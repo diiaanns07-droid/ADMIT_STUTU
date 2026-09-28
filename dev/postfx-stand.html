@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHEN OATH — postfx stand</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0d1016; color: #cfd6e2; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; overflow: hidden; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 8px; top: 8px; padding: 8px 10px; background: rgba(8, 10, 14, 0.72); border: 1px solid #2c3444; border-radius: 6px; max-width: 520px; white-space: pre-wrap; pointer-events: none; }
+  #bar { position: fixed; right: 8px; top: 8px; display: flex; gap: 4px; flex-wrap: wrap; max-width: 460px; justify-content: flex-end; }
+  #bar button { background: #1b2130; color: #d8c49a; border: 1px solid #3a4458; border-radius: 4px; padding: 3px 7px; font: inherit; cursor: pointer; }
+  #bar button.on { background: #3a3222; }
+  #err { position: fixed; left: 8px; bottom: 8px; color: #ff8a7a; white-space: pre-wrap; }
+  body.clean #hud, body.clean #bar { display: none; }
+</style>
+<!-- как в index.html: Three.js один раз, аддоны через three/addons/ -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="hud">загрузка…</div>
+<div id="bar"></div>
+<div id="err"></div>
+<script type="module">
+// Стенд core/postfx.js на настоящей сцене world.js и настоящей камере боя (core/cameraRig.js).
+// URL: q=low|medium|high (постобработка и world)  wq=<world quality отдельно>  pr=<pixel ratio>
+//      scene=idle|strafe|stage2  shot=1 (прогнать ~1.5 с сцены, отрисовать, title=READY)  rm=1 (reducedMotion)
+//      clean=1 (без HUD/кнопок)  bench=1 (замер всех уровней, результат в window.__pfxBench, title=BENCHED)
+import * as THREE from 'three';
+import { createWorld } from '../modules/world.js';
+import { createPostFX } from '../core/postfx.js';
+import { createCameraRig } from '../core/cameraRig.js';
+import { config } from '../config.js';
+
+const P = new URLSearchParams(location.search);
+const errEl = document.getElementById('err');
+window.addEventListener('error', (e) => { errEl.textContent += '\n' + e.message; });
+window.addEventListener('unhandledrejection', (e) => { errEl.textContent += '\n' + (e.reason && e.reason.stack || e.reason); });
+if (P.get('clean') === '1') document.body.classList.add('clean');
+
+const Q = ['low', 'medium', 'high'].includes(P.get('q')) ? P.get('q') : 'medium';
+const WQ = ['low', 'medium', 'high'].includes(P.get('wq')) ? P.get('wq') : Q;
+const PR = +P.get('pr') || 1;
+const SHOT = P.get('shot') === '1';
+
+// renderer — как в main.js
+const canvas = document.createElement('canvas');
+document.body.appendChild(canvas);
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.setPixelRatio(PR);
+renderer.setSize(innerWidth, innerHeight, false);
+canvas.style.width = '100vw'; canvas.style.height = '100vh';
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(config.camera.fov, innerWidth / innerHeight, 0.1, 240);
+scene.add(camera);
+
+const tW0 = performance.now();
+const world = createWorld({ THREE, scene, renderer, camera, config: { world: { ...config.world, quality: WQ }, settings: { quality: WQ, reducedMotion: P.get('rm') === '1' } } });
+const worldCreateMs = performance.now() - tW0;
+world.setQuality(WQ);
+const post = createPostFX({ THREE, renderer, scene, camera, quality: Q });
+post.setReducedMotion(P.get('rm') === '1');
+post.setSize(innerWidth, innerHeight, renderer.getPixelRatio());
+const rig = createCameraRig(config.camera);
+
+// простейший «combat»-снимок: орбита вокруг стража
+const sim = {
+  status: 'playing',
+  player: { position: { x: 0, y: 0, z: 6 }, yaw: Math.PI, hp: 100, maxHp: 100, energy: 100, maxEnergy: 100, action: 'idle', shielding: false, orbitRadius: 6, conjure: null },
+  boss: { position: { x: 0, y: 0, z: 0 }, yaw: 0, hp: 1000, maxHp: 1000, stage: 1, action: 'idle' },
+  cooldowns: {}, projectiles: [], telegraphs: [], stats: {},
+};
+let theta = 0, pending = [], evId = 1;
+const scn = P.get('scene') || 'idle';
+function step(dt, moveX) {
+  theta += (moveX * 3.6 / 6) * dt;
+  sim.player.position = { x: Math.sin(theta) * 6, y: 0, z: Math.cos(theta) * 6 };
+  sim.player.yaw = theta + Math.PI; sim.boss.yaw = theta;
+  sim.player.action = Math.abs(moveX) > 0.01 ? 'move' : 'idle';
+  const evs = pending; pending = [];
+  world.update(dt, sim, evs);
+  const c = rig.update(dt, sim.player.position, sim.boss.position, { x: 0, y: 0, z: 0 });
+  camera.position.set(c.position.x, c.position.y, c.position.z);
+  camera.lookAt(c.target.x, c.target.y, c.target.z);
+}
+if (scn === 'stage2') { sim.boss.stage = 2; sim.boss.hp = 480; pending.push({ id: evId++, type: 'boss_phase', position: { x: 0, y: 3, z: 0 }, data: { stage: 2 } }); }
+rig.reset(sim.player.position, sim.boss.position);
+const moveOf = () => (scn === 'strafe' ? 1 : 0);
+
+const gl = renderer.getContext();
+const px = new Uint8Array(4);
+const flush = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+function gpuName() {
+  try { const e = gl.getExtension('WEBGL_debug_renderer_info'); return e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER); } catch (e) { return '?'; }
+}
+
+async function setTier(t, worldToo = true) {
+  post.setQuality(t);
+  if (worldToo) world.setQuality(t);
+  await post.whenReady;
+  if (t === 'high') { const t0 = performance.now(); while (!post.info().highReady && performance.now() - t0 < 15000) await new Promise((r) => setTimeout(r, 50)); }
+}
+// Замер: N кадров подряд (world.update + камера + render), затем один readPixels — пропускная
+// способность (CPU и GPU перекрываются); и N кадров с readPixels после каждого — полный цикл кадра.
+async function benchTier(t, { frames = 300, worldToo = true } = {}) {
+  await setTier(t, worldToo);
+  for (let i = 0; i < 40; i++) { step(1 / 60, moveOf()); post.render(1 / 60); } flush(); // прогрев, компиляция шейдеров
+  let t0 = performance.now();
+  for (let i = 0; i < frames; i++) { step(1 / 60, moveOf()); post.render(1 / 60); }
+  flush();
+  const through = (performance.now() - t0) / frames;
+  t0 = performance.now();
+  for (let i = 0; i < frames; i++) { step(1 / 60, moveOf()); post.render(1 / 60); flush(); }
+  const sync = (performance.now() - t0) / frames;
+  // только world.update
+  t0 = performance.now();
+  for (let i = 0; i < frames; i++) step(1 / 60, moveOf());
+  const upd = (performance.now() - t0) / frames;
+  step(1 / 60, moveOf()); post.render(1 / 60); flush();
+  const ri = renderer.info.render;
+  return { tier: t, worldTier: worldToo ? t : world.quality, msThroughput: +through.toFixed(3), msSync: +sync.toFixed(3), msWorldUpdatePlusCamera: +upd.toFixed(3), calls: ri.calls, triangles: ri.triangles, passes: post.info().passes, enabled: post.enabled };
+}
+async function benchAll(frames = 300) {
+  running = false;
+  const out = { gpu: gpuName(), size: [innerWidth, innerHeight, renderer.getPixelRatio()], worldCreateMs: +worldCreateMs.toFixed(1), frames, postOnly: [], full: [] };
+  const wq = world.quality;
+  for (const t of ['low', 'medium', 'high']) { world.setQuality('medium'); out.postOnly.push(await benchTier(t, { frames, worldToo: false })); }
+  for (const t of ['low', 'medium', 'high']) out.full.push(await benchTier(t, { frames, worldToo: true }));
+  world.setQuality(wq);
+  running = !SHOT;
+  return out;
+}
+window.__pfx = { THREE, renderer, scene, camera, world, post, sim, benchTier, benchAll, setTier, step, info: () => ({ post: post.info(), calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, programs: renderer.info.programs ? renderer.info.programs.length : -1, textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries, worldCreateMs }) };
+
+// UI
+const hud = document.getElementById('hud'), bar = document.getElementById('bar');
+function btn(label, fn) { const b = document.createElement('button'); b.textContent = label; b.onclick = () => { fn(b); b.blur(); }; bar.appendChild(b); return b; }
+const tb = {};
+for (const t of ['low', 'medium', 'high']) tb[t] = btn('post:' + t, () => { setTier(t, P.get('wq') ? false : true); for (const k in tb) tb[k].classList.toggle('on', k === t); });
+tb[Q].classList.add('on');
+let rm = P.get('rm') === '1';
+btn('reducedMotion', (b) => { rm = !rm; post.setReducedMotion(rm); world.configure({ reducedMotion: rm }); b.classList.toggle('on', rm); });
+btn('bench', async () => { hud.textContent = 'замер…'; const r = await benchAll(300); window.__pfxBench = r; console.log(r); hud.textContent = JSON.stringify(r, null, 1); });
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); post.setSize(innerWidth, innerHeight, renderer.getPixelRatio()); });
+
+let running = !SHOT;
+await post.whenReady;
+if (Q === 'high') await setTier('high', !P.get('wq'));
+for (let i = 0; i < 90; i++) step(1 / 60, moveOf()); // 1.5 с сцены
+if (P.get('bench') === '1') {
+  window.__pfxBench = await benchAll(+P.get('frames') || 300);
+  document.title = 'BENCHED';
+}
+if (SHOT) {
+  post.render(1 / 60);
+  document.title = 'READY';
+} else {
+  let last = performance.now(), acc = 0, n = 0;
+  const loop = () => {
+    requestAnimationFrame(loop);
+    if (!running) return;
+    const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now;
+    step(dt, moveOf());
+    post.render(dt);
+    acc += dt; n++;
+    if (acc > 0.5) {
+      const i = post.info();
+      hud.textContent = `postfx stand · three r${THREE.REVISION} · ${gpuName()}\nfps ${(n / acc).toFixed(0)} · calls ${renderer.info.render.calls} · tris ${renderer.info.render.triangles}\n` +
+        `post: tier ${i.tier} · enabled ${i.enabled} · high ${i.highReady} · ${i.passes.join(' → ')}${i.error ? '\nerror: ' + i.error : ''}\nworld ${world.quality} · createWorld ${worldCreateMs.toFixed(0)} ms`;
+      acc = 0; n = 0;
+    }
+  };
+  loop();
+}
+</script>
+</body>
+</html>

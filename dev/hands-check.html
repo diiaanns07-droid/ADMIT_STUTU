@@ -1,0 +1,86 @@
+<!doctype html>
+<!--
+  ASHEN OATH — dev/hands-check.html. Стенд проверки «Перстней» на ЖИВОЙ камере (не часть игры).
+  Запуск: START_GAME.cmd, затем откройте http://127.0.0.1:87xx/dev/hands-check.html
+  Показывает превью с трекинг-HUD, форму каждой кисти, заряд, распознанные руны и импульсы.
+  Для QA: window.__HC = { vision, frames[] } — лог getHands() с метками времени.
+-->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hands Check</title>
+<style>
+  :root { --bg: #111317; --panel: #1a1d22; --line: #333842; --ink: #e4e1da; --dim: #98a0aa; --gold: #c9a45c; --steel: #9fc4ff; --ember: #ff6a3c; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--ink); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+  h1 { font: 600 18px/1.2 "Palatino Linotype", Georgia, serif; letter-spacing: .12em; margin: 0 0 4px; }
+  .badge { display: inline-block; border: 1px solid var(--ember); color: var(--ember); padding: 1px 8px; font: 600 11px Consolas, monospace; letter-spacing: .1em; margin-left: 8px; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .slot { position: relative; width: min(640px, 100%); aspect-ratio: 4 / 3; background: #07080a; border: 1px solid var(--line); overflow: hidden; }
+  .slot video, .slot canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .slot video { transform: scaleX(-1); }
+  .panel { background: var(--panel); border: 1px solid var(--line); padding: 12px 14px; min-width: 300px; font: 13px/1.6 Consolas, monospace; }
+  .panel b { color: var(--gold); font-weight: 600; }
+  .big { font: 600 22px Consolas, monospace; letter-spacing: .06em; }
+  .ev { color: var(--steel); }
+  button { background: #2a2e35; color: var(--ink); border: 1px solid var(--line); padding: 8px 14px; font: inherit; cursor: pointer; }
+  ul { margin: 6px 0; padding-left: 18px; color: var(--dim); }
+</style>
+</head>
+<body>
+<h1>ПЕРСТНИ · проверка жестов пальцев <span class="badge">DEV</span></h1>
+<p style="color:var(--dim);max-width:90ch">Жесты: <b>OK</b> правой (кольцо большой+указательный, остальные пальцы прямо) — огонь; <b>открытая ладонь</b> левой к камере — щит; <b>кулак → резко раскрыть</b> — выброс (сила = сколько держали кулак); <b>указательный</b> правой рисует руну: треугольник — ИГНИС, молния-зигзаг — ФУЛЬГУР, круг — ОРБИС; быстрый <b>взмах</b> открытой правой ладонью — рывок.</p>
+<div class="row" style="margin:10px 0"><button id="start">Включить камеру</button><span id="st" style="color:var(--dim)"></span></div>
+<div class="row">
+  <div class="slot" id="slot"><video id="v" playsinline muted></video><canvas id="ov"></canvas></div>
+  <div class="panel" id="panel">—</div>
+</div>
+<script type="module">
+import { config } from '../config.js';
+import { createVision } from '../modules/vision.js';
+import { createTrackingHud } from '../core/trackingHud.js';
+
+const video = document.getElementById('v');
+const overlay = document.getElementById('ov');
+const panel = document.getElementById('panel');
+const st = document.getElementById('st');
+const hud = createTrackingHud({ canvas: overlay });
+const vision = await createVision({ video, overlayCanvas: null, config: { ...config.vision, overlay: false }, onStatus: (s) => { st.textContent = `${s.status}: ${s.message}`; } });
+const frames = [];
+const events = [];
+window.__HC = { vision, frames, events };
+document.getElementById('start').onclick = async () => {
+  try { await vision.start(); } catch (e) { st.textContent = 'ошибка: ' + e.message; }
+};
+const q = new URLSearchParams(location.search);
+if (q.get('auto') === '1') vision.start().catch((e) => { st.textContent = 'ошибка: ' + e.message; });
+
+const fmt = (H) => H ? `${H.shape.padEnd(8)} ладонь:${H.palmFacing.padEnd(7)} заряд:${(H.charge * 100).toFixed(0).padStart(3)}%` : '— не видно —';
+function loop() {
+  requestAnimationFrame(loop);
+  const now = performance.now();
+  const status = vision.getStatus();
+  const h = vision.getHands();
+  const pose = vision.getPose();
+  hud.draw(now, { pose, status, input: null, settings: { reducedMotion: false, quality: 'medium' }, mode: 'full', hands: h });
+  if (!h) return;
+  if (h.burst) events.push({ t: now, type: 'burst', power: h.burstPower });
+  if (h.rune) events.push({ t: now, type: 'rune', rune: h.rune, score: h.runeScore });
+  if (h.dash) events.push({ t: now, type: 'dash', dir: h.dash });
+  // импульсы здесь читаются peek'ом; для лога важна форма
+  if (frames.length < 5000) frames.push({ t: Math.round(now), L: h.left && h.left.shape, R: h.right && h.right.shape, Lpalm: h.left && h.left.palmFacing, Rpalm: h.right && h.right.palmFacing, attack: h.attack, shield: h.shield, charge: h.charge });
+  const d = status.debug && status.debug.handGestures;
+  panel.innerHTML = `
+    <div>кисти: <b>${status.hands && status.hands.ready ? 'модель готова (' + status.hands.delegate + ')' : (status.hands && status.hands.error) || 'загрузка…'}</b> · ${status.mode || ''}/${status.delegate || ''} · ${status.debug && status.debug.inferenceHz || '–'} Гц</div>
+    <div>ЛЕВАЯ&nbsp; ${fmt(h.left)}</div>
+    <div>ПРАВАЯ ${fmt(h.right)}</div>
+    <div class="big">${h.attack ? '▲ ОГОНЬ ' : ''}${h.shield ? '◆ ЩИТ ' : ''}${h.drawing ? '✎ РУНА… ' : ''}${h.charge > 0.05 ? '▣ ЗАРЯД ' + (h.charge * 100).toFixed(0) + '%' : ''}</div>
+    <div class="ev">последняя руна: ${h.lastRune ? h.lastRune.rune + ' (' + h.lastRune.score.toFixed(2) + ')' : '—'}</div>
+    <div class="ev">распознавание: ${d && d.lastRecognition ? JSON.stringify({ r: d.lastRecognition.rune, why: d.lastRecognition.reason, s: d.lastRecognition.score && +d.lastRecognition.score.toFixed(2) }) : '—'}</div>
+    <div class="ev">счётчики: ${d ? JSON.stringify(d.counters) : ''}</div>`;
+}
+loop();
+</script>
+</body>
+</html>

@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHEN OATH — стенд интерфейса</title>
+<link rel="stylesheet" href="../modules/ui.css">
+<style>
+  /* Стили только стенда (префикс pv-), в игру не входят. */
+  html, body { margin: 0; height: 100%; background: #101114; overflow: hidden; }
+  #pv-scene { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  .pv-tab {
+    position: fixed; left: 0; top: 50%; transform: translateY(-50%); z-index: 40;
+    writing-mode: vertical-rl; padding: 10px 5px; font: 600 12px/1 system-ui, sans-serif;
+    color: #cfc6b3; background: #26221b; border: 1px solid #574a33; border-left: 0; cursor: pointer;
+  }
+  .pv-drawer {
+    position: fixed; left: 0; top: 0; bottom: 0; width: 300px; z-index: 41; overflow: auto;
+    padding: 12px 14px; box-sizing: border-box; font: 13px/1.4 system-ui, sans-serif; color: #ddd6c8;
+    background: #1b1a18; border-right: 1px solid #574a33;
+  }
+  .pv-drawer h1 { font-size: 14px; margin: 0 0 8px; color: #e3c792; }
+  .pv-drawer label { display: block; margin: 8px 0 3px; color: #b9b1a1; }
+  .pv-drawer select, .pv-drawer button { font: inherit; }
+  .pv-drawer select { width: 100%; padding: 4px; background: #111; color: #eee; border: 1px solid #574a33; }
+  .pv-drawer button { margin: 3px 3px 0 0; padding: 4px 8px; background: #2a2720; color: #eee; border: 1px solid #574a33; cursor: pointer; }
+  .pv-drawer button:focus-visible, .pv-tab:focus-visible { outline: 2px solid #e3c792; outline-offset: 2px; }
+  .pv-note { color: #948d7f; font-size: 12px; margin: 6px 0; }
+  .pv-log { margin: 6px 0 0; padding: 6px; min-height: 120px; background: #111; border: 1px solid #333; font: 11px/1.35 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+  .pv-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .pv-report { position: fixed; inset: 0; z-index: 50; overflow: auto; padding: 16px; background: #111; color: #ddd; font: 13px/1.45 system-ui, sans-serif; }
+  .pv-report .ok { color: #8fb784; } .pv-report .fail { color: #e07458; font-weight: 600; }
+</style>
+</head>
+<body>
+<canvas id="pv-scene" aria-hidden="true"></canvas>
+<div id="ui-root"></div>
+
+<script type="module">
+import { createUI } from '../modules/ui.js';
+import { FIXTURES, FIXTURE_NAMES, fixture, makeSnapshot } from './ui-fixtures.js';
+
+const params = new URLSearchParams(location.search);
+const scene = document.getElementById('pv-scene');
+
+/* ------------------------------------------------ фальшивая сцена (canvas 2D) */
+function paintScene() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = window.innerWidth, h = window.innerHeight;
+  scene.width = Math.round(w * dpr); scene.height = Math.round(h * dpr);
+  const g = scene.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const sky = g.createLinearGradient(0, 0, 0, h);
+  sky.addColorStop(0, '#1d2330'); sky.addColorStop(0.55, '#2a2f38'); sky.addColorStop(1, '#17181c');
+  g.fillStyle = sky; g.fillRect(0, 0, w, h);
+  g.fillStyle = 'rgba(200,210,225,0.08)';
+  g.beginPath(); g.arc(w * 0.72, h * 0.18, h * 0.06, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#1a1c21';
+  for (let i = 0; i < 9; i++) { const x = (i / 8) * w; const ch = h * (0.18 + (i % 3) * 0.05); g.fillRect(x - 14, h * 0.58 - ch, 28, ch); }
+  g.fillStyle = '#34363b'; g.beginPath(); g.ellipse(w / 2, h * 0.74, w * 0.46, h * 0.2, 0, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = 'rgba(196,162,101,0.25)'; g.lineWidth = 2; g.beginPath(); g.ellipse(w / 2, h * 0.74, w * 0.3, h * 0.12, 0, 0, Math.PI * 2); g.stroke();
+  g.fillStyle = '#4a4540';
+  g.fillRect(w / 2 - 55, h * 0.36, 110, h * 0.3); g.fillRect(w / 2 - 80, h * 0.4, 160, 34);
+  g.beginPath(); g.arc(w / 2, h * 0.33, 26, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(224,150,70,0.55)'; g.fillRect(w / 2 - 4, h * 0.42, 8, h * 0.14);
+  g.fillStyle = '#202227'; g.beginPath(); g.moveTo(w / 2 - 22, h * 0.9); g.lineTo(w / 2, h * 0.76); g.lineTo(w / 2 + 22, h * 0.9); g.closePath(); g.fill();
+  g.fillStyle = 'rgba(255,255,255,0.28)'; g.font = '12px system-ui, sans-serif';
+  g.fillText('Фальшивая сцена стенда. Настоящую рисует сборщик (№1/№3).', 14, h - 12);
+}
+paintScene();
+window.addEventListener('resize', paintScene);
+let canvasClicks = 0;
+scene.addEventListener('pointerdown', () => { canvasClicks += 1; renderInfo(); });
+
+/* ------------------------------------------------------------ режим самопроверки */
+if (params.get('selftest') === '1') {
+  const { runUISelfTest } = await import('./ui-selftest.js');
+  const report = await runUISelfTest();
+  window.__AO_SELFTEST__ = report;
+  const box = document.createElement('div');
+  box.className = 'pv-report';
+  box.innerHTML = `<h1>Самопроверка ui.js — ${report.viewport}: ${report.passed}/${report.total}</h1>`;
+  const list = document.createElement('ol');
+  for (const r of report.results) {
+    const li = document.createElement('li');
+    li.className = r.ok ? 'ok' : 'fail';
+    li.textContent = `${r.ok ? 'OK' : 'FAIL'} — ${r.name}${r.detail ? ` (${r.detail})` : ''}`;
+    list.append(li);
+  }
+  box.append(list);
+  document.body.append(box);
+  throw new Error('selftest mode: preview UI is not mounted'); // останавливаем дальнейший код модуля
+}
+
+/* ------------------------------------------------------------------- стенд */
+const logLines = [];
+function logCall(name, arg) {
+  const line = `${new Date().toLocaleTimeString('ru-RU')} ${name}${arg === undefined ? '()' : `(${JSON.stringify(arg)})`}`;
+  logLines.unshift(line); logLines.length = Math.min(logLines.length, 14);
+  if (logEl) logEl.textContent = logLines.join('\n');
+  console.log('[ui-preview]', line);
+}
+
+const settings = { quality: 'medium', volume: 0.8, reducedMotion: false, sensitivity: 1 };
+let mode = params.get('f') && params.get('f') !== 'flow' ? 'fixture' : 'flow';
+let fixtureName = FIXTURES[params.get('f')] ? params.get('f') : 'menu';
+
+/* Живой сценарий: маленькая имитация сборщика. */
+const flow = {
+  screen: 'menu', debug: false, pauseReason: null,
+  tracking: { status: 'idle', message: '', progress: 0, confidence: 0 },
+  timers: [], sim: null, lostAt: 0,
+};
+function later(fn, ms) { flow.timers.push(setTimeout(fn, ms)); }
+function clearTimers() { flow.timers.forEach(clearTimeout); flow.timers = []; }
+const PARTS = { head: true, leftShoulder: true, rightShoulder: true, leftElbow: true, rightElbow: true, leftWrist: true, rightWrist: true };
+
+function startCamera() {
+  clearTimers();
+  flow.tracking = { status: 'permission', message: 'Имитация запроса разрешения' };
+  later(() => { flow.tracking = { status: 'loading', message: 'Имитация загрузки модели', progress: 0 }; }, 1200);
+  for (let i = 1; i <= 10; i++) later(() => { flow.tracking = { status: 'loading', message: 'Имитация загрузки модели', progress: i / 10 }; }, 1200 + i * 150);
+  later(() => { flow.tracking = { status: 'ready', message: '', confidence: 0.84, calibrated: false, parts: { ...PARTS } }; }, 2900);
+}
+function calibrate() {
+  return new Promise((resolve) => {
+    clearTimers();
+    for (let i = 0; i <= 20; i++) later(() => { flow.tracking = { status: 'calibrating', message: 'Держите нейтральную позу', progress: i / 20, confidence: 0.83, parts: { ...PARTS } }; }, i * 120);
+    later(() => { flow.tracking = { status: 'ready', message: '', confidence: 0.86, calibrated: true, parts: { ...PARTS } }; resolve(true); }, 21 * 120);
+  });
+}
+
+function newSim() {
+  return {
+    snap: makeSnapshot({ time: 0, player: { hp: 100, energy: 100 }, boss: { hp: 1000, stage: 1 }, stats: { damageDealt: 0, damageTaken: 0, dodges: 0, blocks: 0 } }),
+    nextTele: 2.5, dashT: 0, seq: 0,
+  };
+}
+function stepSim(dt, inp) {
+  const s = flow.sim; const S = s.snap; const p = S.player; const b = S.boss; const cd = S.cooldowns;
+  S.time += dt;
+  cd.dashRemaining = Math.max(0, cd.dashRemaining - dt);
+  cd.burstRemaining = Math.max(0, cd.burstRemaining - dt);
+  s.dashT = Math.max(0, s.dashT - dt);
+  p.shielding = inp.valid && inp.shield && !inp.attack && p.energy > 1;
+  p.action = 'idle';
+  if (inp.valid && inp.moveX) p.action = 'move';
+  if (inp.valid && inp.dash && cd.dashRemaining <= 0) { cd.dashRemaining = cd.dashTotal; s.dashT = 0.3; }
+  if (s.dashT > 0) p.action = 'dash';
+  p.invulnerable = s.dashT > 0;
+  if (inp.valid && inp.attack && !p.shielding) { const d = 22 * dt; b.hp -= d; S.stats.damageDealt += d; p.action = 'cast'; }
+  if (p.shielding) { p.energy -= 14 * dt; p.action = 'shield'; } else p.energy += 11 * dt;
+  if (inp.valid && inp.burst && cd.burstRemaining <= 0 && p.energy >= 40) { p.energy -= 40; cd.burstRemaining = cd.burstTotal; b.hp -= 90; S.stats.damageDealt += 90; }
+  p.energy = Math.max(0, Math.min(p.maxEnergy, p.energy));
+  b.hp = Math.max(0, b.hp);
+  b.stage = b.hp <= b.maxHp / 2 ? 2 : 1;
+  s.nextTele -= dt;
+  if (s.nextTele <= 0 && S.telegraphs.length === 0) {
+    const kinds = ['slam', 'orb', 'nova'];
+    const kind = kinds[s.seq++ % 3];
+    const dur = b.stage === 2 ? 1.2 : 1.5;
+    S.telegraphs.push({ id: `pv${s.seq}`, kind, origin: { x: 0, y: 0, z: 0 }, target: { ...p.position }, radius: kind === 'nova' ? 5 : 2.2, remaining: dur, duration: dur, blockable: kind !== 'nova' });
+    s.nextTele = b.stage === 2 ? 2.4 : 3.2;
+  }
+  for (const t of S.telegraphs) t.remaining -= dt;
+  const done = S.telegraphs.filter((t) => t.remaining <= 0);
+  S.telegraphs = S.telegraphs.filter((t) => t.remaining > 0);
+  for (const t of done) {
+    if (p.invulnerable) S.stats.dodges += 1;
+    else if (p.shielding && t.blockable) S.stats.blocks += 1;
+    else { const dmg = b.stage === 2 ? 18 : 14; p.hp -= dmg; S.stats.damageTaken += dmg; p.action = 'hit'; }
+  }
+  p.hp = Math.max(0, p.hp);
+  if (b.hp <= 0) { S.status = 'victory'; b.action = 'dead'; flow.screen = 'victory'; }
+  else if (p.hp <= 0) { S.status = 'defeat'; p.action = 'dead'; flow.screen = 'defeat'; }
+}
+
+const callbacks = {
+  onStart(arg = {}) {
+    logCall('onStart', arg);
+    if (arg.debug) flow.debug = true;
+    if (arg.from === 'menu') flow.screen = 'camera';
+    else if (arg.from === 'camera') flow.screen = arg.debug ? 'tutorial' : 'calibration';
+    else if (arg.from === 'calibration') flow.screen = 'tutorial';
+    else if (arg.from === 'tutorial') { flow.sim = newSim(); flow.screen = 'playing'; }
+  },
+  onEnableCamera() { logCall('onEnableCamera'); startCamera(); },
+  onCalibrate() { logCall('onCalibrate'); return calibrate(); },
+  onPause(arg) { logCall('onPause', arg); if (flow.screen === 'playing') { flow.screen = 'paused'; flow.pauseReason = 'user'; } },
+  onResume() { logCall('onResume'); if (flow.screen === 'paused') { flow.screen = 'playing'; flow.pauseReason = null; } },
+  onRestart() { logCall('onRestart'); flow.sim = newSim(); flow.screen = 'playing'; flow.pauseReason = null; },
+  onSettings(patch) { logCall('onSettings', patch); Object.assign(settings, patch); },
+  onDebug(on) { logCall('onDebug', on); flow.debug = !!on; },
+  onExit() { logCall('onExit'); clearTimers(); flow.screen = 'menu'; flow.sim = null; flow.pauseReason = null; },
+};
+
+const ui = createUI({ root: document.getElementById('ui-root'), callbacks, options: { abilityCosts: { burst: 40 } } });
+window.__AO_UI__ = ui;
+
+/* Имитация превью камеры в слоте (вместо video/overlay №1). */
+const cam = document.createElement('canvas');
+cam.width = 320; cam.height = 240;
+ui.cameraSlot.append(cam);
+function paintCam(t, moveX) {
+  if (ui.cameraSlot.getBoundingClientRect().width < 20) return;
+  const g = cam.getContext('2d');
+  g.fillStyle = '#23262b'; g.fillRect(0, 0, 320, 240);
+  g.fillStyle = '#2e3136'; g.fillRect(0, 150, 320, 90);
+  const st = currentTracking().status;
+  if (st === 'idle' || st === 'permission' || st === 'loading' || st === 'error') {
+    g.fillStyle = '#6b665c'; g.font = '14px system-ui'; g.textAlign = 'center';
+    g.fillText(st === 'idle' ? 'камера выключена' : st === 'error' ? 'ошибка' : 'запуск…', 160, 124);
+    return;
+  }
+  const lx = 160 + moveX * 22 + Math.sin(t / 900) * 2;
+  g.fillStyle = '#4a4d55'; g.beginPath(); g.arc(lx, 70, 22, 0, Math.PI * 2); g.fill();
+  g.fillRect(lx - 48, 100, 96, 110);
+  if (st === 'lost') { g.fillStyle = 'rgba(224,116,88,0.9)'; g.font = '13px system-ui'; g.textAlign = 'center'; g.fillText('поза не найдена', 160, 228); return; }
+  const inp = currentInput();
+  const pts = [[lx, 70], [lx - 44, 104], [lx + 44, 104], [lx - 58, inp.shield || inp.burst ? 70 : 150], [lx + 58, inp.attack || inp.burst ? 70 : 150], [lx - 54, inp.shield || inp.burst ? 36 : 190], [lx + 54, inp.attack || inp.burst ? 36 : 190]];
+  g.strokeStyle = 'rgba(227,199,146,0.8)'; g.lineWidth = 2; g.beginPath();
+  g.moveTo(pts[1][0], pts[1][1]); g.lineTo(pts[2][0], pts[2][1]);
+  g.moveTo(pts[1][0], pts[1][1]); g.lineTo(pts[3][0], pts[3][1]); g.lineTo(pts[5][0], pts[5][1]);
+  g.moveTo(pts[2][0], pts[2][1]); g.lineTo(pts[4][0], pts[4][1]); g.lineTo(pts[6][0], pts[6][1]); g.stroke();
+  g.fillStyle = '#e3c792'; for (const [x, y] of pts) { g.beginPath(); g.arc(x, y, 3.5, 0, Math.PI * 2); g.fill(); }
+  g.fillStyle = 'rgba(255,255,255,0.4)'; g.font = '11px system-ui'; g.textAlign = 'left'; g.fillText('имитация превью', 8, 16);
+}
+
+/* Клавиши стенда: в режиме DEBUG — как адаптер №1, иначе имитация CV-ввода. */
+const keys = new Set();
+let pulseDash = 0, pulseBurst = false;
+window.addEventListener('keydown', (e) => {
+  if (e.target && e.target.closest && e.target.closest('.pv-drawer')) return;
+  const k = e.key.toLowerCase();
+  if (e.key === 'Escape' && flow.debug && !e.repeat && mode === 'flow' && flow.screen === 'playing') { callbacks.onPause({ reason: 'user', via: 'keyboard' }); return; }
+  if (e.repeat) return;
+  if (k === 'q') pulseDash = -1; else if (k === 'e') pulseDash = 1; else if (k === 'l') pulseBurst = true;
+  keys.add(k);
+});
+window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+
+let simLost = false;
+function currentTracking() {
+  if (mode === 'fixture') return FIXTURES[fixtureName].tracking || { status: 'idle' };
+  return simLost && flow.tracking.status === 'ready' ? { status: 'lost', message: 'Имитация потери позы', confidence: 0.05, calibrated: true } : flow.tracking;
+}
+let lastInput = { source: 'none', valid: false, calibrated: false, tMs: 0, moveX: 0, dash: 0, attack: false, shield: false, burst: false };
+function readInput() {
+  const tr = currentTracking();
+  const source = flow.debug ? 'debug' : tr.status === 'ready' || tr.status === 'lost' ? 'cv' : 'none';
+  const valid = flow.debug || tr.status === 'ready';
+  const f = { source, valid, calibrated: !!tr.calibrated, tMs: performance.now(), moveX: 0, dash: 0, attack: false, shield: false, burst: false };
+  if (valid) {
+    f.moveX = (keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0);
+    f.dash = pulseDash; f.attack = keys.has('j'); f.shield = keys.has('k'); f.burst = pulseBurst;
+  }
+  pulseDash = 0; pulseBurst = false; // read() потребляет импульсы
+  return f;
+}
+function currentInput() { return lastInput; }
+
+/* ------------------------------------------------------------ панель стенда */
+let logEl = null, infoEl = null;
+if (params.get('dev') !== '0') {
+  const tab = document.createElement('button');
+  tab.type = 'button'; tab.className = 'pv-tab'; tab.textContent = 'Стенд';
+  const drawer = document.createElement('div');
+  drawer.className = 'pv-drawer'; drawer.hidden = params.get('open') !== '1';
+  tab.addEventListener('click', () => { drawer.hidden = !drawer.hidden; });
+  drawer.innerHTML = `
+    <h1>Стенд ui.js (ASHEN_V1)</h1>
+    <label for="pv-mode">Состояние</label>
+    <select id="pv-mode"><option value="flow">Живой сценарий (имитация сборщика)</option>${FIXTURE_NAMES.map((n) => `<option value="${n}">Фикстура: ${n}</option>`).join('')}</select>
+    <div class="pv-row" style="margin-top:8px">
+      <button type="button" id="pv-lose">Потерять трекинг</button>
+      <button type="button" id="pv-restore">Вернуть трекинг</button>
+    </div>
+    <div class="pv-row"><button type="button" id="pv-close">Скрыть стенд</button><a href="?selftest=1" style="color:#e3c792">Самопроверка</a></div>
+    <p class="pv-note">Клавиши стенда: A/D наклон, Q/E рывок, J правая рука, K левая, L обе. Без DEBUG стенд подаёт их как имитацию CV-ввода, чтобы проверить отметки обучения. Это не проверка настоящего трекинга.</p>
+    <p class="pv-note" id="pv-info"></p>
+    <label>Вызовы callbacks</label>
+    <div class="pv-log" id="pv-log"></div>`;
+  document.body.append(tab, drawer);
+  logEl = drawer.querySelector('#pv-log');
+  infoEl = drawer.querySelector('#pv-info');
+  const sel = drawer.querySelector('#pv-mode');
+  sel.value = mode === 'flow' ? 'flow' : fixtureName;
+  sel.addEventListener('change', () => {
+    if (sel.value === 'flow') mode = 'flow'; else { mode = 'fixture'; fixtureName = sel.value; }
+    const url = new URL(location.href); url.searchParams.set('f', sel.value); history.replaceState(null, '', url);
+  });
+  drawer.querySelector('#pv-lose').addEventListener('click', () => { simLost = true; flow.lostAt = performance.now(); });
+  drawer.querySelector('#pv-restore').addEventListener('click', () => { simLost = false; });
+  drawer.querySelector('#pv-close').addEventListener('click', () => { drawer.hidden = true; tab.focus(); });
+}
+function renderInfo() { if (infoEl) infoEl.textContent = `Клики по canvas сцены: ${canvasClicks}. Режим: ${mode === 'flow' ? 'живой сценарий' : fixtureName}.`; }
+renderInfo();
+
+/* ------------------------------------------------------------- единый цикл */
+let prev = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - prev) / 1000);
+  prev = now;
+  let vm;
+  if (mode === 'fixture') {
+    vm = fixture(fixtureName);
+    vm.settings = { ...settings };
+    lastInput = vm.input || lastInput;
+  } else {
+    lastInput = readInput();
+    const tr = currentTracking();
+    if (flow.screen === 'playing' && !flow.debug && tr.status === 'lost' && now - flow.lostAt > 700) {
+      flow.screen = 'paused'; flow.pauseReason = 'tracking'; // сборщик ставит паузу после короткой потери
+    }
+    if (flow.screen === 'playing' && flow.sim) stepSim(dt, lastInput);
+    vm = {
+      screen: flow.screen,
+      snapshot: flow.sim ? flow.sim.snap : null,
+      tracking: tr,
+      debug: flow.debug,
+      settings: { ...settings },
+      error: null,
+      input: lastInput,
+      pauseReason: flow.pauseReason,
+    };
+  }
+  ui.update(vm);
+  paintCam(now, lastInput.valid ? lastInput.moveX : 0);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

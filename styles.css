@@ -1,0 +1,34 @@
+/* ASHEN OATH — базовые стили оболочки. Владелец: №1. Стили интерфейса — modules/ui.css. */
+:root {
+  --ao-bg: #0d1016;
+  --ao-ink: #e7e3da;
+  --ao-gold: #c9a45c;
+  --ao-amber: #e08a3c;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--ao-bg); color: var(--ao-ink); }
+body { font: 15px/1.45 "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+#ao-app { position: fixed; inset: 0; }
+#ao-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#ao-hud-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+#ao-ui-root { position: absolute; inset: 0; pointer-events: none; }
+/* Интро: DOM-HUD прячется, пока идёт облёт камеры и титр (рисует core/battleHud.js). */
+#ao-ui-root.ao-intro .ao-hud { opacity: 0; transition: opacity 0.4s; }
+#ao-ui-root .ao-hud { transition: opacity 0.6s; }
+
+/* Видеопревью: элементы живут в слоте ui.js. Зеркалится только <video>;
+   overlay vision.js №2 рисует скелет уже в зеркальных координатах. */
+#ao-media-holder { position: absolute; width: 2px; height: 2px; overflow: hidden; opacity: 0.01; pointer-events: none; }
+#ao-video { transform: scaleX(-1); }
+
+#ao-boot {
+  position: absolute; inset: 0; display: grid; place-items: center; z-index: 10;
+  background: radial-gradient(ellipse at 50% 40%, #1c222c 0%, #0b0d11 70%);
+  padding: 16px;
+}
+#ao-boot[hidden] { display: none; }
+.ao-boot-card { text-align: center; max-width: 560px; }
+.ao-boot-card h1 { font-family: "Palatino Linotype", Georgia, serif; letter-spacing: 0.2em; font-weight: 600; margin: 0 0 12px; color: #efe6d2; }
+.ao-boot-card p { color: #a9a49a; white-space: pre-line; }
+#ao-boot.is-error .ao-boot-card p { color: #f0c9a0; border: 1px solid rgba(224, 138, 60, 0.5); background: rgba(40, 20, 8, 0.6); padding: 12px 16px; border-radius: 4px; }
+.ao-noscript { position: absolute; inset: 0; display: grid; place-items: center; background: var(--ao-bg); }

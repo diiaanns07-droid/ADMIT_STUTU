@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд tracking HUD — DEBUG / НЕ CV</title>
+<style>
+  :root { --gold: #c9a45c; --ember: #ff6a3c; --ink: #dfe8f5; --dim: #8d97a6; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #0b0d11; color: var(--ink); font: 13px/1.4 "Segoe UI", system-ui, sans-serif; }
+  body { padding: 14px 18px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+  h1 { margin: 0; font: 600 16px 'Palatino Linotype', Georgia, serif; letter-spacing: 0.14em; color: #efe6d2; }
+  .badge { font: 700 12px "Consolas", monospace; letter-spacing: 0.08em; color: #1a0c06; background: var(--ember); padding: 3px 8px; border-radius: 2px; }
+  .note { color: var(--dim); font-size: 12px; }
+  .row { display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap; }
+  figure { margin: 0; }
+  figcaption { font: 11px "Consolas", monospace; color: var(--dim); margin-top: 5px; }
+  /* Слот как .ao-camera-slot в игре: video/overlay абсолютно, inset 0, object-fit: contain. */
+  .slot { position: relative; overflow: hidden; background: #07080b; border: 1px solid #2a2419; }
+  .slot > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: contain; }
+  .slot > canvas.video { transform: scaleX(-1); }   /* как #ao-video: зеркалится только «видео» */
+  .slot::after { content: 'DEBUG / НЕ CV'; position: absolute; right: 4px; bottom: 3px; font: 700 8px "Consolas", monospace; color: var(--ember); opacity: 0.8; pointer-events: none; }
+  #full { width: 460px; height: 345px; }
+  #mini { width: 150px; height: 112px; }
+  #wide { width: 300px; height: 225px; }
+  #fuzz { width: 120px; height: 90px; }
+  #panel { font: 11px/1.5 "Consolas", monospace; color: var(--dim); white-space: pre; min-width: 260px; }
+  #panel b { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>TRACKING HUD</h1>
+  <span class="badge">DEBUG / НЕ CV</span>
+  <span class="note">синтетические landmarks по сценарию, камера и MediaPipe не используются · ?rm=1 — reducedMotion · ?t=сек — заморозить сценарий</span>
+</header>
+<div class="row">
+  <figure><div class="slot" id="full"><canvas class="video" width="640" height="480"></canvas><canvas class="ov"></canvas></div><figcaption>full · 460×345 · кадр 640×480</figcaption></figure>
+  <div class="col">
+    <figure><div class="slot" id="mini"><canvas class="video" width="640" height="480"></canvas><canvas class="ov"></canvas></div><figcaption>mini · 150×112 (док боя)</figcaption></figure>
+    <figure style="margin-top:12px"><div class="slot" id="wide"><canvas class="video" width="640" height="360"></canvas><canvas class="ov"></canvas></div><figcaption>contain · кадр 16:9 в слоте 4:3</figcaption></figure>
+  </div>
+  <div>
+    <div id="panel">…</div>
+    <figure style="margin-top:10px"><div class="slot" id="fuzz"><canvas class="ov"></canvas></div><figcaption>fuzz · мусорные входы</figcaption></figure>
+  </div>
+</div>
+<script type="module">
+import { createTrackingHud } from '../core/trackingHud.js';
+
+const Q = new URLSearchParams(location.search);
+const RM = Q.get('rm') === '1';
+const FREEZE = Q.has('t') ? Math.max(0, parseFloat(Q.get('t')) || 0) : null;
+const LOOP = 15.5;
+const POSE_HZ = 20;
+const settings = { reducedMotion: RM, quality: 'medium' };
+
+// ---------------------------------------------------------------- перехват предупреждений HUD
+const hudWarnings = [];
+const origWarn = console.warn.bind(console);
+console.warn = (...a) => { if (String(a[0]).includes('[trackingHud]')) hudWarnings.push(a.map(String).join(' ')); origWarn(...a); };
+
+// ---------------------------------------------------------------- сценарий
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const smooth = (a, b, t) => { const x = clamp((t - a) / (b - a), 0, 1); return x * x * (3 - 2 * x); };
+const bump = (t, a, b, rise, fall) => smooth(a, a + rise, t) * (1 - smooth(b - fall, b, t));
+const lerp = (a, b, k) => a + (b - a) * k;
+
+const PHASES = [
+  [0, 'idle'], [1.5, 'lean right'], [3.0, 'dash right + return'], [4.0, 'right arm up (fire)'],
+  [5.5, 'left arm up (shield)'], [7.0, 'both up (burst)'], [9.0, 'lost'], [10.5, 'reacquire'],
+  [11.5, 'calibrating'], [14.0, 'idle'],
+];
+function phaseAt(t) { let p = PHASES[0][1]; for (const [s, n] of PHASES) if (t >= s) p = n; return p; }
+
+function params(t) {
+  let lean = 0.18 * bump(t, 1.5, 3.0, 0.45, 0.45);                 // в ширинах плеч; + = своя правая
+  lean += 0.36 * smooth(3.0, 3.16, t) * (1 - smooth(3.42, 3.85, t)); // быстрый рывок и возврат
+  const rArm = clamp(bump(t, 4.0, 5.4, 0.22, 0.25) + bump(t, 7.0, 8.9, 0.22, 0.3), 0, 1);
+  const lArm = clamp(bump(t, 5.5, 6.9, 0.22, 0.25) + bump(t, 7.03, 8.9, 0.22, 0.3), 0, 1);
+  const lost = t >= 9.0 && t < 10.5;
+  const calibrating = t >= 11.5 && t < 14.0;
+  const progress = calibrating ? clamp((t - 11.6) / 2.2, 0, 1) : 0;
+  return { lean, rArm, lArm, lost, calibrating, progress };
+}
+
+// детерминированный шум
+function hash(i) { let x = (i * 374761393) ^ 0x5bd1e995; x = Math.imul(x ^ (x >>> 13), 1274126177); return ((x ^ (x >>> 16)) >>> 0) / 4294967296; }
+
+const SW = 0.28;       // ширина плеч в долях ширины кадра 4:3
+function landmarks(t, p, fi) {
+  const cx = 0.5 - p.lean * SW + 0.004 * Math.sin(t * 0.9);  // своя правая сторона = меньший x в несзеркальном кадре
+  const by = 0.004 * Math.sin(t * 2.1);
+  const L = new Array(33).fill(null);
+  const n = (k) => (hash(fi * 33 + k) - 0.5) * 0.005;
+  const pt = (k, x, y, v = 0.97) => { L[k] = { x: x + n(k), y: y + n(k + 50), z: -0.1, visibility: v }; };
+  const shY = 0.60 + by;
+  const rs = cx - SW / 2, ls = cx + SW / 2;
+  pt(0, cx + 0.006 * Math.sin(t * 1.3), 0.355 + by);
+  for (const k of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) L[k] = null; // лицо не гарантировано
+  pt(11, ls, shY); pt(12, rs, shY + 0.004);
+  const ease = (k) => k * k * (3 - 2 * k);
+  const r = ease(p.rArm), l = ease(p.lArm);
+  // правая рука (экранная правая при зеркале)
+  pt(14, lerp(rs - 0.035, rs - 0.075, r), lerp(0.815, 0.47, r) + by);
+  pt(16, lerp(rs + 0.015, rs - 0.055, r), lerp(0.935, 0.26, r) + by, lerp(0.86, 0.96, r));
+  pt(13, lerp(ls + 0.035, ls + 0.075, l), lerp(0.815, 0.47, l) + by);
+  pt(15, lerp(ls - 0.015, ls + 0.055, l), lerp(0.935, 0.26, l) + by, lerp(0.86, 0.96, l));
+  return L;
+}
+
+function computeMove(o) {
+  const dz = 0.06, full = 0.24, a = Math.abs(o);
+  if (a <= dz) return 0;
+  return Math.sign(o) * Math.min(1, Math.pow((a - dz) / (full - dz), 1.3));
+}
+
+// Упрощённая модель vision: те же поля статуса и импульсы, что у modules/vision.js.
+function makeSim() {
+  return {
+    t: -1, fi: 0, lms: null, p: null,
+    r: { raised: false, since: null }, l: { raised: false, since: null },
+    gest: { state: 'idle', blocked: true, burstLatched: true, downSince: null, attack: false, shield: false },
+    dash: { state: 'disarmed', lastDash: null, armed: true },
+    pulses: { dash: 0, burst: false },
+    lastBodyT: -1, recoveredAt: -1e9, wasLost: false,
+    hz: 20, inf: 7, lat: 38,
+  };
+}
+let sim = makeSim();
+
+function simStep(t) {
+  const p = params(t);
+  sim.p = p;
+  sim.fi++;
+  sim.t = t;
+  sim.lms = p.lost ? null : landmarks(t, p, sim.fi);
+  sim.hz = 20 + (hash(sim.fi) - 0.5) * 1.6;
+  sim.inf = 7.2 + (hash(sim.fi + 7) - 0.5) * 1.2;
+  sim.lat = 38 + (hash(sim.fi + 13) - 0.5) * 8;
+  if (!sim.lms) {
+    sim.r.raised = sim.l.raised = false; sim.r.since = sim.l.since = null;
+    sim.wasLost = true;
+    sim.gest.attack = sim.gest.shield = false;
+    return;
+  }
+  if (sim.wasLost) { sim.wasLost = false; sim.recoveredAt = t; sim.gest.blocked = true; }
+  // руки
+  for (const [arm, v] of [[sim.r, p.rArm], [sim.l, p.lArm]]) {
+    const up = arm.raised ? v > 0.45 : v > 0.6;
+    if (up && !arm.raised) arm.since = t;
+    if (!up) arm.since = null;
+    arm.raised = up;
+  }
+  const g = sim.gest;
+  const R = sim.r, L = sim.l;
+  if (!R.raised && !L.raised) {
+    if (g.downSince === null) g.downSince = t;
+    if (g.blocked && t - g.downSince >= 0.1) { g.blocked = false; g.burstLatched = false; }
+  } else g.downSince = null;
+  g.attack = g.shield = false;
+  if (R.raised && L.raised) {
+    const bothSince = Math.max(R.since, L.since);
+    g.blocked = true;
+    if (g.burstLatched) g.state = 'burst-latched';
+    else if (t - bothSince >= 0.38) { sim.pulses.burst = true; g.burstLatched = true; g.state = 'burst'; }
+    else g.state = 'pair-pending';
+  } else if (g.blocked) g.state = R.raised || L.raised ? 'blocked' : 'rearming';
+  else if (L.raised && t - L.since >= 0.16) { g.shield = true; g.state = 'shield'; }
+  else if (R.raised && t - R.since >= 0.16) { g.attack = true; g.state = 'attack'; }
+  else g.state = R.raised || L.raised ? 'single-pending' : 'idle';
+  // рывок: выход за амплитуду 0.28 sw
+  if (sim.dash.armed && Math.abs(p.lean) >= 0.28) {
+    sim.pulses.dash = Math.sign(p.lean); sim.dash.armed = false; sim.dash.state = 'disarmed';
+    sim.dash.lastDash = { dir: Math.sign(p.lean), tMs: t * 1000 };
+  }
+  if (!sim.dash.armed && Math.abs(p.lean) < 0.06) { sim.dash.armed = true; sim.dash.state = 'armed'; }
+}
+
+function statusFor(t, hudNow) {
+  const p = sim.p || params(t);
+  const lost = p.lost;
+  let status = 'ready', message = 'Трекинг активен';
+  if (lost) {
+    status = t < 9.7 ? 'ready' : 'lost';       // vision ждёт lostGraceMs=700
+    message = status === 'lost' ? 'Не видно плеч — сядьте в кадр' : 'Трекинг активен';
+  } else if (p.calibrating) {
+    status = 'calibrating';
+    message = p.progress < 0.1 ? 'Сядьте ровно, опустите руки и не двигайтесь' : 'Сидите спокойно…';
+  } else if (t - sim.recoveredAt < 2.5) message = 'Трекинг восстановлен';
+  const moveX = lost || p.calibrating ? 0 : computeMove(p.lean);
+  const armDbg = (a, v) => ({ visible: !lost, raised: a.raised, rise: +(lerp(-0.9, 1.2, v)).toFixed(3), threshold: 0.35, heldMs: a.since === null ? 0 : Math.round((t - a.since) * 1000) });
+  return {
+    apiVersion: 'ASHEN_V1', status, message,
+    progress: p.calibrating ? p.progress : 1,
+    confidence: lost ? 0 : +(0.93 + (hash(sim.fi + 3) - 0.5) * 0.04).toFixed(3),
+    calibrated: !p.calibrating, mode: 'worker', delegate: 'GPU',
+    debug: {
+      lateral: { moveX: +moveX.toFixed(3), filtered: +p.lean.toFixed(3) },
+      arms: { left: armDbg(sim.l, p.lArm), right: armDbg(sim.r, p.rArm) },
+      gesture: { ...sim.gest },
+      dash: { ...sim.dash },
+      baseline: p.calibrating ? null : { centerX: 0.5, centerY: 0.6, shoulderWidth: +(SW * 4 / 3).toFixed(3), frameW: 640, frameH: 480 },
+      thresholds: { deadZone: 0.06, moveFull: 0.24, dashAmplitude: 0.28, burstHoldMs: 380 },
+      inferenceHz: +sim.hz.toFixed(1), inferMs: +sim.inf.toFixed(1), latencyMs: +sim.lat.toFixed(1),
+      bodyVisible: !lost,
+      reliability: { shouldersOk: !lost },
+    },
+  };
+}
+
+// [ASHEN_V2] синтетический левый джойстик: 1.5 с «замри» у кисти, потом кисть кружит вокруг центра
+function stickFor(t) {
+  const c = t % 12, full = 0.16, dz = 0.035;
+  const hand0 = { x: 0.3, y: 0.56 };
+  if (c < 1.5) return { engaged: false, x: 0, z: 0, rest: false, grabbing: c > 0.6, hand: hand0, anchor: null, deadzone: dz, full };
+  const a = t * 0.9, rad = full * (0.5 + 0.5 * Math.sin(t * 0.7));
+  const r = rad / full, mag = r <= dz / full ? 0 : Math.pow(Math.min(1, (rad - dz) / (full - dz)), 1.35);
+  return {
+    engaged: true, x: Math.cos(a) * mag, z: -Math.sin(a) * mag, rest: false, grabbing: false,
+    hand: { x: hand0.x + Math.cos(a) * rad * 0.75, y: hand0.y + Math.sin(a) * rad }, anchor: hand0, deadzone: dz, full,
+  };
+}
+
+function readInput(t, status) {
+  const p = sim.p;
+  const valid = status.status === 'ready' && !!sim.lms && !p.calibrating;
+  const f = {
+    source: 'cv', valid, calibrated: !p.calibrating, tMs: sim.t * 1000,
+    moveX: valid ? computeMove(p.lean) : 0, dash: valid ? sim.pulses.dash : 0,
+    attack: valid && sim.gest.attack, shield: valid && sim.gest.shield, burst: valid && sim.pulses.burst,
+    stick: valid ? stickFor(t) : null,
+    dashDir: valid && sim.pulses.dash ? { x: sim.pulses.dash, z: 0.3 } : null,
+  };
+  sim.pulses.dash = 0; sim.pulses.burst = false;       // импульсы потребляются, как vision.read()
+  return f;
+}
+
+// ---------------------------------------------------------------- «видео»: тёмная комната и силуэт
+function drawVideo(cv, lms, t) {
+  const g = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const gr = g.createLinearGradient(0, 0, 0, H);
+  gr.addColorStop(0, '#171b22'); gr.addColorStop(1, '#090a0d');
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  g.fillStyle = 'rgba(120,140,170,0.06)'; g.fillRect(W * 0.62, H * 0.08, W * 0.26, H * 0.34); // окно
+  g.fillStyle = 'rgba(200,160,90,0.04)'; g.fillRect(W * 0.05, H * 0.55, W * 0.22, H * 0.45);  // шкаф
+  if (!lms) {
+    g.fillStyle = 'rgba(255,255,255,0.015)';
+    for (let i = 0; i < 40; i++) g.fillRect(hash(i + (t * 20 | 0)) * W, hash(i + 99) * H, 2, 1);
+    return;
+  }
+  const P = (k) => (lms[k] ? { x: lms[k].x * W, y: lms[k].y * H } : null);
+  const ls = P(11), rs = P(12), nose = P(0);
+  const sw = Math.hypot(ls.x - rs.x, ls.y - rs.y);
+  g.fillStyle = '#262b34';
+  g.strokeStyle = '#262b34';
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  // торс
+  g.beginPath();
+  g.moveTo(rs.x - sw * 0.08, rs.y); g.lineTo(ls.x + sw * 0.08, ls.y);
+  g.lineTo(ls.x + sw * 0.02, H + 10); g.lineTo(rs.x - sw * 0.02, H + 10); g.closePath(); g.fill();
+  // шея и голова
+  g.fillRect((ls.x + rs.x) / 2 - sw * 0.1, nose.y + sw * 0.1, sw * 0.2, (ls.y - nose.y));
+  g.beginPath(); g.ellipse(nose.x, nose.y - sw * 0.08, sw * 0.24, sw * 0.31, 0, 0, Math.PI * 2); g.fill();
+  // руки
+  g.lineWidth = sw * 0.16;
+  for (const [a, b, c] of [[11, 13, 15], [12, 14, 16]]) {
+    const A = P(a), B = P(b), C = P(c);
+    g.beginPath(); g.moveTo(A.x, A.y); g.lineTo(B.x, B.y); g.lineTo(C.x, C.y); g.stroke();
+    g.beginPath(); g.arc(C.x, C.y, sw * 0.1, 0, Math.PI * 2); g.fill();
+  }
+  // мягкий контровой свет
+  g.strokeStyle = 'rgba(223,232,245,0.07)'; g.lineWidth = 2;
+  g.beginPath(); g.ellipse(nose.x, nose.y - sw * 0.08, sw * 0.24, sw * 0.31, 0, 0, Math.PI * 2); g.stroke();
+}
+
+// ---------------------------------------------------------------- HUD-экземпляры
+const slots = ['full', 'mini', 'wide'].map((id) => {
+  const el = document.getElementById(id);
+  const video = el.querySelector('canvas.video');
+  const ov = el.querySelector('canvas.ov');
+  return { id, el, video, ov, hud: createTrackingHud({ canvas: ov }), mode: id === 'mini' ? 'mini' : 'full', times: [], frameW: 640, frameH: id === 'wide' ? 360 : 480 };
+});
+
+function poseFor(slot, hudNowPose) {
+  if (sim.p && sim.p.lost && sim.t >= 9.7) return null;          // вторая половина потери — pose=null
+  return { tMs: hudNowPose, frameW: slot.frameW, frameH: slot.frameH, mirror: true, landmarks: sim.lms };
+}
+
+function drawAll(t, hudNow, poseT, measure) {
+  const status = statusFor(t, hudNow);
+  const input = readInput(t, status);
+  for (const s of slots) {
+    const frame = { pose: poseFor(s, poseT), status, input, settings, mode: s.mode };
+    const t0 = performance.now();
+    s.hud.draw(hudNow, frame);
+    const dt = performance.now() - t0;
+    if (measure) { s.times.push(dt); if (s.times.length > 300) s.times.shift(); }
+  }
+  return { status, input };
+}
+
+function stats(arr) {
+  if (!arr.length) return { n: 0, avg: 0, p95: 0, max: 0 };
+  const s = [...arr].sort((a, b) => a - b);
+  const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
+  return { n: arr.length, avg: +avg.toFixed(4), p95: +s[Math.min(s.length - 1, Math.floor(s.length * 0.95))].toFixed(4), max: +s[s.length - 1].toFixed(4) };
+}
+
+// ---------------------------------------------------------------- цикл
+const panel = document.getElementById('panel');
+let lastPoseFrame = -1;
+let lastInfo = null;
+function stepScript(t, hudNow, poseBase, measure) {
+  const pf = Math.floor(t * POSE_HZ);
+  if (pf !== lastPoseFrame) {
+    if (pf < lastPoseFrame) sim = makeSim();
+    lastPoseFrame = pf;
+    simStep(pf / POSE_HZ);
+    for (const s of slots) drawVideo(s.video, sim.lms && s.id === 'wide' ? sim.lms : sim.lms, t);
+  }
+  const poseT = poseBase + (pf / POSE_HZ) * 1000;
+  lastInfo = drawAll(t, hudNow, poseT, measure);
+}
+
+function updatePanel(t) {
+  const st = lastInfo ? lastInfo.status : null;
+  const inp = lastInfo ? lastInfo.input : null;
+  const lines = [
+    `<b>DEBUG / НЕ CV</b> — синтетический сценарий`,
+    `t ${t.toFixed(2)} s  ${FREEZE !== null ? '(заморожено)' : ''}`,
+    `phase  <b>${phaseAt(t)}</b>`,
+    `status ${st ? st.status : '-'}  gesture ${st ? st.debug.gesture.state : '-'}`,
+    `moveX ${inp ? inp.moveX.toFixed(2) : '-'}  atk ${inp && inp.attack ? 1 : 0}  shd ${inp && inp.shield ? 1 : 0}`,
+    `reducedMotion ${RM}`,
+    '',
+    'draw() cost, последние 300 вызовов (мс):',
+  ];
+  for (const s of slots) { const k = stats(s.times); lines.push(`${s.id.padEnd(5)} avg ${k.avg.toFixed(3)}  p95 ${k.p95.toFixed(3)}  max ${k.max.toFixed(3)}`); }
+  lines.push('', `hud warnings ${hudWarnings.length}`);
+  if (window.__fuzz) lines.push(`fuzz ${window.__fuzz.ok ? 'OK' : 'FAIL'} (${window.__fuzz.cases} входов)`);
+  panel.innerHTML = lines.join('\n');
+}
+
+// ---------------------------------------------------------------- fuzz: мусорные входы не должны бросать
+function runFuzz() {
+  const cv = document.querySelector('#fuzz canvas.ov');
+  const hud = createTrackingHud({ canvas: cv });
+  const junkL = [null, undefined, 5, 'x', {}, { x: NaN, y: 0.5 }, { x: 0.5, y: Infinity }, { x: '0.5', y: '0.5' }];
+  const cases = [
+    undefined, null, 42, 'frame', [], {},
+    { pose: null, status: null, input: null, settings: null, mode: 'mini' },
+    { pose: {}, status: {}, input: {}, settings: {} },
+    { pose: { landmarks: 'nope', frameW: -1, frameH: 0 }, status: { status: 42, debug: 'x' } },
+    { pose: { landmarks: [], frameW: 640, frameH: 480 }, status: { status: 'ready', debug: { arms: 1, gesture: null, baseline: { centerX: 'a' } } } },
+    { pose: { landmarks: new Array(33).fill(null), tMs: NaN }, input: { dash: 'left', burst: 1, moveX: {} } },
+    { input: { stick: { engaged: true, anchor: { x: NaN }, hand: 'x', full: -1, deadzone: Infinity, x: 'a', z: null }, dashDir: { x: NaN, z: 1 } } },
+    { input: { stick: { engaged: false, hand: { x: 2, y: -1 }, grabbing: true }, dashDir: 5 } },
+    { input: { stick: { engaged: false, hand: { x: 0.4, y: 0.4 }, rest: true } } },
+    { pose: { landmarks: junkL, tMs: 1, frameW: 1e9, frameH: 1 }, status: { status: 'ready', progress: 'x' } },
+    { pose: { landmarks: landmarks(1, params(1), 1), tMs: 2, frameW: 640, frameH: 480, mirror: false }, status: { status: 'calibrating', progress: 7, message: 12 }, input: { dash: -1, burst: true, attack: 1, shield: 1 } },
+    { pose: { landmarks: landmarks(1, params(1), 2), tMs: 3 }, status: { status: 'ready', debug: { baseline: { centerX: 0.5, shoulderWidth: -3 }, thresholds: { deadZone: NaN }, arms: { left: { raised: true }, right: { raised: true } }, gesture: { state: 'burst' } } }, input: { burst: true } },
+    { pose: { landmarks: landmarks(1, params(1), 3), tMs: 4 }, status: { status: 'lost', message: 'x'.repeat(400) } },
+    { pose: { landmarks: landmarks(1, params(1), 4), tMs: 5 }, status: { status: 'error', message: 'Ошибка '.repeat(40) }, settings: { reducedMotion: true } },
+  ];
+  let ok = true;
+  const w0 = hudWarnings.length;
+  let now = 1000;
+  for (let rep = 0; rep < 3; rep++) {
+    for (const c of cases) {
+      try { hud.draw(now, c); hud.draw(NaN, c); hud.draw(now += 16, c); } catch (e) { ok = false; console.error('fuzz threw', e); }
+    }
+  }
+  try { hud.clear(); hud.draw(now + 16, cases[13]); hud.dispose(); hud.draw(now + 32, cases[13]); hud.clear(); hud.dispose(); } catch (e) { ok = false; console.error('fuzz lifecycle threw', e); }
+  const bad = createTrackingHud({ canvas: null }); bad.draw(0, {}); bad.clear(); bad.dispose();
+  const bad2 = createTrackingHud(); bad2.draw(0, {});
+  const warns = hudWarnings.length - w0;
+  if (warns > 0) ok = false;          // внутреннее исключение, пойманное HUD, — тоже провал
+  // fuzz-канвас: оставить нормальную картинку «нет цели»
+  const hud2 = createTrackingHud({ canvas: cv });
+  hud2.draw(5000, { pose: null, status: { status: 'lost', message: 'Не видно плеч' }, settings, mode: 'mini' });
+  window.__fuzz = { ok, cases: cases.length * 9 + 6, internalWarnings: warns };
+}
+
+// ---------------------------------------------------------------- бенчмарк: 300 вызовов подряд
+function bench(n = 300) {
+  const out = {};
+  const t = 7.3;                                // самый насыщенный момент: обе руки, заряд
+  sim = makeSim(); lastPoseFrame = -1;
+  for (let x = t - 2; x <= t; x += 1 / 60) stepScript(x, 200000 + x * 1000, 200000, false);
+  for (const s of slots) {
+    const status = statusFor(t, 0);
+    const times = [];
+    for (let i = 0; i < n; i++) {
+      const now = 300000 + i * 16.67;
+      const pf = Math.floor(i / 3);
+      const frame = { pose: { tMs: 300000 + pf * 50, frameW: s.frameW, frameH: s.frameH, mirror: true, landmarks: landmarks(t, params(t), pf) }, status, input: { source: 'cv', valid: true, calibrated: true, moveX: 0.2, dash: i % 40 === 0 ? 1 : 0, attack: false, shield: false, burst: i % 90 === 0 }, settings, mode: s.mode };
+      const t0 = performance.now();
+      s.hud.draw(now, frame);
+      times.push(performance.now() - t0);
+    }
+    out[s.id] = stats(times);
+  }
+  return out;
+}
+
+runFuzz();
+
+if (FREEZE !== null) {
+  // Детерминированный кадр: прогон сценария с t-3 до t шагом 1/60 с «часами HUD» = время сценария.
+  const t = Math.min(FREEZE, LOOP - 0.001);
+  const base = 100000;
+  const t0 = Math.max(0, t - 3);
+  sim = makeSim(); lastPoseFrame = -1;
+  for (let x = t0; x < t; x += 1 / 60) stepScript(x, base + x * 1000, base, true);
+  stepScript(t, base + t * 1000, base, true);
+  updatePanel(t);
+  window.__standReady = true;
+} else {
+  const start = performance.now();
+  let lastPanel = 0;
+  const loop = (now) => {
+    requestAnimationFrame(loop);
+    const t = ((now - start) / 1000) % LOOP;
+    stepScript(t, now, start + Math.floor((now - start) / (LOOP * 1000)) * LOOP * 1000, true);
+    if (now - lastPanel > 500) { lastPanel = now; updatePanel(t); }
+  };
+  requestAnimationFrame(loop);
+  setTimeout(() => { window.__standReady = true; }, 1500);
+}
+
+window.__stand = {
+  perf: () => Object.fromEntries(slots.map((s) => [s.id, stats(s.times)])),
+  bench,
+  warnings: () => hudWarnings.slice(),
+  fuzz: () => window.__fuzz,
+};
+</script>
+</body>
+</html>

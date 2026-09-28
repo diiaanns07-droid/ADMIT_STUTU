@@ -1,0 +1,188 @@
+<!doctype html>
+<!--
+  ASHEN OATH — vision-webcam-check.html · API_VERSION=ASHEN_V1 · роль №2.
+  Стенд ручной проверки vision.js на ЖИВОЙ камере. Не часть игры.
+  Запуск: положите рядом vision.js и vision-worker.js, в этой папке выполните
+    python -m http.server 8000
+  и откройте http://localhost:8000/vision-webcam-check.html в Chrome или Edge.
+  Параметры адреса: ?worker=off — только главный поток; ?cpu=1 — делегат CPU;
+  ?model=<url> — другой файл модели; ?mirror=0 — без зеркала.
+  Встроенное превью чата не подходит: там камера может быть запрещена.
+-->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHEN OATH — проверка камеры</title>
+<style>
+  :root {
+    --ash: #23262b; --panel: #2d3137; --line: #41464e; --text: #e4e1da; --dim: #9aa0a8;
+    --ember: #c8a45a; --ok: #7fae8a; --warn: #d08a5a; --bad: #c96a6a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ash); color: var(--text); font: 15px/1.45 system-ui, "Segoe UI", sans-serif; }
+  main { display: grid; grid-template-columns: minmax(320px, 640px) minmax(300px, 1fr); gap: 20px; padding: 20px; max-width: 1280px; margin: 0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; letter-spacing: .01em; }
+  p.lead { margin: 0 0 14px; color: var(--dim); max-width: 60ch; }
+  .stage { position: relative; background: #1a1c20; border: 1px solid var(--line); aspect-ratio: 4 / 3; overflow: hidden; }
+  .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .stage video.mirror { transform: scaleX(-1); }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
+  button { background: var(--panel); color: var(--text); border: 1px solid var(--line); padding: 7px 14px; font: inherit; cursor: pointer; border-radius: 3px; }
+  button.primary { border-color: var(--ember); }
+  button:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+  label { color: var(--dim); display: inline-flex; gap: 6px; align-items: center; }
+  #status { padding: 10px 12px; border-left: 3px solid var(--line); background: var(--panel); margin-bottom: 14px; }
+  #status[data-s="ready"] { border-color: var(--ok); }
+  #status[data-s="lost"], #status[data-s="calibrating"] { border-color: var(--warn); }
+  #status[data-s="error"] { border-color: var(--bad); }
+  #status b { font-weight: 600; }
+  .input { background: var(--panel); border: 1px solid var(--line); padding: 12px; margin-bottom: 14px; }
+  .bar { position: relative; height: 18px; background: #1f2226; border: 1px solid var(--line); margin: 6px 0 12px; }
+  .bar i { position: absolute; top: 0; bottom: 0; background: var(--ember); }
+  .bar::after { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--dim); }
+  .lamps { display: flex; gap: 8px; flex-wrap: wrap; }
+  .lamp { padding: 4px 10px; border: 1px solid var(--line); color: var(--dim); border-radius: 3px; }
+  .lamp.on { color: #1a1c20; background: var(--ember); border-color: var(--ember); }
+  .lamp.flash { color: #1a1c20; background: var(--text); }
+  .perf { color: var(--dim); font-size: 13px; margin-top: 8px; }
+  details { margin-bottom: 14px; }
+  pre { background: #1f2226; border: 1px solid var(--line); padding: 10px; font: 12px/1.4 ui-monospace, Consolas, monospace; max-height: 320px; overflow: auto; margin: 6px 0 0; white-space: pre-wrap; }
+  #log { max-height: 220px; }
+</style>
+</head>
+<body>
+<main>
+  <section>
+    <h1>Проверка управления камерой</h1>
+    <p class="lead">Сядьте так, чтобы плечи и руки были в кадре. Включите камеру, выполните калибровку и проверьте наклоны, рывки и жесты по чек-листу из 02_HANDOFF.txt.</p>
+    <div class="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+    </div>
+    <div class="controls">
+      <button id="bStart" class="primary">Включить камеру</button>
+      <button id="bCal" disabled>Калибровать</button>
+      <button id="bStop" disabled>Остановить</button>
+      <label><input type="checkbox" id="cOverlay" checked> Скелет</label>
+      <label>Чувствительность <input type="range" id="rSens" min="0.5" max="2" step="0.05" value="1"> <span id="vSens">1.00</span></label>
+    </div>
+  </section>
+  <section>
+    <div id="status" data-s="idle"><b>idle</b> — Камера не включена</div>
+    <div class="input">
+      <div>moveX <span id="vMove">0.00</span> · valid <span id="vValid">false</span></div>
+      <div class="bar"><i id="moveBar" style="left:50%;width:0"></i></div>
+      <div class="lamps">
+        <span class="lamp" id="lDashL">рывок ←</span>
+        <span class="lamp" id="lDashR">рывок →</span>
+        <span class="lamp" id="lAtk">атака</span>
+        <span class="lamp" id="lShd">щит</span>
+        <span class="lamp" id="lBurst">burst</span>
+      </div>
+      <div class="perf" id="perf">кадр страницы: —</div>
+    </div>
+    <details open><summary>Журнал событий</summary><pre id="log"></pre></details>
+    <details><summary>getStatus()</summary><pre id="dbg">—</pre></details>
+  </section>
+</main>
+<script type="module">
+import { createVision, API_VERSION } from '../modules/vision.js';
+
+const q = new URLSearchParams(location.search);
+const $ = (id) => document.getElementById(id);
+const mirror = q.get('mirror') !== '0';
+$('video').classList.toggle('mirror', mirror);
+
+const config = { mirror, overlay: true };
+if (q.get('worker') === 'off') config.useWorker = 'off';
+if (q.get('cpu') === '1') config.delegate = 'CPU';
+if (q.get('model')) config.mediaPipe = { modelUrl: q.get('model') };
+
+const logLines = [];
+function log(text) {
+  const t = (performance.now() / 1000).toFixed(2).padStart(8);
+  logLines.unshift(`${t} с  ${text}`);
+  if (logLines.length > 60) logLines.pop();
+  $('log').textContent = logLines.join('\n');
+}
+
+let lastStatus = '';
+function showStatus(s) {
+  const el = $('status');
+  el.dataset.s = s.status;
+  el.innerHTML = '';
+  const b = document.createElement('b');
+  b.textContent = s.status;
+  el.append(b, ` — ${s.message}`);
+  if (s.status === 'calibrating' || s.status === 'loading') el.append(` (${Math.round(s.progress * 100)}%)`);
+  const key = `${s.status}|${s.message}`;
+  if (key !== lastStatus) { lastStatus = key; log(`статус ${s.status}: ${s.message}`); }
+  $('bCal').disabled = !(s.status === 'ready' || s.status === 'lost' || s.status === 'calibrating');
+  $('bStop').disabled = s.status === 'idle' || s.status === 'error';
+}
+
+const vision = await createVision({ video: $('video'), overlayCanvas: $('overlay'), config, onStatus: showStatus });
+log(`vision.js загружен, ${API_VERSION}`);
+
+$('bStart').onclick = async () => {
+  $('bStart').disabled = true;
+  try { await vision.start(); log(`камера включена, режим ${vision.getStatus().mode}, делегат ${vision.getStatus().delegate}`); }
+  catch (e) { log(`start(): ${e.code} — ${e.message}`); }
+  finally { $('bStart').disabled = false; }
+};
+$('bCal').onclick = async () => {
+  try { await vision.calibrate(); log('калибровка завершена'); }
+  catch (e) { log(`calibrate(): ${e.code} — ${e.message}`); }
+};
+$('bStop').onclick = () => { vision.stop(); log('камера остановлена'); };
+$('cOverlay').onchange = (e) => vision.configure({ overlay: e.target.checked });
+$('rSens').oninput = (e) => {
+  const v = Number(e.target.value);
+  $('vSens').textContent = v.toFixed(2);
+  vision.configure({ sensitivity: v });
+};
+
+// Игровой цикл-имитация: read() раз за кадр, как у главного сборщика.
+const flashUntil = { lDashL: 0, lDashR: 0, lBurst: 0 };
+let prev = { attack: false, shield: false };
+let lastRaf = performance.now();
+const frameTimes = [];
+function loop(now) {
+  const dt = now - lastRaf;
+  lastRaf = now;
+  frameTimes.push({ now, dt });
+  while (frameTimes.length && now - frameTimes[0].now > 1000) frameTimes.shift();
+  const f = vision.read();
+  $('vMove').textContent = f.moveX.toFixed(2);
+  $('vValid').textContent = String(f.valid);
+  const w = Math.abs(f.moveX) * 50;
+  const bar = $('moveBar');
+  bar.style.width = `${w}%`;
+  bar.style.left = f.moveX >= 0 ? '50%' : `${50 - w}%`;
+  if (f.dash) { flashUntil[f.dash > 0 ? 'lDashR' : 'lDashL'] = now + 350; log(`dash ${f.dash > 0 ? '+1 (вправо)' : '−1 (влево)'}`); }
+  if (f.burst) { flashUntil.lBurst = now + 500; log('burst'); }
+  if (f.attack !== prev.attack) log(`attack ${f.attack ? 'нажата' : 'отпущена'}`);
+  if (f.shield !== prev.shield) log(`shield ${f.shield ? 'нажат' : 'отпущен'}`);
+  prev = { attack: f.attack, shield: f.shield };
+  for (const id of Object.keys(flashUntil)) $(id).classList.toggle('flash', now < flashUntil[id]);
+  $('lAtk').classList.toggle('on', f.attack);
+  $('lShd').classList.toggle('on', f.shield);
+  if (frameTimes.length > 5) {
+    const dts = frameTimes.map((x) => x.dt);
+    const avg = dts.reduce((a, b) => a + b, 0) / dts.length;
+    const s = vision.getStatus();
+    $('perf').textContent = `кадр страницы: ср. ${avg.toFixed(1)} мс, макс. ${Math.max(...dts).toFixed(1)} мс за 1 с · inference ${s.debug.inferenceHz ?? '—'} Гц, ${s.debug.inferMs ?? '—'} мс · задержка ${s.debug.latencyMs ?? '—'} мс · ${s.mode ?? '—'}/${s.delegate ?? '—'}`;
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+setInterval(() => {
+  if (document.querySelector('details:last-of-type').open) $('dbg').textContent = JSON.stringify(vision.getStatus(), null, 1);
+}, 200);
+</script>
+</body>
+</html>
