@@ -1330,7 +1330,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
   })();
   const markMesh = new THREE.LineSegments(markGeo, markMat);
   markMesh.visible = false; markMesh.renderOrder = 26; root.add(markMesh);
-  const sig = { dome: 0, domePulse: 0, mark: 0 };
+  const sig = { dome: 0, domePulse: 0, mark: 0, vortexPulse: 0, auraT: 0 };
   function syncSigils(dt) {
     const pl = snap && snap.player, bo = snap && snap.boss;
     const playing = fi.status === 'playing';
@@ -1348,6 +1348,28 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       domeMesh.position.set(fi.player.x, fi.player.y + 0.9, fi.player.z);
       domeMesh.scale.set(1.35, 1.25, 1.35);
       domeMat.uniforms.uOpacity.value = (0.3 + 0.35 * sig.domePulse) * sig.dome * blink * (reducedMotion() ? 0.8 : 1);
+    }
+    // [V3] вихрь / лечение / замедление Регента — редкие короткие вспышки, пока действуют
+    sig.auraT -= dt;
+    if (playing && sig.auraT <= 0 && dt > 0) {
+      sig.auraT = 0.28;
+      if (pl && pl.vortex) {
+        const a = clock * 9;
+        for (let i = 0; i < 3; i++) {
+          const aa = a + i * TAU / 3, r = 1.2 + 0.4 * Math.sin(clock * 3 + i);
+          _s2.set(fi.player.x + Math.sin(aa) * r, GROUND_Y + 0.5 + 0.3 * i, fi.player.z + Math.cos(aa) * r);
+          fxFlash(_s2, PAL.guardCold, 0.15, 0.5, 0.3, { opacity: 0.7, pull: 0.1 });
+        }
+      }
+      if (pl && pl.regen) {
+        _s2.set(fi.player.x, GROUND_Y + 0.2, fi.player.z);
+        _dir.set(0, 1, 0);
+        sparks(_s2, { dir: _dir, count: 4, spread: 0.8, speed: [0.5, 1.4], rgb: RAW.heroGold, life: 1.0, size: 0.04, gravity: -0.3, drag: 0.8 });
+      }
+      if (bo && bo.slowed) {
+        _s2.set(fi.boss.x, GROUND_Y + 0.05, fi.boss.z);
+        fxRing(_s2, 2.0, 2.6, 0.5, RAW.guardCold, RAW.guardCore, 0.35, 3);
+      }
     }
     markMesh.visible = sig.mark > 0.01 && !!camera;
     if (markMesh.visible) {
@@ -2848,6 +2870,27 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       lightFlash(c, PAL.heroAmber, 0.9, 0.6);
       addTrauma(0.08);
       audio.play('shieldUp', c);
+    } else if (k === 'delta') {
+      // дельта: треугольник вспыхивает у рук, луч начнётся с sigil_hit
+      for (let i = 0; i < 3; i++) {
+        const a = -Math.PI / 2 + i * 2 * Math.PI / 3;
+        _ln.x = c.x + fi.right.x * Math.cos(a) * 0.5; _ln.y = c.y + 0.35 - Math.sin(a) * 0.5; _ln.z = c.z + fi.right.z * Math.cos(a) * 0.5;
+        fxFlash(_ln, PAL.heroCore, 0.2, 0.9, 0.5, { flare: true, opacity: 0.9, pull: 0.2 });
+      }
+      lightFlash(c, PAL.heroAmber, 1.0, 0.8);
+      audio.play('cast', c);
+    } else if (k === 'cor') {
+      // кор: сердце из вспышек над героем, золотое кольцо, оберег
+      const cc = chestOf(_r);
+      for (let i = 0; i < 24; i++) {
+        const q = (i / 24) * TAU, x = 16 * Math.pow(Math.sin(q), 3) / 16, y = (13 * Math.cos(q) - 5 * Math.cos(2 * q) - 2 * Math.cos(3 * q) - Math.cos(4 * q)) / 16;
+        _ln.x = cc.x + fi.right.x * x * 0.5; _ln.y = cc.y + 0.9 + y * 0.5; _ln.z = cc.z + fi.right.z * x * 0.5;
+        fxFlash(_ln, i % 2 ? PAL.heroGold : PAL.heroCore, 0.12, 0.45, 0.7 + i * 0.015, { opacity: 0.85, pull: 0.1 });
+      }
+      fxRing(playerGround(_q), 0.3, 2.4, 1.0, RAW.heroGold, RAW.heroCore, 0.7, 3);
+      if (Q.shell) fxShell(cc, 0.4, 1.35, 0.7, RAW.heroGold, 0.5);
+      lightFlash(cc, PAL.heroGold, 0.9, 0.8);
+      audio.play('cast', cc);
     } else if (k === 'frame') {
       // рамка: золотой прицел на ядре Регента, линия от героя к цели
       const to = hasVec(d.to) ? d.to : bossCoreOf(_r);
@@ -2960,7 +3003,101 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       sparks(feet, { dir: _dir, count: 30, spread: 0.9, speed: [0.8, 2.2], rgb: RAW.heroGold, life: 1.4, size: 0.05, essential: true, gravity: -0.4, drag: 0.8, jitter: 0.6 });
       lightFlash(c, PAL.heroGold, 0.8, 0.8);
       audio.play('cast', c);
+    } else if (rune === 'stella') {
+      // звездопад: звезда вспыхивает высоко над Регентом, метеоры — по событиям rune_hit
+      _ln.x = to.x; _ln.y = to.y + 9; _ln.z = to.z;
+      fxFlash(_ln, PAL.heroCore, 0.6, 3.4, 0.9, { flare: true, opacity: 0.9, pull: 0.2 });
+      sparks(_ln, { count: 24, speed: [1, 4], rgb: RAW.heroGold, life: 1.2, size: 0.06, essential: true, drag: 1 });
+      fxFlash(from, PAL.heroAmber, 0.3, 1.2, 0.3, { opacity: 0.8 });
+      audio.play('cast', from);
+    } else if (rune === 'spira') {
+      // вихрь: спираль искр у ног, кольца; дальше вихрь держится по снимку (syncSigils)
+      sig.vortexPulse = 1;
+      const feet = playerGround(_q);
+      fxRing(feet, 0.3, num(d.radius, 7), 0.7, RAW.guardCold, RAW.heroCore, 0.7, 3);
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * TAU * 2, r = 0.4 + i * 0.12;
+        _ln.x = feet.x + Math.sin(a) * r; _ln.y = GROUND_Y + 0.3 + i * 0.06; _ln.z = feet.z + Math.cos(a) * r;
+        fxFlash(_ln, i % 2 ? PAL.guardCold : PAL.heroCore, 0.12, 0.5, 0.25 + i * 0.02, { opacity: 0.8, pull: 0.1 });
+      }
+      audio.play('nova', feet);
+    } else if (rune === 'lemnis') {
+      // вечность: знак ∞ из вспышек над героем, лечение идёт по снимку
+      const c = chestOf(_p);
+      for (let i = 0; i < 20; i++) {
+        const tt = (i / 20) * TAU, den = 1 + Math.sin(tt) * Math.sin(tt);
+        const lx = 0.7 * Math.cos(tt) / den, ly = 0.7 * Math.sin(tt) * Math.cos(tt) / den;
+        _ln.x = c.x + fi.right.x * lx; _ln.y = c.y + 0.9 + ly; _ln.z = c.z + fi.right.z * lx;
+        fxFlash(_ln, PAL.heroGold, 0.12, 0.4, 0.6 + i * 0.02, { opacity: 0.8, pull: 0.1 });
+      }
+      fxRing(playerGround(_q), 0.3, 2.2, 1.0, RAW.heroGold, RAW.heroCore, 0.6, 3);
+      audio.play('cast', c);
+    } else if (rune === 'caret') {
+      fxFlash(from, PAL.heroCore, 0.3, 1.4, 0.25, { flare: true, opacity: 0.9, pull: 0.2 });
+      sparks(from, { dir: fi.fwd, count: 12, spread: 0.5, speed: [3, 7], rgb: RAW.heroAmber, life: 0.35, size: 0.05, essential: true, drag: 3 });
+      audio.play('cast', from);
+    } else if (rune === 'vee') {
+      // жатва: тёмно-красный луч от Регента к герою, вспышка лечения
+      const b = hasVec(d.from) ? d.from : bossCoreOf(_q), c = chestOf(_p);
+      for (let i = 0; i <= 10; i++) {
+        const u = i / 10;
+        _ln.x = b.x + (c.x - b.x) * u; _ln.y = b.y + (c.y - b.y) * u + Math.sin(u * Math.PI) * 0.8; _ln.z = b.z + (c.z - b.z) * u;
+        fxFlash(_ln, i % 2 ? PAL.hitEmber : PAL.heroAmber, 0.2, 0.8, 0.2 + u * 0.3, { opacity: 0.85, pull: 0.2 });
+      }
+      fxFlash(b, PAL.hitEmber, 0.6, 2.6, 0.4, { flare: true, opacity: 0.9, pull: 0.6 });
+      fxFlash(c, PAL.heroGold, 0.3, 1.6, 0.5, { opacity: 0.7 });
+      lightFlash(b, PAL.hitEmber, 0.9, 0.4);
+      addTrauma(0.12);
+      audio.play('burst', b);
+    } else if (rune === 'clepsydra') {
+      // время: холодные кольца вокруг Регента, песок-искры падают; замедление держится по снимку
+      _q.set(to.x, GROUND_Y, to.z);
+      fxRing(_q, 1.0, 6.0, 1.2, RAW.guardCold, RAW.guardCore, 0.6, 3);
+      _ln.x = to.x; _ln.y = to.y + 3; _ln.z = to.z;
+      fxFlash(_ln, PAL.guardCore, 0.8, 4.0, 0.8, { flare: true, opacity: 0.7, pull: 0.6 });
+      _dir.set(0, -1, 0);
+      sparks(_ln, { dir: _dir, count: 40, spread: 0.6, speed: [0.5, 2], rgb: RAW.guardCold, life: 1.8, size: 0.05, essential: true, gravity: 0.6, drag: 0.5 });
+      audio.play('nova', to);
+    } else if (rune === 'alpha') {
+      // начало: белая вспышка, откаты сброшены — кольцо и восходящий столб
+      const c = chestOf(_p);
+      fxFlash(c, PAL.heroCore, 0.5, 2.8, 0.45, { flare: true, opacity: 1, pull: 0.2 });
+      fxRing(playerGround(_q), 0.2, 3.0, 0.6, RAW.heroCore, RAW.heroCore, 0.8, 3);
+      _dir.set(0, 1, 0);
+      sparks(c, { dir: _dir, count: 30, spread: 0.3, speed: [2, 6], rgb: RAW.heroCore, life: 0.8, size: 0.05, essential: true, gravity: -0.5, drag: 1.2 });
+      lightFlash(c, PAL.heroCore, 1.0, 0.5);
+      audio.play('cast', c);
     }
+  }
+  // [ASHEN_V3] удар луча «Дельты»: полоса от героя к Регенту
+  function onSigilHit(ev, d) {
+    if (d.sigil !== 'delta') return;
+    const to = evPos(ev, _p, bossCoreOf), from = hasVec(d.from) ? d.from : chestOf(_q);
+    for (let i = 0; i <= 12; i++) {
+      const u = i / 12;
+      _ln.x = from.x + (to.x - from.x) * u; _ln.y = from.y + (to.y - from.y) * u; _ln.z = from.z + (to.z - from.z) * u;
+      fxFlash(_ln, i % 3 ? PAL.heroAmber : PAL.heroCore, 0.25, 0.6, 0.16, { flare: true, opacity: 0.9, pull: 0.2 });
+    }
+    fxFlash(to, PAL.heroCore, 0.8, 2.8, 0.25, { flare: true, opacity: 1, pull: 0.6 });
+    sparks(to, { count: 16, speed: [2, 7], rgb: RAW.heroAmber, life: 0.45, size: 0.06, essential: true, drag: 2, gravity: 2 });
+    lightFlash(to, PAL.heroAmber, 1.0, 0.25);
+    addTrauma(0.1);
+  }
+
+  // [ASHEN_V3] метеор «Стеллы»: полоса с неба в Регента и удар
+  function onRuneHit(ev, d) {
+    if (d.rune !== 'stella') return;
+    const to = evPos(ev, _p, bossCoreOf);
+    const k = (num(d.index, 0) % 5) - 2;
+    const top = { x: to.x + k * 1.2 + 2, y: to.y + 11, z: to.z - 3 };
+    for (let i = 0; i <= 7; i++) {
+      const u = i / 7;
+      _ln.x = top.x + (to.x - top.x) * u; _ln.y = top.y + (to.y - top.y) * u; _ln.z = top.z + (to.z - top.z) * u;
+      fxFlash(_ln, i % 2 ? PAL.heroAmber : PAL.heroCore, 0.2, 0.7, 0.12 + u * 0.18, { opacity: 0.9, pull: 0.3 });
+    }
+    fxFlash(to, PAL.heroCore, 0.6, 2.4, 0.3, { flare: true, opacity: 0.9, pull: 0.6 });
+    sparks(to, { count: 14, speed: [2, 6], rgb: RAW.heroAmber, life: 0.5, size: 0.06, essential: true, drag: 2, gravity: 2 });
+    addTrauma(0.06);
   }
   function onPerfectDodge() {
     const c = chestOf(_p);
@@ -2991,6 +3128,9 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       case 'parry': onParry(ev, d); break;
       case 'ember_lit': onEmberLit(ev); break;
       case 'sigil_cast': onSigilCast(ev, d); break;
+      case 'rune_hit': onRuneHit(ev, d); break;
+      case 'sigil_hit': onSigilHit(ev, d); break;
+      case 'slow_start': case 'slow_end': case 'vortex_end': case 'regen_end': break; // по снимку
       case 'bastion_start': case 'bastion_end': case 'mark_start': case 'mark_end': break; // по снимку
       case 'rune_cast': onRuneCast(ev, d); break;
       case 'perfect_dodge': onPerfectDodge(); break;

@@ -64,8 +64,8 @@ export const DEFAULT_STICK_CONFIG = Object.freeze({
   dashMinSpanMs: 40,
   dashStraightness: 1.3,   // длина пути / хорда
   dashStartNear: 0.8,      // (A) дёрг от центра…
-  dashPreSteady: 3,        // …или от спокойной руки: перед началом дёрга скорость меньше стольких S/с
-  dashPreMs: 90,           //    (за столько мс до начала) — пронос руки через центр при развороте — не дёрг
+  dashPreSteady: 1.5,      // дёрг только от спокойной руки: перед началом скорость меньше стольких S/с
+  dashPreMs: 100,          //    (за столько мс до начала) — пронос руки через центр при развороте — не дёрг
   dashDownMax: 0.6,        // уровень A не вниз (доля хорды вниз по кадру)
   // рывок, уровень B — «щелчок» с возвратом
   flickTravel: 1.0,        // выход, S
@@ -362,15 +362,15 @@ export function createLeftStick(configPatch = {}) {
     }
     if (!allowed || t < s.dashBlockedUntil || n < 3 || !s.anchor) { if (!allowed) s.flick = null; return; }
     const now = s.hist[n - 1];
-    const nearAnchor = (p) => Math.hypot(p.x - s.anchor.x, p.y - s.anchor.y) / S <= cfg.dashStartNear;
-    // рука перед началом дёрга стояла спокойно (или истории мало): пронос через центр при развороте — не дёрг
+    // рука перед началом дёрга стояла спокойно: пронос через центр при развороте — не дёрг.
+    // Прошлое неизвестно (история только что сброшена сбоем или сменой источника) — тоже не дёрг.
     const steadyBefore = (i) => {
       const p = s.hist[i];
       for (let j = i - 1; j >= 0; j--) {
         const q = s.hist[j];
         if (p.t - q.t >= cfg.dashPreMs) return Math.hypot(p.x - q.x, p.y - q.y) / S / ((p.t - q.t) / 1000) < cfg.dashPreSteady;
       }
-      return true;
+      return false;
     };
 
     // уровень B: идёт кандидат «щелчка» — ждём возврата
@@ -389,7 +389,6 @@ export function createLeftStick(configPatch = {}) {
       const span = now.t - p.t;
       if (span > cfg.flickWindowMs) break;
       if (span < cfg.dashMinSpanMs) continue;
-      if (!nearAnchor(p) && !steadyBefore(i)) continue;
       if (!steadyBefore(i)) continue;
       const dx = (now.x - p.x) / S, dy = (now.y - p.y) / S;
       const d = Math.hypot(dx, dy);

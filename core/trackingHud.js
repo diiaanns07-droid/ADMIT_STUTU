@@ -436,7 +436,7 @@ export function createTrackingHud(opts) {
       const dz = clamp(num(stick.deadzone, 0.035) * rh, 3, full * 0.6);
       const sx = num(stick.x, 0), sz = num(stick.z, 0);
       const mag = Math.min(1, Math.hypot(sx, sz));
-      const run = mag > 0.55;
+      const run = stick.gait ? stick.gait === 'run' : mag > 0.55;   // [V3.1] ступень хода из джойстика (с гистерезисом)
       const col = mag <= 0.01 ? GOLD : run ? GOLD_HI : BLUE;
       ctx.globalAlpha = 0.07;
       ctx.fillStyle = GOLD;
@@ -1016,7 +1016,7 @@ export function createTrackingHud(opts) {
   const TIPS = [4, 8, 12, 16, 20];
   const SHAPE_TXT = { pinch: '◎ OK · FIRE', point: '✎ POINT', fist: '▣ FIST', open: '◇ OPEN', victory: 'V SIGN', unknown: '· · ·' };
   const SHAPE_MINI = { pinch: 'OK', point: 'RUNE', fist: 'FIST', open: 'OPEN', victory: 'V', unknown: '' };
-  const RUNE_TXT = { ignis: 'ИГНИС ▲', fulgur: 'ФУЛЬГУР ϟ', orbis: 'ОРБИС ○' };
+  const RUNE_TXT = { ignis: 'ИГНИС ▲', fulgur: 'ФУЛЬГУР ϟ', orbis: 'ОРБИС ○', stella: 'СТЕЛЛА ★', spira: 'СПИРА @', lemnis: 'ЛЕМНИСКА ∞', caret: 'АКУС ^', vee: 'МЕССИС V', clepsydra: 'КЛЕПСИДРА ⧗', alpha: 'АЛЬФА ℓ' };
   const handLabels = { left: makeLabel(), right: makeLabel(), rune: makeLabel() };
   let runeFlashT = -1e9, runeFlashName = '', runeFlashAt = null, lastRuneKey = '';
 
@@ -1135,6 +1135,20 @@ export function createTrackingHud(opts) {
         const e = tr[tr.length - 1];
         crosshair(hx(e), hy(e), 3, 6, GOLD_HI, 0.9);
       }
+    }
+    // [V3] двуручное рисование: обе половины фигуры
+    const tw = isObj(HI.twin) ? HI.twin : null;
+    if (tw) {
+      for (const [path, c] of [[tw.left, BLUE], [tw.right, GOLD_HI]]) {
+        if (!Array.isArray(path) || path.length < 2) continue;
+        for (const [w, a] of [[mini ? 3 : 6, 0.2], [mini ? 1 : 1.8, 0.95]]) {
+          ctx.strokeStyle = c; ctx.globalAlpha = a; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+          ctx.beginPath(); ctx.moveTo(hx(path[0]), hy(path[0]));
+          for (let i = 1; i < path.length; i++) ctx.lineTo(hx(path[i]), hy(path[i]));
+          ctx.stroke();
+        }
+      }
+      ctx.lineCap = 'butt'; ctx.lineJoin = 'miter'; ctx.globalAlpha = 1;
     }
     const k = (now - runeFlashT) / 1200;
     if (k >= 0 && k < 1 && runeFlashName) {

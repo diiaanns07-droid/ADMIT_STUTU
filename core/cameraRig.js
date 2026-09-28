@@ -43,6 +43,7 @@ export function createCameraRig(cfg) {
     blend: 1,           // 1 — engaged, 0 — explore
     initialized: false,
     lastYaw: 0,
+    inputYaw: 0,        // [V3] курс управления: без плечевого сдвига камеры
   };
 
   // Экранный «вправо» для угла a: касательная к окружности в сторону роста угла.
@@ -169,6 +170,9 @@ export function createCameraRig(cfg) {
     // в бою heading тянется за lock-on, чтобы выход в explore начинался с того же ракурса
     if (w > 0.999) { s.heading = L.yaw; s.steady = 0; }
     const F = w < 0.999 ? follow(dt, player, st.velocity) : null;
+    // [V3] курс управления — не направление взгляда смещённой вбок камеры (≈5° косо), а луч
+    // «Регент → герой» в lock-on и курс камеры за спиной в explore; при переходе — смесь
+    s.inputYaw = F ? wrapAngle(s.heading + wrapAngle(L.yaw - s.heading) * w) : L.yaw;
     const lerp = (p, q, k) => p + (q - p) * k;
     let pos = F ? { x: lerp(F.pos.x, L.pos.x, w), y: lerp(F.pos.y, L.pos.y, w), z: lerp(F.pos.z, L.pos.z, w) } : L.pos;
     const target = F ? { x: lerp(F.target.x, L.target.x, w), y: lerp(F.target.y, L.target.y, w), z: lerp(F.target.z, L.target.z, w) } : L.target;
@@ -202,5 +206,5 @@ export function createCameraRig(cfg) {
     };
   }
 
-  return { update, reset, rightVector, get angle() { return s.angle; }, get yaw() { return s.lastYaw; }, get blend() { return s.blend; } };
+  return { update, reset, rightVector, get angle() { return s.angle; }, get yaw() { return s.lastYaw; }, get inputYaw() { return s.inputYaw; }, get blend() { return s.blend; } };
 }

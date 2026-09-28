@@ -61,6 +61,7 @@ function makeHand(opts = {}) {
   const cmc = { x: -0.022, y: 0.018, z: -0.005 };
   let dirs;
   if (o.thumb === 'out') dirs = [{ x: -0.75, y: 0.62, z: -0.2 }, { x: -0.55, y: 0.8, z: -0.2 }, { x: -0.4, y: 0.9, z: -0.15 }];
+  else if (o.thumb === 'L') dirs = [{ x: -0.95, y: 0.25, z: -0.1 }, { x: -1, y: 0.05, z: -0.05 }, { x: -1, y: -0.05, z: 0 }]; // [V3] «Г»: большой поперёк указательного
   else dirs = [{ x: -0.3, y: 0.6, z: -0.75 }, { x: 0.45, y: 0.55, z: -0.7 }, { x: 0.85, y: 0.3, z: -0.45 }];
   const norm = (v) => { const l = Math.hypot(v.x, v.y, v.z); return { x: v.x / l, y: v.y / l, z: v.z / l }; };
   const tl = [0.032, 0.03, 0.026];
@@ -136,7 +137,7 @@ function shapeAfter(opts, ms = 400) {
 test('API: версия, экспорты, форма HandIntent', () => {
   ok(HAND_GESTURES_VERSION.startsWith('ASHEN_V'));
   ok(DEFAULT_HAND_CONFIG.pinchOn < DEFAULT_HAND_CONFIG.pinchOff);
-  eq(Object.keys(RUNES).join(','), 'ignis,fulgur,orbis');
+  eq(Object.keys(RUNES).join(','), 'ignis,fulgur,orbis,stella,spira,lemnis,caret,vee,clepsydra,alpha');
   const g = createHandGestures();
   const f = g.read(0);
   for (const k of ['available', 'left', 'right', 'attack', 'shield', 'charge', 'burst', 'burstPower', 'rune', 'runeScore', 'runeFizzle', 'dash', 'drawing', 'trail', 'lastRune']) ok(k in f, `нет поля ${k}`);
@@ -265,6 +266,43 @@ function strokeShape(kind, n = 40) {
   }
   return pts;
 }
+
+// [V3] новые фигуры: канонический путь с шумом, наклон ±0.2 рад, оба направления
+function newShape(kind) {
+  const P = [], seg = (V, n = 16) => { for (let s = 0; s < V.length - 1; s++) for (let i = 0; i < n; i++) { const u = i / n; P.push({ x: V[s][0] + (V[s + 1][0] - V[s][0]) * u, y: V[s][1] + (V[s + 1][1] - V[s][1]) * u }); } P.push({ x: V.at(-1)[0], y: V.at(-1)[1] }); };
+  if (kind === 'stella') { const st = []; for (let k = 0; k < 5; k++) { const a = -Math.PI / 2 + k * 2 * Math.PI / 5; st.push([0.5 + 0.5 * Math.cos(a), 0.5 + 0.5 * Math.sin(a)]); } seg([st[0], st[2], st[4], st[1], st[3], st[0]]); }
+  else if (kind === 'spira') for (let i = 0; i <= 120; i++) { const u = i / 120, r = 0.04 + 0.46 * u, a = u * 4 * Math.PI; P.push({ x: 0.5 + r * Math.cos(a), y: 0.5 + r * Math.sin(a) }); }
+  else if (kind === 'lemnis') for (let i = 0; i <= 120; i++) { const q = Math.PI / 2 + (i / 120) * 2 * Math.PI; P.push({ x: 0.5 + 0.5 * Math.cos(q), y: 0.5 + 0.27 * Math.sin(2 * q) }); }
+  else if (kind === 'caret') seg([[0, 1], [0.5, 0], [1, 1]], 24);
+  else if (kind === 'vee') seg([[0, 0], [0.5, 1], [1, 0]], 24);
+  else if (kind === 'clepsydra') seg([[0, 0], [1, 0], [0, 1], [1, 1], [0, 0]]);
+  else if (kind === 'alpha') {
+    const R = 0.25, cx = 0.5, cy = 0.55 - R, bot = { x: cx, y: cy + R };
+    for (let i = 0; i <= 12; i++) { const u = i / 12; P.push({ x: bot.x * u, y: 1 + (bot.y - 1) * u }); }
+    for (let i = 1; i <= 48; i++) { const a = Math.PI / 2 - (i / 48) * 2 * Math.PI; P.push({ x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) }); }
+    for (let i = 1; i <= 12; i++) { const u = i / 12; P.push({ x: bot.x + (1 - bot.x) * u, y: bot.y + (1 - bot.y) * u }); }
+  }
+  return P;
+}
+
+test('[V3] recognizeStroke: 7 новых фигур узнаются в обоих направлениях и под наклоном', () => {
+  let sd = 77; const g2 = () => { let u = 0; while (!u) { sd = (sd * 16807) % 2147483647; u = sd / 2147483647; } sd = (sd * 16807) % 2147483647; return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * sd / 2147483647); }; // свой шум: не сдвигает общий генератор
+  for (const k of ['stella', 'spira', 'lemnis', 'caret', 'vee', 'clepsydra', 'alpha']) for (const rev of [false, true]) for (const rot of [-0.2, 0, 0.2]) {
+    let pts = newShape(k);
+    if (rev) pts = pts.reverse();
+    const c = Math.cos(rot), sn = Math.sin(rot);
+    pts = pts.map((p) => ({ x: (p.x * c - p.y * sn) * 0.3 + g2() * 0.003, y: (p.x * sn + p.y * c) * 0.3 + g2() * 0.003 }));
+    const r = recognizeStroke(pts);
+    eq(r.rune, k, `${k} rev=${rev} rot=${rot} → ${r.rune} (${r.reason}, ${r.score && r.score.toFixed(2)})`);
+  }
+});
+
+test('[V3] доводка замыкания: треугольник с перелётом мимо начала всё равно ИГНИС', () => {
+  const V = [[0.5, 0], [1, 0.87], [0, 0.87], [0.5, 0], [0.75, 0.43]];
+  const pts = [];
+  for (let s = 0; s < V.length - 1; s++) for (let i = 0; i < 14; i++) { const u = i / 14; pts.push({ x: (V[s][0] + (V[s + 1][0] - V[s][0]) * u) * 0.3, y: (V[s][1] + (V[s + 1][1] - V[s][1]) * u) * 0.3 }); }
+  eq(recognizeStroke(pts).rune, 'ignis', 'перелёт');
+});
 
 test('recognizeStroke: треугольник/круг/молния в обоих направлениях и под наклоном; отказ на линии и каракулях', () => {
   const cases = [['triangle', 'ignis'], ['circle', 'orbis'], ['zigzag', 'fulgur']];
@@ -499,7 +537,7 @@ test('[V3] ВРАТА: ладони вместе → резко развести
 
 test('[V3] РАМКА: две «Г» по диагонали → sigil frame один раз; правая «Г» не рисует руну', () => {
   const g = createHandGestures();
-  const Lsh = { curls: [0, 1, 1, 1], thumb: 'out' };
+  const Lsh = { curls: [0, 1, 1, 1], thumb: 'L' };
   const pose = () => [makeHand({ ...Lsh, side: 'left', cx: 0.64, cy: 0.7 }), makeHand({ ...Lsh, side: 'right', cx: 0.36, cy: 0.42 })];
   const r = collect(g, 1000, 1400, pose);
   ok(r.seen.filter((k) => k === 'frame').length === 1, 'рамка ровно один раз: ' + JSON.stringify(r.seen) + ' ' + JSON.stringify(g.getDebug().right));
@@ -508,6 +546,48 @@ test('[V3] РАМКА: две «Г» по диагонали → sigil frame о�
   const g2 = createHandGestures();
   const r2 = collect(g2, 1000, 1000, () => [makeHand({ ...Lsh, side: 'left', cx: 0.64, cy: 0.7 }), makeHand({ ...SHAPES.open, side: 'right', cx: 0.36, cy: 0.42 })]);
   ok(!r2.seen.length, 'одна «Г» — нет печати');
+  // обычное указание обеими руками по диагонали (большой вдоль указательного) — не рамка
+  const g3 = createHandGestures();
+  const P = { curls: [0, 1, 1, 1], thumb: 'out' };
+  const r3 = collect(g3, 1000, 1200, () => [makeHand({ ...P, side: 'left', cx: 0.64, cy: 0.7 }), makeHand({ ...P, side: 'right', cx: 0.36, cy: 0.42 })]);
+  ok(!r3.seen.includes('frame'), 'указание по диагонали — не рамка');
+});
+
+// [V3] двуручное рисование: кисти ставятся так, чтобы кончик указательного был в заданной точке ПОКАЗА
+const TWIN_P = { curls: [0, 1, 1, 1], thumb: 'in' };   // указание: большой поджат
+function handTipAt(side, dx, dy) {
+  const probe = makeHand({ ...TWIN_P, side, cx: 0.5, cy: 0.5 });
+  const ux = 1 - dx;                                   // показ зеркален
+  return makeHand({ ...TWIN_P, side, cx: 0.5 + (ux - probe.landmarks[8].x), cy: 0.5 + (dy - probe.landmarks[8].y) });
+}
+function twinDraw(g, t0, rightHalf, ms = 1300) {
+  // rightHalf(u) → {x, y} в координатах показа для правой руки; левая — зеркально относительно 0.5
+  let t = t0; const seen = [];
+  const at = (u) => { const r = rightHalf(u); return [handTipAt('left', 1 - r.x, r.y), handTipAt('right', r.x, r.y)]; };
+  for (; t < t0 + 700; t += 33) { g.push(obsOf(t, at(0))); const f = g.read(t); if (f.sigil) seen.push(f.sigil); if (f.rune) seen.push('rune:' + f.rune); }
+  const t1 = t;
+  for (; t < t1 + ms; t += 33) { g.push(obsOf(t, at(Math.min(1, (t - t1) / (ms - 150))))); const f = g.read(t); if (f.sigil) seen.push(f.sigil); if (f.rune) seen.push('rune:' + f.rune); }
+  for (let i = 0; i < 15; i++, t += 33) { g.push(obsOf(t, at(1))); const f = g.read(t); if (f.sigil) seen.push(f.sigil); if (f.rune) seen.push('rune:' + f.rune); }
+  return { t, seen };
+}
+const triHalf = (u) => { // от вершины вниз-вправо, потом по основанию к центру
+  const A = { x: 0.5, y: 0.3 }, B = { x: 0.64, y: 0.62 }, M = { x: 0.505, y: 0.62 };
+  const L1 = Math.hypot((B.x - A.x) * 4 / 3, B.y - A.y), L2 = (B.x - M.x) * 4 / 3, k = u * (L1 + L2);
+  if (k <= L1) { const q = k / L1; return { x: A.x + (B.x - A.x) * q, y: A.y + (B.y - A.y) * q }; }
+  const q = (k - L1) / L2; return { x: B.x + (M.x - B.x) * q, y: B.y };
+};
+const heartHalf = (u) => { const q = u * Math.PI; const x = 16 * Math.pow(Math.sin(q), 3), y = 13 * Math.cos(q) - 5 * Math.cos(2 * q) - 2 * Math.cos(3 * q) - Math.cos(4 * q); return { x: 0.5 + x / 32 * 0.3, y: 0.46 - y / 29 * 0.34 }; };
+
+test('[V3] ДЕЛЬТА: оба указательных рисуют треугольник → sigil delta; руна правой не срабатывает', () => {
+  const g = createHandGestures();
+  const r = twinDraw(g, 1000, triHalf);
+  ok(r.seen.includes('delta') && !r.seen.some((x) => x.startsWith('rune:')), 'дельта: ' + JSON.stringify(r.seen) + ' ' + JSON.stringify(g.getDebug().lastRecognition));
+});
+
+test('[V3] КОР: оба указательных рисуют сердце → sigil cor', () => {
+  const g = createHandGestures();
+  const r = twinDraw(g, 1000, heartHalf);
+  ok(r.seen.includes('cor'), 'сердце: ' + JSON.stringify(r.seen) + ' ' + JSON.stringify(g.getDebug().lastRecognition));
 });
 
 test('чары ПРИЗМА: треугольник из больших и указательных → conjure prism', () => {
@@ -654,6 +734,22 @@ test('щит — только раскрытая левая ладонь пря�
   ok(!g.peek(t).shield, 'ладонь ребром — не щит даже с толчком');
 });
 
+test('[V3.1] парирование: мимолётный кулак (перехват руки) — нет; кулак 0.4 с → ладонь — да; левый кулак не «заряжает»', () => {
+  const tryParry = (fistMs) => {
+    const g = createHandGestures();
+    let t = run(g, 1000, 500, () => [L_AT({ ...SHAPES.open })]);
+    t = run(g, t, fistMs, () => [L_AT({ ...SHAPES.fist })]);
+    let parry = false;
+    t = run(g, t, 300, (tt) => { const f = g.read(tt); parry = parry || f.parry; return [L_AT({ ...SHAPES.open })]; });
+    return { parry, g, t };
+  };
+  ok(!tryParry(150).parry, 'кулак 150 мс — не парирование');
+  ok(tryParry(450).parry, 'кулак 450 мс → ладонь — парирование');
+  const g = createHandGestures();
+  const t = run(g, 1000, 1200, () => [L_AT({ ...SHAPES.fist }), R_AT({ ...SHAPES.open })]);
+  ok(g.peek(t).charge === 0, 'левый кулак без правого — заряда нет: ' + g.peek(t).charge);
+});
+
 test('[V3] ведение героя раскрытой ладонью к камере не поднимает щит; джойстик едет', () => {
   const g = createHandGestures();
   let t = run(g, 1000, 600, () => [L_AT({ ...SHAPES.open })], 33, BODYX);     // хватка с раскрытой ладонью
@@ -661,11 +757,14 @@ test('[V3] ведение героя раскрытой ладонью к кам
   t = run(g, t, 900, (tt) => { const u = Math.min(1, (tt - t) / 500); const f = g.peek(tt); shield = shield || f.shield; maxX = Math.max(maxX, f.moveX); return [L_AT({ ...SHAPES.open, cx: 0.62 - 0.12 * u })]; }, 33, BODYX);
   ok(!shield, 'щит не включился при ведении');
   ok(maxX > 0.4, 'джойстик ведёт вправо: moveX ' + maxX.toFixed(2));
-  // тот же щит толчком — поднимается и держится при движении ладони
-  t = run(g, t, 300, () => [L_AT({ ...SHAPES.open, cx: 0.5, size: 0.14 })], 33, BODYX);
+  // толчок, пока рука уведена и герой бежит, щит не поднимает (V3.1)
   t = run(g, t, 200, (tt) => [L_AT({ ...SHAPES.open, cx: 0.5, size: 0.14 + 0.05 * Math.min(1, (tt - t) / 180) })], 33, BODYX);
+  ok(!g.peek(t).shield, 'толчок на бегу — не щит');
+  // вернуть руку в центр и толкнуть — щит поднимается и держится при движении ладони
+  t = run(g, t, 600, () => [L_AT({ ...SHAPES.open, cx: 0.62, size: 0.14 })], 33, BODYX);
+  t = run(g, t, 200, (tt) => [L_AT({ ...SHAPES.open, cx: 0.62, size: 0.14 + 0.05 * Math.min(1, (tt - t) / 180) })], 33, BODYX);
   ok(g.peek(t).shield, 'толчок → щит');
-  t = run(g, t, 400, (tt) => [L_AT({ ...SHAPES.open, cx: 0.5 + 0.08 * Math.min(1, (tt - t) / 300), size: 0.19 })], 33, BODYX);
+  t = run(g, t, 400, (tt) => [L_AT({ ...SHAPES.open, cx: 0.62 - 0.08 * Math.min(1, (tt - t) / 300), size: 0.19 })], 33, BODYX);
   ok(g.peek(t).shield, 'щит держится, пока ладонь к камере');
   t = run(g, t, 400, () => [L_AT({ ...SHAPES.fist, cx: 0.58, size: 0.19 })], 33, BODYX);
   ok(!g.peek(t).shield, 'сжал кулак — щит опустился');

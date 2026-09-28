@@ -12,11 +12,11 @@ const SERIF = '"Palatino Linotype","Book Antiqua",Georgia,serif';
 const GOLD = '#c9a45c', GOLD_HI = '#e3c792', STEEL = '#dfe8f5', BLUE = '#9fc4ff', EMBER = '#ff6a3c', DIM = '#8d97a6';
 const PLATE = 'rgba(5,7,11,0.62)';
 const GLYPHS = '0123456789ABCDEFXZ#%+=/<>';
-const RUNE_NAME = { ignis: 'ИГНИС', fulgur: 'ФУЛЬГУР', orbis: 'ОРБИС' };
-const RUNE_SUB = { ignis: 'огненное копьё', fulgur: 'страж оглушён', orbis: 'лечение и оберег' };
+const RUNE_NAME = { ignis: 'ИГНИС', fulgur: 'ФУЛЬГУР', orbis: 'ОРБИС', stella: 'СТЕЛЛА', spira: 'СПИРА', lemnis: 'ЛЕМНИСКА', caret: 'АКУС', vee: 'МЕССИС', clepsydra: 'КЛЕПСИДРА', alpha: 'АЛЬФА' };
+const RUNE_SUB = { ignis: 'огненное копьё', fulgur: 'страж оглушён', orbis: 'лечение и оберег', stella: 'звездопад', spira: 'вихрь гасит сферы', lemnis: 'вечность: лечение', caret: 'залп игл', vee: 'жатва', clepsydra: 'время Регента замедлено', alpha: 'откаты сброшены' };
 const KIND = { slam: 'SLAM', orb: 'ORB', nova: 'NOVA' };
 // [ASHEN_V3] двуручные печати
-const SIGIL_NAME = { clap: 'ГРОМОВОЙ ХЛОПОК', gate: 'ВРАТА · БАСТИОН', frame: 'МЕТКА ЦЕЛИ' };
+const SIGIL_NAME = { clap: 'ГРОМОВОЙ ХЛОПОК', gate: 'ВРАТА · БАСТИОН', frame: 'МЕТКА ЦЕЛИ', delta: 'ДЕЛЬТА · ЛУЧ', cor: 'КОР · СЕРДЦЕ' };
 
 const isObj = (v) => v !== null && typeof v === 'object';
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -128,6 +128,8 @@ export function createBattleHud({ canvas } = {}) {
           if (k === 'clap') sub = d.stunned ? 'РЕГЕНТ ОГЛУШЁН' : d.cleared ? `ОРБОВ ПОГАШЕНО: ${d.cleared}` : 'ВОЛНА';
           else if (k === 'gate') sub = `−${Math.round(num(d.reduction, 0.6) * 100)}% УРОНА · ${num(d.duration, 5)} с`;
           else if (k === 'frame') sub = `+${Math.round(num(d.bonus, 0.3) * 100)}% УРОНА · ${num(d.duration, 8)} с`;
+          else if (k === 'delta') sub = `${num(d.ticks, 4)} УДАРА ЛУЧА${d.cleared ? ` · ОРБОВ ПОГАШЕНО: ${d.cleared}` : ''}`;
+          else if (k === 'cor') sub = `+${num(d.heal, 45)} HP · ОБЕРЕГ`;
           addCallout(SIGIL_NAME[k] || String(k || ''), W / 2, H * 0.36, k === 'clap' ? BLUE : GOLD_HI, 24, { vy: -8, dur: 1.4, serif: true });
           if (sub) addCallout(sub, W / 2, H * 0.36 + 32, k === 'clap' ? BLUE : GOLD, 13, { vy: -8, dur: 1.4, scramble: true });
           break;

@@ -26,7 +26,7 @@
 
 import { createLeftStick } from './leftStick.js';
 
-export const HAND_GESTURES_VERSION = 'ASHEN_V3-hands-5';
+export const HAND_GESTURES_VERSION = 'ASHEN_V3-hands-6';
 
 export const DEFAULT_HAND_CONFIG = Object.freeze({
   // надёжность
@@ -65,7 +65,12 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   runeMaxStrokeMs: 4000,
   runeMinSize: 0.12,       // диагональ рамки штриха, в высотах кадра
   runeEndStillMs: 300,     // кончик неподвижен — штрих окончен
-  runeStillSpeed: 0.12,    // высот кадра в секунду
+  runeStillSpeed: 0.12,    // высот кадра в секунду (старое правило; V3 — окно ниже)
+  runeStillWindowMs: 100,  // [V3] кончик «движется», если за это окно ушёл дальше runeStillDist…
+  runeStillDist: 0.012,    //    …высот кадра (при живом дрожании трекинга старое правило конец почти не ловило)
+  runeClosedGap: 0.36,     // [V3] замкнутость: зазор начало–конец / диагональ меньше
+  runeSnapFrom: 0.8,       // [V3] доводка замыкания: после этой доли длины ищем ближайший возврат к началу
+  runeSnapDist: 0.2,       //    …ближе этой доли диагонали — пробуем штрих, обрезанный там
   runeScore: 0.78,
   runeMargin: 0.04,        // отрыв от второго кандидата
   runeCooldownMs: 700,     // между двумя распознаваниями
@@ -74,14 +79,18 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   // [ASHEN_V3] щит (левая): поднимается только осознанно — толчок раскрытой ладонью к камере
   // (жест «стоп»); держится, пока ладонь смотрит в камеру. Ведение героя открытой ладонью и
   // хватка джойстика щит больше не включают. shieldHoldMs > 0 — старый путь «ладонь стоит».
-  shieldPushRatio: 1.12,   // кисть выросла в кадре (относительно плеч) за shieldPushMs — толчок
+  shieldPushRatio: 1.15,   // кисть выросла в кадре (относительно плеч) за shieldPushMs — толчок
   shieldPushMs: 320,
   shieldPushKeepMs: 450,   // толчок годится столько, пока форма «ладонь» признаётся
   shieldHoldMs: 0,
   shieldStickMax: 0.2,     // |выход джойстика| меньше — ладонь «стоит»
   shieldDropMs: 160,       // ладонь отвернулась/сжалась дольше — щит опускается
+  shieldPushShift: 0.5,    // [V3.1] за время толчка центр ладони сдвинулся в плоскости кадра меньше (S): это толчок, а не ведение
+  shieldStickStart: 0.25,  // [V3.1] щит поднимается, только если джойстик почти в центре (|выход| меньше)
   // парирование (левая): стабильный кулак → раскрытая ладонь к камере
-  parryWindowMs: 220,      // от выхода из кулака до ладони к камере
+  parryWindowMs: 150,      // от выхода из кулака до ладони к камере (V3.1: 220 → 150)
+  parryFistMs: 250,        // [V3.1] кулак держался хотя бы столько (не «перехват» руки при ведении)
+  parryStickMax: 0.25,     // [V3.1] и джойстик почти в центре в момент раскрытия
   parryRefractoryMs: 450,
   // «Искра» (правая, spec G01): кулак/«заряд» → резко выпрямить только указательный
   sparkTouch: 0.62,        // большой у кончиков указательного/среднего (/ ладонь)
@@ -109,11 +118,12 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   orbFacingOff: 0.3,
   orbSideOn: 0.18,         // или ладонь «ребром» в 2D (|cross|) при нормали хотя бы не наружу
   orbSideOff: 0.28,
-  orbSideMinFacing: 0.1,
+  orbSideMinFacing: 0.3,   // V3.1: 0.1 → 0.3 (ребро ладони при ведении — не сфера)
   orbGapMin: 0.55,         // расстояние между центрами ладоней / S
-  orbGapMax: 4.0,
+  orbGapMax: 3.4,          // V3.1: 4.0 → 3.4
   orbGapSlack: 0.15,       // расширение диапазона при удержании
   orbDyOn: 0.55,           // |dy| / расстояние: кисти рядом по горизонтали
+  conjureStickMax: 0.25,   // [V3.1] чары не начинаются, пока левой рукой ведут героя (|выход джойстика| больше)
   orbDyOff: 0.75,
   orbTipsApart: 0.35,      // кончики пальцев двух кистей не касаются (иначе «домик»/молитва)
   orbTipsApartOff: 0.2,
@@ -160,16 +170,56 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   // РАМКА: обе кисти буквой «Г» (указательный и большой выпрямлены, остальные согнуты), по диагонали
   frameHoldMs: 300,
   frameThumb: 0.6,         // большой отставлен (|кончик − MCP указательного| / ширина ладони); поджатый ≈ 0.45
+  frameAngleDeg: 70,       // и угол «большой — указательный» не меньше (настоящая «Г» ≈ 80–100°)
+  clapLostMs: 100,         // хлопок: одна кисть пропала сразу после быстрого сближения (MediaPipe теряет сомкнутые ладони)
+  clapLostGap: 1.4,
   frameDx: 1.4,            // |dx| между центрами ладоней, S
   frameDy: 0.7,            // |dy|, S — по диагонали, не рядом
   sigilRefractoryMs: 900,
+  // ── [ASHEN_V3] двуручное рисование: оба указательных вместе → зеркально рисуют фигуру (ДЕЛЬТА ▲, КОР ♥)
+  twinTipsTogether: 0.7,   // кончики указательных ближе (S) — старт
+  twinThumbsApart: 0.8,    // большие пальцы дальше (S) — это не ПРИЗМА
+  twinArmMs: 120,          // кончики замерли столько — рисование началось
+  twinStill: 0.012,        // «замер»: сдвиг за окно меньше (высоты кадра)
+  twinMinTravel: 2.5,      // каждый кончик прошёл не меньше (S)
+  twinMeet: 0.8,           // кончики снова сошлись (S) — фигура закрыта
+  twinSeparate: 1.2,       // до этого расходились хотя бы на столько (S)
+  twinEndStillMs: 300,     // или оба замерли столько
+  twinMaxMs: 3000,
+  twinDrift: 1.0,          // середина кончиков ушла вбок больше (S) — половины не зеркальны, отмена
+  twinShapeLossMs: 150,    // кисть вышла из «указания» дольше — отмена
+  twinScore: 0.78,
 });
 
 export const RUNES = Object.freeze({
-  ignis: Object.freeze({ id: 'ignis', title: 'ИГНИС', shape: 'треугольник', closed: true, effect: 'огненное копьё' }),
-  fulgur: Object.freeze({ id: 'fulgur', title: 'ФУЛЬГУР', shape: 'молния (зигзаг)', closed: false, effect: 'оглушение стража' }),
-  orbis: Object.freeze({ id: 'orbis', title: 'ОРБИС', shape: 'круг', closed: true, effect: 'лечение и оберег' }),
+  ignis: Object.freeze({ id: 'ignis', title: 'ИГНИС', glyph: '▲', shape: 'треугольник', closed: true, effect: 'огненное копьё' }),
+  fulgur: Object.freeze({ id: 'fulgur', title: 'ФУЛЬГУР', glyph: 'ϟ', shape: 'молния (зигзаг)', closed: false, effect: 'оглушение стража' }),
+  orbis: Object.freeze({ id: 'orbis', title: 'ОРБИС', glyph: '○', shape: 'круг', closed: true, effect: 'лечение и оберег' }),
+  // [ASHEN_V3] новые фигуры — набор и пороги подобраны симуляцией (98.5% верно, 0% «не та руна»)
+  stella: Object.freeze({ id: 'stella', title: 'СТЕЛЛА', glyph: '★', shape: 'звезда одним штрихом', closed: true, effect: 'звездопад' }),
+  spira: Object.freeze({ id: 'spira', title: 'СПИРА', glyph: '@', shape: 'спираль из центра наружу', closed: false, effect: 'вихрь' }),
+  lemnis: Object.freeze({ id: 'lemnis', title: 'ЛЕМНИСКА', glyph: '∞', shape: 'лежачая восьмёрка', closed: true, effect: 'вечность: лечение' }),
+  caret: Object.freeze({ id: 'caret', title: 'АКУС', glyph: '^', shape: 'шеврон вершиной вверх', closed: false, effect: 'залп игл' }),
+  vee: Object.freeze({ id: 'vee', title: 'МЕССИС', glyph: 'V', shape: 'галка вершиной вниз', closed: false, effect: 'жатва' }),
+  clepsydra: Object.freeze({ id: 'clepsydra', title: 'КЛЕПСИДРА', glyph: '⧗', shape: 'песочные часы', closed: true, effect: 'время Регента медленнее' }),
+  alpha: Object.freeze({ id: 'alpha', title: 'АЛЬФА', glyph: 'ℓ', shape: 'петля над шевроном', closed: false, effect: 'откаты сброшены' }),
 });
+// Ворота распознавателя: замкнутость и число углов (x0.6 при несовпадении замкнутости, x0.85 — углов).
+// Для трёх старых рун таблица даёт ровно прежнее поведение.
+export const RUNE_GATES = Object.freeze({
+  ignis: { closure: 'closed', cMin: 2, cMax: 4 },
+  fulgur: { closure: 'open', cMin: 2, cMax: Infinity },
+  orbis: { closure: 'closed', cMin: 0, cMax: 1 },
+  stella: { closure: 'closed', cMin: 3, cMax: 7 },
+  spira: { closure: 'any', cMin: 0, cMax: 4 },
+  lemnis: { closure: 'closed', cMin: 2, cMax: 6 },
+  caret: { closure: 'open', cMin: 1, cMax: 3 },
+  vee: { closure: 'open', cMin: 1, cMax: 3 },
+  clepsydra: { closure: 'closed', cMin: 3, cMax: 5 },
+  alpha: { closure: 'open', cMin: 0, cMax: 3 },
+});
+// свои пороги у сложных фигур (остальные — runeScore)
+export const RUNE_MIN_SCORE = Object.freeze({ stella: 0.7, clepsydra: 0.7, spira: 0.72, lemnis: 0.72 });
 
 // ───────────────────────────── утилиты ─────────────────────────────
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -311,8 +361,56 @@ const TEMPLATE_SOURCES = (() => {
     t.push({ rune: 'fulgur', pts: polyline(z.map(([x, y]) => [1 - x, y]), false) });
     t.push({ rune: 'fulgur', pts: polyline(z.map(([x, y]) => [1 - x, y]).reverse(), false) });
   }
+  // ── [V3] новые фигуры
+  const curve = (fn, n = 128) => { const out = []; for (let i = 0; i <= n; i++) { const [x, y] = fn(i / n); out.push({ x, y }); } return out; };
+  const rev = (p) => [...p].reverse();
+  const mirX = (p) => p.map((q) => ({ x: 1 - q.x, y: q.y }));
+  // СТЕЛЛА — пентаграмма одним штрихом (вершины через одну), все старты и направления
+  const star = []; for (let k = 0; k < 5; k++) { const a = -Math.PI / 2 + k * 2 * Math.PI / 5; star.push([0.5 + 0.5 * Math.cos(a), 0.5 + 0.5 * Math.sin(a)]); }
+  for (const pts of rotations([star[0], star[2], star[4], star[1], star[3]])) t.push({ rune: 'stella', pts });
+  // СПИРА — 2 витка из центра наружу (и обратно), 8 стартовых углов × 2 направления
+  for (let k = 0; k < 8; k++) for (const d of [1, -1]) {
+    const p = curve((u) => { const r = 0.03 + 0.47 * u, a = k * Math.PI / 4 + d * u * 4 * Math.PI; return [0.5 + r * Math.cos(a), 0.5 + r * Math.sin(a)]; });
+    t.push({ rune: 'spira', pts: p }, { rune: 'spira', pts: rev(p) });
+  }
+  // ЛЕМНИСКА — лежачая восьмёрка (лемниската Жероно), 8 стартов × 2 направления
+  for (let k = 0; k < 8; k++) for (const d of [1, -1]) t.push({ rune: 'lemnis', pts: curve((u) => { const q = k * Math.PI / 4 + d * u * 2 * Math.PI; return [0.5 + 0.5 * Math.cos(q), 0.5 + 0.25 * Math.sin(2 * q)]; }) });
+  // АКУС — шеврон вершиной вверх; МЕССИС — галка вершиной вниз (рисовать прямо: поиск ±25°)
+  { const p = polyline([[0, 1], [0.5, 0], [1, 1]], false); t.push({ rune: 'caret', pts: p }, { rune: 'caret', pts: rev(p) }); }
+  { const p = polyline([[0, 0], [0.5, 1], [1, 0]], false); t.push({ rune: 'vee', pts: p }, { rune: 'vee', pts: rev(p) }); }
+  // КЛЕПСИДРА — песочные часы (Z, замкнутая второй диагональю)
+  for (const pts of rotations([[0, 0], [1, 0], [0, 1], [1, 1]])) t.push({ rune: 'clepsydra', pts });
+  // АЛЬФА — петля над шевроном: подход снизу-слева, петля против часовой, уход вниз-вправо (+ зеркала)
+  {
+    const p = [], R = 0.25, cx = 0.5, cy = 0.55 - R, bot = { x: cx, y: cy + R };
+    for (let i = 0; i <= 12; i++) { const u = i / 12; p.push({ x: bot.x * u, y: 1 + (bot.y - 1) * u }); }
+    for (let i = 1; i <= 48; i++) { const a = Math.PI / 2 - (i / 48) * 2 * Math.PI; p.push({ x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) }); }
+    for (let i = 1; i <= 12; i++) { const u = i / 12; p.push({ x: bot.x + (1 - bot.x) * u, y: bot.y + (1 - bot.y) * u }); }
+    t.push({ rune: 'alpha', pts: p }, { rune: 'alpha', pts: rev(p) }, { rune: 'alpha', pts: mirX(p) }, { rune: 'alpha', pts: rev(mirX(p)) });
+  }
   return t;
 })();
+// [V3] двуручные рисованные фигуры (оба указательных зеркально): правая половина; левая — её зеркало,
+// склейка: reverse(левая) ++ правая.
+const TWIN_SOURCES = (() => {
+  const t = [];
+  const half = (right) => { const left = right.map((q) => ({ x: 1 - q.x, y: q.y })); return [...left].reverse().concat(right.slice(1)); };
+  // ДЕЛЬТА — треугольник: от вершины вниз-наружу и по основанию к центру
+  t.push({ rune: 'delta', pts: half(polyline([[0.5, 0], [1, 1], [0.5, 1]], false)) });
+  // КОР — сердце: от верхней выемки по доле наружу и вниз к острию
+  {
+    const raw = (q) => { const x = 16 * Math.pow(Math.sin(q), 3), y = 13 * Math.cos(q) - 5 * Math.cos(2 * q) - 2 * Math.cos(3 * q) - Math.cos(4 * q); return { x: (x + 16) / 32, y: (12 - y) / 29 }; };
+    const right = []; for (let i = 0; i <= 64; i++) right.push(raw((i / 64) * Math.PI));
+    t.push({ rune: 'cor', pts: half(right) });
+  }
+  return t;
+})();
+export const TWIN_GATES = Object.freeze({ delta: { closure: 'closed', cMin: 1, cMax: 5 }, cor: { closure: 'closed', cMin: 1, cMax: 5 } });
+let TWIN_TEMPLATES = null;
+function twinTemplates() {
+  if (!TWIN_TEMPLATES) TWIN_TEMPLATES = TWIN_SOURCES.map((s) => ({ rune: s.rune, pts: normalizeStroke(resample(s.pts, N_RESAMPLE)) }));
+  return TWIN_TEMPLATES;
+}
 let TEMPLATES = null;
 function templates() {
   if (!TEMPLATES) TEMPLATES = TEMPLATE_SOURCES.map((s) => ({ rune: s.rune, pts: normalizeStroke(resample(s.pts, N_RESAMPLE)) }));
@@ -330,44 +428,87 @@ function countCorners(pts) { // резкие повороты на ресемп�
   return corners;
 }
 
-/** Распознать штрих (точки в координатах с одинаковым масштабом по x и y). */
-export function recognizeStroke(rawPts, opts = {}) {
-  const minScore = fin(opts.minScore) ? opts.minScore : DEFAULT_HAND_CONFIG.runeScore;
-  const margin = fin(opts.margin) ? opts.margin : DEFAULT_HAND_CONFIG.runeMargin;
-  if (!Array.isArray(rawPts) || rawPts.length < 8) return { rune: null, score: 0, reason: 'short' };
-  const clean = rawPts.filter((p) => isObj(p) && fin(p.x) && fin(p.y));
-  const rs = resample(clean, N_RESAMPLE);
-  if (!rs) return { rune: null, score: 0, reason: 'degenerate' };
+// Оценка одного варианта штриха против набора шаблонов с воротами. null — вырожденный/линия.
+function scoreVariant(part, tpls, gates, closedGap) {
+  if (part.length < 8) return null;
+  const rs = resample(part, N_RESAMPLE);
+  if (!rs) return null;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const p of rs) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); }
   const w = maxX - minX, h = maxY - minY, diag = Math.hypot(w, h) || 1;
-  if (Math.min(w, h) < 0.18 * Math.max(w, h)) return { rune: null, score: 0, reason: 'line' };
+  if (Math.min(w, h) < 0.18 * Math.max(w, h)) return { line: true };
   const gap = Math.hypot(rs[0].x - rs[rs.length - 1].x, rs[0].y - rs[rs.length - 1].y) / diag;
-  const closed = gap < 0.3, open = gap > 0.45;
+  const closed = gap < closedGap, open = gap > 0.45;
   const corners = countCorners(rs);
   const pts = normalizeStroke(rs);
-  const best = { ignis: Infinity, fulgur: Infinity, orbis: Infinity };
+  const best = {};
+  for (const k of Object.keys(gates)) best[k] = Infinity;
   const range = (25 * Math.PI) / 180;
-  for (const t of templates()) {
+  for (const t of tpls) {
+    if (!(t.rune in best)) continue;
     const d = distanceAtBestAngle(pts, t.pts, range);
     if (d < best[t.rune]) best[t.rune] = d;
   }
   const half = 0.5 * Math.sqrt(2);
   const scores = {};
-  for (const k of Object.keys(best)) scores[k] = clamp(1 - best[k] / half, 0, 1);
-  // Геометрические ворота: замкнутость и число углов разводят треугольник, круг и молнию.
-  if (!closed) { scores.ignis *= 0.6; scores.orbis *= 0.6; }
-  if (!open) scores.fulgur *= 0.6;
-  if (corners < 2 || corners > 4) scores.ignis *= 0.85;
-  if (corners >= 2) scores.orbis *= 0.85;
-  if (corners < 2) scores.fulgur *= 0.85;
-  const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
-  const [rune, score] = ranked[0];
-  const second = ranked[1][1];
-  const info = { scores, corners, gap: Math.round(gap * 100) / 100 };
-  if (score < minScore) return { rune: null, score, reason: 'low-score', ...info };
-  if (score - second < margin) return { rune: null, score, reason: 'ambiguous', ...info };
-  return { rune, score, reason: 'ok', ...info };
+  for (const k of Object.keys(best)) {
+    const g = gates[k];
+    let sc = clamp(1 - best[k] / half, 0, 1);
+    if (g.closure === 'closed' && !closed) sc *= 0.6;
+    if (g.closure === 'open' && !open) sc *= 0.6;
+    if (corners < g.cMin || corners > g.cMax) sc *= 0.85;
+    scores[k] = sc;
+  }
+  return { scores, corners, gap };
+}
+
+/** Распознать штрих (точки в координатах с одинаковым масштабом по x и y).
+ *  opts: minScore, margin, runes (список id; по умолчанию все руны), minScoreBy, closedGap, snap (доводка замыкания). */
+export function recognizeStroke(rawPts, opts = {}) {
+  const minScore = fin(opts.minScore) ? opts.minScore : DEFAULT_HAND_CONFIG.runeScore;
+  const margin = fin(opts.margin) ? opts.margin : DEFAULT_HAND_CONFIG.runeMargin;
+  const minBy = isObj(opts.minScoreBy) ? opts.minScoreBy : RUNE_MIN_SCORE;
+  const closedGap = fin(opts.closedGap) ? opts.closedGap : DEFAULT_HAND_CONFIG.runeClosedGap;
+  const twin = opts.twin === true;
+  const gatesAll = twin ? TWIN_GATES : RUNE_GATES;
+  const ids = Array.isArray(opts.runes) ? opts.runes.filter((k) => k in gatesAll) : Object.keys(gatesAll);
+  const gates = {}; for (const k of ids) gates[k] = gatesAll[k];
+  if (ids.length < 2) return { rune: null, score: 0, reason: 'config' };
+  const tpls = twin ? twinTemplates() : templates();
+  if (!Array.isArray(rawPts) || rawPts.length < 8) return { rune: null, score: 0, reason: 'short' };
+  const clean = rawPts.filter((p) => isObj(p) && fin(p.x) && fin(p.y));
+  const variants = [clean];
+  // доводка замыкания: промах мимо начала — главная причина провалов замкнутых фигур
+  if (opts.snap !== false && clean.length >= 12) {
+    const S = [0];
+    for (let i = 1; i < clean.length; i++) S.push(S[i - 1] + Math.hypot(clean[i].x - clean[i - 1].x, clean[i].y - clean[i - 1].y));
+    const L = S[S.length - 1];
+    let bx = Infinity, by = Infinity, cx = -Infinity, cy = -Infinity;
+    for (const p of clean) { bx = Math.min(bx, p.x); cx = Math.max(cx, p.x); by = Math.min(by, p.y); cy = Math.max(cy, p.y); }
+    const dg = Math.hypot(cx - bx, cy - by) || 1;
+    let bj = -1, bd = Infinity;
+    for (let i = 0; i < clean.length; i++) {
+      if (S[i] < DEFAULT_HAND_CONFIG.runeSnapFrom * L) continue;
+      const d = Math.hypot(clean[i].x - clean[0].x, clean[i].y - clean[0].y);
+      if (d < bd) { bd = d; bj = i; }
+    }
+    if (bj > 0 && bj < clean.length - 2 && bd < DEFAULT_HAND_CONFIG.runeSnapDist * dg) variants.push(clean.slice(0, bj + 1));
+  }
+  let best = null, sawLine = false;
+  for (const part of variants) {
+    const r = scoreVariant(part, tpls, gates, closedGap);
+    if (!r) continue;
+    if (r.line) { sawLine = true; continue; }
+    const ranked = Object.entries(r.scores).sort((a, b) => b[1] - a[1]);
+    const res = { rune: ranked[0][0], score: ranked[0][1], second: ranked[1][1], scores: r.scores, corners: r.corners, gap: Math.round(r.gap * 100) / 100 };
+    if (!best || res.score > best.score) best = res;
+  }
+  if (!best) return { rune: null, score: 0, reason: sawLine ? 'line' : 'degenerate' };
+  const info = { scores: best.scores, corners: best.corners, gap: best.gap };
+  const need = fin(minBy[best.rune]) ? minBy[best.rune] : minScore;
+  if (best.score < need) return { rune: null, score: best.score, reason: 'low-score', best: best.rune, ...info };
+  if (best.score - best.second < margin) return { rune: null, score: best.score, reason: 'ambiguous', best: best.rune, ...info };
+  return { rune: best.rune, score: best.score, reason: 'ok', ...info };
 }
 
 // ───────────────────────────── признаки кисти ─────────────────────────────
@@ -479,6 +620,7 @@ export function createHandGestures(configPatch = {}) {
       lastObsT: null, mirror: true, aspect: 4 / 3,
       pulses: { burst: null, rune: null, runeFizzle: null, dash: null, throw: null, dashDir: null, parry: null, spark: null, slash: null, sigil: null },
       sig: { hist: [], togetherSince: null, primedUntil: -Infinity, frameSince: null, frameFired: false, blockedUntil: -Infinity },
+      twin: null,   // [V3] двуручное рисование: { phase: 'arming'|'drawing', ... }
       burstBlockedUntil: -Infinity, pendingBurst: null,
       parryBlockedUntil: -Infinity, sparkBlockedUntil: -Infinity, strokeBlockedUntil: -Infinity,
       stickState: null,
@@ -509,9 +651,12 @@ export function createHandGestures(configPatch = {}) {
     }
     for (const h of hands) {
       let side = null;
-      if (L || R) {
-        const dl = L ? d(h, L) : Infinity, dr = R ? d(h, R) : Infinity;
-        side = dl <= dr ? 'left' : 'right';
+      if (L && R) {
+        side = d(h, L) <= d(h, R) ? 'left' : 'right';
+      } else if (L || R) {
+        // видно одно запястье: кисть его, только если рядом с ним; иначе — другая рука
+        const w = L || R, near = d(h, w) <= 0.15;
+        side = (L ? near : !near) ? 'left' : 'right';
       } else if (h.handedness === 'Left' || h.handedness === 'Right') {
         // На реальных кадрах метка совпадает со стороной по запястьям позы (см. шапку файла).
         side = h.handedness === 'Left' ? 'left' : 'right';
@@ -570,14 +715,21 @@ export function createHandGestures(configPatch = {}) {
     const relX = (H.center.x - (bc ? bc.x : 0)) * st.aspect;
     H.rel.push({ t, x: relX });
     while (H.rel.length > 24 || (H.rel.length && t - H.rel[0].t > cfg.swipeWindowMs * 2)) H.rel.shift();
-    // толчок к камере: кисть растёт в кадре быстрее плеч (наклон всем корпусом не считается)
+    // толчок к камере: кисть растёт в кадре быстрее плеч (наклон всем корпусом не считается),
+    // центр ладони почти не сдвигается в плоскости кадра (иначе это ведение джойстика/подъём руки).
+    // Пока кисть не «готова» (только что появилась, часто обрезана краем) — история не копится.
     const sw = fin(st.obsSw) && st.obsSw > 0 ? st.obsSw : null;
-    H.scaleHist.push({ t, s: f.scale, sw });
-    while (H.scaleHist.length > 30 || (H.scaleHist.length && t - H.scaleHist[0].t > cfg.shieldPushMs + 60)) H.scaleHist.shift();
-    const b = H.scaleHist[0];
-    if (b && t - b.t >= cfg.shieldPushMs * 0.5 && b.s > 1e-6) {
-      const body = sw && b.sw ? sw / b.sw : 1;
-      if (f.scale / b.s / body >= cfg.shieldPushRatio) H.pushAt = t;
+    if (!ready(H, t)) H.scaleHist.length = 0;
+    else {
+      const pcx = (data.img[0].x + data.img[9].x) / 2 * st.aspect, pcy = (data.img[0].y + data.img[9].y) / 2;
+      H.scaleHist.push({ t, s: f.scale, sw, x: pcx, y: pcy });
+      while (H.scaleHist.length > 30 || (H.scaleHist.length && t - H.scaleHist[0].t > cfg.shieldPushMs + 60)) H.scaleHist.shift();
+      const b = H.scaleHist[0];
+      if (b && t - b.t >= cfg.shieldPushMs * 0.5 && b.s > 1e-6) {
+        const body = sw && b.sw ? sw / b.sw : 1;
+        const shift = Math.hypot(pcx - b.x, pcy - b.y) / Math.max(1e-4, f.scale);
+        if (f.scale / b.s / body >= cfg.shieldPushRatio && shift < cfg.shieldPushShift) H.pushAt = t;
+      }
     }
   }
 
@@ -592,6 +744,7 @@ export function createHandGestures(configPatch = {}) {
       // вышли из кулака: окно на раскрытие
       H.releasedAt = t;
       H.releaseCharge = H.charge;
+      H.releaseHeldMs = t - H.fistStableAt;
       H.fistStableAt = null;
       H.charge = 0;
     }
@@ -612,14 +765,17 @@ export function createHandGestures(configPatch = {}) {
       return;
     }
     if (oR) {
-      if (stillCharging(L) && t - R.releasedAt < cfg.pairWindowMs) return; // ждём левую — выброс двумя
+      const lSteering = (() => { const so = stick.read(t); return so.engaged && Math.hypot(so.x, so.z) > 0.2; })();
+      if (stillCharging(L) && !lSteering && t - R.releasedAt < cfg.pairWindowMs) return; // ждём левую — выброс двумя
       if (t >= st.burstBlockedUntil) firePulse('burst', t, { power: R.releaseCharge, both: false, hand: 'right' });
       R.releasedAt = null;
     }
     if (oL) {
       if (charged(L) && stillCharging(R) && t - L.releasedAt < cfg.pairWindowMs) return; // ждём правую
       if (L.palmFacing === 'camera') {
-        if (t - L.releasedAt <= cfg.parryWindowMs && t >= st.parryBlockedUntil && !st.conj.on) {
+        const so = stick.read(t);
+        const calm = Math.hypot(so.x, so.z) < cfg.parryStickMax;
+        if (t - L.releasedAt <= cfg.parryWindowMs && t >= st.parryBlockedUntil && !st.conj.on && (L.releaseHeldMs || 0) >= cfg.parryFistMs && calm) {
           firePulse('parry', t, { fromCharge: L.releaseCharge });
           st.parryBlockedUntil = t + cfg.parryRefractoryMs;
         }
@@ -668,8 +824,9 @@ export function createHandGestures(configPatch = {}) {
     if (S.on) return;
     if (S.openSince === null) S.openSince = t;
     const out = stick.read(t);
-    const still = Math.hypot(out.x, out.z) < cfg.shieldStickMax;
-    const pushed = t - L.pushAt <= cfg.shieldPushKeepMs;
+    const mag = Math.hypot(out.x, out.z);
+    const still = mag < cfg.shieldStickMax;
+    const pushed = t - L.pushAt <= cfg.shieldPushKeepMs && mag < cfg.shieldStickStart;
     if (pushed || (cfg.shieldHoldMs > 0 && still && t - S.openSince >= cfg.shieldHoldMs)) S.on = true;
   }
 
@@ -703,7 +860,16 @@ export function createHandGestures(configPatch = {}) {
         s.pts.push(p); s.len += d;
         if (s.pts.length > 256) s.pts.splice(1, 1);
       }
-      if (d / dtS > cfg.runeStillSpeed) s.lastMove = t;
+      // [V3] «движется», если за последние runeStillWindowMs кончик ушёл дальше runeStillDist
+      // (при живом дрожании трекинга мгновенная скорость почти всегда выше порога)
+      let moved = false;
+      for (let i = s.pts.length - 1; i >= 0; i--) {
+        const q = s.pts[i];
+        if (t - q.t > cfg.runeStillWindowMs) break;
+        if (Math.hypot(p.x - q.x, p.y - q.y) > cfg.runeStillDist) { moved = true; break; }
+      }
+      if (d > 0.004 && d / dtS > cfg.runeStillSpeed * 4) moved = true;   // быстрый рывок кончика — тоже движение
+      if (moved) s.lastMove = t;
       st.trail = s.pts.slice(-96).map((q) => ({ x: q.x / st.aspect, y: q.y }));
       st.trailUntil = t + cfg.trailKeepMs;
       const bbox = strokeSize(s.pts);
@@ -892,6 +1058,7 @@ export function createHandGestures(configPatch = {}) {
       return;
     }
     if (!e) { C.pending = null; return; }
+    if (!C.pending) { const so = stick.read(t); if (so.engaged && Math.hypot(so.x, so.z) > cfg.conjureStickMax) return; }
     if (!C.pending || C.pending.kind !== e.kind) { C.pending = { kind: e.kind, since: t }; return; }
     if (t - C.pending.since >= cfg.conjureOnMs) {
       Object.assign(C, { on: true, kind: e.kind, onAt: t, lastGood: t, lastT: t, size: e.size, charge: 0, centerRaw: e.center, pending: null });
@@ -901,19 +1068,45 @@ export function createHandGestures(configPatch = {}) {
   }
 
   // ───────── [V3] двуручные фигуры-печати: ХЛОПОК, ВРАТА, РАМКА ─────────
-  function lShape(H) { return H.rawShape === 'point' && H.feat && H.feat.thumbSpread >= cfg.frameThumb; }  // «Г»: указательный + отставленный большой
+  // «Г»: указательный выпрямлен, большой отставлен ПОД УГЛОМ ≥ frameAngleDeg к указательному.
+  // Обычное указание (перо рун) — 28–65° (реальные кадры HaGRID: без угла 20 из 23 проходили как «Г»).
+  function lShape(H) {
+    if (H.rawShape !== 'point' || !H.feat || H.feat.thumbSpread < cfg.frameThumb || !H.pts) return false;
+    const I = H.pts, tx = I[4].x - I[2].x, ty = I[4].y - I[2].y, ix = I[8].x - I[5].x, iy = I[8].y - I[5].y;
+    const l = Math.hypot(tx, ty) * Math.hypot(ix, iy);
+    if (l < 1e-9) return false;
+    return Math.acos(clamp((tx * ix + ty * iy) / l, -1, 1)) * 180 / Math.PI >= cfg.frameAngleDeg;
+  }
   function updateSigils(t) {
     const G = st.sig, C = st.conj;
     const L = st.hands.left, R = st.hands.right;
     const both = L.present && R.present && L.lastSeen === t && R.lastSeen === t && ready(L, t) && ready(R, t) && L.pts && R.pts && L.scale && R.scale;
-    if (!both) { G.hist.length = 0; G.togetherSince = null; G.frameSince = null; G.frameFired = false; return; }
+    if (!both) {
+      // сомкнутые ладони MediaPipe часто теряет: если кисть пропала сразу после быстрого сближения — это хлопок
+      const h = G.hist, e1 = h[h.length - 1];
+      if (e1 && t - e1.t <= cfg.clapLostMs && e1.gap <= cfg.clapLostGap && t >= G.blockedUntil) {
+        for (let i = h.length - 2; i >= 0; i--) {
+          const e = h[i], span = e1.t - e.t;
+          if (span > cfg.clapWindowMs) break;
+          if (e.gap >= cfg.clapFrom && e.open && e.dy / Math.max(1e-3, e.gap) <= cfg.clapDy && (e.gap - e1.gap) / Math.max(1e-3, span / 1000) >= cfg.clapSpeed && !e1.down) {
+            firePulse('sigil', t, { kind: 'clap', power: 0.6, lost: true });
+            G.blockedUntil = t + cfg.sigilRefractoryMs;
+            Object.assign(st.conj, { on: false, kind: null, pending: null, size: 0, charge: 0, hist: [], throwBlockedUntil: Math.max(st.conj.throwBlockedUntil, t + 500) });
+            break;
+          }
+        }
+      }
+      G.hist.length = 0; G.togetherSince = null; G.frameSince = null; G.frameFired = false; return;
+    }
     const S = (L.scale + R.scale) / 2;
     const cL = palmCenter(L), cR = palmCenter(R);
     const gap = d2(cL, cR) / S, dx = Math.abs(cL.x - cR.x) / S, dy = Math.abs(cL.y - cR.y) / S;
     const openish = (H) => H.rawShape === 'open' || H.extended.slice(1).filter(Boolean).length >= 3;
     const prev = G.hist[G.hist.length - 1];
     if (prev && Math.abs(gap - prev.gap) / Math.max(1e-3, (t - prev.t) / 1000) > 40) G.hist.length = 0; // сбой трекинга
-    G.hist.push({ t, gap, dx, dy, open: openish(L) && openish(R) });
+    const cy = (cL.y + cR.y) / 2;
+    const down = prev && prev.cy !== undefined ? (cy - prev.cy) / Math.max(1e-3, (t - prev.t) / 1000) / S > 3 : false;
+    G.hist.push({ t, gap, dx, dy, cy, down, open: openish(L) && openish(R) });
     while (G.hist.length > 40 || (G.hist.length && t - G.hist[0].t > 800)) G.hist.shift();
     const fire = (kind, data) => {
       if (t < G.blockedUntil) return false;
@@ -955,6 +1148,78 @@ export function createHandGestures(configPatch = {}) {
       if (G.frameSince === null) G.frameSince = t;
       if (!G.frameFired && t - G.frameSince >= cfg.frameHoldMs && fire('frame', {})) G.frameFired = true;
     } else { G.frameSince = null; G.frameFired = false; }
+  }
+
+  // ───────── [V3] двуручное рисование: ДЕЛЬТА (треугольник) и КОР (сердце) ─────────
+  // Оба указательных сходятся кончиками и замирают → каждый рисует свою половину зеркально →
+  // кончики снова сходятся (или замирают). Склейка reverse(левая) ++ правая распознаётся по
+  // двуручным шаблонам. Пока идёт рисование, джойстик и перо правой руки молчат.
+  function updateTwin(t) {
+    const L = st.hands.left, R = st.hands.right, C = st.conj, G = st.sig;
+    const both = L.present && R.present && L.lastSeen === t && R.lastSeen === t && ready(L, t) && ready(R, t) && L.pts && R.pts && L.scale && R.scale && L.tip && R.tip;
+    if (!both || C.on || C.pending) { st.twin = null; return; }
+    const S = (L.scale + R.scale) / 2;
+    const a = st.aspect;
+    const tipL = { x: L.tip.x * a, y: L.tip.y }, tipR = { x: R.tip.x * a, y: R.tip.y };
+    let T = st.twin;
+    if (!T) {
+      const pointing = L.rawShape === 'point' && R.rawShape === 'point';
+      const tips = d2(tipL, tipR) / S, thumbs = d2(L.pts[4], R.pts[4]) / S;
+      if (!pointing || tips > cfg.twinTipsTogether || thumbs < cfg.twinThumbsApart || t < G.blockedUntil) return;
+      T = st.twin = { phase: 'arming', since: t, hist: [], L: [], R: [], fL: { ...tipL }, fR: { ...tipR }, badSince: null, lenL: 0, lenR: 0, maxGap: 0, mid0: null };
+    }
+    st.strokeBlockedUntil = Math.max(st.strokeBlockedUntil, t + 200);   // перо правой руки молчит
+    // сглаживание кончиков (как у пера)
+    const k = 1 - Math.exp(-Math.max(0, t - (T.lastT ?? t)) / cfg.tipTauMs);
+    T.lastT = t;
+    T.fL.x += (tipL.x - T.fL.x) * k; T.fL.y += (tipL.y - T.fL.y) * k;
+    T.fR.x += (tipR.x - T.fR.x) * k; T.fR.y += (tipR.y - T.fR.y) * k;
+    T.hist.push({ t, lx: T.fL.x, ly: T.fL.y, rx: T.fR.x, ry: T.fR.y });
+    while (T.hist.length > 40 || (T.hist.length && t - T.hist[0].t > 500)) T.hist.shift();
+    const stillFor = (ms) => {
+      const now = T.hist[T.hist.length - 1];
+      if (!now || t - T.hist[0].t < ms) return false;
+      for (let i = T.hist.length - 1; i >= 0; i--) {
+        const q = T.hist[i];
+        if (t - q.t > ms) break;
+        if (Math.hypot(now.lx - q.lx, now.ly - q.ly) > cfg.twinStill || Math.hypot(now.rx - q.rx, now.ry - q.ry) > cfg.twinStill) return false;
+      }
+      return true;
+    };
+    const pointing = L.rawShape === 'point' && R.rawShape === 'point';
+    if (T.phase === 'arming') {
+      if (!pointing || d2(tipL, tipR) / S > cfg.twinTipsTogether * 1.3) { st.twin = null; return; }
+      if (stillFor(cfg.twinArmMs)) {
+        T.phase = 'drawing'; T.t0 = t;
+        T.L = [{ x: T.fL.x, y: T.fL.y }]; T.R = [{ x: T.fR.x, y: T.fR.y }];
+        T.mid0 = (T.fL.x + T.fR.x) / 2;
+        if (st.stroke) { st.stroke = null; st.trail = []; }        // своя руна правой руки — отменена молча
+      }
+      return;
+    }
+    // рисование
+    if (!pointing) { if (T.badSince === null) T.badSince = t; if (t - T.badSince > cfg.twinShapeLossMs) { st.twin = null; return; } }
+    else T.badSince = null;
+    if (t - T.t0 > cfg.twinMaxMs || Math.abs((T.fL.x + T.fR.x) / 2 - T.mid0) / S > cfg.twinDrift) { st.twin = null; return; }
+    const add = (arr, f, key) => {
+      const last = arr[arr.length - 1], dd = Math.hypot(f.x - last.x, f.y - last.y);
+      if (dd > 0.004) { arr.push({ x: f.x, y: f.y }); T[key] += dd / S; }
+    };
+    add(T.L, T.fL, 'lenL'); add(T.R, T.fR, 'lenR');
+    const gap = d2(T.fL, T.fR) / S;
+    T.maxGap = Math.max(T.maxGap, gap);
+    const traveled = T.lenL >= cfg.twinMinTravel && T.lenR >= cfg.twinMinTravel;
+    const met = traveled && T.maxGap >= cfg.twinSeparate && gap <= cfg.twinMeet;
+    if (!(met || (traveled && stillFor(cfg.twinEndStillMs)))) return;
+    // склейка и распознавание
+    const combined = [...T.L].reverse().concat(T.R.slice(1));
+    st.twin = null;
+    const r = recognizeStroke(combined, { twin: true, minScore: cfg.twinScore, margin: cfg.runeMargin });
+    st.lastRecognition = { ...r, twin: true };
+    if (!r.rune || t < G.blockedUntil) { firePulse('runeFizzle', t, { reason: r.reason || 'twin', twin: true }); return; }
+    firePulse('sigil', t, { kind: r.rune, power: 1, score: r.score });
+    G.blockedUntil = t + cfg.sigilRefractoryMs;
+    st.swipe.armed = false; st.swipe.until = Math.max(st.swipe.until, t + 500);
   }
 
   // Толчок к камере (обе кисти выросли) или бросок рывком (центр между кистями быстро сдвинулся).
@@ -1015,6 +1280,7 @@ export function createHandGestures(configPatch = {}) {
       updateSwipe(t);
       updateConjure(t, obs);
       updateSigils(t);
+      updateTwin(t);
       updateSpark(t);
       // левая рука — джойстик: центр ладони в кадре (с аспектом) относительно середины плеч
       const L = st.hands.left;
@@ -1024,8 +1290,9 @@ export function createHandGestures(configPatch = {}) {
       const pc = seen ? palmCenter(L) : null;
       // [V3] запасной источник — левое запястье позы (кисть теряется в кулаке и при смазе)
       const pw = isObj(obs.poseWrists) && isObj(obs.poseWrists.left) ? obs.poseWrists.left : null;
-      const wrist = pw && fin(pw.x) && fin(pw.y) && (!fin(pw.visibility) || pw.visibility >= 0.5) ? { x: pw.x * st.aspect, y: pw.y } : null;
-      stick.push({ t, hand: pc ? { x: pc.x, y: pc.y, scale: L.scale } : null, wrist, body: bc, mirror: st.mirror, aspect: st.aspect, busy: st.conj.on || !!st.conj.pending || t < st.conj.throwBlockedUntil });
+      const inFrame = pw && fin(pw.x) && fin(pw.y) && pw.x > 0.03 && pw.x < 0.97 && pw.y > 0.03 && pw.y < 0.95; // поза «додумывает» точки за краем
+      const wrist = inFrame && (!fin(pw.visibility) || pw.visibility >= 0.5) ? { x: pw.x * st.aspect, y: pw.y } : null;
+      stick.push({ t, hand: pc ? { x: pc.x, y: pc.y, scale: L.scale } : null, wrist, body: bc, mirror: st.mirror, aspect: st.aspect, busy: st.conj.on || !!st.conj.pending || t < st.conj.quietUntil || !!(st.twin && st.twin.phase === 'drawing') });
       const dsh = stick.takeDash();
       if (dsh) firePulse('dashDir', t, { x: dsh.x, z: dsh.z, speed: dsh.speed });
       updateShield(t);
@@ -1069,7 +1336,7 @@ export function createHandGestures(configPatch = {}) {
       left: handState(L, t), right: handState(R, t),
       attack: hold(R) && R.shape === 'pinch' && !drawing && !burstP && !busy,
       shield: hold(L) && st.shield.on && !busy,
-      charge: fresh ? Math.max(L.charge, R.charge) : 0,
+      charge: fresh ? (R.shape === 'fist' ? Math.max(L.charge, R.charge) : R.charge) : 0,
       burst: !!burstP, burstPower: burstP ? Math.round(burstP.power * 1000) / 1000 : 0,
       rune: runeP ? runeP.rune : null, runeScore: runeP ? Math.round(runeP.score * 1000) / 1000 : 0,
       runeFizzle: !!live('runeFizzle', t),
@@ -1085,6 +1352,7 @@ export function createHandGestures(configPatch = {}) {
       burstHand: burstP ? (burstP.hand || (burstP.both ? 'both' : 'right')) : null,
       drawing,
       trail: t <= st.trailUntil ? st.trail : [],
+      twin: st.twin && st.twin.phase === 'drawing' ? { left: st.twin.L.map((q) => ({ x: q.x / st.aspect, y: q.y })), right: st.twin.R.map((q) => ({ x: q.x / st.aspect, y: q.y })) } : null,
       lastRune: st.lastRune,
       conjure: fresh && C.on ? {
         kind: C.kind, size: Math.round(C.size * 1000) / 1000, charge: Math.round(C.charge * 1000) / 1000,
