@@ -373,6 +373,15 @@ function normInput(v) {
     attack: valid && v.attack === true,
     shield: valid && v.shield === true,
     burst: valid && v.burst === true,
+    // V2/V3-поля для карточек обучения (раньше отбрасывались, и «Распознано» у рывка-дёрга, рун, чар не загоралось)
+    dashDir: valid && v.dashDir && typeof v.dashDir === 'object' ? v.dashDir : null,
+    rune: valid && typeof v.rune === 'string' ? v.rune : null,
+    conjure: valid && v.conjure && typeof v.conjure === 'object' ? v.conjure : null,
+    throw: valid && v.throw && typeof v.throw === 'object' ? v.throw : null,
+    // [ТВИСТ «ОШИБКА»] подсказка к почти-правильному жесту
+    hint: valid && v.hint && typeof v.hint === 'object' && typeof v.hint.text === 'string'
+      ? { code: String(v.hint.code || ''), gesture: String(v.hint.gesture || ''), text: v.hint.text, side: v.hint.side === 'left' || v.hint.side === 'right' ? v.hint.side : null }
+      : null,
   };
 }
 
@@ -1301,6 +1310,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const host = el('div', { class: 'ao-slothost' });
     const status = statusLine();
     const ready = el('p', { class: 'ao-msg' });
+    // [ТВИСТ «ОШИБКА»] почти-правильный жест на обучении: что не так и как исправить
+    const coachHead = el('span', { class: 'ao-tut-coach__head' });
+    const coachText = el('span', { class: 'ao-tut-coach__text' });
+    const coach = el('div', { class: 'ao-tut-coach', role: 'status', 'aria-live': 'polite', hidden: true }, coachHead, coachText);
     const start = btn('В бой', () => invoke('onStart', { from: 'tutorial' }), { variant: 'primary', size: 'lg' });
     const recal = btn('Перекалибровать', pressCalibrate);
     const back = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
@@ -1318,6 +1331,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           { class: 'ao-tut-ready' },
           status.node,
           ready,
+          coach,
           el('p', { class: 'ao-note', text: 'Остановить бой: кнопка «Пауза» в углу экрана или Esc. Если выйти из кадра, бой встанет на паузу сам.' }),
           el('div', { class: 'ao-actions ao-actions--inline' }, start.node, recal.node, el('span', { class: 'ao-spacer' }), back.node),
         ),
@@ -1334,7 +1348,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       host,
       focus: () => start.node,
       reset() {
-        Object.assign(state.tut, { left: false, right: false, dash: false, attack: false, shield: false, burst: false, dashAt: -1e9, burstAt: -1e9, conj: false, thrown: false, throwAt: -1e9 });
+        Object.assign(state.tut, { left: false, right: false, dash: false, attack: false, shield: false, burst: false, dashAt: -1e9, burstAt: -1e9, conj: false, thrown: false, throwAt: -1e9, hint: null });
       },
       update(ctx) {
         const st = ctx.tr.status;
@@ -1354,6 +1368,14 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         const inp = ctx.input;
         const liveCv = !!inp && inp.source === 'cv' && !ctx.debug;
         const t = state.tut;
+        if (inp && inp.hint && inp.hint.text) t.hint = { ...inp.hint, at: ctx.now };
+        const showHint = !!t.hint && ctx.now - t.hint.at < 4500;
+        setHidden(coach, !showHint);
+        if (showHint) {
+          const side = t.hint.side === 'left' ? ' · левая рука' : t.hint.side === 'right' ? ' · правая рука' : '';
+          setText(coachHead, `Ошибка · ${t.hint.gesture}${side}`);
+          setText(coachText, t.hint.text);
+        }
         if (liveCv && inp.valid) {
           if (inp.moveX <= -STRAFE_SEEN) t.left = true;
           if (inp.moveX >= STRAFE_SEEN) t.right = true;

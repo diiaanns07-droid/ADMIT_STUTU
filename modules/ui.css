@@ -1350,6 +1350,26 @@
   align-items: start;
   margin-top: 1rem;
 }
+.ao-tut-coach {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.55rem 0.8rem;
+  border-left: 3px solid var(--ao-ember, #ff6a3c);
+  background: rgba(255, 106, 60, 0.09);
+  animation: ao-coach-in 0.25s ease-out;
+}
+.ao-tut-coach[hidden] { display: none; }
+.ao-tut-coach__head {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ao-ember, #ff6a3c);
+}
+.ao-tut-coach__text { font-size: 0.98rem; line-height: 1.35; color: var(--ao-text); }
+@keyframes ao-coach-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.ao-reduced-motion .ao-tut-coach { animation: none; }
 .ao-tut-ready .ao-msg {
   margin-top: 0.35rem;
 }

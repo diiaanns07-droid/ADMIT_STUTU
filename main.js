@@ -666,6 +666,8 @@ function frame(now) {
   const dt = dtReal * ts;
 
   const input = readInput();
+  // [ТВИСТ «ОШИБКА»] код подсказки → жест и текст исправления (для HUD, обучения и итогов)
+  if (input && input.hint && hintInfo(input.hint.code)) input.hint = { ...input.hint, ...hintInfo(input.hint.code) };
   app.lastInput = input;
   let events = NO_EVENTS;
 
