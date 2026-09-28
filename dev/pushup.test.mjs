@@ -25,7 +25,9 @@ function pose(k, view, o = {}) {
     put(0, 0.36, sy - 0.02); put(11, 0.5, sy); put(12, 0.51, sy + 0.005, 0.6);
     put(13, 0.5 + bend * 0.13, (sy + wy) / 2 - bend * 0.03); put(14, 0.51 + bend * 0.13, (sy + wy) / 2 - bend * 0.03, 0.6);
     if (!o.noWrists) { put(15, 0.5, wy); put(16, 0.51, wy, 0.6); }
-    put(23, 0.78, sy + 0.04); put(24, 0.79, sy + 0.04, 0.6);
+    const hipDy = o.hip === 'sag' ? 0.06 : o.hip === 'pike' ? -0.07 : 0;  // [ОШИБКА] таз ниже/выше линии тела
+    put(23, 0.78, sy + 0.04 + hipDy * Math.min(1, k * 3)); put(24, 0.79, sy + 0.04 + hipDy * Math.min(1, k * 3), 0.6);
+    put(25, 0.93, sy + 0.064); put(26, 0.94, sy + 0.064, 0.6);
   }
   return L;
 }
@@ -43,6 +45,22 @@ function run(c, view, reps, o = {}) {
   }
   return t;
 }
+
+test('[ОШИБКА] вид сбоку: таз провисает → не засчитано, подсказка «таз провисает»', () => {
+  const c = createPushupCounter();
+  run(c, 'side', 3, { hip: 'sag' });
+  const r = c.read();
+  assert(r.reps === 0 && r.faults.sag === 3, 'reps ' + r.reps + ' ' + JSON.stringify(r.faults) + ' line ' + r.line);
+  assert(/провисает/.test(r.message), r.message);
+});
+
+test('[ОШИБКА] вид сбоку: таз задран → не засчитано, подсказка «таз задран»', () => {
+  const c = createPushupCounter();
+  run(c, 'side', 2, { hip: 'pike' });
+  const r = c.read();
+  assert(r.reps === 0 && r.faults.pike === 2, 'reps ' + r.reps + ' ' + JSON.stringify(r.faults));
+  assert(/задран/.test(r.message), r.message);
+});
 
 test('вид спереди: 10 чистых повторов = 10', () => {
   const c = createPushupCounter();
