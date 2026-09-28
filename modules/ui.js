@@ -1506,6 +1506,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       ['dodges', 'Уклонения'],
       ['blocks', 'Блоки щитом'],
       ['remain', win_ ? 'Здоровье героя' : 'Здоровье Регента'],
+      ['accuracy', 'Точность жестов'],
     ];
     for (const [key, label] of ROWS) {
       const dd = el('dd', { class: 'ao-stat__v', text: '—' });
@@ -1513,6 +1514,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       rows[key] = dd;
     }
     const tip = el('p', { class: 'ao-tip', hidden: true });
+    // [ТВИСТ «ОШИБКА»] самая частая ошибка жеста за бой и как её исправить
+    const coachTip = el('p', { class: 'ao-tip ao-tip--coach', hidden: true });
     const again = btn('Сразиться снова', () => invoke('onRestart'), { variant: 'primary', size: 'lg' });
     const oathR = btn('Клятва героя', () => invoke('onOath', { from: kind }));
     const exit = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
@@ -1523,6 +1526,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       h,
       summary,
       stats,
+      coachTip,
       tip,
       el('div', { class: 'ao-actions ao-actions--center' }, again.node, oathR.node, exit.node),
     );
@@ -1546,6 +1550,12 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setText(rows.taken, fmtInt(st.damageTaken));
         setText(rows.dodges, fmtInt(st.dodges));
         setText(rows.blocks, fmtInt(st.blocks));
+        const c = ctx.coach;
+        setText(rows.accuracy, c && Number.isFinite(c.accuracy) ? `${c.accuracy}%  ·  ${c.good} из ${c.good + c.mistakes} жестов без ошибки` : '—');
+        if (c && c.top) {
+          setText(coachTip, `Чаще всего не получалось: ${c.top.gesture} (×${c.top.count}). ${c.top.text}.`);
+          setHidden(coachTip, false);
+        } else setHidden(coachTip, true);
         if (win_) {
           const maxHp = Math.max(1, num(p.maxHp, 1));
           setText(rows.remain, `${Math.ceil(clamp(num(p.hp), 0, maxHp))} из ${Math.round(maxHp)}`);
@@ -2100,6 +2110,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       tr,
       calibrated: resolveCalibrated(tr, input),
       snap: vm.snapshot && typeof vm.snapshot === 'object' ? vm.snapshot : null,
+      coach: vm.coach && typeof vm.coach === 'object' ? vm.coach : null,
       settings: normSettings(vm.settings),
       errorText:
         (typeof vm.error === 'string' && vm.error) ||

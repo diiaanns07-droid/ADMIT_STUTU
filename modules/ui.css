@@ -1442,6 +1442,13 @@
   background: rgba(196, 162, 101, 0.06);
   margin-bottom: 0.2rem;
 }
+.ao-panel--result .ao-stat:last-child:nth-child(3n + 1) {
+  grid-column: 1 / -1; /* [ОШИБКА] «Точность жестов» — на всю ширину */
+}
+.ao-tip--coach {
+  border-left-color: var(--ao-ember, #ff6a3c);
+  background: rgba(255, 106, 60, 0.07);
+}
 .ao-panel--result .ao-actions {
   border-top: 0;
   padding-top: 0;

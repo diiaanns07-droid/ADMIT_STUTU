@@ -535,6 +535,7 @@ function renderUI() {
     pauseReason: app.pauseReason,
     progress: { ...progression.getView(), emberTotal: EMBER_TOTAL },
     training: app.screen === 'training' ? trainingView() : null,
+    coach: app.screen === 'victory' || app.screen === 'defeat' ? coachStats.summary() : null, // [ТВИСТ «ОШИБКА»] итог
   });
 }
 function trainingView() {

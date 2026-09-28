@@ -181,6 +181,7 @@ export const FIXTURES = {
       boss: { hp: 0, stage: 2, action: 'dead' },
       stats: { damageDealt: 1000, damageTaken: 54, dodges: 9, blocks: 6 },
     }),
+    coach: { good: 31, mistakes: 7, accuracy: 82, top: { code: 'ok_ring_open', count: 4, gesture: '«OK» · снаряд', text: 'Сомкни кончики большого и указательного в кольцо' } },
   }),
   defeat: vm({
     screen: 'defeat',
