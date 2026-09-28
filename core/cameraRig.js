@@ -13,7 +13,8 @@
 // колонна между героем и камерой подтягивает камеру к герою.
 //
 // update(dt, state) → { position, target, right, forward, yaw }
-//   state = { player:{x,y,z}, playerYaw, velocity:{x,z}, boss:{x,y,z}, engaged, impulse:{x,y,z}, colliders }
+//   state = { player:{x,y,z}, playerYaw, velocity:{x,z}, boss:{x,y,z}, engaged, impulse:{x,y,z}, colliders, groundY? }
+//   colliders — круги и отрезки раскладки; groundY(x,z) — высота земли (камера держится над ней).
 // Совместимость V1: update(dt, player, boss, impulse) — это engaged.
 
 const TAU = Math.PI * 2;
@@ -32,7 +33,7 @@ export function createCameraRig(cfg) {
   const E = {
     followDistance: 4.6, followHeight: 2.35, followShoulder: 0.55, lookAhead: 2.2, lookHeight: 1.45,
     alignDelay: 0.6, alignSharpness: 1.6, alignMinSpeed: 1.2, alignMaxDiffDeg: 125,
-    blendTime: 0.6, collisionMargin: 0.35,
+    blendTime: 0.6, collisionMargin: 0.35, groundClearance: 0.9,
     ...(cfg && cfg.explore ? cfg.explore : {}),
   };
   const s = {
@@ -139,6 +140,21 @@ export function createCameraRig(cfg) {
     if (L < 1e-4) return pos;
     let tMin = 1;
     for (const c of colliders) {
+      if (c && c.type === 'segment') {
+        // [ASHEN_V3] стены: выборка по лучу (отрезок-капсула); стена, в которой стоит герой, не в счёт
+        const R = (c.r || 0) + E.collisionMargin;
+        const ex = c.bx - c.ax, ez = c.bz - c.az, L2 = ex * ex + ez * ez || 1;
+        const segD = (x, z) => { const u = Math.max(0, Math.min(1, ((x - c.ax) * ex + (z - c.az) * ez) / L2)); return Math.hypot(x - c.ax - ex * u, z - c.az - ez * u); };
+        const mx = Math.min(c.ax, c.bx) - R, Mx = Math.max(c.ax, c.bx) + R, mz = Math.min(c.az, c.bz) - R, Mz = Math.max(c.az, c.bz) + R;
+        if (Math.max(ax, pos.x) < mx || Math.min(ax, pos.x) > Mx || Math.max(az, pos.z) < mz || Math.min(az, pos.z) > Mz) continue;
+        if (segD(ax, az) < R) continue;
+        for (let i = 1; i <= 12; i++) {
+          const t = i / 12;
+          if (t >= tMin) break;
+          if (segD(ax + dx * t, az + dz * t) < R) { tMin = Math.max(0, t - 1 / 12); break; }
+        }
+        continue;
+      }
       if (!c || c.type !== 'circle') continue;
       const R = c.r + E.collisionMargin;
       const fx = ax - c.x, fz = az - c.z;
@@ -182,6 +198,13 @@ export function createCameraRig(cfg) {
       }
     }
     pos = collide(player, pos, st.colliders);
+    // [ASHEN_V3] рельеф большой карты: камера не уходит под землю на склонах (state.groundY — функция раскладки)
+    if (typeof st.groundY === 'function') {
+      let gy = NaN;
+      try { gy = Number(st.groundY(pos.x, pos.z)); } catch (e) { gy = NaN; }
+      const minY = gy + E.groundClearance;
+      if (Number.isFinite(minY) && pos.y < minY) pos = { x: pos.x, y: minY, z: pos.z };
+    }
 
     const lim = cfg.maxImpulse;
     const clamp = (v) => Math.max(-lim, Math.min(lim, v || 0));

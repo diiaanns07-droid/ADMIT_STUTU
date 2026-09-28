@@ -737,6 +737,28 @@ export function createWorld({ THREE, scene, renderer, camera, config = {} } = {}
     return mesh;
   }
 
+  // [ASHEN_V3] Экземпляры, разбросанные по большой карте: InstancedMesh на клетку chunk×chunk м
+  // с настоящими границами — отсекаются по кадру и по теневой камере; дальше cull м — скрыты
+  // (туман там и так почти сплошной).
+  const culledChunks = [];   // {mesh, x, z, r, cull}
+  function buildInstancedChunked(geo, mat, items, { chunk = 64, cull = 200, ...opts } = {}) {
+    const groups = new Map();
+    const p = new THREE.Vector3();
+    for (const it of items) {
+      p.setFromMatrixPosition(it.m);
+      const k = Math.floor(p.x / chunk) * 4096 + Math.floor(p.z / chunk);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(it);
+    }
+    for (const list of groups.values()) {
+      const mesh = buildInstanced(geo, mat, list, opts);
+      mesh.frustumCulled = true;
+      if (mesh.computeBoundingSphere) mesh.computeBoundingSphere();
+      const bs = mesh.boundingSphere;
+      if (bs) culledChunks.push({ mesh, x: bs.center.x, z: bs.center.z, r: bs.radius, cull });
+    }
+  }
+
   /* ---------------- Небо, затмение, высотный туман (atmosphere.js) ---------------- */
   const atmo = createAtmosphere({
     THREE, scene, renderer, camera, parent: env, G, M, T,
@@ -759,9 +781,11 @@ export function createWorld({ THREE, scene, renderer, camera, config = {} } = {}
   moonLight.position.copy(atmo.keyDir).multiplyScalar(40);
   moonLight.target.position.set(0, 0, 0);
   lights.add(moonLight, moonLight.target);
-  moonLight.shadow.camera.left = -21; moonLight.shadow.camera.right = 21;
-  moonLight.shadow.camera.top = 21; moonLight.shadow.camera.bottom = -21;
-  moonLight.shadow.camera.near = 4; moonLight.shadow.camera.far = 84;
+  const SHADOW_HALF = 21;   // [ASHEN_V3] камера тени следует за героем (followShadow), свет — с 80 м по ключу
+  moonLight.shadow.camera.left = -SHADOW_HALF; moonLight.shadow.camera.right = SHADOW_HALF;
+  moonLight.shadow.camera.top = SHADOW_HALF; moonLight.shadow.camera.bottom = -SHADOW_HALF;
+  moonLight.shadow.camera.near = 20; moonLight.shadow.camera.far = 150;
+  moonLight.shadow.camera.updateProjectionMatrix();
   moonLight.shadow.bias = -0.0004;
   moonLight.shadow.normalBias = 0.035;
   const FILL_I = 0.55;
@@ -858,8 +882,18 @@ float ashPuddle( vec2 xz ) {
     applyPBR(matStoneFlat, t, { normal: 1 });
     applyPBR(matSigilSide, t, { normal: 0.8 });
     matFloor.roughness = 1; matStone.roughness = 1; matStoneFlat.roughness = 1; matSigilSide.roughness = 1;
+    applyTerrainPBR(t);
   });
-  loadPBR('monastery_stone_floor', (t) => { applyPBR(matGround, t, { normal: 0.9, ao: 0.8 }); matGround.roughness = 1; });
+  loadPBR('monastery_stone_floor', (t) => { applyPBR(matGround, t, { normal: 0.9, ao: 0.8 }); matGround.roughness = 1; terrainU.tPave.value = t.diff; });
+  // [ASHEN_V3] земля большой карты: трипланарный альбедо камня + нормали/шероховатость по плоской UV
+  function applyTerrainPBR(t) {
+    terrainU.tRock.value = t.diff;
+    matTerrain.normalMap = t.nor_gl;
+    matTerrain.normalScale = new THREE.Vector2(0.85, 0.85);
+    matTerrain.roughnessMap = t.arm;
+    matTerrain.roughness = 1;
+    matTerrain.needsUpdate = true;
+  }
 
   /* ------------------------------ Пол арены ------------------------------ */
   const FLOOR_UV = 3.2; // метров на повтор текстуры
@@ -996,33 +1030,265 @@ float ashPuddle( vec2 xz ) {
     const jag = (noise.fbm((a / TAU + 0.5) * 18, 4.4, 18, 3) - 0.5) * 8;
     return (lerp(EDGE.base, EDGE.spur, spur) + jag) * K;
   }
-  function groundY(x, z) {
-    const r = Math.hypot(x, z), a = Math.atan2(x, z);
+  /* ---------------- [ASHEN_V3] Большая карта 500×500 м: рельеф, зоны, дороги ---------------- */
+  // Плато арены в центре — прежнее (coreY). За его краем земля не обрывается, а уходит холмами и
+  // долинами до края мира — суперэллипса |x|^4+|z|^4 ≈ 238^4 (квадрат 500×500 со скруглёнными
+  // углами), где скальный вал обрывается в море тумана. Одна функция terrainH кормит и видимую
+  // землю, и раскладку боя (IK стоп, проходимость, высота героя).
+  const WORLD_EDGE = 238;
+  const LAKE_WL = -2.6;             // уровень воды Зеркального озера
+  const ZONES = {
+    city:   { id: 'city',   name: 'Нижний город',      x: 96,   z: 96,   r: 50 },
+    forest: { id: 'forest', name: 'Пепельный лес',     x: -142, z: 4,    r: 72 },
+    lake:   { id: 'lake',   name: 'Зеркальное озеро',  x: -80,  z: 110,  r: 30 },
+    graves: { id: 'graves', name: 'Кладбище колоссов', x: 140,  z: -95,  r: 46 },
+    hill:   { id: 'hill',   name: 'Холм клятвы',       x: -95,  z: -140, r: 14, top: 22 },
+    gate:   { id: 'gate',   name: 'Павшие врата',      x: 0,    z: 214,  r: 16 },
+  };
+  const LAKE_ISLAND = { x: -72.9, z: 100.3, r: 5 };
+  const LAKE_SHORE = { x: -61.8, z: 84.9 };
+  // Дороги от арены к зонам: на полосе земля без складок и вымощена (текстура плит).
+  const ROADS = [
+    [[20, 22], [50, 52], [72, 74], [96, 96]],                          // → Нижний город
+    [[-24, 6], [-44, 4], [-80, -6], [-112, 4], [-142, 4]],             // → Пепельный лес
+    [[-22, 26], [-44, 56], [-58, 78], [LAKE_SHORE.x, LAKE_SHORE.z]],    // → Зеркальное озеро
+    [[18, -14], [52, -22], [80, -55], [110, -80], [140, -95]],         // → Кладбище колоссов
+    [[-14, -40], [-50, -70], [-72, -102], [-88, -126], [-95, -140]],   // → Холм клятвы
+    [[0, 36], [4, 90], [-4, 150], [0, 230]],                           // → Павшие врата
+    [[96, 96], [138, 46], [152, -20], [140, -95]],                     // город ↔ кладбище
+    [[-142, 4], [-122, 50], [-100, 85]],                               // лес ↔ озеро
+  ];
+  const ROAD_HW = 1.9;
+  const roadSegs = [];
+  for (const pl of ROADS) for (let i = 0; i + 1 < pl.length; i++) {
+    const [ax, az] = pl[i], [bx, bz] = pl[i + 1];
+    const ex = bx - ax, ez = bz - az;
+    roadSegs.push({ ax, az, ex, ez, L2: ex * ex + ez * ez || 1,
+      x0: Math.min(ax, bx) - 8, x1: Math.max(ax, bx) + 8, z0: Math.min(az, bz) - 8, z1: Math.max(az, bz) + 8 });
+  }
+  function roadDist(x, z) {
+    let best = 99;
+    for (let i = 0; i < roadSegs.length; i++) {
+      const s = roadSegs[i];
+      if (x < s.x0 || x > s.x1 || z < s.z0 || z > s.z1) continue;
+      const u = clamp(((x - s.ax) * s.ex + (z - s.az) * s.ez) / s.L2, 0, 1);
+      const d = Math.hypot(x - s.ax - s.ex * u, z - s.az - s.ez * u);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+  const edgeJag = (a) => (noise.fbm((a / TAU + 0.5) * 32, 9.7, 32, 3) - 0.5) * 16;
+  const superF = (a) => { const s = Math.sin(a), c = Math.cos(a); return Math.sqrt(Math.sqrt(s * s * s * s + c * c * c * c)); };
+  // >0 — внутри мира (м до кромки обрыва), <0 — за краем
+  function edgeDist(x, z) {
+    const x2 = x * x, z2 = z * z;
+    return WORLD_EDGE + edgeJag(Math.atan2(x, z)) - Math.sqrt(Math.sqrt(x2 * x2 + z2 * z2));
+  }
+  // точка на расстоянии off от кромки по азимуту a
+  function edgePoint(a, off) {
+    const rr = (WORLD_EDGE + edgeJag(a) - off) / superF(a);
+    return { x: Math.sin(a) * rr, z: Math.cos(a) * rr };
+  }
+  // Прежнее плато (V1/V2): волны у колонн, ровно у арены.
+  function coreY(x, z, r, a) {
     const hill = smoothstep(18, 36, r) * (noise.fbm((a / TAU + 0.5) * 12, r * 0.05, 12, 4) * 3.2 - 1.1);
-    const y = -1.0 + Math.max(-0.5, hill) + (noise.n2(x * 0.4, z * 0.4, 0) - 0.5) * 0.18 * smoothstep(13, 16, r);
-    const e = plateauEdge(a);
-    const cliff = smoothstep(e - 3, e + 6, r);
-    return { y: lerp(y, -54 + (noise.n2(x * 0.08, z * 0.08, 0) - 0.5) * 10, cliff), cliff };
+    return -1.0 + Math.max(-0.5, hill) + (noise.n2(x * 0.4, z * 0.4, 0) - 0.5) * 0.18 * smoothstep(13, 16, r);
+  }
+  const smax = (a, b, k) => { const h = clamp(0.5 + 0.5 * (b - a) / k, 0, 1); return lerp(a, b, h) + k * h * (1 - h); };
+  const segDist = (x, z, ax, az, bx, bz) => {
+    const ex = bx - ax, ez = bz - az, u = clamp(((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez || 1), 0, 1);
+    return Math.hypot(x - ax - ex * u, z - az - ez * u);
+  };
+  function terrainH(x, z) {
+    const r = Math.hypot(x, z);
+    const wRoad = smoothstep(ROAD_HW + 4, ROAD_HW, roadDist(x, z));
+    // крупные холмы и складки; складки дорога срезает (мелких нет — сетка земли их не передаст)
+    let y = -1.5 + (noise.fbm(x / 120 + 31.7, z / 120 + 11.3, 0, 4) - 0.5) * 30;
+    y += (noise.fbm(x / 30 + 71.1, z / 30 + 5.3, 0, 2) - 0.5) * 6 * (1 - wRoad * 0.9);
+    const Z = ZONES;
+    let d, w;
+    d = Math.hypot(x - Z.city.x, z - Z.city.z);
+    if (d < Z.city.r + 26) { w = smoothstep(Z.city.r + 26, Z.city.r, d); y = lerp(y, -2, w); }
+    d = Math.hypot(x - Z.graves.x, z - Z.graves.z);
+    if (d < Z.graves.r + 34) { w = smoothstep(Z.graves.r + 34, Z.graves.r, d); y = lerp(y, -5 + (noise.fbm(x / 14, z / 14, 0, 2) - 0.5) * 2.2, w); }
+    d = Math.hypot(x - Z.gate.x, z - Z.gate.z);
+    if (d < Z.gate.r + 24) { w = smoothstep(Z.gate.r + 24, Z.gate.r, d); y = lerp(y, -1, w); }
+    d = Math.hypot(x - Z.hill.x, z - Z.hill.z);
+    if (d < 130) y = smax(y, Z.hill.top - Math.max(0, d - Z.hill.r) * 0.4, 5);
+    const L = Z.lake;
+    d = Math.hypot(x - L.x, z - L.z);
+    if (d < L.r + 30) {
+      const q = d / L.r;
+      const bowl = d < L.r ? LAKE_WL - 3.4 + 4.0 * q * q : LAKE_WL + 0.6 + (d - L.r) * 0.12;
+      y = lerp(y, bowl, smoothstep(L.r + 30, L.r + 3, d));
+      const di = Math.hypot(x - LAKE_ISLAND.x, z - LAKE_ISLAND.z);
+      if (di < 14) y = Math.max(y, LAKE_WL + 0.9 - Math.max(0, di - LAKE_ISLAND.r) * 0.8);
+      const dc = segDist(x, z, LAKE_SHORE.x, LAKE_SHORE.z, LAKE_ISLAND.x, LAKE_ISLAND.z);
+      if (dc < 6) y = Math.max(y, LAKE_WL + 0.32 - Math.max(0, dc - 1.4) * 1.2);
+    }
+    // край мира: скальный вал и обрыв в море тумана
+    const ed = edgeDist(x, z);
+    if (ed < 18) {
+      y += 3.4 * smoothstep(18, 5, ed) * (0.55 + 0.9 * noise.n2(x * 0.09, z * 0.09, 0));
+      if (ed < 5) y = lerp(y, -58 + (noise.n2(x * 0.05, z * 0.05, 0) - 0.5) * 14, smoothstep(5, -9, ed));
+    }
+    // плато арены — как было
+    if (r < 112) {
+      const a = Math.atan2(x, z);
+      const wCore = 1 - smoothstep(plateauEdge(a) - 4, plateauEdge(a) + 26, r);
+      if (wCore > 0) y = lerp(y, coreY(x, z, r, a), wCore);
+    }
+    return y;
+  }
+  function groundY(x, z) {
+    return { y: terrainH(x, z), cliff: smoothstep(7, -2, edgeDist(x, z)) };
+  }
+  function inDeepWater(x, z) {
+    const L = ZONES.lake;
+    return Math.hypot(x - L.x, z - L.z) < L.r + 1 && terrainH(x, z) < LAKE_WL - 0.45;
+  }
+  // городская сетка: локальные оси (u — поперёк, v — от арены)
+  const CITY_TH = Math.PI / 4;
+  const CITY_EX = { x: Math.cos(CITY_TH), z: -Math.sin(CITY_TH) }, CITY_EZ = { x: Math.sin(CITY_TH), z: Math.cos(CITY_TH) };
+  const cityUV = (x, z) => { const dx = x - ZONES.city.x, dz = z - ZONES.city.z; return [dx * CITY_EX.x + dz * CITY_EX.z, dx * CITY_EZ.x + dz * CITY_EZ.z]; };
+  const cityW = (u, v) => ({ x: ZONES.city.x + CITY_EX.x * u + CITY_EZ.x * v, z: ZONES.city.z + CITY_EX.z * u + CITY_EZ.z * v });
+
+  // Материал земли: трипланар по камню (склоны без растяжки), плиты на дорогах и в городе,
+  // крупные пятна против повтора, лужи на ровном (как на полу арены).
+  const terrainU = { tRock: { value: texStone }, tPave: { value: texFloor }, ashWet: { value: { x: 0.5, y: 1, z: 0.42, w: 1.75 } } };
+  const matTerrain = M(new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.96, metalness: 0 }));
+  matTerrain.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, terrainU);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aPave;\nvarying float vPave;\nvarying vec3 vAshWorldPos;\nvarying vec3 vTerN;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\n  vAshWorldPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;\n  vTerN = normalize( mat3( modelMatrix ) * objectNormal );\n  vPave = aPave;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\n' + WET_GLSL + '\nuniform sampler2D tRock;\nuniform sampler2D tPave;\nvarying float vPave;\nvarying vec3 vTerN;')
+      .replace('#include <map_fragment>', `
+  vec3 ashTN = normalize( vTerN );
+  vec3 ashBW = pow( abs( ashTN ), vec3( 4.0 ) ); ashBW /= ( ashBW.x + ashBW.y + ashBW.z );
+  vec3 ashP = vAshWorldPos * 0.25;
+  vec3 ashRock;
+  if ( ashBW.y > 0.985 ) ashRock = texture2D( tRock, ashP.xz ).rgb;          // ровная земля — одна выборка
+  else ashRock = texture2D( tRock, ashP.zy ).rgb * ashBW.x + texture2D( tRock, ashP.xz ).rgb * ashBW.y + texture2D( tRock, ashP.xy ).rgb * ashBW.z;
+  float ashDist = length( vAshWorldPos - cameraPosition );
+  float ashMac = ashWN( vAshWorldPos.xz * 0.043 ) * 0.62 + ashWN( vAshWorldPos.xz * 0.17 + 3.1 ) * 0.38;
+  ashRock *= 0.72 + 0.56 * ashMac;
+  float ashFlat = smoothstep( 0.55, 0.86, ashTN.y );
+  float ashPw = clamp( vPave, 0.0, 1.0 ) * ashFlat;
+  vec3 ashCol = ashRock;
+  if ( ashPw > 0.004 ) ashCol = mix( ashRock, texture2D( tPave, vAshWorldPos.xz * 0.3125 ).rgb, ashPw );
+  float ashLum = dot( ashCol, vec3( 0.2126, 0.7152, 0.0722 ) );
+  ashCol = mix( vec3( ashLum ), ashCol, ashWet.z ) * ashWet.w;
+  float ashPud = 0.0;                                                          // лужи — только вблизи
+  if ( ashDist < 75.0 ) ashPud = ashPuddle( vAshWorldPos.xz ) * ashWet.x * ashFlat * ( 0.45 + 0.55 * ashPw ) * ( 1.0 - smoothstep( 50.0, 75.0, ashDist ) );
+  ashCol *= mix( 1.0, 0.45, ashPud );
+  diffuseColor.rgb *= ashCol;`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+  roughnessFactor = mix( roughnessFactor * ashWet.y, 0.2, ashPud );`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+  normal = normalize( mix( normal, nonPerturbedNormal, ashPud * 0.92 ) );`);
+  };
+  matTerrain.customProgramCacheKey = () => 'ashTerrain';
+
+  const TERRAIN_R0 = 12.95 * K, TERRAIN_R1 = 305;
+  function paveAt(x, z, rd) {
+    const brk = smoothstep(0.18, 0.4, noise.n2(x * 0.23 + 3.3, z * 0.23 + 9.1, 0));
+    let p = smoothstep(ROAD_HW + 0.5, ROAD_HW - 0.7, rd);
+    const [u, v] = cityUV(x, z);
+    if (Math.abs(u) < 47 && Math.abs(v) < 47) p = Math.max(p, 0.9);
+    if (Math.hypot(x - ZONES.hill.x, z - ZONES.hill.z) < 12) p = Math.max(p, 1);
+    if (Math.hypot(x - ZONES.gate.x, z - ZONES.gate.z) < 20) p = Math.max(p, 0.85);
+    return p * brk;
   }
   {
-    const g = new THREE.RingGeometry(12.95 * K, 96 * K, 180, 44);
-    g.rotateX(-Math.PI / 2);
-    const p = g.attributes.position, uvA = g.attributes.uv;
-    const colors = new Float32Array(p.count * 3);
-    for (let i = 0; i < p.count; i++) {
-      const x = p.getX(i), z = p.getZ(i), r = Math.hypot(x, z);
-      const gy = groundY(x, z);
-      p.setY(i, gy.y);
-      uvA.setXY(i, x / 3.2, z / 3.2 + gy.cliff * gy.y / 3.2);
-      const v = lerp(0.95, 0.6, smoothstep(14, 45, r)) * (0.85 + noise.n2(x * 0.15, z * 0.15, 0) * 0.3) * lerp(1, 0.55, gy.cliff);
-      colors[i * 3] = v; colors[i * 3 + 1] = v * 0.98; colors[i * 3 + 2] = v * 0.96;
+    const NA = initialQuality === 'low' ? 384 : 512;
+    const rings = [];
+    for (let r = TERRAIN_R0; ;) { rings.push(r); if (r >= TERRAIN_R1) break; r += Math.max(0.5, r * TAU / NA); }
+    const NR = rings.length, NV = NR * NA;
+    const pos = new Float32Array(NV * 3), uv = new Float32Array(NV * 2), col = new Float32Array(NV * 3), pave = new Float32Array(NV);
+    for (let i = 0; i < NR; i++) {
+      const r = rings[i];
+      for (let j = 0; j < NA; j++) {
+        const a = ((j + (i & 1) * 0.5) / NA) * TAU;
+        const x = Math.sin(a) * r, z = Math.cos(a) * r, k = i * NA + j;
+        const y = terrainH(x, z);
+        pos[k * 3] = x; pos[k * 3 + 1] = y; pos[k * 3 + 2] = z;
+        uv[k * 2] = x / 4; uv[k * 2 + 1] = z / 4;
+        const rd = roadDist(x, z);
+        pave[k] = paveAt(x, z, rd);
+        // пепельный тон, лес темнее и холоднее, у колоссов теплее, у воды мокрее
+        let v0 = lerp(0.95, 0.78, smoothstep(14, 60, r)) * (0.82 + noise.n2(x * 0.07, z * 0.07, 0) * 0.36);
+        let cr = 1, cg = 0.985, cb = 0.965;
+        const fF = smoothstep(ZONES.forest.r + 14, ZONES.forest.r - 16, Math.hypot(x - ZONES.forest.x, z - ZONES.forest.z));
+        v0 *= lerp(1, 0.62, fF); cr -= 0.05 * fF; cb += 0.02 * fF;
+        const fG = smoothstep(ZONES.graves.r + 20, ZONES.graves.r - 10, Math.hypot(x - ZONES.graves.x, z - ZONES.graves.z));
+        cr += 0.06 * fG; cb -= 0.07 * fG;
+        const dl = Math.hypot(x - ZONES.lake.x, z - ZONES.lake.z) - ZONES.lake.r;
+        v0 *= lerp(1, 0.62, smoothstep(6, -2, dl));
+        const ed = edgeDist(x, z);
+        v0 *= lerp(1, 0.7, smoothstep(6, -6, ed));
+        col[k * 3] = v0 * cr; col[k * 3 + 1] = v0 * cg; col[k * 3 + 2] = v0 * cb;
+      }
     }
-    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const idx = new Uint32Array((NR - 1) * NA * 6);
+    let o = 0;
+    for (let i = 0; i < NR - 1; i++) for (let j = 0; j < NA; j++) {
+      const a = i * NA + j, b = i * NA + (j + 1) % NA, c = (i + 1) * NA + j, d = (i + 1) * NA + (j + 1) % NA;
+      if (i & 1) { idx[o++] = a; idx[o++] = b; idx[o++] = d; idx[o++] = a; idx[o++] = d; idx[o++] = c; }
+      else { idx[o++] = a; idx[o++] = b; idx[o++] = c; idx[o++] = b; idx[o++] = d; idx[o++] = c; }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('aPave', new THREE.BufferAttribute(pave, 1));
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
     g.computeVertexNormals();
-    const ground = new THREE.Mesh(G(g), matGround);
+    // обход треугольников должен давать нормаль вверх
+    if (g.attributes.normal.getY(NA * 4) < 0) {
+      for (let t = 0; t < idx.length; t += 3) { const s = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = s; }
+      g.index.needsUpdate = true;
+      g.computeVertexNormals();
+    }
+    // обрывы и склоны темнее
+    const nA = g.attributes.normal;
+    for (let k = 0; k < NV; k++) { const s = lerp(0.62, 1, smoothstep(0.45, 0.9, nA.getY(k))); col[k * 3] *= s; col[k * 3 + 1] *= s; col[k * 3 + 2] *= s; }
+    g.computeBoundingSphere();
+    const ground = new THREE.Mesh(G(g), matTerrain);
     ground.receiveShadow = true;
     ground.name = 'outer-ground';
     env.add(ground);
+  }
+
+  // Зеркальное озеро: глянцевая вода отражает небо затмения (IBL), рябь — в шейдере.
+  const waterU = { uWT: { value: 0 } };
+  const matWater = M(new THREE.MeshPhysicalMaterial({ color: 0x0a1016, roughness: 0.04, metalness: 0, ior: 1.33, specularIntensity: 1 }));
+  matWater.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, waterU);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWWorld;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\n  vWWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uWT;\nvarying vec3 vWWorld;')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+  {
+    vec2 wp = vWWorld.xz; float t = uWT;
+    vec2 wg = vec2( sin( wp.x * 1.7 + t * 1.3 ) + 0.6 * sin( wp.y * 2.3 - t * 0.9 + wp.x * 0.7 ) + 0.3 * sin( ( wp.x + wp.y ) * 4.1 + t * 2.1 ),
+                    cos( wp.y * 1.9 + t * 1.1 ) + 0.5 * cos( wp.x * 2.7 - t * 1.4 - wp.y * 0.5 ) + 0.3 * cos( ( wp.x - wp.y ) * 3.7 - t * 1.8 ) ) * 0.028;
+    normal = normalize( normal + ( viewMatrix * vec4( wg.x, 0.0, wg.y, 0.0 ) ).xyz );
+  }`);
+  };
+  matWater.customProgramCacheKey = () => 'ashWater';
+  atmo.useEnv(matWater, 2.4);
+  {
+    const wg = new THREE.CircleGeometry(ZONES.lake.r + 4, 72);
+    wg.rotateX(-Math.PI / 2);
+    const water = new THREE.Mesh(G(wg), matWater);
+    water.position.set(ZONES.lake.x, LAKE_WL, ZONES.lake.z);
+    water.receiveShadow = true;
+    water.name = 'mirror-lake';
+    env.add(water);
   }
 
   // Хребты-силуэты: два кольца, туман разводит их по глубине.
@@ -1232,6 +1498,545 @@ float ashPuddle( vec2 xz ) {
   arch(100, 23, 6.2, 6.0, 1.7, 1.5, 1.3, { blocks: 11 });
   arch(262, 23.5, 6.4, 6.0, 1.7, 1.5, 1.3, { blocks: 11, missing: [0, 1, 2, 3], brokenLeftH: 3.2 });
 
+  /* ===================== [ASHEN_V3] ЗОНЫ БОЛЬШОЙ КАРТЫ ===================== */
+  // Всё крупное — в слитые меши по зоне (стены, башни, колоссы) или в общие InstancedMesh
+  // (колонны, блоки, деревья, валуны): десяток вызовов отрисовки на всю карту.
+  // Коллайдеры — из тех же размеров, что видно; мелочь (щебень, камешки) — без коллайдеров
+  // и по уровням качества.
+  const LANDMARKS = [];
+  const lakeGlints = [];                // отражения фонарей на воде (поворачиваются к камере)
+  const CLEARINGS = [];                 // поляны под угли: без деревьев и валунов
+  const zoneParts = [];                 // слитый камень зон (matStone)
+  const glowParts = [];                 // тёплые окна, руны путевых камней
+  const treeItems = [[], [], []];
+  const boulderItems = [], pebbleItems = [];
+  const gyT = terrainH;
+  const landmark = (z, extra = {}) => LANDMARKS.push(Object.freeze({ id: z.id, kind: 'landmark', name: z.name, x: z.x, y: gyT(z.x, z.z), z: z.z, r: z.r, ...extra }));
+  // слитый меш зоны: у каждой зоны свои границы — вне кадра и вне теневой камеры не рисуется
+  function flushZone(name) {
+    if (!zoneParts.length) return;
+    const m = new THREE.Mesh(G(mergeGeos(zoneParts.splice(0))), matStone);
+    m.castShadow = true; m.receiveShadow = true;
+    m.name = name;
+    env.add(m);
+  }
+  function putGeo(g, x, y, z, yaw = 0, list = zoneParts) { if (yaw) g.rotateY(yaw); g.translate(x, y, z); list.push(g); return g; }
+  function colliderFree(x, z, m) {
+    for (const c of LAYOUT_COLLIDERS) {
+      if (c.type === 'circle') { if (Math.hypot(x - c.x, z - c.z) < c.r + m) return false; }
+      else if (segDist(x, z, c.ax, c.az, c.bx, c.bz) < c.r + m) return false;
+    }
+    return true;
+  }
+  function rubble(x, z, spread, n, rnd) {
+    for (let i = 0; i < n; i++) {
+      const s = 0.2 + Math.pow(rnd(), 2) * 0.55;
+      const px = x + (rnd() - 0.5) * spread * 2, pz = z + (rnd() - 0.5) * spread * 2;
+      blocks.push(instItem(new THREE.Vector3(px, gyT(px, pz) + s * 0.25, pz), { x: rnd() * 0.7, y: rnd() * TAU, z: rnd() * 0.7 },
+        { x: s * (1 + rnd()), y: s * (0.6 + rnd() * 0.5), z: s * (1 + rnd()) }, rnd() < 0.5 ? 1 : 2, stoneTint(rnd, 0.82)));
+    }
+  }
+  // Стена из секций по отрезку: у руин высота по шуму, провалы, зубцы, щебень у подножия.
+  function wallRun(ax, az, bx, bz, h, t, o = {}) {
+    const rnd = o.rnd || seedRnd;
+    const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz);
+    if (L < 0.5) return;
+    const ux = dx / L, uz = dz / L, yaw = Math.atan2(-uz, ux);
+    const n = Math.max(1, Math.round(L / (o.sec || 3.4))), sl = L / n;
+    for (let i = 0; i < n; i++) {
+      const s = (i + 0.5) * sl, cx = ax + ux * s, cz = az + uz * s;
+      if ((o.gaps && o.gaps.some(([g0, g1]) => s > g0 && s < g1)) || (i > 0 && i < n - 1 && rnd() < (o.gap != null ? o.gap : 0.12))) {
+        rubble(cx, cz, 1.5, 4, rnd);
+        continue;
+      }
+      const prof = o.ruin === false ? 0.92 + rnd() * 0.08 : clamp(0.2 + 1.0 * noise.fbm(cx * 0.08 + 13, cz * 0.08 + 7, 0, 2) + (rnd() - 0.5) * 0.3, 0.16, 1);
+      const hh = h * prof;
+      const gA = gyT(cx - ux * sl / 2, cz - uz * sl / 2), gB = gyT(cx + ux * sl / 2, cz + uz * sl / 2);
+      const y0 = Math.min(gA, gB) - 0.7, H = hh + Math.max(gA, gB) - y0;
+      const tt = t * (0.95 + rnd() * 0.1);
+      const g = chiseled(sl * 1.01, H, tt, { bevel: 0.1, jitter: 0.07, uvScale: 2.4, seed: 700 + zoneParts.length });
+      g.translate(0, H / 2, 0);
+      putGeo(g, cx, y0, cz, yaw);
+      if (hh > 1.4 && rnd() < 0.4) {
+        const bw = 0.6 + rnd() * 0.8, bh = 0.4 + rnd() * 0.5;
+        const b = chiseled(bw, bh, tt * 0.92, { bevel: 0.06, jitter: 0.05, uvScale: 2.4, seed: 900 + zoneParts.length });
+        b.translate((rnd() - 0.5) * (sl - bw), H + bh / 2 - 0.02, 0);
+        putGeo(b, cx, y0, cz, yaw);
+      }
+      addSegment(cx - ux * sl / 2, cz - uz * sl / 2, cx + ux * sl / 2, cz + uz * sl / 2, tt / 2 + 0.05);
+      if (rnd() < 0.3) { const sd = rnd() < 0.5 ? 1 : -1; rubble(cx - uz * sd * (tt / 2 + 0.9), cz + ux * sd * (tt / 2 + 0.9), 0.8, 2, rnd); }
+    }
+  }
+  // Квадратная башня: карниз, зубцы или шатёр, тёплые окна.
+  function towerAt(x, z, w, h, o = {}) {
+    const rnd = o.rnd || seedRnd, yaw = o.yaw || 0, hw = w / 2;
+    const y0 = Math.min(gyT(x - hw, z - hw), gyT(x + hw, z + hw), gyT(x - hw, z + hw), gyT(x + hw, z - hw)) - 0.8;
+    const H = h + (gyT(x, z) - y0);
+    const g = chiseled(w, H, w * 0.94, { bevel: 0.18, jitter: 0.12, taperTop: 0.9, uvScale: 2.6, seed: 400 + zoneParts.length });
+    g.translate(0, H / 2, 0);
+    putGeo(g, x, y0, z, yaw);
+    for (const f of [0.34, 0.66]) {
+      const band = chiseled(w * lerp(1.07, 0.97, f), 0.42, w * lerp(1.01, 0.91, f), { bevel: 0.08, jitter: 0.04, uvScale: 2.6, seed: 450 + zoneParts.length });
+      band.translate(0, H * f, 0);
+      putGeo(band, x, y0, z, yaw);
+    }
+    const tw = w * 0.9 / 2;
+    if (o.roof) {
+      const rh = w * (1.4 + rnd() * 0.8);
+      const cone = new THREE.ConeGeometry(w * 0.74, rh, 4, 1);
+      cone.rotateY(Math.PI / 4);
+      cone.translate(0, H + rh / 2 - 0.05, 0);
+      boxProjectUV(cone, 2.6);
+      putGeo(cone, x, y0, z, yaw);
+    } else {
+      for (let k = 0; k < 8; k++) {
+        if (rnd() < 0.35) continue;
+        const side = k >> 1, t2 = (k & 1) ? 0.5 : -0.5;
+        const lx = side === 0 ? t2 * tw * 1.4 : side === 1 ? tw - 0.3 : side === 2 ? t2 * tw * 1.4 : -tw + 0.3;
+        const lz = side === 0 ? tw - 0.3 : side === 1 ? t2 * tw * 1.4 : side === 2 ? -tw + 0.3 : t2 * tw * 1.4;
+        const bh = 0.7 + rnd() * 0.8;
+        const b = chiseled(0.9, bh, 0.9, { bevel: 0.07, jitter: 0.05, uvScale: 2.4, seed: 480 + zoneParts.length });
+        b.translate(lx, H + bh / 2 - 0.05, lz);
+        putGeo(b, x, y0, z, yaw);
+      }
+    }
+    if (o.windows) {
+      const nWin = 2 + (rnd() * 4 | 0);
+      for (let k = 0; k < nWin; k++) {
+        const f = (rnd() * 4) | 0, fy = 0.45 + rnd() * 0.45, hwF = (w / 2) * lerp(1, 0.9, fy) + 0.03;
+        const q = new THREE.PlaneGeometry(0.55, 1.05);
+        q.rotateY(f * Math.PI / 2);
+        const s = (rnd() - 0.5) * w * 0.45;
+        const lx = f === 0 ? s : f === 1 ? hwF : f === 2 ? -s : -hwF, lz = f === 0 ? hwF * 0.94 : f === 1 ? -s : f === 2 ? -hwF * 0.94 : s;
+        q.translate(lx, H * fy, lz);
+        putGeo(q, x, y0, z, yaw, glowParts);
+      }
+    }
+    addCircle(x, z, w * 0.64);
+  }
+  // Колонна на рельефе в общие InstancedMesh (tier 0 — у неё коллайдер).
+  function colAt(x, z, h, type, rnd) {
+    const y0 = gyT(x, z) - 0.35, rad = 0.55 + rnd() * 0.1, yaw = rnd() * TAU, tint = stoneTint(rnd);
+    addCircle(x, z, rad * 1.32);
+    const b = new THREE.Vector3(x, y0, z);
+    plinths.push(instItem(b, { y: yaw }, { x: rad * 2.5, y: 0.7, z: rad * 2.5 }, 0, tint));
+    shafts.push(instItem(b.clone().setY(y0 + 0.7), { y: yaw }, { x: rad, y: h, z: rad }, 0, tint));
+    if (type === 'tall') caps.push(instItem(b.clone().setY(y0 + 0.7 + h), { y: yaw }, { x: rad, y: 1, z: rad }, 0, tint));
+    else tops.push(instItem(b.clone().setY(y0 + 0.68 + h), { y: yaw }, { x: rad * 0.995, y: 0.35 + rnd() * 0.5, z: rad * 0.995 }, 0, tint));
+  }
+  // Мёртвое дерево: изогнутый ствол с раструбом, 5–7 сучьев с веточками, корни.
+  function deadTreeGeo(seed) {
+    const rr = mulberry32(seed * 7919 + 13);
+    const parts = [];
+    const H = 7.5 + rr() * 3.5, bx0 = (rr() - 0.5) * 1.4, bz0 = (rr() - 0.5) * 1.4;
+    const bend = (y) => { const t = y / H; return [bx0 * t * t, bz0 * t * t]; };
+    const trunk = new THREE.CylinderGeometry(0.09, 0.34, H, 6, 5, true);
+    trunk.translate(0, H / 2, 0);
+    { const p = trunk.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const y = p.getY(i), [bx, bz] = bend(y), fl = 1 + 1.1 * Math.pow(1 - clamp(y / 1.4, 0, 1), 2);
+        const kn = 1 + (hash3(Math.round(Math.atan2(p.getX(i), p.getZ(i)) * 3), Math.round(y * 2), seed, 5) - 0.5) * 0.25;
+        p.setXYZ(i, p.getX(i) * fl * kn + bx, y, p.getZ(i) * fl * kn + bz);
+      } }
+    parts.push(trunk);
+    const up = new THREE.Vector3(0, 1, 0);
+    const limb = (x, y, z, dir, len, r0, seg = 4) => {
+      const c = new THREE.CylinderGeometry(Math.max(0.012, r0 * 0.25), r0, len, seg, 1, true);
+      c.translate(0, len / 2, 0);
+      const p = c.attributes.position;
+      for (let i = 0; i < p.count; i++) { const t = p.getY(i) / len; p.setX(i, p.getX(i) + Math.sin(t * 3 + seed) * 0.12 * t * len * 0.1); }
+      c.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(up, dir));
+      c.translate(x, y, z);
+      parts.push(c);
+    };
+    const nb = 5 + ((rr() * 3) | 0);
+    for (let i = 0; i < nb; i++) {
+      const y = H * (0.34 + 0.56 * (i / nb) + rr() * 0.05), [bx, bz] = bend(y);
+      const len = (1.5 + rr() * 2.6) * (1.15 - (y / H) * 0.55);
+      const yb = rr() * TAU, pitch = deg(28 + rr() * 42);
+      const dir = new THREE.Vector3(Math.sin(pitch) * Math.sin(yb), Math.cos(pitch), Math.sin(pitch) * Math.cos(yb));
+      const r0 = 0.11 * (1 - y / H) + 0.035;
+      limb(bx, y, bz, dir, len, r0);
+      if (rr() < 0.75) {
+        const t2 = 0.45 + rr() * 0.35;
+        const d2 = dir.clone().add(new THREE.Vector3((rr() - 0.5) * 1.3, 0.5 + rr() * 0.4, (rr() - 0.5) * 1.3)).normalize();
+        limb(bx + dir.x * len * t2, y + dir.y * len * t2, bz + dir.z * len * t2, d2, len * (0.4 + rr() * 0.25), r0 * 0.5, 3);
+      }
+    }
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * TAU + rr() * 0.8;
+      limb(0, 0.45, 0, new THREE.Vector3(Math.sin(a), -0.32, Math.cos(a)).normalize(), 1.3 + rr() * 0.6, 0.13, 4);
+    }
+    const g = mergeGeos(parts);
+    boxProjectUV(g, 1.3);
+    return G(g);
+  }
+  function addTree(x, z, variant, s, rnd, tint) {
+    treeItems[variant].push(instItem(new THREE.Vector3(x, gyT(x, z) - 0.2, z), { x: (rnd() - 0.5) * 0.08, y: rnd() * TAU, z: (rnd() - 0.5) * 0.08 },
+      { x: s, y: s * (0.9 + rnd() * 0.25), z: s }, 0, tint || new THREE.Color().setScalar(0.34 + rnd() * 0.2).multiply(new THREE.Color(1.04, 1, 0.96))));
+    addCircle(x, z, 0.46 * s);
+  }
+  function addBoulder(x, z, s, rnd, collide = true, tier = 0) {
+    const list = tier === 0 ? boulderItems : pebbleItems;
+    list.push(instItem(new THREE.Vector3(x, gyT(x, z) - s * 0.3, z), { x: rnd() * 0.6, y: rnd() * TAU, z: rnd() * 0.6 },
+      { x: s * (1 + rnd() * 0.5), y: s * (0.6 + rnd() * 0.4), z: s * (1 + rnd() * 0.4) }, tier, stoneTint(rnd, 0.78)));
+    if (collide && s > 0.7) addCircle(x, z, s * 1.05);
+  }
+
+  /* ---------- Нижний город: сетка улиц под 45°, стена с воротами, кварталы руин, площадь ---------- */
+  {
+    const Cz = ZONES.city, rnd = mulberry32(wc.seed + 911);
+    const yawC = Math.atan2(-CITY_EX.z, CITY_EX.x);   // локальная X → CITY_EX
+    const wallUV = (u0, v0, u1, v1, h, t, o = {}) => { const a = cityW(u0, v0), b = cityW(u1, v1); wallRun(a.x, a.z, b.x, b.z, h, t, { rnd, ...o }); };
+    const E = 47, streets = [-24, 0, 24];
+    const gates = streets.map((s) => [s + E - 4.2, s + E + 4.2]);
+    wallUV(-E, -E, E, -E, 7.5, 1.7, { gaps: gates, gap: 0.08 });
+    wallUV(E, -E, E, E, 7.5, 1.7, { gaps: gates, gap: 0.14 });
+    wallUV(E, E, -E, E, 7.5, 1.7, { gaps: gates, gap: 0.14 });
+    wallUV(-E, E, -E, -E, 7.5, 1.7, { gaps: gates, gap: 0.1 });
+    for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const p = cityW(su * E, sv * E); towerAt(p.x, p.z, 8, 14 + rnd() * 6, { rnd, yaw: yawC, windows: rnd() < 0.5 }); }
+    // площадь: чаша фонтана и обломанный обелиск
+    {
+      const pc = cityW(0, 0), y0 = gyT(pc.x, pc.z);
+      for (let i = 0; i < 14; i++) {
+        if (i === 3 || i === 9) continue;
+        const a = (i / 14) * TAU, g = chiseled(1.95, 0.75, 0.6, { bevel: 0.08, jitter: 0.04, uvScale: 2, seed: 1200 + i });
+        g.translate(0, 0.3, 4.3);
+        g.rotateY(a);
+        g.translate(pc.x, y0, pc.z);
+        zoneParts.push(g);
+      }
+      const pl = chiseled(2.8, 1.2, 2.8, { bevel: 0.1, uvScale: 2.2, seed: 1230 }); pl.translate(0, 0.5, 0); putGeo(pl, pc.x, y0, pc.z, yawC);
+      const ob = chiseled(1.3, 7.5, 1.3, { bevel: 0.1, jitter: 0.06, taperTop: 0.55, uvScale: 2.2, seed: 1231 }); ob.translate(0, 1.1 + 3.75, 0); ob.rotateZ(0.05); putGeo(ob, pc.x, y0, pc.z, yawC + 0.3);
+      const rn = new THREE.CircleGeometry(0.42, 18); rn.translate(0, 3.2, 0.62); putGeo(rn, pc.x, y0, pc.z, yawC + 0.3, glowParts);
+      addCircle(pc.x, pc.z, 4.75);
+    }
+    const cells = [-36, -12, 12, 36];
+    for (const cu of cells) for (const cv of cells) {
+      const inner = Math.abs(cu) === 12 && Math.abs(cv) === 12;
+      const su = Math.sign(cu), sv = Math.sign(cv);
+      if (cu === 36 && cv === 36) {             // колокольня — ориентир над городом
+        const p = cityW(36, 36); towerAt(p.x, p.z, 10, 34, { rnd, yaw: yawC, roof: true, windows: true });
+        wallUV(27.5, 27.5, 44, 27.5, 3, 1, { gap: 0.3 });
+        continue;
+      }
+      if (inner) {
+        const p = cityW(cu + su * 4.5, cv + sv * 4.5);
+        towerAt(p.x, p.z, 6.5, 12 + rnd() * 8, { rnd, yaw: yawC, windows: rnd() < 0.6, roof: rnd() < 0.3 });
+        wallUV(cu - 7 * su, cv + 7.5 * sv, cu + 1 * su, cv + 7.5 * sv, 3.5 + rnd() * 2, 0.9, { gap: 0.2 });
+        continue;
+      }
+      const kind = rnd();
+      if (kind < 0.45) {                         // дом: четыре стены, дверной проём к улице
+        const hu = 4.8 + rnd() * 2.6, hv = 4.5 + rnd() * 2.8, h = 4 + rnd() * 4.5, t = 0.8;
+        const ou = (rnd() - 0.5) * (9 - hu) , ov = (rnd() - 0.5) * (9 - hv);
+        const u0 = cu + ou - hu, u1 = cu + ou + hu, v0 = cv + ov - hv, v1 = cv + ov + hv;
+        const door = [[hu - 1.3, hu + 1.3]];
+        wallUV(u0, v0, u1, v0, h, t, { gaps: sv > 0 ? door : [], gap: 0.15, sec: 2.6 });
+        wallUV(u1, v0, u1, v1, h, t, { gaps: su < 0 ? [[hv - 1.3, hv + 1.3]] : [], gap: 0.15, sec: 2.6 });
+        wallUV(u1, v1, u0, v1, h, t, { gaps: sv < 0 ? door : [], gap: 0.15, sec: 2.6 });
+        wallUV(u0, v1, u0, v0, h, t, { gaps: su > 0 ? [[hv - 1.3, hv + 1.3]] : [], gap: 0.15, sec: 2.6 });
+        const pc = cityW(cu + ou, cv + ov); rubble(pc.x, pc.z, Math.min(hu, hv) - 1, 6, rnd);
+      } else if (kind < 0.7) {                   // башня
+        const p = cityW(cu + (rnd() - 0.5) * 5, cv + (rnd() - 0.5) * 5);
+        towerAt(p.x, p.z, 6.5 + rnd() * 2.5, 15 + rnd() * 13, { rnd, yaw: yawC, windows: rnd() < 0.55, roof: rnd() < 0.4 });
+      } else if (kind < 0.85) {                  // зал: два ряда колонн и задняя стена
+        for (let k = 0; k < 4; k++) for (const s of [-1, 1]) {
+          const p = cityW(cu + s * 3.6, cv - 6 + k * 4.1);
+          const tall = rnd() < 0.35;
+          colAt(p.x, p.z, tall ? 7 + rnd() * 2 : 1.5 + rnd() * 4.5, tall ? 'tall' : 'broken', rnd);
+        }
+        wallUV(cu - 6, cv + 8 * sv, cu + 6, cv + 8 * sv, 6 + rnd() * 2, 1.1, { gap: 0.2 });
+      } else {                                   // развал: низкие стены и щебень
+        wallUV(cu - 7, cv - 2, cu + 2, cv - 7, 1.6 + rnd() * 1.5, 0.9, { gap: 0.3 });
+        wallUV(cu + 3, cv + 6, cu + 7, cv - 3, 1.4 + rnd() * 1.2, 0.9, { gap: 0.3 });
+        const pc = cityW(cu, cv); rubble(pc.x, pc.z, 6, 14, rnd);
+        const pb = cityW(cu - 2, cv + 3); addBoulder(pb.x, pb.z, 1.2 + rnd() * 0.6, rnd);
+      }
+    }
+    // щебень на улицах
+    for (let i = 0; i < 70; i++) { const p = cityW((rnd() - 0.5) * 90, (rnd() - 0.5) * 90); rubble(p.x, p.z, 1.2, 1, rnd); }
+    flushZone('city-ruins');
+    landmark(Cz);
+  }
+
+  /* ---------- Кладбище колоссов: павший исполин с воздетой кистью, меч, рёбра, стоящие ноги ---------- */
+  {
+    const Gz = ZONES.graves, rnd = mulberry32(wc.seed + 931);
+    const parts = [], pieces = [];
+    const seg = (p0, p1, w, d, o = {}) => { segBox(parts, p0, p1, w, d, { uvScale: 3, ...o }); pieces.push([p0, p1, w, d]); };
+    // лежит на спине, голова к +X
+    seg([-8, 1, 0], [-2, 1.2, 0], 12, 9);
+    seg([-3, 1.5, 0], [12, 2.5, 0], 15, 9, { taperTop: 1.15 });
+    seg([12.5, 2, 0.5], [20, 4.5, 1], 8.5, 8.5, { taperTop: 0.7 });
+    seg([4, 2, 8], [0, 3, 17], 5, 5);                 // плечо
+    seg([0, 3, 17], [3, 12, 22], 4.5, 4.5);           // предплечье вверх
+    seg([3, 12, 22], [4.5, 16, 24], 5.5, 2.4);        // ладонь
+    for (let f = 0; f < 4; f++) {                     // пальцы тянутся к затмению
+      const ox = -1.6 + f * 1.1;
+      const b = [4.5 + ox * 0.3, 16, 24 + ox], m = [5.5 + ox * 0.2, 19.5 - Math.abs(ox) * 0.4, 25.5 + ox * 1.1], t = [7 + ox * 0.1, 21.5 - Math.abs(ox) * 0.6, 25.2 + ox * 1.2];
+      seg(b, m, 1.15, 1.15); seg(m, t, 0.95, 0.95);
+    }
+    seg([4, 2, -8], [-3, 1.5, -18], 5, 5);            // вторая рука отломана
+    seg([-3.5, 1.2, -18.5], [-5.5, 1, -22], 4, 4, { jitter: 0.9 });
+    for (const s of [-1, 1]) {
+      seg([-8, 1.5, s * 3.5], [-20, 7, s * 4.5], 6, 6);   // бедро
+      seg([-20, 7, s * 4.5], [-32, 0, s * 5], 5, 5);     // голень
+    }
+    // великий меч, воткнутый в землю
+    seg([-4, -3, -30], [-7, 30, -33], 3.2, 0.8, { taperTop: 0.5 });
+    seg([-6.6, 26.5, -38], [-6.9, 26.8, -28], 1.3, 1.3);
+    seg([-7, 30, -33], [-7.5, 35, -33.5], 1, 1);
+    // грудная клетка второго исполина
+    seg([26, -0.8, 22], [46, -0.4, 22], 3.2, 3.2);
+    for (let i = 0; i < 6; i++) {
+      const x = 27 + i * 3.3, rr0 = 0.62 - i * 0.04;
+      for (const s of [-1, 1]) {
+        const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(x, -0.5, 22), new THREE.Vector3(x + 0.5, 6, 22 + s * 6.5), new THREE.Vector3(x + 1, 12, 22 + s * 4.5), new THREE.Vector3(x + 1.4, 14.8 - i * 0.6, 22 + s * 1.2)]);
+        const tube = new THREE.TubeGeometry(curve, 18, rr0, 6, false);
+        boxProjectUV(tube, 3);
+        parts.push(tube);
+      }
+    }
+    // стоящие ноги на постаменте
+    seg([-26, 0, 34], [-26, 3, 34], 14, 9);
+    seg([-29.5, 3, 34], [-29.5, 18, 34.6], 4.5, 5);
+    seg([-22.5, 3, 34], [-22.2, 13, 33.5], 4.5, 5, { jitter: 0.8 });
+    const phi = 0.55, cph = Math.cos(phi), sph = Math.sin(phi);
+    const ox = Gz.x + 4, oz = Gz.z - 2, oy = -6.3;
+    const W = (p) => ({ x: ox + p[0] * cph + p[2] * sph, z: oz - p[0] * sph + p[2] * cph });
+    const g = mergeGeos(parts);
+    g.rotateY(phi);
+    g.translate(ox, oy, oz);
+    const mesh = new THREE.Mesh(G(g), matStone);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.name = 'colossus-graveyard';
+    env.add(mesh);
+    for (const [p0, p1, w, d] of pieces) {
+      if (Math.min(p0[1], p1[1]) > 4) continue;       // высоко над землёй — не мешает
+      const a = W(p0), b = W(p1);
+      addSegment(a.x, a.z, b.x, b.z, Math.max(w, d) * 0.45);
+    }
+    for (let i = 0; i < 6; i++) { const a = W([27 + i * 3.3, 0, 22]); addCircle(a.x, a.z, 1.3); }
+    // ряды надгробий
+    for (let row = 0; row < 3; row++) for (let k = 0; k < 9; k++) {
+      const p = W([-6 + k * 3.4 + (rnd() - 0.5), 0, -46 - row * 4 + (rnd() - 0.5)]);
+      if (!colliderFree(p.x, p.z, 1)) continue;
+      const hS = 1.4 + rnd() * 0.9;
+      blocks.push(instItem(new THREE.Vector3(p.x, gyT(p.x, p.z) + hS * 0.35, p.z), { x: (rnd() - 0.5) * 0.3, y: -phi + (rnd() - 0.5) * 0.3, z: (rnd() - 0.5) * 0.25 },
+        { x: 1.1, y: hS, z: 0.34 }, 0, stoneTint(rnd, 0.8)));
+      addCircle(p.x, p.z, 0.6);
+    }
+    landmark(Gz);
+  }
+
+  /* ---------- Холм клятвы: кольцо менгиров, ротонда, коленопреклонённая статуя ---------- */
+  {
+    const Hz = ZONES.hill, rnd = mulberry32(wc.seed + 941);
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * TAU + 0.2, x = Hz.x + Math.sin(a) * 10.5, z = Hz.z + Math.cos(a) * 10.5;
+      const y0 = gyT(x, z);
+      if (i === 4) {                               // упавший
+        const g = chiseled(1.5, 6, 0.9, { bevel: 0.12, jitter: 0.1, uvScale: 2.4, seed: 1300 + i });
+        g.rotateZ(Math.PI / 2); g.translate(0, 0.5, 0);
+        putGeo(g, x, y0, z, a);
+        addSegment(x - Math.cos(a) * 3, z + Math.sin(a) * 3, x + Math.cos(a) * 3, z - Math.sin(a) * 3, 0.6);
+        continue;
+      }
+      const h = 5 + rnd() * 2.8;
+      const g = chiseled(1.5, h + 0.6, 0.9, { bevel: 0.12, jitter: 0.1, taperTop: 0.78, uvScale: 2.4, seed: 1300 + i });
+      g.translate(0, (h + 0.6) / 2, 0); g.rotateX((rnd() - 0.5) * 0.12); g.rotateZ((rnd() - 0.5) * 0.12);
+      putGeo(g, x, y0 - 0.6, z, a);
+      const rn = new THREE.PlaneGeometry(0.28, 1.4); rn.rotateY(Math.PI); rn.translate(0, h * 0.6, -0.47);
+      putGeo(rn, x, y0 - 0.6, z, a, glowParts);
+      addCircle(x, z, 0.95);
+    }
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * TAU + 0.5;
+      colAt(Hz.x + Math.sin(a) * 6.2, Hz.z + Math.cos(a) * 6.2, i % 3 === 0 ? 6.5 : 1.4 + rnd() * 3.5, i % 3 === 0 ? 'tall' : 'broken', rnd);
+    }
+    // статуя смотрит на арену, за кольцом со стороны края мира
+    const dl = Math.hypot(Hz.x, Hz.z), sx = Hz.x + (Hz.x / dl) * 19, sz = Hz.z + (Hz.z / dl) * 19;
+    const st = new THREE.Mesh(colossusGeo(1.2), matStone);
+    st.position.set(sx, gyT(sx, sz) - 0.6, sz);
+    st.scale.setScalar(0.3);
+    st.rotation.y = Math.atan2(-sx, -sz);
+    st.castShadow = true; st.receiveShadow = true;
+    st.name = 'oath-statue';
+    env.add(st);
+    addCircle(sx, sz, 4.4);
+    flushZone('hill-shrine');
+    landmark(Hz, { y: gyT(Hz.x, Hz.z) });
+  }
+
+  /* ---------- Павшие врата: разбитая арка на краю мира, башни, стены вдоль обрыва ---------- */
+  {
+    const Gt = ZONES.gate, rnd = mulberry32(wc.seed + 951);
+    arch(0, Gt.z, 11, 11, 3.4, 3.2, 2.4, { blocks: 15, missing: [9, 10, 11] });
+    towerAt(-12.8, Gt.z, 7, 24, { rnd, windows: true });
+    towerAt(12.8, Gt.z, 7, 17, { rnd });
+    wallRun(16.5, Gt.z, 40, Gt.z - 3, 9, 2.2, { rnd, gap: 0.15 });
+    wallRun(40, Gt.z - 3, 64, Gt.z - 12, 8, 2.2, { rnd, gap: 0.25 });
+    wallRun(-16.5, Gt.z, -42, Gt.z - 2, 9, 2.2, { rnd, gap: 0.15 });
+    wallRun(-42, Gt.z - 2, -66, Gt.z - 10, 7, 2.2, { rnd, gap: 0.3 });
+    flushZone('fallen-gate');
+    landmark(Gt);
+  }
+
+  /* ---------- Зеркальное озеро: гать из плит к острову ---------- */
+  {
+    const Lz = ZONES.lake, rnd = mulberry32(wc.seed + 961);
+    const dx = LAKE_ISLAND.x - LAKE_SHORE.x, dz = LAKE_ISLAND.z - LAKE_SHORE.z, L = Math.hypot(dx, dz);
+    for (let s = 0.8; s < L - LAKE_ISLAND.r + 1; s += 1.45) {
+      const x = LAKE_SHORE.x + dx / L * s + (rnd() - 0.5) * 0.3, z = LAKE_SHORE.z + dz / L * s + (rnd() - 0.5) * 0.3;
+      blocks.push(instItem(new THREE.Vector3(x, Math.max(gyT(x, z), LAKE_WL + 0.2) + 0.02, z), { y: Math.atan2(dx, dz) + (rnd() - 0.5) * 0.3 },
+        { x: 1.5, y: 0.26, z: 1.15 }, 0, stoneTint(rnd, 0.9)));
+    }
+    addTree(LAKE_ISLAND.x - 2.6, LAKE_ISLAND.z + 2.2, 1, 1.25, rnd);
+    // каменные фонари по берегу и их отражения-дорожки на воде (дорожка поворачивается к камере)
+    const matGl = addMat(0xffa860, 0.85, texGlow, true);
+    matGl.color.multiplyScalar(3.4);
+    const glG = G(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2));
+    const lampMat = M(new THREE.SpriteMaterial({ map: texGlow, color: 0xffb070, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending, fog: true }));
+    lampMat.color.multiplyScalar(3.2);
+    const nL = 9;
+    for (let i = 0; i < nL; i++) {
+      const a = (i / nL) * TAU + 0.35 + (rnd() - 0.5) * 0.2;
+      const x = Lz.x + Math.sin(a) * (Lz.r + 0.8), z = Lz.z + Math.cos(a) * (Lz.r + 0.8);
+      if (Math.hypot(x - LAKE_SHORE.x, z - LAKE_SHORE.z) < 5) continue;
+      const y0 = gyT(x, z);
+      const post = chiseled(0.42, 1.5, 0.42, { bevel: 0.05, jitter: 0.03, taperTop: 0.8, uvScale: 1.6, seed: 1500 + i }); post.translate(0, 0.6, 0); putGeo(post, x, y0, z, a);
+      const cap = chiseled(0.8, 0.22, 0.8, { bevel: 0.05, jitter: 0.03, uvScale: 1.6, seed: 1520 + i }); cap.translate(0, 1.72, 0); putGeo(cap, x, y0, z, a);
+      const lamp = new THREE.Sprite(lampMat); lamp.position.set(x, y0 + 1.55, z); lamp.scale.set(0.9, 0.9, 1); env.add(lamp);
+      addCircle(x, z, 0.4);
+      const gx = Lz.x + Math.sin(a) * (Lz.r - 3.2), gz = Lz.z + Math.cos(a) * (Lz.r - 3.2);
+      const gl = new THREE.Mesh(glG, matGl); gl.position.set(gx, LAKE_WL + 0.03, gz); gl.renderOrder = 3; env.add(gl);
+      lakeGlints.push({ mesh: gl, x: gx, z: gz, len: 8 + rnd() * 3, wid: 1.1 });
+    }
+    { // отражение маяка угля на острове
+      const gl = new THREE.Mesh(glG, addMat(0xff5a24, 0.8, texGlow, true)); gl.material.color.multiplyScalar(3.2);
+      const gx = LAKE_ISLAND.x + 4.5, gz = LAKE_ISLAND.z - 5.5;
+      gl.position.set(gx, LAKE_WL + 0.03, gz); gl.renderOrder = 3; env.add(gl);
+      lakeGlints.push({ mesh: gl, x: gx, z: gz, len: 14, wid: 0.9 });
+    }
+    flushZone('lake-lanterns');
+    for (let i = 0; i < 18; i++) {
+      const a = (i / 18) * TAU + rnd() * 0.3, r = Lz.r + 1 + rnd() * 5;
+      const x = Lz.x + Math.sin(a) * r, z = Lz.z + Math.cos(a) * r;
+      if (Math.hypot(x - LAKE_SHORE.x, z - LAKE_SHORE.z) < 7 || roadDist(x, z) < ROAD_HW + 1.5) continue;
+      addBoulder(x, z, 0.9 + rnd() * 1.6, rnd);
+    }
+    landmark(Lz);
+  }
+
+  /* ---------- Путевые камни с рунами на дорогах ---------- */
+  {
+    const rnd = mulberry32(wc.seed + 971);
+    ROADS.forEach((pl, i) => {
+      const k = Math.max(1, (pl.length / 2) | 0);
+      const [ax, az] = pl[k - 1], [bx, bz] = pl[k];
+      const len = Math.hypot(bx - ax, bz - az) || 1, nx = -(bz - az) / len, nz = (bx - ax) / len;
+      const x = (ax + bx) / 2 + nx * (ROAD_HW + 1.6), z = (az + bz) / 2 + nz * (ROAD_HW + 1.6);
+      const y0 = gyT(x, z), yaw = Math.atan2(nx, nz);
+      const g = chiseled(0.9, 2.8, 0.6, { bevel: 0.1, jitter: 0.06, taperTop: 0.7, uvScale: 2, seed: 1400 + i });
+      g.translate(0, 1.2, 0); g.rotateZ((rnd() - 0.5) * 0.1);
+      putGeo(g, x, y0, z, yaw);
+      const rn = new THREE.PlaneGeometry(0.3, 0.9); rn.rotateY(Math.PI); rn.translate(0, 1.6, -0.31);
+      putGeo(rn, x, y0, z, yaw, glowParts);
+      addCircle(x, z, 0.6);
+    });
+  }
+
+  // Поляны под угли (места задаются ниже, в EMBER_SPOTS) — деревья и валуны их обходят.
+  const EMBER_SPOTS = [
+    { x: Math.sin(deg(28)) * 21, z: Math.cos(deg(28)) * 21, name: 'Плато Регента' },
+    { x: Math.sin(deg(105)) * 31, z: Math.cos(deg(105)) * 31, name: 'Плато Регента' },
+    { x: Math.sin(deg(150)) * 50, z: Math.cos(deg(150)) * 50, name: 'Врата святилища' },
+    { ...cityW(0, -8), name: ZONES.city.name },
+    { x: -142, z: 16, name: ZONES.forest.name },
+    { x: LAKE_ISLAND.x + 1.2, z: LAKE_ISLAND.z - 0.8, name: ZONES.lake.name },
+    { x: ZONES.graves.x - 8, z: ZONES.graves.z - 16, name: ZONES.graves.name },
+    { x: ZONES.hill.x, z: ZONES.hill.z, name: ZONES.hill.name },
+    { x: 5, z: ZONES.gate.z + 9, name: ZONES.gate.name },
+    { ...cityW(24, 24), name: ZONES.city.name },
+  ];
+  for (const s of EMBER_SPOTS) CLEARINGS.push({ x: s.x, z: s.z, r: 4.5 });
+  CLEARINGS.push({ x: -142, z: 16, r: 10 });   // поляна в лесу
+
+  /* ---------- Пепельный лес и одиночные деревья, валуны, камешки, скальный вал у края ---------- */
+  {
+    const Fz = ZONES.forest, rnd = mulberry32(wc.seed + 981);
+    const cell = 3.2, grid = new Map();
+    const key = (x, z) => ((Math.floor(x / cell) + 512) << 10) | (Math.floor(z / cell) + 512);
+    const spaced = (x, z, m) => {
+      const ix = Math.floor(x / cell), iz = Math.floor(z / cell);
+      for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) {
+        const l = grid.get(((ix + a + 512) << 10) | (iz + b + 512));
+        if (l) for (const p of l) if ((p.x - x) ** 2 + (p.z - z) ** 2 < m * m) return false;
+      }
+      return true;
+    };
+    const mark = (x, z) => { const k = key(x, z); if (!grid.has(k)) grid.set(k, []); grid.get(k).push({ x, z }); };
+    const pre = LAYOUT_COLLIDERS.slice();
+    const freeOfPre = (x, z, m) => pre.every((c) => (c.type === 'circle' ? Math.hypot(x - c.x, z - c.z) > c.r + m : segDist(x, z, c.ax, c.az, c.bx, c.bz) > c.r + m));
+    const inCity = (x, z) => { const [u, v] = cityUV(x, z); return Math.abs(u) < 52 && Math.abs(v) < 52; };
+    const okSpot = (x, z, m) => Math.hypot(x, z) > 82 && edgeDist(x, z) > 9 && roadDist(x, z) > ROAD_HW + 1.6
+      && Math.hypot(x - ZONES.lake.x, z - ZONES.lake.z) > ZONES.lake.r + 3 && !inCity(x, z)
+      && Math.hypot(x - ZONES.hill.x, z - ZONES.hill.z) > 24 && Math.hypot(x - ZONES.gate.x, z - ZONES.gate.z) > 26
+      && CLEARINGS.every((c) => Math.hypot(x - c.x, z - c.z) > c.r) && spaced(x, z, m) && freeOfPre(x, z, m);
+    let nForest = 0;
+    for (let i = 0; i < 5200 && nForest < 360; i++) {
+      const a = rnd() * TAU, r = Math.sqrt(rnd()) * Fz.r * 1.25;
+      const x = Fz.x + Math.sin(a) * r, z = Fz.z + Math.cos(a) * r;
+      const dens = smoothstep(Fz.r * 1.25, Fz.r * 0.55, r) * (0.55 + 0.9 * noise.n2(x * 0.05 + 4, z * 0.05 + 2, 0));
+      if (rnd() > dens || !okSpot(x, z, 3.1)) continue;
+      addTree(x, z, (rnd() * 3) | 0, 0.8 + rnd() * 0.55, rnd); mark(x, z); nForest++;
+    }
+    let nLone = 0;
+    for (let i = 0; i < 4000 && nLone < 120; i++) {
+      const x = (rnd() - 0.5) * 480, z = (rnd() - 0.5) * 480;
+      if (Math.hypot(x - Fz.x, z - Fz.z) < Fz.r * 1.3 || Math.hypot(x - ZONES.graves.x, z - ZONES.graves.z) < ZONES.graves.r + 6) continue;
+      if (noise.n2(x * 0.02 + 9, z * 0.02 + 1, 0) < 0.45 || !okSpot(x, z, 5)) continue;
+      addTree(x, z, (rnd() * 3) | 0, 0.7 + rnd() * 0.6, rnd); mark(x, z); nLone++;
+    }
+    let nB = 0;
+    for (let i = 0; i < 3000 && nB < 110; i++) {
+      const x = (rnd() - 0.5) * 480, z = (rnd() - 0.5) * 480;
+      if (!okSpot(x, z, 3.5)) continue;
+      addBoulder(x, z, 0.9 + Math.pow(rnd(), 2) * 2.6, rnd); mark(x, z); nB++;
+    }
+    // скальный вал: крупные глыбы вдоль кромки обрыва
+    for (let a = 0; a < TAU; a += deg(1.15)) {
+      const off = 3 + rnd() * 6, p = edgePoint(a + (rnd() - 0.5) * 0.01, off);
+      if (Math.hypot(p.x - ZONES.gate.x, p.z - ZONES.gate.z) < 12) continue;
+      addBoulder(p.x, p.z, 1.6 + rnd() * 2.8, rnd, off > 5);
+    }
+    // мелочь без коллайдеров (уровни качества)
+    let nP = 0;
+    for (let i = 0; i < 6000 && nP < 700; i++) {
+      const x = (rnd() - 0.5) * 480, z = (rnd() - 0.5) * 480;
+      if (Math.hypot(x, z) < 40 || edgeDist(x, z) < 4 || inDeepWater(x, z)) continue;
+      addBoulder(x, z, 0.15 + Math.pow(rnd(), 2) * 0.5, rnd, false, nP < 350 ? 1 : 2); nP++;
+    }
+    landmark(Fz);
+  }
+  {
+    const treeGeos = [deadTreeGeo(1), deadTreeGeo(2), deadTreeGeo(3)];
+    const matBark = std({ color: 0x5a524c, map: texStone, roughness: 0.97, metalness: 0 });
+    patchWet(matBark, { x: 0, y: 1, z: 0.45, w: 1.5 });
+    treeItems.forEach((items, i) => { if (items.length) buildInstancedChunked(treeGeos[i], matBark, items, { name: 'dead-trees-' + i, chunk: 72, cull: 210 }); });
+    buildInstancedChunked(G(rockGeo(1, 1, 613, 0.72)), matStoneFlat, boulderItems, { name: 'boulders', chunk: 96, cull: 170 });
+    buildInstancedChunked(G(rockGeo(1, 0, 617, 0.6)), matStoneFlat, pebbleItems, { name: 'pebbles', cast: false, chunk: 64, cull: 70 });
+    flushZone('waystones');
+    if (glowParts.length) {
+      const matWin = M(new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, fog: true }));
+      matWin.color.setRGB(3.2, 1.45, 0.55);   // HDR: светится сквозь туман и цепляет bloom
+      const wm = new THREE.Mesh(G(mergeGeos(glowParts)), matWin);
+      wm.name = 'zone-glow';
+      env.add(wm);
+    }
+  }
+
   buildInstanced(shaftGeo, matStone, shafts, { name: 'column-shafts' });
   buildInstanced(brokenTopGeo, matStone, tops, { name: 'column-broken-tops' });
   buildInstanced(capitalGeo, matStone, caps, { name: 'column-capitals' });
@@ -1342,7 +2147,7 @@ float ashPuddle( vec2 xz ) {
     parts.push(skirt);
     return G(mergeGeos(parts));
   }
-  for (const [a, lift, r] of [[160, 2.5, 235], [222, -1.5, 250]]) {
+  for (const [a, lift, r] of [[160, 2.5, 372], [222, -1.5, 392]]) { // [ASHEN_V3] за краем большой карты
     const c = new THREE.Mesh(colossusGeo(lift), matColossus);
     const pos = polar(a, r);
     c.position.set(pos.x, -48, pos.z);
@@ -1497,14 +2302,9 @@ float ashPuddle( vec2 xz ) {
   const EMBERS = [];
   const EMBER_POIS = [];
   {
-    const isFree = (x, z, m) => LAYOUT_COLLIDERS.every((c) => {
-      if (c.type === 'circle') return Math.hypot(x - c.x, z - c.z) > c.r + m;
-      const ex = c.bx - c.ax, ez = c.bz - c.az, L2 = ex * ex + ez * ez || 1;
-      const u = clamp(((x - c.ax) * ex + (z - c.az) * ez) / L2, 0, 1);
-      return Math.hypot(x - c.ax - ex * u, z - c.az - ez * u) > c.r + m;
-    }) && groundY(x, z).cliff < 0.02
-      && Math.abs(groundY(x + 1.2, z).y - groundY(x - 1.2, z).y) < 0.7 && Math.abs(groundY(x, z + 1.2).y - groundY(x, z - 1.2).y) < 0.7;
-    const SPOTS = [[28, 21], [105, 31], [150, 50], [215, 27], [292, 31]];   // азимут°, радиус (в единицах K)
+    // [ASHEN_V3] углей 10: два на плато, у святилища и по зонам большой карты (EMBER_SPOTS)
+    const isFree = (x, z, m) => colliderFree(x, z, m) && edgeDist(x, z) > 9 && !inDeepWater(x, z)
+      && Math.abs(terrainH(x + 1.2, z) - terrainH(x - 1.2, z)) < 0.7 && Math.abs(terrainH(x, z + 1.2) - terrainH(x, z - 1.2)) < 0.7;
     const standG = G(chiseled(0.28, 1.55, 0.22, { bevel: 0.04, jitter: 0.02, taperTop: 0.7 }));
     const plinthG = G(chiseled(1.15, 0.5, 1.15, { bevel: 0.06, jitter: 0.03, taperTop: 0.86 }));
     const bowlG = G(lathe([[0.0005, 0], [0.1, 0.0], [0.26, 0.07], [0.38, 0.2], [0.42, 0.29], [0.38, 0.3], [0.33, 0.22], [0.0005, 0.16]], 16));
@@ -1517,14 +2317,14 @@ float ashPuddle( vec2 xz ) {
       m.color.multiplyScalar(hdr);
       return new THREE.Sprite(m);
     };
-    SPOTS.forEach(([az, rr], i) => {
+    EMBER_SPOTS.forEach((spot, i) => {
       let pos = null;
-      for (let k = 0; k < 60 && !pos; k++) {
-        const a = az + (k === 0 ? 0 : (rnd() - 0.5) * 30), r = (rr + (k === 0 ? 0 : (rnd() - 0.5) * 10)) * K;
-        const q = polar(a, r);
+      for (let k = 0; k < 80 && !pos; k++) {
+        const j = k === 0 ? 0 : 1.5 + k * 0.12, a = rnd() * TAU;
+        const q = { x: spot.x + Math.sin(a) * j, z: spot.z + Math.cos(a) * j };
         if (isFree(q.x, q.z, 2.4)) pos = q;
       }
-      if (!pos) return;
+      if (!pos) { console.warn('[world] нет места под уголь', i, spot.name); return; }
       const gy = groundY(pos.x, pos.z).y;
       const grp = new THREE.Group();
       grp.name = 'ember-altar-' + i;
@@ -1560,7 +2360,7 @@ float ashPuddle( vec2 xz ) {
       pool.rotation.x = -Math.PI / 2; pool.position.y = 0.03; pool.scale.set(4.6, 4.6, 1); pool.renderOrder = 2; grp.add(pool);
       const id = 'ember-' + i;
       EMBERS.push({ id, x: pos.x, z: pos.z, grp, lit: false, litT: 9, ember, outer, core, beacon, pool, slitMat, coalMat, phase: i * 1.9 });
-      EMBER_POIS.push(Object.freeze({ id, kind: 'ember', x: pos.x, y: gy, z: pos.z, r: 1.9 }));
+      EMBER_POIS.push(Object.freeze({ id, kind: 'ember', name: spot.name, x: pos.x, y: gy, z: pos.z, r: 1.9 }));
     });
   }
   function setPoiState(id, st) {
@@ -1573,6 +2373,11 @@ float ashPuddle( vec2 xz ) {
   function updateEmbers(dt) {
     const rm = wc.reducedMotion ? 0.4 : 1;
     for (const e of EMBERS) {
+      // [ASHEN_V3] дальний алтарь — только маяк (экономия вызовов отрисовки)
+      if (camera) {
+        const near = Math.hypot(camera.position.x - e.x, camera.position.z - e.z) < 80;
+        if (near !== e.near) { e.near = near; for (const c of e.grp.children) c.visible = near || c === e.beacon || c === e.ember; }
+      }
       const pulse = 0.5 + 0.5 * Math.sin(time * 2.1 + e.phase);
       if (!e.lit) {
         e.ember.material.opacity = 0.22 + 0.2 * pulse;
@@ -1612,11 +2417,12 @@ float ashPuddle( vec2 xz ) {
     if (r < 11.6) return -0.3;
     if (r < 12.3) return -0.6;
     if (r < 12.95) return -0.9;
-    return groundY(x, z).y;
+    return terrainH(x, z);
   }
+  // [ASHEN_V3] ходить можно до скального вала у края мира и по мелководью озера
   function layoutWalkable(x, z) {
     if (Math.hypot(x, z) < 12.95 * K) return true;
-    return groundY(x, z).cliff < 0.3;
+    return edgeDist(x, z) > 6.5 && !inDeepWater(x, z);
   }
   // старт — снаружи арены, со стороны камеры (+Z), на свободном от коллайдеров месте
   const spawn = (() => {
@@ -1635,12 +2441,18 @@ float ashPuddle( vec2 xz ) {
   })();
   const layout = Object.freeze({
     version: 1,
-    bounds: { minX: -100, maxX: 100, minZ: -100, maxZ: 100 },
+    bounds: { minX: -262, maxX: 262, minZ: -262, maxZ: 262 },   // [ASHEN_V3] 500×500 м
     arena: { x: 0, z: 0, r: 13 * K, leash: 6 },
     bossHome: { x: 0, z: 0 },
     playerSpawn: spawn,
     colliders: Object.freeze(LAYOUT_COLLIDERS.map((c) => Object.freeze({ ...c }))),
     pois: Object.freeze(EMBER_POIS.slice()),
+    // [ASHEN_V3] ориентиры зон для HUD/миникарты: {id, kind:'landmark', name, x, y, z, r}
+    landmarks: Object.freeze([{ id: 'arena', kind: 'landmark', name: 'Арена Регента', x: 0, y: 0, z: 0, r: 13 * K },
+      { id: 'shrine', kind: 'landmark', name: 'Врата святилища', x: Math.sin(deg(SHRINE_AZ)) * 56 * K, y: -1, z: Math.cos(deg(SHRINE_AZ)) * 56 * K, r: 17 }, ...LANDMARKS]),
+    roads: Object.freeze(ROADS.map((pl) => Object.freeze(pl.map(([x, z]) => Object.freeze({ x, z }))))),
+    worldEdge: WORLD_EDGE,
+    edgeDistance: edgeDist,
     groundY: layoutGroundY,
     isWalkable: layoutWalkable,
   });
@@ -3135,6 +3947,7 @@ float ashPuddle( vec2 xz ) {
   const ASH_TOP = 13, ASH_R = 24;
   function updateEnv(dt, snap, bInfo) {
     const rm = wc.reducedMotion ? 0.4 : 1;
+    if (camera) for (const c of culledChunks) c.mesh.visible = Math.hypot(camera.position.x - c.x, camera.position.z - c.z) - c.r < c.cull;
     updateEmbers(dt);
     for (let i = 0; i < braziers.length; i++) {
       const bz = braziers[i];
@@ -3149,20 +3962,34 @@ float ashPuddle( vec2 xz ) {
       const n = ashGeo.drawRange.count;
       const a = ashPos;
       const wind = 0.18 * rm;
+      const acx = heroRoot.position.x, acz = heroRoot.position.z, acy = heroRoot.position.y;
       for (let i = 0; i < n; i++) {
         const sd = ashSeed[i];
         const k = i * 3;
         a[k] += (wind + Math.sin(time * 0.37 + sd) * 0.14 * rm) * dt;
         a[k + 1] -= (0.22 + (sd % 1) * 0.28) * rm * dt;
         a[k + 2] += Math.cos(time * 0.31 + sd * 1.7) * 0.12 * rm * dt;
-        if (a[k + 1] < -1 || a[k] * a[k] + a[k + 2] * a[k + 2] > ASH_R * ASH_R) {
+        // [ASHEN_V3] облако пепла идёт за героем: вышедшие за радиус переносятся на противоположную сторону
+        const ddx = a[k] - acx, ddz = a[k + 2] - acz;
+        if (a[k + 1] < acy - 2) {
           const h1 = hash3(sd, time, i, 3), h2 = hash3(i, sd, time, 5);
           const r = Math.sqrt(h1) * ASH_R, an = h2 * TAU;
-          a[k] = Math.sin(an) * r; a[k + 2] = Math.cos(an) * r;
-          a[k + 1] = a[k + 1] < -1 ? ASH_TOP : -1 + hash3(sd, i, 1, 9) * ASH_TOP;
+          a[k] = acx + Math.sin(an) * r; a[k + 2] = acz + Math.cos(an) * r;
+          a[k + 1] = acy + ASH_TOP - 1;
+        } else if (ddx * ddx + ddz * ddz > ASH_R * ASH_R) {
+          a[k] = acx - ddx * 0.97; a[k + 2] = acz - ddz * 0.97;
+          if (a[k + 1] > acy + ASH_TOP) a[k + 1] = acy - 1 + hash3(sd, i, 1, 9) * ASH_TOP;
         }
       }
       ashGeo.attributes.position.needsUpdate = true;
+    }
+    waterU.uWT.value = time * (wc.reducedMotion ? 0.35 : 1);
+    if (camera) for (const g of lakeGlints) {
+      const dx = camera.position.x - g.x, dz = camera.position.z - g.z, d = Math.hypot(dx, dz) || 1;
+      g.mesh.rotation.y = Math.atan2(dx, dz);
+      const L = Math.min(g.len, d * 0.8), sh = 0.85 + 0.15 * Math.sin(time * 1.7 + g.x);
+      g.mesh.scale.set(g.wid * sh, 1, L);
+      g.mesh.position.x = g.x + (dx / d) * L * 0.42; g.mesh.position.z = g.z + (dz / d) * L * 0.42;
     }
     const sw = portalGroup.userData.swirls;
     sw[0].rotation.z = time * 0.16 * rm; sw[1].rotation.z = -time * 0.11 * rm;
@@ -3191,13 +4018,30 @@ float ashPuddle( vec2 xz ) {
       bossX: bossRoot.position.x, bossZ: bossRoot.position.z,
       stageW: bInfo.stageW, status: snap ? snap.status : 'playing',
     });
+    followShadow();
     if (aInfo) {
-      moonLight.position.copy(atmo.keyDir).multiplyScalar(40);
       moonLight.color.copy(aInfo.keyColor);
       moonLight.intensity = aInfo.keyIntensity * PL;
       hemi.intensity = HEMI_I * PL * (1 + aInfo.skyFlash);
       fillLight.intensity = FILL_I * PL * (1 + aInfo.skyFlash);
     }
+  }
+
+  // [ASHEN_V3] теневая камера ключа едет за героем (в арене — ближе к центру, чтобы ловить колонны
+  // и босса); центр привязан к texel-сетке света — тени не «кипят» при движении.
+  const _sc = new THREE.Vector3(), _sr = new THREE.Vector3(), _su = new THREE.Vector3(), _sl = new THREE.Vector3();
+  function followShadow() {
+    const ld = _sl.copy(atmo.keyDir).normalize();
+    const hx = heroRoot.position.x, hz = heroRoot.position.z;
+    const k = 1 - 0.65 * smoothstep(30, 12, Math.hypot(hx, hz));
+    _sc.set(hx * k, heroRoot.position.y, hz * k);
+    _sr.set(0, 1, 0).cross(ld).normalize();
+    _su.copy(ld).cross(_sr);
+    const texel = (SHADOW_HALF * 2) / Math.max(256, moonLight.shadow.mapSize.x);
+    const cr = _sc.dot(_sr), cu = _sc.dot(_su);
+    _sc.addScaledVector(_sr, Math.round(cr / texel) * texel - cr).addScaledVector(_su, Math.round(cu / texel) * texel - cu);
+    moonLight.target.position.copy(_sc);
+    moonLight.position.copy(_sc).addScaledVector(ld, 80);
   }
 
   function setQuality(level) {

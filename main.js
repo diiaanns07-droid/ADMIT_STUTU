@@ -275,6 +275,7 @@ function rigState(snap, impulse) {
   return {
     player: P.position, playerYaw: P.yaw, velocity: P.velocity, boss: snap.boss.position,
     engaged: P.encounter !== 'explore', impulse, colliders: worldLayout ? worldLayout.colliders : null,
+    groundY: worldLayout ? worldLayout.groundY : null,   // [ASHEN_V3] камера над рельефом большой карты
   };
 }
 

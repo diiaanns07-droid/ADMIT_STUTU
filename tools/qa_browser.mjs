@@ -324,7 +324,7 @@ async function scenarioOath() {
     const pv = await page.eval('__ASHEN__.progress()');
     check('новый профиль: 0 очков клятвы, 7 улучшений', pv.points === 0 && pv.upgrades.length === 7, JSON.stringify({ points: pv.points, n: pv.upgrades.length }));
     const embers = await page.eval('__ASHEN__.embers()');
-    check('на плато 5 углей клятвы, все вне арены (r > 16 м)', embers.length === 5 && embers.every((e) => Math.hypot(e.x, e.z) > 16 && !e.lit), JSON.stringify(embers.map((e) => Math.round(Math.hypot(e.x, e.z)))));
+    check('10 углей клятвы на большой карте (ASHEN_V3), все вне арены (r > 16 м)', embers.length === 10 && embers.every((e) => Math.hypot(e.x, e.z) > 16 && !e.lit), JSON.stringify(embers.map((e) => Math.round(Math.hypot(e.x, e.z)))));
     check('меню → «Клятва героя»', (await page.click('Клятва героя')) === 'ok' && (await screen(page)) === 'oath');
     const cards = await page.eval(`[...document.querySelectorAll('.ao-upg')].filter((c) => c.offsetParent !== null).map((c) => c.querySelector('button').getAttribute('aria-disabled'))`);
     check('7 карточек, без очков покупать нельзя', cards.length === 7 && cards.every((d) => d === 'true'), JSON.stringify(cards));

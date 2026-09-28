@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHEN OATH — обзор большой карты</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0d1016; color: #cfd6e2; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; overflow: hidden; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 8px; top: 8px; padding: 8px 10px; background: rgba(8, 10, 14, 0.72); border: 1px solid #2c3444; border-radius: 6px; white-space: pre-wrap; pointer-events: none; }
+  #bar { position: fixed; right: 8px; top: 8px; display: flex; gap: 4px; flex-wrap: wrap; max-width: 520px; justify-content: flex-end; }
+  #bar button { background: #1b2130; color: #d8c49a; border: 1px solid #3a4458; border-radius: 4px; padding: 3px 7px; font: inherit; cursor: pointer; }
+  #err { position: fixed; left: 8px; bottom: 8px; color: #ff8a7a; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="hud">загрузка…</div>
+<div id="bar"></div>
+<div id="err"></div>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/" } }
+</script>
+<script type="module">
+// Стенд большой карты (ASHEN_V3): настоящий world.js + postfx + камера исследования (cameraRig),
+// герой стоит в выбранной точке. Бой не создаётся. Замер FPS и renderer.info за 3 с.
+// URL: at=<id ориентира или ember-N> | x=&z=  yaw=<градусы взгляда>  q=low|medium|high  post=0 (без postfx)
+// WASD — идти (5.5 м/с) по земле раскладки с коллизиями отключёнными; клавиши 1..9 — ориентиры.
+import * as THREE from 'three';
+const { createWorld } = await import(new URLSearchParams(location.search).get('mod') || '../modules/world.js');
+import { createCameraRig } from '../core/cameraRig.js';
+import { config } from '../config.js';
+const P = new URLSearchParams(location.search);
+const errEl = document.getElementById('err'), hud = document.getElementById('hud');
+window.addEventListener('error', (e) => { errEl.textContent += '\n' + e.message; });
+
+const q = P.get('q') || 'medium';
+config.settings = { ...config.defaultSettings, quality: q };
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, config.qualityPresets[q].pixelRatioCap));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(config.camera.fov, innerWidth / innerHeight, 0.1, 1200);
+scene.add(camera);
+const t0 = performance.now();
+const world = createWorld({ THREE, scene, renderer, camera, config });
+const buildMs = performance.now() - t0;
+const L = world.layout;
+let postfx = null;
+if (P.get('post') !== '0') {
+  try { const m = await import('../core/postfx.js'); postfx = m.createPostFX({ THREE, renderer, scene, camera, quality: q }); postfx.setSize(innerWidth, innerHeight, renderer.getPixelRatio()); } catch (e) { console.warn(e); }
+}
+const rig = createCameraRig(config.camera);
+const places = [...(L.landmarks || []), ...L.pois.map((p) => ({ ...p, name: p.id + ' · ' + p.name }))];
+const bar = document.getElementById('bar');
+const hero = { x: 0, z: 26, yaw: Math.PI };
+function go(pl, yawDeg) {
+  const ang = Math.atan2(pl.x, pl.z);
+  const back = pl.kind === 'ember' ? 5 : Math.min(28, (pl.r || 10) * 0.9);
+  hero.x = pl.x + Math.sin(ang) * back; hero.z = pl.z + Math.cos(ang) * back;
+  hero.yaw = yawDeg != null ? (yawDeg * Math.PI) / 180 : Math.atan2(pl.x - hero.x, pl.z - hero.z);
+  if (!L.isWalkable(hero.x, hero.z)) { hero.x = pl.x; hero.z = pl.z; }
+  rig.reset(state());
+}
+places.forEach((pl, i) => { const b = document.createElement('button'); b.textContent = pl.name; b.onclick = () => go(pl); bar.appendChild(b); });
+function state() {
+  const y = L.groundY(hero.x, hero.z);
+  return { player: { x: hero.x, y, z: hero.z }, playerYaw: hero.yaw, velocity: { x: 0, z: 0 }, boss: { x: 0, y: 0, z: 0 }, engaged: false,
+    impulse: { x: 0, y: 0, z: 0 }, colliders: L.colliders, groundY: L.groundY };
+}
+const at = P.get('at');
+if (at) { const pl = places.find((p) => p.id === at); if (pl) go(pl, P.has('yaw') ? +P.get('yaw') : null); }
+if (P.has('x')) { hero.x = +P.get('x'); hero.z = +P.get('z'); hero.yaw = ((+P.get('yaw') || 0) * Math.PI) / 180; rig.reset(state()); }
+const keys = new Set();
+addEventListener('keydown', (e) => { keys.add(e.code); const n = +e.key; if (n >= 1 && n <= places.length) go(places[n - 1]); });
+addEventListener('keyup', (e) => keys.delete(e.code));
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); if (postfx) postfx.setSize(innerWidth, innerHeight, renderer.getPixelRatio()); });
+
+let last = performance.now(), fAcc = 0, fN = 0, fps = 0, info = {};
+const snap = () => ({
+  status: 'playing', time: 0,
+  player: { position: { x: hero.x, y: L.groundY(hero.x, hero.z), z: hero.z }, yaw: hero.yaw, velocity: { x: vel.x, z: vel.z }, hp: 100, maxHp: 100, energy: 100, maxEnergy: 100, action: vel.s > 0.1 ? 'move' : 'idle', invulnerable: false, shielding: false, encounter: 'explore' },
+  boss: { position: { x: 0, y: 0, z: 0 }, yaw: 0, hp: 1000, maxHp: 1000, stage: 1, action: 'idle' },
+  cooldowns: {}, projectiles: [], telegraphs: [], stats: {},
+});
+const vel = { x: 0, z: 0, s: 0 };
+let fly = null;   // __TOUR__.fly([x,y,z,tx,ty,tz]) — свободная камера; null — за героем
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const cy = rig.yaw || hero.yaw;
+  const fx = Math.sin(cy), fz = Math.cos(cy), rx = -fz, rz = fx;
+  let mx = 0, mz = 0;
+  if (keys.has('KeyW')) { mx += fx; mz += fz; } if (keys.has('KeyS')) { mx -= fx; mz -= fz; }
+  if (keys.has('KeyD')) { mx -= rx; mz -= rz; } if (keys.has('KeyA')) { mx += rx; mz += rz; }
+  const m = Math.hypot(mx, mz);
+  vel.x = m ? (mx / m) * 5.5 : 0; vel.z = m ? (mz / m) * 5.5 : 0; vel.s = m ? 5.5 : 0;
+  if (m) { const nx = hero.x + vel.x * dt, nz = hero.z + vel.z * dt; if (L.isWalkable(nx, nz)) { hero.x = nx; hero.z = nz; } hero.yaw = Math.atan2(vel.x, vel.z); }
+  world.update(dt, snap(), []);
+  const c = rig.update(dt, { ...state(), velocity: { x: vel.x, z: vel.z } });
+  if (fly) { camera.position.set(fly[0], fly[1], fly[2]); camera.lookAt(fly[3], fly[4], fly[5]); }
+  else { camera.position.set(c.position.x, c.position.y, c.position.z); camera.lookAt(c.target.x, c.target.y, c.target.z); }
+  if (postfx && postfx.enabled) postfx.render(dt); else renderer.render(scene, camera);
+  info = { calls: renderer.info.render.calls, tris: renderer.info.render.triangles };
+  fAcc += dt; fN++;
+  if (fAcc > 1) { fps = fN / fAcc; fAcc = 0; fN = 0; }
+  hud.textContent = `ASHEN V3 · большая карта · q=${q}\nпостройка мира ${buildMs.toFixed(0)} мс · коллайдеров ${L.colliders.length} · углей ${L.pois.length}\n` +
+    `FPS ${fps.toFixed(0)} · вызовов ${info.calls} · треугольников ${(info.tris / 1000).toFixed(0)}k\n` +
+    `герой ${hero.x.toFixed(1)}, ${L.groundY(hero.x, hero.z).toFixed(1)}, ${hero.z.toFixed(1)} · до края ${L.edgeDistance ? L.edgeDistance(hero.x, hero.z).toFixed(0) : '—'} м\nWASD — идти, 1..${places.length} — ориентиры`;
+  requestAnimationFrame(frame);
+}
+// Синхронный замер: n кадров update+render, readPixels ждёт GPU → мс на кадр (CPU+GPU).
+function bench(n = 60, W = 1280, H = 720) {
+  renderer.setPixelRatio(1); renderer.setSize(W, H); camera.aspect = W / H; camera.updateProjectionMatrix();
+  if (postfx) postfx.setSize(W, H, 1);
+  const gl = renderer.getContext(), px = new Uint8Array(4);
+  let calls = 0, tris = 0;
+  const t = performance.now();
+  for (let i = 0; i < n; i++) {
+    world.update(1 / 60, snap(), []);
+    const c = rig.update(1 / 60, state());
+    if (fly) { camera.position.set(fly[0], fly[1], fly[2]); camera.lookAt(fly[3], fly[4], fly[5]); }
+    else { camera.position.set(c.position.x, c.position.y, c.position.z); camera.lookAt(c.target.x, c.target.y, c.target.z); }
+    renderer.info.autoReset = false; renderer.info.reset();
+    if (postfx && postfx.enabled) postfx.render(1 / 60); else renderer.render(scene, camera);
+    calls = renderer.info.render.calls; tris = renderer.info.render.triangles; renderer.info.autoReset = true;
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  }
+  const ms = (performance.now() - t) / n;
+  return { msPerFrame: +ms.toFixed(2), fps: +(1000 / ms).toFixed(0), calls, tris, w: renderer.domElement.width, h: renderer.domElement.height };
+}
+window.__TOUR__ = { world, renderer, bench, fly: (v) => { fly = v; }, go: (id, yaw) => { const pl = places.find((p) => p.id === id); if (pl) go(pl, yaw); return !!pl; }, place: (x, z, yawDeg) => { hero.x = x; hero.z = z; hero.yaw = (yawDeg * Math.PI) / 180; rig.reset(state()); },
+  stats: () => ({ fps, ...info, buildMs, colliders: L.colliders.length, embers: L.pois.map((p) => [p.id, p.name, Math.round(p.x), Math.round(p.z)]), assets: world.assets }), places: () => places.map((p) => [p.id, p.name, Math.round(p.x), Math.round(p.z)]) };
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

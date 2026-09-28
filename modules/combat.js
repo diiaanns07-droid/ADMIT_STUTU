@@ -414,6 +414,31 @@ export function sweptCylinderHit(a0, a1, b0, b1, radius, yMin, yMax) {
   return { hit: true, t: u0 };
 }
 
+// [ASHEN_V3] Большая карта — сотни коллайдеров: равномерная сетка 8 м. В ячейку попадает всё, что
+// ближе pad к её границе (pad > радиус героя + подшаг + выталкивание), поэтому для точки хватает
+// одной ячейки. Для маленьких раскладок сетки нет — перебор как раньше.
+const GRID_EMPTY = Object.freeze([]);
+function buildColliderGrid(colliders, cell = 8, pad = 1.6) {
+  if (!Array.isArray(colliders) || colliders.length < 48) return null;
+  const cells = new Map();
+  const key = (ix, iz) => (ix + 32768) * 65536 + (iz + 32768);
+  for (const c of colliders) {
+    let x0, x1, z0, z1;
+    if (c.type === 'circle') { x0 = c.x - c.r; x1 = c.x + c.r; z0 = c.z - c.r; z1 = c.z + c.r; }
+    else { const r = c.r || 0; x0 = Math.min(c.ax, c.bx) - r; x1 = Math.max(c.ax, c.bx) + r; z0 = Math.min(c.az, c.bz) - r; z1 = Math.max(c.az, c.bz) + r; }
+    const ix0 = Math.floor((x0 - pad) / cell), ix1 = Math.floor((x1 + pad) / cell);
+    const iz0 = Math.floor((z0 - pad) / cell), iz1 = Math.floor((z1 + pad) / cell);
+    if ((ix1 - ix0 + 1) * (iz1 - iz0 + 1) > 4096) continue;   // абсурдно большой — пропуск (защита)
+    for (let ix = ix0; ix <= ix1; ix++) for (let iz = iz0; iz <= iz1; iz++) {
+      const k = key(ix, iz);
+      let l = cells.get(k);
+      if (!l) { l = []; cells.set(k, l); }
+      l.push(c);
+    }
+  }
+  return { near: (x, z) => cells.get(key(Math.floor(x / cell), Math.floor(z / cell))) || GRID_EMPTY };
+}
+
 // Раскладка карты → проверенная копия: коллайдеры с конечными числами, функции-заглушки.
 function normalizeLayout(layout, boss) {
   const L = isPlainObject(layout) ? layout : null;
@@ -437,6 +462,7 @@ function normalizeLayout(layout, boss) {
   return {
     custom: !!L,
     arena, colliders, playerSpawn: sp,
+    grid: buildColliderGrid(colliders),
     groundY: (x, z) => { const v = Number(gy(x, z)); return Number.isFinite(v) ? v : 0; },
     isWalkable: (x, z) => walk(x, z) !== false,
     resolveMove: typeof src.resolveMove === 'function' && L ? src.resolveMove : null,
@@ -1213,7 +1239,8 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     return { x, z };
   }
   function pushOut(x, z, r) {
-    for (const c of LAY.colliders) {
+    const list = LAY.grid ? LAY.grid.near(x, z) : LAY.colliders;   // [ASHEN_V3] сетка на большой карте
+    for (const c of list) {
       if (c.type === 'circle') {
         const dx = x - c.x, dz = z - c.z, R = c.r + r, d2 = dx * dx + dz * dz;
         if (d2 < R * R) {
