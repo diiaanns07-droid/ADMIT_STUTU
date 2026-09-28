@@ -17,9 +17,10 @@
  *   onResume()                  onRestart()            onExit()
  *   onSettings(patch)           patch — часть settings, например {volume:0.4}
  *   onDebug(nextEnabled:boolean)
- *   [ASHEN_V2] onOath({from})  onTraining({from})  onBuyUpgrade(id)  onBack()
- *   viewModel.progress = { points, earned, pushups, embers[], emberTotal, upgrades[{id,name,level,max,cost,canBuy,now,next}] }
- *   viewModel.training = { reps, total, state, message, depth, lastOk, sinceRepMs }
+ *   [ASHEN_V2] onOath({from})  onTraining({from})  onBuyUpgrade(id)  onBack()  onExercise('pushups'|'squats')
+ *   viewModel.progress = { points, earned, pushups, squats, embers[], emberTotal, upgrades[{id,name,level,max,cost,canBuy,now,next}] }
+ *   viewModel.training = { exercise, reps, total, state, message, depth, lastOk, sinceRepMs,
+ *     приседания: attempts, knee, view, lastHint{code,text,tMs}, sinceHintMs, faults{}, formScore, topFault{code,text,count}, debugSim }
  */
 
 export const API_VERSION = 'ASHEN_V1';
@@ -48,7 +49,7 @@ const SCREEN_ANNOUNCE = {
   defeat: 'Поражение',
   error: 'Ошибка',
   oath: 'Клятва героя: улучшения',
-  training: 'Тренировка: отжимания',
+  training: 'Тренировка клятвы',
 };
 
 const DEBUG_KEYS_TEXT =
@@ -1577,13 +1578,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const meta = el('p', { class: 'ao-note ao-oath__meta' });
     const grid = el('div', { class: 'ao-upgs', role: 'list' });
     const cards = new Map();
-    const train = btn('Тренировка: отжимания', () => invoke('onTraining', { from: 'oath' }), { variant: 'primary' });
+    const train = btn('Тренировка: отжимания и приседания', () => invoke('onTraining', { from: 'oath' }), { variant: 'primary' });
     const back = btn('Назад', () => invoke('onBack'), { variant: 'quiet' });
     const panel = el(
       'div',
       { class: 'ao-panel ao-panel--oath ao-frame' },
       el('div', { class: 'ao-oath__head' },
-        el('div', {}, h, el('p', { class: 'ao-lead', text: 'Отжимание перед камерой — 1 очко клятвы, уголь, зажжённый на плато, — 3 очка.' })),
+        el('div', {}, h, el('p', { class: 'ao-lead', text: 'Отжимание или чистое приседание перед камерой — 1 очко клятвы, уголь, зажжённый на плато, — 3 очка.' })),
         el('div', { class: 'ao-oath__bank' }, pts, ptsLabel)),
       meta,
       grid,
@@ -1609,7 +1610,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setText(pts, String(points));
         setText(ptsLabel, plural(points, 'очко клятвы', 'очка клятвы', 'очков клятвы'));
         const et = P && isNum(P.emberTotal) ? P.emberTotal : 0;
-        setText(meta, P ? `Отжиманий всего: ${num(P.pushups)} · углей зажжено: ${Array.isArray(P.embers) ? P.embers.length : 0}${et ? ` из ${et}` : ''} · заработано очков: ${num(P.earned)}` : '');
+        setText(meta, P ? `Отжиманий всего: ${num(P.pushups)} · приседаний: ${num(P.squats)} · углей зажжено: ${Array.isArray(P.embers) ? P.embers.length : 0}${et ? ` из ${et}` : ''} · заработано очков: ${num(P.earned)}` : '');
         const list = P && Array.isArray(P.upgrades) ? P.upgrades : [];
         for (const u of list) {
           if (!u || typeof u.id !== 'string') continue;
@@ -1641,17 +1642,50 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const host = el('div', { class: 'ao-slothost' });
     const status = statusLine();
     const enable = btn('Разрешить камеру', pressEnable, { variant: 'primary', iconName: 'camera' });
+    const lead = el('p', { class: 'ao-lead' });
+    // выбор упражнения
+    const exName = `${uid}-train-ex`;
+    const exSeg = el('div', { class: 'ao-seg' });
+    const exInputs = [];
+    for (const [value, label] of [['pushups', 'Отжимания'], ['squats', 'Приседания']]) {
+      const input = el('input', { type: 'radio', name: exName, value, class: 'ao-seg__input' });
+      exInputs.push(input);
+      exSeg.append(el('label', { class: 'ao-seg__opt' }, input, el('span', { class: 'ao-seg__label', text: label })));
+      listen(input, 'change', () => { if (input.checked) invoke('onExercise', value); });
+    }
+    const exField = el('fieldset', { class: 'ao-field ao-fieldset ao-train__ex' }, el('legend', { class: 'ao-field__legend', text: 'Упражнение' }), exSeg);
     const count = el('strong', { class: 'ao-train__count', text: '0' });
     const countLabel = el('span', { class: 'ao-train__label', text: 'отжиманий за подход' });
+    const good = el('span', { class: 'ao-train__good', 'aria-hidden': 'true', hidden: true, text: 'Чисто! +1' });
     const depth = meter('Глубина отжимания', 'ao-train__depth');
+    // карточка ошибки техники (приседания): держится ~3 с после подсказки
+    const faultText = el('span', { class: 'ao-train__faulttext' });
+    const fault = el('div', { class: 'ao-train__fault', 'data-tone': 'bad', hidden: true },
+      el('strong', { class: 'ao-train__faultkey', text: 'Ошибка' }), faultText);
     const msg = el('p', { class: 'ao-train__msg', role: 'status' });
+    const stepsPush = el('ol', { class: 'ao-train__steps' },
+      el('li', { text: 'Поставьте ноутбук на пол перед головой (или сбоку), камерой на себя.' }),
+      el('li', { text: 'Упор лёжа: в кадре должны быть плечи и обе кисти.' }),
+      el('li', { text: 'Опускайтесь, пока плечи почти не дойдут до кистей, и выпрямляйте руки. Можно с колен.' }));
+    const stepsSquat = el('ol', { class: 'ao-train__steps', hidden: true },
+      el('li', { text: 'Поставьте ноутбук в 2–3 м от себя, камерой на себя.' }),
+      el('li', { text: 'В кадре — всё тело, от плеч до стоп. Встаньте лицом к камере или под углом 45°.' }),
+      el('li', { text: 'Ноги на ширине плеч. Садитесь, пока бёдра не станут параллельны полу, и выпрямляйтесь полностью. Очко дают только чистые повторы.' }));
+    const simNote = el('p', {
+      class: 'ao-note ao-train__sim', hidden: true,
+      text: 'DEBUG, без камеры: S или ↓ (держать) — присесть, Shift — быстро, V — колени внутрь, G — колени за носки, T — наклон, H — пятки, B — не выпрямляться.',
+    });
+    // итог подхода (приседания)
+    const sumLine = el('p', { class: 'ao-train__sumline' });
+    const sumTip = el('p', { class: 'ao-train__sumtip' });
+    const summary = el('div', { class: 'ao-train__summary', hidden: true }, el('strong', { class: 'ao-train__sumhead', text: 'Итог подхода' }), sumLine, sumTip);
     const total = el('p', { class: 'ao-note' });
     const oathB = btn('Улучшения', () => invoke('onOath', { from: 'training' }));
     const done = btn('Готово', () => invoke('onBack'), { variant: 'primary' });
     const panel = el(
       'div',
       { class: 'ao-panel ao-panel--train ao-frame' },
-      el('div', { class: 'ao-head' }, h, el('p', { class: 'ao-lead', text: 'Каждое настоящее отжимание — очко клятвы. Видео обрабатывается только в браузере и не записывается.' })),
+      el('div', { class: 'ao-head' }, h, lead),
       el(
         'div',
         { class: 'ao-cols' },
@@ -1659,19 +1693,24 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         el(
           'div',
           { class: 'ao-col' },
-          el('div', { class: 'ao-train__score' }, count, countLabel),
+          exField,
+          el('div', { class: 'ao-train__score' }, count, countLabel, good),
           depth.node,
+          fault,
           msg,
-          el('ol', { class: 'ao-train__steps' },
-            el('li', { text: 'Поставьте ноутбук на пол перед головой (или сбоку), камерой на себя.' }),
-            el('li', { text: 'Упор лёжа: в кадре должны быть плечи и обе кисти.' }),
-            el('li', { text: 'Опускайтесь, пока плечи почти не дойдут до кистей, и выпрямляйте руки. Можно с колен.' })),
+          stepsPush,
+          stepsSquat,
+          simNote,
+          summary,
           total,
         ),
       ),
       el('div', { class: 'ao-actions' }, done.node, oathB.node),
     );
+    const POSTURE = ['valgus', 'knees_forward', 'lean', 'heels'];
+    const VIEW_NAME = { front: 'вид спереди', side: 'вид сбоку', diag: 'вид под углом' };
     let lastKey = '';
+    let lastMode = '';
     return {
       section: screenSection('training', panel, hid),
       heading: h,
@@ -1679,20 +1718,70 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       focus: () => done.node,
       update(ctx) {
         const T = ctx.vm.training && typeof ctx.vm.training === 'object' ? ctx.vm.training : {};
+        const squat = T.exercise === 'squats';
         const st = ctx.tr.status;
         paintStatus(status, describeTracking(ctx.tr, cfg), '');
-        setBtn(enable, { hidden: !(st === 'idle' || st === 'error'), disabled: CAMERA_STARTING.includes(st) });
+        setBtn(enable, { hidden: squat && T.debugSim ? true : !(st === 'idle' || st === 'error'), disabled: CAMERA_STARTING.includes(st) });
         setAttr(host, 'data-tone', describeTracking(ctx.tr, cfg).tone);
+        const mode = squat ? 'squats' : 'pushups';
+        if (mode !== lastMode) {
+          lastMode = mode;
+          lastKey = '';
+          for (const i of exInputs) { const on = i.value === mode; if (i.checked !== on) i.checked = on; }
+          setText(lead, squat
+            ? 'Каждое чистое приседание — очко клятвы. Игра следит за техникой и подсказывает, что исправить. Видео обрабатывается только в браузере и не записывается.'
+            : 'Каждое настоящее отжимание — очко клятвы. Видео обрабатывается только в браузере и не записывается.');
+          setAttr(depth.node, 'aria-label', squat ? 'Глубина приседа' : 'Глубина отжимания');
+          setHidden(stepsPush, squat);
+          setHidden(stepsSquat, !squat);
+        }
         const reps = Math.max(0, num(T.reps) | 0);
         setText(count, String(reps));
-        setText(countLabel, `${plural(reps, 'отжимание', 'отжимания', 'отжиманий')} за подход`);
+        setText(countLabel, squat
+          ? `${plural(reps, 'чистое приседание', 'чистых приседания', 'чистых приседаний')} за подход`
+          : `${plural(reps, 'отжимание', 'отжимания', 'отжиманий')} за подход`);
         paintMeter(depth, num(T.depth));
-        const fresh = isNum(T.sinceRepMs) && T.sinceRepMs < 600;
-        setClass(count, 'is-flash', fresh && T.lastOk !== false);
-        const text = typeof T.message === 'string' ? T.message : '';
-        if (text !== lastKey) { lastKey = text; setText(msg, /^\d+$/.test(text) ? 'Засчитано!' : text); }
+        const repAge = isNum(T.sinceRepMs) ? T.sinceRepMs : Infinity;
+        setClass(count, 'is-flash', repAge < 600 && T.lastOk !== false);
         const P = ctx.vm.progress;
-        setText(total, P && isNum(P.points) ? `Очков клятвы: ${P.points} · отжиманий всего: ${num(P.pushups)}` : '');
+        if (!squat) {
+          setHidden(good, true);
+          setHidden(fault, true);
+          setHidden(simNote, true);
+          setHidden(summary, true);
+          const text = typeof T.message === 'string' ? T.message : '';
+          if (text !== lastKey) { lastKey = text; setText(msg, /^\d+$/.test(text) ? 'Засчитано!' : text); }
+          setText(total, P && isNum(P.points) ? `Очков клятвы: ${P.points} · отжиманий всего: ${num(P.pushups)}` : '');
+          return;
+        }
+        // --- приседания: карточка ошибки ~3 с (про кадр — пока тело не в кадре), «Чисто! +1», итог
+        const H = T.lastHint && typeof T.lastHint === 'object' && typeof T.lastHint.text === 'string' ? T.lastHint : null;
+        const hintAge = isNum(T.sinceHintMs) ? T.sinceHintMs : Infinity;
+        const framing = !!H && H.code === 'frame' && T.state === 'noPose';
+        const showFault = !!H && (framing || (hintAge < 3000 && hintAge <= repAge));
+        setHidden(fault, !showFault);
+        if (showFault) {
+          setText(faultText, H.text);
+          setAttr(fault, 'data-tone', POSTURE.includes(H.code) ? 'bad' : 'warn');
+          setAttr(fault, 'data-code', H.code);
+          const key = `${H.code}|${H.tMs}`;
+          if (key !== lastKey) { lastKey = key; announce(`Ошибка: ${H.text}`); }
+        }
+        setHidden(good, !(repAge < 1200 && T.lastOk === true && !showFault));
+        const knee = isNum(T.knee) ? `угол колена ${Math.round(T.knee)}°` : '';
+        const live = T.state !== 'noPose' && T.state !== 'setup';
+        setText(msg, live ? [knee, VIEW_NAME[T.view] || ''].filter(Boolean).join(' · ') : (typeof T.message === 'string' ? T.message : ''));
+        setHidden(simNote, !T.debugSim);
+        const att = Math.max(0, num(T.attempts) | 0);
+        setHidden(summary, att === 0);
+        if (att > 0) {
+          const score = isNum(T.formScore) ? Math.round(T.formScore * 100) : 0;
+          setText(sumLine, `Чистых: ${reps} из ${att} · техника ${score}%`);
+          const tf = T.topFault && typeof T.topFault.text === 'string' ? T.topFault : null;
+          setText(sumTip, tf ? `Чаще всего (${tf.count}×): ${tf.text}` : 'Ошибок нет — так держать!');
+          setClass(summary, 'is-clean', !tf);
+        }
+        setText(total, P && isNum(P.points) ? `Очков клятвы: ${P.points} · приседаний всего: ${num(P.squats)}` : '');
       },
     };
   })();

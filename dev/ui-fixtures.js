@@ -208,6 +208,18 @@ export const FIXTURES = {
     screen: 'training', tracking: { ...READY }, progress: PROGRESS_MID,
     training: { reps: 7, state: 'down', message: '7', depth: 0.64, lastOk: true, sinceRepMs: 200 },
   }),
+  'training-squat-fault': vm({
+    screen: 'training', tracking: { ...READY }, progress: PROGRESS_MID,
+    training: {
+      exercise: 'squats', reps: 4, attempts: 6, state: 'bottom', message: '', depth: 0.92, knee: 104, view: 'front',
+      lastOk: false, sinceRepMs: 4000, lastHint: { code: 'valgus', text: 'Колени заваливаются внутрь — разводи их в стороны, по линии носков', tMs: 1 }, sinceHintMs: 300,
+      faults: { shallow: 1, valgus: 1 }, formScore: 0.667, topFault: { code: 'shallow', text: 'Садись глубже — бёдра до параллели с полом', count: 1 },
+    },
+  }),
+  'training-squat-clean': vm({
+    screen: 'training', tracking: { ...READY }, progress: PROGRESS_MID,
+    training: { exercise: 'squats', reps: 5, attempts: 5, state: 'top', message: '5', depth: 0, knee: 176, view: 'side', lastOk: true, sinceRepMs: 300, lastHint: null, sinceHintMs: null, faults: {}, formScore: 1, topFault: null },
+  }),
 };
 
 export const FIXTURE_NAMES = Object.keys(FIXTURES);

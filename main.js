@@ -23,8 +23,10 @@ import { createUI } from './modules/ui.js';
 import { createVision } from './modules/vision.js';
 import { createTrackingHud } from './core/trackingHud.js';
 import { createBattleHud } from './core/battleHud.js';
+import { createCoachStats, hintInfo } from './core/gestureCoach.js';
 import { createProgression } from './core/progression.js';
 import { createPushupCounter } from './core/pushupCounter.js';
+import { createSquatCounter, topSquatFault, synthSquatPose } from './core/squatCounter.js';
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
 
@@ -135,7 +137,32 @@ const combatCfg = typeof combat.getConfig === 'function' ? combat.getConfig() : 
 // Хранится только в localStorage этого браузера.
 const progression = createProgression();
 const pushups = createPushupCounter();
-const train = { reps: 0, lastPoseT: -1, lastRepAt: -1e9 };
+const squats = createSquatCounter();
+// exercise: 'pushups' | 'squats'. sim — клавиатурная имитация приседа в DEBUG (без камеры).
+const train = { reps: 0, lastPoseT: -1, lastRepAt: -1e9, exercise: 'pushups', hintRef: null, hintAt: -1e9, sim: { k: 0, t: 0, keys: new Set() } };
+function resetTraining() {
+  pushups.reset(); squats.reset();
+  train.reps = 0; train.lastPoseT = -1; train.lastRepAt = -1e9; train.sim.k = 0; train.sim.t = 0; train.sim.keys.clear();
+  train.hintRef = null; train.hintAt = -1e9;
+}
+// [ASHEN_V2] DEBUG-приседания: S или ↓ (держать) — вниз, отпустить — вверх; Shift — быстро;
+// V — колени внутрь, G — колени за носки (вид сбоку), T — наклон корпуса, H — пятки, B — не выпрямляться.
+const SIM_KEYS = ['KeyS', 'ArrowDown', 'ShiftLeft', 'ShiftRight', 'KeyV', 'KeyG', 'KeyT', 'KeyH', 'KeyB'];
+function simActive() { return app.debug && app.screen === 'training' && train.exercise === 'squats'; }
+window.addEventListener('keydown', (e) => { if (simActive() && SIM_KEYS.includes(e.code)) { train.sim.keys.add(e.code); if (e.code === 'ArrowDown') e.preventDefault(); } });
+window.addEventListener('keyup', (e) => { train.sim.keys.delete(e.code); });
+window.addEventListener('blur', () => train.sim.keys.clear());
+function simSquatFrame(now, dt) {
+  const K = train.sim.keys, sim = train.sim;
+  const down = K.has('KeyS') || K.has('ArrowDown');
+  const rate = K.has('ShiftLeft') || K.has('ShiftRight') ? 4 : 1;       // глубина в секунду
+  const floor = K.has('KeyB') ? 0.25 : 0;
+  const target = down ? 1 : floor;
+  const step = rate * Math.min(0.1, dt);
+  sim.k = sim.k < target ? Math.min(target, sim.k + step) : Math.max(target, sim.k - step);
+  const kf = K.has('KeyG');
+  return synthSquatPose(sim.k, kf ? 'side' : 'front', { valgus: K.has('KeyV'), kneesForward: kf, lean: K.has('KeyT'), heels: K.has('KeyH') });
+}
 function applyUpgrades() {
   if (typeof combat.setUpgrades !== 'function') return;
   try { combat.setUpgrades(progression.mods()); } catch (e) { console.warn('[ASHEN] setUpgrades', e); }
@@ -254,6 +281,7 @@ function rigState(snap, impulse) {
 function startFight() {
   resetFight();
   battleHud.reset();
+  coachStats.reset();
   app.resumableFight = false;
   app.resumeAt = 0;
   effects.setVolume(gameVolume());
@@ -376,8 +404,16 @@ const callbacks = {
   // [ASHEN_V2] клятва героя (улучшения) и тренировка (отжимания)
   onOath() { openSub('oath'); },
   onTraining() {
-    pushups.reset(); train.reps = 0; train.lastPoseT = -1; train.lastRepAt = -1e9;
+    resetTraining();
     openSub('training');
+  },
+  // [ASHEN_V2] выбор упражнения на экране тренировки: 'pushups' | 'squats'
+  onExercise(kind) {
+    const k = kind === 'squats' ? 'squats' : 'pushups';
+    if (k === train.exercise) return;
+    train.exercise = k;
+    resetTraining();
+    renderUI();
   },
   onBuyUpgrade(id) { if (progression.buy(id).ok) renderUI(); },
   onBack() {
@@ -420,6 +456,8 @@ if (slot) { slot.appendChild(video); slot.appendChild(overlay); }
 // собственный overlay vision выключен (config.vision.overlay=false).
 const trackingHud = createTrackingHud({ canvas: overlay });
 const battleHud = createBattleHud({ canvas: hudCanvas });
+// [ТВИСТ «ОШИБКА»] удачные жесты и подсказки за бой → точность и частая ошибка на экране итогов
+const coachStats = createCoachStats();
 const _proj = new THREE.Vector3();
 function projectToScreen(p) {
   _proj.set(p.x, p.y, p.z).project(camera);
@@ -500,8 +538,18 @@ function renderUI() {
   });
 }
 function trainingView() {
+  if (train.exercise === 'squats') {
+    const q = squats.read();
+    return {
+      exercise: 'squats', debugSim: app.debug, reps: train.reps, attempts: q.attempts, state: q.phase, message: q.message,
+      depth: q.depth, knee: q.knee, view: q.view, lastOk: q.lastRep ? q.lastRep.ok : null,
+      sinceRepMs: performance.now() - train.lastRepAt, lastHint: q.lastHint,
+      sinceHintMs: q.lastHint ? performance.now() - train.hintAt : null,
+      faults: q.faults, formScore: q.formScore, topFault: topSquatFault(q.faults),
+    };
+  }
   const r = pushups.read();
-  return { reps: train.reps, state: r.state, message: r.message, depth: r.depth, lastOk: r.lastRep ? r.lastRep.ok : null, sinceRepMs: performance.now() - train.lastRepAt };
+  return { exercise: 'pushups', reps: train.reps, state: r.state, message: r.message, depth: r.depth, lastOk: r.lastRep ? r.lastRep.ok : null, sinceRepMs: performance.now() - train.lastRepAt };
 }
 
 // ---------------------------------------------------------------- системные события
@@ -559,6 +607,47 @@ function timeScale(now) {
   return 1;
 }
 
+// ---------------------------------------------------------------- [ТВИСТ «ОШИБКА»]
+// Импульсы удачных жестов и коды подсказок из распознавателя → статистика боя.
+function trackCoach(input) {
+  if (!input) return;
+  if (input.burst) coachStats.success('burst');
+  if (input.rune) coachStats.success('rune');
+  if (input.spark) coachStats.success('spark');
+  if (input.slash) coachStats.success('slash');
+  if (input.parry) coachStats.success('parry');
+  if (input.throw) coachStats.success('throw');
+  if (input.sigil) coachStats.success('sigil');
+  if (input.hint && input.hint.code) coachStats.mistake(input.hint.code);
+}
+function coachView(input) {
+  const h = input && input.hint && hintInfo(input.hint.code) ? { ...input.hint, ...hintInfo(input.hint.code) } : null;
+  const s = coachStats.summary();
+  return { hint: h, accuracy: s.accuracy, good: s.good, mistakes: s.mistakes };
+}
+
+// ---------------------------------------------------------------- постобработка: лучи короны и рывок экрана
+const _sunV = new THREE.Vector3();
+const PUNCH = { burst: 0.9, rune_cast: 0.75, sigil_cast: 0.6, boss_impact: 0.8, perfect_dodge: 0.5 };
+function feedPostFx(events) {
+  const atmo = world && world.atmosphere;
+  if (atmo && atmo.sunDir && typeof postfx.setSun === 'function') {
+    _sunV.copy(atmo.sunDir).multiplyScalar(400).add(camera.position).project(camera);
+    const inFront = _sunV.z < 1;
+    const edge = Math.max(Math.abs(_sunV.x), Math.abs(_sunV.y));
+    postfx.setSun(_sunV.x * 0.5 + 0.5, _sunV.y * 0.5 + 0.5, inFront ? 1 - Math.min(1, Math.max(0, (edge - 1) / 0.6)) : 0);
+  }
+  if (!Array.isArray(events) || typeof postfx.punch !== 'function') return;
+  for (const e of events) {
+    let k = e && PUNCH[e.type];
+    if (!k) continue;
+    if (e.type === 'burst') k *= 0.6 + 0.4 * Math.min(1, (e.data && e.data.power) || 0.5);
+    let x = 0.5, y = 0.5;
+    if (e.position) { _sunV.set(e.position.x, e.position.y || 0, e.position.z).project(camera); if (_sunV.z < 1) { x = _sunV.x * 0.5 + 0.5; y = _sunV.y * 0.5 + 0.5; } }
+    postfx.punch(k, x, y);
+  }
+}
+
 // ---------------------------------------------------------------- главный цикл
 const NO_EVENTS = Object.freeze([]);
 const ZERO = Object.freeze({ x: 0, y: 0, z: 0 });
@@ -602,6 +691,7 @@ function frame(now) {
       } else app.lostTime = 0;
     }
     if (now < app.resumeAt) frozen = true;
+    if (app.screen === 'playing' && !frozen) trackCoach(input);
     if (app.screen === 'playing' && dt > 0 && !frozen) {
       // [ASHEN_V2] стик — в осях камеры: «вперёд на стике» = «вперёд на экране»
       if (Number.isFinite(rig.yaw)) input.viewYaw = rig.yaw;
@@ -616,7 +706,23 @@ function frame(now) {
   }
 
   // [ASHEN_V2] тренировка: поза → счётчик отжиманий → очки клятвы
-  if (app.screen === 'training' && vision) {
+  if (app.screen === 'training' && train.exercise === 'squats') {
+    // поза с камеры, в DEBUG — клавиатурная имитация (время — performance.now)
+    let pose = null;
+    if (app.debug) {
+      const dtSim = train.sim.t ? (now - train.sim.t) / 1000 : 0;
+      train.sim.t = now;
+      pose = { tMs: now, landmarks: simSquatFrame(now, dtSim), frameW: 640, frameH: 480 };
+    } else if (vision) { try { pose = vision.getPose(); } catch (e) { pose = null; } }
+    if (pose && pose.tMs !== train.lastPoseT) {
+      train.lastPoseT = pose.tMs;
+      squats.push({ tMs: pose.tMs, landmarks: pose.landmarks, frameW: pose.frameW, frameH: pose.frameH });
+    }
+    const got = squats.drain();
+    if (got.length) { train.reps += got.length; train.lastRepAt = now; progression.addSquats(got.length); }
+    const hint = squats.read().lastHint;
+    if (hint && hint !== train.hintRef) { train.hintRef = hint; train.hintAt = now; }
+  } else if (app.screen === 'training' && vision) {
     let pose = null;
     try { pose = vision.getPose(); } catch (e) { pose = null; }
     if (pose && pose.tMs !== train.lastPoseT) {
@@ -663,6 +769,7 @@ function frame(now) {
     camera.lookAt(c.target.x, c.target.y, c.target.z);
   }
 
+  if (postfx && postfx.enabled) feedPostFx(events);
   let rendered = false;
   if (postfx && postfx.enabled) { try { postfx.render(dtReal); rendered = true; } catch (e) { console.warn('[ASHEN] postfx.render', e); postfx = null; } }
   if (!rendered) renderer.render(scene, camera);
@@ -674,6 +781,7 @@ function frame(now) {
     intro: { active: app.screen === 'intro', t: app.intro.t, duration: app.intro.duration },
     settings, resumeLeftMs: app.screen === 'playing' ? Math.max(0, app.resumeAt - now) : 0,
     pois: unlitEmbers(),
+    coach: coachView(input),
   });
 
   perf.frames++;
@@ -705,6 +813,8 @@ window.__ASHEN__ = Object.freeze({
   worldAssets: () => (world && world.assets ? world.assets : null),
   progress: () => progression.getView(),
   pushups: () => pushups.getDebug(),
+  coach: () => coachStats.summary(),
+  squats: () => squats.getDebug(),
   heroMax: () => { const c = typeof combat.getEffectiveConfig === 'function' ? combat.getEffectiveConfig() : null; return c ? { hp: c.player.maxHp, energy: c.player.maxEnergy } : null; },
   embers: () => (worldLayout && Array.isArray(worldLayout.pois) ? worldLayout.pois.map((q) => ({ id: q.id, x: q.x, z: q.z, lit: progression.isEmberLit(q.id) })) : []),
   renderInfo: () => {

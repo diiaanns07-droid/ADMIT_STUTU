@@ -1,17 +1,18 @@
 // Прогресс героя (ASHEN_V2). Владелец: №1.
-// Очки клятвы приходят за настоящие отжимания перед камерой (1 повтор = 1 очко) и за угли,
+// Очки клятвы приходят за настоящие отжимания и чистые приседания перед камерой (1 повтор = 1 очко) и за угли,
 // зажжённые на плато (по 3 очка, каждый уголь один раз). Очки тратятся на улучшения.
 // Хранится только в этом браузере (localStorage, ключ ashen.oath.v1); без хранилища — в памяти.
 // Никуда не отправляется.
 //
 // createProgression({ storage?, key? }) → {
-//   getView(), addPushups(n), lightEmber(id), isEmberLit(id), buy(id), mods(), resetAll(), onChange(fn)
+//   getView(), addPushups(n), addSquats(n), lightEmber(id), isEmberLit(id), buy(id), mods(), resetAll(), onChange(fn)
 // }
 // mods() — модификаторы для combat.setUpgrades(): аддитивные поля и множители (*Mul).
 
 export const PROGRESSION_VERSION = 1;
 export const EMBER_POINTS = 3;
 export const PUSHUP_POINTS = 1;
+export const SQUAT_POINTS = 1;
 
 const lvlText = (fn) => (l) => fn(Math.max(0, l | 0));
 export const UPGRADES = Object.freeze([
@@ -54,13 +55,14 @@ export const UPGRADES = Object.freeze([
 const BY_ID = new Map(UPGRADES.map((u) => [u.id, u]));
 const MAX_POINTS = 100000;
 
-function fresh() { return { v: PROGRESSION_VERSION, points: 0, earned: 0, pushups: 0, embers: [], levels: {} }; }
+function fresh() { return { v: PROGRESSION_VERSION, points: 0, earned: 0, pushups: 0, squats: 0, embers: [], levels: {} }; }
 
 function sanitize(raw) {
   const s = fresh();
   if (!raw || typeof raw !== 'object') return s;
   const int = (v) => (Number.isFinite(v) ? Math.max(0, Math.min(MAX_POINTS, Math.floor(v))) : 0);
   s.points = int(raw.points); s.earned = int(raw.earned); s.pushups = int(raw.pushups);
+  s.squats = int(raw.squats);   // старые сохранения без поля — 0
   if (Array.isArray(raw.embers)) s.embers = [...new Set(raw.embers.filter((e) => typeof e === 'string' && e.length < 40))].slice(0, 64);
   if (raw.levels && typeof raw.levels === 'object') {
     for (const u of UPGRADES) { const l = int(raw.levels[u.id]); if (l > 0) s.levels[u.id] = Math.min(u.max, l); }
@@ -102,6 +104,15 @@ export function createProgression(opts = {}) {
     changed('pushup');
     return got;
   }
+  // Чистые приседания (с правильной техникой) — тоже очки клятвы.
+  function addSquats(n) {
+    const k = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+    if (!k) return 0;
+    st.squats = Math.min(MAX_POINTS, st.squats + k);
+    const got = give(k * SQUAT_POINTS);
+    changed('squat');
+    return got;
+  }
   function isEmberLit(id) { return st.embers.includes(String(id)); }
   function lightEmber(id) {
     const s = String(id);
@@ -125,7 +136,7 @@ export function createProgression(opts = {}) {
   }
   function getView() {
     return {
-      points: st.points, earned: st.earned, pushups: st.pushups, embers: st.embers.slice(),
+      points: st.points, earned: st.earned, pushups: st.pushups, squats: st.squats, embers: st.embers.slice(),
       upgrades: UPGRADES.map((u) => {
         const level = st.levels[u.id] || 0, cost = costOf(u);
         return {
@@ -141,5 +152,5 @@ export function createProgression(opts = {}) {
   function resetAll() { st = fresh(); changed('reset'); }
   function onChange(fn) { if (typeof fn === 'function') listeners.add(fn); return () => listeners.delete(fn); }
 
-  return { getView, addPushups, lightEmber, isEmberLit, buy, mods, resetAll, onChange };
+  return { getView, addPushups, addSquats, lightEmber, isEmberLit, buy, mods, resetAll, onChange };
 }

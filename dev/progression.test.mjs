@@ -28,6 +28,21 @@ test('отжимания дают очки; уголь — один раз', () 
   assert(p.getView().points === 5 + EMBER_POINTS && p.getView().earned === 5 + EMBER_POINTS, 'сумма');
 });
 
+test('приседания дают очки и хранятся отдельно; старое сохранение без squats читается', () => {
+  const s = memStore();
+  const p = createProgression({ storage: s });
+  p.addPushups(2);
+  assert(p.addSquats(4) === 4 && p.addSquats(-1) === 0 && p.addSquats('3') === 0, 'addSquats');
+  const v = p.getView();
+  assert(v.squats === 4 && v.pushups === 2 && v.points === 6 && v.earned === 6, JSON.stringify(v));
+  assert(createProgression({ storage: s }).getView().squats === 4, 'сохранено');
+  s.setItem('ashen.oath.v1', '{"v":1,"points":5,"earned":5,"pushups":5,"embers":[],"levels":{}}');
+  const old = createProgression({ storage: s }).getView();
+  assert(old.squats === 0 && old.pushups === 5 && old.points === 5, 'старый формат');
+  s.setItem('ashen.oath.v1', '{"squats": -7}');
+  assert(createProgression({ storage: s }).getView().squats === 0, 'мусор в squats');
+});
+
 test('покупка: списание, уровень, нехватка очков, потолок', () => {
   const p = createProgression({ storage: memStore() });
   assert(p.buy('vitality').reason === 'points', 'без очков нельзя');
