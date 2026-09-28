@@ -198,6 +198,20 @@ try {
   await page.hold('KeyC', 60); await sleep(500);
   stats.marked = await page.eval('__ASHEN__.snapshot().boss.marked');
   await page.shot('13_sigil_frame');
+  // [V3] новые руны и рисованные печати: 4 — звездопад, 9 — клепсидра, V — дельта, B — кор
+  await sleep(600); await waitEnergy(45);
+  await page.hold('Digit4', 60); await sleep(650);
+  await page.shot('14_rune_stella');
+  await sleep(900); await waitEnergy(35);
+  await page.hold('Digit9', 60); await sleep(500);
+  stats.slowed = await page.eval('__ASHEN__.snapshot().boss.slowed');
+  await page.shot('15_rune_clepsydra');
+  await sleep(700); await waitEnergy(50);
+  await page.hold('KeyV', 60); await sleep(420);
+  await page.shot('16_sigil_delta');
+  await sleep(1500); await waitEnergy(40);
+  await page.hold('KeyB', 60); await sleep(600);
+  await page.shot('17_sigil_cor');
   if (argv.includes('--phase2')) {
     // добить Регента до второй фазы (≤50% HP): огонь J + брошенные сферы O
     const t0 = Date.now();

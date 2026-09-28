@@ -988,6 +988,81 @@ test('[V3] печать РАМКА: метка цели +30% урона по Р�
   assert(!c.getSnapshot().boss.marked, 'метка истекла');
 });
 
+test('[V3] руны: ★ звездопад 5×, ^ три иглы попадают с 13 м, V жатва — урон и лечение', () => {
+  const cfg = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5() }).getConfig().runes;
+  let c = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5() });
+  let ev = runFor(c, 2, 60, (t0) => I({ rune: t0 < 0.001 ? 'stella' : null }));
+  assert(count(ev, 'rune_hit', (e) => e.data.rune === 'stella') === cfg.stella.count, 'метеоров: ' + count(ev, 'rune_hit'));
+  { const dealt = c.getSnapshot().boss.maxHp - c.getSnapshot().boss.hp, base = cfg.stella.damage * cfg.stella.count; assert(dealt >= base - 1e-6 && dealt <= base * 1.12, 'урон звездопада (с комбо): ' + dealt); }
+  c = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5(), layout: { ...DEFAULT_LAYOUT, playerSpawn: { x: 0, z: 13, yaw: Math.PI } } });
+  c.getSnapshot();
+  ev = runFor(c, 2, 60, (t0) => I({ rune: t0 < 0.001 ? 'caret' : null }));
+  assert(count(ev, 'boss_hit', (e) => e.data.amount >= cfg.caret.damage - 1e-6) === cfg.caret.count, 'игл попало: ' + count(ev, 'boss_hit'));
+  c = createCombat({ config: {}, bossBrain: createScriptTestBrain_NOT_No5([orbAtPlayer(0.05, { damage: 30 })]) });
+  runFor(c, 2.5, 60, () => I());
+  const hp0 = c.getSnapshot().player.hp;
+  assert(hp0 < 100, 'сначала ранен');
+  ev = runFor(c, 0.2, 60, (t0) => I({ rune: t0 < 0.001 ? 'vee' : null }));
+  assert(c.getSnapshot().player.hp === Math.min(100, hp0 + cfg.vee.heal) && count(ev, 'boss_hit') === 1, 'жатва');
+});
+
+test('[V3] руны: @ вихрь гасит сферу и ускоряет бег; ∞ лечит за время; α сбрасывает откаты и даёт энергию', () => {
+  const cfg = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5() }).getConfig();
+  let c = createCombat({ config: {}, bossBrain: createScriptTestBrain_NOT_No5([orbAtPlayer(0.3)]) });
+  let ev = runFor(c, 2, 60, (t0) => I({ rune: t0 < 0.001 ? 'spira' : null }));
+  assert(count(ev, 'projectile_impact', (e) => e.data.result === 'dispelled') === 1 && count(ev, 'player_hit') === 0, 'вихрь погасил сферу');
+  c = createCombat({ config: { encounter: { enabled: false } }, bossBrain: createIdleTestBrain_NOT_No5(), layout: { ...DEFAULT_LAYOUT, colliders: [], playerSpawn: { x: 0, z: 30, yaw: Math.PI } } });
+  runFor(c, 0.05, 60, (t0) => I({ rune: t0 < 0.001 ? 'spira' : null }));
+  runFor(c, 1.2, 60, () => I({ moveZ: -1, viewYaw: 0 }));
+  const sp = c.getSnapshot().player.speed;
+  assert(sp > cfg.player.runSpeed * cfg.player.backpedalFactor * (1 + cfg.runes.spira.speedBonus) * 0.9 || sp > cfg.player.runSpeed * 1.1, 'бег быстрее: ' + sp.toFixed(2));
+  c = createCombat({ config: {}, bossBrain: createScriptTestBrain_NOT_No5([orbAtPlayer(0.05, { damage: 50 })]) });
+  runFor(c, 2.5, 60, () => I());
+  const hp0 = c.getSnapshot().player.hp;
+  runFor(c, 0.05, 60, (t0) => I({ rune: t0 < 0.001 ? 'lemnis' : null }));
+  runFor(c, cfg.runes.lemnis.duration / 2, 60, () => I());
+  const mid = c.getSnapshot().player.hp;
+  runFor(c, cfg.runes.lemnis.duration, 60, () => I());
+  const end = c.getSnapshot().player.hp;
+  assert(mid > hp0 + 10 && mid < hp0 + cfg.runes.lemnis.heal - 5 && Math.abs(end - Math.min(100, hp0 + cfg.runes.lemnis.heal)) < 1, `лечение за время: ${hp0} → ${mid.toFixed(1)} → ${end.toFixed(1)}`);
+  c = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5() });
+  runFor(c, 0.1, 60, (t0) => I({ dashDir: t0 < 0.001 ? { x: 1, z: 0 } : null }));
+  assert(c.getSnapshot().cooldowns.dashRemaining > 0.3, 'рывок на откате');
+  const e0 = c.getSnapshot().player.energy;
+  runFor(c, 0.05, 60, (t0) => I({ rune: t0 < 0.001 ? 'alpha' : null }));
+  const s = c.getSnapshot();
+  assert(s.cooldowns.dashRemaining === 0 && s.player.energy >= Math.min(s.player.maxEnergy, e0 + cfg.runes.alpha.energyGain) - 1, 'альфа: откат 0, энергия');
+});
+
+test('[V3] ⧗ клепсидра: замах Регента идёт на 45% медленнее', () => {
+  const tele = (slow) => {
+    const c = createCombat({ config: {}, bossBrain: createScriptTestBrain_NOT_No5([{ at: 0.3, spec: (s) => ({ id: 'sl', kind: 'slam', origin: { x: 0, y: 0, z: 0 }, target: { ...s.player.position }, windup: 1.0, radius: 2, damage: 10, blockable: false, projectileSpeed: 0 }) }]) });
+    if (slow) runFor(c, 0.05, 60, (t0) => I({ rune: t0 < 0.001 ? 'clepsydra' : null }));
+    runFor(c, 0.9, 60, () => I());
+    const t = c.getSnapshot().telegraphs[0];
+    return t ? t.remaining : 0;
+  };
+  const normal = tele(false), slowed = tele(true);
+  assert(slowed > normal + 0.2, `замах: без клепсидры осталось ${normal.toFixed(2)} с, с ней ${slowed.toFixed(2)} с`);
+});
+
+test('[V3] печати рисунком: ДЕЛЬТА — 4 удара луча и гашение сферы на линии; КОР — лечение за 3 с и оберег', () => {
+  const cfg = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5() }).getConfig().sigils;
+  let c = createCombat({ config: {}, bossBrain: createScriptTestBrain_NOT_No5([orbAtPlayer(0.05, { projectileSpeed: 4 })]) });
+  runFor(c, 0.75, 60, () => I());
+  assert(c.getSnapshot().projectiles.some((q) => q.owner === 'boss'), 'сфера летит');
+  let ev = runFor(c, 1.5, 60, (t0) => I({ sigil: t0 < 0.001 ? 'delta' : null }));
+  assert(count(ev, 'sigil_hit', (e) => e.data.sigil === 'delta') === cfg.delta.ticks, 'ударов луча: ' + count(ev, 'sigil_hit'));
+  assert(count(ev, 'sigil_cast', (e) => e.data.sigil === 'delta' && e.data.cleared === 1) === 1 && count(ev, 'player_hit') === 0, 'сфера на линии погашена');
+  c = createCombat({ config: {}, bossBrain: createScriptTestBrain_NOT_No5([orbAtPlayer(0.05, { damage: 50 })]) });
+  runFor(c, 2.5, 60, () => I());
+  const hp0 = c.getSnapshot().player.hp;
+  runFor(c, 0.05, 60, (t0) => I({ sigil: t0 < 0.001 ? 'cor' : null }));
+  assert(c.getSnapshot().player.warded, 'оберег');
+  runFor(c, cfg.cor.duration + 0.2, 60, () => I());
+  assert(Math.abs(c.getSnapshot().player.hp - Math.min(100, hp0 + cfg.cor.heal)) < 1, `лечение: ${hp0} → ${c.getSnapshot().player.hp}`);
+});
+
 test('[V3] неизвестная печать и руна игнорируются; снимок содержит откаты печатей', () => {
   const c = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5() });
   const ev = runFor(c, 0.2, 60, (t0) => I({ sigil: t0 < 0.001 ? 'hack' : null, rune: t0 < 0.001 ? 'nope' : null }));

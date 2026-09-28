@@ -5,17 +5,17 @@
 //   J — огонь (удержание), U — «Искра», I — «Рассечение» (направление по зажатой A/D, иначе вправо),
 //   K — щит (удержание), F — парирование, L — выброс (обе руки),
 //   O / P (удерживать) — слепить сферу / призму, отпустить — бросить;
-//   [V3] Z — печать «Хлопок», X — «Врата», C — «Рамка»; 1…9 — руны правой руки по порядку RUNE_KEYS;
+//   [V3] Z — печать «Хлопок», X — «Врата», C — «Рамка», V — «Дельта», B — «Кор»; 1…9, 0 — десять рун правой руки (RUNE_KEYS);
 //   H — следующая подсказка режима «ОШИБКА» (показ твиста без камеры; коды — core/gestureCoach.js).
 // Импульсы создаются только на первое нажатие (event.repeat игнорируется) и потребляются read().
 // В режиме CV main.js этот адаптер не опрашивает.
 
-const SIGIL_KEYS = { KeyZ: 'clap', KeyX: 'gate', KeyC: 'frame' };
+const SIGIL_KEYS = { KeyZ: 'clap', KeyX: 'gate', KeyC: 'frame', KeyV: 'delta', KeyB: 'cor' };
 const DEMO_HINTS = ['ok_ring_open', 'shield_palm', 'burst_short', 'rune_open', 'orb_facing', 'slash_slow', 'parry_slow', 'hand_far'];
 // руны правой руки по цифрам (порядок совпадает с RUNE_IDS боя; лишние цифры ничего не делают)
-export const RUNE_KEYS = ['ignis', 'fulgur', 'orbis'];
-const DIGITS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9'];
-const KEYS = ['KeyA', 'KeyD', 'KeyW', 'KeyS', 'KeyQ', 'KeyE', 'Space', 'KeyJ', 'KeyU', 'KeyI', 'KeyK', 'KeyF', 'KeyL', 'KeyO', 'KeyP', 'KeyZ', 'KeyX', 'KeyC', 'KeyH', ...DIGITS];
+export const RUNE_KEYS = ['ignis', 'fulgur', 'orbis', 'stella', 'spira', 'lemnis', 'caret', 'vee', 'clepsydra', 'alpha'];
+const DIGITS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0'];
+const KEYS = ['KeyA', 'KeyD', 'KeyW', 'KeyS', 'KeyQ', 'KeyE', 'Space', 'KeyJ', 'KeyU', 'KeyI', 'KeyK', 'KeyF', 'KeyL', 'KeyO', 'KeyP', 'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyH', ...DIGITS];
 
 export function createDebugInput(target = window) {
   const held = new Set();

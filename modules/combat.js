@@ -31,8 +31,8 @@ const DEFAULT_COLUMNS = [0, 45, 90, 135, 180, 225, 270, 315].map((a) => ({
   type: 'circle', x: Math.round(Math.sin(a * Math.PI / 180) * 18 * 1000) / 1000, z: Math.round(Math.cos(a * Math.PI / 180) * 18 * 1000) / 1000, r: 0.8,
 }));
 // [ASHEN_V3] руны правой руки и двуручные печати
-export const RUNE_IDS = Object.freeze(['ignis', 'fulgur', 'orbis']);
-export const SIGIL_IDS = Object.freeze(['clap', 'gate', 'frame']);
+export const RUNE_IDS = Object.freeze(['ignis', 'fulgur', 'orbis', 'stella', 'spira', 'lemnis', 'caret', 'vee', 'clepsydra', 'alpha']);
+export const SIGIL_IDS = Object.freeze(['clap', 'gate', 'frame', 'delta', 'cor']);
 
 export const DEFAULT_LAYOUT = Object.freeze({
   version: 1,
@@ -83,12 +83,12 @@ export const DEFAULT_COMBAT_CONFIG = deepFreeze({
     chestHeight: 1.1,
     strafeSpeed: 4.0,       // (V1, орбита) — в V2 не используется
     moveDeadzone: 0.06,     // круговая мёртвая зона вектора (moveX, moveZ)
-    accelTime: 0.12,        // постоянная времени разгона (без «льда», без мгновенных рывков)
-    stopTime: 0.08,         // постоянная времени остановки при нейтрали
+    accelTime: 0.08,        // постоянная времени разгона (V3: 0.12 → 0.08 — отклик на руку живее)
+    stopTime: 0.06,         // постоянная времени остановки при нейтрали
     // [ASHEN_V2] свободное движение
-    walkSpeed: 2.2,         // м/с при walkShare хода стика
+    walkSpeed: 2.4,         // м/с при walkShare хода стика (V3: стик даёт шаг 0.2…0.6 и бег 1.0)
     runSpeed: 5.5,          // м/с при полном ходе
-    walkShare: 0.55,        // доля хода стика, до которой — ходьба
+    walkShare: 0.62,        // доля хода стика, до которой — ходьба
     backpedalFactor: 0.7,   // в lock-on: пятиться медленнее
     strafeFactor: 0.9,      // в lock-on: боком чуть медленнее
     turnRate: 12,           // рад/с: разворот корпуса (explore — по движению, engaged — на босса)
@@ -100,6 +100,8 @@ export const DEFAULT_COMBAT_CONFIG = deepFreeze({
     frameLockTurnDeg: 35,   // стик повернули сильнее — кадр берётся заново с текущей камеры
     frameLockIdle: 0.25,    // стик в нейтрали дольше — кадр сбрасывается
     frameLockResync: 2.5,   // 1/с: при беге «вперёд» кадр плавно догоняет камеру
+    frameLockResyncDeg: 8,  // «вперёд» — это в пределах ±столько градусов (шире — герой и камера гоняются)
+    frameLockBlend: 0.25,   // с: новый кадр после поворота стика перенимается плавно
     energyRegen: 20,        // ед./с
     energyRegenDelay: 0.5,  // пауза регена после траты энергии
     hitGrace: 0.35,         // неуязвимость после полученного удара
@@ -150,6 +152,14 @@ export const DEFAULT_COMBAT_CONFIG = deepFreeze({
     ignis: { cooldown: 10, energy: 25, damage: 70 },            // огненное копьё
     fulgur: { cooldown: 16, energy: 30, damage: 20, stun: 2.5 }, // оглушение: срыв замаха
     orbis: { cooldown: 18, energy: 20, heal: 22, ward: 6 },      // лечение + оберег на один удар
+    // [ASHEN_V3] новые фигуры правой руки
+    stella: { cooldown: 22, energy: 40, damage: 18, count: 5, interval: 0.18 },    // ★ звездопад
+    spira: { cooldown: 14, energy: 25, duration: 3, radius: 7, speedBonus: 0.25 }, // @ вихрь: гасит сферы, бег быстрее
+    lemnis: { cooldown: 26, energy: 30, heal: 45, duration: 6 },                   // ∞ вечность: лечение за время
+    caret: { cooldown: 7, energy: 18, damage: 15, count: 3, spreadDeg: 9 },        // ^ залп игл
+    vee: { cooldown: 14, energy: 25, damage: 30, heal: 20 },                       // V жатва: урон + лечение
+    clepsydra: { cooldown: 24, energy: 35, duration: 5, slow: 0.45 },              // ⧗ время: Регент медленнее
+    alpha: { cooldown: 30, energy: 0, energyGain: 35 },                            // α начало: откаты сброшены
     castTime: 0.35,
   },
   // [ASHEN_V3] двуручные печати (input.sigil): хлопок, врата, рамка
@@ -157,6 +167,8 @@ export const DEFAULT_COMBAT_CONFIG = deepFreeze({
     clap: { energy: 25, cooldown: 12, radius: 7, damage: 25, stun: 1.2, reach: 9 },   // громовой хлопок
     gate: { energy: 30, cooldown: 20, duration: 5, reduction: 0.6 },                  // бастион: −60% урона, орбы гаснут
     frame: { energy: 20, cooldown: 18, duration: 8, bonus: 0.3 },                     // метка цели: +30% урона по Регенту
+    delta: { energy: 50, cooldown: 30, ticks: 4, damage: 40, interval: 0.2, width: 1.2 }, // ▲ двумя руками: луч, гасит сферы на линии
+    cor: { energy: 40, cooldown: 35, heal: 45, duration: 3, ward: 6 },                 // ♥ двумя руками: лечение за 3 с + оберег
     castTime: 0.3,
   },
   combo: {
@@ -515,14 +527,15 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         shielding: false, shieldLock: false,
         fireTimer: 0, firing: false, castTimer: 0, burstCd: 0,
         runeCd: Object.fromEntries(RUNE_IDS.map((k) => [k, 0])), ward: 0, charge: 0,
-        sigilCd: { clap: 0, gate: 0, frame: 0 }, bastion: 0,
+        sigilCd: Object.fromEntries(SIGIL_IDS.map((k) => [k, 0])), bastion: 0, beam: [],
+        vortex: 0, regen: 0, regenRate: 0, meteors: [],
         combo: 0, comboTimer: 0,
         dead: false,
       },
       b: {
         hp: C.boss.maxHp, stage: 1,
         yaw: Math.atan2(pp.x - BOSS.x, pp.z - BOSS.z),
-        decisionAction: 'idle', hitReact: 0, dead: false, stun: 0, mark: 0,
+        decisionAction: 'idle', hitReact: 0, dead: false, stun: 0, mark: 0, slow: 0,
       },
       projectiles: [],
       telegraphs: [],
@@ -532,7 +545,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       stats: { damageDealt: 0, damageTaken: 0, dodges: 0, blocks: 0 },
       input: { moveX: 0, moveZ: 0, attack: false, shield: false, valid: false, conjure: null, viewYaw: NaN },
       engaged: engaged0,
-      frame: { yaw: null, stickA: 0, idle: 0 },
+      frame: { yaw: null, stickA: 0, idle: 0, target: null },
       aggroT: 0,
       pendingDash: 0,
       pendingDashCam: null,
@@ -601,9 +614,15 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     F.idle = 0;
     const a = Math.atan2(ix, iz), raw = rawViewYaw();
     const turn = Math.abs(wrapAngle(a - F.stickA)) * 180 / Math.PI;
-    if (F.yaw === null || turn > C.player.frameLockTurnDeg) { F.yaw = raw; F.stickA = a; return; }
-    F.stickA += wrapAngle(a - F.stickA) * 0.15;             // мелкое подруливание не сбрасывает кадр
-    if (Math.abs(a) < Math.PI / 6) F.yaw = wrapAngle(F.yaw + wrapAngle(raw - F.yaw) * (1 - Math.exp(-C.player.frameLockResync * h)));
+    if (F.yaw === null) { F.yaw = raw; F.target = null; F.stickA = a; return; }
+    if (turn > C.player.frameLockTurnDeg) { F.target = raw; F.stickA = a; }   // новый кадр — перенять плавно
+    else F.stickA += wrapAngle(a - F.stickA) * 0.15;         // мелкое подруливание не сбрасывает кадр
+    if (F.target !== null && F.target !== undefined) {
+      const d = wrapAngle(F.target - F.yaw);
+      F.yaw = wrapAngle(F.yaw + d * (1 - Math.exp(-h / Math.max(0.02, C.player.frameLockBlend))));
+      if (Math.abs(d) < 0.01) F.target = null;
+    }
+    if (Math.abs(a) < C.player.frameLockResyncDeg * Math.PI / 180) F.yaw = wrapAngle(F.yaw + wrapAngle(raw - F.yaw) * (1 - Math.exp(-C.player.frameLockResync * h)));
   }
   function camToWorld(cx, cz) {
     const y = viewYaw(), s = C.player.moveSign;
@@ -667,7 +686,9 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       if (a.radial < -0.35 * Math.abs(a.lateral) - 0.05 && -a.radial > Math.abs(a.lateral)) return 'back';
       if (Math.abs(a.lateral) > Math.abs(a.radial)) return 'strafe';
     }
-    return sp > (C.player.walkSpeed + C.player.runSpeed) / 2 ? 'run' : 'walk';
+    // [V3] гистерезис: бег с 4.2 м/с, обратно в шаг — ниже 3.2 (анимация не мигает на границе)
+    if (P.gait === 'run' ? sp < 3.2 : sp > 4.2) P.gait = P.gait === 'run' ? 'walk' : 'run';
+    return P.gait === 'run' ? 'run' : 'walk';
   }
   function buildSnapshot() {
     const P = st.p, B = st.b;
@@ -707,6 +728,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         burstCharge: P.charge,
         warded: P.ward > 0, wardRemaining: P.ward,
         bastion: P.bastion > 0, bastionRemaining: P.bastion,
+        vortex: P.vortex > 0, vortexRemaining: P.vortex, regen: P.regen > 0, regenRemaining: P.regen,
         combo: P.combo, comboMultiplier: 1 + comboBonus(), comboTimer: P.comboTimer,
       },
       boss: {
@@ -718,6 +740,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         action: bossAction(),
         stunned: B.stun > 0, stunRemaining: B.stun,
         marked: B.mark > 0, markRemaining: B.mark,
+        slowed: B.slow > 0, slowRemaining: B.slow,
       },
       cooldowns: {
         dashRemaining: P.dashCd, dashTotal: C.dash.cooldown,
@@ -1178,6 +1201,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         const wl = Math.hypot(w.x, w.z) || 1;
         const ux = w.x / wl, uz = w.z / wl;
         let k = P.shielding ? C.shield.moveSpeedFactor : 1;
+        if (P.vortex > 0) k *= 1 + C.runes.spira.speedBonus;
         if (st.engaged) {
           const f = toBossUnit();
           const along = ux * f.x + uz * f.z;
@@ -1380,6 +1404,30 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       B.mark = S.duration;
       emit('sigil_cast', chest, { sigil: 'frame', duration: S.duration, bonus: S.bonus, from: vcopy(chest), to: vcopy(to) });
       emit('mark_start', to, { duration: S.duration, bonus: S.bonus });
+    } else if (sg === 'delta') {
+      // луч: гасит сферы Регента на линии «герой → Регент», затем ticks ударов
+      const ax = pp.x, az = pp.z, bx = BOSS.x, bz = BOSS.z, ex = bx - ax, ez = bz - az, L2 = ex * ex + ez * ez || 1;
+      let cleared = 0;
+      const keep = [];
+      for (const pr of st.projectiles) {
+        if (pr.owner === 'boss') {
+          const u = clamp(((pr.position.x - ax) * ex + (pr.position.z - az) * ez) / L2, 0, 1);
+          if (Math.hypot(pr.position.x - ax - ex * u, pr.position.z - az - ez * u) <= S.width) {
+            cleared++;
+            emit('projectile_impact', pr.position, { owner: 'boss', kind: pr.kind, projectileId: pr.id, attackId: pr.attackId, result: 'dispelled' });
+            continue;
+          }
+        }
+        keep.push(pr);
+      }
+      st.projectiles = keep;
+      P.beam = Array.from({ length: S.ticks }, (_, i) => ({ i, t: 0.15 + i * S.interval }));
+      emit('sigil_cast', chest, { sigil: 'delta', ticks: S.ticks, amount: S.ticks * S.damage, cleared, from: vcopy(chest), to: vcopy(to) });
+    } else if (sg === 'cor') {
+      P.regen = S.duration; P.regenRate = S.heal / Math.max(0.1, S.duration);
+      P.ward = S.ward;
+      emit('sigil_cast', chest, { sigil: 'cor', heal: S.heal, duration: S.duration, ward: S.ward, from: vcopy(chest), to: vcopy(chest) });
+      emit('ward_start', pp, { duration: S.ward });
     }
   }
 
@@ -1416,6 +1464,44 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       P.ward = R.ward;
       emit('rune_cast', chest, { rune, heal: P.hp - before, ward: R.ward, from: vcopy(chest), to: vcopy(chest) });
       emit('ward_start', playerPos(), { duration: R.ward });
+    } else if (rune === 'stella') {
+      P.meteors = Array.from({ length: R.count }, (_, i) => ({ i, t: 0.25 + i * R.interval }));
+      emit('rune_cast', chest, { rune, from: vcopy(chest), to: vcopy(to), count: R.count, amount: R.damage * R.count });
+    } else if (rune === 'spira') {
+      P.vortex = R.duration;
+      emit('rune_cast', chest, { rune, from: vcopy(chest), to: vcopy(chest), duration: R.duration, radius: R.radius });
+    } else if (rune === 'lemnis') {
+      P.regen = R.duration; P.regenRate = R.heal / Math.max(0.1, R.duration);
+      emit('rune_cast', chest, { rune, from: vcopy(chest), to: vcopy(chest), heal: R.heal, duration: R.duration });
+    } else if (rune === 'caret') {
+      const S = C.spark;
+      emit('rune_cast', chest, { rune, from: vcopy(chest), to: vcopy(to), count: R.count });
+      for (let i = 0; i < R.count; i++) {
+        const off = (i - (R.count - 1) / 2) * R.spreadDeg * Math.PI / 180;
+        let vx = to.x - chest.x, vy = to.y - chest.y, vz = to.z - chest.z;
+        const c = Math.cos(off), sn = Math.sin(off);
+        [vx, vz] = [vx * c - vz * sn, vx * sn + vz * c];
+        const vl = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1;
+        const id = `caret:${fightGen}:${++projSeq}`;
+        addProjectile({
+          id, owner: 'player', kind: 'spark', position: vcopy(chest),
+          velocity: vec(vx / vl * S.speed, vy / vl * S.speed, vz / vl * S.speed), radius: S.radius * 1.2,
+          age: 0, lifetime: S.lifetime * 1.5, damage: R.damage, attackId: null, passed: false, homing: true,
+        });
+      }
+    } else if (rune === 'vee') {
+      const before = P.hp;
+      P.hp = Math.min(C.player.maxHp, P.hp + R.heal);
+      emit('rune_cast', chest, { rune, from: vcopy(to), to: vcopy(chest), heal: P.hp - before, amount: R.damage });
+      damageBoss(R.damage, 'rune', to, { rune: 'vee' });
+    } else if (rune === 'clepsydra') {
+      B.slow = R.duration;
+      emit('rune_cast', chest, { rune, from: vcopy(chest), to: vcopy(to), duration: R.duration, slow: R.slow });
+      emit('slow_start', to, { duration: R.duration, slow: R.slow });
+    } else if (rune === 'alpha') {
+      P.dashCd = 0; P.sparkCd = 0; P.slashCd = 0; P.throwCd = 0; P.parryCd = 0;
+      P.energy = Math.min(C.player.maxEnergy, P.energy + R.energyGain);
+      emit('rune_cast', chest, { rune, from: vcopy(chest), to: vcopy(chest), energy: R.energyGain });
     }
   }
 
@@ -1750,6 +1836,16 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       const pr = list[i];
       if (pr.owner !== 'player') { list[w++] = pr; continue; }
       const prev = vcopy(pr.position);
+      if (pr.homing && !pr.path) {
+        // [V3] иглы «Акус» доворачивают к Регенту (веер сходится в цель)
+        const to = bossAim(), sp = Math.hypot(pr.velocity.x, pr.velocity.y, pr.velocity.z) || 1;
+        let dx = to.x - pr.position.x, dy = to.y - pr.position.y, dz = to.z - pr.position.z;
+        const dl = Math.hypot(dx, dy, dz) || 1;
+        const k = 1 - Math.exp(-7 * h);
+        let vx = pr.velocity.x + (dx / dl * sp - pr.velocity.x) * k, vy = pr.velocity.y + (dy / dl * sp - pr.velocity.y) * k, vz = pr.velocity.z + (dz / dl * sp - pr.velocity.z) * k;
+        const vl = Math.hypot(vx, vy, vz) || 1;
+        pr.velocity.x = vx / vl * sp; pr.velocity.y = vy / vl * sp; pr.velocity.z = vz / vl * sp;
+      }
       if (pr.path) advanceOnPath(pr, h);
       else {
         pr.position.x += pr.velocity.x * h;
@@ -1921,6 +2017,44 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     for (const k of SIGIL_IDS) P.sigilCd[k] = Math.max(0, P.sigilCd[k] - h);
     if (P.bastion > 0) { P.bastion = Math.max(0, P.bastion - h); if (P.bastion <= 0) emit('bastion_end', playerPos(), { reason: 'expired' }); }
     if (B.mark > 0) { B.mark = Math.max(0, B.mark - h); if (B.mark <= 0) emit('mark_end', vcopy(BOSS), { reason: 'expired' }); }
+    if (B.slow > 0) { B.slow = Math.max(0, B.slow - h); if (B.slow <= 0) emit('slow_end', vcopy(BOSS), { reason: 'expired' }); }
+    if (P.vortex > 0) {
+      P.vortex = Math.max(0, P.vortex - h);
+      // вихрь гасит сферы Регента вокруг героя, пока крутится
+      const pp = playerPos(), R = C.runes.spira.radius;
+      let any = false;
+      const keep = [];
+      for (const pr of st.projectiles) {
+        if (pr.owner === 'boss' && distXZ(pr.position, pp) <= R) { any = true; emit('projectile_impact', pr.position, { owner: 'boss', kind: pr.kind, projectileId: pr.id, attackId: pr.attackId, result: 'dispelled' }); }
+        else keep.push(pr);
+      }
+      if (any) st.projectiles = keep;
+      if (P.vortex <= 0) emit('vortex_end', pp, { reason: 'expired' });
+    }
+    if (P.regen > 0) {
+      const dtR = Math.min(h, P.regen);
+      P.regen = Math.max(0, P.regen - h);
+      if (P.hp > 0) P.hp = Math.min(C.player.maxHp, P.hp + P.regenRate * dtR);
+      if (P.regen <= 0) emit('regen_end', playerPos(), { reason: 'expired' });
+    }
+    if (P.beam.length) {
+      for (const m of P.beam) m.t -= h;
+      while (P.beam.length && P.beam[0].t <= 0 && st.status === 'playing') {
+        const m = P.beam.shift();
+        const to = bossAim();
+        emit('sigil_hit', to, { sigil: 'delta', index: m.i, amount: C.sigils.delta.damage, from: playerChest() });
+        damageBoss(C.sigils.delta.damage, 'sigil', to, { sigil: 'delta' });
+      }
+    }
+    if (P.meteors.length) {
+      for (const m of P.meteors) m.t -= h;
+      while (P.meteors.length && P.meteors[0].t <= 0 && st.status === 'playing') {
+        const m = P.meteors.shift();
+        const to = bossAim();
+        emit('rune_hit', to, { rune: 'stella', index: m.i, amount: C.runes.stella.damage });
+        damageBoss(C.runes.stella.damage, 'rune', to, { rune: 'stella' });
+      }
+    }
     if (P.ward > 0) { P.ward = Math.max(0, P.ward - h); if (P.ward <= 0) emit('ward_end', playerPos(), { reason: 'expired' }); }
     if (B.stun > 0) B.stun = Math.max(0, B.stun - h);
     if (P.comboTimer > 0) { P.comboTimer = Math.max(0, P.comboTimer - h); if (P.comboTimer <= 0 && P.combo > 0) breakCombo('timeout'); }
@@ -1929,7 +2063,8 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   // ---------------------------------------------------------------- шаг
   function step(h) {
     // оглушённый страж «замирает»: часы мозга стоят; вне арены (explore) босс не думает об атаках
-    if (st.b.stun <= 0 && st.engaged) callBrain(h);
+    const bh = st.b.slow > 0 ? h * (1 - C.runes.clepsydra.slow) : h;   // [V3] «Клепсидра»: время Регента медленнее
+    if (st.b.stun <= 0 && st.engaged) callBrain(bh);
     if (st.status !== 'playing') return;
     st.time += h;
     st.debug.steps++;
@@ -1953,10 +2088,10 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     fireBolts(h);
     updatePlayerProjectiles(h);
     if (st.status !== 'playing') return;
-    updateTelegraphs(h);
+    updateTelegraphs(bh);
     if (st.status !== 'playing') return;
     updateParry(h);
-    updateBossProjectiles(h, playerPrev);
+    updateBossProjectiles(bh, playerPrev);
     if (st.status !== 'playing') return;
     updateBossYaw(h);
   }

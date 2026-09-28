@@ -687,8 +687,13 @@ function frame(now) {
     let frozen = false;
     if (!app.debug) {
       const vs = visionStatus();
-      const bodyOk = input.valid && !(vs && vs.debug && vs.debug.bodyVisible === false);
-      if (!bodyOk) {
+      const bodyHidden = !!(vs && vs.debug && vs.debug.bodyVisible === false);
+      // [V3.1] рука, уведённая вперёд/вправо, закрывает плечо — видимость плеч падает. Если кисти
+      // отслеживаются и ввод валиден, это не «потеря»: бой не замирает и не встаёт на паузу.
+      let handsOn = false;
+      if (bodyHidden && input.valid) { try { const hh = vision && vision.getHands(); handsOn = !!(hh && hh.available); } catch (e) { handsOn = false; } }
+      const bad = !input.valid || (bodyHidden && !handsOn);
+      if (bad) {
         app.lostTime += Math.min(raw, 0.25);
         frozen = app.lostTime >= config.tracking.freezeSec;
         if (app.lostTime >= config.tracking.lostPauseSec) pause('tracking');
@@ -698,7 +703,8 @@ function frame(now) {
     if (app.screen === 'playing' && !frozen) trackCoach(input);
     if (app.screen === 'playing' && dt > 0 && !frozen) {
       // [ASHEN_V2] стик — в осях камеры: «вперёд на стике» = «вперёд на экране»
-      if (Number.isFinite(rig.yaw)) input.viewYaw = rig.yaw;
+      if (Number.isFinite(rig.inputYaw)) input.viewYaw = rig.inputYaw;   // [V3] курс управления без плечевого сдвига
+      else if (Number.isFinite(rig.yaw)) input.viewYaw = rig.yaw;
       try { combat.update(dt, input); } catch (e) { console.error('[ASHEN] combat.update', e); }
     }
     events = adaptEvents(combat.drainEvents());

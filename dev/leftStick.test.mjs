@@ -63,7 +63,7 @@ test('8 направлений: угол выхода совпадает с на
     const wantX = Math.cos(a), wantZ = Math.sin(a);
     // экран: x вправо → в кадре −x (зеркало); вперёд → вверх в кадре (−y)
     let { st, t } = grabbed();
-    t = run(st, t, 450, () => at(-wantX * 2.0, -wantZ * 2.0));
+    t = run(st, t, 450, () => at(-wantX * 1.5, -wantZ * 1.5));
     const r = st.read(t);
     const got = Math.atan2(r.z, r.x), err = Math.abs(Math.atan2(Math.sin(got - a), Math.cos(got - a))) * 180 / Math.PI;
     ok(err <= 10, `сектор ${k}: ошибка ${err.toFixed(1)}°`);
@@ -234,6 +234,75 @@ test('[V3] ход назад короче: рука вниз на 1 S даёт �
   t = run(st, t, 400, () => at(0, -1.0));
   const fwd = st.read(t).z;
   ok(back > fwd + 0.05 && back > 0, `назад ${back.toFixed(2)} > вперёд ${fwd.toFixed(2)}`);
+});
+
+// ───────── [V3] приёмка в геометрии ноутбука (по аудиту): игрок близко, 25 Гц, шум, плавные траектории ─────────
+const LAP = { S: 0.14, BODY: { x: 0.5 * ASPECT, y: 0.62, sw: 0.55 }, DT: 40 };
+const LA = { x: LAP.BODY.x + 0.25, y: 0.45 };
+const mj = (k) => (k <= 0 ? 0 : k >= 1 ? 1 : k * k * k * (10 - 15 * k + 6 * k * k));
+function lapRun(pathFn, ms, { noise = 0.003, seed0 = 5, preMs = 600 } = {}) {
+  const st = createLeftStick();
+  let seed = seed0; const g = () => { seed = (seed * 16807) % 2147483647; return (seed / 2147483647 - 0.5) * 2; };
+  let t = 1000;
+  for (; t < 1000 + preMs; t += LAP.DT) st.push({ t, hand: { x: LA.x + g() * noise, y: LA.y + g() * noise, scale: LAP.S }, body: LAP.BODY, mirror: true, aspect: ASPECT });
+  const t0 = t, dashes = [], outs = [];
+  for (; t < t0 + ms; t += LAP.DT) {
+    const d = pathFn(t - t0);             // {dx, dy} в S от точки хватки; dy > 0 — вниз
+    const y = LA.y + d.dy * LAP.S + g() * noise;
+    st.push({ t, hand: y < 0.98 ? { x: LA.x + d.dx * LAP.S + g() * noise, y, scale: LAP.S } : null, body: LAP.BODY, mirror: true, aspect: ASPECT });
+    const k = st.takeDash(); if (k) dashes.push(k);
+    const r = st.read(t); outs.push({ t: t - t0, x: r.x, z: r.z, gait: r.gait });
+  }
+  return { st, dashes, outs };
+}
+const backTravel = (outs) => outs.reduce((a, o) => a + Math.max(0, -o.z) * LAP.DT / 1000 * 5.5, 0); // «метры назад» при беге 5.5 м/с
+
+test('[V3 приёмка] опустить руку (0.4 / 0.7 / 1.2 с, через нижний край кадра) — ни рывка, ни бега назад', () => {
+  for (const ms of [400, 700, 1200]) {
+    const { dashes, outs } = lapRun((dt) => ({ dx: 0.2 * mj(dt / ms), dy: 4.3 * mj(dt / ms) }), ms + 800);
+    ok(dashes.length === 0, `рывок при опускании за ${ms} мс`);
+    ok(backTravel(outs) < 0.3, `назад ${backTravel(outs).toFixed(2)} м при опускании за ${ms} мс`);
+  }
+});
+
+test('[V3 приёмка] быстрое ведение, возврат в центр, разворот — без рывка', () => {
+  const cases = [
+    ['ведение 1.3 S / 150 мс', (dt) => ({ dx: -1.3 * mj(dt / 150), dy: 0 })],
+    ['ведение 1.6 S / 200 мс', (dt) => ({ dx: -1.6 * mj(dt / 200), dy: 0 })],
+    ['вперёд 1.6 S / 180 мс', (dt) => ({ dx: 0, dy: -1.6 * mj(dt / 180) })],
+  ];
+  for (const [name, fn] of cases) for (const seed0 of [5, 11, 17]) ok(lapRun(fn, 900, { seed0 }).dashes.length === 0, name);
+  // возврат в центр и разворот: сначала спокойно уйти на +1.6 S, постоять, потом резко
+  const pre = (fn) => (dt) => (dt < 600 ? { dx: 1.6 * mj(dt / 500), dy: 0 } : fn(dt - 600));
+  for (const [name, fn] of [['возврат 1.6→0 за 200 мс', (dt) => ({ dx: 1.6 - 1.6 * mj(dt / 200), dy: 0 })], ['разворот 1.6→−1.6 за 350 мс', (dt) => ({ dx: 1.6 - 3.2 * mj(dt / 350), dy: 0 })]]) {
+    for (const seed0 of [5, 11, 17]) {
+      const r = lapRun(pre(fn), 1600, { seed0 });
+      ok(r.dashes.length === 0, `${name}: рывок (${r.dashes.map((d) => d.tier).join(',')})`);
+    }
+  }
+});
+
+test('[V3 приёмка] настоящий дёрг с возвратом (1.2 / 1.5 / 1.8 S) — ровно один рывок в ту сторону; и на бегу', () => {
+  for (const [d, dur] of [[1.8, 100], [1.5, 130], [1.2, 120]]) {
+    const r = lapRun((dt) => ({ dx: -d * mj(dt / dur) + d * mj((dt - 250) / 250), dy: 0 }), 900);
+    ok(r.dashes.length === 1, `дёрг ${d} S: рывков ${r.dashes.length}`);
+    ok(r.dashes[0].x > 0.9, `вправо на экране: ${r.dashes[0].x.toFixed(2)}`);
+  }
+  // бег вперёд (рука держится на 1.3 S вверх), потом дёрг вбок и обратно
+  const r = lapRun((dt) => (dt < 700 ? { dx: 0, dy: -1.3 * mj(dt / 400) } : { dx: -1.6 * mj((dt - 700) / 100) + 1.6 * mj((dt - 950) / 250), dy: -1.3 }), 1500);
+  ok(r.dashes.length === 1 && r.dashes[0].x > 0.9, 'рывок на бегу: ' + JSON.stringify(r.dashes.map((q) => [q.x.toFixed(2), q.z.toFixed(2)])));
+});
+
+test('[V3 приёмка] шаг/бег не мигают: рука держится на 1.1 S и 1.35 S 10 с с шумом', () => {
+  for (const rr of [1.1, 1.35]) {
+    const { outs } = lapRun((dt) => ({ dx: -rr * mj(dt / 300), dy: 0 }), 10000, { noise: 0.004 });
+    let flips = 0; for (let i = 20; i < outs.length; i++) if (outs[i].gait !== outs[i - 1].gait) flips++;
+    ok(flips <= 1, `r=${rr}: смен шаг/бег ${flips}`);
+  }
+  const walk = lapRun((dt) => ({ dx: -0.8 * mj(dt / 300), dy: 0 }), 1500).outs.at(-1);
+  const run = lapRun((dt) => ({ dx: -1.4 * mj(dt / 300), dy: 0 }), 1500).outs.at(-1);
+  ok(walk.gait === 'walk' && Math.hypot(walk.x, walk.z) <= 0.6 + 1e-9, 'шаг: ' + JSON.stringify(walk));
+  ok(run.gait === 'run' && Math.abs(Math.hypot(run.x, run.z) - 1) < 1e-9, 'бег: ' + JSON.stringify(run));
 });
 
 test('мусор на входе не ломает модуль', () => {

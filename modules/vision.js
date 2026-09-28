@@ -936,6 +936,17 @@ export async function createVision(options = {}) {
   const handsInterp = hi && typeof hi.read === 'function' && typeof hi.push === 'function'
     ? hi : createHandGestures(cfg.handGestures || {});
   let lastPose = null;      // { tMs, frameW, frameH, mirror, landmarks[33] } — для трекинг-HUD
+  let lastBody = null;      // [V3.1] последняя надёжная середина плеч {x, y, t}
+  // [V3.1] «Чувствительность движений» из паузы действует и на джойстик левой руки:
+  // выше — короче ход до бега и уже мёртвая зона (рывок не трогаем — он в ладонях).
+  function applyStickSensitivity() {
+    if (!handsInterp || typeof handsInterp.configure !== 'function') return;
+    const k = clamp(finite(cfg.sensitivity) ? cfg.sensitivity : 1, 0.5, 2);
+    try {
+      handsInterp.configure({ stick: { deadzone: 0.4 / Math.sqrt(k), walkFull: 1.05 / k, runOn: 1.2 / k, runOff: 0.95 / k, full: 1.6 / k } });
+    } catch { /* ignore */ }
+  }
+  applyStickSensitivity();
   let handsStatus = { enabled: !!cfg.hands, ready: false, error: null, delegate: null };
 
   const st = { status: 'idle', message: 'Камера не включена', progress: 0, emittedProgress: 0, code: null };
@@ -1585,10 +1596,14 @@ export async function createVision(options = {}) {
     lastPose = { tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, landmarks: lms };
     if (cfg.hands) {
       const wr = (i) => (lms && lms[i] ? { x: lms[i].x, y: lms[i].y, visibility: lms[i].visibility } : null);
-      const body = lms && lms[11] && lms[12] ? { x: (lms[11].x + lms[12].x) / 2, y: (lms[11].y + lms[12].y) / 2 } : null;
+      // [V3.1] середина плеч — только из надёжно видимых плеч: рука, уведённая вперёд/вправо,
+      // закрывает левое плечо и сдвигает его точку. Иначе — последняя хорошая (до 700 мс).
+      const shOk = (p) => p && finite(p.x) && finite(p.y) && (!finite(p.visibility) || p.visibility >= 0.6);
+      let body = null;
+      if (lms && shOk(lms[11]) && shOk(lms[12])) { body = { x: (lms[11].x + lms[12].x) / 2, y: (lms[11].y + lms[12].y) / 2 }; lastBody = { ...body, t: tMs }; }
+      else if (lastBody && tMs - lastBody.t <= 700) body = { x: lastBody.x, y: lastBody.y };
       // ширина плеч (в высотах кадра): толчок кистями к камере отличаем от наклона всем корпусом
-      const vis = (p) => !finite(p.visibility) || p.visibility >= 0.5;
-      const sw = body && vis(lms[11]) && vis(lms[12]) && h > 0 ? Math.hypot((lms[11].x - lms[12].x) * (w / h), lms[11].y - lms[12].y) : null;
+      const sw = lms && shOk(lms[11]) && shOk(lms[12]) && h > 0 ? Math.hypot((lms[11].x - lms[12].x) * (w / h), lms[11].y - lms[12].y) : null;
       handsInterp.push({ tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, hands: Array.isArray(hands) ? hands : [], poseWrists: { left: wr(15), right: wr(16) }, bodyCenter: body, shoulderWidth: sw });
     }
     processCalibration(arrived);
@@ -1854,6 +1869,7 @@ export async function createVision(options = {}) {
     cfg = mergeVisionConfig(cfg, patch);
     interp.configure(patch);
     if (patch.handGestures) handsInterp.configure(patch.handGestures);
+    if ('sensitivity' in patch) applyStickSensitivity();
     if ('overlay' in patch && !cfg.overlay) clearOverlay();
     if ('mediaPipe' in patch && engine) console.warn('[vision] новые URL MediaPipe применятся после dispose/createVision');
     updateMinInterval();
@@ -1874,6 +1890,7 @@ export async function createVision(options = {}) {
     interp.resetMotion('stopped');
     handsInterp.reset('stopped');
     lastPose = null;
+    lastBody = null;
     clearOverlay();
     if (st.status !== 'error') setStatus('idle', 'Камера выключена', 0);
   }
