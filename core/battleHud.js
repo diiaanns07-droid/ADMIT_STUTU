@@ -5,7 +5,9 @@
 //
 // frame(f): f = { dtReal, timeScale, screen, snapshot, events, input, project(p)->{x,y,behind},
 //   viewport:{w,h}, intro:{active,t,duration}, settings:{reducedMotion}, resumeLeftMs,
-//   pois:[{id,x,y,z}] — [ASHEN_V2] незажжённые угли клятвы (метка над алтарём или стрелка у края) }
+//   pois:[{id,x,y,z}] — [ASHEN_V2] незажжённые угли клятвы (метка над алтарём или стрелка у края),
+//   coach:{hint:{code,gesture,text,side}|null, accuracy, good, mistakes} — [ТВИСТ «ОШИБКА»] подсказка к
+//   почти-правильному жесту (карточка внизу по центру) и точность жестов за бой }
 
 const MONO = '"Consolas","Cascadia Mono",monospace';
 const SERIF = '"Palatino Linotype","Book Antiqua",Georgia,serif';
@@ -36,6 +38,8 @@ export function createBattleHud({ canvas } = {}) {
   let combo = { n: 0, shown: 0, pop: 0, lost: 0, lostN: 0 };
   let rune = { name: '', sub: '', t: 9, trail: null };
   let fizzleT = 9;
+  let coach = { hint: null, t: 9 };   // [ТВИСТ «ОШИБКА»] текущая карточка подсказки
+  const COACH_DUR = 4.2;
   let lastScreen = '';
   let playingSince = -1;
 
@@ -322,7 +326,67 @@ export function createBattleHud({ canvas } = {}) {
       ctx.globalAlpha = 1;
     }
     rune.t += dtR;
-    if (fizzleT < 0.9) { tag('РУНА НЕ РАСПОЗНАНА', W / 2, H * 0.3, DIM, `600 12px ${MONO}`, 'center'); fizzleT += dtR; }
+    if (fizzleT < 0.9 && !(coach.hint && coach.t < 1)) { tag('РУНА НЕ РАСПОЗНАНА', W / 2, H * 0.3, DIM, `600 12px ${MONO}`, 'center'); fizzleT += dtR; }
+  }
+
+  // [ТВИСТ «ОШИБКА»] карточка: что за жест, что не так и как исправить. Держится ~4 с, новая заменяет старую.
+  function wrapLines(text, maxW) {
+    const words = String(text).split(' ');
+    const lines = [];
+    let cur = '';
+    for (const w of words) {
+      const next = cur ? cur + ' ' + w : w;
+      if (ctx.measureText(next).width > maxW && cur) { lines.push(cur); cur = w; } else cur = next;
+    }
+    if (cur) lines.push(cur);
+    return lines.slice(0, 3);
+  }
+  function drawCoach(cv, dtR, rm) {
+    if (!isObj(cv)) return;
+    if (isObj(cv.hint) && cv.hint.text && (!coach.hint || cv.hint.tMs !== coach.hint.tMs || cv.hint.code !== coach.hint.code)) {
+      coach = { hint: cv.hint, t: 0 };
+    }
+    // точность жестов за бой — у правого края под кнопкой паузы
+    if (Number.isFinite(cv.accuracy) && num(cv.good, 0) + num(cv.mistakes, 0) >= 3) {
+      const acc = cv.accuracy;
+      tag(`ТОЧНОСТЬ ЖЕСТОВ ${acc}%`, W - 24, 70, acc >= 75 ? GOLD_HI : acc >= 50 ? GOLD : EMBER, `600 11px ${MONO}`, 'right');
+    }
+    if (!coach.hint || coach.t >= COACH_DUR) { coach.t += dtR; return; }
+    const k = coach.t;
+    const a = clamp(k / 0.18, 0, 1) * clamp((COACH_DUR - k) / 0.5, 0, 1);
+    const h = coach.hint;
+    const cw = Math.min(560, W - 40);
+    ctx.font = `500 17px ${SERIF}`;
+    const lines = wrapLines(h.text, cw - 58);
+    const ch = 46 + lines.length * 22;
+    const x = W / 2 - cw / 2;
+    const rise = rm ? 0 : (1 - clamp(k / 0.25, 0, 1)) * 14;
+    const y = Math.min(H * 0.6, H - 260 - ch) + rise; // выше панели способностей и превью камеры
+    ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(12,6,6,0.82)';
+    ctx.fillRect(x, y, cw, ch);
+    // пульсирующая рамка и красная полоса слева
+    const pulse = rm ? 0.8 : 0.6 + 0.4 * Math.abs(Math.sin(k * 5));
+    ctx.strokeStyle = `rgba(255,106,60,${(0.55 * pulse).toFixed(3)})`;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, cw - 1, ch - 1);
+    ctx.fillStyle = EMBER;
+    ctx.fillRect(x, y, 4, ch);
+    // значок «!»
+    ctx.beginPath(); ctx.arc(x + 27, y + 24, 11, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,106,60,0.18)'; ctx.fill();
+    ctx.strokeStyle = EMBER; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = EMBER; ctx.font = `700 14px ${MONO}`; ctx.textAlign = 'center'; ctx.fillText('!', x + 27, y + 16);
+    ctx.textAlign = 'left';
+    const side = h.side === 'left' ? ' · ЛЕВАЯ РУКА' : h.side === 'right' ? ' · ПРАВАЯ РУКА' : '';
+    ctx.font = `600 11px ${MONO}`; ctx.fillStyle = EMBER;
+    ctx.fillText(scramble(`ОШИБКА · ${String(h.gesture || '').toUpperCase()}${side}`, k, rm, 0.3), x + 48, y + 11);
+    ctx.font = `500 17px ${SERIF}`; ctx.fillStyle = STEEL;
+    lines.forEach((ln, i) => ctx.fillText(ln, x + 48, y + 30 + i * 22));
+    // полоска времени жизни
+    ctx.fillStyle = 'rgba(255,106,60,0.5)';
+    ctx.fillRect(x + 4, y + ch - 2, (cw - 4) * (1 - k / COACH_DUR), 2);
+    ctx.globalAlpha = 1;
+    coach.t += dtR;
   }
 
   function drawCombo(snap, dtR, rm) {
@@ -467,6 +531,7 @@ export function createBattleHud({ canvas } = {}) {
       drawHero(snap, proj, f.input);
       drawCombo(snap, dtR, rm);
       drawRune(f.input, rm, dtR);
+      drawCoach(f.coach, dtR, rm);
       drawCallouts(dtR, rm);
       drawScreenFx(num(f.timeScale, 1), dtR, rm);
       if (num(f.resumeLeftMs, 0) > 0) drawResume(f.resumeLeftMs);
@@ -486,7 +551,7 @@ export function createBattleHud({ canvas } = {}) {
     callouts.length = 0;
     combo = { n: 0, shown: 0, pop: 0, lost: 0, lostN: 0 };
     rune = { name: '', sub: '', t: 9, trail: null };
-    flash.t = 1; hurt.t = 1; dashFx.t = 1; fizzleT = 9; lock.ok = false; lock.hitFlash = 0;
+    flash.t = 1; hurt.t = 1; dashFx.t = 1; fizzleT = 9; coach = { hint: null, t: 9 }; lock.ok = false; lock.hitFlash = 0;
   }
   function dispose() { disposed = true; clearAll(); }
   return { frame, reset, dispose };

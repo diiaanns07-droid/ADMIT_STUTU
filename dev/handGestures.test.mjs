@@ -258,6 +258,10 @@ function strokeShape(kind, n = 40) {
     const V = [[0.65, 0], [0.15, 0.55], [0.85, 0.45], [0.35, 1]];
     for (let s = 0; s < 3; s++) for (let i = 0; i < n / 3; i++) { const u = i / (n / 3); pts.push([V[s][0] + (V[s + 1][0] - V[s][0]) * u, V[s][1] + (V[s + 1][1] - V[s][1]) * u]); }
     pts.push(V[3]);
+  } else if (kind === 'openTriangle') { // треугольник без последней стороны — фигура не замкнута
+    const V = [[0.5, 0], [1, 0.87], [0, 0.87], [0.3, 0.35]];
+    for (let s = 0; s < 3; s++) for (let i = 0; i < n / 3; i++) { const u = i / (n / 3); pts.push([V[s][0] + (V[s + 1][0] - V[s][0]) * u, V[s][1] + (V[s + 1][1] - V[s][1]) * u]); }
+    pts.push(V[3]);
   } else if (kind === 'line') {
     for (let i = 0; i <= n; i++) pts.push([i / n, 0.5 + 0.02 * Math.sin(i)]);
   } else if (kind === 'scribble') {
@@ -694,6 +698,116 @@ test('дёрг левой рукой → dashDir в сторону дёрга (�
   t = run(g, t, 600, (tt) => { const f = g.read(tt); if (f.dashDir) dirs.push(f.dashDir); const k = Math.min(1, (tt - t0) / 100); return [L_AT({ ...SHAPES.fist, cx: 0.62 - 0.2 * k })]; }, 33, BODYX);
   eq(dirs.length, 1, 'рывков ' + dirs.length);
   ok(dirs[0].x > 0.8, 'вправо на экране: ' + JSON.stringify(dirs[0]));
+});
+
+// ───────── [ТВИСТ «ОШИБКА»] подсказки к почти-правильным жестам ─────────
+// Прогон с чтением: собирает коды подсказок, которые увидел бы HUD.
+function hintsOf(g, t0, ms, fn, extra) {
+  const codes = [];
+  const t = run(g, t0, ms, (tt) => { const f = g.read(tt); if (f.hint) codes.push(f.hint.code); return fn(tt); }, 33, extra);
+  const f = g.read(t); if (f.hint) codes.push(f.hint.code);
+  return { t, codes };
+}
+
+test('[ОШИБКА] правильные жесты не дают подсказок (выброс, парирование, щит, искра, руна, сфера)', () => {
+  let g = createHandGestures();
+  let t = run(g, 1000, 900, () => [R_AT({ ...SHAPES.fist })]);
+  let h = hintsOf(g, t, 400, () => [R_AT({ ...SHAPES.open })]);
+  eq(h.codes.join(','), '', 'выброс');
+  g = createHandGestures();
+  t = run(g, 1000, 500, () => [L_AT({ ...SHAPES.fist })]);
+  h = hintsOf(g, t, 400, () => [L_AT({ ...SHAPES.open })]);
+  eq(h.codes.join(','), '', 'парирование');
+  g = createHandGestures(); t = pushLeft(g, 1000, { cx: 0.62, cy: 0.55 });
+  eq(g.getDebug().counters.hints, 0, 'щит толчком');
+  g = createHandGestures();
+  t = run(g, 1000, 600, () => [R_AT({ ...SHAPES.fist })]);
+  h = hintsOf(g, t, 330, () => [R_AT({ ...SHAPES.point })]);
+  eq(h.codes.join(','), '', 'искра');
+  for (const shape of ['triangle', 'circle', 'zigzag']) {
+    g = createHandGestures(); drawRune(g, 1000, shape);
+    eq(g.getDebug().counters.hints, 0, `руна ${shape}: ${JSON.stringify(g.getDebug().hints)}`);
+  }
+  g = createHandGestures(); run(g, 1000, 1500, () => orbPose({ half: 0.12 }));
+  eq(g.getDebug().counters.hints, 0, 'сфера: ' + JSON.stringify(g.getDebug().hints));
+});
+
+test('[ОШИБКА] «OK»: кольцо не сомкнуто → ok_ring_open; остальные пальцы согнуты → ok_fingers', () => {
+  let g = createHandGestures();
+  // большой палец в стороне от указательного, указательный подогнут, остальные прямые
+  let h = hintsOf(g, 1000, 1500, () => [R_AT({ curls: [0.55, 0, 0, 0], thumb: 'in' })]);
+  ok(h.codes.includes('ok_ring_open'), 'ok_ring_open: ' + h.codes + ' ' + JSON.stringify(g.getDebug().right));
+  g = createHandGestures();
+  h = hintsOf(g, 1000, 1500, () => [R_AT({ curls: [0.45, 0.2, 0.9, 0.9], thumb: 'pinch' })]);
+  ok(h.codes.includes('ok_fingers'), 'ok_fingers: ' + h.codes + ' ' + JSON.stringify(g.getDebug().right));
+});
+
+test('[ОШИБКА] выброс без заряда → burst_short', () => {
+  const g = createHandGestures();
+  let t = run(g, 1000, 500, () => [R_AT({ ...SHAPES.open })]);
+  t = run(g, t, 280, () => [R_AT({ ...SHAPES.fist })]);
+  const h = hintsOf(g, t, 400, () => [R_AT({ ...SHAPES.open })]);
+  ok(h.codes.includes('burst_short'), 'burst_short: ' + h.codes);
+});
+
+test('[ОШИБКА] щит: толчок ладонью ребром → shield_palm; ладонь просто стоит → shield_push', () => {
+  let g = createHandGestures();
+  const codes = [];
+  let t = run(g, 1000, 500, () => [L_AT({ ...SHAPES.open, yaw: 1.35, size: 0.12 })]);
+  t = run(g, t, 400, (tt) => { const f = g.read(tt); if (f.hint) codes.push(f.hint.code); return [L_AT({ ...SHAPES.open, yaw: 1.35, size: 0.12 + 0.05 * Math.min(1, (tt - t) / 180) })]; });
+  ok(codes.includes('shield_palm'), 'shield_palm: ' + codes);
+  g = createHandGestures();
+  const h = hintsOf(g, 1000, 2600, () => [L_AT({ ...SHAPES.open })]);
+  ok(h.codes.includes('shield_push'), 'shield_push: ' + h.codes);
+  ok(!g.peek(h.t).shield, 'щита нет');
+});
+
+test('[ОШИБКА] руны: линия → rune_line; незамкнутый треугольник → rune_open; мелко → rune_small', () => {
+  let g = createHandGestures();
+  let r = drawRune(g, 1000, 'line', { size: 0.35 });
+  ok(r.frames.some((f) => f.hint && f.hint.code === 'rune_line'), 'rune_line: ' + JSON.stringify(g.getDebug().hints) + JSON.stringify(g.getDebug().lastRecognition));
+  g = createHandGestures();
+  r = drawRune(g, 1000, 'openTriangle', { size: 0.35 });
+  ok(r.frames.some((f) => f.hint && f.hint.code === 'rune_open'), 'rune_open: ' + JSON.stringify(g.getDebug().hints) + JSON.stringify(g.getDebug().lastRecognition));
+  g = createHandGestures();
+  r = drawRune(g, 1000, 'circle', { size: 0.07 });
+  ok(r.frames.some((f) => f.hint && f.hint.code === 'rune_small'), 'rune_small: ' + JSON.stringify(g.getDebug().hints) + JSON.stringify(g.getDebug().lastRecognition));
+});
+
+test('[ОШИБКА] медленный взмах → slash_slow, рассечения нет', () => {
+  const g = createHandGestures();
+  const frames = swipe(g, 1000, 1, { speed: 1.2 });
+  ok(frames.every((f) => !f.slash), 'рассечения быть не должно');
+  ok(frames.some((f) => f.hint && f.hint.code === 'slash_slow'), 'slash_slow: ' + JSON.stringify(g.getDebug().hints));
+  // а быстрый взмах подсказки не даёт
+  const g2 = createHandGestures();
+  const fast = swipe(g2, 1000, 1, { speed: 2.6 });
+  ok(fast.some((f) => f.slash) && !fast.some((f) => f.hint), 'быстрый взмах без подсказки');
+});
+
+test('[ОШИБКА] сфера: ладони к камере → orb_facing; руки на разной высоте → orb_dy', () => {
+  let g = createHandGestures();
+  let h = hintsOf(g, 1000, 1800, () => orbPose({ half: 0.12, yaw: 0 }));
+  ok(h.codes.includes('orb_facing'), 'orb_facing: ' + h.codes + ' ' + JSON.stringify(g.getDebug().conjure));
+  g = createHandGestures();
+  h = hintsOf(g, 1000, 1800, () => { const [l, r] = orbPose({ half: 0.1 }); r.landmarks = r.landmarks.map((p) => ({ ...p, y: p.y - 0.2 })); return [l, r]; });
+  ok(h.codes.includes('orb_dy'), 'orb_dy: ' + h.codes + ' ' + JSON.stringify(g.getDebug().conjure));
+});
+
+test('[ОШИБКА] кадр: кистей нет при видимых запястьях → hands_missing; кисть у края → hand_edge', () => {
+  let g = createHandGestures();
+  const pw = { poseWrists: { left: { x: 0.6, y: 0.6, visibility: 0.9 }, right: { x: 0.4, y: 0.6, visibility: 0.9 } } };
+  let h = hintsOf(g, 1000, 3000, () => [], pw);
+  ok(h.codes.includes('hands_missing'), 'hands_missing: ' + h.codes);
+  g = createHandGestures();
+  h = hintsOf(g, 1000, 1500, () => [R_AT({ ...SHAPES.open, cx: 0.03 })]);
+  ok(h.codes.includes('hand_edge'), 'hand_edge: ' + h.codes);
+});
+
+test('[ОШИБКА] одна и та же подсказка не спамит (кулдаун)', () => {
+  const g = createHandGestures();
+  const h = hintsOf(g, 1000, 5000, () => [R_AT({ curls: [0.55, 0, 0, 0], thumb: 'in' })]);
+  eq(h.codes.filter((c) => c === 'ok_ring_open').length, 1, 'за 5 с — одна подсказка: ' + h.codes);
 });
 
 test('производительность: push()+read() на кадр', () => {

@@ -5,15 +5,17 @@
 //   J — огонь (удержание), U — «Искра», I — «Рассечение» (направление по зажатой A/D, иначе вправо),
 //   K — щит (удержание), F — парирование, L — выброс (обе руки),
 //   O / P (удерживать) — слепить сферу / призму, отпустить — бросить;
-//   [V3] Z — печать «Хлопок», X — «Врата», C — «Рамка»; 1…9 — руны правой руки по порядку RUNE_KEYS.
+//   [V3] Z — печать «Хлопок», X — «Врата», C — «Рамка»; 1…9 — руны правой руки по порядку RUNE_KEYS;
+//   H — следующая подсказка режима «ОШИБКА» (показ твиста без камеры; коды — core/gestureCoach.js).
 // Импульсы создаются только на первое нажатие (event.repeat игнорируется) и потребляются read().
 // В режиме CV main.js этот адаптер не опрашивает.
 
 const SIGIL_KEYS = { KeyZ: 'clap', KeyX: 'gate', KeyC: 'frame' };
+const DEMO_HINTS = ['ok_ring_open', 'shield_palm', 'burst_short', 'rune_open', 'orb_facing', 'slash_slow', 'parry_slow', 'hand_far'];
 // руны правой руки по цифрам (порядок совпадает с RUNE_IDS боя; лишние цифры ничего не делают)
 export const RUNE_KEYS = ['ignis', 'fulgur', 'orbis'];
 const DIGITS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9'];
-const KEYS = ['KeyA', 'KeyD', 'KeyW', 'KeyS', 'KeyQ', 'KeyE', 'Space', 'KeyJ', 'KeyU', 'KeyI', 'KeyK', 'KeyF', 'KeyL', 'KeyO', 'KeyP', 'KeyZ', 'KeyX', 'KeyC', ...DIGITS];
+const KEYS = ['KeyA', 'KeyD', 'KeyW', 'KeyS', 'KeyQ', 'KeyE', 'Space', 'KeyJ', 'KeyU', 'KeyI', 'KeyK', 'KeyF', 'KeyL', 'KeyO', 'KeyP', 'KeyZ', 'KeyX', 'KeyC', 'KeyH', ...DIGITS];
 
 export function createDebugInput(target = window) {
   const held = new Set();
@@ -24,6 +26,8 @@ export function createDebugInput(target = window) {
   let pendingParry = false;
   let pendingSigil = null;
   let pendingRune = null;
+  let pendingHint = null;
+  let hintIdx = 0;
   let enabled = false;
   let conj = null;          // { kind, t0 } — удерживается O (сфера) или P (призма)
   let pendingThrow = null;
@@ -64,6 +68,7 @@ export function createDebugInput(target = window) {
     if (code === 'KeyL') pendingBurst = true;
     if (code === 'KeyU') pendingSpark = true;
     if (code === 'KeyF') pendingParry = true;
+    if (code === 'KeyH') { pendingHint = { code: DEMO_HINTS[hintIdx % DEMO_HINTS.length], side: null, guess: null, tMs: performance.now() }; hintIdx++; }
     if (SIGIL_KEYS[code]) pendingSigil = SIGIL_KEYS[code];
     { const i = DIGITS.indexOf(code); if (i >= 0 && RUNE_KEYS[i]) pendingRune = RUNE_KEYS[i]; }
     if (code === 'KeyI') {
@@ -97,6 +102,7 @@ export function createDebugInput(target = window) {
     pendingParry = false;
     pendingSigil = null;
     pendingRune = null;
+    pendingHint = null;
     conj = null;
     pendingThrow = null;
   }
@@ -125,6 +131,7 @@ export function createDebugInput(target = window) {
       frame.sigil = pendingSigil;
       frame.rune = pendingRune;
       frame.runeScore = pendingRune ? 1 : 0;
+      frame.hint = pendingHint;
       if (conj) {
         frame.conjure = conjState(frame.tMs);
         frame.attack = false; frame.shield = false; frame.spark = false; frame.slash = null; frame.parry = false;
@@ -141,6 +148,7 @@ export function createDebugInput(target = window) {
     pendingThrow = null;
     pendingSigil = null;
     pendingRune = null;
+    pendingHint = null;
     return frame;
   }
 
@@ -176,6 +184,6 @@ export function emptyInput(source = 'none') {
     attack: false, spark: false, slash: null, rune: null, runeScore: 0, runeFizzle: false,
     shield: false, parry: false, sigil: null,
     burst: false, burstPower: 0, burstHand: null, charge: 0,
-    conjure: null, throw: null,
+    conjure: null, throw: null, hint: null,
   };
 }

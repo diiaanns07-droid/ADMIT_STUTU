@@ -163,6 +163,22 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   frameDx: 1.4,            // |dx| между центрами ладоней, S
   frameDy: 0.7,            // |dy|, S — по диагонали, не рядом
   sigilRefractoryMs: 900,
+  // ── [ТВИСТ «ОШИБКА»] подсказки к почти-правильным жестам (импульс hint { code }).
+  //    Тексты — core/gestureCoach.js. Подсказка выдаётся, только когда жест явно начат,
+  //    но одно конкретное условие не выполнено; частые повторы гасятся кулдаунами.
+  hintCooldownMs: 6000,    // одна и та же подсказка не чаще
+  hintGapMs: 2200,         // любые две подсказки не чаще
+  hintEdge: 0.015,         // точка кисти ближе к краю кадра (доля) — «у края»
+  hintEdgeMs: 700,
+  hintFarScale: 0.05,      // размер ладони в высотах кадра меньше — «слишком далеко»
+  hintFarMs: 1500,
+  hintMissingMs: 2500,     // запястья позы видны, а кистей нет столько — «кистей не видно»
+  hintRingSlack: 1.6,      // «кольцо почти замкнуто»: pinchOn ≤ pinch < pinchOn × slack
+  hintNearMs: 450,         // почти-поза держится столько — подсказка
+  hintSlowSwipe: 0.6,      // взмах быстрее swipeSpeed × это, но медленнее порога — «резче»
+  hintTwoHandMs: 900,      // почти-сфера/призма держится столько
+  hintThrowHoldMs: 3500,   // чары держатся без броска столько — напомнить, как бросить
+  hintWeakPush: 1.1,       // кисти выросли хотя бы так, но не до pushRatio — «резче»
 });
 
 export const RUNES = Object.freeze({
@@ -477,7 +493,8 @@ export function createHandGestures(configPatch = {}) {
     st = {
       hands: { left: newHand('left'), right: newHand('right') },
       lastObsT: null, mirror: true, aspect: 4 / 3,
-      pulses: { burst: null, rune: null, runeFizzle: null, dash: null, throw: null, dashDir: null, parry: null, spark: null, slash: null, sigil: null },
+      pulses: { burst: null, rune: null, runeFizzle: null, dash: null, throw: null, dashDir: null, parry: null, spark: null, slash: null, sigil: null, hint: null },
+      coach: { until: {}, gapUntil: -Infinity, near: {}, counts: {}, noHandsSince: null },
       sig: { hist: [], togetherSince: null, primedUntil: -Infinity, frameSince: null, frameFired: false, blockedUntil: -Infinity },
       burstBlockedUntil: -Infinity, pendingBurst: null,
       parryBlockedUntil: -Infinity, sparkBlockedUntil: -Infinity, strokeBlockedUntil: -Infinity,
@@ -486,7 +503,7 @@ export function createHandGestures(configPatch = {}) {
       stroke: null, trail: [], trailUntil: -Infinity, lastRune: null, runeBlockedUntil: -Infinity, lastRecognition: null,
       tipF: null,
       swipe: { armed: true, until: -Infinity },
-      counters: { obs: 0, bursts: 0, runes: 0, fizzles: 0, dashes: 0, badObs: 0, conjures: 0, throws: 0, parries: 0, sparks: 0, slashes: 0, sigils: 0 },
+      counters: { obs: 0, bursts: 0, runes: 0, fizzles: 0, dashes: 0, badObs: 0, conjures: 0, throws: 0, parries: 0, sparks: 0, slashes: 0, sigils: 0, hints: 0 },
       conj: newConj(),
     };
     stick.reset();
@@ -596,7 +613,11 @@ export function createHandGestures(configPatch = {}) {
       H.charge = 0;
     }
     if (!H.present) { H.fistStableAt = null; H.charge = 0; H.releasedAt = null; }
-    if (H.releasedAt !== null && t - H.releasedAt > cfg.releaseWindowMs) H.releasedAt = null;
+    if (H.releasedAt !== null && t - H.releasedAt > cfg.releaseWindowMs) {
+      // [ОШИБКА] заряженный правый кулак раскрывался слишком медленно (или не до конца)
+      if (H.side === 'right' && H.present && H.releaseCharge >= cfg.minCharge && H.rawShape === 'unknown' && !st.stroke) hint('burst_slow', t, { side: 'right' });
+      H.releasedAt = null;
+    }
   }
 
   // Выброс «кулак → ладонь»: правой или двумя руками. Левая одна делает парирование (ладонь к камере).
@@ -611,6 +632,11 @@ export function createHandGestures(configPatch = {}) {
       L.releasedAt = null; R.releasedAt = null;
       return;
     }
+    if (opened(R) && !charged(R)) {
+      // [ОШИБКА] кулак раскрыт, но заряд не набран (кулак стоял меньше ~0,3 с)
+      if (R.releaseCharge > 0.05 && !st.conj.on) hint('burst_short', t, { side: 'right' });
+      R.releasedAt = null;
+    }
     if (oR) {
       if (stillCharging(L) && t - R.releasedAt < cfg.pairWindowMs) return; // ждём левую — выброс двумя
       if (t >= st.burstBlockedUntil) firePulse('burst', t, { power: R.releaseCharge, both: false, hand: 'right' });
@@ -618,13 +644,18 @@ export function createHandGestures(configPatch = {}) {
     }
     if (oL) {
       if (charged(L) && stillCharging(R) && t - L.releasedAt < cfg.pairWindowMs) return; // ждём правую
+      // подсказки парирования — только если левая явно толкнула к камере (а не просто расслабила кулак)
+      const meant = t - L.pushAt <= 500;
       if (L.palmFacing === 'camera') {
         if (t - L.releasedAt <= cfg.parryWindowMs && t >= st.parryBlockedUntil && !st.conj.on) {
           firePulse('parry', t, { fromCharge: L.releaseCharge });
           st.parryBlockedUntil = t + cfg.parryRefractoryMs;
-        }
+        } else if (t - L.releasedAt > cfg.parryWindowMs && meant) hint('parry_slow', t, { side: 'left' });
         L.releasedAt = null;
-      } else if (t - L.releasedAt > cfg.parryWindowMs) L.releasedAt = null;
+      } else if (t - L.releasedAt > cfg.parryWindowMs) {
+        if (meant && L.palmFacing !== 'camera') hint('parry_palm', t, { side: 'left' });
+        L.releasedAt = null;
+      }
     }
   }
 
@@ -645,6 +676,8 @@ export function createHandGestures(configPatch = {}) {
     if (R.loadLeft === null) return;
     if (t - R.loadLeft > cfg.sparkFlickMs) { R.loadLeft = null; return; }
     const flicked = f.reach[0] > cfg.sparkExtend && f.pinch > cfg.sparkOpen && curled(2, 0.06) && curled(3, 0.1);
+    // [ОШИБКА] вместе с указательным выпрямился и средний («V»), безымянный и мизинец согнуты
+    if (!flicked && f.reach[0] > cfg.sparkExtend && f.reach[1] > cfg.sparkExtend && curled(2, 0.06) && curled(3, 0.1)) hint('spark_one', t, { side: 'right' });
     if (flicked && t >= st.sparkBlockedUntil) {
       firePulse('spark', t, {});
       st.sparkBlockedUntil = t + cfg.sparkRefractoryMs;
@@ -660,6 +693,8 @@ export function createHandGestures(configPatch = {}) {
     const busy = st.conj.on || !!st.conj.pending || t < st.conj.quietUntil;
     const facing = L.present && L.lastSeen === t && ready(L, t) && L.rawShape === 'open' && L.palmFacing === 'camera' && L.fistStableAt === null;
     if (!facing || busy) {
+      // [ОШИБКА] толчок раскрытой левой был, но ладонь смотрит вбок или тыльной стороной
+      if (!busy && L.present && L.lastSeen === t && L.rawShape === 'open' && L.palmFacing !== 'camera' && t - L.pushAt <= 250) hint('shield_palm', t, { side: 'left' });
       S.openSince = null;
       if (S.on) { if (S.badSince === null) S.badSince = t; if (busy || t - S.badSince >= cfg.shieldDropMs) { S.on = false; S.badSince = null; } }
       return;
@@ -686,6 +721,68 @@ export function createHandGestures(configPatch = {}) {
     if (kind === 'sigil') st.counters.sigils++;
   }
 
+  // ───────── [ТВИСТ «ОШИБКА»] подсказки ─────────
+  function hint(code, t, data) {
+    const C = st.coach;
+    if (t < C.gapUntil || t < (C.until[code] ?? -Infinity)) return;
+    C.until[code] = t + cfg.hintCooldownMs;
+    C.gapUntil = t + cfg.hintGapMs;
+    C.counts[code] = (C.counts[code] || 0) + 1;
+    st.counters.hints++;
+    st.pulses.hint = { tMs: t, code, ...data };
+  }
+  // Условие держится ms подряд (почти-поза, а не случайный кадр).
+  function sustained(key, cond, t, ms) {
+    const N = st.coach.near;
+    if (!cond) { N[key] = null; return false; }
+    if (N[key] == null) N[key] = t;
+    return t - N[key] >= ms;
+  }
+
+  // Почти-позы, которые не видны изнутри отдельных детекторов: кадр, «OK», щит, сфера, призма.
+  function updateCoach(t, obs) {
+    const L = st.hands.left, R = st.hands.right, C = st.conj;
+    // кадр: кистей нет, хотя запястья позы видны
+    const pw = isObj(obs.poseWrists) ? obs.poseWrists : {};
+    const wristSeen = [pw.left, pw.right].some((w) => isObj(w) && fin(w.y) && w.y < 0.9 && (!fin(w.visibility) || w.visibility >= 0.6));
+    if (sustained('missing', wristSeen && !L.present && !R.present, t, cfg.hintMissingMs)) hint('hands_missing', t);
+    for (const H of [L, R]) {
+      const seen = H.present && H.lastSeen === t && H.landmarks;
+      const e = cfg.hintEdge;
+      const edge = seen && H.landmarks.some((p) => p.x < e || p.x > 1 - e || p.y < e || p.y > 1 - e);
+      if (sustained(`edge_${H.side}`, edge, t, cfg.hintEdgeMs)) hint('hand_edge', t, { side: H.side });
+      if (sustained(`far_${H.side}`, seen && H.scale > 0 && H.scale < cfg.hintFarScale, t, cfg.hintFarMs)) hint('hand_far', t, { side: H.side });
+    }
+    const busy = C.on || !!C.pending || !!st.stroke;
+    // «OK» правой: кольцо почти замкнуто при выпрямленных остальных — или замкнуто, но остальные согнуты
+    const f = R.feat;
+    const rOk = R.present && R.lastSeen === t && f && ready(R, t) && !busy && R.rawShape !== 'pinch';
+    const oth = cfg.okOthersReach;
+    const othersStraight = f && f.reach[1] >= oth && f.reach[2] >= oth - 0.04 && f.reach[3] >= oth - 0.1;
+    const indexBent = f && f.reach[0] <= f.reach[1] - cfg.okIndexDrop + 0.03;
+    const ringAlmost = rOk && othersStraight && indexBent && f.pinch >= cfg.pinchOn && f.pinch < cfg.pinchOn * cfg.hintRingSlack;
+    if (sustained('ok_ring', ringAlmost, t, cfg.hintNearMs)) hint('ok_ring_open', t, { side: 'right' });
+    const partly = f ? [1, 2, 3].filter((i) => f.reach[i] >= 1.12).length : 0;
+    const ringBent = rOk && f.pinch < cfg.pinchOn && !othersStraight && partly >= 1 && partly < 3 && R.rawShape !== 'fist';
+    if (sustained('ok_fingers', ringBent, t, cfg.hintNearMs + 150)) hint('ok_fingers', t, { side: 'right' });
+    // щит левой: открытая ладонь стоит к камере, но толчка не было
+    const lSeen = L.present && L.lastSeen === t && ready(L, t) && !busy;
+    const stk = stick.read(t);
+    const calmPalm = lSeen && L.rawShape === 'open' && L.palmFacing === 'camera' && !st.shield.on && !(stk && stk.engaged && Math.hypot(stk.x, stk.z) > cfg.shieldStickMax);
+    if (sustained('shield_push', calmPalm, t, 1600)) hint('shield_push', t, { side: 'left' });
+    // двумя руками: почти-сфера / почти-призма / чары держатся без броска
+    const ev = C.lastEval;
+    if (!C.on && ev) {
+      const why = ev.kind ? null : ev.why;
+      const orbCode = why === 'facing' ? 'orb_facing' : why === 'dy' ? 'orb_dy' : why === 'gap' && ev.gap > cfg.orbGapMax ? 'orb_far' : null;
+      if (sustained('orb', !!orbCode, t, cfg.hintTwoHandMs)) hint(orbCode, t);
+      if (sustained('prism', !ev.kind && !!ev.prismNear, t, cfg.hintTwoHandMs)) hint('prism_tips', t);
+    } else { sustained('orb', false, t, 0); sustained('prism', false, t, 0); }
+    if (!C.on) C.weakPushAt = null;
+    else if (C.weakPushAt != null && t - C.weakPushAt > 400) { C.weakPushAt = null; hint('throw_weak', t); }
+    if (C.on && t - C.onAt >= cfg.hintThrowHoldMs) hint('throw_hold', t);
+  }
+
   function updateStroke(t) {
     const R = st.hands.right;
     const drawingNow = R.present && R.shape === 'point' && ready(R, t) && t >= st.strokeBlockedUntil;
@@ -707,7 +804,9 @@ export function createHandGestures(configPatch = {}) {
       st.trail = s.pts.slice(-96).map((q) => ({ x: q.x / st.aspect, y: q.y }));
       st.trailUntil = t + cfg.trailKeepMs;
       const bbox = strokeSize(s.pts);
-      if (s.len > 0 && bbox >= cfg.runeMinSize && t - s.lastMove >= cfg.runeEndStillMs) finishStroke(t, 'still');
+      // [ОШИБКА] мелкий, но явно нарисованный штрих тоже завершается на остановке — чтобы подсказать «крупнее»
+      const smallDone = bbox >= cfg.runeMinSize * 0.45 && s.len >= cfg.runeMinSize && t - s.t0 >= 600;
+      if (s.len > 0 && (bbox >= cfg.runeMinSize || smallDone) && t - s.lastMove >= cfg.runeEndStillMs) finishStroke(t, 'still');
       else if (t - s.t0 > cfg.runeMaxStrokeMs) finishStroke(t, 'too-long');
     } else {
       st.tipF = null;
@@ -727,8 +826,14 @@ export function createHandGestures(configPatch = {}) {
     if (!s) return;
     const dur = t - s.t0;
     const size = strokeSize(s.pts);
-    if (dur < cfg.runeMinStrokeMs || size < cfg.runeMinSize || s.pts.length < 10) { st.lastRecognition = { rune: null, reason: 'too-small', why, size }; return; }
-    if (why === 'too-long') { firePulse('runeFizzle', t, { reason: 'too-long' }); st.lastRecognition = { rune: null, reason: 'too-long' }; return; }
+    if (dur < cfg.runeMinStrokeMs || size < cfg.runeMinSize || s.pts.length < 10) {
+      st.lastRecognition = { rune: null, reason: 'too-small', why, size };
+      // [ОШИБКА] штрих явно начат (не просто мелькнул указательный): мелко или слишком быстро
+      if (size >= cfg.runeMinSize * 0.45 && size < cfg.runeMinSize && dur >= 350 && s.len > cfg.runeMinSize * 0.8) hint('rune_small', t, { side: 'right' });
+      else if (size >= cfg.runeMinSize && dur < cfg.runeMinStrokeMs) hint('rune_fast', t, { side: 'right' });
+      return;
+    }
+    if (why === 'too-long') { firePulse('runeFizzle', t, { reason: 'too-long' }); st.lastRecognition = { rune: null, reason: 'too-long' }; hint('rune_long', t, { side: 'right' }); return; }
     if (t < st.runeBlockedUntil) return;
     // обрезаем неподвижный «хвост» в конце штриха
     const pts = s.pts.filter((p) => p.t <= s.lastMove + 40);
@@ -738,7 +843,24 @@ export function createHandGestures(configPatch = {}) {
     if (r.rune) {
       firePulse('rune', t, { rune: r.rune, score: r.score });
       st.lastRune = { rune: r.rune, score: r.score, tMs: t };
-    } else firePulse('runeFizzle', t, { reason: r.reason, score: r.score });
+    } else {
+      firePulse('runeFizzle', t, { reason: r.reason, score: r.score });
+      hint(runeHint(r), t, { side: 'right', guess: r.scores ? bestRune(r.scores) : null });
+    }
+  }
+
+  // [ОШИБКА] что именно не так с нераспознанной руной: по ближайшему шаблону, замкнутости и углам.
+  function bestRune(scores) { let b = null; for (const k of Object.keys(scores)) if (!b || scores[k] > scores[b]) b = k; return b; }
+  function runeHint(r) {
+    if (r.reason === 'line') return 'rune_line';
+    if (!r.scores) return 'rune_unclear';
+    const g = bestRune(r.scores);
+    if ((g === 'ignis' || g === 'orbis') && fin(r.gap) && r.gap >= 0.3) return 'rune_open';
+    if (g === 'ignis' && (r.corners < 2 || r.corners > 4)) return 'rune_corners';
+    if (g === 'fulgur') return 'rune_zigzag';
+    if (g === 'orbis') return 'rune_round';
+    if (g === 'ignis') return 'rune_corners';
+    return 'rune_unclear';
   }
 
   function updateSwipe(t) {
@@ -760,7 +882,15 @@ export function createHandGestures(configPatch = {}) {
       firePulse('slash', t, { dir: Math.sign(travel), power: clamp((Math.abs(speed) - cfg.swipeSpeed) / (cfg.swipeSpeed * 1.5) + 0.35, 0, 1) });
       st.swipe.armed = false;
       st.swipe.until = t + cfg.swipeRefractoryMs;
+      st.swipe.slowAt = null;
+    } else if (Math.abs(speed) >= cfg.swipeSpeed * cfg.hintSlowSwipe && Math.abs(travel) >= cfg.swipeMinTravel * 1.3) {
+      if (st.swipe.slowAt == null) st.swipe.slowAt = t; // [ОШИБКА] широкий, но медленный взмах — ждём, не разгонится ли
     }
+  }
+  function checkSlowSwipe(t) {
+    const s = st.swipe;
+    if (st.conj.on || st.conj.pending) s.slowAt = null;
+    if (s.slowAt != null && t - s.slowAt > 320) { s.slowAt = null; if (t >= s.until) hint('slash_slow', t, { side: 'right' }); }
   }
 
   // ───────── двуручные чары: СФЕРА / ПРИЗМА (удержание) и бросок (импульс) ─────────
@@ -805,6 +935,8 @@ export function createHandGestures(configPatch = {}) {
         const size = clamp((win - cfg.prismSizeMin) / Math.max(1e-6, cfg.prismSizeMax - cfg.prismSizeMin), 0, 1);
         return { kind: 'prism', size, center: mid(mid(L.pts[8], R.pts[8]), mid(L.pts[4], R.pts[4])), info };
       }
+      // [ОШИБКА] почти-призма: окно есть, но кончики не сомкнуты
+      info.prismNear = !prayer && gap >= gapMin && win >= winLim * 0.7 && Math.max(thumbs, index) <= tipLim * 1.9 && (thumbs > tipLim || index > tipLim);
     }
     // СФЕРА: обе кисти раскрыты, ладони друг к другу, рядом по горизонтали, пальцы не касаются
     {
@@ -947,6 +1079,10 @@ export function createHandGestures(configPatch = {}) {
       for (let i = G.hist.length - 1; i >= 0; i--) if (G.hist[i].gap <= cfg.gateTogether) { from = G.hist[i]; break; }
       const sp = from ? (gap - from.gap) / Math.max(1e-3, (t - from.t) / 1000) : 0;
       if (sp >= cfg.gateSpeed && fire('gate', { power: clamp(sp / (cfg.gateSpeed * 2.5), 0.3, 1) })) { G.primedUntil = -Infinity; G.togetherSince = null; return; }
+      // [ОШИБКА] ладони развели, но медленно
+      if (sp < cfg.gateSpeed && t >= G.blockedUntil) { hint('gate_slow', t); G.primedUntil = -Infinity; }
+    } else if (t <= G.primedUntil && gap >= cfg.gateApart && dx / Math.max(1e-3, gap) < cfg.gateHoriz * 0.8 && t >= G.blockedUntil) {
+      hint('gate_horiz', t); G.primedUntil = -Infinity; // [ОШИБКА] развели вверх-вниз, а не в стороны
     }
     // РАМКА: две «Г» по диагонали держатся frameHoldMs
     const frame = lShape(L) && lShape(R) && dx >= cfg.frameDx && dy >= cfg.frameDy;
@@ -955,6 +1091,8 @@ export function createHandGestures(configPatch = {}) {
       if (G.frameSince === null) G.frameSince = t;
       if (!G.frameFired && t - G.frameSince >= cfg.frameHoldMs && fire('frame', {})) G.frameFired = true;
     } else { G.frameSince = null; G.frameFired = false; }
+    // [ОШИБКА] обе «Г» есть, но руки рядом по высоте — рамка не по диагонали
+    if (sustained('frame', !frame && lShape(L) && lShape(R) && dy < cfg.frameDy, t, 600)) hint('frame_diag', t);
   }
 
   // Толчок к камере (обе кисти выросли) или бросок рывком (центр между кистями быстро сдвинулся).
@@ -972,6 +1110,8 @@ export function createHandGestures(configPatch = {}) {
         const k = (Math.min(rL, rR) - 1) / Math.max(1e-6, (cfg.pushRatio - 1) * 2.2);
         return { how: 'push', strength: clamp(0.4 + k, 0, 1), dirX: 0 };
       }
+      // [ОШИБКА] обе кисти заметно подались к камере, но не дотянули до броска
+      if (Math.min(rL, rR) >= cfg.hintWeakPush && Math.max(rL, rR) < cfg.pushRatio && pL >= cfg.pushTrend && pR >= cfg.pushTrend) st.conj.weakPushAt = now.t;
     }
     const fb = olderThan(cfg.flingWindowMs) || h[0];
     const span = (now.t - fb.t) / 1000;
@@ -1029,6 +1169,8 @@ export function createHandGestures(configPatch = {}) {
       const dsh = stick.takeDash();
       if (dsh) firePulse('dashDir', t, { x: dsh.x, z: dsh.z, speed: dsh.speed });
       updateShield(t);
+      checkSlowSwipe(t);
+      updateCoach(t, obs);
     } catch (e) {
       st.counters.badObs++;
     }
@@ -1061,7 +1203,7 @@ export function createHandGestures(configPatch = {}) {
     // Руки заняты чарами (или только что бросили их): одиночные удержания молчат.
     const busy = C.on || !!C.pending || t < C.quietUntil;
     const thr = live('throw', t);
-    const dd = live('dashDir', t), sp = live('slash', t), sg = live('sigil', t);
+    const dd = live('dashDir', t), sp = live('slash', t), sg = live('sigil', t), hintP = live('hint', t);
     const stk = stick.read(t);
     const stickOut = busy ? { ...stk, engaged: false, x: 0, z: 0, moveX: 0, moveZ: 0 } : stk;
     return {
@@ -1091,6 +1233,8 @@ export function createHandGestures(configPatch = {}) {
         center: C.center, heldMs: Math.max(0, t - C.onAt),
       } : null,
       throw: thr ? { kind: thr.kind, size: Math.round(thr.size * 1000) / 1000, power: Math.round(thr.power * 1000) / 1000, aimX: Math.round(thr.aimX * 1000) / 1000, how: thr.how } : null,
+      // [ТВИСТ «ОШИБКА»] почти-правильный жест: код подсказки (тексты — core/gestureCoach.js)
+      hint: hintP ? { code: hintP.code, side: hintP.side || null, guess: hintP.guess || null, tMs: hintP.tMs } : null,
     };
   }
 
@@ -1098,6 +1242,7 @@ export function createHandGestures(configPatch = {}) {
     const f = peek(nowMs);
     st.pulses.burst = null; st.pulses.rune = null; st.pulses.runeFizzle = null; st.pulses.dash = null; st.pulses.throw = null;
     st.pulses.dashDir = null; st.pulses.parry = null; st.pulses.spark = null; st.pulses.slash = null; st.pulses.sigil = null;
+    st.pulses.hint = null;
     return f;
   }
 
@@ -1121,6 +1266,7 @@ export function createHandGestures(configPatch = {}) {
       stick: stick.getDebug(),
       conjure: { on: st.conj.on, kind: st.conj.kind, pending: st.conj.pending ? st.conj.pending.kind : null, size: Math.round(st.conj.size * 100) / 100, charge: Math.round(st.conj.charge * 100) / 100, eval: st.conj.lastEval },
       counters: { ...st.counters },
+      hints: { ...st.coach.counts },
     };
   }
 

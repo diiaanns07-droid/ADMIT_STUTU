@@ -1783,7 +1783,7 @@ export async function createVision(options = {}) {
 
   // [ASHEN_V2] InputFrame: движение и рывок — левая рука-джойстик, жесты — обе руки (core/handGestures.js).
   // Без кистей остаются только запасные жесты позы (поднятая рука — огонь/щит, обе — выброс).
-  const V2_EMPTY = { dashDir: null, stick: null, spark: false, slash: null, parry: false, burstHand: null, sigil: null };
+  const V2_EMPTY = { dashDir: null, stick: null, spark: false, slash: null, parry: false, burstHand: null, sigil: null, hint: null };
   function read() {
     const now = nowMs();
     const f = interp.read(now);
@@ -1817,6 +1817,7 @@ export async function createVision(options = {}) {
     out.runeFizzle = h.runeFizzle;
     out.conjure = cleanConjure(h.conjure);
     out.throw = cleanThrow(h.throw);
+    out.hint = h.hint || null;           // [ТВИСТ «ОШИБКА»] почти-правильный жест → код подсказки
     if (out.conjure) {
       // Обе руки заняты заклинанием: стоим, одиночные жесты (и запасные по позе) не действуют.
       out.attack = false; out.shield = false;
