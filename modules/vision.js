@@ -116,11 +116,13 @@ export const DEFAULT_VISION_CONFIG = Object.freeze({
   pulseTtlMs: 300,         // непрочитанный импульс dash/burst сгорает
   // Калибровка
   calibrationMs: 1500,
-  calibrationMinSamples: 12,
+  // Порог по числу кадров — для слабых ноутбуков: при позе+кистях инференс бывает ~6 Гц
+  // (≈9 кадров за 1,5 с), поэтому 12 кадров там не набиралось никогда, и калибровка падала по таймауту.
+  calibrationMinSamples: 6,
   calibrationMaxSpread: 0.05,
   calibrationMaxWidthSpread: 0.06,
-  calibrationGapMs: 300,
-  calibrationTimeoutMs: 15000,
+  calibrationGapMs: 700,   // было 300: на 6 Гц одиночная задержка кадра сбрасывала накопленное
+  calibrationTimeoutMs: 25000,
   minNoise: 0.004,
   // Движок и производительность
   useWorker: 'auto',       // 'auto' | 'off' (или false)

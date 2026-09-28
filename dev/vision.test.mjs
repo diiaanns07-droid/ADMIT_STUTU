@@ -504,7 +504,7 @@ test('A23 калибровка: поднятые руки и раскачива�
   sim.interp.ackCalibration();
   const sim2 = createSim();
   sim2.interp.beginCalibration(sim2.now());
-  sim2.run(16000, (s) => { s.frames = false; }, { tick: true, read: false });
+  sim2.run(26000, (s) => { s.frames = false; }, { tick: true, read: false }); // таймаут 25 с
   c = sim2.interp.calibrationStatus();
   eq(c.result, 'failed', 'таймаут без кадров');
   ok(/Калибровка не удалась/.test(c.message), c.message);
