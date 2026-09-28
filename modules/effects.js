@@ -953,7 +953,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     fi.player.z + fi.right.z * 0.36 * side + fi.fwd.z * 0.42,
   );
   const bossCoreOf = (out) => out.set(fi.boss.x, fi.boss.y + BOSS_CORE_H, fi.boss.z);
-  const playerGround = (out) => out.set(fi.player.x, GROUND_Y, fi.player.z);
+  const playerGround = (out) => out.set(fi.player.x, fi.player.y, fi.player.z); // земля под героем (большая карта — рельеф)
   function evPos(ev, out, fallback) {
     if (ev && hasVec(ev.position)) return out.set(ev.position.x, ev.position.y, ev.position.z);
     return fallback(out);
@@ -1903,7 +1903,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     const prism = conj.kind === 'prism';
     const ch = conj.charge;
     if (dt > 0) conj.sigilA += dt * (0.35 + 1.1 * ch) * (reducedMotion() ? 0.4 : 1);
-    sigilMesh.position.set(fi.player.x, GROUND_Y + 0.05, fi.player.z);
+    sigilMesh.position.set(fi.player.x, fi.player.y + 0.05, fi.player.z);
     sigilMesh.rotation.set(0, conj.sigilA, 0);
     sigilMesh.scale.setScalar(0.8 + 0.45 * ch + 0.15 * (1 - a));
     const u = sigilMat.uniforms;
@@ -2821,7 +2821,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       // вспышка у героя — умеренная: камера за спиной, крупный блик засвечивал пол-экрана
       fxFlash(c, PAL.heroCore, 0.25, 1.2, 0.2, { flare: true, opacity: 0.8, pull: 0.1 });
       fxFlash(c, PAL.guardCold, 0.4, 1.5, 0.3, { opacity: 0.35, pull: 0.1 });
-      _q.set(fi.player.x, GROUND_Y, fi.player.z);
+      _q.set(fi.player.x, fi.player.y, fi.player.z);
       const R = num(d.radius, 7);
       fxRing(_q, 0.4, R, 0.55, RAW.guardCold, RAW.heroCore, 0.85, 3);
       fxRing(_q, 0.2, R * 0.6, 0.4, RAW.heroAmber, RAW.heroCore, 0.6, 3);
@@ -2839,7 +2839,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     } else if (k === 'gate') {
       // врата: золотые створки расходятся от героя, купол поднимается
       sig.domePulse = 1;
-      _q.set(fi.player.x, GROUND_Y, fi.player.z);
+      _q.set(fi.player.x, fi.player.y, fi.player.z);
       fxRing(_q, 0.3, 2.4, 0.7, RAW.heroGold, RAW.heroCore, 0.9, 3);
       fxWall(_q, 0.3, 1.4, 2.2, 0.6, RAW.heroGold, 0.45);
       fxFlash(c, PAL.heroCore, 0.4, 2.4, 0.4, { flare: true, opacity: 0.9 });
@@ -2871,7 +2871,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     dashFx.active = true; dashFx.t = 0; dashFx.next = 0; dashFx.acc = 0; dashFx.sign = sign;
     dashFx.ghostsLeft = reducedMotion() ? 0 : Q.ghosts;
     const feet = evPos(ev, _p, playerGround);
-    feet.y = GROUND_Y + 0.05;
+    feet.y = fi.player.y + 0.05;
     _dir.set(-fi.right.x * sign, 0.25, -fi.right.z * sign);
     sparks(feet, { pool: dust, dir: _dir, count: 12, spread: 0.8, speed: [1, 3], rgb: RAW.dust, life: 0.7, size: 0.1, sizeEnd: 0.2, gravity: 1, drag: 2.5, alpha: 0.6 });
     sparks(chestOf(_q), { dir: _dir, count: 6, spread: 0.5, speed: [2, 4], rgb: RAW.heroGold, life: 0.3, size: 0.05, essential: true, drag: 3 });

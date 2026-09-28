@@ -218,7 +218,10 @@ export function createBattleHud({ canvas } = {}) {
     const base = ctx.globalAlpha;
     let nearest = null, nd = Infinity;
     for (const q of pois) if (isObj(q) && Number.isFinite(q.x)) { const dd = Math.hypot(q.x - p.x, q.z - p.z); if (dd < nd) { nd = dd; nearest = q; } }
-    for (const q of pois.slice(0, 8)) {
+    // ближайшие 8 (углей на большой карте 10): ближний всегда с меткой
+    const near8 = pois.filter((q) => isObj(q) && Number.isFinite(q.x) && Number.isFinite(q.z))
+      .sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z)).slice(0, 8);
+    for (const q of near8) {
       if (!isObj(q) || !Number.isFinite(q.x) || !Number.isFinite(q.z)) continue;
       const d = Math.hypot(q.x - p.x, q.z - p.z);
       const qy = num(q.y, 0);
