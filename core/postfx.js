@@ -48,6 +48,11 @@ uniform float uContrast;
 uniform float uSat;
 uniform vec3 uShadowTint;
 uniform vec3 uHighTint;
+uniform vec2 uSunPos;      // экранные uv короны затмения
+uniform float uSunVis;     // 0 — корона за кадром/сзади
+uniform float uRays;       // сила лучей
+uniform vec2 uPunchC;      // центр удара (uv)
+uniform float uPunch;      // 0..1 радиальный рывок экрана на сильном попадании
 varying vec2 vUv;
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -61,6 +66,32 @@ void main() {
   col.r = texture2D(tDiffuse, vUv - off).r;
   col.g = texture2D(tDiffuse, vUv).g;
   col.b = texture2D(tDiffuse, vUv + off).b;
+  // радиальный рывок: размытие от точки удара наружу (как «зум» на мощном попадании)
+  if (uPunch > 0.002) {
+    vec2 dv = vUv - uPunchC;
+    vec3 acc = col;
+    for (int i = 1; i < 8; i++) {
+      float k = 1.0 - uPunch * 0.07 * float(i) / 7.0;
+      acc += texture2D(tDiffuse, uPunchC + dv * k).rgb;
+    }
+    col = acc / 8.0;
+  }
+  // лучи от короны: марш от пикселя к короне, копим только яркое (корона, огни, магия)
+  if (uSunVis > 0.002 && uRays > 0.0) {
+    vec2 step = (uSunPos - vUv) / 16.0;
+    vec2 p = vUv;
+    float decay = 1.0, acc = 0.0;
+    for (int i = 0; i < 16; i++) {
+      p += step;
+      vec2 pc = clamp(p, 0.0, 1.0);
+      vec3 c = texture2D(tDiffuse, pc).rgb;
+      acc += max(dot(c, vec3(0.2126, 0.7152, 0.0722)) - 0.55, 0.0) * decay;
+      decay *= 0.93;
+    }
+    vec2 ds = (vUv - uSunPos) * vec2(uRes.x / max(uRes.y, 1.0), 1.0);
+    float fall = 1.0 - smoothstep(0.1, 1.25, length(ds));
+    col += vec3(1.0, 0.84, 0.62) * (acc / 16.0) * uRays * uSunVis * fall;
+  }
   col = clamp(col, 0.0, 1.0);
   // gentle filmic S-curve (display space)
   vec3 s = col * col * (3.0 - 2.0 * col);
@@ -87,6 +118,7 @@ const BLOOM = { strength: 0.7, radius: 0.42, threshold: 1.0, knee: 0.15, maxInpu
 const GTAO_SCALE = 0.5; // AO targets at half the composer resolution
 const GTAO_PARAMS = { radius: 0.55, distanceExponent: 1.4, thickness: 1.6, scale: 1.0, samples: 12, distanceFallOff: 1.0, screenSpaceRadius: false };
 const GTAO_BLEND = 0.7;
+const RAYS = { strength: 1.35 }; // лучи от короны (medium/high); на low постобработки нет
 const GRADE = { grain: 0.036, vignette: 0.45, ca: 0.0, contrast: 0.16, sat: 1.04,
   shadowTint: [-0.010, 0.002, 0.026], highTint: [0.028, 0.010, -0.020] };
 
@@ -94,7 +126,7 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
   if (!THREE || !renderer || !scene || !camera) throw new Error('[postfx] need THREE, renderer, scene, camera');
   const S = {
     tier: normTier(quality), reduced: !!reducedMotion, ready: false, failed: false, disposed: false, error: null,
-    w: 1, h: 1, pr: 1, time: 0, highLoading: false, highReady: false, highFailed: false, mods: null,
+    w: 1, h: 1, pr: 1, time: 0, sun: { x: 0.5, y: 0.2, vis: 0 }, punch: 0, punchC: { x: 0.5, y: 0.5 }, highLoading: false, highReady: false, highFailed: false, mods: null,
   };
   const P = {}; // passes
   let composer = null;
@@ -156,6 +188,8 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
         uGrain: { value: GRADE.grain }, uVignette: { value: GRADE.vignette }, uCA: { value: GRADE.ca },
         uContrast: { value: GRADE.contrast }, uSat: { value: GRADE.sat },
         uShadowTint: { value: new THREE.Vector3(...GRADE.shadowTint) }, uHighTint: { value: new THREE.Vector3(...GRADE.highTint) },
+        uSunPos: { value: new THREE.Vector2(0.5, 0.2) }, uSunVis: { value: 0 }, uRays: { value: RAYS.strength },
+        uPunchC: { value: new THREE.Vector2(0.5, 0.5) }, uPunch: { value: 0 },
       },
       vertexShader: GRADE_VERT, fragmentShader: GRADE_FRAG,
     });
@@ -246,6 +280,13 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
     const d = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 1 / 60;
     S.time = (S.time + d) % 1000;
     P.grade.uniforms.uTime.value = S.reduced ? 0 : S.time;
+    // лучи короны и радиальный рывок: сглаживание видимости, затухание рывка
+    const U = P.grade.uniforms;
+    U.uSunPos.value.set(S.sun.x, S.sun.y);
+    U.uSunVis.value += (S.sun.vis - U.uSunVis.value) * (1 - Math.exp(-d * 6));
+    S.punch = S.reduced ? 0 : S.punch * Math.exp(-d * 7);
+    U.uPunch.value = S.punch;
+    U.uPunchC.value.set(S.punchC.x, S.punchC.y);
     // The composer calls renderer.render()/fullscreen quads several times per frame; with the default
     // info.autoReset only the last quad would be counted. Accumulate the whole frame instead, so
     // renderer.info.render.calls/triangles keep meaning "this frame" for QA/diagnostics.
@@ -276,6 +317,18 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
     try { applyTier(); } catch (e) { fail('setQuality', e); }
   }
 
+  // Корона затмения на экране (uv 0..1, y вверх); vis 0..1 — за кадром/сзади гаснет плавно.
+  function setSun(x, y, vis) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) { S.sun.vis = 0; return; }
+    S.sun.x = x; S.sun.y = y; S.sun.vis = Math.max(0, Math.min(1, +vis || 0));
+  }
+  // Радиальный рывок экрана от точки (uv) — мощное попадание, выброс, руна.
+  function punch(strength, x = 0.5, y = 0.5) {
+    if (S.reduced) return;
+    const k = Math.max(0, Math.min(1, +strength || 0));
+    if (k > S.punch) { S.punch = k; S.punchC.x = Number.isFinite(x) ? x : 0.5; S.punchC.y = Number.isFinite(y) ? y : 0.5; }
+  }
+
   function setReducedMotion(b) {
     S.reduced = !!b;
     try { applyTier(); } catch (e) { /* ignore */ }
@@ -290,7 +343,7 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
   const whenReady = init().then((ok) => !!ok && !S.failed, (e) => { fail('init', e); return false; });
 
   return {
-    render, setSize, setQuality, setReducedMotion, dispose, whenReady,
+    render, setSize, setQuality, setReducedMotion, setSun, punch, dispose, whenReady,
     get enabled() { return active(); },
     get ready() { return S.ready && !S.failed; },
     get tier() { return S.tier; },
