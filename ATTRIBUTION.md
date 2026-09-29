@@ -47,6 +47,11 @@ MediaPipe 1.0.x **сознательно не используется**: в е�
   (CC0 1.0, Poly Pizza; ссылки — `assets/quaternius/LICENSE.md`). Их анимации (шаг, бег, удар, прыжок,
   смерть, сидя…) переносятся на VRM-персонажей по направлениям костей (`modules/vrmKit.js`).
 - Если модель не загрузилась, остаётся процедурный Пепельный страж.
+- [HERO] `assets/heroes/knight.glb`, `wizard.glb`, `ranger.glb` — тела и костюмы **Quaternius** (Modular
+  Character Outfits — Fantasy, Universal Base Characters), **CC0 1.0**: Пепельный страж (латы Knight),
+  Архимаг (Wizard), Лучница (Ranger). `assets/heroes/anims_kaykit.glb` — 35 клипов **KayKit Adventurers 1.0**
+  (Kay Lousberg, **CC0 1.0**), меши убраны. Источники и ссылки на лицензии — `assets/heroes/LICENSE.md`.
+  Снаряжение (плащи, посохи, лук, наплечники, пояса) — процедурное (`modules/heroGear.js`).
 
 ## Собственные ресурсы
 Вся геометрия процедурная (включая Регента, колоссов и шпили), небо с затмением и туман — шейдеры,

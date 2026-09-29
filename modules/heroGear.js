@@ -22,11 +22,23 @@ const PRESETS = {
     pauldrons: 'plate', bracers: true, belt: true, pouches: 2, dagger: 'right', rings: true,
     cape: { w: 0.5, len: 1.25, color: 0x16121f, trim: 0x8f8fb5 }, staff: { crystal: 0x8fd8ff, glow: 0x9d7bff },
   },
-  // Пепельный страж: бронза и уголь, тяжёлые латы, посох-клинок с углём клятвы
+  // Пепельный страж (латы Quaternius Knight): плащ, посох с углём клятвы, пылающая печать на груди
   warden: {
     metal: 0x8a6a45, metal2: 0xd8b070, leather: 0x2c2018, cloth: 0x3a1f1a, glow: 0xff8a3a,
-    pauldrons: 'heavy', bracers: true, belt: true, pouches: 2, dagger: null, rings: true, chest: true,
-    cape: { w: 0.56, len: 1.3, color: 0x2a1a17, trim: 0xd8b070 }, staff: { crystal: 0xffb46a, glow: 0xff7a2a },
+    pauldrons: null, bracers: false, belt: 'pouches', pouches: 2, dagger: null, rings: false, sigil: true,
+    cape: { w: 0.62, len: 1.3, color: 0x2a1a17, trim: 0xd8b070 }, staff: { crystal: 0xffb46a, glow: 0xff7a2a },
+  },
+  // Лучница (Quaternius Ranger): лук и колчан, кинжал
+  scout: {
+    metal: 0xb0b4bc, metal2: 0xc9a45c, leather: 0x4a3322, cloth: 0x234a2a, glow: 0x9dffb0,
+    pauldrons: null, bracers: false, belt: 'pouches', pouches: 2, dagger: 'right', rings: false,
+    bow: true, quiver: true,
+  },
+  // Архимаг (Quaternius Wizard): посох-громоотвод, плащ с рунами, наручи, перстни
+  magus: {
+    metal: 0x6a6f7c, metal2: 0xd8b070, leather: 0x2a2230, cloth: 0x1c2438, glow: 0x8fd8ff,
+    pauldrons: 'plate', bracers: true, belt: 'pouches', pouches: 2, dagger: null, rings: true, sigil: false,
+    cape: { w: 0.62, len: 1.35, color: 0x1a2236, trim: 0xd8b070 }, staff: { crystal: 0xbfe8ff, glow: 0x6fb8ff },
   },
 };
 
@@ -103,7 +115,7 @@ function capeGeo(THREE, topW, w, len, cols = 12, rows = 18) {
   // сверху — по ширине плеч и огибает спину, книзу шире и ровнее; складки — лёгкая волна по ширине
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) {
-    const t = -p.getY(i) / len, u = p.getX(i) * 2; // u: −1..1
+    const t = Math.min(1, Math.max(0, -p.getY(i) / len)), u = p.getX(i) * 2; // u: −1..1
     const width = topW + (w - topW) * Math.sqrt(t);
     const wrapK = (1 - t) * 0.09 + 0.02;
     p.setX(i, u * width * 0.5);
@@ -231,6 +243,16 @@ export function dressHero(THREE, vrm, { preset = 'ranger', model = null, atmosph
     stick(grp, chestB, bp[chestB].clone().addScaledVector(UP, -0.02).addScaledVector(FWD, 0.015), modelQ);
   }
 
+  // ---------------- печать клятвы на груди (светящийся знак поверх лат)
+  if (P.sigil && bp[chestB]) {
+    const grp = new THREE.Group(); grp.name = 'sigil';
+    const disk = new THREE.Mesh(G(new THREE.CircleGeometry(0.055, 24)), Mt(new THREE.MeshBasicMaterial({ map: rune, color: new THREE.Color(P.glow).multiplyScalar(2.4), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })));
+    grp.add(disk);
+    const ring = new THREE.Mesh(G(new THREE.TorusGeometry(0.06, 0.006, 5, 28)), mats.trim); grp.add(ring);
+    const core = new THREE.Mesh(G(new THREE.OctahedronGeometry(0.016)), mats.glow); core.position.z = 0.008; grp.add(core);
+    stick(grp, chestB, bp[chestB].clone().addScaledVector(FWD, 0.17).addScaledVector(UP, 0.02), modelQ);
+  }
+
   // ---------------- наручи
   if (P.bracers && bp.leftLowerArm) {
     for (const side of ['left', 'right']) {
@@ -257,12 +279,14 @@ export function dressHero(THREE, vrm, { preset = 'ranger', model = null, atmosph
     const grp = new THREE.Group(); grp.name = 'belt';
     const y = (bp.spine ? bp.hips.y * 0.55 + bp.spine.y * 0.45 : bp.hips.y + 0.04);
     const rx = Math.max(0.13, shoulderW * 0.42), rz = rx * 0.78;
-    const belt = new THREE.Mesh(G(new THREE.TorusGeometry(1, 0.018, 6, 36)), mats.leather);
-    belt.rotation.x = Math.PI / 2; belt.scale.set(rx, rz, 1.5);
-    grp.add(belt);
-    const buckle = new THREE.Mesh(G(new THREE.BoxGeometry(0.06, 0.05, 0.014)), mats.trim);
-    buckle.position.set(0, 0, rz + 0.006); grp.add(buckle);
-    const bgem = new THREE.Mesh(G(new THREE.OctahedronGeometry(0.012)), mats.glow); bgem.position.set(0, 0, rz + 0.016); grp.add(bgem);
+    if (P.belt !== 'pouches') {
+      const belt = new THREE.Mesh(G(new THREE.TorusGeometry(1, 0.018, 6, 36)), mats.leather);
+      belt.rotation.x = Math.PI / 2; belt.scale.set(rx, rz, 1.5);
+      grp.add(belt);
+      const buckle = new THREE.Mesh(G(new THREE.BoxGeometry(0.06, 0.05, 0.014)), mats.trim);
+      buckle.position.set(0, 0, rz + 0.006); grp.add(buckle);
+      const bgem = new THREE.Mesh(G(new THREE.OctahedronGeometry(0.012)), mats.glow); bgem.position.set(0, 0, rz + 0.016); grp.add(bgem);
+    }
     const pouchG = G(new THREE.BoxGeometry(0.06, 0.07, 0.035, 2, 2, 1));
     const flapG = G(new THREE.BoxGeometry(0.064, 0.025, 0.04));
     const n = P.pouches || 0;
@@ -355,7 +379,9 @@ varying float vCapeT;`)
       const cg = new THREE.Mesh(G(new THREE.OctahedronGeometry(0.008)), mats.glow); cg.position.set(0, 0.008, 0); clasp.add(cg);
       grp.add(clasp);
     }
-    const top = bp[chestB].clone().addScaledVector(UP, 0.07).addScaledVector(FWD, -0.1);
+    // верх плаща — под наплечниками/воротом, вплотную к лопаткам (сверху кромка не видна)
+    const neckY = bp.neck ? bp.neck.y : bp[chestB].y + 0.12;
+    const top = bp[chestB].clone().setY(bp[chestB].y * 0.35 + neckY * 0.65 - 0.03).addScaledVector(FWD, -0.085);
     stick(grp, chestB, top, modelQ);
   }
 
@@ -382,7 +408,7 @@ varying float vCapeT;`)
     // в позе Idle: вертикально, чуть впереди и снаружи кулака
     const hand = bp.rightHand.clone();
     const fing = bp.rightMiddleProximal || hand.clone().addScaledVector(UP, -0.08);
-    const palm = hand.clone().lerp(fing, 0.8).addScaledVector(FWD, 0.02).addScaledVector(LEFT, -0.012);
+    const palm = hand.clone().lerp(fing, 0.75).addScaledVector(FWD, 0.015);
     const q = qFromTo(new THREE.Vector3(0, 1, 0), UP.clone().addScaledVector(FWD, 0.12).normalize());
     stick(grp, 'rightHand', palm, q);
     parts[parts.length - 1].spin = halo; parts[parts.length - 1].crystal = crystal;
@@ -407,9 +433,9 @@ varying float vCapeT;`)
       const diag = UP.clone().multiplyScalar(0.95).addScaledVector(LEFT, -0.45).normalize();
       const q = qFromTo(new THREE.Vector3(0, 1, 0), diag);
       const zNow = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
-      const want = FWD.clone().negate();
+      const want = FWD.clone(); // тетива к спине, рукоять выгибается назад от тела
       q.premultiply(new THREE.Quaternion().setFromAxisAngle(diag, Math.atan2(zNow.clone().cross(want).dot(diag), zNow.dot(want))));
-      stick(grp, chestB, back.clone().addScaledVector(FWD, -0.03), q);
+      stick(grp, chestB, back.clone().addScaledVector(FWD, -0.08), q);
       bow = grp;
     }
     if (P.quiver) {
