@@ -26,6 +26,7 @@ const ONLY = argOf('--seed', null);   // --seed N: один прогон с эт
 const JSON_OUT = argv.includes('--json');
 const DEBUG = argv.includes('--debug');
 const PUSH = +argOf('--push', 1.35);
+const FAST_MS = +argOf('--fast', 150);          // длительность «резкого» движения руля, мс
 const OFFSET = +argOf('--offset', 0);          // привычная ладонь игрока смещена от нейтрали игры (sw, + к середине груди)
 const LEVEL = +argOf('--level', 0);            // и выше (+) / ниже (−) «уровня груди» (sw)          // сила осознанного толчка щита: во столько раз кисть растёт в кадре
 const G_OPTS = JSON.parse(argOf('--cfg', '{}')); // подмена настроек handGestures (подбор порогов)
@@ -68,6 +69,15 @@ function scenario() {
   add(300, 'any', (u) => open(NX, CHEST, SIZE * lerp(PUSH, 1.0, ease(u))), 'убрал ладонь');
   add(2500, 'walk', () => open(NX, CHEST), 'снова идёт');
   add(3000, 'walk', () => open(NX, CHEST), 'ход, ладонь ребром', );
+  // резкие, но обычные движения руля (не дёрг-рывок): быстро увести руку в поворот и вернуть
+  add(FAST_MS, 'any', (u) => open(lerp(NX, NX - 0.45, ease(u)), CHEST), 'резко влево');
+  add(1200, 'turnL', () => open(NX - 0.45, CHEST), 'дуга влево 2');
+  add(FAST_MS, 'any', (u) => open(lerp(NX - 0.45, NX + 0.4, ease(u)), CHEST), 'резко вправо');
+  add(1200, 'turnR', () => open(NX + 0.4, CHEST), 'дуга вправо 2');
+  add(FAST_MS, 'any', (u) => open(lerp(NX + 0.4, NX, ease(u)), CHEST), 'резко прямо');
+  add(1500, 'walk', () => open(NX, CHEST), 'ход 3');
+  add(FAST_MS, 'any', (u) => open(NX, lerp(CHEST, SHOULDER, ease(u)), SIZE * lerp(1, 1.1, ease(u))), 'резко к плечу');
+  add(1500, 'run', () => open(NX, SHOULDER, SIZE * 1.1), 'бег 2');
   add(300, 'any', (u) => open(NX, lerp(CHEST, LAP, ease(u))), 'рука вниз 2');
   add(2000, 'rest', () => open(NX, LAP), 'отдых');
   return P;
@@ -128,7 +138,7 @@ function simulate(seed, gOpts = {}) {
       const f = g.read(t);
       M.frames++;
       const moving = f.moveZ > 0;
-      if (f.dash || f.dashDir) M.falseDash++;
+      if (f.dash || f.dashDir) { M.falseDash++; if (DEBUG) console.log(`ложный рывок: seed=${seed} «${P.tag}» +${t - t0} мс`, JSON.stringify(g.getDebug().stick.dash)); }
       if (P.want !== 'shield' && P.want !== 'any') {
         if (f.shield) M.falseShieldFrames++;
         if (f.shield && !prevShield) { M.falseShieldOn++; if (DEBUG) console.log(`ложный щит: seed=${seed} «${P.tag}» +${t - t0} мс`, JSON.stringify(g.getDebug().left.push), 'recent hand frames:', recent.join('')); }
@@ -225,7 +235,7 @@ else {
 // пороги качества (см. BUILD_STATUS.md, раздел V6)
 const LIMITS = [
   ['falseShieldOn', (v) => v === 0, 'щит не должен подниматься сам'],
-  ['falseDash', (v) => v <= Math.ceil(SEEDS / 4), 'ложные рывки'],
+  ['falseDash', (v) => v === 0, 'ложные рывки (в т.ч. резкий перехват руля за 0,15 с)'],
   ['walkStopPct', (v) => v <= 3, 'спотыкания при ходьбе, % кадров'],
   ['straightTurnAvg', (v) => v <= 0.03, 'руль на прямой'],
   ['wrongTurn', (v) => v === 0, 'поворот не в ту сторону'],

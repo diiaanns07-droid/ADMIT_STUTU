@@ -100,7 +100,9 @@ function merge(base, patch) {
   return out;
 }
 
-export function createLeftStick(configPatch = {}) {
+// hooks.acceptA({ x, z, t0, t }) → false: резкий дёрг уровня A не срабатывает сразу, а остаётся
+// кандидатом «щелчка» (рывок — на возврате руки). x, z — направление в осях выхода (как у рывка).
+export function createLeftStick(configPatch = {}, hooks = {}) {
   let cfg = merge(DEFAULT_STICK_CONFIG, configPatch);
   let s;
   function reset() {
@@ -400,7 +402,8 @@ export function createLeftStick(configPatch = {}) {
       for (let j = i + 1; j < n; j++) { path += Math.hypot(s.hist[j].x - s.hist[j - 1].x, s.hist[j].y - s.hist[j - 1].y) / S; peak = Math.max(peak, instV(j)); }
       if (path / d > cfg.dashStraightness) continue;
       const ux = dx / d, uy = dy / d;
-      if (span <= cfg.dashWindowMs && d >= cfg.dashTravel && v >= cfg.dashSpeed && peak >= cfg.dashPeakSpeed && uy < cfg.dashDownMax) {
+      if (span <= cfg.dashWindowMs && d >= cfg.dashTravel && v >= cfg.dashSpeed && peak >= cfg.dashPeakSpeed && uy < cfg.dashDownMax
+        && (!hooks.acceptA || hooks.acceptA({ x: s.mirror ? -ux : ux, z: -uy, t0: p.t, t }) !== false)) {
         fireDash(t, ux, uy, v, p.t, 'A');
         return;
       }

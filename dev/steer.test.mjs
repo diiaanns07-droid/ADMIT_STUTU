@@ -356,6 +356,22 @@ test('[V6] привычка не «съедает» поворот: поднял
   ok(st.read(t).x < -0.4, 'поворот полный: ' + st.read(t).x);
 });
 
+test('[V6] быстрый перехват руля (поворот влево → резко вправо) и резкий подъём к плечу — не рывок', () => {
+  let { st, t } = raised();
+  t = run(st, t, 600, () => P(0.45, CHEST));
+  ok(st.read(t).x < -0.3, 'сначала поворот влево');
+  // резко (≈0,1 с) — на поворот вправо, без возврата
+  const t0 = t;
+  t = run(st, t, 700, (tt) => P(0.45 - 0.85 * Math.min(1, (tt - t0) / 100), CHEST));
+  ok(!st.takeDash() && st.getDebug().counters.dashes === 0, 'перехват руля — не рывок: ' + JSON.stringify(st.getDebug().counters));
+  ok(st.read(t).x > 0.3, 'поворачиваем вправо: ' + st.read(t).x);
+  // резко к плечу — бег, а не рывок вперёд
+  const t1 = t;
+  t = run(st, t, 600, (tt) => P(-0.4, CHEST + 0.55 * Math.min(1, (tt - t1) / 100)));
+  ok(!st.takeDash() && st.getDebug().counters.dashes === 0, 'рука к плечу — не рывок: ' + JSON.stringify(st.getDebug().counters));
+  ok(st.read(t).gait === 'run', 'бежим');
+});
+
 test('мусор на входе не ломает модуль', () => {
   const st = createSteerStick();
   st.push(null); st.push({}); st.push({ t: NaN }); st.push({ t: 5, hand: { x: NaN, y: 1 } });

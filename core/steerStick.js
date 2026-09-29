@@ -82,6 +82,10 @@ export const DEFAULT_STEER_CONFIG = Object.freeze({
   dashLowMinV: -1.25,      // «опущена, но в кадре»: не ниже стольких sw под плечами
   dashLowLateral: 0.7,     // из опущенного положения — только боковой рывок (|x| не меньше)
   dashFreezeMs: 350,       // после рывка выход держится на значении до дёрга (рука возвращается)
+  // [V6] резкий дёрг без возврата (уровень A) из зоны поворота к нейтрали или через неё — это
+  // перехват руля (был поворот влево — резко вправо), а резко вверх — «к плечу, бегу»; это не рывки.
+  // «Щелчок» с возвратом — рывок всегда.
+  dashReverseFrom: 0.2,    // рука перед дёргом была дальше стольких sw от нейтрали…
   // подсказки
   riseWindowMs: 1500,      // «поднимал руку» — уровень вырос на riseMin за это окно…
   riseMin: 0.3,
@@ -100,7 +104,7 @@ function merge(base, patch) {
 export function createSteerStick(configPatch = {}) {
   let cfg = merge(DEFAULT_STEER_CONFIG, configPatch);
   // детектор рывка — тот же, что у джойстика; хватка ему не нужна (гейт — здесь)
-  const dash = createLeftStick({ freeDash: 1 });
+  const dash = createLeftStick({ freeDash: 1 }, { acceptA: (d) => acceptSharp(d) });
   let s;
   function reset() {
     s = {
@@ -113,10 +117,10 @@ export function createSteerStick(configPatch = {}) {
       learn: null,           // [V6] накопление положения ладони после подъёма: { n, sum, sum2, done }
       wOff: null, wOffN: 0,
       zone: 'none', zoneHist: [{ t: -Infinity, zone: 'none' }],
-      levelHist: [], outHist: [], riseT: -Infinity,
+      levelHist: [], outHist: [], latHist: [], riseT: -Infinity,
       freezeUntil: -Infinity, freezeOut: null, pendingDash: null,
       handDisp: null,
-      counters: { pushes: 0, raises: 0, stops: 0, exits: 0, dashes: 0, dashRejected: 0, wristFrames: 0, learned: 0 },
+      counters: { pushes: 0, raises: 0, stops: 0, exits: 0, dashes: 0, dashRejected: 0, dashSteer: 0, wristFrames: 0, learned: 0 },
     };
     dash.reset();
   }
@@ -294,10 +298,26 @@ export function createSteerStick(configPatch = {}) {
 
     setZone(t, s.raised ? 'up' : lv >= cfg.dashLowMinV ? 'low' : 'none');
     s.outHist.push({ t, x: out.x, z: out.z });
+    s.latHist.push({ t, d: outward - s.neutral });
+    while (s.latHist.length > 40 || (s.latHist.length && t - s.latHist[0].t > 800)) s.latHist.shift();
     while (s.outHist.length > 40 || (s.outHist.length && t - s.outHist[0].t > 800)) s.outHist.shift();
     feedDash(obs, t);
     if (t < s.freezeUntil && s.freezeOut && s.raised) out = { ...s.freezeOut };
     s.out = out;
+  }
+
+  // [V6] Резкий дёрг без возврата (уровень A) в «Руле» срабатывает сразу, только если это не руление:
+  // из зоны поворота к нейтрали или через неё — перехват руля; резко вверх — «к плечу, бегу».
+  // Такой дёрг остаётся кандидатом «щелчка»: вернул руку — рывок (детектор core/leftStick.js).
+  function acceptSharp({ x, z, t0 }) {
+    if (z > 0 && z >= Math.abs(x)) { s.counters.dashSteer++; return false; }
+    if (Math.abs(x) > Math.abs(z)) {
+      let d0 = null;
+      for (let i = s.latHist.length - 1; i >= 0; i--) if (s.latHist[i].t <= t0) { d0 = s.latHist[i].d; break; }
+      const mo = (s.mirror ? -1 : 1) * x;   // боковая часть дёрга в «наружу»-единицах (+ — к левому боку игрока)
+      if (d0 !== null && Math.abs(d0) > cfg.dashReverseFrom && d0 * mo < 0) { s.counters.dashSteer++; return false; }
+    }
+    return true;
   }
 
   // Рывок: детектор джойстика (без хватки) + свой гейт по положению руки в момент начала дёрга.
