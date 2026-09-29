@@ -572,7 +572,7 @@ uniform float uTime; uniform vec3 uLag; uniform float uWind;`)
     const cm = new Std({
       name: 'gear-cape', color, roughness: 0.85, metalness: 0, side: THREE.DoubleSide,
       ...(physical ? { sheen: 0.6, sheenRoughness: 0.7, sheenColor: new THREE.Color(trim).multiplyScalar(0.35) } : {}),
-      emissive: P.glow, emissiveMap: rune, emissiveIntensity: 0.0,
+      emissive: P.glow, emissiveMap: rune, emissiveIntensity: 0.55, // руна-волна поперёк плаща и тлеющая кромка
     });
     cm.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, capeU);
@@ -594,7 +594,7 @@ varying float vCapeT;`)
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying float vCapeT;')
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-  totalEmissiveRadiance += emissive * smoothstep( 0.9, 0.99, vCapeT ) * 0.6;`);
+  totalEmissiveRadiance += emissive * smoothstep( 0.9, 0.995, vCapeT ) * 1.3;`);
     };
     cm.customProgramCacheKey = () => 'heroCape:' + len.toFixed(3);
     Mt(cm);
