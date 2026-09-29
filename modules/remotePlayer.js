@@ -150,7 +150,7 @@ function makePlate(THREE) {
 }
 
 // ---------------------------------------------------------------- удалённый игрок
-export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, delayMs = 100 } = {}) {
+export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, heroes = null, delayMs = 100 } = {}) {
   const root = new THREE.Group();
   root.name = 'remote-player';
   root.visible = false;
@@ -377,7 +377,7 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
     const st = S.st;
     if (!S.got || !st) return null;
     return {
-      id: 'remote', name: S.name, hero: S.hero, heroName: HERO_NAMES[S.hero] || S.hero,
+      id: 'remote', name: S.name, hero: S.hero, heroName: (heroes && heroes[S.hero] && heroes[S.hero].name) || HERO_NAMES[S.hero] || S.hero,
       position: { x: root.position.x, y: root.position.y, z: root.position.z },
       yaw: S.yaw,
       velocity: { x: st.velocity.x, z: st.velocity.z }, speed: st.speed,

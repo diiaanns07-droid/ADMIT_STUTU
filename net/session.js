@@ -54,7 +54,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     lobbyOpen: false, busy: false, oppGone: false,
     lanIps: null, lanCheck: '', netCheck: '',
   };
-  const remote = createRemotePlayer({ THREE, scene, world, heroFactory, camera });
+  const remote = createRemotePlayer({ THREE, scene, world, heroFactory, camera, heroes });
   // значок связи в бою: соперник и пинг; при обрыве — «переподключение»
   let badge = null, badgeKey = '', badgeAt = 0, lostSince = 0;
   function updateBadge(now, inFight) {
