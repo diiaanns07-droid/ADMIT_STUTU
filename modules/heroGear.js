@@ -1212,7 +1212,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     const _mq = new THREE.Quaternion();
     cloth = createCloth(THREE, {
       cols, rows, rest, anchor: raw(chestB), parent: holder, colliders, material: capeMat,
-      pleats: 3.5, pleatDepth: w > 0.55 ? 0.016 : 0.012,
+      pleats: 3.5, pleatDepth: w > 0.55 ? 0.016 : 0.012, hem: { r: 0.0055, material: mats.trim },
       hips: raw('hips'), back: { lim: 0.035, h: Math.max(0.2, bp[chestB].y - bp.hips.y) },
       fwd: (out) => out.set(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(_mq)),
       floor: () => holder.getWorldPosition(new THREE.Vector3()).y,
@@ -1327,7 +1327,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       }
       const cl = createCloth(THREE, {
         cols, rows, rest, anchor: raw(stole ? chestB : 'hips'), parent: holder, colliders: legCaps, material: capeMat,
-        pleats: pn.pleats ?? 1.5, pleatDepth: 0.008, name: 'tabard', plane: Math.abs(pn.az) < 0.5 ? 'front' : 'none',
+        pleats: pn.pleats ?? 1.5, pleatDepth: 0.008, name: 'tabard', plane: Math.abs(pn.az) < 0.5 ? 'front' : 'none', hem: { r: 0.0045, material: mats.trim },
         cling: P.tabard.cling ?? 3,
         uv: pn.emblem ? { u0: 0, u1: 1, v0: 0, v1: 1 } : { u0: 0, u1: 1, v0: 0, v1: 0.62 },
         hips: raw('hips'), back: { lim: 0.03, h: 0.3 },

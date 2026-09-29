@@ -11,7 +11,8 @@
 //   colliders — [{ a, b, r }] (кости-концы отрезка и радиус, м), fwd() → мировой вектор «вперёд» героя.
 //   plane — 'back' (плащ: не заходит вперёд корпуса), 'front' (полы спереди: не уходят назад, между ног),
 //   'none'; name — имя меша; uv — окно текстуры { u0, u1, v0, v1 } (полы без герба — нижняя часть холста);
-//   cling — прилегание, м/с²: тяга по горизонтали к оси таза (полы ложатся на бёдра, а не висят «вывеской»).
+//   cling — прилегание, м/с²: тяга по горизонтали к оси таза (полы ложатся на бёдра, а не висят «вывеской»);
+//   hem — { r, material }: кант-валик по свободным краям (бока и подол) — у ткани видна толщина.
 //   → { mesh, update(dt, lod), reset(), setWind(k), dispose() }
 
 const H = 1 / 60;                 // шаг симуляции
@@ -66,6 +67,47 @@ export function createCloth(THREE, o) {
   mesh.frustumCulled = false;
   mesh.castShadow = true; mesh.receiveShadow = true;
   parent.add(mesh);
+
+  // кант: путь по сетке отрисовки — левый край сверху вниз, подол, правый край снизу вверх
+  let hem = null;
+  if (o.hem && o.hem.material) {
+    const path = [];
+    for (let j = 0; j < rr; j++) path.push(j * rc);
+    for (let i = 1; i < rc; i++) path.push((rr - 1) * rc + i);
+    for (let j = rr - 2; j >= 0; j--) path.push(j * rc + rc - 1);
+    const HS = 5, NP = path.length;
+    const hg = new THREE.BufferGeometry();
+    hg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NP * HS * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    hg.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(NP * HS * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    const hidx = [];
+    for (let k = 0; k < NP - 1; k++) for (let q = 0; q < HS; q++) { const a0 = k * HS + q, a1 = k * HS + ((q + 1) % HS), b0 = a0 + HS, b1 = a1 + HS; hidx.push(a0, b0, a1, a1, b0, b1); }
+    hg.setIndex(hidx);
+    const hm = new THREE.Mesh(hg, o.hem.material);
+    hm.name = (o.name || 'cape') + '-hem'; hm.frustumCulled = false; hm.castShadow = false; hm.receiveShadow = true;
+    parent.add(hm);
+    hem = { mesh: hm, geo: hg, path, HS, r: o.hem.r || 0.006 };
+  }
+  function writeHem() {
+    if (!hem) return;
+    const nr = geo.attributes.normal.array, P2 = hem.geo.attributes.position.array, N2 = hem.geo.attributes.normal.array;
+    const sc = 1 / (parent.getWorldScale(v).x || 1), R = hem.r * sc, path = hem.path, NP = path.length, HS = hem.HS;
+    for (let k = 0; k < NP; k++) {
+      const c = path[k], pr = path[Math.max(0, k - 1)], nx2 = path[Math.min(NP - 1, k + 1)];
+      let tx = rpos[nx2 * 3] - rpos[pr * 3], ty = rpos[nx2 * 3 + 1] - rpos[pr * 3 + 1], tz = rpos[nx2 * 3 + 2] - rpos[pr * 3 + 2];
+      const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+      const nx = nr[c * 3], ny = nr[c * 3 + 1], nz = nr[c * 3 + 2];
+      // бинормаль ⟂ касательной и нормали ткани
+      let bx = ty * nz - tz * ny, by = tz * nx - tx * nz, bz = tx * ny - ty * nx;
+      const bl = Math.hypot(bx, by, bz) || 1; bx /= bl; by /= bl; bz /= bl;
+      for (let q = 0; q < HS; q++) {
+        const an = (q / HS) * Math.PI * 2, ca = Math.cos(an), sa = Math.sin(an);
+        const ox = nx * ca + bx * sa, oy = ny * ca + by * sa, oz = nz * ca + bz * sa, w = (k * HS + q) * 3;
+        P2[w] = rpos[c * 3] + ox * R; P2[w + 1] = rpos[c * 3 + 1] + oy * R; P2[w + 2] = rpos[c * 3 + 2] + oz * R;
+        N2[w] = ox; N2[w + 1] = oy; N2[w + 2] = oz;
+      }
+    }
+    hem.geo.attributes.position.needsUpdate = true; hem.geo.attributes.normal.needsUpdate = true;
+  }
 
   // ---------------------------------------------------------------- шаг симуляции
   let wind = 1, time = 0, acc = 0, lastA = null;
@@ -264,6 +306,7 @@ export function createCloth(THREE, o) {
     }
     geo.attributes.position.needsUpdate = true;
     geo.attributes.normal.needsUpdate = true;
+    writeHem();
   }
   // нормали сетки разностями соседей (быстрее общего computeVertexNormals; ориентация — как у треугольников)
   function gridNormals() {
@@ -328,7 +371,8 @@ export function createCloth(THREE, o) {
     mesh, update, reset,
     setWind(k) { wind = k; },
     get particles() { return P; },
-    dispose() { if (mesh.parent) mesh.parent.remove(mesh); geo.dispose(); },
+    get hem() { return hem ? hem.mesh : null; },
+    dispose() { if (mesh.parent) mesh.parent.remove(mesh); geo.dispose(); if (hem) { if (hem.mesh.parent) hem.mesh.parent.remove(hem.mesh); hem.geo.dispose(); } },
   };
 }
 
