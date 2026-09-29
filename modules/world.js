@@ -4055,7 +4055,9 @@ float ashPuddle( vec2 xz ) {
     if (Array.isArray(events)) for (const ev of events) handleEvent(ev);
     const snap = snapshot && typeof snapshot === 'object' ? snapshot : null;
     updateHero(dt, snap);
-    const bInfo = updateBoss(dt, snap);
+    const pvpMode = !!(snap && snap.mode === 'pvp');   // [PVP] дуэль: Регента нет — модель скрыта, не анимируется
+    bossRoot.visible = !pvpMode;
+    const bInfo = updateBoss(dt, pvpMode ? null : snap);
     updateEnv(dt, snap, bInfo);
     const aInfo = atmo.update(dt, {
       bossX: bossRoot.position.x, bossZ: bossRoot.position.z,

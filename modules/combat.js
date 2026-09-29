@@ -523,6 +523,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   let projSeq = 0;
   let st = null;
   let warnedBrain = false;
+  let PV = null;      // [PVP] дуэль игрок против игрока: логика — modules/pvp.js (attachPvp); null/off — бой с боссом
 
   function freshState() {
     // старт: точка раскладки; если раскладка — заглушка, то по-старому (startAngle, orbitRadius)
@@ -590,7 +591,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   // ---------------------------------------------------------------- геометрия
   function playerPos() { const P = st.p; return vec(P.x, P.y, P.z); }
   function playerChest() { const p = playerPos(); p.y += C.player.chestHeight; return p; }
-  function bossAim() { return vec(BOSS.x, BOSS.y + C.boss.aimHeight, BOSS.z); }
+  function bossAim() { if (PV && PV.on) return PV.aim(); return vec(BOSS.x, BOSS.y + C.boss.aimHeight, BOSS.z); } // [PVP] цель — грудь соперника
   // Точка между ладонями героя (там висит слепленная сфера и оттуда она вылетает).
   function conjurePoint() {
     const pp = playerPos();
@@ -801,6 +802,11 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       }),
       stats: { ...st.stats },
     };
+    // [PVP] C4: режим, соперник и цель lock-on (в бою с боссом — Регент)
+    snap.mode = PV && PV.on ? 'pvp' : 'boss';
+    snap.opponent = null;
+    snap.lockTarget = { position: vcopy(BOSS), kind: 'boss' };
+    if (PV && PV.on) PV.decorate(snap);
     return C.sim.freezeSnapshots ? deepFreeze(snap) : snap;
   }
 
@@ -1067,6 +1073,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   }
 
   function damageBoss(amount, source, point, extra) {
+    if (PV && PV.on) { PV.damage(amount, source, point, extra); return; } // [PVP] урон уходит сопернику сообщением hit
     if (C.encounter.enabled) { st.aggroT = C.encounter.aggroMemory; engage('aggro'); }
     if (st.status !== 'playing' || !(amount > 0)) return;
     const B = st.b;
@@ -1415,6 +1422,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     emit('encounter_start', playerPos(), { reason, arena: { x: LAY.arena.x, z: LAY.arena.z, r: LAY.arena.r } });
   }
   function updateEncounter() {
+    if (PV && PV.on) { PV.encounter(); return; }   // [PVP] engaged — соперник ближе ~35 м
     if (!C.encounter.enabled) { st.engaged = true; return; }
     const d = distXZ(st.p, LAY.arena);
     if (!st.engaged && d <= LAY.arena.r) engage('arena');
@@ -1467,6 +1475,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     const power = st.pendingBurstPower === null ? 0.5 : st.pendingBurstPower;
     st.pendingBurstPower = null;
     const dmg = C.burst.damage * (0.5 + power) * (both ? 1 + C.burst.bothHandsBonus : 1); // заряд кулака: ×0.5 … ×1.5; двумя руками — бонус
+    if (PV && PV.on && PV.burst(dmg, power, both, cleared, chest, to)) return;   // [PVP] выброс — волна в соперника
     emit('burst', chest, { amount: dmg, power, both, cleared, from: vcopy(chest), to: vcopy(to), radius: C.burst.clearRadius * (0.7 + 0.6 * power) });
     damageBoss(dmg, 'burst', to);
   }
@@ -1488,6 +1497,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     P.sigilCd[sg] = S.cooldown;
     P.castTimer = Math.max(P.castTimer, C.sigils.castTime);
     const pp = playerPos(), chest = playerChest(), to = bossAim();
+    if (PV && PV.on && PV.sigil(sg, S, chest, to)) return;   // [PVP] печати против игрока
     if (sg === 'clap') {
       let cleared = 0;
       const keep = [];
@@ -1559,6 +1569,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     P.castTimer = C.runes.castTime;
     const chest = playerChest();
     const to = bossAim();
+    if (PV && PV.on && PV.rune(rune, R, chest, to)) return;   // [PVP] руны против игрока: снаряды и fx
     if (rune === 'ignis') {
       emit('rune_cast', chest, { rune, from: vcopy(chest), to: vcopy(to), amount: R.damage });
       damageBoss(R.damage, 'rune', to);
@@ -1971,6 +1982,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         const point = vec(prev.x + (pr.position.x - prev.x) * hit.t,
           prev.y + (pr.position.y - prev.y) * hit.t,
           prev.z + (pr.position.z - prev.z) * hit.t);
+        if (PV && PV.on) { PV.projectileHit(pr, point); continue; }   // [PVP] попадание в капсулу соперника → hit
         if (pr.path) {
           emit('projectile_impact', point, {
             owner: 'player', kind: pr.kind, projectileId: pr.id, result: 'boss',
@@ -2176,7 +2188,8 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   function step(h) {
     // оглушённый страж «замирает»: часы мозга стоят; вне арены (explore) босс не думает об атаках
     const bh = st.b.slow > 0 ? h * (1 - C.runes.clepsydra.slow) : h;   // [V3] «Клепсидра»: время Регента медленнее
-    if (st.b.stun <= 0 && st.engaged) callBrain(bh);
+    if (PV && PV.on) PV.preStep(h);                     // [PVP] босса нет: соперник, статусы fx, отсечка ввода
+    else if (st.b.stun <= 0 && st.engaged) callBrain(bh);
     if (st.status !== 'playing') return;
     st.time += h;
     st.debug.steps++;
@@ -2265,6 +2278,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   let upgradeMods = {};
   function setUpgrades(mods) {
     const m = isPlainObject(mods) ? mods : {};
+    if (PV && PV.on) { upgradeMods = { ...m }; return getEffectiveConfig(); }   // [PVP] в дуэли улучшения не действуют (честный баланс)
     const f = (k, d) => (Number.isFinite(m[k]) ? m[k] : d);
     const P = st.p;
     const hpFull = P.hp >= C.player.maxHp - 1e-6, enFull = P.energy >= C.player.maxEnergy - 1e-6;
@@ -2290,6 +2304,30 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   function getEffectiveConfig() { return JSON.parse(JSON.stringify(C)); }
   function getUpgrades() { return { ...upgradeMods }; }
 
+  // [PVP] хуки дуэли. attachPvp(factory): factory(K) → объект хуков modules/pvp.js; setMode('pvp'|'boss');
+  // setOpponent(state) — интерполированный соперник (remotePlayer.getState); applyRemoteHit(hit) — входящий удар.
+  const K = {
+    get st() { return st; }, C, BOSS, H, BASE_BOSS: vcopy(C.arena.bossPosition), LAY,
+    emit, vec, vcopy, clamp, distXZ, wrapAngle, playerPos, playerChest, addProjectile, resolveMove, endShield,
+    breakCombo, toBossUnit, screenRight, conjurePoint, newId: (kind) => `${kind}:${fightGen}:${++projSeq}`,
+  };
+  function attachPvp(factory) {
+    try { if (PV && PV.on) PV.disable(); } catch (e) { /* ignore */ }
+    PV = null;
+    if (typeof factory === 'function') PV = factory(K) || null;
+    return !!PV;
+  }
+  function setMode(mode) {
+    if (mode === 'pvp' && !PV) return false;
+    if (PV) { if (mode === 'pvp') PV.enable(); else PV.disable(); }
+    reset();
+    return true;
+  }
+  function getMode() { return PV && PV.on ? 'pvp' : 'boss'; }
+  function setOpponent(state) { if (PV) PV.setOpponent(state); }
+  function applyRemoteHit(hit) { return PV && PV.on ? PV.applyRemoteHit(hit) : { applied: false, reason: 'mode' }; }
+
   reset();
-  return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig };
+  return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig,
+    attachPvp, setMode, getMode, setOpponent, applyRemoteHit };   // [PVP]
 }

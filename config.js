@@ -101,6 +101,15 @@ export const config = {
 
   effects: {},
 
+  // [PVP] баланс дуэли игрок против игрока (modules/pvp.js, PVP_DEFAULTS — полный список ключей).
+  // Отдельно от боя с Регентом: HP 400, одно попадание ≤ 18% HP, раунды до 2 побед из 3.
+  pvp: {
+    hp: 400,
+    maxHitShare: 0.18,
+    engageRange: 35,
+    rounds: { toWin: 2, countdown: 3, roundEnd: 2.8, slowmo: 0.5, roundTime: 100, disconnectWait: 20 },
+  },
+
   // Звук временно выключен по просьбе владельца: AudioContext не создаётся, ползунок громкости скрыт.
   // Включить обратно: enabled: true.
   audio: { enabled: false },

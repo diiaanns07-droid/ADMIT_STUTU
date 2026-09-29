@@ -434,6 +434,7 @@ const callbacks = {
   },
 
   onExit() {
+    if (pvpCtl && pvpCtl.active) pvpCtl.stop();   // [PVP] выход из дуэли: бой возвращается к Регенту
     app.nav = [];
     app.resumableFight = false;
     app.introShown = false;
@@ -469,6 +470,25 @@ const trackingHud = createTrackingHud({ canvas: overlay });
 const battleHud = createBattleHud({ canvas: hudCanvas });
 // [ТВИСТ «ОШИБКА»] удачные жесты и подсказки за бой → точность и частая ошибка на экране итогов
 const coachStats = createCoachStats();
+// [PVP] дуэль игрок против игрока (modules/pvp.js, №3): грузится динамически; при ошибке — обычный бой.
+// ?pvp=local — две вкладки одного браузера (DEBUG, клавиатура). Лобби №2: window.__ashenPvp.start(net, {name, hero}).
+let pvpCtl = null;
+import('./modules/pvp.js').then((m) => {
+  try {
+    pvpCtl = m.createPvpController({
+      THREE, scene, camera, combat, config, settings, arena: worldLayout && worldLayout.arena,
+      host: {
+        startFight() { resetFight(); battleHud.reset(); coachStats.reset(); app.resumableFight = false; app.resumeAt = 0; app.introShown = true; setScreen('playing'); },
+        exitToMenu() { callbacks.onExit(); },
+        setDebug(on) { callbacks.onDebug(on); },
+        coach: () => coachStats.summary(),
+      },
+    });
+    window.__ashenPvp = { start: (net, opts) => pvpCtl.startWithNet(net, opts), startLocal: (code) => pvpCtl.startLocal(code), get active() { return pvpCtl.active; } };
+    pvpCtl.autoStart(location.search);
+  } catch (e) { console.warn('[ASHEN] pvp недоступен:', e); pvpCtl = null; }
+}).catch((e) => console.warn('[ASHEN] modules/pvp.js не загружен:', e && e.message));
+
 const _proj = new THREE.Vector3();
 function projectToScreen(p) {
   _proj.set(p.x, p.y, p.z).project(camera);
@@ -674,7 +694,7 @@ function frame(now) {
   last = now;
   const stalled = raw > config.loop.stallSec;       // после ухода вкладки не догоняем
   const dtReal = stalled ? 0 : Math.min(raw, config.loop.maxDt);
-  const ts = app.screen === 'playing' ? timeScale(now) : 1;
+  const ts = app.screen === 'playing' ? (pvpCtl && pvpCtl.active ? pvpCtl.timeScale(now) : timeScale(now)) : 1; // [PVP] в дуэли без стоп-кадров
   const dt = dtReal * ts;
 
   const input = readInput();
@@ -717,9 +737,12 @@ function frame(now) {
       if (Number.isFinite(rig.inputYaw)) input.viewYaw = rig.inputYaw;   // [V3] курс управления без плечевого сдвига
       else if (Number.isFinite(rig.yaw)) input.viewYaw = rig.yaw;
       input.moveMode = settings.moveMode;   // [V5] «Руль»: moveX — поворот героя, moveZ — вперёд по его курсу
-      try { combat.update(dt, input); } catch (e) { console.error('[ASHEN] combat.update', e); }
+      let inputC = input;
+      if (pvpCtl && pvpCtl.active) { try { inputC = pvpCtl.beforeUpdate(input); } catch (e) { console.error('[PVP] beforeUpdate', e); } } // [PVP] фазы раунда, оглушение, соперник
+      try { combat.update(dt, inputC); } catch (e) { console.error('[ASHEN] combat.update', e); }
     }
     events = adaptEvents(combat.drainEvents());
+    if (pvpCtl && pvpCtl.active) { try { events = pvpCtl.afterUpdate(events); } catch (e) { console.error('[PVP] afterUpdate', e); } } // [PVP] сеть, раунды
     timeEvents(events, now);
     lastSnapshot = combat.getSnapshot();
     events = checkEmbers(lastSnapshot, events);
@@ -799,6 +822,7 @@ function frame(now) {
     camera.lookAt(c.target.x, c.target.y, c.target.z);
   }
 
+  if (pvpCtl) { try { pvpCtl.frame(lastSnapshot); } catch (e) { console.error('[PVP] frame', e); } } // [PVP] st 20 Гц, фазы хоста, панель
   if (postfx && postfx.enabled) feedPostFx(events);
   let rendered = false;
   if (postfx && postfx.enabled) { try { postfx.render(dtReal); rendered = true; } catch (e) { console.warn('[ASHEN] postfx.render', e); postfx = null; } }
@@ -847,6 +871,7 @@ window.__ASHEN__ = Object.freeze({
   hero: () => (heroModel ? heroModel.state() : null),
   heroStep: (dt, snap, events) => { if (heroModel) heroModel.update(dt, snap, events || []); return heroModel ? heroModel.state() : null; }, // QA: шаг анимации без rAF
   squats: () => squats.getDebug(),
+  pvp: () => (pvpCtl ? pvpCtl.debug() : null),   // [PVP] QA: фаза, счёт, статистика дуэли
   heroMax: () => { const c = typeof combat.getEffectiveConfig === 'function' ? combat.getEffectiveConfig() : null; return c ? { hp: c.player.maxHp, energy: c.player.maxEnergy } : null; },
   embers: () => (worldLayout && Array.isArray(worldLayout.pois) ? worldLayout.pois.map((q) => ({ id: q.id, x: q.x, z: q.z, lit: progression.isEmberLit(q.id) })) : []),
   renderInfo: () => {
