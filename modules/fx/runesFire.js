@@ -67,7 +67,7 @@ export function register(fx) {
         onHit(p) {
           if (tr) tr.stop(); if (tr2) tr2.stop();
           if (haze && haze.kill) haze.kill();
-          explosion(fx, p, c.targetGround, 'fire', R, { scale: 1.35, shake: 0.38, hitstop: 65 });
+          explosion(fx, p, c.targetGround, 'fire', R, { scale: R ? 0.7 : 1.35, shake: 0.38, hitstop: 65 }); // по нашему герою (у камеры) — мельче
           // огненное кольцо: языки пламени бегут по земле наружу
           kit.emit({ at: { x: c.targetGround.x, y: c.targetGround.y + 0.1, z: c.targetGround.z }, shape: 'ring', radius: 0.6, count: 46, radial: 6.5, speed: [0, 0.3], dir: { x: 0, y: 1, z: 0 }, cone: 0.1, life: [0.35, 0.6], size: [0.7, 0.25], ramp, intensity: 2.4, sprite: 'flame', rot: 0, drag: 3.2, gravity: -0.6, rival: R, essential: true });
           decal(fx, c.targetGround, 'scorch', 2.6, 'fire', R, { life: 9 });
@@ -107,13 +107,13 @@ export function register(fx) {
         try {
           fx.bolts.strike({ from: sky, to: tgt, color: P.mid, core: P.core, width: 0.13, branches: 6, jitter: 0.13, segments: 22, dur: 0.5, intensity: 3.4, rival, seed: (Math.random() * 1e6) | 0 });
           fx.bolts.strike({ from: c.hand, to: tgt, color: P.mid, core: P.core, width: 0.06, branches: 3, jitter: 0.16, segments: 14, dur: 0.32, intensity: 3, rival, seed: (Math.random() * 1e6) | 0 });
-          fx.bolts.groundArcs({ center: c.targetGround, radius: 4.2, count: 7, dur: 0.7, color: P.mid, core: P.core, intensity: 2.4, rival });
+          fx.bolts.groundArcs({ center: c.targetGround, radius: R ? 2.4 : 4.2, count: 7, dur: 0.7, color: P.mid, core: P.core, intensity: 2.4, rival });
         } catch (e) { /* ignore */ }
       } else {
         kit.emit({ at: sky, shape: 'line', to: tgt, count: 60, speed: [0, 0.3], life: [0.1, 0.25], size: [0.2, 0.05], ramp: 'storm', intensity: 4, sprite: 'glow', essential: true, rival: R });
       }
       muzzle(fx, c.hand, c.dir, 'storm', R, { size: 0.9, count: 18 });
-      kit.screenFlash(R ? 0xb49cff : 0xdff2ff, 0.3, 0.08);
+      kit.screenFlash(R ? 0xb49cff : 0xdff2ff, R ? 0.18 : 0.3, 0.08);
       kit.flash(tgt, { color: P.core, size: [1.2, 5.5], dur: 0.3, intensity: 5, sprite: 'star', pull: 0.8 });
       kit.flash(tgt, { color: P.mid, size: [1.5, 6], dur: 0.5, intensity: 2.2, sprite: 'glow', pull: 0.8 });
       kit.emit({ at: tgt, count: 90, speed: [4, 13], life: [0.3, 0.8], size: [0.06, 0.012], ramp: rampOf('storm', R), intensity: 3.6, sprite: 'spark', stretch: 0.04, gravity: 6, drag: 1.5, ground: c.targetGround.y + 0.03, essential: true, rival: R });

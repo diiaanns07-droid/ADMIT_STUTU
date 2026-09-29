@@ -159,6 +159,7 @@ attribute vec4 iF; // orbit cx, cz, w, rgrow
 attribute vec4 iG; // groundY, fadeIn, sizeCurve, seed
 uniform float uTime;
 uniform float uRampRows;
+uniform float uMaxAng;
 uniform sampler2D uRamp;
 varying vec2 vUv;
 varying vec4 vCol;
@@ -209,6 +210,7 @@ void main() {
   vBlend = ab;
   float size = mix(iC.x, iC.y, pow(k, iG.z));
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  size = min(size, uMaxAng * max(-mv.z, 0.1)); // у камеры частица не шире ~20° поля зрения
   vec2 corner = position.xy;
   vec2 ax = vec2(1.0, 0.0), ay = vec2(0.0, 1.0);
   float sx = size, sy = size;
@@ -316,7 +318,7 @@ export function createFxKit(deps) {
   geo.instanceCount = 0;
   const partMat = new THREE.ShaderMaterial({
     uniforms: {
-      uTime: { value: 0 }, uRamp: { value: ramp.tex }, uAtlas: { value: atlas }, uRampRows: { value: RAMP_ROWS },
+      uTime: { value: 0 }, uRamp: { value: ramp.tex }, uAtlas: { value: atlas }, uRampRows: { value: RAMP_ROWS }, uMaxAng: { value: 0.36 },
     },
     vertexShader: VS_PART, fragmentShader: FS_PART,
     depthTest: true, side: THREE.DoubleSide, ...premulBlend(THREE),
@@ -487,8 +489,10 @@ export function createFxKit(deps) {
     const L = _d.length();
     if (L > 1e-4) _d.multiplyScalar(Math.min(pull, L * 0.5) / L); else _d.set(0, 0, 0);
     const sz = o.size;
-    const s0 = Array.isArray(sz) ? num(sz[0], 0.3) : num(sz, 0.6) * 0.4;
-    const s1 = Array.isArray(sz) ? num(sz[1], s0 * 3) : num(sz, 0.6);
+    // вспышка у камеры (удар по нашему герою) не шире ~25° поля зрения
+    const cap = Math.max(0.3, 0.45 * L);
+    const s0 = Math.min(cap, Array.isArray(sz) ? num(sz[0], 0.3) : num(sz, 0.6) * 0.4);
+    const s1 = Math.min(cap, Array.isArray(sz) ? num(sz[1], s0 * 3) : num(sz, 0.6));
     const row = isNum(o.color) ? rampFor(o.color, o.deep) : rampRow(o.ramp || 'white');
     const sprName = o.sprite === 'flare' ? 'star' : (o.sprite || 'glow');
     const spr = SPRITES[sprName] ?? 1;
