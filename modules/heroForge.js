@@ -352,6 +352,7 @@ export function buildQuiver(THREE, M, { h = 0.52, arrows = 8 } = {}) {
   for (let i = 0; i < arrows; i++) {
     const a = (i / arrows) * TAU + 0.3, rr = 0.012 + 0.014 * ((i * 7) % 3) / 2;
     const ar = buildArrow(THREE, M, { len: 0.7 });
+    ar.name = 'quiver-arrow'; // неподвижны — склеиваются с колчаном
     ar.rotation.z = Math.PI; // остриём вниз
     ar.position.set(Math.cos(a) * rr, h + 0.14 + (i % 3) * 0.02, -Math.sin(a) * rr);
     grp.add(ar);

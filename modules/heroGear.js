@@ -149,7 +149,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   const P = PRESETS[preset] || PRESETS.ranger;
   const H = vrm.humanoid;
   const raw = (b) => (H.getRawBoneNode ? H.getRawBoneNode(b) : null) || H.getNormalizedBoneNode(b);
-  const owned = { geo: [], mat: [] };
+  const owned = { geo: [], mat: [], tex: [] }; // tex — свои текстуры экземпляра (кайма плаща, кольцо рун)
   const G = (g) => { owned.geo.push(g); return g; };
   const Mt = (m) => {
     owned.mat.push(m);
@@ -182,7 +182,8 @@ export function dressHero(THREE, vrm, opts = {}) {
     cm0.customProgramCacheKey = () => 'gearCrystal:' + (pk ? pk.call(cm0) : '');
   }
   mats.core = Mt(new THREE.MeshBasicMaterial({ name: 'gear-core', color: new THREE.Color(glowHex).multiplyScalar(3.2), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
-  mats.runeRing = Mt(new THREE.MeshBasicMaterial({ name: 'gear-runering', map: runeRingTexture(THREE), color: new THREE.Color(glowHex).multiplyScalar(2.4), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+  const ringTex = runeRingTexture(THREE); if (ringTex) owned.tex.push(ringTex);
+  mats.runeRing = Mt(new THREE.MeshBasicMaterial({ name: 'gear-runering', map: ringTex, color: new THREE.Color(glowHex).multiplyScalar(2.4), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
   mats.inlay = Mt(new THREE.MeshBasicMaterial({ name: 'gear-inlay', color: new THREE.Color(P.glow).multiplyScalar(2.2) }));
   mats.glint = Mt(new THREE.SpriteMaterial({ name: 'gear-glint', map: glintTexture(THREE), color: new THREE.Color(glowHex).lerp(new THREE.Color(1, 1, 1), 0.35).multiplyScalar(1.6), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
   mats.fletch = Mt(new Std({ name: 'gear-fletch', color: 0xf2ece0, roughness: 0.85, side: THREE.DoubleSide, ...(physical ? { sheen: 0.4, sheenRoughness: 0.5, sheenColor: new THREE.Color(1, 1, 1) } : {}) }));
@@ -808,6 +809,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       }
     }
     const tx = capeTextures(THREE, { base: color, trim, glow: P.glow, emblem, key: preset });
+    for (const k of ['map', 'bump', 'emissive']) if (tx[k]) owned.tex.push(tx[k]);
     capeMat = Mt(new Std({
       name: 'gear-cape', color: 0xffffff, map: tx.map || null, bumpMap: tx.bump || null, bumpScale: 1.4,
       emissive: 0xffffff, emissiveMap: tx.emissive || null, emissiveIntensity: tx.emissive ? 1.1 : 0,
@@ -1003,18 +1005,19 @@ export function dressHero(THREE, vrm, opts = {}) {
     }
   }
   function dispose() {
+    // все геометрии снаряжения (включая не склеенные и оставшиеся в группах оружия) — один раз
+    const geos = new Set(owned.geo);
+    const collect = (root) => { if (root) root.traverse((o) => { if ((o.isMesh || o.isLine) && o.geometry) geos.add(o.geometry); }); };
+    for (const p of parts) collect(p.obj);
+    collect(bowRig && bowRig.group); collect(staffRig && staffRig.group); collect(arrow);
     if (cloth) cloth.dispose();
     if (hair) hair.dispose();
     if (plume) plume.dispose();
     if (ribbons) { ribbons.dispose(); for (const g of ribbons.pendants || []) if (g.parent) g.parent.remove(g); }
     for (const p of parts) if (p.obj.parent) p.obj.parent.remove(p.obj);
     if (bow && bow.parent) bow.parent.remove(bow);
-    for (const g of owned.geo) g.dispose();
-    if (bowRig || staffRig) {
-      const extra = new Set();
-      for (const r of [bowRig && bowRig.group, staffRig && staffRig.group, arrow]) if (r) r.traverse((o) => { if (o.isMesh && o.geometry) extra.add(o.geometry); });
-      for (const g of extra) g.dispose();
-    }
+    for (const g of geos) g.dispose();
+    for (const x of owned.tex) x.dispose();
     for (const m of owned.mat) { if (atmosphere && atmosphere.releaseEnv) { try { atmosphere.releaseEnv(m); } catch (e) { /* ignore */ } } m.dispose(); }
     parts.length = 0;
   }

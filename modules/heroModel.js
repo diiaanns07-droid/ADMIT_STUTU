@@ -281,7 +281,7 @@ export function createHeroModel({
     if (cur) {
       cur.mixer.stopAllAction();
       cur.mixer.uncacheRoot(cur.vrm.scene);
-      if (cur.gear && cur.gear.dispose) { try { cur.gear.dispose(); } catch (e) { /* ignore */ } }
+      if (cur.gear && cur.gear.dispose) { try { cur.gear.dispose(); } catch (e) { console.warn('[HERO] снаряжение не освободилось', e && e.message); } }
       if (cur.shade && cur.shade.dispose) { try { cur.shade.dispose(); } catch (e) { /* ignore */ } }
       if (cur.aura) { try { cur.aura.dispose(); } catch (e) { /* ignore */ } }
       if (cur.model.parent) cur.model.parent.remove(cur.model);
