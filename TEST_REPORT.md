@@ -208,3 +208,46 @@ Chrome → module worker → Pose + Hand Landmarker (GPU) → распознав
 Наборы: `leftStick` 24/24 (с приёмкой в геометрии ноутбука), `handGestures` 58/58, `combat` 56/56,
 `vision` 61/61, `boss` 20/20, `progression` 9/9, `pushup` 13/13, `squat` 18/18, `qa_node` все,
 ui-selftest 139/139 в трёх окнах. **Живым человеком перед камерой не проверено.**
+
+## V6 · [HERO] Герои — проверка (2026-09-29)
+Облако без GPU и камеры: Chromium headless + SwiftShader (≈1 кадр/с — fps только для сравнения «до/после»,
+не для оценки ноутбука). Библиотеки с CDN подменялись локальными копиями (`--vendor`, npm pack).
+
+Как повторить:
+```
+node dev/heroModel.test.mjs                                    # карточки героев, классы материалов, таблицы переноса
+node tools/hero_shots.mjs --vendor DIR --stand 'dev/hero_stand.html?a=elf&b=ashen' --drift   # C5 + дрейф головы
+node tools/hero_shots.mjs --vendor DIR --heroes ashen,elf,dark,ranger,archmage --no-battle --menu-step 90  # витрина
+node tools/hero_shots.mjs --vendor DIR --heroes elf --zone forest                         # бой (старт в лесу)
+```
+
+**Сравнение «до/после»:** `dev/shots/hero_before_after.jpg` (меню, T0 = main c2e7215 против V6),
+`dev/shots/hero_closeups.jpg` (стенд: стойка стража и архимага, волосы и лица, поза лука, вид сзади).
+
+| Проверка C5 (`dev/hero_stand.html`, 2 героя в одной сцене) | Результат |
+|---|---|
+| свой root у каждого экземпляра, свои миксеры | да / да |
+| общих материалов у двух героев | **0** (91 и 72 материала) |
+| якоря `handL, handR, chest, head, bowSocket, staffTip` — `Object3D`, прикреплены, разные у героев | да |
+| `setPose({bowActive, bowDraw:1})` двигает кисть левой руки | 0,8–1,4 м |
+| `heroModel.update` одного героя (CPU, SwiftShader-машина) | 0,10–0,29 мс (< 1,5 мс) |
+| дрейф головы относительно таза, 900 кадров: покой / поворот / вращение / lock-on | до исправления уходил на ±2,6 рад (головы «крутились»); после — в пределах ±0,6 рад |
+
+| Цена кадра, бой (640×360, medium) | До (T0) | После (V6, весь main) |
+|---|---|---|
+| Пепельный страж: вызовов отрисовки / треугольников | 395 / 542 тыс. | 373 / 587 тыс. |
+| Эльфийка: вызовов / треугольников | 529 / 615 тыс. | 395 / 604 тыс. |
+| `heroModel.update`: страж / эльфийка | 0,003 (процедурный) / 0,57 мс | 0,14 / 0,11 мс |
+| fps SwiftShader (только сравнение) | 1 / 1 | 1 / 2 |
+
+«После» — весь текущий main (лес, эффекты, стиль BDO других агентов), не только герои. Сами герои стали
+дешевле VRoid: нет контуров MToon (второй проход) и пружин волос, снаряжение склеено по материалам
+(−35% вызовов на двух героях). Свет витрины — шейдерный (без новых источников в сцене). Замер на настоящем
+ноутбуке с встроенной графикой не делался.
+
+**Анимаций 30** (клипы KayKit, CC0): Idle, IdleCalm, Walk, WalkBack, Run, StrafeL, StrafeR, DodgeF/B/L/R,
+Cast1 (одной рукой), Cast2 (двумя), CastRaise, CastHold, BowAim, BowShoot, Block, Blocking, BlockHit, Hit, HitB
+(оглушение — удержание), Victory, Death, Jump, Slash, Chop, Punch, Throw, Stance. Поверх: поза лука/чар
+(`setPose`), зеркало рук игрока, дыхание, оглядывание, доворот груди к цели в lock-on.
+
+Не проверено: живая камера (зеркало рук), настоящий GPU (fps на medium), сеть на двух ноутбуках.
