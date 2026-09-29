@@ -53,7 +53,7 @@ test('выстрел: bow_draw_start → bow_draw → bow_release → стрел
   const hp0 = snap.boss.hp;
   F.tick({ bow: bowIn({ phase: 'ready' }) }, 120);
   ok(F.ev('bow_draw_start').length === 1, 'bow_draw_start');
-  ok(F.ev('bow_draw').length >= 3, `bow_draw ${F.ev('bow_draw').length}`);
+  ok(F.ev('bow_draw').length >= 2, `bow_draw ${F.ev('bow_draw').length}`);   // не чаще раза в 90 мс
   const rel = F.ev('bow_release');
   ok(rel.length === 1 && rel[0].data.draw === 1 && rel[0].data.charged === true && 'element' in rel[0].data, 'bow_release');
   const hit = F.ev('arrow_hit');
@@ -172,6 +172,46 @@ test('снимок: все числа конечны, снарядов не бо
   walk(s, 'snap');
   ok(bad.length === 0, bad.join(', '));
   ok(s.projectiles.length <= F.c.getConfig().sim.maxProjectiles, `снарядов ${s.projectiles.length}`);
+});
+
+// ───────── регрессии ревью ─────────
+test('ревью: после выстрела нет ложного bow_cancel; второй выстрел — снова bow_draw_start', () => {
+  const F = fight();
+  shoot(F, { draw: 1, after: 20 });
+  shoot(F, { draw: 1, after: 20 });
+  F.tick({ bow: bowIn({ active: false, phase: 'idle' }) }, 5);       // стойка кончилась сама (не отмена)
+  ok(F.ev('bow_draw_start').length === 2 && F.ev('bow_release').length === 2, `start ${F.ev('bow_draw_start').length}, rel ${F.ev('bow_release').length}`);
+  ok(F.ev('bow_cancel').length === 0, `ложных bow_cancel ${F.ev('bow_cancel').length}`);
+});
+test('ревью: setBossTargetable(false) переживает reset (реванш в дуэли)', () => {
+  const F = fight();
+  F.c.hand.setBossTargetable(false);
+  F.c.reset();
+  shoot(F, { draw: 1, after: 100 });
+  ok(F.ev('arrow_hit').length === 0 && F.c.getSnapshot().boss.hp === F.c.getConfig().boss.maxHp, 'после reset стрела снова бьёт Регента');
+});
+test('ревью: цель позади героя не захватывается (ни дождь, ни баллистика)', () => {
+  const F = fight();
+  shoot(F, { draw: 1, aimX: 1, aimY: 0.9, rain: true, charged: true, after: 150 });   // aimX 1 ≈ 28° — в конусе 40°: дождь по Регенту
+  ok(F.ev('arrow_hit').some((e) => e.data.rain), 'дождь в конусе прицела не попал');
+});
+test('ревью: смертельная стрела даёт arrow_hit; горение — всегда 6 тиков и не «щёлкает» комбо', () => {
+  const F = fight();
+  F.c.getSnapshot();
+  for (let i = 0; i < 40 && F.c.getSnapshot().status === 'playing'; i++) shoot(F, { draw: 1, charged: true, after: 25 });
+  ok(F.c.getSnapshot().status === 'victory', 'нет победы');
+  const lastHit = F.ev('arrow_hit').pop(), vic = F.ev('victory')[0];
+  ok(lastHit && vic && +lastHit.id.slice(2) < +vic.id.slice(2), 'нет arrow_hit у смертельного выстрела');
+  const G = fight(); shoot(G, { element: 'fire', after: 260 });
+  const burns = G.ev('boss_hit').filter((e) => e.data.source === 'burn');
+  ok(burns.length === 6, `тиков горения ${burns.length}`);
+  ok(burns.every((e) => e.data.combo === 1), `combo в тиках: ${burns.map((e) => e.data.combo)}`);
+});
+test('ревью: reset возвращает генератор дождя — тот же ввод, тот же результат', () => {
+  const run = (F) => { shoot(F, { draw: 1, aimY: 0.9, rain: true, charged: true, after: 150 }); return F.c.getSnapshot().boss.hp; };
+  const F = fight(); const a = run(F); F.c.reset(); F.events.length = 0; const b = run(F);
+  const G = fight(); const c = run(G);
+  ok(a === b && b === c, `${a} / ${b} / ${c}`);
 });
 
 for (const l of out) console.log(l);

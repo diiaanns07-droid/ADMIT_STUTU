@@ -52,6 +52,9 @@ try {
   await page.waitForFunction(() => window.__ASHEN__ && window.__ASHEN__.screen === 'menu', null, { timeout: 60000 });
   const click = (label) => page.evaluate((l) => { const b = [...document.querySelectorAll('button')].find((x) => x.offsetParent !== null && x.textContent.trim() === l); if (!b) return 'missing'; b.click(); return 'ok'; }, label);
   const snap = () => page.evaluate(() => window.__ASHEN__.snapshot());
+  // крупный план героя (нижняя середина кадра) — посмотреть лук и сгусток в руке
+  const vp = page.viewportSize();
+  const heroShot = (name) => page.screenshot({ path: join(OUT, name), clip: { x: Math.round(vp.width * 0.28), y: Math.round(vp.height * 0.38), width: Math.round(vp.width * 0.44), height: Math.round(vp.height * 0.62) } });
   // ждать условия по снимку боя (программный рендер медленный: время идёт кадрами, а не секундами)
   const until = async (fn, ms, what) => {
     const t0 = Date.now();
@@ -91,6 +94,7 @@ try {
   check('натяжение: snap.player.bow.active и draw растёт', !!mid, JSON.stringify(mid));
   await until(() => window.__ASHEN__.snapshot().player.bow.charged, 60000, 'заряд');
   await page.screenshot({ path: join(OUT, 'hand_bow_draw.png') });
+  await heroShot('hand_bow_draw_hero.png');
   await page.keyboard.up('KeyN');
   const arrow = await until(() => window.__ASHEN__.snapshot().projectiles.filter((p) => p.kind === 'arrow').length, 60000, 'стрела');
   check('выстрел: стрела в snapshot.projectiles', !!arrow, `${arrow}`);
@@ -124,6 +128,7 @@ try {
   const sp = await until(() => { const h = window.__ASHEN__.snapshot().player.handSpell; return h && h.phase === 'hold' && h.power > 0.5 ? h : null; }, 60000, 'сгусток');
   check('сгусток в ладони: handSpell hold', !!sp, JSON.stringify(sp));
   await page.screenshot({ path: join(OUT, 'hand_orb_hold.png') });
+  await heroShot('hand_orb_hold_hero.png');
   await page.keyboard.up('KeyM');
   const orbs = await until(() => window.__ASHEN__.snapshot().projectiles.filter((p) => p.kind === 'hand_orb').length, 60000, 'бросок');
   check('бросок: hand_orb в snapshot.projectiles', !!orbs, `${orbs}`);

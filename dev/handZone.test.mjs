@@ -179,6 +179,24 @@ test('поза героя: setPose у heroModel вызывается; проце
   ok(J.shL.rotation.x < -1.2 && J.elR.rotation.x < -1.5, `суставы ${JSON.stringify(J.shL.rotation)} ${JSON.stringify(J.elR.rotation)}`);
 });
 
+test('ревью: handCombat выключен — B не перехватывается; пауза во время натяжения не «залипает»', () => {
+  const T = fakeTarget();
+  const z = createHandZone({ target: T });
+  z.apply(dbgInput(), fakeNow, { debug: true, playing: true, enabled: false });
+  ok(!T.key('keydown', 'KeyB').stopped, 'B перехвачена при выключенном луке');
+  T.key('keyup', 'KeyB');
+  z.apply(dbgInput(), fakeNow, { debug: true, playing: true });
+  T.key('keydown', 'KeyB'); T.key('keyup', 'KeyB');
+  T.key('keydown', 'KeyN');
+  fakeNow += 500;
+  z.apply(dbgInput(), fakeNow, { debug: true, playing: true });
+  z.apply(dbgInput(), fakeNow, { debug: true, playing: false });   // пауза
+  T.key('keyup', 'KeyN');                                            // отпустили во время паузы
+  fakeNow += 2000;
+  const inp = z.apply(dbgInput({ moveZ: 1 }), fakeNow, { debug: true, playing: true });
+  ok(!inp.bow.active && inp.moveZ === 1, `после паузы лук залип: ${JSON.stringify(inp.bow)}`);
+});
+
 performance.now = realNow;
 for (const l of out) console.log(l);
 console.log(`\n${pass} passed, ${fail} failed`);

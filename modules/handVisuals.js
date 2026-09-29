@@ -917,6 +917,8 @@ export function createHandVisuals({ THREE, scene, config } = {}) {
     if (!ev || typeof ev !== 'object' || seenBefore(ev.id)) return;
     const d = ev.data && typeof ev.data === 'object' ? ev.data : EMPTY, p = hasVec(ev.position) ? ev.position : null;
     const sp = S.Q.sparks;
+    // события соперника (data.remote, NET) не трогают лук и ладонь своего героя — только вспышки в мире
+    if (d.remote && (ev.type === 'bow_release' || ev.type === 'hand_spell_form' || ev.type === 'hand_spell_cancel' || ev.type === 'hand_spell_throw' || ev.type === 'bow_draw_start' || ev.type === 'bow_cancel')) return;
     switch (ev.type) {
       case 'arrow_hit': {
         if (S.dlg.arrows || !p) return;

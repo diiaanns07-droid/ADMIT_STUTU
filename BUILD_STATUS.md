@@ -312,5 +312,9 @@ DEBUG-клавиши, поза процедурного героя), `modules/co
 - **CTRL (№1), просьба:** в DEBUG-бою клавишу **B** забирает лук (перехват в capture-фазе в `core/handZone.js`, только в бою);
   печать «Кор» у `core/debugInput.js` осталась на **Shift+B** (на экране тренировки B по-прежнему у симулятора приседаний).
   Стоит поправить шапку `core/debugInput.js`. Своё гашение движения при `input.bow.active` main уже делает — дублировать не обязательно.
+- **NET (№2) / VFX (№7), по ревью:** `net/sync.js` `decodeEvent` меняет `owner` 'player' → 'opponent', а `modules/effects.js`
+  (`projectile_impact`) тогда рисует стрелу соперника как удар Регента (кольцо + свет) — стоит считать 'opponent' как игрока (или свой цвет);
+  `encodeProjectiles` теряет `charged`/`twoHand` (можно `extra.ch`/`extra.th`); в `NET_EVENT_TYPES` нет `arrow_rain`, `hand_chain`,
+  `element_apply`, `bow_draw`, `bow_cancel`, `bow_element` — соперник не видит круг дождя стрел и цепь молнии.
 - **PVP (№3) / C4 lockTarget:** стрелы и сгустки выбирают цель сами (Регент + цели `registerTarget`, ближайшая к линии прицела);
   если в дуэли нужна именно `snap.lockTarget`, зарегистрируйте соперника — этого достаточно.
