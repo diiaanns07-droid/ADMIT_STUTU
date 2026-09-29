@@ -318,7 +318,7 @@ export function createHandMagic(configPatch = {}) {
   }
   function forceTick(now, sculpt = 0) {
     if (st.phase === 'idle' || !fin(now)) return;
-    const dt = st.lastT === null ? 0 : clamp(now - st.lastT, 0, 250);
+    const dt = st.lastT === null ? 0 : clamp(now - st.lastT, 0, 1000);   // DEBUG: кадры бывают редкими
     st.lastT = now;
     if (st.phase === 'form' && now - st.bornAt >= cfg.bornMs) st.phase = 'hold';
     st.sculpt = sculpt;

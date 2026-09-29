@@ -315,6 +315,40 @@ TUTORIAL.push({
   svg: svgWrap(conjureMark() + figureGroup({ left: 'up', right: 'up', hi: { armL: true, armR: true }, live: { armL: 'f-live-burst', armR: 'f-live-burst' } })),
 });
 
+/* [HAND] Лук (левый кулак + правая щепоть) и магия рукой (сгусток в ладони). Фигура со спины, как у других карточек. */
+function handFigureBase() {
+  return '<path class="f-seat" d="M34 90 L86 90"/><path class="f-base f-torso" d="M60 86 L60 50"/>' +
+    '<path class="f-base" d="M43 50 L77 50"/><circle class="f-base f-head" cx="60" cy="34" r="8"/>' +
+    '<text class="f-lab" x="30" y="82" text-anchor="middle">Л</text><text class="f-lab" x="90" y="82" text-anchor="middle">П</text>';
+}
+function bowFigure() {
+  return handFigureBase() +
+    '<path class="f-hi f-arm-l f-live-attack" d="M43 50 L29 46 L16 44"/>' +
+    '<path class="f-hi f-arm-r f-live-attack" d="M77 50 L89 42 L69 37"/>' +
+    '<path class="f-arrow" d="M17 20 Q3 44 17 68"/><path class="f-trail" d="M17 20 L69 37 L17 68"/>' +
+    '<path class="f-arrow" d="M69 37 L6 45 M6 45 l6 -4 M6 45 l6.5 3"/>';
+}
+function palmFlameFigure() {
+  return handFigureBase() +
+    '<path class="f-base f-arm-l" d="M43 50 L38 66 L40 80"/>' +
+    '<path class="f-hi f-arm-r f-live-burst" d="M77 50 L90 45 L86 30"/><path class="f-hi" d="M80 29 L92 29"/>' +
+    '<path class="f-arrow" d="M86 25 C80 20 82 13 85 8 C86 13 89 13 88 9 C93 14 93 21 86 25 Z"/>' +
+    '<path class="f-trail" d="M97 22 l7 -2 M97 28 l8 1"/>';
+}
+TUTORIAL.push({
+  key: 'bow',
+  title: 'Лук',
+  gesture: 'Левый кулак вперёд, как будто держишь лук. Правую щепоть (большой + указательный) поднеси к кулаку и тяни к уху. Разожми пальцы — выстрел.',
+  effect: 'Сильнее натянешь — сильнее стрела; полное натяжение подержать — стрела светится. Кулак выше — выше прицел, вверх с полным натяжением — «Дождь стрел». Руна при поднятом луке — стихия стрелы.',
+  svg: svgWrap(bowFigure()),
+}, {
+  key: 'handMagic',
+  title: 'Магия рукой',
+  gesture: 'Правая ладонь вверх перед грудью — в ней рождается огонь; «когти» — молния, ладонь вниз — лёд, кулак ладонью вверх — земля. Сжимай и раскрывай пальцы — сгусток растёт.',
+  effect: 'Резко толкни ладонь к камере или махни в сторону — бросок. Опусти руку — отмена. Сгусток в сфере двумя ладонями — усиленный бросок.',
+  svg: svgWrap(palmFlameFigure()),
+});
+
 /* Карта видимых точек для калибровки (вид со спины, как в пиктограммах). */
 const BODY_MAP_SVG =
   '<svg class="ao-bodymap__svg" viewBox="0 0 100 84" fill="none" stroke-linecap="round" stroke-linejoin="round" ' +
@@ -1434,6 +1468,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       focus: () => start.node,
       reset() {
         Object.assign(state.tut, { left: false, right: false, dash: false, attack: false, shield: false, burst: false, dashAt: -1e9, burstAt: -1e9, conj: false, thrown: false, throwAt: -1e9, hint: null });
+        Object.assign(state.tut, { bowHold: false, bowShot: false, bowAt: -1e9, orb: false, orbThrown: false, orbAt: -1e9 }); // [HAND]
       },
       update(ctx) {
         const st = ctx.tr.status;
@@ -1488,6 +1523,12 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
             t.thrown = true;
             t.throwAt = ctx.now;
           }
+          // [HAND] лук и магия рукой: поля есть только в сыром вводе (normInput их не пропускает)
+          const hb = ctx.vm && ctx.vm.input && ctx.vm.input.bow, hs = ctx.vm && ctx.vm.input && ctx.vm.input.handSpell;
+          if (hb && hb.active) t.bowHold = true;
+          if (hb && hb.release) { t.bowShot = true; t.bowAt = ctx.now; }
+          if (hs && (hs.phase === 'form' || hs.phase === 'hold')) t.orb = true;
+          if (hs && hs.phase === 'throw') { t.orbThrown = true; t.orbAt = ctx.now; }
         }
         for (const c of Object.values(cards)) {
           if (!liveCv) setHidden(c.chip, true);
@@ -1521,6 +1562,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
             else if (t.conj) setChip(cards.conjure, 'partial', 'Чары есть, теперь толкните ладони к камере');
             else setChip(cards.conjure, 'try', 'Попробуйте');
           }
+          // [HAND]
+          if (cards.bow) setChip(cards.bow, t.bowShot ? 'seen' : t.bowHold ? 'partial' : 'try', t.bowShot ? 'Распознано' : t.bowHold ? 'Стрела наложена — натяните и разожмите пальцы' : 'Попробуйте');
+          if (cards.handMagic) setChip(cards.handMagic, t.orbThrown ? 'seen' : t.orb ? 'partial' : 'try', t.orbThrown ? 'Распознано' : t.orb ? 'Сгусток есть — бросьте его резким движением' : 'Попробуйте');
         }
         const mx = inp.valid ? inp.moveX : 0;
         setStyle(cards.strafe.lean.mark, 'left', `${(50 + mx * 50).toFixed(1)}%`);
@@ -1530,6 +1574,11 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setClass(cards.hands.card, 'is-shield', inp.shield);
         setClass(cards.both.card, 'is-now', ctx.now - t.burstAt < IMPULSE_LATCH_MS);
         if (cards.conjure) setClass(cards.conjure.card, 'is-now', !!inp.conjure || ctx.now - t.throwAt < IMPULSE_LATCH_MS);
+        { // [HAND]
+          const hb = ctx.vm && ctx.vm.input && ctx.vm.input.bow, hs = ctx.vm && ctx.vm.input && ctx.vm.input.handSpell;
+          if (cards.bow) setClass(cards.bow.card, 'is-now', !!(hb && hb.active) || ctx.now - (t.bowAt || -1e9) < IMPULSE_LATCH_MS);
+          if (cards.handMagic) setClass(cards.handMagic.card, 'is-now', !!(hs && hs.phase !== 'idle') || ctx.now - (t.orbAt || -1e9) < IMPULSE_LATCH_MS);
+        }
       },
     };
   })();

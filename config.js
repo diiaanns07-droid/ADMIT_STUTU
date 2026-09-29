@@ -114,6 +114,7 @@ export const config = {
     // 'stick' — прежний джойстик (поднять руку и замереть — центр)
     moveMode: 'steer',
     hero: 'ashen',          // выбранный герой: ashen | warrior | elf (modules/heroModel.js)
+    handCombat: true,       // [HAND] лук (левый кулак + правая щепоть) и магия рукой (сгусток в ладони); false — выключить
   },
 
   settings: null,            // заполняет main.js (живой объект)
