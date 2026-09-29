@@ -120,6 +120,7 @@ export function createNet(opts = {}) {
           return;
         case 'bye':
           S.remote = null;
+          S.everOpen = false;              // следующий гость — новое 'open', а не 'reconnected'
           setState(S.isHost ? 'connecting' : 'idle');
           emit('left', msg);
           if (!S.isHost) teardown();

@@ -211,6 +211,13 @@ await t('net local: hello, ping, st/ev, обрыв 3 с → lost → восст�
   B.close();
   assert.ok(await until(() => left, 2000));
   assert.equal(A.state, 'connecting');
+  // новый гость в ту же комнату — у хоста событие 'open' (не 'reconnected')
+  let opened = null;
+  A.on('open', (r) => { opened = r && r.name; });
+  const B2 = createNet({ transport: 'local', name: 'Вера' });
+  await B2.join(code);
+  assert.ok(await until(() => opened === 'Вера', 2000), `open: ${opened}`);
+  B2.close();
   A.close();
 });
 await t('net local: третий игрок в полную комнату не попадает', async () => {

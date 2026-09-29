@@ -42,17 +42,18 @@ export const PVP_DEFAULTS = Object.freeze({
   knockTime: 0.2, knockMax: 3.5,
   dotTime: 3,
   reflectMul: 0.8,            // парирование возвращает снаряд с этим уроном
-  parrySuccessCd: 1.0,        // после удачного парирования — откат (в бою с Регентом его нет)
+  parrySuccessCd: 1.4,        // после удачного парирования — откат (в бою с Регентом его нет)
   parryEnergy: 5,
   reflectSpeed: 30,
   counterStagger: 0.6,        // парированный удар вблизи (рассечение/хлопок) сбивает атакующего
+  igniteDist: 4,              // «Искра разгорается в полёте»: урон искры/огня растёт с 50% до 100% на первых метрах
   heal: 0.85,                 // лечение в PvP × (при HP 400 то же лечение вчетверо слабее, чем у героя со 100 HP)
   alpha: { cooldownMul: 0.5, energy: 20 }, // ℓ «Альфа»: откаты не сбрасываются, а сокращаются вдвое
   shield: { blockBase: 4, blockPerDmg: 0.25, brokenMul: 0.5 },
   // множители урона по способностям (урон боя с боссом × множитель, затем кап maxHitShare)
   dmg: {
     bolt: 0.7, spark: 0.75, slash: 0.5, burst: 0.45, sphere: 0.5, prism: 0.5, ignis: 0.5, fulgur: 1.0,
-    stella: 0.55, caret: 0.9, vee: 0.9, clepsydra: 1, frame: 1, clap: 0.8, delta: 0.35, arrow: 0.6, hand_orb: 0.6,
+    stella: 0.5, caret: 0.9, vee: 0.9, clepsydra: 1, frame: 1, clap: 0.8, delta: 0.35, arrow: 0.6, hand_orb: 0.6,
     reflect: 1, default: 0.6,
   },
   // снаряды, которыми в PvP становятся мгновенные удары по Регенту
@@ -73,9 +74,9 @@ export const PVP_DEFAULTS = Object.freeze({
   noParry: ['stella', 'delta'],                // лучи и метеоры парированием не отбить
   // откаты и прочие поля боя, заменяемые на время PvP (путь в конфиге боя → значение)
   override: {
-    'bolt.interval': 0.5, 'bolt.energyCost': 3, 'spark.cooldown': 0.8, 'spark.cost': 8, 'slash.cooldown': 1.1,
+    'dash.cost': 24, 'bolt.interval': 0.5, 'bolt.energyCost': 3, 'spark.cooldown': 0.8, 'spark.cost': 8, 'slash.cooldown': 1.3, 'slash.radius': 3.6,
     'burst.cooldown': 11, 'throw.cooldown': 1.6,
-    'runes.ignis.cooldown': 9, 'runes.fulgur.cooldown': 14, 'runes.orbis.cooldown': 24, 'runes.stella.cooldown': 20,
+    'runes.ignis.cooldown': 11, 'runes.fulgur.cooldown': 14, 'runes.orbis.cooldown': 24, 'runes.stella.cooldown': 20,
     'runes.spira.cooldown': 16, 'runes.lemnis.cooldown': 32, 'runes.caret.cooldown': 7, 'runes.vee.cooldown': 14,
     'runes.clepsydra.cooldown': 18, 'runes.alpha.cooldown': 40,
     'sigils.clap.cooldown': 14, 'sigils.gate.cooldown': 24, 'sigils.frame.cooldown': 18, 'sigils.delta.cooldown': 26,
@@ -151,6 +152,7 @@ export function buildHooks(K, PC, opts = {}) {
   const hist = Array.from({ length: HN }, () => ({ t: -1e9, iframe: 0, parry: false, shield: false, ward: false, bastion: false, spawn: false, dashE: 0 }));
   let hi = 0;
   let ghosts = [];              // снаряды соперника для снимка (owner 'opponent')
+  let lastStepAt = -1e9;        // когда бой последний раз шагал (пауза/заморозка — текущие флаги защиты не в счёт)
   let view = null;              // состояние раунда для snap.pvp (ставит сессия)
   const stats = { dealt: 0, taken: 0, sent: 0, landed: 0, dodged: 0, blocked: 0, parried: 0, maxTaken: 0, oppTaken: 0, casts: Object.create(null), takenBy: Object.create(null) };
 
@@ -211,7 +213,9 @@ export function buildHooks(K, PC, opts = {}) {
     const pp = K.playerPos();
     const d = Math.hypot(BOSS.x - pp.x, BOSS.z - pp.z);
     const lead = clamp(d / Math.max(1, PC.aimLeadSpeed), 0, PC.maxLead) * PC.aimLead;
-    return vec(BOSS.x + opp.vel.x * lead, BOSS.y + C.boss.aimHeight, BOSS.z + opp.vel.z * lead);
+    // во время рывка не упреждаем (рывок короче полёта снаряда); скорость упреждения — не больше спринта
+    const vl = Math.hypot(opp.vel.x, opp.vel.z), k = opp.dashing ? 0 : vl > 8.5 ? 8.5 / vl : 1;
+    return vec(BOSS.x + opp.vel.x * lead * k, BOSS.y + C.boss.aimHeight, BOSS.z + opp.vel.z * lead * k);
   }
   function encounter() {
     const st = K.st;
@@ -259,7 +263,12 @@ export function buildHooks(K, PC, opts = {}) {
   }
   function projectileHit(pr, point) {
     const kind = pr.pvpKind || (pr.reflected ? 'reflect' : pr.kind) || 'bolt';
-    const raw = pr.pvpFinal ? pr.damage : (pr.damage || 0) * mulOf(kind);
+    let raw = pr.pvpFinal ? pr.damage : (pr.damage || 0) * mulOf(kind);
+    if ((kind === 'spark' || kind === 'bolt') && PC.igniteDist > 0) {
+      const v = pr.velocity || { x: 0, y: 0, z: 0 };
+      const flown = (pr.age || 0) * Math.hypot(v.x, v.y || 0, v.z);
+      raw *= clamp(0.5 + 0.5 * flown / PC.igniteDist, 0.5, 1);
+    }
     const v = pr.velocity || { x: 0, z: 0 };
     sendHit(kind, raw, pr.fx, point, { x: v.x, z: v.z }, { heal: pr.heal });
     K.emit('projectile_impact', point, { owner: 'player', kind: pr.kind, projectileId: pr.id, result: 'opponent', pvp: true, size: pr.size, power: pr.power, radius: pr.radius });
@@ -288,12 +297,10 @@ export function buildHooks(K, PC, opts = {}) {
     const S = PC.shots.burst;
     shoot('burst', dmg, { knock: S.knock * (0.7 + 0.6 * power) });
     K.emit('burst', chest, { amount: dmg, power, both, cleared: 0, from: vcopy(chest), to: vcopy(to), radius: 2.5 * (0.7 + 0.6 * power), pvp: true });
-    count('burst');
     return true;
   }
   function rune(r, R, chest, to) {
     const Pp = P();
-    count(r);
     if (r === 'ignis') {
       shoot('ignis', R.damage, { dot: PC.shots.ignis.dot });
       K.emit('rune_cast', chest, { rune: r, from: vcopy(chest), to: vcopy(to), amount: R.damage, pvp: true });
@@ -326,7 +333,6 @@ export function buildHooks(K, PC, opts = {}) {
     return true;
   }
   function sigil(sg, S, chest, to) {
-    count(sg);
     const pp = K.playerPos();
     if (sg === 'clap') {
       const Q = PC.clap;
@@ -349,7 +355,7 @@ export function buildHooks(K, PC, opts = {}) {
     }
     return false;                          // gate, cor — на себя
   }
-  function count(k) { stats.casts[k] = (stats.casts[k] || 0) + 1; }
+  function count(k) { if (k) stats.casts[k] = (stats.casts[k] || 0) + 1; }
   function runTimed(h) {
     if (!timed.length) return;
     for (let i = 0; i < timed.length; i++) {
@@ -388,6 +394,7 @@ export function buildHooks(K, PC, opts = {}) {
       K.st.stats.damageDealt += amount;
       Pp.combo++; Pp.comboTimer = C.combo.decay;
       opp.hp = num(a.hpAfter, opp.hp);
+      opp.ackHp = opp.hp; opp.ackAt = clock();
       K.emit('boss_hit', point, { amount, source: p.kind, hpAfter: opp.hp, combo: Pp.combo, multiplier: 1, marked: false, pvp: true, target: 'opponent' });
       if (p.heal > 0 && Pp.hp > 0) {
         const before = Pp.hp;
@@ -418,8 +425,11 @@ export function buildHooks(K, PC, opts = {}) {
   // защита в окне [t0, now]: что было активно хоть в одной записи + текущее состояние
   function defenseSince(t0) {
     const Pp = P();
-    const d = { iframe: Pp.iframe > 0, perfect: Pp.dashing && Pp.dashElapsed <= C.perfectDodge.window, parry: Pp.parryWin > 0, shield: Pp.shielding,
-      ward: Pp.ward > 0, bastion: Pp.bastion > 0, spawn: Pp.grace > 0 && me.spawnT > 0 };
+    // бой стоит (пауза, потеря трекинга): i-кадры и щит «заморожены» — живым флагам не верим, только истории окна
+    const live = clock() - lastStepAt <= 100;
+    const d = live ? { iframe: Pp.iframe > 0, perfect: Pp.dashing && Pp.dashElapsed <= C.perfectDodge.window, parry: Pp.parryWin > 0, shield: Pp.shielding,
+      ward: Pp.ward > 0, bastion: Pp.bastion > 0, spawn: Pp.grace > 0 && me.spawnT > 0 }
+      : { iframe: false, perfect: false, parry: false, shield: false, ward: Pp.ward > 0, bastion: false, spawn: Pp.grace > 0 && me.spawnT > 0 };
     for (const h of hist) {
       if (h.t < t0) continue;
       if (h.iframe > 0) { d.iframe = true; if (h.dashE <= C.perfectDodge.window) d.perfect = true; }
@@ -591,6 +601,7 @@ export function buildHooks(K, PC, opts = {}) {
       Pp.x = to.x; Pp.z = to.z; Pp.y = K.LAY.groundY(Pp.x, Pp.z);
     }
     if (!Pp.dead) runTimed(h);
+    lastStepAt = clock();
     record();
   }
 
@@ -630,6 +641,7 @@ export function buildHooks(K, PC, opts = {}) {
   // состояние для сообщения st (20 Гц)
   function myState() {
     const st = K.st, Pp = st.p;
+    const stale = clock() - lastStepAt > 150;             // бой стоит (пауза): не «летим» дальше у соперника
     const pr = [];
     for (const q of st.projectiles) {
       if (q.owner !== 'player' || pr.length >= 16) continue;
@@ -638,10 +650,10 @@ export function buildHooks(K, PC, opts = {}) {
     }
     return {
       t: Math.round(clock()),
-      position: { x: r2(Pp.x), y: r2(Pp.y), z: r2(Pp.z) }, yaw: r2(Pp.yaw), velocity: { x: r2(Pp.vx), z: r2(Pp.vz) },
+      position: { x: r2(Pp.x), y: r2(Pp.y), z: r2(Pp.z) }, yaw: r2(Pp.yaw), velocity: stale ? { x: 0, z: 0 } : { x: r2(Pp.vx), z: r2(Pp.vz) },
       hp: r2(Pp.hp), maxHp: C.player.maxHp, energy: r2(Pp.energy), maxEnergy: C.player.maxEnergy,
       shielding: Pp.shielding, invulnerable: Pp.iframe > 0 || Pp.grace > 0, stunned: me.stunT > 0, slowed: me.slowT > 0, marked: me.markT > 0,
-      dashing: Pp.dashing, dead: !!Pp.dead, pr, taken: Math.round(stats.taken * 10) / 10,   // taken — для «нанесённого урона» соперника
+      dashing: !stale && Pp.dashing, dead: !!Pp.dead, pr, taken: Math.round(stats.taken * 10) / 10,   // taken — для «нанесённого урона» соперника
     };
   }
   function r2(v) { return Math.round(v * 100) / 100; }
@@ -675,7 +687,8 @@ export function buildHooks(K, PC, opts = {}) {
     get floorY() { return Math.min(K.st.p.y, opp.has ? BOSS.y : K.st.p.y); },   // уровень земли дуэли (для «снаряд ушёл в пол»)
     enable, disable, aim, encounter, damage, projectileHit, burst, rune, sigil, preStep, decorate, setOpponent, applyRemoteHit,
     // для сессии
-    onAck, myState, respawn, grantSpawnInvuln,
+    onAck, myState, respawn, grantSpawnInvuln, count,
+    onReset() { resetState(); },
     drainOutbox() { return outbox.splice(0, outbox.length); },
     setPing(ms) { ping = Math.max(0, num(ms, 0)); },
     setTag(t) { tag = String(t || 'p'); },
@@ -953,12 +966,13 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
   }
   function matchEnd(w, reason, local) {
     S.winner = w; S.reason = reason || 'score';
+    S.claim = reason === 'disconnect' && w === role;     // своя техническая победа: повторяем сопернику, пока не узнает
     setPhase('match_end');
     if (!local) send('duel', { phase: 'match_end', round: S.round, score: [S.score.host, S.score.guest], winner: w, reason: S.reason, at: Math.round(now()) });
     roundEvent('match_end', { reason: S.reason });
   }
   function startMatch() {            // только хост
-    S.score = { host: 0, guest: 0 }; S.round = 1; S.rematch = { me: false, opp: false }; S.roundTimes = [];
+    S.score = { host: 0, guest: 0 }; S.round = 1; S.rematch = { me: false, opp: false }; S.roundTimes = []; S.claim = false;
     S.matchStart = now();
     resetStats();
     beginCountdown();
@@ -1006,9 +1020,57 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
     let res;
     try { res = combat.applyRemoteHit(m); } catch (e) { res = { applied: false, reason: 'error' }; }
     if (res && res.duplicate) return;           // повтор: ответ уже отправлен
+    if (res && res.applied && res.hpAfter <= 0) checkDeath();
     send('hitAck', { id: m.id, applied: !!(res && res.applied), reason: res ? res.reason : 'error', amount: res && res.amount, hpAfter: res && res.hpAfter, counter: !!(res && res.counter) });
   };
   handlers.hitAck = (m) => { m = payload(m); S.lastRecv = now(); H.onAck(m); };
+  // фазы по порядку: гость принимает только более позднюю фазу (повторы и опоздавшие сообщения безвредны)
+  const RANK = { lobby: 0, countdown: 1, fight: 2, round_end: 3, match_end: 4 };
+  const phaseKey = (ph, round) => (ph === 'match_end' ? 1e6 : num(round, 0) * 10 + (RANK[ph] || 0));
+  function hostPhaseMsg() {
+    const ph = S.phase === 'paused' ? (S.pausedFrom || 'lobby') : S.phase;
+    return { phase: ph, round: S.round, score: [S.score.host, S.score.guest], winner: S.winner, reason: S.reason, dur: R.countdown, at: Math.round(now()), sync: true };
+  }
+  function guestApply(m) {
+    const ph = m.phase;
+    if (!(ph in RANK) || ph === 'lobby') return;
+    const round = num(m.round, S.round);
+    const cur = S.phase === 'paused' ? (S.pausedFrom || 'lobby') : S.phase;
+    const newMatch = ph === 'countdown' && round === 1 && (cur === 'match_end' || cur === 'lobby');
+    if (!newMatch && phaseKey(ph, round) <= phaseKey(cur, S.round)) return;
+    if (Array.isArray(m.score)) S.score = { host: num(m.score[0], 0), guest: num(m.score[1], 0) };
+    if (S.phase === 'paused') S.phase = cur;                       // сообщение хоста дошло — связь есть
+    if (newMatch) { resetStats(); S.matchStart = now(); S.rematch = { me: false, opp: false }; S.roundTimes = []; S.claim = false; }
+    // новый раунд (в том числе пропущенный отсчёт): сначала респаун
+    if ((ph === 'countdown' || ph === 'fight') && !(cur === 'countdown' && S.round === round)) {
+      S.winner = null; S.deadSent = 0; S.round = round;
+      H.respawn(mySpawn());
+    }
+    S.round = round;
+    if (ph === 'countdown') { setPhase('countdown', now() - Math.max(0, num(net.ping, 0) / 2)); roundEvent('countdown'); }
+    else if (ph === 'fight') beginFight();
+    else if (ph === 'round_end') {
+      S.winner = m.winner || null; S.reason = m.reason || 'ko';
+      if (cur === 'fight') S.roundTimes.push((now() - S.roundStart) / 1000);
+      setPhase('round_end'); S.slowUntil = now() + R.slowmo * 1000;
+      roundEvent('round_end', { reason: S.reason });
+    } else if (ph === 'match_end') {
+      S.winner = m.winner || null; S.reason = m.reason || 'score';
+      setPhase('match_end'); roundEvent('match_end', { reason: S.reason });
+    }
+  }
+  // соперник заявил техническую победу (у него пропала связь со мной на 20 с)
+  function onClaim(m) {
+    const peer = role === 'host' ? 'guest' : 'host';
+    if (S.phase === 'match_end' && S.claim) {                      // оба заявили — ничья
+      if (S.winner !== null) { S.winner = null; roundEvent('match_end', { reason: 'disconnect' }); }
+      return;
+    }
+    if (S.phase === 'match_end' && S.winner === peer) return;      // уже знаем
+    S.score[peer] = Math.max(S.score[peer], R.toWin);
+    S.winner = peer; S.reason = 'disconnect'; S.claim = false;
+    setPhase('match_end'); roundEvent('match_end', { reason: 'disconnect' });
+  }
   handlers.duel = (m) => {
     m = payload(m);
     S.lastRecv = now();
@@ -1020,28 +1082,10 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
       if (role === 'host' && S.phase === 'fight' && num(m.round, S.round) === S.round) endRound('host', 'ko');
       return;
     }
-    if (ph === 'leave') { if (S.phase !== 'match_end') { S.score[role]++; matchEnd(role, 'left', true); } return; }
-    if (role === 'host') return;              // фазами управляет хост
-    if (Array.isArray(m.score)) S.score = { host: num(m.score[0], 0), guest: num(m.score[1], 0) };
-    S.round = num(m.round, S.round);
-    if (ph === 'countdown') {
-      if (S.phase === 'match_end' || S.phase === 'lobby') { resetStats(); S.matchStart = now(); S.rematch = { me: false, opp: false }; S.roundTimes = []; }
-      S.winner = null; S.deadSent = 0;
-      setPhase('countdown', now() - Math.max(0, num(net.ping, 0) / 2));
-      H.respawn(mySpawn());
-      roundEvent('countdown');
-    } else if (ph === 'fight') {
-      if (S.phase !== 'fight') beginFight();
-    } else if (ph === 'round_end') {
-      if (S.phase === 'fight' || S.phase === 'countdown' || S.phase === 'paused') {
-        S.winner = m.winner || null; S.reason = m.reason || 'ko';
-        S.roundTimes.push((now() - S.roundStart) / 1000);
-        setPhase('round_end'); S.slowUntil = now() + R.slowmo * 1000;
-        roundEvent('round_end', { reason: S.reason });
-      }
-    } else if (ph === 'match_end') {
-      if (S.phase !== 'match_end') { S.winner = m.winner || null; S.reason = m.reason || 'score'; setPhase('match_end'); roundEvent('match_end', { reason: S.reason }); }
-    }
+    if (ph === 'leave') { handlers.left(); return; }
+    if (ph === 'match_end' && m.reason === 'disconnect' && m.claim) { onClaim(m); return; }
+    if (role === 'host') return;              // остальными фазами управляет хост
+    guestApply(m);
   };
   handlers.bye = () => { S.lastRecv = -1e9; };
   // соперник сам вышел (сеть №2: событие 'left'; заглушка: 'bye') — техническая победа сразу
@@ -1067,6 +1111,7 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
       net.on(t, fn);
     }
     if (!EXT) net.on('bye', handlers.left);
+    // лук и магия рукой №6: их «Регент» в дуэли — капсула соперника (BOSS), попадание → api.pvp.projectileHit с fx стихии
     if (EXT && net.remote && net.remote.name) { H.opponent.name = String(net.remote.name).slice(0, 24); H.opponent.hero = net.remote.hero || null; S.oppHello = { ...net.remote }; }
     S.lastRecv = now();
     setPhase('lobby');
@@ -1120,22 +1165,42 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
     if (!S.active) return events;
     let out = Array.isArray(events) ? events.slice() : [];
     for (const m of H.drainOutbox()) { const { t, ...p } = m; send(t, p); }
+    // «любимое заклинание»: свои касты (player_cast 'rune' — дубль rune_cast от main.js adaptEvents)
+    if (S.phase === 'fight') for (const e of out) {
+      const d = e.data || {};
+      if (d.remote) continue;
+      if (e.type === 'player_cast' && d.ability !== 'rune') H.count(d.ability === 'throw' ? (d.kind === 'prism' ? 'prism' : 'sphere') : d.ability);
+      else if (e.type === 'rune_cast') H.count(d.rune);
+      else if (e.type === 'sigil_cast') H.count(d.sigil);
+      else if (e.type === 'burst') H.count('burst');
+      else if (e.type === 'bow_release') H.count('arrow');
+      else if (e.type === 'hand_spell_throw') H.count('hand_orb');
+    }
     // свои события сопернику (для его эффектов); с сетью №2 их пересылает её сессия
     if (!EXT) for (const e of out) {
       if (PC.forwardEventTypes.includes(e.type)) send('ev', { e: { id: e.id, type: e.type, position: e.position, data: e.data } });
     }
-    // смерть в бою
-    if (S.phase === 'fight' && H.isDead()) {
-      if (role === 'host') endRound('guest', 'ko');
-      else if (now() - S.deadSent > PC.net.deadResendMs) { S.deadSent = now(); send('duel', { phase: 'dead', round: S.round }); }
-    }
+    checkDeath();
     if (S.remote.length) { out = out.concat(S.remote); S.remote.length = 0; }
     if (S.events.length) { out = out.concat(S.events); S.events.length = 0; }
     return out;
   }
+  // смерть в бою (на любом экране: удары приходят и на паузе)
+  function checkDeath() {
+    if (S.phase !== 'fight' || !H.isDead()) return;
+    if (role === 'host') endRound('guest', 'ko');
+    else if (now() - S.deadSent > PC.net.deadResendMs) { S.deadSent = now(); send('duel', { phase: 'dead', round: S.round }); }
+  }
   function frame() {
     if (!S.active) return;
     const t = now();
+    checkDeath();
+    // хост раз в 0,5 с повторяет текущую фазу (потерянные round_end/match_end доходят); своя техпобеда — тоже
+    if (role === 'host' && S.phase !== 'lobby' && t - (S.syncSent || 0) >= 500) { S.syncSent = t; send('duel', hostPhaseMsg()); }
+    if (S.phase === 'match_end' && S.claim && t - (S.claimSent || 0) >= 1000) {
+      S.claimSent = t;
+      send('duel', { phase: 'match_end', winner: role, reason: 'disconnect', claim: true, round: S.round, score: [S.score.host, S.score.guest] });
+    }
     for (const m of H.drainOutbox()) { const { t: tt, ...p } = m; send(tt, p); }
     if (!S.oppHello) sendHello(false);
     if (!EXT && t - S.stSent >= 1000 / PC.net.stHz) {
@@ -1161,10 +1226,10 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
         const back = S.pausedFrom || 'countdown';
         S.phase = back; H.setAcceptHits(back === 'fight'); H.setFrozen(back !== 'fight');
         S.phaseAt += t - S.pausedAt;
-        if (role === 'host') send('duel', { phase: back, round: S.round, score: [S.score.host, S.score.guest], at: Math.round(t) });
+        if (role === 'host') { S.syncSent = t; send('duel', hostPhaseMsg()); }
       } else if ((t - S.pausedAt) / 1000 >= R.disconnectWait) {
         S.score[role] = Math.max(S.score[role], R.toWin);
-        matchEnd(role, 'disconnect', true);
+        matchEnd(role, 'disconnect');
       }
       return;
     }
@@ -1172,7 +1237,9 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
     if (S.phase === 'lobby' && S.meReady && S.oppReady) startMatch();
     else if (S.phase === 'countdown' && el >= R.countdown) beginFight();
     else if (S.phase === 'fight' && el >= R.roundTime) {
-      const mine = H.hpFrac(), theirs = num(H.opponent.hp, 0) / Math.max(1, num(H.opponent.maxHp, 1));
+      const o = H.opponent;
+      const oppHp = Number.isFinite(o.ackHp) && t - num(o.ackAt, -1e9) < 1500 ? Math.min(num(o.hp, 0), o.ackHp) : num(o.hp, 0);
+      const mine = H.hpFrac(), theirs = oppHp / Math.max(1, num(o.maxHp, 1));
       endRound(Math.abs(mine - theirs) < 0.005 ? null : mine > theirs ? 'host' : 'guest', 'time');
     } else if (S.phase === 'round_end' && el >= R.roundEnd) {
       const w = S.winner;
@@ -1190,7 +1257,9 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
   }
   function favorite() {
     let best = null, n = 0;
-    for (const [k, c] of Object.entries(H.stats.casts)) if (c > n) { best = k; n = c; }
+    const list = Object.entries(H.stats.casts);
+    const pool = list.some(([k]) => k !== 'bolt') ? list.filter(([k]) => k !== 'bolt') : list;   // огонь из зажатой руки — только если больше ничего
+    for (const [k, c] of pool) if (c > n) { best = k; n = c; }
     return best ? { id: best, name: ABILITY_NAMES[best] || best, count: n } : null;
   }
   function getView() {
@@ -1279,7 +1348,7 @@ export function createPvpView({ THREE, scene, camera, root, onRematch, onMenu, e
   (root || doc.body).appendChild(el);
   const $ = (s) => el.querySelector(s);
   const center = $('.pvp-center'), modal = $('.pvp-modal'), lobby = $('.pvp-lobby'), tag = $('.pvp-tag');
-  let lastKey = '', lastModal = '';
+  let lastKey = '', lastModal = '', lastTop = '';
   // заглушка модели соперника: капсула с кольцом (если №2 не рисует удалённого героя)
   let stub = null;
   if (THREE && scene && !externalModel) {
@@ -1318,14 +1387,21 @@ export function createPvpView({ THREE, scene, camera, root, onRematch, onMenu, e
     if (m) m.onclick = () => { if (onMenu) onMenu(); };
   }
   function update(v, snap) {
-    if (!v || !v.active) { el.hidden = true; if (stub) stub.g.visible = false; return; }
-    el.hidden = false;
-    $('.pvp-me .pvp-pips').innerHTML = pips(v.score[0], v.toWin);
-    $('.pvp-opp .pvp-pips').innerHTML = pips(v.score[1], v.toWin);
-    $('.pvp-mys').textContent = v.score[0]; $('.pvp-ops').textContent = v.score[1];
-    $('.pvp-on').textContent = v.oppName || 'Соперник';
-    $('.pvp-rd').textContent = v.phase === 'lobby' ? 'ДУЭЛЬ' : `РАУНД ${v.round}${v.phase === 'fight' ? ' · ' + Math.floor(v.roundTime) + ' с' : ''}${v.ping ? ' · ' + v.ping + ' мс' : ''}`;
-    lobby.textContent = v.phase === 'lobby' ? (v.oppReady ? 'Соперник готов…' : v.oppConnected ? 'Ждём, пока соперник войдёт в бой…' : 'Ожидание соперника…') : '';
+    if (!v || !v.active) { if (!el.hidden) el.hidden = true; if (stub) stub.g.visible = false; lastTop = ''; return; }
+    if (el.hidden) el.hidden = false;
+    // DOM трогаем только при изменении (панель живёт каждый кадр)
+    const rd = v.phase === 'lobby' ? 'ДУЭЛЬ' : `РАУНД ${v.round}${v.phase === 'fight' ? ' · ' + Math.floor(v.roundTime) + ' с' : ''}${v.ping ? ' · ' + v.ping + ' мс' : ''}`;
+    const lb = v.phase === 'lobby' ? (v.oppReady ? 'Соперник готов…' : v.oppConnected ? 'Ждём, пока соперник войдёт в бой…' : 'Ожидание соперника…') : '';
+    const topKey = `${v.score[0]}|${v.score[1]}|${v.toWin}|${v.oppName}|${rd}|${lb}`;
+    if (topKey !== lastTop) {
+      lastTop = topKey;
+      $('.pvp-me .pvp-pips').innerHTML = pips(v.score[0], v.toWin);
+      $('.pvp-opp .pvp-pips').innerHTML = pips(v.score[1], v.toWin);
+      $('.pvp-mys').textContent = v.score[0]; $('.pvp-ops').textContent = v.score[1];
+      $('.pvp-on').textContent = v.oppName || 'Соперник';
+      $('.pvp-rd').textContent = rd;
+      lobby.textContent = lb;
+    }
     if (v.phase === 'countdown') {
       const n = Math.ceil(v.countdown);
       center1(n > 0 ? String(n) : 'БОЙ!', n > 0 ? '' : 'fight', n > 0 ? `раунд ${v.round}` : '');
@@ -1368,8 +1444,9 @@ export function createPvpView({ THREE, scene, camera, root, onRematch, onMenu, e
       if (vis) {
         const W = el.clientWidth || window.innerWidth, Hh = el.clientHeight || window.innerHeight;
         tag.style.left = `${(_v.x + 1) * 0.5 * W}px`; tag.style.top = `${(1 - _v.y) * 0.5 * Hh}px`;
-        tag.querySelector('.nm').textContent = o.name || 'Соперник';
-        tag.querySelector('.bar i').style.width = `${Math.max(0, Math.min(100, 100 * o.hp / Math.max(1, o.maxHp)))}%`;
+        const nm = o.name || 'Соперник', w = `${Math.round(Math.max(0, Math.min(100, 100 * o.hp / Math.max(1, o.maxHp))))}%`;
+        if (tag._nm !== nm) { tag._nm = nm; tag.querySelector('.nm').textContent = nm; }
+        if (tag._w !== w) { tag._w = w; tag.querySelector('.bar i').style.width = w; }
       }
     } else tag.style.display = 'none';
   }
@@ -1462,6 +1539,7 @@ export function createPvpController({ THREE, scene, camera, combat, config, sett
   }
   return {
     get active() { return !!(session && session.active); },
+    get inMatch() { return !!(session && session.active && session.phase !== 'lobby' && session.phase !== 'match_end'); },
     get session() { return session; },
     startLocal, startWithNet, stop,
     autoStart(search) {

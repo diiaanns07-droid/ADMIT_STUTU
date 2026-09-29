@@ -203,6 +203,20 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
   }
   const _hand = new THREE.Vector3();
 
+  // призрак из самой модели героя: на время обрыва меши получают светящийся полупрозрачный материал
+  // (встроенный MeshBasicMaterial сам поддерживает скиннинг и морфы), потом родные возвращаются
+  const ghostMat = new THREE.MeshBasicMaterial({ color: 0x9fc4ff, transparent: true, opacity: 0.28, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+  let ghosted = null;   // [{ mesh, mat }]
+  function setModelGhost(model, on) {
+    if (on && !ghosted && model) {
+      ghosted = [];
+      model.traverse((o) => { if ((o.isMesh || o.isSkinnedMesh) && o.material) { ghosted.push({ mesh: o, mat: o.material, cast: o.castShadow }); o.material = Array.isArray(o.material) ? o.material.map(() => ghostMat) : ghostMat; o.castShadow = false; } });
+    } else if (!on && ghosted) {
+      for (const g of ghosted) { g.mesh.material = g.mat; g.mesh.castShadow = g.cast; }
+      ghosted = null;
+    }
+  }
+
   const buf = createInterpBuffer({ delayMs });
   const S = {
     name: 'Соперник', hero: 'ashen', connected: true, visible: true, got: false,
@@ -290,6 +304,7 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
   }
 
   const snapLike = { status: 'playing', player: null };
+  const EMPTY_EVENTS = Object.freeze([]);
   const _cam = new THREE.Vector3();
 
   // nowMs — время кадра (rAF): интерполяция идёт ровно по кадрам, без дрожи от момента вызова
@@ -316,27 +331,32 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
 
     const st = s.st;
     const lost = !S.connected;
-    // призрак при обрыве
-    ghost.group.visible = lost;
+    // призрак при обрыве: модель героя становится светящимся силуэтом; без модели — процедурный призрак
     const model = root.getObjectByName('hero-model');
     const vrmOn = !!(hm && hm.ready && model);
-    if (model) model.visible = !lost;
+    if (ghosted && (!vrmOn || !model)) ghosted = null;      // модель сменилась — старые меши уже не наши
+    setModelGhost(vrmOn ? model : null, lost && vrmOn);
+    if (ghosted) ghostMat.opacity = 0.2 + 0.1 * Math.sin(S.t * 4);
+    ghost.group.visible = lost && !vrmOn;
+    if (model) model.visible = true;
     body.group.visible = !lost && !vrmOn;
     const sp = Math.hypot(s.vx, s.vz);
     if (lost) animateBody(ghost, dt, null, 0);
     else if (!vrmOn) animateBody(body, dt, st, sp);
     updateFx(st, lost);
-    if (hm && !lost) {
-      const P = { ...st, position: { x: s.x, y: S.rootY, z: s.z }, yaw: S.yaw, velocity: { x: s.vx, z: s.vz }, speed: sp };
+    if (hm) {
+      // при обрыве модель стоит в покое (скорость 0), а не бежит на месте
+      const P = lost ? { ...st, position: { x: s.x, y: S.rootY, z: s.z }, yaw: S.yaw, velocity: { x: 0, z: 0 }, speed: 0, action: 'idle', locomotion: 'idle', shielding: false, conjure: null, bow: null, handSpell: null }
+        : { ...st, position: { x: s.x, y: S.rootY, z: s.z }, yaw: S.yaw, velocity: { x: s.vx, z: s.vz }, speed: sp };
       snapLike.player = P;
       snapLike.status = st && st.dead ? 'defeat' : 'playing';
       // C5: поза лука / чар рукой поверх анимаций — из st.bow / st.handSpell соперника
       if (typeof hm.setPose === 'function') {
-        const bw = st && st.bow, hs = st && st.handSpell;
+        const bw = P.bow, hs = P.handSpell;
         const hsW = hs ? (hs.phase === 'hold' ? 1 : hs.phase === 'form' ? 0.6 : hs.phase === 'throw' ? 0.3 : 0) : 0;
         try { hm.setPose({ bowDraw: bw ? bw.draw : 0, aim: { x: bw ? bw.aimX : 0, y: bw ? bw.aimY : 0 }, handSpell: hsW }); } catch (e) { /* ignore */ }
       }
-      try { hm.update(dt, snapLike, events); } catch (e) { console.warn('[NET] heroModel соперника', e); }
+      try { hm.update(dt, snapLike, lost ? EMPTY_EVENTS : events); } catch (e) { console.warn('[NET] heroModel соперника', e); }
     }
     events.length = 0;
 
@@ -372,6 +392,8 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
   }
 
   function dispose() {
+    setModelGhost(null, false);
+    ghostMat.dispose();
     for (const m of [shield, rim, orb, spell]) { m.geometry.dispose(); m.material.dispose(); }
     if (world && typeof world.setForestHero2 === 'function') { try { world.setForestHero2(null); } catch (e) { /* ignore */ } }
     try { if (hm && typeof hm.dispose === 'function') hm.dispose(); } catch (e) { /* ignore */ }

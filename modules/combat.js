@@ -2252,6 +2252,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     fightGen++;
     st = freshState();
     if (hand) hand.reset(); // [HAND]
+    if (PV && PV.on) PV.onReset();   // [PVP] статусы дуэли (оглушение, горение, метеоры) не переживают сброс
     try {
       bossBrain.reset();
     } catch (err) {
@@ -2322,19 +2323,23 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     breakCombo, toBossUnit, screenRight, conjurePoint, newId: (kind) => `${kind}:${fightGen}:${++projSeq}`,
   };
   function attachPvp(factory) {
-    try { if (PV && PV.on) PV.disable(); } catch (e) { /* ignore */ }
+    try { if (PV && PV.on) { PV.disable(); setUpgrades(upgradeMods); } } catch (e) { /* ignore */ }
     PV = null;
     if (typeof factory === 'function') PV = factory(K) || null;
     return !!PV;
   }
   function setMode(mode) {
     if (mode === 'pvp' && !PV) return false;
-    if (PV) { if (mode === 'pvp') PV.enable(); else PV.disable(); }
+    // в дуэли улучшения «Клятвы героя» не действуют: вход — от базового конфига, выход — улучшения заново
+    if (PV) {
+      if (mode === 'pvp') { if (!PV.on) { const keep = upgradeMods; setUpgrades({}); upgradeMods = keep; PV.enable(); } }
+      else if (PV.on) { PV.disable(); setUpgrades(upgradeMods); }
+    }
     reset();
     return true;
   }
   function getMode() { return PV && PV.on ? 'pvp' : 'boss'; }
-  function setOpponent(state) { if (PV) PV.setOpponent(state); }
+  function setOpponent(state) { if (PV && PV.on) PV.setOpponent(state); }
   function applyRemoteHit(hit) { return PV && PV.on ? PV.applyRemoteHit(hit) : { applied: false, reason: 'mode' }; }
 
   // [FOREST] место старта (settings.startZone, точки дуэли PvP): действует со следующего reset();
