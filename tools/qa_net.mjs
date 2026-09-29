@@ -179,7 +179,7 @@ if (MODE === 'local') {
   await sleep(2500);
   const fr = (re) => page0.frames().find((f) => re.test(f.url()));
   const mk = (re, sel) => ({
-    evaluate: (fn) => fr(re).evaluate(fn),
+    evaluate: (fn, arg) => fr(re).evaluate(fn, arg),
     focus: () => page0.locator(sel).click({ position: { x: 200, y: 300 } }),
     keyDown: (k) => page0.keyboard.down(k), keyUp: (k) => page0.keyboard.up(k), press: (k) => page0.keyboard.press(k),
     shot: (path) => page0.screenshot({ path }),
@@ -196,7 +196,7 @@ if (MODE === 'local') {
     page.on('console', (m) => { if (m.type() === 'error') errors[tag].push(m.text()); });
     await page.goto(`${base}&${extra}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
     return {
-      evaluate: (fn) => page.evaluate(fn), focus: () => page.bringToFront(),
+      evaluate: (fn, arg) => page.evaluate(fn, arg), focus: () => page.bringToFront(),
       keyDown: (k) => page.keyboard.down(k), keyUp: (k) => page.keyboard.up(k), press: (k) => page.keyboard.press(k),
       shot: (path) => page.screenshot({ path }),
     };
