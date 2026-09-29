@@ -208,13 +208,13 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       else _face.lerp(_ft, 1 - Math.exp(-4 * dt));
     } else _face.set(hp.x, hp.y + 1.58, hp.z);
     const yaw = heroRoot.rotation.y + (0.18 + 0.56 * Math.sin(S.angle)) * (1 - 0.6 * z) + U.yaw;
-    const dist = (2.8 + 0.18 * Math.sin(S.angle * 0.7)) * (1 - z) + 0.82 * z;
+    const dist = (2.8 + 0.18 * Math.sin(S.angle * 0.7)) * (1 - z) + 0.64 * z;
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
     // цель: «по пояс» (герой справа от панели меню) → лицо, сдвиг держит тот же угол от центра кадра
     const side = 0.85 * dist / 2.8;
     const cx = hp.x * (1 - z) + _face.x * z, cz = hp.z * (1 - z) + _face.z * z;
-    const tgY = (hp.y + 1.12) * (1 - z) + (_face.y - 0.02) * z;
-    const camY = (hp.y + 1.38 + 0.08 * Math.sin(S.angle * 0.5)) * (1 - z) + (_face.y + 0.03) * z;
+    const tgY = (hp.y + 1.12) * (1 - z) + (_face.y - 0.05) * z;
+    const camY = (hp.y + 1.38 + 0.08 * Math.sin(S.angle * 0.5)) * (1 - z) + (_face.y + 0.01) * z;
     camera.position.set(cx + Math.sin(yaw) * dist, camY, cz + Math.cos(yaw) * dist);
     _tgt.set(cx - rx * side, tgY, cz - rz * side);
     camera.lookAt(_tgt);

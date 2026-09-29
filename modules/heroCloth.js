@@ -9,13 +9,16 @@
 // createCloth(THREE, { cols, rows, rest, anchor, parent, colliders, fwd, material, pleats, lod })
 //   rest — Float32Array мировых позиций частиц (строка 0 — верх), anchor — кость, к которой прибит верх,
 //   colliders — [{ a, b, r }] (кости-концы отрезка и радиус, м), fwd() → мировой вектор «вперёд» героя.
+//   plane — 'back' (плащ: не заходит вперёд корпуса), 'front' (полы спереди: не уходят назад, между ног),
+//   'none'; name — имя меша; uv — окно текстуры { u0, u1, v0, v1 } (полы без герба — нижняя часть холста).
 //   → { mesh, update(dt, lod), reset(), setWind(k), dispose() }
 
 const H = 1 / 60;                 // шаг симуляции
 const G = -9.8;
 
 export function createCloth(THREE, o) {
-  const { cols, rows, rest, anchor, parent, colliders = [], material, pleats = 3.5, pleatDepth = 0.014 } = o;
+  const { cols, rows, rest, anchor, parent, colliders = [], material, pleats = 3.5, pleatDepth = 0.014, plane = 'back' } = o;
+  const UVW = o.uv || { u0: 0, u1: 1, v0: 0, v1: 1 };
   const N = cols * rows;
   const P = new Float32Array(N * 3), Q = new Float32Array(N * 3), W = new Float32Array(N), L = new Float32Array(N * 3);
   const m4 = new THREE.Matrix4(), v = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3(), f = new THREE.Vector3();
@@ -47,7 +50,7 @@ export function createCloth(THREE, o) {
   const geo = new THREE.BufferGeometry();
   const rpos = new Float32Array(RN * 3), ruv = new Float32Array(RN * 2);
   // u — справа налево героя, развёрнуто так, чтобы снаружи (вид из-за спины) герб читался не зеркально
-  for (let j = 0; j < rr; j++) for (let i = 0; i < rc; i++) { const k = j * rc + i; ruv[k * 2] = 1 - i / (rc - 1); ruv[k * 2 + 1] = 1 - j / (rr - 1); }
+  for (let j = 0; j < rr; j++) for (let i = 0; i < rc; i++) { const k = j * rc + i; ruv[k * 2] = UVW.u0 + (UVW.u1 - UVW.u0) * (1 - i / (rc - 1)); ruv[k * 2 + 1] = UVW.v0 + (UVW.v1 - UVW.v0) * (1 - j / (rr - 1)); }
   const idx = [];
   for (let j = 0; j < rr - 1; j++) for (let i = 0; i < rc - 1; i++) {
     const a0 = j * rc + i, a1 = a0 + 1, b0 = a0 + rc, b1 = b0 + 1;
@@ -58,7 +61,7 @@ export function createCloth(THREE, o) {
   geo.setAttribute('uv', new THREE.BufferAttribute(ruv, 2));
   geo.setIndex(idx);
   const mesh = new THREE.Mesh(geo, material);
-  mesh.name = 'cape';
+  mesh.name = o.name || 'cape';
   mesh.frustumCulled = false;
   mesh.castShadow = true; mesh.receiveShadow = true;
   parent.add(mesh);
@@ -107,8 +110,10 @@ export function createCloth(THREE, o) {
     // и выше (при резкой остановке не перелетает через голову)
     const px = x - hipP.x, pz = z - hipP.z;
     const ahead = px * fw.x + pz * fw.z;
-    const lim = y < hipP.y + backH ? backLim : backLim + 0.03;
-    if (ahead > lim) { x -= fw.x * (ahead - lim); z -= fw.z * (ahead - lim); }
+    if (plane === 'back') {
+      const lim = y < hipP.y + backH ? backLim : backLim + 0.03;
+      if (ahead > lim) { x -= fw.x * (ahead - lim); z -= fw.z * (ahead - lim); }
+    } else if (plane === 'front' && ahead < backLim) { x += fw.x * (backLim - ahead); z += fw.z * (backLim - ahead); }
     // потолок: не выше верха своего столбца (плащ не взлетает над плечами)
     const top = P[(k % cols) * 3 + 1] + 0.06;
     if (y > top) y = top;

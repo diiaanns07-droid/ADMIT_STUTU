@@ -35,12 +35,14 @@ const PRESETS = {
     metal: 0xd8c08a, metal2: 0xe8d6a0, leather: 0x8a6a4a, cloth: 0xe8e4d8, glow: 0x7fe8ff,
     pauldrons: null, bracers: false, belt: 'pouches', pouches: 1, dagger: 'left', rings: false, sigil: false,
     cape: { w: 0.5, len: 0.98, color: 0xd6cdb8, trim: 0xc9a45c, emblem: 'leaf', lining: 0x5f7d6a }, bow: { wood: 0xb9a888, rough: 0.62 }, quiver: 'hip',
+    tabard: { panels: [{ az: 0.42, w: 0.11, len: 0.66, pleats: 0.8 }, { az: -0.42, w: 0.11, len: 0.66, pleats: 0.8 }] },
   },
   // Тёмная чародейка на теле Quaternius: воронёные наплечники, длинный плащ, посох с кристаллом ночи
   witchQ: {
     metal: 0x34303e, metal2: 0x9a8fc4, leather: 0x1e1826, cloth: 0x160f22, glow: 0xa77bff,
     pauldrons: 'plate', bracers: false, belt: 'pouches', pouches: 2, dagger: 'right', rings: false, sigil: true,
     cape: { w: 0.6, len: 1.3, color: 0x1a1128, trim: 0xb8aee0, emblem: 'moon', lining: 0x40235f }, staff: { crystal: 0x9fe0ff, glow: 0xa77bff, style: 'crescent', wood: 0x1b1522 },
+    tabard: { panels: [{ az: 0, w: 0.26, len: 0.8, emblem: true }, { az: 1.12, w: 0.17, len: 0.7 }, { az: -1.12, w: 0.17, len: 0.7 }] },
   },
   // Лучница (Quaternius Ranger): лук и колчан, кинжал
   scout: {
@@ -1157,6 +1159,74 @@ export function dressHero(THREE, vrm, opts = {}) {
     stick(grp, chestB, c0, new THREE.Quaternion());
   }
 
+  // ---------------- полы мантии (чародейка, эльфийка): полотнища ткани с пояса — силуэт мантии, а не
+  // костюма лучницы. Материал плаща (вышивка, герб, подкладка — без новых текстур): переднее полотнище
+  // с гербом, боковые — нижняя часть холста (кайма и подол без герба). Физика ткани, прибиты к тазу,
+  // обтекают бёдра и голени; переднее не уходит назад между ног.
+  const tabards = [];
+  if (P.tabard && capeMat && bp.hips) {
+    // высота: верх полотнищ — под нижним ремнём костюма (ремень прячет край, где ткань прибита)
+    const v = new THREE.Vector3();
+    let beltLo = Infinity;
+    vrm.scene.traverse((o) => {
+      if (!o.isSkinnedMesh || !o.visible || !/Belt/.test(o.name)) return;   // ремни костюма (не наш пояс с подсумками)
+      const pa = o.geometry.attributes.position;
+      for (let i = 0; i < pa.count; i++) { o.getVertexPosition(i, v); v.applyMatrix4(o.matrixWorld); if (v.clone().sub(bp.hips).dot(FWD) > 0) beltLo = Math.min(beltLo, v.y); }
+    });
+    const yBelt = Number.isFinite(beltLo) ? beltLo + 0.025 : bp.hips.y + (P.tabard.y ?? 0.06);
+    // обхват тела на этой высоте по секторам азимута (без ремней, капюшона, волос): ткань прилегает
+    const SEC = 24, secR = new Float32Array(SEC);
+    vrm.scene.traverse((o) => {
+      if (!o.isSkinnedMesh || !o.visible || /Belt|Hood|Hair|Eye|Face|Brow/i.test(o.name)) return;
+      const pa = o.geometry.attributes.position;
+      for (let i = 0; i < pa.count; i++) {
+        o.getVertexPosition(i, v); v.applyMatrix4(o.matrixWorld);
+        if (Math.abs(v.y - yBelt) > 0.035) continue;
+        v.sub(bp.hips);
+        const f = v.dot(FWD), l = v.dot(LEFT), r = Math.hypot(f, l);
+        if (r > 0.3) continue;
+        const k = Math.floor(((Math.atan2(l, f) + Math.PI) / (Math.PI * 2)) * SEC) % SEC;
+        secR[k] = Math.max(secR[k], r);
+      }
+    });
+    const hipsCap = bodyCaps.find((c) => c.name === 'hips');
+    const Rdef = hipsCap ? hipsCap.r - 0.02 : 0.14;
+    const Rat = (ph) => {
+      const x = ((ph + Math.PI) / (Math.PI * 2)) * SEC - 0.5, k0 = Math.floor(x), t3 = x - k0;
+      const g = (k) => secR[((k % SEC) + SEC) % SEC] || Rdef;
+      return g(k0) * (1 - t3) + g(k0 + 1) * t3;
+    };
+    const holder = model || vrm.scene;
+    const _mq2 = new THREE.Quaternion();
+    const legCaps = bodyCaps.filter((c) => /Leg/.test(c.name)).map((c) => ({ ...c, r: c.r - 0.008 }));   // запас капсул (+0.018) велик для прилегающей ткани
+    for (const pn of P.tabard.panels) {
+      const cols = 7, rows = 12;
+      const R0 = Rat(pn.az) + 0.008;
+      const ah = pn.w / 2 / R0;
+      const rest = new Float32Array(cols * rows * 3);
+      for (let j = 0; j < rows; j++) {
+        const t2 = j / (rows - 1);
+        for (let i = 0; i < cols; i++) {
+          // столбцы — по убыванию азимута (обход как у плаща: лицевая сторона треугольников — к телу)
+          const ph = pn.az + ah - (2 * ah * i) / (cols - 1);
+          const r = Rat(ph) + 0.008 + (0.02 + 0.06 * t2) * (j ? 1 : 0);
+          const p = new THREE.Vector3(bp.hips.x, yBelt - t2 * pn.len, bp.hips.z).addScaledVector(FWD, Math.cos(ph) * r).addScaledVector(LEFT, Math.sin(ph) * r);
+          p.toArray(rest, (j * cols + i) * 3);
+        }
+      }
+      const cl = createCloth(THREE, {
+        cols, rows, rest, anchor: raw('hips'), parent: holder, colliders: legCaps, material: capeMat,
+        pleats: pn.pleats ?? 1.5, pleatDepth: 0.008, name: 'tabard', plane: Math.abs(pn.az) < 0.5 ? 'front' : 'none',
+        uv: pn.emblem ? { u0: 0, u1: 1, v0: 0, v1: 1 } : { u0: 0, u1: 1, v0: 0, v1: 0.62 },
+        hips: raw('hips'), back: { lim: 0.03, h: 0.3 },
+        fwd: (out) => out.set(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(_mq2)),
+        floor: () => holder.getWorldPosition(new THREE.Vector3()).y,
+      });
+      tabards.push(cl);
+    }
+    names.push('tabard');
+  }
+
   // ---------------- кадр: ткань, свечение, LOD
   let t = 0, lodL = 0;
   const perf = { cloth: 0, hair: 0 }; // мс на кадр (скользящее среднее) — для QA
@@ -1166,6 +1236,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     const now = typeof performance !== 'undefined' ? () => performance.now() : () => Date.now();
     let t0 = now();
     if (cloth) { try { cloth.update(dt, lodL); } catch (e) { /* ткань не критична */ } }
+    for (const tb of tabards) { try { tb.update(dt, lodL); } catch (e) { /* полы не критичны */ } }
     let t1 = now(); perf.cloth += (t1 - t0 - perf.cloth) * 0.1; t0 = t1;
     if (hair) { try { hair.update(dt, lodL); } catch (e) { /* пряди не критичны */ } }
     if (plume) { try { plume.update(dt, lodL); } catch (e) { /* плюмаж не критичен */ } }
@@ -1215,6 +1286,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     // ресницы вдали — субпиксельные полоски с альфа-тестом (мерцали бы): только на ближнем плане
     if (lids && lids.lashes) for (const o of lids.lashes) o.visible = l === 0;
     if (cloth) { cloth.mesh.castShadow = l === 0; cloth.setWind(l >= 2 ? 0 : 1); }
+    for (const tb of tabards) { tb.mesh.castShadow = l === 0; tb.setWind(l >= 2 ? 0 : 1); }
     if (hair) hair.setWind(l >= 2 ? 0 : 1);
     if (plume) plume.setWind(l >= 2 ? 0 : 1);
     if (ribbons) { ribbons.setWind(l >= 2 ? 0 : 1); ribbons.mesh.castShadow = l === 0; }
@@ -1302,6 +1374,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     for (const p of parts) collect(p.obj);
     collect(bowRig && bowRig.group); collect(staffRig && staffRig.group); collect(arrow);
     if (cloth) cloth.dispose();
+    for (const tb of tabards) tb.dispose();
     if (hair) hair.dispose();
     if (plume) plume.dispose();
     if (ribbons) { ribbons.dispose(); for (const g of ribbons.pendants || []) if (g.parent) g.parent.remove(g); }
