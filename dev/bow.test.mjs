@@ -158,6 +158,24 @@ test('серия быстрых недонатянутых выстрелов п
   ok(rel.slice(1).some((r) => r.rapid), 'нет пометки rapid');
   ok(!rel[0].rapid, 'первый выстрел помечен rapid');
 });
+test('шум трекинга: один «раскрытый» кадр при полном натяжении — не выстрел; кисть у лица пропала на 250 мс — стрела на месте', () => {
+  const S = makeScene();
+  const bow = createBowGesture();
+  let rel = 0, glitchT = null, lostT = null;
+  for (const f of shotFrames(S, shotScript({ f: 1, holdMs: 1200 }))) {
+    let hands = f.hands;
+    if (f.phase === 'hold') {
+      if (glitchT === null) glitchT = f.t;
+      if (f.t - glitchT > 150 && f.t - glitchT < 190) hands = { left: f.hands.left, right: handAt(S, 'right', 0.28, -0.45, SHAPES.pinchOpen, { size: 0.075 }) };
+      if (f.t - glitchT > 500 && f.t - glitchT < 750) hands = { left: f.hands.left };
+    }
+    bow.push(buildHandFrame(obsOf(S, f.t, hands), S.pose()));
+    const r = bow.read(f.t);
+    if (r.release) { rel++; if (f.phase === 'hold') lostT = f.t; }
+  }
+  ok(lostT === null, 'выстрел от шума во время удержания');
+  ok(rel === 1, `выстрелов ${rel}`);
+});
 test('гистерезис выхода: левый кулак пропал на 120 мс — стойка держится; на 400 мс — выход', () => {
   const S = makeScene();
   for (const [gap, expectActive] of [[120, true], [400, false]]) {
