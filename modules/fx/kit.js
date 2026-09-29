@@ -160,6 +160,7 @@ attribute vec4 iG; // groundY, fadeIn, sizeCurve, seed
 uniform float uTime;
 uniform float uRampRows;
 uniform float uMaxAng;
+uniform float uHdr;
 uniform sampler2D uRamp;
 varying vec2 vUv;
 varying vec4 vCol;
@@ -205,7 +206,7 @@ void main() {
   fl -= ab * 16.0;
   float spr = floor(fl + 0.5);
   float fin = iG.y > 0.0 ? clamp(k / iG.y, 0.0, 1.0) : 1.0;
-  vec3 col = fxRival(fxLin(rc.rgb), rival) * iE.y;
+  vec3 col = fxRival(fxLin(rc.rgb), rival) * min(iE.y, 3.0) * uHdr; // uHdr — калибровка под bloom игры
   vCol = vec4(col, rc.a * iE.z * fin);
   vBlend = ab;
   float size = mix(iC.x, iC.y, pow(k, iG.z));
@@ -318,7 +319,7 @@ export function createFxKit(deps) {
   geo.instanceCount = 0;
   const partMat = new THREE.ShaderMaterial({
     uniforms: {
-      uTime: { value: 0 }, uRamp: { value: ramp.tex }, uAtlas: { value: atlas }, uRampRows: { value: RAMP_ROWS }, uMaxAng: { value: 0.36 },
+      uTime: { value: 0 }, uRamp: { value: ramp.tex }, uAtlas: { value: atlas }, uRampRows: { value: RAMP_ROWS }, uMaxAng: { value: 0.36 }, uHdr: { value: num(deps.hdr, 0.7) },
     },
     vertexShader: VS_PART, fragmentShader: FS_PART,
     depthTest: true, side: THREE.DoubleSide, ...premulBlend(THREE),

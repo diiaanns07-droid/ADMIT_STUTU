@@ -149,7 +149,7 @@ export function register(fx) {
     kit.flash(st, { color: P.hot, size: [0.5, 2.4], dur: 0.2, intensity: 3.2, sprite: 'star', pull: 0, rival: R });
     let tr = null;
     if (fx.trails) {
-      try { tr = fx.trails.create({ width: 0.55 * sc, life: 0.42, color: P.mid, hot: P.core, intensity: 2.6, style: 'fire', maxPoints: 26, minDist: 0.25, rival: R ? 1 : 0 }); } catch (e) { tr = null; }
+      try { tr = fx.trails.create({ width: 0.42 * sc, life: 0.36, color: P.mid, hot: P.core, intensity: 1.8, style: 'fire', maxPoints: 26, minDist: 0.25, rival: R ? 1 : 0 }); } catch (e) { tr = null; }
       if (tr && tr.push) { try { tr.push(st); } catch (e) { tr = null; } }
     }
     const prev = new V3().copy(st);
