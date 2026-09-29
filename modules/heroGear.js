@@ -22,11 +22,35 @@ const PRESETS = {
     pauldrons: 'plate', bracers: true, belt: true, pouches: 2, dagger: 'right', rings: true,
     cape: { w: 0.5, len: 1.25, color: 0x16121f, trim: 0x8f8fb5 }, staff: { crystal: 0x8fd8ff, glow: 0x9d7bff },
   },
-  // Пепельный страж: бронза и уголь, тяжёлые латы, посох-клинок с углём клятвы
+  // Пепельный страж (латы Quaternius Knight): плащ, посох с углём клятвы, пылающая печать на груди
   warden: {
     metal: 0x8a6a45, metal2: 0xd8b070, leather: 0x2c2018, cloth: 0x3a1f1a, glow: 0xff8a3a,
-    pauldrons: 'heavy', bracers: true, belt: true, pouches: 2, dagger: null, rings: true, chest: true,
-    cape: { w: 0.56, len: 1.3, color: 0x2a1a17, trim: 0xd8b070 }, staff: { crystal: 0xffb46a, glow: 0xff7a2a },
+    pauldrons: null, bracers: false, belt: 'pouches', pouches: 2, dagger: null, rings: false, sigil: true,
+    cape: { w: 0.62, len: 1.3, color: 0x2a1a17, trim: 0xd8b070 }, staff: { crystal: 0xffb46a, glow: 0xff7a2a },
+  },
+  // Эльфийка на теле Quaternius: короткий белый плащ, лук и колчан, грозовые руны
+  sylvan: {
+    metal: 0xd8c08a, metal2: 0xe8d6a0, leather: 0x8a6a4a, cloth: 0xe8e4d8, glow: 0x7fe8ff,
+    pauldrons: null, bracers: false, belt: 'pouches', pouches: 1, dagger: 'left', rings: false, sigil: false,
+    cape: { w: 0.5, len: 0.95, color: 0xe6e2d6, trim: 0xd8c08a }, bow: true, quiver: true,
+  },
+  // Тёмная чародейка на теле Quaternius: воронёные наплечники, длинный плащ, посох с кристаллом ночи
+  witchQ: {
+    metal: 0x34303e, metal2: 0x9a8fc4, leather: 0x1e1826, cloth: 0x160f22, glow: 0xa77bff,
+    pauldrons: 'plate', bracers: false, belt: 'pouches', pouches: 2, dagger: 'right', rings: false, sigil: true,
+    cape: { w: 0.56, len: 1.3, color: 0x140e1e, trim: 0x9a8fc4 }, staff: { crystal: 0x9fe0ff, glow: 0xa77bff },
+  },
+  // Лучница (Quaternius Ranger): лук и колчан, кинжал
+  scout: {
+    metal: 0xb0b4bc, metal2: 0xc9a45c, leather: 0x4a3322, cloth: 0x234a2a, glow: 0x9dffb0,
+    pauldrons: null, bracers: false, belt: 'pouches', pouches: 2, dagger: 'right', rings: false,
+    bow: true, quiver: true,
+  },
+  // Архимаг (Quaternius Wizard): посох-громоотвод, плащ с рунами, наручи, перстни
+  magus: {
+    metal: 0x6a6f7c, metal2: 0xd8b070, leather: 0x2a2230, cloth: 0x1c2438, glow: 0x8fd8ff,
+    pauldrons: 'plate', bracers: true, belt: 'pouches', pouches: 2, dagger: null, rings: true, sigil: false,
+    cape: { w: 0.62, len: 1.35, color: 0x1a2236, trim: 0xd8b070 }, staff: { crystal: 0xbfe8ff, glow: 0x6fb8ff },
   },
 };
 
@@ -86,6 +110,28 @@ function runeTex(THREE) {
   }, false);
 }
 
+// волосы: вертикальные пряди разной яркости, альфа тает к краям и к кончику (яркость — R, альфа — A)
+function hairTex(THREE) {
+  return canvasTex(THREE, 'hair', 128, (g, N) => {
+    const W = N, H = N * 4;
+    g.canvas.width = W; g.canvas.height = H;
+    g.clearRect(0, 0, W, H);
+    for (let i = 0; i < 220; i++) {
+      const x = rnd() * W, w = 1.2 + rnd() * 2.6, v = 150 + rnd() * 105, a = 0.55 + rnd() * 0.45;
+      const tip = H * (0.72 + rnd() * 0.28);
+      const grd = g.createLinearGradient(0, 0, 0, tip);
+      grd.addColorStop(0, `rgba(${v},${v},${v},${a})`); grd.addColorStop(0.8, `rgba(${v},${v},${v},${a})`); grd.addColorStop(1, `rgba(${v},${v},${v},0)`);
+      g.fillStyle = grd;
+      g.beginPath(); g.moveTo(x, 0); g.bezierCurveTo(x + (rnd() - 0.5) * 6, tip * 0.4, x + (rnd() - 0.5) * 8, tip * 0.8, x + (rnd() - 0.5) * 5, tip);
+      g.lineTo(x + w, tip); g.bezierCurveTo(x + w, tip * 0.7, x + w, tip * 0.3, x + w, 0); g.closePath(); g.fill();
+    }
+    // края пряди мягче
+    const edge = g.createLinearGradient(0, 0, W, 0);
+    edge.addColorStop(0, 'rgba(0,0,0,1)'); edge.addColorStop(0.12, 'rgba(0,0,0,0)'); edge.addColorStop(0.88, 'rgba(0,0,0,0)'); edge.addColorStop(1, 'rgba(0,0,0,1)');
+    g.globalCompositeOperation = 'destination-out'; g.fillStyle = edge; g.fillRect(0, 0, W, H); g.globalCompositeOperation = 'source-over';
+  }, true);
+}
+
 // ---------------------------------------------------------------- геометрия
 function plateGeo(THREE, r, arc, lames, drop) {
   // наплечник: несколько выпуклых пластин-«ламелей» одна под другой
@@ -103,7 +149,7 @@ function capeGeo(THREE, topW, w, len, cols = 12, rows = 18) {
   // сверху — по ширине плеч и огибает спину, книзу шире и ровнее; складки — лёгкая волна по ширине
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) {
-    const t = -p.getY(i) / len, u = p.getX(i) * 2; // u: −1..1
+    const t = Math.min(1, Math.max(0, -p.getY(i) / len)), u = p.getX(i) * 2; // u: −1..1
     const width = topW + (w - topW) * Math.sqrt(t);
     const wrapK = (1 - t) * 0.09 + 0.02;
     p.setX(i, u * width * 0.5);
@@ -132,7 +178,8 @@ function bowGeo(THREE, len) {
   return { geo: g, tipZ: pts[0].z };
 }
 
-export function dressHero(THREE, vrm, { preset = 'ranger', model = null, atmosphere = null, quality = 'medium', shading = 'realistic' } = {}) {
+export function dressHero(THREE, vrm, opts = {}) {
+  const { preset = 'ranger', model = null, atmosphere = null, quality = 'medium' } = opts;
   const P = PRESETS[preset] || PRESETS.ranger;
   const H = vrm.humanoid;
   const raw = (b) => (H.getRawBoneNode ? H.getRawBoneNode(b) : null) || H.getNormalizedBoneNode(b);
@@ -231,6 +278,16 @@ export function dressHero(THREE, vrm, { preset = 'ranger', model = null, atmosph
     stick(grp, chestB, bp[chestB].clone().addScaledVector(UP, -0.02).addScaledVector(FWD, 0.015), modelQ);
   }
 
+  // ---------------- печать клятвы на груди (светящийся знак поверх лат)
+  if (P.sigil && bp[chestB]) {
+    const grp = new THREE.Group(); grp.name = 'sigil';
+    const disk = new THREE.Mesh(G(new THREE.CircleGeometry(0.055, 24)), Mt(new THREE.MeshBasicMaterial({ map: rune, color: new THREE.Color(P.glow).multiplyScalar(2.4), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })));
+    grp.add(disk);
+    const ring = new THREE.Mesh(G(new THREE.TorusGeometry(0.06, 0.006, 5, 28)), mats.trim); grp.add(ring);
+    const core = new THREE.Mesh(G(new THREE.OctahedronGeometry(0.016)), mats.glow); core.position.z = 0.008; grp.add(core);
+    stick(grp, chestB, bp[chestB].clone().addScaledVector(FWD, 0.17).addScaledVector(UP, 0.02), modelQ);
+  }
+
   // ---------------- наручи
   if (P.bracers && bp.leftLowerArm) {
     for (const side of ['left', 'right']) {
@@ -257,12 +314,14 @@ export function dressHero(THREE, vrm, { preset = 'ranger', model = null, atmosph
     const grp = new THREE.Group(); grp.name = 'belt';
     const y = (bp.spine ? bp.hips.y * 0.55 + bp.spine.y * 0.45 : bp.hips.y + 0.04);
     const rx = Math.max(0.13, shoulderW * 0.42), rz = rx * 0.78;
-    const belt = new THREE.Mesh(G(new THREE.TorusGeometry(1, 0.018, 6, 36)), mats.leather);
-    belt.rotation.x = Math.PI / 2; belt.scale.set(rx, rz, 1.5);
-    grp.add(belt);
-    const buckle = new THREE.Mesh(G(new THREE.BoxGeometry(0.06, 0.05, 0.014)), mats.trim);
-    buckle.position.set(0, 0, rz + 0.006); grp.add(buckle);
-    const bgem = new THREE.Mesh(G(new THREE.OctahedronGeometry(0.012)), mats.glow); bgem.position.set(0, 0, rz + 0.016); grp.add(bgem);
+    if (P.belt !== 'pouches') {
+      const belt = new THREE.Mesh(G(new THREE.TorusGeometry(1, 0.018, 6, 36)), mats.leather);
+      belt.rotation.x = Math.PI / 2; belt.scale.set(rx, rz, 1.5);
+      grp.add(belt);
+      const buckle = new THREE.Mesh(G(new THREE.BoxGeometry(0.06, 0.05, 0.014)), mats.trim);
+      buckle.position.set(0, 0, rz + 0.006); grp.add(buckle);
+      const bgem = new THREE.Mesh(G(new THREE.OctahedronGeometry(0.012)), mats.glow); bgem.position.set(0, 0, rz + 0.016); grp.add(bgem);
+    }
     const pouchG = G(new THREE.BoxGeometry(0.06, 0.07, 0.035, 2, 2, 1));
     const flapG = G(new THREE.BoxGeometry(0.064, 0.025, 0.04));
     const n = P.pouches || 0;
@@ -289,6 +348,161 @@ export function dressHero(THREE, vrm, { preset = 'ranger', model = null, atmosph
     }
     const c = bp.hips.clone(); c.y = y;
     stick(grp, 'hips', c, modelQ);
+  }
+
+  // ---------------- острые уши эльфа (сквозь капюшон — узнаваемый силуэт)
+  if (opts.ears && bp.head) {
+    const skin = Mt(new Std({ name: 'gear-ear', color: 0xc08463, roughness: 0.55, ...(physical ? { sheen: 0.2, sheenColor: new THREE.Color(1, 0.7, 0.6) } : {}) }));
+    const earG = G(new THREE.ConeGeometry(0.013, 0.07, 6));
+    earG.translate(0, 0.033, 0);
+    for (const s of [1, -1]) {
+      const ear = new THREE.Mesh(earG, skin); ear.name = `elf-ear-${s > 0 ? 'l' : 'r'}`;
+      ear.scale.set(1, 1, 0.45);
+      const dir = LEFT.clone().multiplyScalar(s).addScaledVector(UP, 0.85).addScaledVector(FWD, -0.55).normalize();
+      stick(ear, 'head', bp.head.clone().addScaledVector(UP, 0.068).addScaledVector(LEFT, s * 0.066).addScaledVector(FWD, -0.012), qFromTo(new THREE.Vector3(0, 1, 0), dir));
+    }
+  }
+
+  // ---------------- длинные волосы (девушки): пряди у лица до груди и копна по спине из-под капюшона.
+  // Ленты-«карты» с текстурой прядей, одна геометрия на всю причёску; качание и инерция — в шейдере.
+  let hairU = null;
+  if (opts.hair && bp.head) {
+    const H = opts.hair;
+    const hairC = new THREE.Color(H.color || 0x3a2418);
+    hairU = { uTime: { value: 0 }, uLag: { value: new THREE.Vector3() }, uWind: { value: 1 } };
+    const hm = new Std({
+      name: 'gear-hair', color: hairC, map: hairTex(THREE), alphaTest: 0.38, side: THREE.DoubleSide, roughness: 0.55, envMapIntensity: 0.35, metalness: 0,
+      ...(physical ? { sheen: 0.3, sheenRoughness: 0.4, sheenColor: hairC.clone().multiplyScalar(1.6).lerp(new THREE.Color(1, 1, 1), 0.12), anisotropy: 0.45, anisotropyRotation: Math.PI / 2, specularIntensity: 0.35 } : {}),
+    });
+    hm.alphaToCoverage = true;
+    hm.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, hairU);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>
+attribute float aT; attribute float aSeed;
+uniform float uTime; uniform vec3 uLag; uniform float uWind;`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+  {
+    float t2 = aT * aT;
+    float w = sin( uTime * 2.1 + aSeed * 6.0 + aT * 4.0 ) * 0.018 + sin( uTime * 3.3 + aSeed * 11.0 ) * 0.008;
+    transformed.x += ( w * uWind - uLag.x * 0.35 ) * t2;
+    transformed.z += ( w * 0.6 * uWind - uLag.z * 0.4 ) * t2;
+    transformed.y += abs( uLag.z ) * 0.12 * t2;
+  }`);
+    };
+    hm.customProgramCacheKey = () => 'heroHair';
+    Mt(hm);
+    const pos = [], nrm = [], uv = [], tA = [], sd = [], idx = [];
+    // череп: вершины меша головы, привязанные к кости head (капюшоны и шлемы не считаются), в осях героя
+    const headBone = raw('head');
+    const sk = { minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9, minZ: 1e9, maxZ: -1e9, n: 0 };
+    const hv = new THREE.Vector3(), rel = new THREE.Vector3();
+    vrm.scene.traverse((o) => {
+      if (!o.isSkinnedMesh || /hood|hat|helm|armet|hair/i.test(o.name) || !o.geometry.attributes.skinIndex) return;
+      const bi = o.skeleton.bones.indexOf(headBone);
+      if (bi < 0) return;
+      const SI = o.geometry.attributes.skinIndex, SW = o.geometry.attributes.skinWeight;
+      for (let i = 0; i < SI.count; i += 2) {
+        let w = 0;
+        for (let k = 0; k < 4; k++) if (SI.getComponent(i, k) === bi) w += SW.getComponent(i, k);
+        if (w < 0.6) continue;
+        o.getVertexPosition(i, hv); hv.applyMatrix4(o.matrixWorld);
+        rel.copy(hv).sub(bp.head);
+        const x = rel.dot(LEFT), y = rel.dot(UP), z = rel.dot(FWD);
+        sk.minX = Math.min(sk.minX, x); sk.maxX = Math.max(sk.maxX, x); sk.minY = Math.min(sk.minY, y); sk.maxY = Math.max(sk.maxY, y);
+        sk.minZ = Math.min(sk.minZ, z); sk.maxZ = Math.max(sk.maxZ, z); sk.n++;
+      }
+    });
+    if (sk.n < 50) Object.assign(sk, { minX: -0.075, maxX: 0.075, minY: -0.02, maxY: 0.21, minZ: -0.1, maxZ: 0.1 });
+    const hH = sk.maxY - sk.minY;
+    // эллипсоид верха головы (от бровей вверх): центр и полуоси
+    const cy = sk.minY + hH * 0.62, ry = (sk.maxY - cy) * 1.05;
+    const cz = (sk.minZ + sk.maxZ) * 0.5 - 0.004, rz = (sk.maxZ - sk.minZ) * 0.5 * 1.06;
+    const cx = (sk.minX + sk.maxX) * 0.5, rx = (sk.maxX - sk.minX) * 0.5 * 1.08;
+    const toW = (x, y, z) => bp.head.clone().addScaledVector(LEFT, x).addScaledVector(UP, y).addScaledVector(FWD, z);
+    const headC = toW(cx, cy, cz);
+    // точка на эллипсоиде по направлению (az: 0 — назад, polar: 0 — макушка) и нормаль
+    const onSkull = (az, polar, k = 1) => {
+      const dx = Math.sin(az) * Math.sin(polar), dy = Math.cos(polar), dz = -Math.cos(az) * Math.sin(polar);
+      return { p: toW(cx + dx * rx * k, cy + dy * ry * k, cz + dz * rz * k), n: LEFT.clone().multiplyScalar(dx / rx).addScaledVector(UP, dy / ry).addScaledVector(FWD, dz / rz).normalize() };
+    };
+    const SEG = 12;
+    // прядь: корень root, изгиб наружу out, падение вниз на длину len, смещение вперёд/назад drift
+    const strand = (root, out, len, width, drift, seed) => {
+      const base = pos.length / 3;
+      const pts = [];
+      for (let j = 0; j <= SEG; j++) {
+        const t = j / SEG;
+        const p = root.clone().addScaledVector(out, 0.035 * Math.sin(Math.min(1, t * 3) * Math.PI * 0.5) + 0.01 * t).addScaledVector(UP, -len * t).add(drift.clone().multiplyScalar(t * t));
+        pts.push(p);
+      }
+      for (let j = 0; j <= SEG; j++) {
+        const t = j / SEG, p = pts[j];
+        const tan = (j < SEG ? pts[j + 1].clone().sub(p) : p.clone().sub(pts[j - 1])).normalize();
+        const side = tan.clone().cross(out).normalize();
+        const wv = width * (1 - 0.55 * t);
+        for (const k of [-1, 1]) {
+          const q = p.clone().addScaledVector(side, k * wv * 0.5);
+          pos.push(q.x, q.y, q.z); nrm.push(out.x, out.y, out.z); uv.push(k < 0 ? 0 : 1, 1 - t); tA.push(t); sd.push(seed);
+        }
+        if (j < SEG) { const a = base + j * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+      }
+    };
+    const len = H.len || 0.62;
+    // шапка волос: купол по эллипсоиду черепа; линия роста — у лба над бровями, сзади — у затылка
+    const capBase = pos.length / 3, CN = 20, CM = 9;
+    const browY = sk.minY + hH * 0.58;
+    for (let yI = 0; yI <= CM; yI++) {
+      for (let xI = 0; xI <= CN; xI++) {
+        const az = (xI / CN) * Math.PI * 2;
+        const back = -Math.cos(az) * 0.5 + 0.5;                   // 1 — лоб, 0 — затылок
+        const hl = browY + hH * (0.14 * back - 0.16 * (1 - back)); // высота линии роста
+        const pm = Math.acos(Math.max(-0.95, Math.min(0.95, (hl - cy) / ry)));
+        const { p, n } = onSkull(az, (yI / CM) * pm, 1.02);
+        pos.push(p.x, p.y, p.z); nrm.push(n.x, n.y, n.z); uv.push(0.2 + 0.6 * (xI / CN), 1 - (yI / CM) * 0.6); tA.push(0); sd.push(0);
+        if (yI < CM && xI < CN) { const i0 = capBase + yI * (CN + 1) + xI, i1 = i0 + CN + 1; idx.push(i0, i1, i0 + 1, i0 + 1, i1, i1 + 1); }
+      }
+    }
+    const capIdx = idx.length;
+    // копна по спине: веер корней по затылку, три слоя, до пояса
+    for (let layer = 0; layer < 3; layer++) {
+      const n = [11, 9, 7][layer];
+      for (let i = 0; i < n; i++) {
+        const a = (i / (n - 1) - 0.5) * [2.9, 2.4, 1.8][layer];      // угол от «прямо назад»
+        const out = FWD.clone().multiplyScalar(-Math.cos(a)).addScaledVector(LEFT, Math.sin(a)).normalize();
+        const root = onSkull(a, 1.2 + layer * 0.35, 1.02).p;
+        const drift = FWD.clone().multiplyScalar(-0.08 - 0.04 * Math.cos(a)).addScaledVector(out, 0.035);
+        strand(root, out, len * (0.92 + 0.16 * rnd()) * (1 - layer * 0.05), 0.11, drift, rnd());
+      }
+    }
+    // пряди у лица: по четыре с каждой стороны, падают на грудь перед плечами
+    for (const sgn of [1, -1]) {
+      for (let i = 0; i < 4; i++) {
+        const a = sgn * (1.62 + i * 0.2);
+        const out = FWD.clone().multiplyScalar(-Math.cos(a)).addScaledVector(LEFT, Math.sin(a)).normalize();
+        const root = onSkull(a, 1.35 + i * 0.12, 1.04).p;
+        const drift = FWD.clone().multiplyScalar(0.1 + i * 0.012).addScaledVector(LEFT, sgn * (0.035 + i * 0.01));
+        strand(root, out, len * (0.8 - i * 0.07), 0.085, drift, rnd());
+      }
+    }
+    const hg = new THREE.BufferGeometry();
+    hg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    hg.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+    hg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    hg.setAttribute('aT', new THREE.Float32BufferAttribute(tA, 1));
+    hg.setAttribute('aSeed', new THREE.Float32BufferAttribute(sd, 1));
+    hg.setIndex(idx);
+    // вершины — в мировых координатах позы Idle; переводим в систему группы (начало — центр черепа)
+    hg.translate(-headC.x, -headC.y, -headC.z);
+    hg.addGroup(0, capIdx, 0); hg.addGroup(capIdx, idx.length - capIdx, 1);
+    // шапка — непрозрачная (без альфы), пряди — с альфой и покачиванием
+    const capM = Mt(new Std({ name: 'gear-hair-cap', color: hairC.clone().multiplyScalar(0.85), map: hairTex(THREE), roughness: 0.62, metalness: 0, envMapIntensity: 0.25, ...(physical ? { sheen: 0.25, sheenRoughness: 0.45, sheenColor: hairC.clone().multiplyScalar(1.5) } : {}) }));
+    const hair = new THREE.Mesh(G(hg), [capM, hm]);
+    hair.name = 'hair-mesh'; hair.frustumCulled = false;
+    const grp = new THREE.Group(); grp.name = 'hair';
+    grp.add(hair);
+    stick(grp, 'head', headC, new THREE.Quaternion());
+    hair.castShadow = true;
   }
 
   // ---------------- кольца-руны
@@ -355,7 +569,9 @@ varying float vCapeT;`)
       const cg = new THREE.Mesh(G(new THREE.OctahedronGeometry(0.008)), mats.glow); cg.position.set(0, 0.008, 0); clasp.add(cg);
       grp.add(clasp);
     }
-    const top = bp[chestB].clone().addScaledVector(UP, 0.07).addScaledVector(FWD, -0.1);
+    // верх плаща — под наплечниками/воротом, вплотную к лопаткам (сверху кромка не видна)
+    const neckY = bp.neck ? bp.neck.y : bp[chestB].y + 0.12;
+    const top = bp[chestB].clone().setY(bp[chestB].y * 0.35 + neckY * 0.65 - 0.03).addScaledVector(FWD, -0.085);
     stick(grp, chestB, top, modelQ);
   }
 
@@ -382,7 +598,7 @@ varying float vCapeT;`)
     // в позе Idle: вертикально, чуть впереди и снаружи кулака
     const hand = bp.rightHand.clone();
     const fing = bp.rightMiddleProximal || hand.clone().addScaledVector(UP, -0.08);
-    const palm = hand.clone().lerp(fing, 0.8).addScaledVector(FWD, 0.02).addScaledVector(LEFT, -0.012);
+    const palm = hand.clone().lerp(fing, 0.75).addScaledVector(FWD, 0.015);
     const q = qFromTo(new THREE.Vector3(0, 1, 0), UP.clone().addScaledVector(FWD, 0.12).normalize());
     stick(grp, 'rightHand', palm, q);
     parts[parts.length - 1].spin = halo; parts[parts.length - 1].crystal = crystal;
@@ -407,9 +623,9 @@ varying float vCapeT;`)
       const diag = UP.clone().multiplyScalar(0.95).addScaledVector(LEFT, -0.45).normalize();
       const q = qFromTo(new THREE.Vector3(0, 1, 0), diag);
       const zNow = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
-      const want = FWD.clone().negate();
+      const want = FWD.clone(); // тетива к спине, рукоять выгибается назад от тела
       q.premultiply(new THREE.Quaternion().setFromAxisAngle(diag, Math.atan2(zNow.clone().cross(want).dot(diag), zNow.dot(want))));
-      stick(grp, chestB, back.clone().addScaledVector(FWD, -0.03), q);
+      stick(grp, chestB, back.clone().addScaledVector(FWD, -0.08), q);
       bow = grp;
     }
     if (P.quiver) {
@@ -454,6 +670,23 @@ varying float vCapeT;`)
         } else { prevPos.copy(vel); havePrev = true; }
       }
     }
+    if (hairU) {
+      hairU.uTime.value = t;
+      if (capeU) hairU.uLag.value.copy(capeU.uLag.value);
+      else if (root && dt > 1e-4) {
+        root.getWorldPosition(vel);
+        if (havePrev) {
+          const v = vel.clone().sub(prevPos).divideScalar(dt); prevPos.copy(vel);
+          if (v.lengthSq() > 400) v.set(0, 0, 0);
+          const hairRoot = parts.find((p) => p.obj.name === 'hair');
+          if (hairRoot) { hairRoot.obj.getWorldQuaternion(_q); v.applyQuaternion(_q.invert()); }
+          const k = 1 - Math.exp(-5 * dt);
+          lag.x += (Math.max(-1.2, Math.min(1.2, v.x * 0.15)) - lag.x) * k;
+          lag.z += (Math.max(-1.2, Math.min(1.2, v.z * 0.15)) - lag.z) * k;
+          hairU.uLag.value.copy(lag);
+        } else { prevPos.copy(vel); havePrev = true; }
+      }
+    }
     for (const p of parts) {
       if (p.spin) p.spin.rotation.z = t * 0.9;
       if (p.crystal) p.crystal.rotation.y = t * 0.6;
@@ -464,6 +697,7 @@ varying float vCapeT;`)
     lodL = l;
     for (const p of parts) p.obj.traverse((o) => { if (o.isMesh) o.castShadow = l === 0; });
     if (capeU) capeU.uWind.value = l >= 2 ? 0 : 1;
+    if (hairU) hairU.uWind.value = l >= 2 ? 0 : 1;
   }
   function setBowHeld(w) { void w; } // TODO: перенос лука в левую руку (C5 bowDraw) — №6 берёт через setPose
   function dispose() {

@@ -21,26 +21,55 @@
 // heroRoot не задан — экземпляр создаёт свой root (для удалённого игрока) и сам ставит его по snapLike.player.
 // snapLike: нужен только { player: { position, yaw, velocity, action, hp, … как в snapshot } }.
 
-import { loadVRM, retargetClip } from './vrmKit.js';
+import { loadVRM, loadHumanoidGLB, retargetClip } from './vrmKit.js';
 
 // Карточки героев: имя, класс, стихия и три строки описания — для меню №8 и витрины (heroShowcase).
 export const HEROES = Object.freeze({
   ashen: {
-    id: 'ashen', name: 'Пепельный страж', vrm: null, cls: 'Воин-маг', element: 'Пепел и пламя',
-    desc: ['Клятвенный страж павшего святилища.', 'Латы из закалённой бронзы, посох-клинок с углём клятвы.', 'Держит удар и отвечает огнём.'],
-    gear: 'warden', stance: 'staff',
+    id: 'ashen', name: 'Пепельный страж', vrm: null, glb: 'knight.glb', height: 1.84, cls: 'Воин-маг', element: 'Пепел и пламя',
+    desc: ['Клятвенный страж павшего святилища.', 'Латы из закалённой стали, посох с углём клятвы.', 'Держит удар и отвечает огнём.'],
+    gear: 'warden', stance: 'staff', adduct: 0.3, menuStance: 'Stance',
   },
+  // [HERO] V6: эльфийка и чародейка — реалистичные (тело и костюм Quaternius Ranger, перекраска, своё снаряжение)
   elf: {
-    id: 'elf', name: 'Эльфийка', vrm: 'elf.vrm', height: 1.72, cls: 'Лучница-заклинательница', element: 'Гроза',
+    id: 'elf', name: 'Эльфийка', vrm: null, glb: 'ranger.glb', height: 1.74, cls: 'Лучница-заклинательница', element: 'Гроза',
     desc: ['Следопыт Сияющего леса.', 'Лук из белого ясеня и перстни-руны на пальцах.', 'Бьёт издалека и уходит рывком.'],
-    gear: 'ranger', stance: 'bow',
+    gear: 'sylvan', stance: 'bow', adduct: 0.3, menuStance: 'IdleCalm', ears: true, hair: { color: 0xe6dcc0, len: 0.95 },
+    // зелёная ткань → белый шёлк с бирюзой, кожа доспеха → светлая замша
+    recolor: { MI_Ranger: [{ h: [65, 175], toH: 172, s: 0.35, v: 1.55 }, { h: [8, 48], toH: 38, s: 0.55, v: 1.45 }] },
   },
   dark: {
-    id: 'dark', name: 'Тёмная чародейка', vrm: 'dark.vrm', height: 1.7, cls: 'Чародейка', element: 'Тьма и лёд',
+    id: 'dark', name: 'Тёмная чародейка', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Чародейка', element: 'Тьма и лёд',
     desc: ['Изгнанница из башни Затмения.', 'Посох с кристаллом ночи, плащ с живыми рунами.', 'Сковывает льдом и рвёт тьмой.'],
-    gear: 'witch', stance: 'staff',
+    gear: 'witchQ', stance: 'staff', adduct: 0.3, menuStance: 'CastHold', hide: ['Female_Ranger_Acc_Pauldrons'], hair: { color: 0x1c1426, len: 1.05 },
+    // зелёная ткань → глубокий фиолетовый, кожа → почти чёрная
+    recolor: { MI_Ranger: [{ h: [65, 175], toH: 272, s: 1.1, v: 0.62 }, { h: [8, 48], toH: 255, s: 0.35, v: 0.42 }] },
+  },
+  // прежние аниме-героини VRoid (в меню не показываются; heroShading 'anime' — как было)
+  elfVroid: {
+    id: 'elfVroid', name: 'Эльфийка (VRoid)', vrm: 'elf.vrm', height: 1.72, cls: 'Лучница-заклинательница', element: 'Гроза',
+    desc: ['Следопыт Сияющего леса.', 'Аниме-модель VRoid (CC0).', 'Прежний вид героини.'],
+    gear: 'ranger', stance: 'bow', menuStance: 'IdleCalm', hidden: true,
+  },
+  darkVroid: {
+    id: 'darkVroid', name: 'Тёмная чародейка (VRoid)', vrm: 'dark.vrm', height: 1.7, cls: 'Чародейка', element: 'Тьма и лёд',
+    desc: ['Изгнанница из башни Затмения.', 'Аниме-модель VRoid (CC0).', 'Прежний вид героини.'],
+    gear: 'witch', stance: 'staff', menuStance: 'CastHold', hidden: true,
+  },
+  // [HERO] новые герои (Quaternius Modular Fantasy, CC0)
+  ranger: {
+    id: 'ranger', name: 'Лучница', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Лучница', element: 'Ветер',
+    desc: ['Разведчица пограничных застав.', 'Капюшон следопыта, длинный лук и колчан за спиной.', 'Натягивает тетиву рукой — стрела летит в цель.'],
+    gear: 'scout', stance: 'bow', adduct: 0.3, menuStance: 'IdleCalm', hair: { color: 0x5a3220, len: 0.85 },
+  },
+  archmage: {
+    id: 'archmage', name: 'Архимаг', vrm: null, glb: 'wizard.glb', height: 1.8, cls: 'Архимаг', element: 'Буря',
+    desc: ['Последний магистр Грозовой коллегии.', 'Посох-громоотвод и плащ, прошитый рунами.', 'Лепит сферы молний двумя руками.'],
+    gear: 'magus', stance: 'staff', adduct: 0.3, menuStance: 'CastHold',
   },
 });
+// порядок карточек в меню (№8 может брать отсюда)
+export const HERO_ORDER = Object.freeze(['ashen', 'elf', 'dark', 'ranger', 'archmage']); // elfVroid/darkVroid — скрытые
 
 // Клипы: [имя в игре, файл, имя клипа в файле, петля]. Первый найденный файл — основной.
 const KAY = 'anims_kaykit.glb';
@@ -246,15 +275,17 @@ export function createHeroModel({
   async function setHero(id) {
     let def = HEROES[id] || HEROES.ashen;
     // удалённый экземпляр не может взять процедурное тело мира: страж — на запасной модели
-    if (!def.vrm && !heroBody) def = { ...def, vrm: HEROES.dark.vrm, height: 1.78, fallbackOf: def.id };
-    if (def.id === S.hero && (S.ready || !def.vrm)) return;
+    if (!def.vrm && !def.glb && !heroBody) def = { ...def, glb: HEROES.ashen.glb, height: 1.84, fallbackOf: def.id };
+    if (def.id === S.hero && (S.ready || (!def.vrm && !def.glb))) return;
     const token = ++S.token;
     S.hero = def.id;
     clear();
-    if (!def.vrm) { showProcedural(true); parentAnchors(); S.ready = !!heroBody; return; }
+    if (!def.vrm && !def.glb) { showProcedural(true); parentAnchors(); S.ready = !!heroBody; return; }
     try {
-      const url = new URL(def.vrm, new URL(vrmUrl, base)).href;
-      const vrm = await loadVRM(THREE, url);
+      const url = def.glb ? new URL(def.glb, heroesBase).href : new URL(def.vrm, new URL(vrmUrl, base)).href;
+      const vrm = def.glb ? await loadHumanoidGLB(THREE, url) : await loadVRM(THREE, url);
+      if (def.recolor) await recolorHero(vrm, def.recolor);
+      if (def.hide) vrm.scene.traverse((o) => { if (o.isMesh && def.hide.some((n) => o.name.startsWith(n))) o.visible = false; });
       if (S.disposed || token !== S.token) { disposeVrm(vrm); return; }
       const lib = await buildClips(THREE, vrm, url, libUrls);
       if (S.disposed || token !== S.token) { disposeVrm(vrm); return; }
@@ -271,7 +302,7 @@ export function createHeroModel({
       wrapG.add(vrm.scene);
       const mixer = new THREE.AnimationMixer(vrm.scene);
       const legNames = new Set(LEG_VRM.map((b) => { const n = vrm.humanoid.getNormalizedBoneNode(b); return n && n.name; }).filter(Boolean));
-      const full = {}, upper = {};
+      const full = {}, upper = {}, lower = {};
       const names = new Set([...Object.keys(lib.clips), ...Object.keys(ALIAS)]);
       for (const name of names) {
         const clip = lib.clips[name] || lib.clips[ALIAS[name]];
@@ -284,6 +315,16 @@ export function createHeroModel({
           upperClips.set(clip, up);
         }
         upper[name] = mixer.clipAction(upperClips.get(clip));
+        // ноги отдельно: пока действие играет на корпусе, ноги целиком остаются на передвижении
+        if (LOCO.includes(name)) {
+          if (!lowerClips.has(clip)) {
+            const lo = clip.clone();
+            lo.name = `${clip.name}#lower`;
+            lo.tracks = lo.tracks.filter((tr) => legNames.has(tr.name.split('.')[0]));
+            lowerClips.set(clip, lo);
+          }
+          lower[name] = mixer.clipAction(lowerClips.get(clip));
+        }
       }
       root.add(wrapG);
       const H = vrm.humanoid;
@@ -295,22 +336,41 @@ export function createHeroModel({
       const tracked = new Set();
       for (const clip of Object.values(lib.clips)) for (const tr of clip.tracks) tracked.add(tr.name.split('.')[0]);
       const free = Object.values(bones).filter((b) => b && !tracked.has(b.name));
-      cur = { model: wrapG, vrm, mixer, full, upper, stride: lib.stride, loops: lib.loops, bones, free, scale: k, def, gear: null, shade: null, url };
+      cur = { model: wrapG, vrm, mixer, full, upper, lower, stride: lib.stride, loops: lib.loops, bones, free, scale: k, def, gear: null, shade: null, url };
       // оболочка: реалистичные материалы (modules/heroShading.js) и снаряжение (modules/heroGear.js)
       await dressUp(token);
       if (S.disposed || token !== S.token) return;
       showProcedural(false);
-      for (const n of LOCO) if (full[n]) { full[n].play(); full[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); }
+      for (const n of LOCO) if (full[n]) { full[n].play(); full[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); if (lower[n]) { lower[n].play(); lower[n].setEffectiveWeight(0); } }
       mixer.update(0);
       parentAnchors();
       S.ready = true;
+      if (stance) setStance(stance);
     } catch (e) {
       console.warn('[ASHEN] модель героя не загрузилась — процедурный герой:', e && e.message);
       if (token === S.token) { clear(); S.hero = heroBody ? 'ashen' : def.id; showProcedural(true); parentAnchors(); S.ready = !!heroBody; }
     }
   }
-  const upperClips = new WeakMap();
+  const upperClips = new WeakMap(), lowerClips = new WeakMap();
   function disposeVrm(vrm) { import('@pixiv/three-vrm').then((V) => { try { V.VRMUtils.deepDispose(vrm.scene); } catch (e) { /* ignore */ } }).catch(() => {}); }
+  // [HERO] модель не загрузилась: страж — процедурное тело мира, прочие — запасная модель
+  void disposeVrm;
+
+  // перекраска атласа костюма (heroShading.recolorTexture) — у каждого экземпляра своя текстура
+  async function recolorHero(vrm, rules) {
+    try {
+      const m = await import('./heroShading.js');
+      vrm.scene.traverse((o) => {
+        if (!o.isMesh) return;
+        for (const mt of [].concat(o.material)) {
+          const R = mt && rules[mt.name];
+          if (!R || !mt.map || mt.userData.recolored) continue;
+          const nt = m.recolorTexture(THREE, mt.map, R);
+          if (nt !== mt.map) { mt.map = nt; mt.userData.recolored = true; mt.needsUpdate = true; }
+        }
+      });
+    } catch (e) { console.warn('[HERO] перекраска', e && e.message); }
+  }
 
   async function dressUp(token) {
     if (!cur) return;
@@ -325,8 +385,10 @@ export function createHeroModel({
       if (token !== S.token || cur !== c) return;
       // снаряжение крепится в позе Idle (кадр 0): рукоять посоха вертикально в опущенной руке
       if (c.full.Idle) { c.full.Idle.play(); c.full.Idle.setEffectiveWeight(1); c.mixer.update(0); }
+      const add = c.def.adduct ?? 0.22; // та же поза рук, что в игре (см. applyLife)
+      adduct(c.bones.leftUpperArm, -add); adduct(c.bones.rightUpperArm, add);
       c.vrm.update(0);
-      c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading });
+      c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null });
       if (c.full.Idle) c.full.Idle.stop();
     } catch (e) { console.warn('[HERO] heroGear недоступен, без снаряжения:', e && e.message); }
   }
@@ -405,15 +467,22 @@ export function createHeroModel({
     const v = turnW && sp < 0.3 ? Math.abs(S.yawRate) * 0.35 : sp;
     S.phase = (S.phase + (dt * v) / Math.max(0.3, cyc)) % 1;
     const kf = 1 - Math.exp(-10 * dt);
+    // действие перекрывает передвижение (микшер нормирует сумму весов — иначе вышло бы 50/50):
+    // на всё тело — передвижение гаснет; только корпус — ноги берут отдельные «нижние» клипы
+    const aw = act ? clamp(act.getEffectiveWeight(), 0, 1) : 0;
+    const keepFull = 1 - aw, keepLower = actUpper ? aw : 0;
     for (const n of LOCO) {
       const a = F[n];
       if (!a) continue;
       S.wLoco[n] += ((want[n] || 0) - S.wLoco[n]) * kf;
-      a.setEffectiveWeight(S.wLoco[n]);
+      a.setEffectiveWeight(S.wLoco[n] * keepFull);
       a.enabled = true;
-      if (n === 'Idle') { a.timeScale = 1; continue; }
+      const lo = cur.lower && cur.lower[n];
+      if (lo) { lo.enabled = true; lo.setEffectiveWeight(S.wLoco[n] * keepLower); }
+      if (n === 'Idle') { a.timeScale = 1; if (lo) { lo.timeScale = 0; lo.time = a.time; } continue; }
       a.timeScale = 0;
       a.time = S.phase * a.getClip().duration;
+      if (lo) { lo.timeScale = 0; lo.time = a.time; }
     }
     void sprint;
   }
@@ -511,9 +580,9 @@ export function createHeroModel({
     if (B.leftShoulder) B.leftShoulder.rotateZ(br * 0.6);
     if (B.rightShoulder) B.rightShoulder.rotateZ(-br * 0.6);
     S.lookT -= dt;
-    if (S.lookT <= 0) { S.lookT = 2.5 + Math.random() * 3.5; S.lookWant = S.idleT > 2.5 ? (Math.random() - 0.5) * 1.1 : 0; }
+    if (S.lookT <= 0) { S.lookT = 2.5 + Math.random() * 3.5; S.lookWant = S.idleT > 4 ? (Math.random() - 0.5) * 0.6 : 0; }
     if (!idle) S.lookWant = 0;
-    S.look += (S.lookWant - S.look) * (1 - Math.exp(-2.2 * dt));
+    S.look += (S.lookWant - S.look) * (1 - Math.exp(-1.6 * dt));
     if (B.neck) B.neck.rotateY(S.look * 0.45);
     if (B.head) B.head.rotateY(S.look * 0.55);
     S.chestTwist += (twist - S.chestTwist) * (1 - Math.exp(-8 * dt));
@@ -526,6 +595,19 @@ export function createHeroModel({
 
   // ---------------------------------------------------------------- кадр
   function resetFree() { for (const b of cur.free) b.quaternion.identity(); }
+  // Микшер three.js пишет в кость, только если значение клипа изменилось с прошлого кадра
+  // (PropertyMixer.apply). Поэтому наши добавки (дыхание, оглядывание, поза, сведение рук) нельзя
+  // оставлять на костях: после микшера запоминаем «чистую» позу и возвращаем её перед следующим кадром.
+  function saveClean() {
+    const L = cur.touched || (cur.touched = Object.values(cur.bones).filter(Boolean));
+    if (!cur.clean) cur.clean = L.map(() => new THREE.Quaternion());
+    for (let i = 0; i < L.length; i++) cur.clean[i].copy(L[i].quaternion);
+  }
+  function restoreClean() {
+    if (!cur.clean) return;
+    const L = cur.touched;
+    for (let i = 0; i < L.length; i++) L[i].quaternion.copy(cur.clean[i]);
+  }
 
   function update(dt, snap, events) {
     if (!S.ready || !cur) return;
@@ -537,9 +619,13 @@ export function createHeroModel({
     }
     // LOD: реже обновляем удалённого/дальнего героя
     if (S.lod >= 2) { S.lodAcc += dt; if (S.lodAcc < 0.1) return; dt = S.lodAcc; S.lodAcc = 0; }
+    restoreClean();
     resetFree();
-    if (!P) { // меню: покой
+    if (!P) { // меню: покой (или стойка витрины)
+      S.yawRate = 0; S.prevYaw = null;
+      updateLoco(dt, 0, 0, 0, false);
       cur.mixer.update(dt);
+      saveClean();
       applyLife(dt, true, 0);
       applyPose(dt);
       vrmTick(dt);
@@ -557,7 +643,7 @@ export function createHeroModel({
     if (status === 'defeat' || status === 'victory') {
       W.rotation.set(0, 0, 0);
       updateLoco(dt, 0, 0, 0, false);
-      cur.mixer.update(dt); vrmTick(dt); return;
+      cur.mixer.update(dt); saveClean(); vrmTick(dt); return;
     }
 
     // скорость в осях героя (вперёд = +z, влево = +x)
@@ -627,6 +713,7 @@ export function createHeroModel({
     S.recoil = Math.max(0, S.recoil - dt * 3.5);
     W.rotation.set(S.lean - 0.18 * Math.sin(Math.PI * S.recoil), 0, 0);
     cur.mixer.update(dt);
+    saveClean();
 
     // lock-on: грудь к цели (C4 snap.lockTarget, по умолчанию — босс в бою)
     let twist = 0;
@@ -668,6 +755,14 @@ export function createHeroModel({
   }
   function setMirror(m) { mirror.data = m && m.valid ? m : null; }
   function getAnchors() { return anchors; }
+  // [HERO] стойка класса в меню (витрина): клип в цикле на всё тело, пока нет боя
+  let stance = null;
+  function setStance(name) {
+    stance = name || null;
+    if (!cur) return;
+    if (stance && cur.full[stance]) { if (holdName !== 'stance' || actName !== stance) playAct(stance, { loop: true, fade: 0.45, holdKey: 'stance' }); }
+    else if (holdName === 'stance') stopAct(0.4);
+  }
 
   function dispose() {
     S.disposed = true;
@@ -680,7 +775,8 @@ export function createHeroModel({
   setHero(hero);
 
   return {
-    root, update, setHero, setPose, setMirror, getAnchors, setShading, setQuality, setLod, dispose,
+    root, update, setHero, setPose, setMirror, getAnchors, setShading, setQuality, setLod, setStance, dispose,
+    menuStance: (id) => (HEROES[id] && HEROES[id].menuStance) || null,
     get ready() { return S.ready; },
     get hero() { return S.hero; },
     get vrm() { return cur ? cur.vrm : null; },

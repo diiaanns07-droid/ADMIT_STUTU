@@ -15,6 +15,12 @@ import { encodeState, decodeState, encodeEvent, decodeEvent, encodeProjectiles, 
 import { createRemotePlayer } from '../modules/remotePlayer.js';
 
 const ST_EVERY_MS = 50;    // 20 Гц
+const LAST_KEY = 'ashen-oath.net.last';
+const LAST_TTL_MS = 15 * 60 * 1000;   // хост перезагрузил страницу — та же комната ещё 15 минут
+function readLast() {
+  try { const v = JSON.parse(localStorage.getItem(LAST_KEY) || 'null'); return v && Date.now() - v.at < LAST_TTL_MS && isValidRoomCode(v.code) ? v : null; } catch (e) { return null; }
+}
+function saveLast(code, role, mode) { try { localStorage.setItem(LAST_KEY, JSON.stringify({ code, role, mode, at: Date.now() })); } catch (e) { /* ignore */ } }
 const PR_EVERY_MS = 100;   // 10 Гц
 const START_DELAY_MS = 3200;
 
@@ -45,6 +51,33 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     lobbyOpen: false, busy: false, oppGone: false,
   };
   const remote = createRemotePlayer({ THREE, scene, world, heroFactory, camera });
+  // значок связи в бою: соперник и пинг; при обрыве — «переподключение»
+  let badge = null, badgeKey = '', badgeAt = 0;
+  function updateBadge(now, inFight) {
+    if (now - badgeAt < 200) return;
+    badgeAt = now;
+    const net = S.net;
+    const show = inFight && !S.lobbyOpen && net && (net.state === 'connected' || net.state === 'lost');
+    if (!badge) {
+      if (!show) return;
+      badge = document.createElement('div');
+      badge.className = 'nl-badge';
+      badge.setAttribute('role', 'status');
+      badge.innerHTML = '<span class="nl-badge__dot"></span><span class="nl-badge__txt"></span>';
+      document.body.appendChild(badge);
+      import('../modules/netLobby.js').then((m) => m.ensureLobbyCss && m.ensureLobbyCss()).catch(() => {});
+    }
+    const opp = net && net.remote ? net.remote.name : 'Соперник';
+    const lost = net && net.state === 'lost';
+    const key = show ? `${lost ? 'L' : 'C'}|${opp}|${lost ? '' : Math.round(net.ping / 5) * 5}` : 'hidden';
+    if (key === badgeKey) return;
+    badgeKey = key;
+    badge.hidden = !show;
+    if (!show) return;
+    badge.classList.toggle('is-lost', !!lost);
+    badge.classList.toggle('is-slow', !lost && net.ping > 180);
+    badge.querySelector('.nl-badge__txt').textContent = lost ? `${opp} · связь потеряна — переподключение…` : `${opp} · пинг ${Math.round(net.ping)} мс`;
+  }
   remote.setVisible(true);
   let lobby = null;
   const listeners = new Set();
@@ -56,7 +89,9 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
   });
 
   // ------------------------------------------------------------ сеть
-  function bind(net) {
+  function bind(net0) {
+    // события старой сети (после «Выйти из комнаты» или смены режима) больше ничего не меняют
+    const net = { on: (t, fn) => net0.on(t, (x) => { if (S.net === net0) fn(x); }), get isHost() { return net0.isHost; }, sharedToLocal: (t) => net0.sharedToLocal(t) };
     net.on('state', (s) => {
       S.status = s;
       remote.setConnected(s !== 'lost');
@@ -99,7 +134,11 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     changed();
     const net = newNet(mode);
     try {
-      const code = await net.host({ code: U.auto === 'host' && isValidRoomCode(U.room || '') ? U.room : undefined });
+      // тот же код, что и до перезагрузки страницы (гость переподключится сам); занят — будет новый
+      const last = readLast();
+      const want = U.auto === 'host' && isValidRoomCode(U.room || '') ? U.room : last && last.role === 'host' && last.mode === mode ? last.code : undefined;
+      const code = await net.host({ code: want });
+      saveLast(code, 'host', mode);
       S.message = 'Комната создана. Продиктуйте код сопернику.';
       return code;
     } catch (e) {
@@ -121,6 +160,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     const net = newNet(mode);
     try {
       await net.join(code);
+      saveLast(code, 'guest', mode);
       S.message = 'Вы в комнате.';
       return true;
     } catch (e) {
@@ -213,6 +253,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     }
     // соперник виден только в бою (в меню снимка нет) и пока он в комнате
     remote.setVisible(!!snap && !!net && net.state !== 'idle' && !S.oppGone);
+    updateBadge(now, !!snap);
     // соперник: события → его модель и общий массив (data.remote = true)
     let inc = null;
     if (S.inEvents.length) { inc = S.inEvents.splice(0, S.inEvents.length); remote.pushEvents(inc); }
@@ -241,6 +282,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
       opponent: net && net.remote ? { ...net.remote, heroName: heroes && heroes[net.remote.hero] ? heroes[net.remote.hero].name : net.remote.hero } : null,
       meReady: S.meReady, oppReady: S.oppReady, startIn: S.startAt ? Math.max(0, S.startAt - performance.now()) : 0, started: S.started,
       name: p.name, hero: p.hero, lanHost: S.lanHost, https: typeof location !== 'undefined' && location.protocol === 'https:',
+      lastCode: (() => { const l = readLast(); return l && l.role === 'guest' ? l.code : ''; })(),
       heroes: heroes ? Object.values(heroes).map((h) => ({ id: h.id, name: h.name })) : [],
       showLocal: S.mode === 'local' || U.transport === 'local' || !!(hooks.isDebug && hooks.isDebug()),
     };

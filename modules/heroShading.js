@@ -15,6 +15,11 @@
 
 export function classifyMaterial(name = '') {
   const n = String(name);
+  // Quaternius (GLB-герои): MI_Regular_* — кожа, MI_Hair_* — волосы, MI_Eyes — глаза, остальное — снаряжение
+  if (/^MI_Regular/i.test(n)) return 'skin';
+  if (/^MI_Hair/i.test(n)) return 'hair';
+  if (/^MI_Eye/i.test(n)) return 'iris';
+  if (/^MI_/i.test(n)) return 'armor';
   if (/EyeHighlight/i.test(n)) return 'eyeHi';
   if (/EyeIris|EyeExtra/i.test(n)) return 'iris';
   if (/EyeWhite/i.test(n)) return 'eyeWhite';
@@ -36,6 +41,8 @@ const PRESET = {
   eyeWhite: { roughness: 0.35, specularIntensity: 0.5, clearcoat: 0.6, clearcoatRoughness: 0.08, env: 0.7 },
   lash: { roughness: 0.9, specularIntensity: 0.1, env: 0.1 },
   other: { roughness: 0.65, specularIntensity: 0.4, env: 0.45 },
+  // атлас снаряжения Quaternius: металл и кожа по карте ORM; лак и лёгкий sheen поверх
+  armor: { specularIntensity: 0.5, clearcoat: 0.18, clearcoatRoughness: 0.4, sheen: 0.12, sheenRoughness: 0.7, sheenColor: [0.5, 0.45, 0.4], env: 0.85 },
 };
 
 // Шум «плетения» ткани — карта нормалей 128×128, одна на модуль (текстура не материал: делить можно).
@@ -98,6 +105,47 @@ function patchSkin(THREE, mat, uniforms) {
   mat.customProgramCacheKey = () => 'heroSkin:' + (prevKey ? prevKey.call(mat) : '');
 }
 
+// [HERO] Перекраска атласа костюма (процедурно, на canvas): правила по тону HSV.
+//   rules: [{ h: [from°, to°], toH?, s?: множитель, v?: множитель, minS? }] — первое подходящее правило.
+// Нужна, чтобы из одного костюма Quaternius сделать разных героев (эльфийка, чародейка).
+export function recolorTexture(THREE, tex, rules) {
+  const img = tex && tex.image;
+  if (!img || typeof document === 'undefined' || !rules || !rules.length) return tex;
+  const w = img.width, h = img.height;
+  if (!w || !h) return tex;
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, w, h), px = d.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const r = px[i] / 255, gg = px[i + 1] / 255, b = px[i + 2] / 255;
+    const mx = Math.max(r, gg, b), mn = Math.min(r, gg, b), c = mx - mn;
+    let hue = 0;
+    if (c > 1e-5) hue = mx === r ? ((gg - b) / c) % 6 : mx === gg ? (b - r) / c + 2 : (r - gg) / c + 4;
+    hue = (hue * 60 + 360) % 360;
+    let sat = mx > 0 ? c / mx : 0, val = mx;
+    for (const R of rules) {
+      if (sat < (R.minS ?? 0.12)) continue;
+      const [a0, a1] = R.h;
+      if (!(a0 <= a1 ? hue >= a0 && hue <= a1 : hue >= a0 || hue <= a1)) continue;
+      if (R.toH !== undefined) hue = R.toH;
+      if (R.s !== undefined) sat = Math.min(1, sat * R.s);
+      if (R.v !== undefined) val = Math.min(1, val * R.v);
+      break;
+    }
+    const C = val * sat, X = C * (1 - Math.abs(((hue / 60) % 2) - 1)), m = val - C;
+    const k = Math.floor(hue / 60) % 6;
+    const [rr, g2, bb] = [[C, X, 0], [X, C, 0], [0, C, X], [0, X, C], [X, 0, C], [C, 0, X]][k];
+    px[i] = (rr + m) * 255; px[i + 1] = (g2 + m) * 255; px[i + 2] = (bb + m) * 255;
+  }
+  g.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(cv);
+  t.flipY = tex.flipY; t.colorSpace = tex.colorSpace; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT;
+  t.channel = tex.channel; t.anisotropy = tex.anisotropy || 4;
+  return t;
+}
+
 export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, quality = 'medium' } = {}) {
   const entries = []; // { mesh, index|-1, orig, real }
   const owned = [];
@@ -110,6 +158,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     if (!orig) return orig;
     if (orig.isOutline) return hidden;
     const isMToon = !!(orig.isMToonMaterial || (orig.uniforms && orig.uniforms.litFactor));
+    if (!isMToon && orig.isMeshStandardMaterial) return buildFromStandard(orig, q);
     if (!isMToon) return orig;
     const kind = classifyMaterial(orig.name);
     const P = PRESET[kind] || PRESET.other;
@@ -148,6 +197,34 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
         atmosphere.useEnv(m, P.env);
       } catch (e) { /* атмосфера без патча */ }
     }
+    m.userData.heroKind = kind;
+    owned.push(m);
+    return m;
+  }
+
+  // GLB-герой (MeshStandardMaterial с картами ORM): те же текстуры, Physical и классовые добавки
+  function buildFromStandard(orig, q) {
+    const kind = classifyMaterial(orig.name);
+    const P = PRESET[kind] || PRESET.other;
+    const physical = q !== 'low';
+    const Ctor = physical ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
+    const m = new Ctor({
+      name: `${orig.name}#real`, map: orig.map, color: orig.color.clone(), side: orig.side,
+      transparent: orig.transparent, alphaTest: orig.alphaTest, depthWrite: orig.depthWrite,
+      normalMap: orig.normalMap, roughnessMap: orig.roughnessMap, metalnessMap: orig.metalnessMap, aoMap: orig.aoMap,
+      roughness: orig.roughness, metalness: orig.metalness, emissive: orig.emissive.clone(), emissiveMap: orig.emissiveMap, emissiveIntensity: orig.emissiveIntensity,
+    });
+    if (orig.normalMap) m.normalScale.copy(orig.normalScale);
+    if (kind === 'skin') { m.roughness = Math.max(0.45, orig.roughness * 0.85); }
+    if (kind === 'iris') { m.roughness = 0.2; }
+    if (physical) {
+      m.specularIntensity = P.specularIntensity;
+      if (P.sheen) { m.sheen = P.sheen; m.sheenRoughness = P.sheenRoughness; m.sheenColor = new THREE.Color(...P.sheenColor); }
+      if (P.anisotropy) { m.anisotropy = P.anisotropy * 0.7; m.anisotropyRotation = Math.PI / 2; }
+      if (P.clearcoat) { m.clearcoat = P.clearcoat; m.clearcoatRoughness = P.clearcoatRoughness; }
+    }
+    if (kind === 'skin') patchSkin(THREE, m, skinU);
+    if (atmosphere) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, P.env); } catch (e) { /* ignore */ } }
     m.userData.heroKind = kind;
     owned.push(m);
     return m;

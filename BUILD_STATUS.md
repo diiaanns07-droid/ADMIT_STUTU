@@ -166,6 +166,22 @@
 - «Камера занята» в настоящем браузере; реальное сворачивание вкладки (событие симулировано).
 - Звук на слух, Firefox и Safari.
 
+## V6 · [HERO] герои — API для других команд (черновик, дополняется)
+- **C5 готов** (`modules/heroModel.js`): `createHeroModel({ THREE, scene, hero, remote:true })` без `heroRoot` —
+  свой root (ставится по `snapLike.player.position/yaw`), свой миксер и материалы (проверено: 2 героя, 0 общих
+  материалов — `dev/hero_stand.html`). `update(dt, snapLike, events)`; для `remote:true` берутся только события
+  с `data.remote`, для своего — только без него. `getAnchors()` → `{ handL, handR, chest, head, bowSocket, staffTip }`
+  — постоянные `THREE.Object3D` (при смене героя переезжают на новые кости; у процедурного героя — маркеры рига).
+  `setPose({ bowActive, bowDraw 0..1, aim:{x,y}, handSpell 0..1 })` — поза лука/чар поверх анимаций; main.js уже
+  зовёт её из `input.bow`/`input.handSpell` (C2), №6 может звать сам. `setMirror(m)` — руки героя за руками игрока.
+  `setStance(clip)` — стойка витрины. Общие настройки для экземпляров NET — `configureHeroes({ atmosphere, shading, quality })`.
+- **Герои:** `HEROES` + `HERO_ORDER` — ashen (Пепельный страж, латы Knight), elf, dark (VRoid), **ranger** (Лучница),
+  **archmage** (Архимаг) — Quaternius CC0 (`assets/heroes/`). У каждого `name, cls, element, desc[3]`.
+- **Для №8 (BDO):** в `HERO_OPTIONS` (ui.js) добавлены 2 героя и 4-е поле `{ cls, element, desc }` с тегом [HERO] —
+  карточек теперь 5 (3+2); описание (3 строки) можно показывать под выбранной карточкой. Витрина меню —
+  `modules/heroShowcase.js` (свой свет, облёт, `postfx.setFocus(dist)` если есть).
+- **Настройка** `heroShading: 'realistic'|'anime'` (C1). 'realistic' — MeshPhysicalMaterial (`modules/heroShading.js`).
+
 ## V6 · [BDO] стиль Black Desert — API для других команд (черновик, дополняется)
 - **Настроение зоны (для №5 [FOREST])** — уже в main: `world.atmosphere.setZoneMood({ weight, sky, fog, sun, exposure, grade })`.
   `weight` 0..1 (насколько герой в зоне; можно звать каждый кадр — смена плавная, ~1 с). Остальные поля
@@ -239,3 +255,82 @@
 - **Проверка:** `node dev/net.test.mjs` (коды, упаковка, интерполяция 150 мс/5%, обрыв/восстановление),
   `node dev/net-lan.test.mjs` (relay.py + WebSocket), `dev/net-two-tabs.html` (две игры рядом, `?harness=1` — лёгкий
   стенд), `node tools/qa_net.mjs --mode local|lan|peer [--harness] [--cdn DIR]`.
+## V6 · [HAND] лук и магия рукой (№6)
+**Сделано.**
+- **Сумеречный Лук** (`core/bowGesture.js`): левый кулак вперёд (зона груди/плеча, «вытянут» — кисть крупнее ¼ ширины плеч) +
+  правая щепоть у кулака → стрела наложена (`bow.active`); натяжение 0..1 — расстояние между кистями в ширинах плеч плюс рост
+  отношения масштабов кистей (глубина); полное натяжение 0,35 с — `charged`; прицел — кулак относительно центра плеч; разжать
+  щепоть — выстрел (натяжение и прицел берутся до раскрытия пальцев); высоко вверх + полное натяжение — «Дождь стрел»; серия
+  недонатянутых — `rapid` (слабые стрелы); руна при поднятом луке — стихия следующей стрелы; выход из стойки — гистерезис 0,2 с.
+  «ОШИБКА»: `bow_fist`, `bow_pinch`, `bow_draw`, `bow_release`, `bow_low`, `bow_forward` (тексты — `core/gestureCoach.js`).
+- **Магия рукой** (`core/handMagic.js`): правая ладонь вверх — огонь, «когти» — молния, ладонь вниз — лёд, кулак ладонью вверх —
+  земля; рождение за 0,3 с неподвижной формы в зоне каста; лепка (сжать/раскрыть, вращать) ускоряет рост power до 1 за 1,5 с;
+  бросок — резкий мах (направление из вектора движения) или толчок к камере; отмена — опустить руку, потерять кисть, медленно сжать
+  кулак; сгусток + сфера двумя руками → усиленный бросок стихии. «ОШИБКА»: `spell_throw_weak`, `spell_hold`, `spell_palm`.
+- **Бой** (`modules/combatHand.js`, хуки `[HAND]` в `modules/combat.js`): стрелы с гравитацией, урон и скорость по натяжению,
+  заряженная пробивает, аим-ассист в конусе 12° (баллистика до цели), «Дождь стрел» (10 падающих стрел по площади), сгустки с
+  самонаведением; стихии: огонь — горение (не раздувает комбо), молния — цепь на одну цель, лёд — замедление Регента, земля —
+  оглушение/отбрасывание; энергия, откаты, `ability_denied`; цели PvP через `registerTarget`.
+- **Связка** (`core/handZone.js`, хуки в `main.js`, `modules/vision.js` → `setHandTap`): C2-гашение конфликтов (проверено на
+  настоящем `core/handGestures.js`: во время лука и 0,45 с после не проходят руление, рывок, парирование, «OK», выброс, искра;
+  во время сгустка — жесты правой руки); DEBUG-клавиши B/N/M; поза процедурного героя; оверлей `core/handFxOverlay.js` поверх
+  превью камеры (огонь/молния/лёд/земля в настоящей ладони, лук, тетива, стрела, прицел); 3D-заглушки `modules/handVisuals.js`.
+- Карточки обучения «Лук» и «Магия рукой» (`modules/ui.js`), удачные выстрелы/броски — в точность жестов на экране итогов.
+
+**Как проверить.** `node dev/bow.test.mjs` (≥95% верных выстрелов на 300 случайных с шумом — сейчас 99%; HaGRID-сцена 100%;
+0 ложных луков на 200 прогонах руления и старых жестах), `node dev/handMagic.test.mjs` (100% на 240 случайных, 0 ложных),
+`node dev/handZone.test.mjs`, `node dev/combatHand.test.mjs`. Браузер: `node dev/hand-qa.mjs --cdn <папка с npm-пакетами three
+и three-vrm> [--walk]` — DEBUG-бой, B/N/M, скриншоты. Стенды: `dev/handfx-stand.html?scene=bow|fire|storm|frost|earth|two|rain`,
+`dev/handvisuals-stand.html?scene=bow|fire|storm|frost|earth|rain`.
+
+**Не успел / стоит доделать.** Живая проверка с настоящей камерой (пороги подобраны на синтетике и HaGRID); в клавиатурном
+DEBUG нет оверлея (он рисуется только поверх камеры); стойка «боком к камере» сужает плечи — vision (widthRatioMin 0.55) может
+счесть это потерей трекинга, в карточке сказано держать корпус к камере.
+
+### API для других команд
+Файлы зоны: `core/bowGesture.js` (лук), `core/handMagic.js` (сгусток в ладони), `core/handZone.js` (связка с вводом,
+DEBUG-клавиши, поза процедурного героя), `modules/combatHand.js` (бой), `core/handFxOverlay.js` (оверлей на превью),
+`modules/handVisuals.js` (3D-заглушки — №7 [VFX] может заменить). Настройка `settings.handCombat` (true по умолчанию).
+- **Ввод (C2)** — main.js сразу после `readInput()`: `input.bow = { active, phase:'idle'|'ready'|'nocked'|'drawing', draw, aimX, aimY,
+  charged, release (1 кадр), element, rain, rapid, rune }`, `input.handSpell = { phase:'idle'|'form'|'hold'|'throw', element, power,
+  dir{x,y}, size, twoHand, how, formed (1 кадр), cancel (1 кадр) }`. Пока `bow.active` (и 0,45 с после) main **уже обнуляет**
+  moveX/moveZ/dash/dashDir/stick, щит, парирование, «OK», искру, выброс, взмах — №1 [CTRL] может дополнительно проверять `input.bow.active`.
+- **События (C3)** из combat: `bow_draw_start`, `bow_draw {draw, charged}`, `bow_release {draw, charged, element, projectileId, rain}`,
+  `arrow_hit {damage, element, target:'boss'|'player', targetId, charged, rain}`, `hand_spell_form {element, power}`,
+  `hand_spell_throw {element, power, dir, twoHand, projectileId}`, `hand_spell_hit {element, damage, twoHand, target}`, `hand_spell_cancel {element, reason}`;
+  дополнительно `bow_cancel`, `bow_element {element, rune}`, `arrow_rain {center, radius, delay, count, element}`, `hand_chain {from, to}`,
+  `element_apply {element, target, duration, knockback}`, а также `projectile_impact` (kind arrow/hand_orb) и `boss_hit` (source arrow/hand_orb/burn/chain).
+- **Снимок (C3/C4):** в `snap.projectiles` — `{ id, owner:'player', kind:'arrow'|'hand_orb', element, position, velocity, radius, damage, charged,
+  twoHand, pierce, from:'hand' }`; `snap.player.bow`, `snap.player.handSpell`; `snap.cooldowns.arrow*/handOrb*/rain*`.
+- **PvP (№3):** `combat.hand.registerTarget({ id, kind:'player', getPosition()→{x,y,z}, radius, height, onHit(hit) })` — мои стрелы и
+  сгустки сами делают swept-тест по сопернику и зовут `onHit({ damage, element, kind, projectileId, point, dir, charged, twoHand,
+  knockback{x,z}|null, slowSec, burnSec, burnDps, chain })`; урон и эффекты по сети применяет №3. `combat.hand.setBossTargetable(false)` —
+  в дуэли стрелы не бьют Регента. Либо можно брать снаряды из `snap.projectiles` (поле `damage` есть) в свой hit-тест — но тогда не
+  регистрировать цель, чтобы урон не прошёл дважды.
+- **Герой (C5):** VRM-героям позу даёт `[HERO] heroPoseFromInput` в main.js; процедурному стражу — `createHeroBowPose()` (core/handZone.js).
+- **VFX (№7):** `modules/handVisuals.js` — `setDelegated({ arrows, orbs, bow })` прячет мои заглушки, когда эффекты рисуют своё.
+
+## V6 · [VFX] «больше магии» — эффекты рун и заклинаний (№7, в работе)
+- **База `modules/fx/`** поверх `modules/effects.js` (старые эффекты — откат; настройка `fxMagic: true`, `false` — как раньше):
+  - `fx/kit.js` — GPU-частицы одним InstancedMesh (физика в вершинном шейдере: снос, сопротивление, гравитация,
+    турбулентность, закрутка вокруг оси, земля; цвет по жизни — градиенты, форма — атлас 16 спрайтов; аддитив и дым
+    одним проходом с премультипликацией); пул 0/2/3 PointLight (low/medium/high); акторы и таймлайн; экранная вспышка;
+    тряска/толчок камеры и хит-стоп (main.js берёт `effects.takeHitStop()`); мост к волне искажения postfx
+    (`queueShockwave`, если №8 его экспортирует). Ёмкость частиц: low 1400 / medium 4200 / high 8000
+    (+ старые пулы effects.js ≤ 950 на medium, итого < 6000).
+  - `fx/glyph.js` — магические круги (один draw call): кольца, руны по окружности, раскрытие, вращение, стили
+    rune/clock/hex/sigil; символ в центре — из SDF-атласа 20 знаков (10 рун, печати, стихии, лук); `runeStroke(id)`.
+  - `fx/bolts.js` — ветвящиеся молнии, треск, дуги по земле (один draw call).
+  - `fx/trails.js`, `fx/decals.js`, `fx/shock.js`, `fx/shieldHex.js` — ленты-следы, декали (ожог, кратер, иней, трещины…),
+    ударные волны и марево, гексагональный щит/купол.
+  - `fx/index.js` — реестр: обработчик V6 возвращает `true` — старый эффект пропускается; любая ошибка — старый эффект.
+  - Хореографии: `fx/runesFire.js` (▲ ϟ), `fx/runesLight.js` (○ ∞ ℓ), `fx/runesSky.js` (★ ⧗), `fx/runesWild.js` (@ ^ V),
+    `fx/sigils.js` (печати, искра, рассечение, выброс, сфера/призма), `fx/handMagic.js` (ладони, руна в воздухе),
+    `fx/bowHand.js` (лук и магия ладони по C3), `fx/combatFx.js` (удары по материалам, щит, появление/смерть, PvP).
+  - PvP: события с `data.remote = true` рисуются от соперника к нашему герою в холодном фиолетовом.
+- **Хуки в общих файлах** (все с тегом `[VFX]`): `main.js` — `effects.setAnchors` (C5 `heroModel.getAnchors()` →
+  `world.getAnchors()`), `effects.setGround(layout.groundY)`, `effects.setInput(input)` перед `effects.update`,
+  хит-стоп после него, `fxMagic` в `sanitizeSettings`, `__ASHEN__.fx()`; `config.js` — `fxMagic: true`.
+- **Проверка:** стенд `dev/effects_testbench.html` (кнопка на каждое заклинание, мс/частицы/draw calls, PvP, стресс);
+  снимки — `node dev/fx_shots.mjs --page "dev/effects_testbench.html?shot=1" --script ignis,fulgur --times 0.2,0.5`;
+  в игре — `node dev/fx_game.mjs --out DIR` (DEBUG-бой, руны клавишами, ошибки консоли).

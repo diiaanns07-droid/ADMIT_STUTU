@@ -3,228 +3,506 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ASHEN OATH — стенд effects.js (не игра)</title>
+<title>ASHEN OATH — стенд эффектов V6 (не игра)</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #16181c; color: #d8d2c4; font: 13px/1.4 system-ui, sans-serif; overflow: hidden; }
+  html, body { margin: 0; height: 100%; background: #0e1014; color: #d8d2c4; font: 12px/1.35 system-ui, sans-serif; overflow: hidden; }
   canvas { display: block; }
-  #panel { position: fixed; top: 8px; left: 8px; width: 250px; padding: 10px; background: rgba(20,22,26,.86); border: 1px solid #3a3d44; }
-  #panel h1 { margin: 0 0 6px; font-size: 13px; color: #e8a14a; font-weight: 600; }
-  #panel .row { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
-  #panel button { flex: 1 1 70px; padding: 4px 6px; background: #2a2d33; color: #d8d2c4; border: 1px solid #4a4e57; cursor: pointer; font: inherit; }
-  #panel button:hover { background: #353941; }
-  #panel label { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
-  #info { position: fixed; right: 8px; bottom: 8px; max-width: 420px; padding: 6px 8px; background: rgba(20,22,26,.8); font: 11px/1.35 ui-monospace, monospace; white-space: pre; }
-  #tag { position: fixed; right: 8px; top: 8px; padding: 3px 8px; border: 1px solid #c95d45; color: #f2d0c2; }
+  #panel { position: fixed; top: 6px; left: 6px; width: 300px; max-height: calc(100% - 12px); overflow: auto; padding: 8px; background: rgba(16,18,22,.88); border: 1px solid #3a3d44; }
+  #panel h1 { margin: 0 0 4px; font-size: 13px; color: #e8a14a; font-weight: 600; }
+  #panel h2 { margin: 8px 0 2px; font-size: 11px; color: #9aa4b4; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+  #panel .row { display: flex; flex-wrap: wrap; gap: 3px; }
+  #panel button { flex: 1 1 60px; padding: 3px 4px; background: #262a31; color: #d8d2c4; border: 1px solid #454a54; cursor: pointer; font: inherit; }
+  #panel button:hover { background: #333842; }
+  #panel label { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  #info { position: fixed; right: 6px; bottom: 6px; padding: 5px 8px; background: rgba(16,18,22,.82); font: 11px/1.35 ui-monospace, monospace; white-space: pre; }
+  #tag { position: fixed; right: 6px; top: 6px; padding: 2px 8px; border: 1px solid #c95d45; color: #f2d0c2; }
+  body.shot #panel, body.shot #info, body.shot #tag { display: none; }
 </style>
-<!-- Для запуска стенда нужен localhost/HTTPS. Три.js закреплён по версии; сборщик может подменить путь. -->
 <script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js" } }
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/" } }
 </script>
 </head>
 <body>
-<div id="tag">СТЕНД ЭФФЕКТОВ · DEBUG · НЕ CV</div>
-<div id="panel">
-  <h1>effects.js — ручная проверка</h1>
-  <div class="row">
-    <button data-a="slam">1 Slam</button><button data-a="orb">2 Orb</button><button data-a="nova">3 Nova</button>
-  </div>
-  <div class="row">
-    <button data-a="cast">J Каст</button><button data-a="shield">K Щит</button><button data-a="burst">L Выброс</button>
-  </div>
-  <div class="row">
-    <button data-a="dashL">Q Рывок ←</button><button data-a="dashR">E Рывок →</button><button data-a="block">B Блок</button>
-  </div>
-  <div class="row">
-    <button data-a="bossHit">Удар по боссу</button><button data-a="playerHit">Урон герою</button><button data-a="phase">Фаза 2</button>
-  </div>
-  <div class="row">
-    <button data-a="victory">Победа</button><button data-a="defeat">Поражение</button><button data-a="reset">Сброс</button>
-  </div>
-  <div class="row"><button id="audioBtn">Включить звук</button><button id="auto">Авто-бой: выкл</button></div>
-  <label>Качество
-    <select id="q"><option>low</option><option selected>medium</option><option>high</option></select></label>
-  <label>Громкость <input id="vol" type="range" min="0" max="1" step="0.05" value="0.7"></label>
+<div id="tag">СТЕНД ЭФФЕКТОВ V6 · НЕ CV</div>
+<div id="panel"><h1>effects.js + modules/fx (V6)</h1><div id="groups"></div>
+  <h2>Настройки</h2>
+  <label>Качество <select id="q"><option>low</option><option selected>medium</option><option>high</option></select></label>
   <label><input id="rm" type="checkbox"> reducedMotion</label>
-  <label><input id="pause" type="checkbox"> пауза (update с dt=0)</label>
+  <label><input id="v6" type="checkbox" checked> V6 (fxMagic)</label>
+  <label><input id="pvp" type="checkbox"> PvP: соперник вместо Регента</label>
+  <label><input id="auto" type="checkbox"> стресс: заклинание каждые 0,6 с</label>
+  <label><input id="pause" type="checkbox"> пауза (dt = 0)</label>
 </div>
 <div id="info"></div>
 <script type="module">
+// Стенд эффектов: фейковая симуляция боя (НЕ combat.js) → события и снимок → effects.update.
+// Кнопка на каждое заклинание; ?shot=1 — без панели (для Playwright: dev/fx_shots.mjs --script <имя>).
+// Протокол: window.__stand = { ready, play(name), run(sec), reset(), info(), measure(sec) }; window.__bench — всё остальное.
 import * as THREE from 'three';
 import { createEffects, API_VERSION } from '../modules/effects.js';
 
-// ---------- минимальная сцена-заглушка (настоящие модели делает world.js)
+const qs = new URLSearchParams(location.search);
+const SHOT = qs.has('shot');
+if (SHOT) document.body.classList.add('shot');
+
+// ---------------------------------------------------------------- сцена (как в бою: камера за спиной героя)
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
-renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(SHOT ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1b1e24);
-scene.fog = new THREE.Fog(0x1b1e24, 18, 40);
-const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 120);
-scene.add(new THREE.HemisphereLight(0x8aa0b8, 0x2a2622, 0.9));
-const moon = new THREE.DirectionalLight(0xc8d6e8, 1.6); moon.position.set(-6, 12, 4); scene.add(moon);
-const floor = new THREE.Mesh(new THREE.CircleGeometry(11, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x57534e, roughness: 0.95 }));
-scene.add(floor);
-const hero = new THREE.Group();
-const heroMat = new THREE.MeshStandardMaterial({ color: 0x3a3430, roughness: 0.8 });
-hero.add(new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.45, 14).translate(0, 0.725, 0), heroMat));
-hero.add(new THREE.Mesh(new THREE.SphereGeometry(0.21, 12, 10).translate(0, 1.56, 0), heroMat));
-scene.add(hero);
-const boss = new THREE.Group();
-const stone = new THREE.MeshStandardMaterial({ color: 0x5a5c60, roughness: 0.9 });
-boss.add(new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.2, 1.1).translate(0, 1.1, 0), stone));
-boss.add(new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.3, 1.3).translate(0, 2.8, 0), stone));
-boss.add(new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9).translate(0, 3.9, 0), stone));
-scene.add(boss);
+scene.background = new THREE.Color(0x131620);
+scene.fog = new THREE.Fog(0x131620, 24, 70);
+const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 400);
+scene.add(camera);
+scene.add(new THREE.HemisphereLight(0x8a98b0, 0x2a2420, 0.75));
+const key = new THREE.DirectionalLight(0xc8d6f0, 1.3); key.position.set(-6, 10, -8); scene.add(key);
+const tile = (() => {
+  const s = 128, d = new Uint8Array(s * s * 4);
+  for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+    const i = (y * s + x) * 4, g = ((x % 64) < 2 || (y % 64) < 2) ? 38 : 66 + ((x * 7 + y * 13) % 17);
+    d[i] = g; d[i + 1] = g - 3; d[i + 2] = g - 6; d[i + 3] = 255;
+  }
+  const t = new THREE.DataTexture(d, s, s); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(14, 14); t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; return t;
+})();
+scene.add(new THREE.Mesh(new THREE.CircleGeometry(45, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tile, roughness: 0.9, color: 0x9a948c })));
+function dummy(color, h) {
+  const m = new THREE.MeshStandardMaterial({ color, roughness: 0.75 });
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.27, h - 0.8, 6, 12).translate(0, h / 2 - 0.05, 0), m));
+  g.add(new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10).translate(0, h - 0.18, 0), m));
+  const arm = new THREE.CapsuleGeometry(0.07, 0.5, 4, 8).rotateX(Math.PI / 2 - 0.5).translate(0, 0, -0.22);
+  const aR = new THREE.Mesh(arm, m); aR.position.set(0.33, 1.4, 0); g.add(aR);
+  const aL = new THREE.Mesh(arm, m); aL.position.set(-0.33, 1.4, 0); g.add(aL);
+  const handR = new THREE.Object3D(); handR.position.set(0.34, 1.5, -0.46); g.add(handR);
+  const handL = new THREE.Object3D(); handL.position.set(-0.34, 1.5, -0.46); g.add(handL);
+  const chest = new THREE.Object3D(); chest.position.set(0, 1.25, -0.12); g.add(chest);
+  const head = new THREE.Object3D(); head.position.set(0, h - 0.18, 0); g.add(head);
+  const staffTip = new THREE.Object3D(); staffTip.position.set(0.36, 1.7, -0.5); g.add(staffTip);
+  const bowSocket = new THREE.Object3D(); bowSocket.position.set(-0.36, 1.45, -0.5); g.add(bowSocket);
+  g.userData.anchors = { handR, handL, chest, head, staffTip, bowSocket };
+  scene.add(g);
+  return g;
+}
+const hero = dummy(0x3b3431, 1.8);
+const opp = dummy(0x2f3346, 1.8); opp.visible = false;
+const bossG = new THREE.Group();
+{
+  const bm = new THREE.MeshStandardMaterial({ color: 0x6a6c72, roughness: 0.6 });
+  bossG.add(new THREE.Mesh(new THREE.ConeGeometry(0.9, 3.2, 16).translate(0, 1.6, 0), bm));
+  bossG.add(new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12).translate(0, 3.3, 0), bm));
+  bossG.add(new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.07, 8, 32).translate(0, 3.4, -0.2), new THREE.MeshStandardMaterial({ color: 0x8a6a3a, metalness: 0.8, roughness: 0.4 })));
+  scene.add(bossG);
+}
 
-const settings = { quality: 'medium', volume: 0.7, reducedMotion: false };
+// ---------------------------------------------------------------- effects
+const settings = { quality: qs.get('quality') || 'medium', volume: 0, reducedMotion: qs.has('rm'), fxMagic: !qs.has('nov6') };
 const config = { settings, effects: {} };
 const fx = createEffects({ THREE, scene, camera, renderer, config });
 fx.setQuality(settings.quality);
-fx.setVolume(settings.volume);
+fx.setVolume(0);
+fx.setAnchors(() => hero.userData.anchors);
+fx.setGround(() => 0);
+document.getElementById('q').value = settings.quality;
+document.getElementById('rm').checked = settings.reducedMotion;
+document.getElementById('v6').checked = settings.fxMagic;
 
-// ---------- крошечная фейковая симуляция (только для стенда)
-let eid = 0, aid = 0, pid = 0;
-const S = {
-  time: 0, angle: 0, strafe: 0, shielding: false, stage: 1, status: 'playing',
-  projectiles: [], telegraphs: [], pending: [], autoT: 0, auto: false,
-};
+// ---------------------------------------------------------------- фейковая симуляция
 const v3 = (x, y, z) => ({ x, y, z });
-const R0 = 6;
-const playerPos = () => v3(Math.sin(S.angle) * R0, 0, Math.cos(S.angle) * R0);
-const emit = (type, position, data = {}) => S.pending.push({ id: 'ev' + (++eid), type, position, data });
-function attack(kind) {
-  if (S.status !== 'playing') return;
-  const p = playerPos();
+let eid = 0, pid = 0;
+const S = {
+  time: 0, status: 'playing', stage: 1, pvp: false, heroZ: 6, heroX: 0,
+  shielding: false, conjure: null, vortex: 0, regen: 0, bastion: 0, ward: 0, slow: 0, stun: 0, mark: 0, burstCharge: 0,
+  heroAction: 'idle', oppAction: 'idle', heroHp: 80, oppHp: 100,
+  projectiles: [], telegraphs: [], pending: [], timers: [], input: null, trail: null,
+  bow: null, hand: null,
+};
+const emit = (type, position, data = {}) => S.pending.push({ id: 'b' + (++eid), type, position: position ? { ...position } : null, data });
+const later = (sec, fn) => S.timers.push({ t: S.time + sec, fn });
+const heroPos = () => v3(S.heroX, 0, S.heroZ);
+const oppPos = () => v3(0, 0, 0);
+const wp = (o) => { const v = new THREE.Vector3(); hero.updateMatrixWorld(true); o.getWorldPosition(v); return v3(v.x, v.y, v.z); };
+const wpOpp = (o) => { const v = new THREE.Vector3(); opp.updateMatrixWorld(true); o.getWorldPosition(v); return v3(v.x, v.y, v.z); };
+const heroChest = () => wp(hero.userData.anchors.chest);
+const heroHand = () => wp(hero.userData.anchors.handR);
+const oppChest = () => wpOpp(opp.userData.anchors.chest);
+const bossCore = () => v3(0, 2.6, 0);
+const target = () => (S.pvp ? oppChest() : bossCore());
+function hitTarget(amount, point, extra = {}) {
+  if (S.pvp) emit('player_hit_remote', point || oppChest(), { amount, ...extra }); // соперник получил урон (только для стенда)
+  else emit('boss_hit', point || bossCore(), { amount, source: 'rune', ...extra });
+}
+function addProj(p) { p.id = p.id || 'p' + (++pid); S.projectiles.push(p); return p; }
+function flyTo(kind, from, to, speed, extra = {}) {
+  const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z, l = Math.hypot(dx, dy, dz) || 1;
+  return addProj({ owner: extra.owner || 'player', kind, position: { ...from }, velocity: v3(dx / l * speed, dy / l * speed, dz / l * speed), radius: extra.radius || 0.2, target: to, ...extra });
+}
+
+// Руна в воздухе: имитация следа пальца (input.hands.trail, координаты показа 0..1, y вниз).
+const STROKES = {
+  ignis: [[0.5, 0.05], [0.95, 0.9], [0.05, 0.9], [0.5, 0.05]],
+  fulgur: [[0.65, 0], [0.15, 0.55], [0.85, 0.45], [0.35, 1]],
+  orbis: Array.from({ length: 33 }, (_, i) => [0.5 + 0.45 * Math.cos(i / 32 * 6.2832 - 1.57), 0.5 + 0.45 * Math.sin(i / 32 * 6.2832 - 1.57)]),
+  stella: (() => { const s = []; for (let k = 0; k < 5; k++) { const a = -Math.PI / 2 + k * 2 * Math.PI / 5; s.push([0.5 + 0.48 * Math.cos(a), 0.52 + 0.48 * Math.sin(a)]); } return [s[0], s[2], s[4], s[1], s[3], s[0]]; })(),
+  spira: Array.from({ length: 65 }, (_, i) => { const u = i / 64, r = 0.03 + 0.45 * u, a = u * 4 * Math.PI; return [0.5 + r * Math.cos(a), 0.5 + r * Math.sin(a)]; }),
+  lemnis: Array.from({ length: 65 }, (_, i) => { const q = i / 64 * 6.2832; return [0.5 + 0.48 * Math.cos(q), 0.5 + 0.24 * Math.sin(2 * q)]; }),
+  caret: [[0.05, 0.95], [0.5, 0.05], [0.95, 0.95]],
+  vee: [[0.05, 0.05], [0.5, 0.95], [0.95, 0.05]],
+  clepsydra: [[0.1, 0.05], [0.9, 0.05], [0.1, 0.95], [0.9, 0.95], [0.1, 0.05]],
+  alpha: (() => { const p = []; for (let i = 0; i <= 8; i++) p.push([0.5 * i / 8, 1 - 0.3 * i / 8]); for (let i = 1; i <= 24; i++) { const a = Math.PI / 2 - i / 24 * 2 * Math.PI; p.push([0.5 + 0.25 * Math.cos(a), 0.45 + 0.25 * Math.sin(a)]); } for (let i = 1; i <= 8; i++) p.push([0.5 + 0.5 * i / 8, 0.7 + 0.3 * i / 8]); return p; })(),
+};
+function resample(pts, n) {
+  const P = pts.map(([x, y]) => ({ x, y }));
+  const L = []; let tot = 0; for (let i = 1; i < P.length; i++) { tot += Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y); L.push(tot); }
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    const d = (k / (n - 1)) * tot; let i = 0; while (i < L.length - 1 && L[i] < d) i++;
+    const a = P[i], b = P[i + 1], l0 = i ? L[i - 1] : 0, t = (d - l0) / Math.max(1e-6, L[i] - l0);
+    out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  }
+  return out;
+}
+function drawRune(rune, dur, then) {
+  const pts = resample(STROKES[rune] || STROKES.orbis, 48);
+  // рисуем в правой половине кадра (правая рука), масштаб ~0.3 кадра
+  const map = (q) => ({ x: 0.52 + q.x * 0.3, y: 0.22 + q.y * 0.34 });
+  S.trail = { pts: pts.map(map), t0: S.time, dur, rune, then };
+}
+
+const RUNE_DATA = {
+  ignis: () => ({ amount: 45 }), fulgur: () => ({ stun: 1.2, cancelled: 0 }), orbis: () => ({ heal: 25, ward: 4 }),
+  stella: () => ({ count: 5, amount: 90 }), spira: () => ({ duration: 3, radius: 7 }), lemnis: () => ({ heal: 45, duration: 6 }),
+  caret: () => ({ count: 5 }), vee: () => ({ heal: 12, amount: 30 }), clepsydra: () => ({ duration: 5, slow: 0.45 }), alpha: () => ({ energy: 30 }),
+};
+function castRune(rune, remote) {
+  const me = remote ? oppChest() : heroChest();
+  const to = remote ? heroChest() : target();
+  const base = { rune, from: me, to: ['orbis', 'spira', 'lemnis', 'alpha'].includes(rune) ? me : to, ...RUNE_DATA[rune]() };
+  if (rune === 'vee') { base.from = to; base.to = me; }
+  if (remote) base.remote = true;
+  emit('rune_cast', me, base);
+  emit('player_cast', me, { ability: 'rune', rune, remote: remote || undefined });
+  if (remote) S.oppAction = 'cast'; else S.heroAction = 'cast';
+  later(0.35, () => { S.heroAction = 'idle'; S.oppAction = 'idle'; });
+  const hitPoint = to;
+  if (rune === 'ignis' || rune === 'vee') later(0.02, () => (remote ? emit('player_hit', heroChest(), { amount: 30, remote: true }) : hitTarget(rune === 'ignis' ? 45 : 30, hitPoint, { rune })));
+  if (rune === 'fulgur') { if (!remote) { S.stun = 1.2; emit('boss_stunned', hitPoint, { duration: 1.2 }); hitTarget(20, hitPoint, { rune }); } }
+  if (rune === 'orbis') { if (!remote) { S.ward = 4; emit('ward_start', heroPos(), { duration: 4 }); } }
+  if (rune === 'stella') for (let i = 0; i < 5; i++) later(0.25 + i * 0.18, () => { emit('rune_hit', to, { rune: 'stella', index: i, amount: 18, remote: remote || undefined }); if (!remote) hitTarget(18, to, { rune: 'stella' }); });
+  if (rune === 'spira' && !remote) S.vortex = 3;
+  if (rune === 'lemnis' && !remote) S.regen = 6;
+  if (rune === 'caret') for (let i = 0; i < 5; i++) {
+    const off = (i - 2) * 0.16, dx = to.x - me.x, dz = to.z - me.z, c = Math.cos(off), s = Math.sin(off);
+    const dir = v3(dx * c - dz * s, to.y - me.y, dx * s + dz * c), l = Math.hypot(dir.x, dir.y, dir.z);
+    addProj({ id: 'caret:' + (++pid), owner: remote ? 'opponent' : 'player', kind: 'spark', position: { ...me }, velocity: v3(dir.x / l * 34, dir.y / l * 34, dir.z / l * 34), radius: 0.19, homing: true, target: to, remote });
+  }
+  if (rune === 'clepsydra' && !remote) { S.slow = 5; emit('slow_start', to, { duration: 5, slow: 0.45 }); }
+}
+function castSigil(sigil, remote) {
+  const me = remote ? oppChest() : heroChest(), to = remote ? heroChest() : target();
+  const d = { sigil, from: me, to, remote: remote || undefined };
+  if (sigil === 'clap') Object.assign(d, { radius: 7, cleared: 1, stunned: true });
+  if (sigil === 'gate') Object.assign(d, { duration: 6, reduction: 0.6, to: me });
+  if (sigil === 'frame') Object.assign(d, { duration: 6, bonus: 0.3 });
+  if (sigil === 'delta') Object.assign(d, { ticks: 4, amount: 60, cleared: 0 });
+  if (sigil === 'cor') Object.assign(d, { heal: 30, duration: 4, ward: 4, to: me });
+  emit('sigil_cast', me, d);
+  if (!remote) {
+    if (sigil === 'gate') { S.bastion = 6; emit('bastion_start', heroPos(), { duration: 6 }); }
+    if (sigil === 'frame') { S.mark = 6; emit('mark_start', to, { duration: 6, bonus: 0.3 }); }
+    if (sigil === 'cor') { S.ward = 4; emit('ward_start', heroPos(), { duration: 4 }); }
+    if (sigil === 'clap') { S.stun = 1.5; emit('boss_stunned', to, { duration: 1.5, source: 'clap' }); }
+  }
+  if (sigil === 'delta') for (let i = 0; i < 4; i++) later(0.3 + i * 0.22, () => { emit('sigil_hit', to, { sigil: 'delta', index: i, amount: 15, from: remote ? oppChest() : heroChest(), remote: remote || undefined }); if (!remote) hitTarget(15, to); });
+}
+// ---- базовые приёмы
+function spark(remote) {
+  const from = remote ? wpOpp(opp.userData.anchors.handR) : heroHand(), to = remote ? heroChest() : target();
+  const p = flyTo('spark', from, to, 38, { radius: 0.16, owner: remote ? 'opponent' : 'player', remote });
+  const vel = p.velocity;
+  emit('player_cast', from, { ability: 'spark', projectileId: p.id, velocity: vel, remote: remote || undefined });
+}
+function slash(dir, remote) {
+  const c = remote ? oppChest() : heroChest();
+  emit('player_cast', c, { ability: 'slash', dir, power: 0.8, remote: remote || undefined });
+  emit('player_slash', c, { dir, power: 0.8, hit: true, arc: { yaw: Math.PI, angleDeg: 110, radius: 4.5 }, remote: remote || undefined });
+  if (!remote) later(0.05, () => hitTarget(40, target(), { source: 'slash' }));
+}
+function conjureThrow(kind) {
+  S.conjure = { kind: kind === 'prism' ? 'prism' : 'orb', size: 0.1, charge: 0 };
+  emit('conjure_start', heroChest(), { kind: S.conjure.kind });
+  const t0 = S.time;
+  S.timers.push({ t: S.time + 1.2, fn: () => {
+    const from = heroChest(); from.z -= 0.5; from.y += 0.1;
+    S.conjure = null;
+    const p = flyTo(kind, from, target(), 16, { radius: 0.35 });
+    emit('player_cast', from, { ability: 'throw', kind, projectileId: p.id, size: 0.8, power: 0.9 });
+  } });
+  S.conjureT0 = t0;
+}
+// ---- лук (C3, №6): натяжение 0.8 с → выпуск → стрела → попадание
+function bow(element, charged) {
+  S.bow = { t0: S.time, element: element || null, charged: !!charged };
+  emit('bow_draw_start', wp(hero.userData.anchors.bowSocket), { element: element || null });
+}
+function bowRelease() {
+  const b = S.bow; if (!b) return; S.bow = null;
+  const from = wp(hero.userData.anchors.bowSocket), to = target();
+  emit('bow_release', from, { draw: 1, charged: b.charged, element: b.element });
+  const n = b.charged ? 1 : 1;
+  for (let i = 0; i < n; i++) flyTo('arrow', from, to, 42, { radius: 0.08, element: b.element, charged: b.charged, onHit: (pp) => emit('arrow_hit', pp, { damage: b.charged ? 40 : 18, element: b.element }) });
+  if (b.charged && b.element) { // дождь стрел — залп сверху по цели
+    for (let i = 0; i < 9; i++) later(0.35 + i * 0.07, () => {
+      const t = target(); const tx = t.x + (Math.random() - 0.5) * 3, tz = t.z + (Math.random() - 0.5) * 3;
+      flyTo('arrow', v3(tx + 2, 14, tz + 3), v3(tx, 0.1, tz), 30, { radius: 0.06, element: b.element, rain: true, onHit: (pp) => emit('arrow_hit', pp, { damage: 8, element: b.element, rain: true }) });
+    });
+  }
+}
+// ---- магия ладони (C3, №6): формирование 1 с → бросок → снаряд hand_orb → попадание
+function handSpell(element) {
+  S.hand = { t0: S.time, element, phase: 'form' };
+  emit('hand_spell_form', heroHand(), { element, power: 0 });
+  later(1.0, () => {
+    if (!S.hand) return;
+    S.hand = null;
+    const from = heroHand(), to = target();
+    emit('hand_spell_throw', from, { element, power: 1, dir: { x: 0, y: 0 } });
+    flyTo('hand_orb', from, to, 24, { radius: 0.3, element, onHit: (pp) => emit('hand_spell_hit', pp, { element, damage: 35 }) });
+  });
+}
+// ---- удары Регента
+function bossAttack(kind) {
+  const p = heroPos();
   const windup = kind === 'nova' ? 1.4 : kind === 'orb' ? 1.0 : 1.2;
-  const t = {
-    id: 'atk' + (++aid), kind, origin: v3(0, 2.6, 0), target: kind === 'nova' ? v3(0, 0, 0) : v3(p.x, 0, p.z),
-    radius: kind === 'nova' ? 4.6 : kind === 'orb' ? 0.5 : 2.2, remaining: windup, duration: windup, blockable: kind !== 'slam',
-  };
+  const t = { id: 'atk' + (++eid), kind, origin: v3(0, 2.6, 0), target: kind === 'nova' ? v3(0, 0, 0) : v3(p.x, 0, p.z), radius: kind === 'nova' ? 4.6 : kind === 'orb' ? 0.5 : 2.2, remaining: windup, duration: windup, blockable: kind !== 'slam' };
   S.telegraphs.push(t);
   emit('boss_windup', t.origin, { attackKind: kind, attackId: t.id, windup });
 }
-function cast() {
-  const p = playerPos();
-  const hand = v3(p.x + Math.cos(S.angle) * 0.36 - Math.sin(S.angle) * 0.42, 1.45, p.z - Math.sin(S.angle) * 0.36 - Math.cos(S.angle) * 0.42);
-  const dx = -hand.x, dz = -hand.z, l = Math.hypot(dx, dz), sp = 22;
-  S.projectiles.push({ id: 'p' + (++pid), owner: 'player', kind: 'bolt', position: hand, velocity: v3(dx / l * sp, 0.5, dz / l * sp), radius: 0.2 });
-  emit('player_cast', hand, {});
+
+const ACTIONS = {
+  // руны
+  ignis: () => castRune('ignis'), fulgur: () => castRune('fulgur'), orbis: () => castRune('orbis'), stella: () => castRune('stella'), spira: () => castRune('spira'),
+  lemnis: () => castRune('lemnis'), caret: () => castRune('caret'), vee: () => castRune('vee'), clepsydra: () => castRune('clepsydra'), alpha: () => castRune('alpha'),
+  // руна рисуется в воздухе 0,5 с и затем срабатывает
+  ...Object.fromEntries(Object.keys(STROKES).map((r) => ['draw_' + r, () => drawRune(r, 0.5, () => castRune(r))])),
+  // печати
+  clap: () => castSigil('clap'), gate: () => castSigil('gate'), frame: () => castSigil('frame'), delta: () => castSigil('delta'), cor: () => castSigil('cor'),
+  // приёмы
+  spark: () => spark(), slashR: () => slash('right'), slashL: () => slash('left'),
+  burst: () => { emit('player_cast', heroChest(), { ability: 'burst' }); emit('burst', heroChest(), { amount: 40, power: 0.9, radius: 7, from: heroChest(), to: target() }); later(0.05, () => hitTarget(40)); },
+  sphere: () => conjureThrow('sphere'), prism: () => conjureThrow('prism'),
+  parry: () => emit('parry', v3(S.heroX - 0.3, 1.45, S.heroZ - 1.2), { success: true }),
+  dashL: () => { S.heroX -= 1.2; emit('player_dash', heroPos(), { direction: -1 }); }, dashR: () => { S.heroX += 1.2; emit('player_dash', heroPos(), { direction: 1 }); },
+  perfect: () => emit('perfect_dodge', heroPos(), {}),
+  shield: () => { S.shielding = !S.shielding; emit(S.shielding ? 'shield_start' : 'shield_end', heroPos(), {}); },
+  block: () => { if (!S.shielding) { S.shielding = true; emit('shield_start', heroPos(), {}); } emit('block', v3(S.heroX + 0.2, 1.4, S.heroZ - 0.9), { attackKind: 'orb', prevented: 20 }); },
+  // Регент
+  slam: () => bossAttack('slam'), orb: () => bossAttack('orb'), nova: () => bossAttack('nova'),
+  bossHit: () => emit('boss_hit', v3(0.2, 2.4, 0.6), { amount: 30, source: 'spark' }),
+  playerHit: () => emit('player_hit', heroChest(), { amount: 25 }),
+  phase: () => { S.stage = 2; emit('boss_phase', v3(0, 3, 0), { stage: 2, from: 1 }); },
+  // лук и магия ладони
+  bow: () => { bow(null, false); later(0.8, bowRelease); }, bowFire: () => { bow('fire', true); later(0.9, bowRelease); },
+  bowStorm: () => { bow('storm', true); later(0.9, bowRelease); }, bowFrost: () => { bow('frost', true); later(0.9, bowRelease); },
+  handFire: () => handSpell('fire'), handStorm: () => handSpell('storm'), handFrost: () => handSpell('frost'), handEarth: () => handSpell('earth'),
+  // PvP: те же заклинания соперника (data.remote = true)
+  ...Object.fromEntries(Object.keys(RUNE_DATA).map((r) => ['r_' + r, () => { setPvp(true); castRune(r, true); }])),
+  r_spark: () => { setPvp(true); spark(true); }, r_slash: () => { setPvp(true); slash('right', true); },
+  r_clap: () => { setPvp(true); castSigil('clap', true); }, r_delta: () => { setPvp(true); castSigil('delta', true); },
+  // герой
+  spawn: () => { emit('hero_spawn', heroPos(), {}); }, death: () => { S.heroHp = 0; S.heroAction = 'dead'; emit('hero_death', heroPos(), {}); },
+  r_spawn: () => { setPvp(true); emit('hero_spawn', oppPos(), { remote: true }); }, r_death: () => { setPvp(true); S.oppHp = 0; S.oppAction = 'dead'; emit('hero_death', oppPos(), { remote: true }); },
+  victory: () => { S.status = 'victory'; S.telegraphs = []; emit('victory', v3(0, 2.6, 0), {}); },
+  defeat: () => { S.status = 'defeat'; S.heroAction = 'dead'; S.telegraphs = []; emit('defeat', heroPos(), {}); },
+  reset: () => resetSim(),
+};
+const GROUPS = [
+  ['Руны', ['ignis', 'fulgur', 'orbis', 'stella', 'spira', 'lemnis', 'caret', 'vee', 'clepsydra', 'alpha']],
+  ['Руна в воздухе (след пальца)', Object.keys(STROKES).map((r) => 'draw_' + r)],
+  ['Печати', ['clap', 'gate', 'frame', 'delta', 'cor']],
+  ['Приёмы', ['spark', 'slashR', 'slashL', 'burst', 'sphere', 'prism', 'parry', 'dashL', 'dashR', 'perfect', 'shield', 'block']],
+  ['Регент', ['slam', 'orb', 'nova', 'bossHit', 'playerHit', 'phase']],
+  ['Лук / ладонь (C3)', ['bow', 'bowFire', 'bowStorm', 'bowFrost', 'handFire', 'handStorm', 'handFrost', 'handEarth']],
+  ['PvP: соперник (remote)', [...Object.keys(RUNE_DATA).map((r) => 'r_' + r), 'r_spark', 'r_slash', 'r_clap', 'r_delta']],
+  ['Герой', ['spawn', 'death', 'r_spawn', 'r_death', 'victory', 'defeat', 'reset']],
+];
+function setPvp(v) {
+  S.pvp = !!v; opp.visible = S.pvp; bossG.visible = !S.pvp;
+  document.getElementById('pvp').checked = S.pvp;
 }
+function resetSim() {
+  Object.assign(S, { time: 0, status: 'playing', stage: 1, heroX: 0, shielding: false, conjure: null, vortex: 0, regen: 0, bastion: 0, ward: 0, slow: 0, stun: 0, mark: 0, heroAction: 'idle', oppAction: 'idle', heroHp: 80, oppHp: 100, projectiles: [], telegraphs: [], pending: [], timers: [], trail: null, bow: null, hand: null });
+  fx.reset();
+}
+
 function stepSim(dt) {
   S.time += dt;
-  S.angle += S.strafe * dt * 0.5;
+  for (const k of ['vortex', 'regen', 'bastion', 'ward', 'slow', 'stun', 'mark']) if (S[k] > 0) S[k] = Math.max(0, S[k] - dt);
+  const due = S.timers.filter((t) => t.t <= S.time); S.timers = S.timers.filter((t) => t.t > S.time);
+  for (const t of due) t.fn();
+  if (S.conjure) { const k = Math.min(1, (S.time - (S.conjureT0 || 0)) / 1.1); S.conjure.size = 0.2 + 0.7 * k; S.conjure.charge = k; }
+  // след руны
+  let hands = null;
+  if (S.trail) {
+    const T = S.trail, k = Math.min(1, (S.time - T.t0) / T.dur);
+    const n = Math.max(2, Math.round(T.pts.length * k));
+    hands = { available: true, drawing: k < 1, trail: T.pts.slice(0, n), lastRune: k >= 1 ? T.rune : null, right: { shape: 'point', tip: T.pts[n - 1], center: T.pts[n - 1] }, left: null };
+    if (k >= 1 && T.then) { const f = T.then; T.then = null; f(); }
+    if (S.time - T.t0 > T.dur + 0.7) S.trail = null;
+  }
+  // лук / ладонь во вводе (C2)
+  let bowIn = null, handIn = null;
+  if (S.bow) { const d = Math.min(1, (S.time - S.bow.t0) / 0.8); bowIn = { active: true, draw: d, aimX: 0, aimY: 0, charged: d >= 1, release: false, element: S.bow.element }; if (Math.floor(d * 10) !== Math.floor(Math.min(1, (S.time - dt - S.bow.t0) / 0.8) * 10)) emit('bow_draw', wp(hero.userData.anchors.bowSocket), { draw: d, element: S.bow.element }); }
+  if (S.hand) { const p = Math.min(1, (S.time - S.hand.t0) / 1.0); handIn = { phase: p < 0.25 ? 'form' : 'hold', element: S.hand.element, power: p, dir: { x: 0, y: 0 } }; }
+  S.input = { valid: true, hands, bow: bowIn, handSpell: handIn || { phase: 'idle', element: 'fire', power: 0, dir: { x: 0, y: 0 } } };
+  // телеграфы Регента
   for (const t of S.telegraphs) t.remaining = Math.max(0, t.remaining - dt);
   for (const t of S.telegraphs.filter((x) => x.remaining <= 0)) {
     emit('boss_impact', t.kind === 'slam' ? t.target : t.origin, { attackKind: t.kind, attackId: t.id, radius: t.radius });
-    if (t.kind === 'orb') {
-      const dx = t.target.x - t.origin.x, dz = t.target.z - t.origin.z, l = Math.hypot(dx, dz), sp = 11;
-      S.projectiles.push({ id: 'p' + (++pid), owner: 'boss', kind: 'orb', position: { ...t.origin }, velocity: v3(dx / l * sp, -t.origin.y / (l / sp), dz / l * sp), radius: 0.5 });
-    }
+    if (t.kind === 'orb') { const q = flyTo('orb', t.origin, heroChest(), 11, { owner: 'boss', radius: 0.5 }); emit('boss_projectile', t.origin, { attackKind: 'orb', attackId: t.id, projectileId: q.id }); }
   }
   S.telegraphs = S.telegraphs.filter((x) => x.remaining > 0);
-  for (const p of S.projectiles) { p.position = v3(p.position.x + p.velocity.x * dt, p.position.y + p.velocity.y * dt, p.position.z + p.velocity.z * dt); }
+  // снаряды
+  for (const p of S.projectiles) {
+    if (p.homing && p.target) { const t = p.target; const dx = t.x - p.position.x, dy = t.y - p.position.y, dz = t.z - p.position.z, l = Math.hypot(dx, dy, dz) || 1, sp = Math.hypot(p.velocity.x, p.velocity.y, p.velocity.z); const k = Math.min(1, dt * 6); p.velocity = v3(p.velocity.x + (dx / l * sp - p.velocity.x) * k, p.velocity.y + (dy / l * sp - p.velocity.y) * k, p.velocity.z + (dz / l * sp - p.velocity.z) * k); }
+    p.position = v3(p.position.x + p.velocity.x * dt, p.position.y + p.velocity.y * dt, p.position.z + p.velocity.z * dt);
+  }
   S.projectiles = S.projectiles.filter((p) => {
-    if (p.owner === 'player' && Math.hypot(p.position.x, p.position.z) < 1.1) {
-      emit('projectile_impact', { ...p.position }, { owner: 'player', projectileId: p.id, direction: v3(p.velocity.x, p.velocity.y, p.velocity.z) });
-      emit('boss_hit', { ...p.position }, { amount: 12 });
+    const t = p.target || (p.owner === 'boss' ? heroChest() : target());
+    const d = Math.hypot(p.position.x - t.x, p.position.y - t.y, p.position.z - t.z);
+    if (d < Math.max(0.6, p.radius * 2) || p.position.y < 0.05) {
+      const pos = { ...p.position };
+      if (p.owner === 'boss') { if (S.shielding) emit('block', pos, { projectileId: p.id, attackKind: 'orb' }); else emit('player_hit', pos, { amount: 12, projectileId: p.id }); }
+      else {
+        emit('projectile_impact', pos, { owner: p.owner === 'opponent' ? 'player' : 'player', kind: p.kind, projectileId: p.id, element: p.element, result: 'boss', direction: p.velocity, remote: p.remote || undefined });
+        if (p.onHit) p.onHit(pos); else if (!p.remote) hitTarget(p.kind === 'spark' ? 14 : 40, pos, { source: p.kind });
+      }
       return false;
     }
-    if (p.owner === 'boss' && p.position.y < 1.4) {
-      const pp = playerPos();
-      if (Math.hypot(p.position.x - pp.x, p.position.z - pp.z) < 1.2) {
-        if (S.shielding) emit('block', { ...p.position }, { projectileId: p.id }); else emit('player_hit', null, { amount: 10, projectileId: p.id });
-        return false;
-      }
-    }
-    if (Math.hypot(p.position.x, p.position.z) > 12 || p.position.y < -0.5) return false;
-    return true;
+    return Math.hypot(p.position.x, p.position.z) < 40;
   });
-  if (S.auto && S.status === 'playing') {
-    S.autoT += dt;
-    if (S.autoT > 2.4) { S.autoT = 0; attack(['slam', 'orb', 'nova'][Math.floor(S.time) % 3]); }
-    if (Math.floor(S.time * 3) !== Math.floor((S.time - dt) * 3)) cast();
-    S.strafe = Math.sin(S.time * 0.7);
+  if (S.auto) {
+    S.autoT = (S.autoT || 0) + dt;
+    if (S.autoT > 0.6) { S.autoT = 0; const list = ['ignis', 'fulgur', 'stella', 'spira', 'caret', 'vee', 'clepsydra', 'orbis', 'burst', 'spark', 'slashR', 'delta', 'clap']; ACTIONS[list[(S.autoN = (S.autoN || 0) + 1) % list.length]](); }
   }
 }
 function snapshot() {
-  const p = playerPos();
-  return {
-    status: S.status, time: S.time,
-    player: { position: p, yaw: 0, hp: 80, maxHp: 100, energy: 60, maxEnergy: 100, action: S.status === 'defeat' ? 'dead' : 'idle', invulnerable: false, shielding: S.shielding },
-    boss: { position: v3(0, 0, 0), yaw: 0, hp: 600, maxHp: 1000, stage: S.stage, action: 'idle' },
+  const hp = heroPos();
+  const snap = {
+    status: S.status, time: S.time, mode: S.pvp ? 'pvp' : 'boss',
+    player: {
+      position: hp, yaw: Math.PI, hp: S.heroHp, maxHp: 100, energy: 60, maxEnergy: 100,
+      action: S.heroAction, invulnerable: false, shielding: S.shielding, conjure: S.conjure ? { ...S.conjure } : null,
+      conjurePoint: (() => { const c = heroChest(); return v3(c.x, c.y + 0.05, c.z - 0.45); })(),
+      burstCharge: S.burstCharge, warded: S.ward > 0, wardRemaining: S.ward, bastion: S.bastion > 0, bastionRemaining: S.bastion,
+      vortex: S.vortex > 0, vortexRemaining: S.vortex, regen: S.regen > 0, regenRemaining: S.regen, lockedOn: true, encounter: 'engaged',
+    },
+    boss: { position: v3(0, 0, 0), yaw: 0, hp: 600, maxHp: 1000, stage: S.stage, action: S.stun > 0 ? 'stunned' : 'idle', stunned: S.stun > 0, stunRemaining: S.stun, slowed: S.slow > 0, slowRemaining: S.slow, marked: S.mark > 0, markRemaining: S.mark },
     cooldowns: { dashRemaining: 0, dashTotal: 1, burstRemaining: 0, burstTotal: 6 },
-    projectiles: S.projectiles.map((q) => ({ ...q, position: { ...q.position }, velocity: { ...q.velocity } })),
+    projectiles: S.projectiles.map((q) => ({ id: q.id, owner: q.owner === 'opponent' ? 'player' : q.owner, kind: q.kind, element: q.element, position: { ...q.position }, velocity: { ...q.velocity }, radius: q.radius, remote: q.remote || undefined, charged: q.charged, rain: q.rain })),
     telegraphs: S.telegraphs.map((q) => ({ ...q, origin: { ...q.origin }, target: { ...q.target } })),
     stats: { damageDealt: 0, damageTaken: 0, dodges: 0, blocks: 0 },
+    opponent: S.pvp ? { id: 'opp', name: 'Соперник', hero: 'ashen', position: oppPos(), yaw: 0, hp: S.oppHp, maxHp: 100, energy: 80, maxEnergy: 100, action: S.oppAction, shielding: false, invulnerable: false, stunned: false, slowed: false } : null,
+    lockTarget: S.pvp ? { position: oppPos(), kind: 'player' } : { position: v3(0, 0, 0), kind: 'boss' },
+  };
+  return snap;
+}
+
+// ---------------------------------------------------------------- кадр
+function placeCamera() {
+  const imp = fx.getCameraImpulse();
+  camera.position.set(S.heroX + 1.2 + imp.x, 2.75 + imp.y, S.heroZ + 4.9 + imp.z);
+  camera.lookAt(S.heroX * 0.6 + 0.35, 1.9, 2.2);
+  camera.updateMatrixWorld();
+}
+const perf = { upd: 0, ren: 0, n: 0, updAvg: 0, renAvg: 0, fps: 0, frames: 0, t0: performance.now(), hitstop: 0 };
+let lastSnap = snapshot();
+let hitStopLeft = 0;
+function frame(dt) {
+  const paused = document.getElementById('pause').checked;
+  let events = [];
+  // хит-стоп как в main.js: боевое время почти стоит
+  let ts = 1;
+  if (hitStopLeft > 0) { ts = 0.04; hitStopLeft -= dt * 1000; }
+  const sdt = paused ? 0 : dt * ts;
+  if (!paused) { stepSim(sdt); lastSnap = snapshot(); events = S.pending; S.pending = []; }
+  hero.position.set(S.heroX, 0, S.heroZ); hero.rotation.y = 0;
+  hero.visible = S.heroAction !== 'dead' || true;
+  opp.position.set(0, 0, 0); opp.rotation.y = Math.PI;
+  hero.updateMatrixWorld(true); opp.updateMatrixWorld(true);
+  const t0 = performance.now();
+  fx.setInput(S.input);
+  fx.update(sdt, lastSnap, events);
+  const hs = fx.takeHitStop(); if (hs > 0) { hitStopLeft = Math.max(hitStopLeft, hs); perf.hitstop = hs; }
+  const t1 = performance.now();
+  placeCamera();
+  renderer.render(scene, camera);
+  const t2 = performance.now();
+  perf.upd += t1 - t0; perf.ren += t2 - t1; perf.n++;
+  if (perf.n >= 30) { perf.updAvg = perf.upd / perf.n; perf.renAvg = perf.ren / perf.n; perf.upd = perf.ren = 0; perf.n = 0; }
+}
+function info() {
+  const d = fx.getDebugInfo();
+  const k = d.v6 && d.v6.kit;
+  return {
+    fps: Math.round(perf.fps), updMs: +perf.updAvg.toFixed(3), cpuRenderMs: +perf.renAvg.toFixed(2),
+    calls: renderer.info.render.calls, tris: renderer.info.render.triangles, programs: renderer.info.programs ? renderer.info.programs.length : null,
+    oldParticles: d.particles.glow + d.particles.dust, v6Particles: k ? k.particles : 0, v6Cap: k ? k.cap : 0,
+    v6: d.v6 ? { loaded: d.v6.loaded, sub: d.v6.sub, actors: k && k.actors, lights: k && k.lights } : null,
+    events: d.events, hitstop: perf.hitstop, quality: d.quality, reduced: d.reducedMotion,
   };
 }
-const actions = {
-  slam: () => attack('slam'), orb: () => attack('orb'), nova: () => attack('nova'),
-  cast, shield: () => { S.shielding = !S.shielding; },
-  burst: () => emit('burst', null, { radius: 7 }),
-  dashL: () => { S.angle -= 0.35; emit('player_dash', playerPos(), { direction: -1 }); },
-  dashR: () => { S.angle += 0.35; emit('player_dash', playerPos(), { direction: 1 }); },
-  block: () => { const p = playerPos(); emit('block', v3(p.x * 0.85, 1.3, p.z * 0.85), {}); },
-  bossHit: () => emit('boss_hit', v3(0, 2.4, 0.6), { amount: 30 }),
-  playerHit: () => emit('player_hit', null, { amount: 10 }),
-  phase: () => { S.stage = 2; emit('boss_phase', null, {}); },
-  victory: () => { S.status = 'victory'; S.telegraphs = []; emit('victory', null, {}); },
-  defeat: () => { S.status = 'defeat'; S.telegraphs = []; emit('defeat', null, {}); },
-  reset: () => { Object.assign(S, { time: 0, stage: 1, status: 'playing', projectiles: [], telegraphs: [], pending: [], shielding: false }); fx.reset(); },
-};
 
-// ---------- UI стенда
-document.querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', () => actions[b.dataset.a]()));
-const keys = { Digit1: 'slam', Digit2: 'orb', Digit3: 'nova', KeyJ: 'cast', KeyK: 'shield', KeyL: 'burst', KeyQ: 'dashL', KeyE: 'dashR', KeyB: 'block' };
-window.addEventListener('keydown', (e) => {
-  if (e.repeat) return; // импульсные действия — без автоповтора
-  if (keys[e.code]) actions[keys[e.code]]();
-  if (e.code === 'KeyA') S.strafe = -1;
-  if (e.code === 'KeyD') S.strafe = 1;
-});
-window.addEventListener('keyup', (e) => { if (e.code === 'KeyA' || e.code === 'KeyD') S.strafe = 0; });
-document.getElementById('audioBtn').addEventListener('click', async () => {
-  const ok = await fx.unlockAudio();
-  document.getElementById('audioBtn').textContent = ok ? 'Звук включён' : 'Звук недоступен';
-});
-document.getElementById('auto').addEventListener('click', (e) => { S.auto = !S.auto; e.target.textContent = 'Авто-бой: ' + (S.auto ? 'вкл' : 'выкл'); });
-document.getElementById('q').addEventListener('change', (e) => { settings.quality = e.target.value; fx.setQuality(settings.quality); });
-document.getElementById('vol').addEventListener('input', (e) => { settings.volume = Number(e.target.value); fx.setVolume(settings.volume); });
-document.getElementById('rm').addEventListener('change', (e) => { settings.reducedMotion = e.target.checked; });
-const pauseBox = document.getElementById('pause');
-window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
-
-// ---------- кадр (в игре этим владеет сборщик №1)
-const camBase = new THREE.Vector3(), look = new THREE.Vector3();
-let lastSnap = snapshot();
-function frame(dt) {
-  const paused = pauseBox.checked;
-  let events = [];
-  if (!paused) { stepSim(dt); lastSnap = snapshot(); events = S.pending; S.pending = []; }
-  const p = lastSnap.player.position;
-  hero.position.set(p.x, 0, p.z); hero.rotation.y = Math.atan2(-p.x, -p.z);
-  fx.update(paused ? 0 : dt, lastSnap, events);
-  const back = new THREE.Vector3(p.x, 0, p.z).normalize();
-  camBase.set(p.x + back.x * 4.6, 3.1, p.z + back.z * 4.6);
-  const imp = fx.getCameraImpulse();
-  camera.position.set(camBase.x + imp.x, camBase.y + imp.y, camBase.z + imp.z);
-  look.set(p.x * 0.35, 1.1, p.z * 0.35); camera.lookAt(look);
-  camera.updateMatrixWorld();
-  renderer.render(scene, camera);
+// ---------------------------------------------------------------- UI
+const groupsEl = document.getElementById('groups');
+for (const [title, names] of GROUPS) {
+  const h = document.createElement('h2'); h.textContent = title; groupsEl.appendChild(h);
+  const row = document.createElement('div'); row.className = 'row';
+  for (const n of names) { const b = document.createElement('button'); b.textContent = n; b.onclick = () => ACTIONS[n](); row.appendChild(b); }
+  groupsEl.appendChild(row);
 }
+document.getElementById('q').onchange = (e) => { settings.quality = e.target.value; fx.setQuality(settings.quality); };
+document.getElementById('rm').onchange = (e) => { settings.reducedMotion = e.target.checked; };
+document.getElementById('v6').onchange = (e) => { settings.fxMagic = e.target.checked; };
+document.getElementById('pvp').onchange = (e) => setPvp(e.target.checked);
+document.getElementById('auto').onchange = (e) => { S.auto = e.target.checked; };
+window.addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+if (qs.has('pvp')) setPvp(true);
+if (qs.has('stress')) S.auto = true;
+
 let last = performance.now(), infoT = 0;
-const manual = new URLSearchParams(location.search).has('manual');
 function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   frame(dt);
+  perf.frames++;
+  if (now - perf.t0 >= 1000) { perf.fps = perf.frames * 1000 / (now - perf.t0); perf.frames = 0; perf.t0 = now; }
   infoT += dt;
-  if (infoT > 0.25) { infoT = 0; const d = fx.getDebugInfo(); document.getElementById('info').textContent = `API ${API_VERSION}  three r${THREE.REVISION}\nчастицы ${d.particles.glow}/${d.particles.glowCap} пыль ${d.particles.dust}/${d.particles.dustCap}\nтелеграфы ${d.telegraphs.live} снаряды ${d.projectiles.drawn}\nсобытия ${d.events.processed} дубли ${d.events.duplicatesSkipped}\nзвук ${d.audio.state} голоса ${d.audio.voices}\ndraw calls ${renderer.info.render.calls} programs ${renderer.info.programs ? renderer.info.programs.length : '?'}`; }
-  requestAnimationFrame(loop);
+  if (infoT > 0.25 && !SHOT) {
+    infoT = 0; const i = info();
+    document.getElementById('info').textContent = `API ${API_VERSION}  three r${THREE.REVISION}  ${i.quality}${i.reduced ? ' · reducedMotion' : ''}\nfps ${i.fps}  effects.update ${i.updMs} мс  render(CPU) ${i.cpuRenderMs} мс\nчастицы: V6 ${i.v6Particles}/${i.v6Cap} + старые ${i.oldParticles}\ndraw calls ${i.calls}  tris ${i.tris}  programs ${i.programs}\nV6: ${i.v6 ? i.v6.loaded.subsystems.join(',') + ' | ' + i.v6.loaded.choreo.length + ' хореогр. | сбой: ' + (i.v6.loaded.failed.join(',') || '—') : 'выкл'}\nсобытия ${i.events.processed} дубли ${i.events.duplicatesSkipped} ошибки ${i.events.errors}  хит-стоп ${i.hitstop} мс`;
+  }
+  if (!SHOT) requestAnimationFrame(loop);
 }
-if (!manual) requestAnimationFrame(loop);
-// Хук для автоматической проверки (Playwright): детерминированные шаги без rAF.
-window.__bench = { fx, S, actions, frame, renderer, scene, camera, THREE, settings };
+const stand = {
+  ready: (async () => { if (fx.v6 && fx.v6.ready) { try { await fx.v6.ready; } catch (e) { /* ignore */ } } return true; })(),
+  play(name) { if (ACTIONS[name]) ACTIONS[name](); else console.warn('нет действия', name); },
+  run(sec) { const n = Math.max(1, Math.round(sec * 60)); for (let i = 0; i < n; i++) frame(sec > 0 ? sec / n : 0); },
+  reset: resetSim, info,
+  measure(sec) {
+    return new Promise((res) => {
+      let n = 0; const t0 = performance.now(); let l = t0;
+      const f = (now) => { frame(Math.min(0.1, (now - l) / 1000)); l = now; n++; if (now - t0 < sec * 1000) requestAnimationFrame(f); else res({ fps: n * 1000 / (now - t0), ...info() }); };
+      requestAnimationFrame(f);
+    });
+  },
+  actions: Object.keys(ACTIONS),
+};
+window.__stand = stand;
+window.__bench = { fx, S, ACTIONS, frame, renderer, scene, camera, THREE, settings, snapshot, hero, opp };
+if (!SHOT) requestAnimationFrame(loop);
 </script>
 </body>
 </html>

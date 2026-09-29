@@ -23,6 +23,8 @@
 // результата выпускается ровно одно.
 // =============================================================================
 
+import { createCombatHand } from './combatHand.js'; // [HAND] лук и магия рукой: стрелы и сгустки
+
 export const COMBAT_API_VERSION = 'ASHEN_V2';
 
 // Заглушка раскладки карты (контракт ASHEN_V2, К.9), пока мир не передал свою: плато R = 45 м,
@@ -515,6 +517,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   const H = C.sim.fixedStep;
   const MAX_STEPS = Math.ceil(C.sim.maxFrameDt / H) + 1;
   const BOSS = vcopy(C.arena.bossPosition);
+  let hand = null; // [HAND] modules/combatHand.js (создаётся в конце фабрики)
   // [ASHEN_V2] раскладка карты: коллизии, земля, арена. Функции раскладки — чистые.
   const LAY = normalizeLayout(layout, BOSS);
 
@@ -802,6 +805,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       }),
       stats: { ...st.stats },
     };
+    if (hand) { try { hand.decorateSnapshot(snap); } catch (e) { /* [HAND] снимок без стрел */ } } // [HAND]
     // [PVP] C4: режим, соперник и цель lock-on (в бою с боссом — Регент)
     snap.mode = PV && PV.on ? 'pvp' : 'boss';
     snap.opponent = null;
@@ -818,6 +822,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       st.input.conjure = null;
       st.pendingDash = 0; st.pendingDashCam = null; st.pendingBurst = false; st.pendingRune = null; st.pendingThrow = null; st.p.charge = 0;
       st.pendingSpark = false; st.pendingSlash = null; st.pendingParry = false;
+      if (hand) hand.clearInput(); // [HAND]
       return;
     }
     const vy = Number(input.viewYaw);
@@ -865,6 +870,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     if (typeof input.sigil === 'string' && SIGIL_IDS.includes(input.sigil)) st.pendingSigil = input.sigil;
     const ch = Number(input.charge);
     st.p.charge = Number.isFinite(ch) ? clamp(ch, 0, 1) : 0;
+    if (hand) { try { hand.readInput(input); } catch (e) { console.warn('[combat] hand.readInput', e); } } // [HAND] input.bow / input.handSpell
   }
 
   function readVec2(v) {
@@ -1053,6 +1059,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     }
     st.status = result;
     st.projectiles.length = 0;
+    if (hand) hand.clear(); // [HAND]
     st.telegraphs.length = 0;
     st.pendingDash = 0;
     st.pendingBurst = false;
@@ -2214,6 +2221,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     fireBolts(h);
     updatePlayerProjectiles(h);
     if (st.status !== 'playing') return;
+    if (hand) { try { hand.step(h); } catch (e) { console.warn('[combat] hand.step', e); } if (st.status !== 'playing') return; } // [HAND] стрелы и сгустки
     updateTelegraphs(bh);
     if (st.status !== 'playing') return;
     updateParry(h);
@@ -2243,6 +2251,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   function reset() {
     fightGen++;
     st = freshState();
+    if (hand) hand.reset(); // [HAND]
     try {
       bossBrain.reset();
     } catch (err) {
@@ -2337,8 +2346,16 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     return !!LAY.custom;
   }
 
+  // [HAND] лук и магия рукой (modules/combatHand.js): доступ к бою изнутри замыкания (st — геттером: reset его заменяет)
+  try {
+    hand = createCombatHand({
+      C, BOSS, get st() { return st; }, playerPos, playerChest, bossAim, toBossUnit, damageBoss, emit, deny,
+      groundY: (x, z) => LAY.groundY(x, z),
+    });
+  } catch (e) { hand = null; console.warn('[combat] combatHand недоступен', e); }
+
 
   reset();
-  return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig, setSpawn,
+  return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig, setSpawn, get hand() { return hand; } /* [HAND] */,
     attachPvp, setMode, getMode, setOpponent, applyRemoteHit };   // [PVP]
 }

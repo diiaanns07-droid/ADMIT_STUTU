@@ -5,6 +5,8 @@
 
 const STATUS_TEXT = { idle: 'Не подключено', connecting: 'Подключение…', connected: 'Соперник на связи', lost: 'Связь потеряна' };
 
+export function ensureLobbyCss() { loadCss(); }
+
 function loadCss() {
   if (document.getElementById('nl-css')) return;
   const l = document.createElement('link');
@@ -160,6 +162,7 @@ export function createNetLobby({ root, actions }) {
       : 'Пусто — ретранслятор на этом же ноутбуке (127.0.0.1). Порт 8790.';
     lanHint.classList.toggle('is-warn', !!v.https);
     // до комнаты — кнопки, в комнате — код и готовность
+    if (!inRoom && !codeIn.value && v.lastCode && document.activeElement !== codeIn) codeIn.value = v.lastCode; // прошлая комната
     actionsBox.hidden = inRoom;
     hostBtn.disabled = v.busy; joinBtn.disabled = v.busy; codeIn.disabled = v.busy;
     roomBox.hidden = !inRoom;

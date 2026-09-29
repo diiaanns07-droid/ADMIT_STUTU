@@ -48,6 +48,49 @@ export async function loadVRM(THREE, url) {
   return vrm;
 }
 
+// [HERO] GLB-герой на скелете Quaternius UAL (как у манекена UE: pelvis, spine_01…03, neck_01, Head,
+// clavicle_l, upperarm_l…, thigh_l, calf_l, foot_l, ball_l, пальцы index_01_l…). Для него строится
+// VRMHumanoid из three-vrm: нормализованный скелет (покой = T-поза модели), поэтому перенос клипов,
+// позы и якоря работают так же, как у VRM. Возвращает «vrm»-подобный объект:
+//   { scene, humanoid, expressionManager: null, springBoneManager: null, update(dt), isGlbHero: true }
+const UAL_BONES = {
+  hips: 'pelvis', spine: 'spine_01', chest: 'spine_02', upperChest: 'spine_03', neck: 'neck_01', head: 'Head',
+  leftShoulder: 'clavicle_l', leftUpperArm: 'upperarm_l', leftLowerArm: 'lowerarm_l', leftHand: 'hand_l',
+  rightShoulder: 'clavicle_r', rightUpperArm: 'upperarm_r', rightLowerArm: 'lowerarm_r', rightHand: 'hand_r',
+  leftUpperLeg: 'thigh_l', leftLowerLeg: 'calf_l', leftFoot: 'foot_l', leftToes: 'ball_l',
+  rightUpperLeg: 'thigh_r', rightLowerLeg: 'calf_r', rightFoot: 'foot_r', rightToes: 'ball_r',
+};
+for (const s of ['l', 'r']) {
+  const S = s === 'l' ? 'left' : 'right';
+  UAL_BONES[`${S}ThumbMetacarpal`] = `thumb_01_${s}`; UAL_BONES[`${S}ThumbProximal`] = `thumb_02_${s}`; UAL_BONES[`${S}ThumbDistal`] = `thumb_03_${s}`;
+  for (const [f, q] of [['Index', 'index'], ['Middle', 'middle'], ['Ring', 'ring'], ['Little', 'pinky']]) {
+    UAL_BONES[`${S}${f}Proximal`] = `${q}_01_${s}`; UAL_BONES[`${S}${f}Intermediate`] = `${q}_02_${s}`; UAL_BONES[`${S}${f}Distal`] = `${q}_03_${s}`;
+  }
+}
+export async function loadHumanoidGLB(THREE, url, boneMap = UAL_BONES) {
+  const [{ GLTFLoader }, V] = await Promise.all([import('three/addons/loaders/GLTFLoader.js'), vrmModule()]);
+  const gltf = await new GLTFLoader().loadAsync(url);
+  const scene = gltf.scene;
+  scene.updateMatrixWorld(true);
+  const find = (n) => scene.getObjectByName(n) || scene.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(n));
+  // лицом к +z, как VRM: стопа → носок
+  const foot = find(boneMap.leftFoot), toe = find(boneMap.leftToes);
+  if (foot && toe) {
+    const a = foot.getWorldPosition(new THREE.Vector3()), b = toe.getWorldPosition(new THREE.Vector3());
+    if (b.z - a.z < 0) { scene.rotation.y = Math.PI; scene.updateMatrixWorld(true); }
+  }
+  const human = {};
+  for (const [vName, sName] of Object.entries(boneMap)) { const n = find(sName); if (n) human[vName] = { node: n }; }
+  if (!human.hips || !human.head || !human.leftUpperArm) throw new Error('нет костей гуманоида: ' + url);
+  const humanoid = new V.VRMHumanoid(human, { autoUpdateHumanBones: true });
+  scene.add(humanoid.normalizedHumanBonesRoot);
+  scene.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; o.receiveShadow = true; } });
+  return {
+    scene, humanoid, expressionManager: null, springBoneManager: null, lookAt: null, isGlbHero: true,
+    update() { humanoid.update(); },
+  };
+}
+
 // Перенос клипа на VRM по мировым направлениям костей (устойчив к разной позе покоя:
 // у Quaternius руки в покое опущены, у VRM — T-поза).
 //   корпус (таз, позвоночник, шея, голова): D(t) = Q_src(t)·Q_src_rest⁻¹, W_vrm(t) = D(t)·W_vrm_rest;

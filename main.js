@@ -28,6 +28,7 @@ import { createCoachStats, hintInfo } from './core/gestureCoach.js';
 import { createProgression } from './core/progression.js';
 import { createPushupCounter } from './core/pushupCounter.js';
 import { createSquatCounter, topSquatFault, synthSquatPose } from './core/squatCounter.js';
+import { createHandZone, createHeroBowPose } from './core/handZone.js'; // [HAND] лук и магия рукой
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
 
@@ -66,8 +67,12 @@ function sanitizeSettings(patch, base) {
   // [NET] имя в онлайн-дуэли и IP ретранслятора LAN
   if (typeof patch.netName === 'string') out.netName = patch.netName.replace(/[<>\u0000-\u001f]/g, '').trim().slice(0, 16);
   if (typeof patch.netLanHost === 'string') out.netLanHost = patch.netLanHost.replace(/[^0-9A-Za-z.:\-]/g, '').slice(0, 64);
+  // [VFX] эффекты V6 «больше магии» (false — прежние эффекты)
+  if ('fxMagic' in patch) out.fxMagic = patch.fxMagic !== false;
   // [BDO] интерфейс в стиле Black Desert
   if ('bdoUi' in patch) out.bdoUi = patch.bdoUi !== false;
+  // [HAND] лук и магия рукой
+  if ('handCombat' in patch) out.handCombat = patch.handCombat !== false;
   return out;
 }
 function loadSettings() {
@@ -136,9 +141,17 @@ try {
   configureHeroes({ atmosphere: world && world.atmosphere, shading: settings.heroShading, quality: settings.quality });
   if (world && world.hero) heroModel = createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, markers: world.hero.markers, atmosphere: world.atmosphere, shading: settings.heroShading, quality: settings.quality, hero: settings.hero, baseUrl: new URL('./assets/quaternius/', import.meta.url).href }); // [HERO] markers/atmosphere/shading
 } catch (e) { console.warn('[ASHEN] heroModel', e); }
+// [HERO] витрина героя в меню: кинематографичный свет и облёт (modules/heroShowcase.js); ошибка — прежняя камера меню
+let heroShowcase = null;
+if (heroModel && world && world.hero) import('./modules/heroShowcase.js').then((m) => { try { heroShowcase = m.createHeroShowcase({ THREE, scene, heroRoot: world.hero.root, heroModel, getPostfx: () => postfx, settings }); } catch (e) { console.warn('[HERO] витрина', e); } }).catch((e) => console.warn('[HERO] heroShowcase.js', e && e.message));
 const bossBrain = make('boss.js', () => createBossBrain(config));
 const combat = make('combat.js', () => createCombat({ config, bossBrain, layout: worldLayout }));
 const effects = make('effects.js', () => createEffects({ THREE, scene, camera, renderer, config }));
+// [VFX] эффекты V6 крепятся к рукам героя (C5 heroModel.getAnchors → world.getAnchors) и к рельефу карты
+try {
+  if (effects.setAnchors) effects.setAnchors(() => (heroModel && typeof heroModel.getAnchors === 'function' ? heroModel.getAnchors() : (world && typeof world.getAnchors === 'function' ? world.getAnchors() : null)));
+  if (effects.setGround && worldLayout && typeof worldLayout.groundY === 'function') effects.setGround(worldLayout.groundY);
+} catch (e) { console.warn('[ASHEN] effects V6 hooks', e); }
 const debugInput = createDebugInput(window);
 // Постобработка (core/postfx.js) грузится динамически: до готовности и при любой ошибке — обычный render().
 let postfx = null;
@@ -222,6 +235,7 @@ function forestZoneEvents(events, snap) {
 // [FOREST] место старта из настроек: combat.setSpawn до reset (точки — world.layout.spawns)
 function applyStartZone() {
   if (typeof combat.setSpawn !== 'function' || !worldLayout || !worldLayout.spawns) return;
+  if (app.netInfo && app.netInfo.spawn) { combat.setSpawn(app.netInfo.spawn); return; } // [NET] дуэль по сети: своя точка поляны
   combat.setSpawn(settings.startZone === 'forest' ? worldLayout.spawns.forest : null);
 }
 function unlitEmbers() {
@@ -297,6 +311,8 @@ function resetFight() {
   combat.reset();              // сбрасывает и bossBrain
   world.reset();
   effects.reset();
+  if (handVisuals) { try { handVisuals.reset(); } catch (e) { /* [HAND] */ } }
+  if (handZone) handZone.reset(); // [HAND]
   debugInput.clear();
   readInput();                 // выбросить накопленные импульсы
   combat.drainEvents();
@@ -350,7 +366,11 @@ async function ensureVision() {
     visionPromise = createVision({
       video, overlayCanvas: overlay, config: { ...config.vision, sensitivity: settings.sensitivity, moveMode: settings.moveMode },
       onStatus: (s) => { lastVisionStatus = s; },
-    }).then((v) => { vision = v; return v; }, (e) => { visionPromise = null; throw e; });
+    }).then((v) => {
+      vision = v;
+      if (handZone && typeof v.setHandTap === 'function') v.setHandTap((o) => handZone.pushObs(o)); // [HAND]
+      return v;
+    }, (e) => { visionPromise = null; throw e; });
   }
   return visionPromise;
 }
@@ -497,6 +517,9 @@ function openNet() {
           setDebug: (on) => callbacks.onDebug(on),
           onReady: (info) => {
             app.netInfo = info;
+            // [NET] хост и гость — на разных точках Поляны дуэлей (C7), друг напротив друга
+            const duel = worldLayout && worldLayout.spawns && worldLayout.spawns.duel;
+            if (Array.isArray(duel) && duel.length >= 2 && !info.spawn) info.spawn = duel[info.isHost ? 0 : 1];
             if (typeof app.onNetReady === 'function') { app.onNetReady(info); return; }
             app.introShown = true;                        // без облёта Регента
             if (app.debug) startFight(); else setScreen('camera');
@@ -532,6 +555,27 @@ if (slot) { slot.appendChild(video); slot.appendChild(overlay); }
 // Трекинг-HUD («tracking edit»: рамки, координаты, скелет кистей, след руны) рисует на overlay;
 // собственный overlay vision выключен (config.vision.overlay=false).
 const trackingHud = createTrackingHud({ canvas: overlay });
+// [HAND] лук и магия рукой: связка ввода (core/handZone.js), поза героя, оверлей на превью камеры,
+// простые 3D-заглушки (modules/handVisuals.js; их заменит №7 [VFX]). Любая ошибка — игра без них.
+let handZone = null, heroBowPose = null, handFx = null, handVisuals = null;
+// точки кистей активного героя (C5 heroModel.getAnchors — у VRM и процедурного), иначе — маркеры мира
+const _hAnc = { heroHandL: { x: 0, y: 0, z: 0 }, heroHandR: { x: 0, y: 0, z: 0 }, heroChest: { x: 0, y: 0, z: 0 }, heroHead: { x: 0, y: 0, z: 0 } }, _hV = new THREE.Vector3();
+function handAnchors() {
+  try {
+    const a = heroModel && typeof heroModel.getAnchors === 'function' ? heroModel.getAnchors() : null;
+    if (a && a.handL && a.handR && a.handL.parent && a.handR.parent) {
+      for (const [k, n] of [['heroHandL', 'handL'], ['heroHandR', 'handR'], ['heroChest', 'chest'], ['heroHead', 'head']]) {
+        const o = a[n]; if (!o) continue;
+        o.getWorldPosition(_hV); _hAnc[k].x = _hV.x; _hAnc[k].y = _hV.y; _hAnc[k].z = _hV.z;
+      }
+      return _hAnc;
+    }
+  } catch (e) { /* ниже — маркеры мира */ }
+  return typeof world.getAnchors === 'function' ? world.getAnchors() : null;
+}
+try { handZone = createHandZone({ target: window }); heroBowPose = createHeroBowPose(); } catch (e) { console.warn('[HAND] handZone', e); handZone = null; }
+import('./core/handFxOverlay.js').then((m) => { try { handFx = m.createHandFxOverlay({ canvas: overlay }); } catch (e) { console.warn('[HAND] handFxOverlay', e); } }).catch((e) => console.warn('[HAND] core/handFxOverlay.js', e && e.message));
+import('./modules/handVisuals.js').then((m) => { try { handVisuals = m.createHandVisuals({ THREE, scene, config }); handVisuals.setQuality(settings.quality); } catch (e) { console.warn('[HAND] handVisuals', e); handVisuals = null; } }).catch((e) => console.warn('[HAND] modules/handVisuals.js', e && e.message));
 const battleHud = createBattleHud({ canvas: hudCanvas });
 // [ТВИСТ «ОШИБКА»] удачные жесты и подсказки за бой → точность и частая ошибка на экране итогов
 const coachStats = createCoachStats();
@@ -579,6 +623,7 @@ function applySettings() {
     app.appliedQuality = settings.quality;
     world.setQuality(settings.quality);   // тени (castShadow), пепел, огни жаровен, декор
     effects.setQuality(settings.quality); // пулы частиц, вспышечный свет
+    if (handVisuals) { try { handVisuals.setQuality(settings.quality); } catch (e) { /* [HAND] */ } }
     if (postfx) { try { postfx.setQuality(settings.quality); } catch (e) { /* ignore */ } }
     if (heroModel && heroModel.setQuality) { try { heroModel.setQuality(settings.quality); configureHeroes({ quality: settings.quality }); } catch (e) { /* ignore */ } } // [HERO]
   }
@@ -638,6 +683,7 @@ function drawTracking(now, input) {
   let hands = null, pose = null;
   try { hands = vision.getHands(); pose = vision.getPose(); } catch (e) { /* ignore */ }
   trackingHud.draw(now, { pose, status: visionStatus(), input, settings, mode: mini ? 'mini' : 'full', hands });
+  if (handFx && handZone && settings.handCombat !== false) { try { handFx.draw(now, { ...handZone.overlay(now), pose, settings, mode: mini ? 'mini' : 'full' }); } catch (e) { /* [HAND] оверлей не критичен */ } } // [HAND]
 }
 
 // ---------------------------------------------------------------- UI
@@ -738,6 +784,8 @@ function trackCoach(input) {
   if (input.parry) coachStats.success('parry');
   if (input.throw) coachStats.success('throw');
   if (input.sigil) coachStats.success('sigil');
+  if (input.bow && input.bow.release) coachStats.success('bow');                        // [HAND]
+  if (input.handSpell && input.handSpell.phase === 'throw') coachStats.success('hand_spell'); // [HAND]
   if (input.hint && input.hint.code) coachStats.mistake(input.hint.code);
 }
 function coachView(input) {
@@ -785,6 +833,8 @@ function frame(now) {
   const dt = dtReal * ts;
 
   const input = readInput();
+  // [HAND] лук и магия рукой → input.bow / input.handSpell; конфликтующие жесты гасятся (C2)
+  if (handZone) { try { handZone.apply(input, now, { debug: app.debug, playing: app.screen === 'playing', enabled: settings.handCombat !== false }); } catch (e) { console.warn('[HAND] apply', e); } }
   // [ТВИСТ «ОШИБКА»] код подсказки → жест и текст исправления (для HUD, обучения и итогов)
   if (input && input.hint && hintInfo(input.hint.code)) input.hint = { ...input.hint, ...hintInfo(input.hint.code) };
   app.lastInput = input;
@@ -882,7 +932,12 @@ function frame(now) {
   if (netSession) { try { const r = netSession.frame(dtReal, now, lastSnapshot, input, events); fxEvents = r.events; fxSnap = r.snapshot; } catch (e) { console.warn('[NET] frame', e); } }
   try { world.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] world.update', e); }
   if (heroModel) { try { heroModel.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] heroModel.update', e); } }
+  if (effects.setInput) effects.setInput(input); // [VFX] след руны в воздухе, свечение ладоней
+  if (heroBowPose) { try { heroBowPose.update(dt, { root: world.hero && world.hero.root, heroModel, snap: lastSnapshot }); } catch (e) { /* [HAND] */ } } // [HAND] поза лука/ладони
   try { effects.update(dt, fxSnap, fxEvents); } catch (e) { console.error('[ASHEN] effects.update', e); } // [NET] fxSnap/fxEvents
+  if (effects.takeHitStop && app.screen === 'playing') { const hs = effects.takeHitStop(); if (hs > 0) timeFx.stopUntil = Math.max(timeFx.stopUntil, now + hs); } // [VFX] хит-стоп по силе удара
+  if (handVisuals && effects.linkHandVisuals) effects.linkHandVisuals(handVisuals); // [VFX] стрелы/сгустки/попадания — V6, лук — №6
+  if (handVisuals) { try { handVisuals.update(dt, fxSnap, fxEvents, handAnchors()); } catch (e) { /* [HAND] */ } } // [HAND] (fxSnap — со стрелами соперника)
 
   // камера
   if (app.screen === 'intro' && lastSnapshot) {
@@ -916,6 +971,7 @@ function frame(now) {
     camera.lookAt(c.target.x, c.target.y, c.target.z);
   }
 
+  if (heroShowcase) { try { heroShowcase.update(dtReal, app.screen === 'menu', camera); } catch (e) { console.warn('[HERO] витрина', e); heroShowcase = null; } } // [HERO] свет и облёт витрины
   if (pvpCtl) { try { pvpCtl.frame(lastSnapshot, app.screen); } catch (e) { console.error('[PVP] frame', e); } } // [PVP] фазы хоста, готовность, панель
   if (postfx && typeof postfx.setMode === 'function') { try { postfx.setMode(app.screen, settings); } catch (e) { /* ignore */ } } // [BDO] DOF меню и грейд по экрану
   if (postfx && postfx.enabled) feedPostFx(events);
@@ -969,6 +1025,8 @@ window.__ASHEN__ = Object.freeze({
   heroAnchors: () => { if (!heroModel || !heroModel.getAnchors) return null; const a = heroModel.getAnchors(), v = new THREE.Vector3(); return Object.fromEntries(Object.entries(a).map(([k, o]) => { o.getWorldPosition(v); return [k, { x: +v.x.toFixed(3), y: +v.y.toFixed(3), z: +v.z.toFixed(3), attached: !!o.parent }]; })); }, // [HERO] C5
   net: () => (netSession ? netSession.debug() : null),             // [NET]
   netSession: () => netSession,                                    // [NET] для тестов и №3
+  hand: () => (handZone ? handZone.getDebug() : null), // [HAND] лук и магия рукой
+  fx: () => { try { return JSON.parse(JSON.stringify(effects.getDebugInfo())); } catch (e) { return null; } }, // [VFX] QA: частицы и слой V6
   heroStep: (dt, snap, events) => { if (heroModel) heroModel.update(dt, snap, events || []); return heroModel ? heroModel.state() : null; }, // QA: шаг анимации без rAF
   squats: () => squats.getDebug(),
   pvp: () => (pvpCtl ? pvpCtl.debug() : null),   // [PVP] QA: фаза, счёт, статистика дуэли

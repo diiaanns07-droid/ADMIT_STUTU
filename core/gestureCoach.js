@@ -47,6 +47,16 @@ export const COACH_HINTS = Object.freeze({
   gate_slow:     { gesture: 'Врата', text: 'Разводи ладони резче — «Врата» открываются рывком в стороны' },
   gate_horiz:    { gesture: 'Врата', text: 'Разводи ладони в стороны по горизонтали, а не вверх-вниз' },
   frame_diag:    { gesture: 'Рамка', text: 'Поставь «Г»-рамку по диагонали: одна рука выше, другая ниже' },
+  // [HAND] лук (core/bowGesture.js) и магия рукой (core/handMagic.js)
+  bow_fist:      { gesture: 'Лук', text: 'Сожми левую руку в кулак, как будто держишь лук' },
+  bow_pinch:     { gesture: 'Лук', text: 'Сведи большой и указательный в щепоть у левого кулака' },
+  bow_draw:      { gesture: 'Лук', text: 'Тяни правую руку назад к уху' },
+  bow_release:   { gesture: 'Лук', text: 'Отпусти стрелу — разожми пальцы' },
+  bow_low:       { gesture: 'Лук', text: 'Подними левый кулак до груди или плеча' },
+  bow_forward:   { gesture: 'Лук', text: 'Вытяни левый кулак вперёд, к камере — как будто держишь лук' },
+  spell_throw_weak: { gesture: 'Магия рукой', text: 'Бросай резче — толкни ладонь к камере или махни в сторону' },
+  spell_hold:    { gesture: 'Магия рукой', text: 'Сгусток готов — брось его резким движением ладони' },
+  spell_palm:    { gesture: 'Магия рукой', text: 'Разверни ладонь вверх — в ней родится огненный сгусток' },
 });
 
 export function hintInfo(code) {
@@ -54,7 +64,7 @@ export function hintInfo(code) {
 }
 
 // Какому жесту засчитывать удачу по импульсу распознавателя.
-const SUCCESS_KINDS = ['burst', 'rune', 'spark', 'slash', 'parry', 'throw', 'sigil', 'shield', 'attack'];
+const SUCCESS_KINDS = ['burst', 'rune', 'spark', 'slash', 'parry', 'throw', 'sigil', 'shield', 'attack', 'bow', 'hand_spell']; // [HAND] +bow, hand_spell
 
 export function createCoachStats() {
   let good = 0, bad = 0;
