@@ -236,7 +236,7 @@ export function createHandZone({ target = typeof window !== 'undefined' ? window
 }
 
 // ───────── поза героя (C5): процедурный Пепельный страж ─────────
-// Если у modules/heroModel.js появится setPose({bowDraw, aim, handSpell}) — зовём его; для процедурного
+// setPose({bowDraw, aim, handSpell}) у modules/heroModel.js зовёт main.js ([HERO]); по просьбе (setPose: true) — и здесь. Для процедурного
 // героя (world.hero.root, суставы shL/elL/shR/elR/wrL/wrR) доворачиваем руки после world.update:
 // левая вытянута вперёд с луком (по прицелу), правая тянет тетиву к уху; с огнём — правая ладонь вперёд-вверх.
 export function createHeroBowPose() {
@@ -257,7 +257,7 @@ export function createHeroBowPose() {
     o.rotation.x = lerp(o.rotation.x, x, k); o.rotation.y = lerp(o.rotation.y, y, k); o.rotation.z = lerp(o.rotation.z, z, k);
   }
   return {
-    update(dt, { root, heroModel, snap, procedural = true } = {}) {
+    update(dt, { root, heroModel, snap, procedural = true, setPose = false } = {}) {
       const P = snap && snap.player;
       const bowS = P && P.bow ? P.bow : null, sp = P && P.handSpell ? P.handSpell : null;
       const bowOn = !!(bowS && (bowS.active || bowS.phase === 'ready')) && P.action !== 'dead';
@@ -267,7 +267,8 @@ export function createHeroBowPose() {
       ws += ((spellOn && !bowOn ? 1 : 0) - ws) * k;
       if (bowS) { S.draw += ((bowS.active ? bowS.draw : 0) - S.draw) * k; S.aimX += (bowS.aimX - S.aimX) * k; S.aimY += (bowS.aimY - S.aimY) * k; }
       if (sp) S.spell += ((spellOn ? sp.power : 0) - S.spell) * k;
-      if (heroModel && typeof heroModel.setPose === 'function') {
+      // setPose у VRM-героев зовёт main.js ([HERO] heroPoseFromInput) — здесь только по просьбе (setPose: true)
+      if (setPose && heroModel && typeof heroModel.setPose === 'function') {
         try { heroModel.setPose({ bowDraw: w > 0.02 ? S.draw * w : 0, aim: { x: S.aimX, y: S.aimY }, handSpell: ws > 0.02 ? Math.max(0.2, S.spell) * ws : 0, bow: w }); } catch (e) { /* поза — не критично */ }
       }
       if (!procedural || (w < 0.01 && ws < 0.01)) return;

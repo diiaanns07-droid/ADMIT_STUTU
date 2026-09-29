@@ -173,7 +173,7 @@ test('поза героя: setPose у heroModel вызывается; проце
   const root = { getObjectByName: (n) => J[n] };
   const pose = createHeroBowPose();
   const snap = { player: { action: 'cast', bow: { active: true, phase: 'drawing', draw: 1, aimX: 0, aimY: 0, charged: true }, handSpell: { phase: 'idle' } } };
-  for (let i = 0; i < 30; i++) pose.update(1 / 60, { root, heroModel: hm, snap });
+  for (let i = 0; i < 30; i++) pose.update(1 / 60, { root, heroModel: hm, snap, setPose: true });
   ok(calls.length === 30 && calls[29].bowDraw > 0.8, `setPose ${JSON.stringify(calls[29])}`);
   ok(J.shL.rotation.x < -1.2 && J.elR.rotation.x < -1.5, `суставы ${JSON.stringify(J.shL.rotation)} ${JSON.stringify(J.elR.rotation)}`);
 });

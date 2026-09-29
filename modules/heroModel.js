@@ -1,51 +1,225 @@
-// ASHEN OATH — выбираемый герой (settings.hero):
+// ASHEN OATH — выбираемый герой (settings.hero). [HERO] V6: контракт C5, несколько экземпляров.
 //   'ashen' — Пепельный страж: процедурный герой мира (world.js), модель не грузится;
 //   'elf'   — Эльфийка: VRoid AvatarSample_F (assets/vroid/elf.vrm, CC0);
 //   'dark'  — Тёмная чародейка: VRoid Darkness (assets/vroid/dark.vrm, CC0).
-// VRM грузится через modules/vrmKit.js; анимации — клипы Quaternius (assets/quaternius/*.glb, CC0,
-// скелет Mixamo), перенесённые на VRM по направлениям костей. vrm.update(dt) каждый кадр:
-// физика волос и одежды (spring bones), моргание. Модель вешается на heroRoot мира (позиция и
-// поворот — из боя), процедурное тело прячется. Не загрузилась — остаётся процедурный герой.
+// VRM грузится через modules/vrmKit.js. Анимации — KayKit Adventurers (assets/heroes/anims_kaykit.glb,
+// CC0: стрейфы, шаг назад, рывки в 4 стороны, касты одной и двумя руками, лук, блок, удары, победа),
+// запасной набор — Quaternius woman.glb (6 клипов). Клипы переносятся на VRM один раз на файл модели
+// и делятся между экземплярами (данные клипа только читаются); миксер, материалы и сцена у каждого
+// экземпляра свои.
 //
-// Нижний слой — передвижение: стоим / шаг / бег (скорость клипа по скорости героя); вбок корпус
-// доворачивается в сторону хода, назад — шаг с обратным временем. Верхний слой — действия:
-// каст/удар — «Punch», щит и чары — поза «Punch» на пике, рывок — «Jump», смерть — «Death».
-// Пока герой идёт, действия играют только на корпусе и руках (дорожки ног вырезаны).
+// Нижний слой — передвижение: бленд вперёд / назад / влево / вправо по скорости в осях героя, фаза
+// шага общая и идёт по пройденному пути (ноги не скользят). В lock-on грудь довёрнута к цели.
+// Верхний слой — действия по событиям боя (пока герой идёт — только корпус и руки). Поверх — поза
+// setPose (лук, чары рукой) и зеркало рук игрока setMirror (как world.setMirror у процедурного героя),
+// затем дыхание и оглядывание в покое.
 //
-// createHeroModel({ THREE, heroRoot, heroBody, extras, hero, baseUrl, vrmUrl })
-//   → { update(dt, snap, events), setHero(id), get ready, get hero, state(), dispose() }
+// createHeroModel({ THREE, heroRoot?, heroBody?, extras?, markers?, scene?, hero, shading?, quality?,
+//                   atmosphere?, remote?, baseUrl?, vrmUrl?, heroesUrl? })
+//   → { root, update(dt, snapLike, events), setHero(id), setPose(p), setMirror(m), getAnchors(),
+//       setShading(mode), setQuality(q), setLod(level), get ready, get hero, state(), dispose() }
+// heroRoot не задан — экземпляр создаёт свой root (для удалённого игрока) и сам ставит его по snapLike.player.
+// snapLike: нужен только { player: { position, yaw, velocity, action, hp, … как в snapshot } }.
 
 import { loadVRM, retargetClip } from './vrmKit.js';
 
+// Карточки героев: имя, класс, стихия и три строки описания — для меню №8 и витрины (heroShowcase).
 export const HEROES = Object.freeze({
-  ashen: { id: 'ashen', name: 'Пепельный страж', vrm: null },
-  elf: { id: 'elf', name: 'Эльфийка', vrm: 'elf.vrm', height: 1.72 },
-  dark: { id: 'dark', name: 'Тёмная чародейка', vrm: 'dark.vrm', height: 1.7 },
+  ashen: {
+    id: 'ashen', name: 'Пепельный страж', vrm: null, cls: 'Воин-маг', element: 'Пепел и пламя',
+    desc: ['Клятвенный страж павшего святилища.', 'Латы из закалённой бронзы, посох-клинок с углём клятвы.', 'Держит удар и отвечает огнём.'],
+    gear: 'warden', stance: 'staff',
+  },
+  elf: {
+    id: 'elf', name: 'Эльфийка', vrm: 'elf.vrm', height: 1.72, cls: 'Лучница-заклинательница', element: 'Гроза',
+    desc: ['Следопыт Сияющего леса.', 'Лук из белого ясеня и перстни-руны на пальцах.', 'Бьёт издалека и уходит рывком.'],
+    gear: 'ranger', stance: 'bow',
+  },
+  dark: {
+    id: 'dark', name: 'Тёмная чародейка', vrm: 'dark.vrm', height: 1.7, cls: 'Чародейка', element: 'Тьма и лёд',
+    desc: ['Изгнанница из башни Затмения.', 'Посох с кристаллом ночи, плащ с живыми рунами.', 'Сковывает льдом и рвёт тьмой.'],
+    gear: 'witch', stance: 'staff',
+  },
 });
-// клипы Quaternius: [имя в игре, файл, имя клипа в файле]
-const CLIPS = [
-  ['Idle', 'woman.glb', 'Idle'], ['Walk', 'woman.glb', 'Walking'], ['Run', 'woman.glb', 'Running'],
-  ['Punch', 'woman.glb', 'Punch'], ['Death', 'woman.glb', 'Death'], ['Jump', 'woman.glb', 'Jump'],
-];
-const LEG_VRM = ['hips', 'leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'leftToes', 'rightUpperLeg', 'rightLowerLeg', 'rightFoot', 'rightToes'];
-const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 
-export function createHeroModel({ THREE, heroRoot, heroBody, extras = [], hero = 'ashen', baseUrl = './assets/quaternius/', vrmUrl = './assets/vroid/' } = {}) {
-  const S = { ready: false, disposed: false, hero: 'ashen', token: 0, lean: 0, turn: 0, recoil: 0, prevYaw: null, yawRate: 0, blinkT: 2, blink: 0 };
-  let loaderP = null;
-  const cache = new Map(); // url → Promise<gltf>
-  let cur = null;          // { model, vrm, mixer, full, upper }
-  let loco = null, locoName = '';
+// Клипы: [имя в игре, файл, имя клипа в файле, петля]. Первый найденный файл — основной.
+const KAY = 'anims_kaykit.glb';
+const CLIPS_KAY = [
+  ['Idle', 'Idle', true], ['IdleCalm', 'Unarmed_Idle', true], ['Walk', 'Walking_A', true], ['WalkBack', 'Walking_Backwards', true],
+  ['Run', 'Running_A', true], ['StrafeL', 'Running_Strafe_Left', true], ['StrafeR', 'Running_Strafe_Right', true],
+  ['DodgeF', 'Dodge_Forward'], ['DodgeB', 'Dodge_Backward'], ['DodgeL', 'Dodge_Left'], ['DodgeR', 'Dodge_Right'],
+  ['Cast1', 'Spellcast_Shoot'], ['Cast2', 'Spellcast_Long'], ['CastRaise', 'Spellcast_Raise'], ['CastHold', 'Spellcasting', true],
+  ['BowAim', '2H_Ranged_Aiming', true], ['BowShoot', '2H_Ranged_Shoot'], ['Block', 'Block'], ['Blocking', 'Blocking', true],
+  ['BlockHit', 'Block_Hit'], ['Hit', 'Hit_A'], ['HitB', 'Hit_B'], ['Victory', 'Cheer', true], ['Death', 'Death_A'],
+  ['Jump', 'Jump_Full_Short'], ['Slash', '1H_Melee_Attack_Slice_Horizontal'], ['Chop', '1H_Melee_Attack_Chop'],
+  ['Punch', 'Unarmed_Melee_Attack_Punch_A'], ['Throw', 'Throw'], ['Stance', '2H_Melee_Idle', true],
+];
+// запасной набор (прежний): Quaternius woman.glb, скелет Mixamo
+const CLIPS_QUAT = [
+  ['Idle', 'Idle', true], ['Walk', 'Walking', true], ['Run', 'Running', true], ['Punch', 'Punch'], ['Death', 'Death'], ['Jump', 'Jump'],
+];
+const ALIAS = { // чего нет в запасном наборе
+  IdleCalm: 'Idle', WalkBack: 'Walk', StrafeL: 'Run', StrafeR: 'Run', DodgeF: 'Jump', DodgeB: 'Jump', DodgeL: 'Jump', DodgeR: 'Jump',
+  Cast1: 'Punch', Cast2: 'Punch', CastRaise: 'Punch', CastHold: 'Punch', BowAim: 'Punch', BowShoot: 'Punch', Block: 'Punch', Blocking: 'Punch',
+  BlockHit: 'Punch', Hit: 'Punch', HitB: 'Punch', Victory: 'Jump', Slash: 'Punch', Chop: 'Punch', Throw: 'Punch', Stance: 'Idle',
+};
+const LOCO = ['Idle', 'Walk', 'Run', 'WalkBack', 'StrafeL', 'StrafeR'];
+const LEG_VRM = ['hips', 'leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'leftToes', 'rightUpperLeg', 'rightLowerLeg', 'rightFoot', 'rightToes'];
+const ANCHOR_NAMES = ['handL', 'handR', 'chest', 'head', 'bowSocket', 'staffTip'];
+const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+
+// ---------------------------------------------------------------- общие кэши модуля
+const gltfCache = new Map();   // url → Promise<gltf> (библиотеки клипов; только чтение)
+const clipCache = new Map();   // vrmUrl + '|' + lib → Promise<{ clips, stride }>
+let gltfLoaderP = null;
+let defaults = { atmosphere: null, shading: 'realistic', quality: 'medium' };
+// [HERO] общие настройки для экземпляров, созданных без явных параметров (удалённый игрок NET)
+export function configureHeroes(patch = {}) { defaults = { ...defaults, ...patch }; }
+
+function loadGltf(url) {
+  if (!gltfCache.has(url)) {
+    if (!gltfLoaderP) gltfLoaderP = import('three/addons/loaders/GLTFLoader.js').then((m) => new m.GLTFLoader());
+    const p = gltfLoaderP.then((l) => l.loadAsync(url));
+    p.catch(() => gltfCache.delete(url));
+    gltfCache.set(url, p);
+  }
+  return gltfCache.get(url);
+}
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+// Перенос всех клипов на VRM (кусками, чтобы не было длинного кадра) + длина шага клипов ходьбы.
+async function buildClips(THREE, vrm, key, libUrls) {
+  if (clipCache.has(key)) return clipCache.get(key);
+  const p = (async () => {
+    const { clone } = await import('three/addons/utils/SkeletonUtils.js');
+    let lib = null, table = null, rig = 'kaykit';
+    try { lib = await loadGltf(libUrls.kaykit); table = CLIPS_KAY; } catch (e) {
+      console.warn('[HERO] anims_kaykit.glb не загрузилась — запасной набор Quaternius:', e && e.message);
+      lib = await loadGltf(libUrls.quat); table = CLIPS_QUAT; rig = 'mixamo';
+    }
+    const src = clone(lib.scene);
+    const clips = {};
+    for (const [name, clipName] of table) {
+      const c = lib.animations.find((a) => a.name.split('|').pop() === clipName);
+      if (!c) continue;
+      const clip = retargetClip(THREE, c, src, vrm, 30, rig);
+      clip.name = name;
+      clips[name] = clip;
+      await tick();
+    }
+    const loops = new Set(table.filter((t) => t[2]).map((t) => t[0]));
+    return { clips, loops, rig, stride: measureStrides(THREE, vrm, clips) };
+  })();
+  p.catch(() => clipCache.delete(key));
+  clipCache.set(key, p);
+  return p;
+}
+
+// Путь за цикл клипа (м, в масштабе VRM до подгонки роста): скорость опорной стопы назад × длительность.
+function measureStrides(THREE, vrm, clips) {
+  const out = {};
+  const H = vrm.humanoid;
+  const foot = H.getNormalizedBoneNode('leftFoot'), footR = H.getNormalizedBoneNode('rightFoot');
+  if (!foot || !footR) return out;
+  const mixer = new THREE.AnimationMixer(vrm.scene);
+  const v = new THREE.Vector3();
+  for (const name of ['Walk', 'Run', 'WalkBack', 'StrafeL', 'StrafeR']) {
+    const clip = clips[name];
+    if (!clip) continue;
+    const a = mixer.clipAction(clip);
+    a.play();
+    const N = 48, dur = clip.duration;
+    const ys = [], ps = [];
+    for (let i = 0; i <= N; i++) {
+      mixer.setTime((i / N) * dur);
+      vrm.scene.updateMatrixWorld(true);
+      foot.getWorldPosition(v);
+      ys.push(v.y); ps.push(v.clone());
+    }
+    a.stop(); mixer.uncacheClip(clip);
+    const minY = Math.min(...ys);
+    let dist = 0, n = 0;
+    for (let i = 1; i <= N; i++) {
+      if (ys[i] < minY + 0.03 && ys[i - 1] < minY + 0.03) { dist += Math.hypot(ps[i].x - ps[i - 1].x, ps[i].z - ps[i - 1].z); n++; }
+    }
+    const dt = dur / N;
+    const vSt = n ? dist / (n * dt) : 0;
+    out[name] = vSt > 0.05 ? vSt * dur : null; // путь за цикл
+  }
+  if (H.resetNormalizedPose) H.resetNormalizedPose();
+  mixer.uncacheRoot(vrm.scene);
+  return out;
+}
+
+export function createHeroModel({
+  THREE, heroRoot = null, heroBody = null, extras = [], markers = null, scene = null, hero = 'ashen',
+  shading, quality, atmosphere, remote = false,
+  baseUrl = './assets/quaternius/', vrmUrl = './assets/vroid/', heroesUrl = null,
+} = {}) {
+  const ownRoot = !heroRoot;
+  const root = heroRoot || new THREE.Group();
+  if (ownRoot) { root.name = remote ? 'hero-remote' : 'hero-instance'; if (scene) scene.add(root); }
+  const base = typeof document !== 'undefined' ? document.baseURI : 'http://localhost/';
+  const heroesBase = heroesUrl || new URL('../assets/heroes/', import.meta.url).href;
+  const libUrls = { kaykit: new URL(KAY, heroesBase).href, quat: new URL('woman.glb', new URL(baseUrl, base)).href };
+  const opts = { shading: shading || defaults.shading, quality: quality || defaults.quality, atmosphere: atmosphere || defaults.atmosphere };
+  const S = {
+    ready: false, disposed: false, hero: 'ashen', token: 0, lean: 0, recoil: 0, prevYaw: null, yawRate: 0,
+    blinkT: 2, blink: 0, phase: 0, idleT: 0, lookT: 3, look: 0, lookWant: 0, chestTwist: 0, lod: 0, lodAcc: 0,
+    wLoco: { Idle: 1, Walk: 0, Run: 0, WalkBack: 0, StrafeL: 0, StrafeR: 0 }, stun: 0,
+  };
+  let cur = null;   // { model, vrm, mixer, full, upper, stride, gear, shade, bones }
   let act = null, actName = '', actUntil = 0, actUpper = false, holdName = '';
   let time = 0, lastStatus = '';
+  const pose = { bowDraw: 0, aimX: 0, aimY: 0, handSpell: 0, bowActive: false, w: 0, wBow: 0, wSpell: 0, draw: 0 };
+  const mirror = { data: null, w: 0 };
 
-  function loadGltf(file) {
-    const url = new URL(file, new URL(baseUrl, document.baseURI)).href;
-    if (!cache.has(url)) {
-      if (!loaderP) loaderP = import('three/addons/loaders/GLTFLoader.js').then((m) => new m.GLTFLoader());
-      cache.set(url, loaderP.then((l) => l.loadAsync(url)));
+  // ---------------------------------------------------------------- якоря C5 (постоянные объекты)
+  const anchors = {};
+  for (const n of ANCHOR_NAMES) { const o = new THREE.Object3D(); o.name = `hero-anchor-${n}`; anchors[n] = o; }
+  function parentAnchors() {
+    const put = (name, parent, x, y, z) => { const a = anchors[name]; if (!parent) return; parent.add(a); a.position.set(x, y, z); a.quaternion.identity(); };
+    if (cur && cur.vrm) {
+      const H = cur.vrm.humanoid;
+      const raw = (b) => (H.getRawBoneNode ? H.getRawBoneNode(b) : null) || H.getNormalizedBoneNode(b);
+      // якоря ставятся в осях героя (модель смотрит +z) и затем «прилипают» к кости
+      const at = (name, bone, off) => {
+        const b = raw(bone);
+        if (!b) return;
+        const a = anchors[name];
+        cur.model.updateMatrixWorld(true);
+        const p = new THREE.Vector3(); b.getWorldPosition(p);
+        const q = new THREE.Quaternion(); cur.model.getWorldQuaternion(q);
+        p.add(new THREE.Vector3(off[0], off[1], off[2]).applyQuaternion(q)); // смещение — метры в осях героя
+        const wm = new THREE.Matrix4().compose(p, q, new THREE.Vector3(1, 1, 1));
+        b.updateWorldMatrix(true, false);
+        wm.premultiply(b.matrixWorld.clone().invert());
+        b.add(a);
+        wm.decompose(a.position, a.quaternion, a.scale);
+      };
+      at('handL', 'leftHand', [0.075, -0.01, 0.0]);
+      at('handR', 'rightHand', [-0.075, -0.01, 0.0]);
+      at('chest', 'upperChest', [0, 0.02, 0.16]);
+      at('head', 'head', [0, 0.1, 0.02]);
+      at('bowSocket', 'upperChest', [0, 0.02, -0.16]);
+      if (!anchors.chest.parent) at('chest', 'chest', [0, 0.05, 0.16]);
+      if (!anchors.bowSocket.parent) at('bowSocket', 'chest', [0, 0.05, -0.16]);
+      const tip = cur.gear && cur.gear.staffTip;
+      if (tip) { tip.add(anchors.staffTip); anchors.staffTip.position.set(0, 0, 0); anchors.staffTip.quaternion.identity(); }
+      else at('staffTip', 'rightHand', [-0.09, 0.0, 0.3]);
+      return;
     }
-    return cache.get(url);
+    // процедурный герой мира: маркеры рига world.js
+    const m = markers || {};
+    put('handL', m.handL || root, 0, m.handL ? 0 : 1.0, 0);
+    put('handR', m.handR || root, 0, m.handR ? 0 : 1.0, 0);
+    put('chest', m.chestFront || root, 0, m.chestFront ? 0 : 1.35, m.chestFront ? 0 : 0.16);
+    put('head', m.headTop || root, 0, m.headTop ? -0.1 : 1.65, 0);
+    put('bowSocket', m.chestFront || root, 0, m.chestFront ? 0 : 1.35, m.chestFront ? -0.32 : -0.16);
+    put('staffTip', m.handR || root, 0, m.handR ? -0.05 : 1.0, m.handR ? 0.35 : 0.3);
   }
 
   function showProcedural(on) {
@@ -55,81 +229,135 @@ export function createHeroModel({ THREE, heroRoot, heroBody, extras = [], hero =
 
   function clear() {
     const curScene = cur && cur.vrm ? cur.vrm.scene : null;
-    if (curScene) import('@pixiv/three-vrm').then((V) => { try { V.VRMUtils.deepDispose(curScene); } catch (e) { /* ignore */ } }).catch(() => {});
+    // якоря снять с костей до освобождения модели
+    for (const n of ANCHOR_NAMES) { const a = anchors[n]; if (a.parent) a.parent.remove(a); }
     if (cur) {
       cur.mixer.stopAllAction();
+      cur.mixer.uncacheRoot(cur.vrm.scene);
+      if (cur.gear && cur.gear.dispose) { try { cur.gear.dispose(); } catch (e) { /* ignore */ } }
+      if (cur.shade && cur.shade.dispose) { try { cur.shade.dispose(); } catch (e) { /* ignore */ } }
       if (cur.model.parent) cur.model.parent.remove(cur.model);
     }
-    cur = null; loco = null; locoName = ''; act = null; actName = ''; holdName = ''; lastStatus = '';
+    if (curScene) import('@pixiv/three-vrm').then((V) => { try { V.VRMUtils.deepDispose(curScene); } catch (e) { /* ignore */ } }).catch(() => {});
+    cur = null; act = null; actName = ''; holdName = ''; lastStatus = '';
     S.ready = false;
   }
 
   async function setHero(id) {
-    const def = HEROES[id] || HEROES.ashen;
+    let def = HEROES[id] || HEROES.ashen;
+    // удалённый экземпляр не может взять процедурное тело мира: страж — на запасной модели
+    if (!def.vrm && !heroBody) def = { ...def, vrm: HEROES.dark.vrm, height: 1.78, fallbackOf: def.id };
     if (def.id === S.hero && (S.ready || !def.vrm)) return;
     const token = ++S.token;
     S.hero = def.id;
     clear();
-    if (!def.vrm) { showProcedural(true); return; }
+    if (!def.vrm) { showProcedural(true); parentAnchors(); S.ready = !!heroBody; return; }
     try {
-      const { clone } = await import('three/addons/utils/SkeletonUtils.js');
-      const files = [...new Set(CLIPS.map((c) => c[1]))];
-      const [vrm, ...srcs] = await Promise.all([
-        loadVRM(THREE, new URL(def.vrm, new URL(vrmUrl, document.baseURI)).href),
-        ...files.map((f) => loadGltf(f)),
-      ]);
-      if (S.disposed || token !== S.token) return;
-      const src = Object.fromEntries(files.map((f, i) => [f, srcs[i]]));
+      const url = new URL(def.vrm, new URL(vrmUrl, base)).href;
+      const vrm = await loadVRM(THREE, url);
+      if (S.disposed || token !== S.token) { disposeVrm(vrm); return; }
+      const lib = await buildClips(THREE, vrm, url, libUrls);
+      if (S.disposed || token !== S.token) { disposeVrm(vrm); return; }
       // рост: VRoid ~1.5–1.6 м — подгоняем под героя
+      if (vrm.humanoid.resetNormalizedPose) vrm.humanoid.resetNormalizedPose();
       vrm.scene.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(vrm.scene);
       const h = Math.max(1e-3, box.max.y - box.min.y);
       const k = (def.height || 1.7) / h;
-      const wrap = new THREE.Group(); // поворот «корпус по ходу», наклон и масштаб — на обёртке
-      wrap.name = 'hero-model';
-      wrap.scale.setScalar(k);
+      const wrapG = new THREE.Group(); // поворот корпуса, наклон и масштаб — на обёртке
+      wrapG.name = 'hero-model';
+      wrapG.scale.setScalar(k);
       vrm.scene.position.y = -box.min.y;
-      wrap.add(vrm.scene);
+      wrapG.add(vrm.scene);
       const mixer = new THREE.AnimationMixer(vrm.scene);
       const legNames = new Set(LEG_VRM.map((b) => { const n = vrm.humanoid.getNormalizedBoneNode(b); return n && n.name; }).filter(Boolean));
       const full = {}, upper = {};
-      for (const [name, file, clipName] of CLIPS) {
-        const g = src[file];
-        const c = g && g.animations.find((a) => a.name.split('|').pop() === clipName);
-        if (!c) continue;
-        const clip = retargetClip(THREE, c, clone(g.scene), vrm);
-        clip.name = name;
+      const names = new Set([...Object.keys(lib.clips), ...Object.keys(ALIAS)]);
+      for (const name of names) {
+        const clip = lib.clips[name] || lib.clips[ALIAS[name]];
+        if (!clip) continue;
         full[name] = mixer.clipAction(clip);
-        const up = clip.clone();
-        up.name = `${name}#upper`;
-        up.tracks = up.tracks.filter((tr) => !legNames.has(tr.name.split('.')[0]));
-        upper[name] = mixer.clipAction(up);
+        if (!upperClips.has(clip)) {
+          const up = clip.clone();
+          up.name = `${clip.name}#upper`;
+          up.tracks = up.tracks.filter((tr) => !legNames.has(tr.name.split('.')[0]));
+          upperClips.set(clip, up);
+        }
+        upper[name] = mixer.clipAction(upperClips.get(clip));
       }
-      if (vrm.humanoid.resetNormalizedPose) vrm.humanoid.resetNormalizedPose();
-      heroRoot.add(wrap);
+      root.add(wrapG);
+      const H = vrm.humanoid;
+      const nb = (n) => H.getNormalizedBoneNode(n);
+      const bones = {};
+      for (const n of ['hips', 'spine', 'chest', 'upperChest', 'neck', 'head', 'leftUpperArm', 'leftLowerArm', 'leftHand', 'rightUpperArm', 'rightLowerArm', 'rightHand', 'leftShoulder', 'rightShoulder']) bones[n] = nb(n);
+      // кости без дорожек в клипах (у KayKit — шея, ключицы, верх груди): их сбрасываем в покой каждый
+      // кадр, иначе дыхание и поза накапливались бы
+      const tracked = new Set();
+      for (const clip of Object.values(lib.clips)) for (const tr of clip.tracks) tracked.add(tr.name.split('.')[0]);
+      const free = Object.values(bones).filter((b) => b && !tracked.has(b.name));
+      cur = { model: wrapG, vrm, mixer, full, upper, stride: lib.stride, loops: lib.loops, bones, free, scale: k, def, gear: null, shade: null, url };
+      // оболочка: реалистичные материалы (modules/heroShading.js) и снаряжение (modules/heroGear.js)
+      await dressUp(token);
+      if (S.disposed || token !== S.token) return;
       showProcedural(false);
-      cur = { model: wrap, vrm, mixer, full, upper };
-      setLoco('Idle', 0);
+      for (const n of LOCO) if (full[n]) { full[n].play(); full[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); }
+      mixer.update(0);
+      parentAnchors();
       S.ready = true;
     } catch (e) {
       console.warn('[ASHEN] модель героя не загрузилась — процедурный герой:', e && e.message);
-      if (token === S.token) { S.hero = 'ashen'; showProcedural(true); }
+      if (token === S.token) { clear(); S.hero = heroBody ? 'ashen' : def.id; showProcedural(true); parentAnchors(); S.ready = !!heroBody; }
     }
   }
+  const upperClips = new WeakMap();
+  function disposeVrm(vrm) { import('@pixiv/three-vrm').then((V) => { try { V.VRMUtils.deepDispose(vrm.scene); } catch (e) { /* ignore */ } }).catch(() => {}); }
 
-  function setLoco(name, fade = 0.2) {
-    if (!cur || name === locoName || !cur.full[name]) return;
-    const next = cur.full[name];
-    next.reset().setEffectiveWeight(1).play();
-    if (loco) next.crossFadeFrom(loco, fade, false);
-    loco = next; locoName = name;
+  async function dressUp(token) {
+    if (!cur) return;
+    const c = cur;
+    try {
+      const m = await import('./heroShading.js');
+      if (token !== S.token || cur !== c) return;
+      c.shade = m.shadeHero(THREE, c.vrm, { mode: opts.shading, atmosphere: opts.atmosphere, quality: opts.quality, heroId: c.def.id });
+    } catch (e) { console.warn('[HERO] heroShading недоступен, MToon как есть:', e && e.message); }
+    try {
+      const g = await import('./heroGear.js');
+      if (token !== S.token || cur !== c) return;
+      // снаряжение крепится в позе Idle (кадр 0): рукоять посоха вертикально в опущенной руке
+      if (c.full.Idle) { c.full.Idle.play(); c.full.Idle.setEffectiveWeight(1); c.mixer.update(0); }
+      c.vrm.update(0);
+      c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading });
+      if (c.full.Idle) c.full.Idle.stop();
+    } catch (e) { console.warn('[HERO] heroGear недоступен, без снаряжения:', e && e.message); }
   }
+
+  function setShading(mode) {
+    if (mode !== 'realistic' && mode !== 'anime') return;
+    if (opts.shading === mode) return;
+    opts.shading = mode;
+    if (cur && cur.shade && cur.shade.setMode) cur.shade.setMode(mode);
+    if (cur && cur.gear && cur.gear.setShading) cur.gear.setShading(mode);
+  }
+  function setQuality(q) {
+    opts.quality = q;
+    if (cur && cur.shade && cur.shade.setQuality) cur.shade.setQuality(q);
+    if (cur && cur.gear && cur.gear.setQuality) cur.gear.setQuality(q);
+  }
+  // LOD: 0 — полный, 1 — пружины и ткань через кадр, без теней, 2 — без пружин, 10 Гц анимации
+  function setLod(level) {
+    const l = clamp(Math.round(num(level, 0)), 0, 2);
+    if (l === S.lod) return;
+    S.lod = l;
+    if (cur) cur.vrm.scene.traverse((o) => { if (o.isMesh) o.castShadow = l === 0; });
+    if (cur && cur.gear && cur.gear.setLod) cur.gear.setLod(l);
+  }
+
+  // ---------------------------------------------------------------- слой действий
   function stopAct(fade = 0.2) {
     if (act) act.fadeOut(fade);
     act = null; actName = ''; holdName = '';
   }
-  // opts: speed, upperOnly, loop, hold (поза: остановиться на доле клипа freezeAt)
-  function playAct(name, { speed = 1, upperOnly = false, fade = 0.1, loop = false, holdKey = '', freezeAt = null } = {}) {
+  function playAct(name, { speed = 1, upperOnly = false, fade = 0.12, loop = false, holdKey = '', freezeAt = null } = {}) {
     if (!cur) return;
     const a = (upperOnly ? cur.upper : cur.full)[name];
     if (!a) return;
@@ -142,50 +370,207 @@ export function createHeroModel({ THREE, heroRoot, heroBody, extras = [], hero =
     const dur = a.getClip().duration;
     if (freezeAt !== null) { a.time = dur * freezeAt; a.timeScale = 0; }
     act = a; actName = name; actUpper = upperOnly; holdName = holdKey;
-    actUntil = loop || freezeAt !== null ? Infinity : time + dur / Math.max(0.01, speed) - 0.08;
+    actUntil = loop || freezeAt !== null ? Infinity : time + dur / Math.max(0.01, speed) - 0.1;
   }
+
+  // ---------------------------------------------------------------- передвижение: бленд по направлению
+  function updateLoco(dt, lx, lz, sp, sprint) {
+    const F = cur.full;
+    const ang = Math.atan2(lx, lz); // 0 — вперёд, +π/2 — влево (+x героя)
+    const moveW = smooth(0.25, 0.9, sp);
+    const cf = Math.cos(ang), sf = Math.sin(ang);
+    let wf = Math.max(0, cf), wb = Math.max(0, -cf), wl = Math.max(0, sf), wr = Math.max(0, -sf);
+    const sum = wf + wb + wl + wr || 1;
+    wf /= sum; wb /= sum; wl /= sum; wr /= sum;
+    const runK = smooth(1.9, 3.6, sp);
+    // поворот на месте: переступание боковым шагом
+    let turnW = 0;
+    if (sp < 0.3 && Math.abs(S.yawRate) > 1.1) {
+      turnW = smooth(1.1, 3, Math.abs(S.yawRate)) * 0.55; // yaw растёт — поворот влево
+    }
+    const want = {
+      Idle: Math.max(0, 1 - moveW - turnW),
+      Walk: moveW * wf * (1 - runK), Run: moveW * wf * runK,
+      WalkBack: moveW * wb, StrafeL: moveW * wl + (S.yawRate > 0 ? turnW : 0), StrafeR: moveW * wr + (S.yawRate < 0 ? turnW : 0),
+    };
+    // фаза шага по пройденному пути: общий цикл для всех клипов ходьбы
+    const st = cur.stride || {};
+    const k = cur.scale || 1;
+    let dist = 0, wsum = 0;
+    for (const n of ['Walk', 'Run', 'WalkBack', 'StrafeL', 'StrafeR']) {
+      const d = st[n] ? st[n] * k : ({ Walk: 1.3, Run: 2.4, WalkBack: 1.1, StrafeL: 2.0, StrafeR: 2.0 })[n];
+      dist += d * want[n]; wsum += want[n];
+    }
+    const cyc = wsum > 1e-3 ? dist / wsum : 1.4;
+    const v = turnW && sp < 0.3 ? Math.abs(S.yawRate) * 0.35 : sp;
+    S.phase = (S.phase + (dt * v) / Math.max(0.3, cyc)) % 1;
+    const kf = 1 - Math.exp(-10 * dt);
+    for (const n of LOCO) {
+      const a = F[n];
+      if (!a) continue;
+      S.wLoco[n] += ((want[n] || 0) - S.wLoco[n]) * kf;
+      a.setEffectiveWeight(S.wLoco[n]);
+      a.enabled = true;
+      if (n === 'Idle') { a.timeScale = 1; continue; }
+      a.timeScale = 0;
+      a.time = S.phase * a.getClip().duration;
+    }
+    void sprint;
+  }
+
+  // ---------------------------------------------------------------- поза поверх анимации (C5, зеркало)
+  const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _qm = new THREE.Quaternion();
+  const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _rest = new THREE.Vector3();
+  // Кость bone (нормализованная, покой = T-поза, направление покоя restDir в осях модели) направить
+  // в сторону dirModel (оси героя: +z вперёд, +x влево, +y вверх) с весом w.
+  function aimBone(bone, restDir, dirModel, w) {
+    if (!bone || w <= 0.001) return;
+    cur.vrm.scene.getWorldQuaternion(_qm);
+    _rest.copy(restDir).applyQuaternion(_qm);
+    _v.copy(dirModel).normalize().applyQuaternion(_qm);
+    _q.setFromUnitVectors(_rest, _v).multiply(_qm);       // желаемый поворот в мире
+    bone.parent.updateWorldMatrix(true, false);
+    bone.parent.getWorldQuaternion(_q2);
+    _q.premultiply(_q2.invert());                        // → локальный
+    bone.quaternion.slerp(_q, clamp(w, 0, 1));
+    bone.updateWorldMatrix(false, false);
+  }
+  const RL = new THREE.Vector3(1, 0, 0), RR = new THREE.Vector3(-1, 0, 0);
+  const dA = new THREE.Vector3(), dB = new THREE.Vector3();
+  function applyPose(dt) {
+    const B = cur.bones;
+    const kf = (r) => 1 - Math.exp(-r * dt);
+    const bowOn = pose.bowActive || pose.bowDraw > 0.02;
+    pose.wBow += ((bowOn ? 1 : 0) - pose.wBow) * kf(bowOn ? 10 : 5);
+    pose.wSpell += (clamp(pose.handSpell, 0, 1) - pose.wSpell) * kf(8);
+    pose.draw += (clamp(pose.bowDraw, 0, 1) - pose.draw) * kf(18);
+    const ax = clamp(pose.aimX, -1, 1), ay = clamp(pose.aimY, -1, 1);
+    // лук: корпус боком к цели, левая рука держит лук на линии прицела, правая тянет тетиву к щеке
+    if (pose.wBow > 0.01) {
+      const w = pose.wBow;
+      if (B.chest) { B.chest.rotateY(0.45 * w); B.chest.updateWorldMatrix(false, false); }
+      dA.set(-ax * 0.55 - 0.25, 0.1 + ay * 0.5, 1);          // линия прицела (в осях героя; +x — влево)
+      aimBone(B.leftUpperArm, RL, dA, w);
+      aimBone(B.leftLowerArm, RL, dA, w);
+      const d = pose.draw;
+      dB.set(-0.35 - 0.75 * d, 0.1 + ay * 0.4, 1 - 1.25 * d); // плечо правой: к луку → назад-вбок
+      aimBone(B.rightUpperArm, RR, dB, w);
+      dB.set(0.2 + 0.9 * d, 0.1 + 0.1 * d + ay * 0.3, 1 - 0.6 * d); // предплечье: к тетиве → к щеке
+      aimBone(B.rightLowerArm, RR, dB, w);
+    }
+    // чары рукой: обе ладони перед грудью, сфера между ними; с силой руки расходятся
+    if (pose.wSpell > 0.01 && pose.wBow < 0.9) {
+      const w = pose.wSpell * (1 - pose.wBow);
+      const spread = 0.25 + 0.2 * clamp(pose.handSpell, 0, 1);
+      dA.set(spread - ax * 0.4, -0.35 + ay * 0.5, 1);
+      aimBone(B.leftUpperArm, RL, dA, w);
+      dA.set(-0.55 - ax * 0.3, 0.15 + ay * 0.4, 0.8);
+      aimBone(B.leftLowerArm, RL, dA, w);
+      dB.set(-spread - ax * 0.4, -0.35 + ay * 0.5, 1);
+      aimBone(B.rightUpperArm, RR, dB, w);
+      dB.set(0.55 - ax * 0.3, 0.15 + ay * 0.4, 0.8);
+      aimBone(B.rightLowerArm, RR, dB, w);
+    }
+    // зеркало рук игрока: векторы плечо→локоть, локоть→кисть в кадре (x вправо, y вниз)
+    const m = mirror.data;
+    mirror.w += ((m ? 1 : 0) - mirror.w) * kf(m ? 6 : 3);
+    if (mirror.w > 0.01 && m) {
+      const w = mirror.w * 0.85 * (1 - pose.wBow) * (1 - pose.wSpell);
+      for (const [side, up, lo, rest] of [['left', B.leftUpperArm, B.leftLowerArm, RL], ['right', B.rightUpperArm, B.rightLowerArm, RR]]) {
+        const a = m[side];
+        if (!a || !a.upper || !a.fore) continue;
+        // экран: вправо = вправо героя (−x), вниз = −y; чуть вперёд, чтобы кисть не уходила в тело
+        aimBone(up, rest, dA.set(-a.upper.x, -a.upper.y, 0.3), w);
+        aimBone(lo, rest, dB.set(-a.fore.x, -a.fore.y, 0.45), w);
+      }
+    }
+  }
+
+  // руки клипов KayKit (коренастые персонажи) разведены в стороны: сводим плечи к телу
+  const _ax = new THREE.Vector3(), _qa = new THREE.Quaternion(), _qp = new THREE.Quaternion();
+  function adduct(bone, angle) {
+    if (!bone || Math.abs(angle) < 1e-4) return;
+    cur.model.getWorldQuaternion(_qp);
+    _ax.set(0, 0, 1).applyQuaternion(_qp);                    // ось «вперёд» героя в мире
+    _qa.setFromAxisAngle(_ax, angle);
+    bone.parent.updateWorldMatrix(true, false);
+    bone.parent.getWorldQuaternion(_qp);
+    // local' = P⁻¹ · R · P · local
+    bone.quaternion.premultiply(_qp).premultiply(_qa).premultiply(_qp.invert());
+  }
+  // дыхание, оглядывание в покое, доворот груди к цели
+  function applyLife(dt, idle, twist) {
+    const B = cur.bones;
+    const add = (cur.def.adduct ?? 0.22) * (act ? 0.35 : 1);
+    adduct(B.leftUpperArm, -add);
+    adduct(B.rightUpperArm, add);
+    S.idleT = idle ? S.idleT + dt : 0;
+    const br = Math.sin(time * 1.7) * 0.022 * (idle ? 1 : 0.4);
+    if (B.upperChest) B.upperChest.rotateX(-br);
+    else if (B.chest) B.chest.rotateX(-br);
+    if (B.leftShoulder) B.leftShoulder.rotateZ(br * 0.6);
+    if (B.rightShoulder) B.rightShoulder.rotateZ(-br * 0.6);
+    S.lookT -= dt;
+    if (S.lookT <= 0) { S.lookT = 2.5 + Math.random() * 3.5; S.lookWant = S.idleT > 2.5 ? (Math.random() - 0.5) * 1.1 : 0; }
+    if (!idle) S.lookWant = 0;
+    S.look += (S.lookWant - S.look) * (1 - Math.exp(-2.2 * dt));
+    if (B.neck) B.neck.rotateY(S.look * 0.45);
+    if (B.head) B.head.rotateY(S.look * 0.55);
+    S.chestTwist += (twist - S.chestTwist) * (1 - Math.exp(-8 * dt));
+    if (Math.abs(S.chestTwist) > 1e-3) {
+      if (B.spine) B.spine.rotateY(S.chestTwist * 0.35);
+      if (B.chest) B.chest.rotateY(S.chestTwist * 0.4);
+      if (B.head) B.head.rotateY(S.chestTwist * 0.25);
+    }
+  }
+
+  // ---------------------------------------------------------------- кадр
+  function resetFree() { for (const b of cur.free) b.quaternion.identity(); }
 
   function update(dt, snap, events) {
     if (!S.ready || !cur) return;
-    if (!snap || !snap.player) { time += dt; cur.mixer.update(dt); vrmTick(dt); return; } // меню: стоим в покое
     time += dt;
-    const P = snap.player;
+    const P = snap && snap.player;
+    if (ownRoot && P && P.position) {
+      root.position.set(num(P.position.x), num(P.position.y), num(P.position.z));
+      root.rotation.y = num(P.yaw, root.rotation.y);
+    }
+    // LOD: реже обновляем удалённого/дальнего героя
+    if (S.lod >= 2) { S.lodAcc += dt; if (S.lodAcc < 0.1) return; dt = S.lodAcc; S.lodAcc = 0; }
+    resetFree();
+    if (!P) { // меню: покой
+      cur.mixer.update(dt);
+      applyLife(dt, true, 0);
+      applyPose(dt);
+      vrmTick(dt);
+      return;
+    }
     const status = snap.status || 'playing';
-    const yaw = heroRoot.rotation.y;
+    const yaw = root.rotation.y;
     const W = cur.model;
     if (status !== lastStatus) {
       if (status === 'defeat' || P.action === 'dead') playAct('Death', { speed: 1, fade: 0.2 });
-      else if (status === 'victory') playAct('Jump', { loop: true, speed: 0.9, fade: 0.3 });
+      else if (status === 'victory') playAct('Victory', { loop: true, speed: 1, fade: 0.3 });
       else if (lastStatus === 'defeat' || lastStatus === 'victory') stopAct(0.1);
       lastStatus = status;
     }
-    if (status === 'defeat' || status === 'victory') { W.rotation.set(0, 0, 0); cur.mixer.update(dt); vrmTick(dt); return; }
+    if (status === 'defeat' || status === 'victory') {
+      W.rotation.set(0, 0, 0);
+      updateLoco(dt, 0, 0, 0, false);
+      cur.mixer.update(dt); vrmTick(dt); return;
+    }
 
-    // скорость в осях героя (вперёд = +z)
+    // скорость в осях героя (вперёд = +z, влево = +x)
     const vx = num(P.velocity && P.velocity.x), vz = num(P.velocity && P.velocity.z);
     const c = Math.cos(yaw), s = Math.sin(yaw);
     const lx = vx * c - vz * s, lz = vx * s + vz * c;
     const sp = Math.hypot(vx, vz);
     if (dt > 1e-4) {
-      let dy = yaw - (S.prevYaw ?? yaw);
-      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      const dy = wrap(yaw - (S.prevYaw ?? yaw));
       S.yawRate += (dy / dt - S.yawRate) * (1 - Math.exp(-10 * dt));
     }
     S.prevYaw = yaw;
     const sprint = num(P.sprint) > 0.5 || !!P.cruise;
-    let lname = 'Idle', rate = 1, turnWant = 0;
-    if (sp > 0.35) {
-      const back = lz < -0.3 && Math.abs(lz) >= Math.abs(lx) * 0.8;
-      if (back) { lname = 'Walk'; rate = -Math.min(1.6, sp / 1.6); }
-      else {
-        lname = sp < 2.8 ? 'Walk' : 'Run';
-        rate = lname === 'Walk' ? sp / 1.6 : sp / (sprint ? 5.2 : 4.6);
-        // вбок: корпус доворачивается к направлению хода (своих клипов стрейфа у моделей нет)
-        turnWant = Math.max(-1.2, Math.min(1.2, Math.atan2(lx, Math.max(0.05, lz))));
-      }
-    } else if (Math.abs(S.yawRate) > 1.4) { lname = 'Walk'; rate = 0.7; }
-    setLoco(lname);
-    if (loco) loco.timeScale = Math.sign(rate || 1) * Math.min(1.9, Math.max(0.55, Math.abs(rate)));
     const moving = sp > 0.6;
 
     // действия по событиям боя
@@ -193,42 +578,69 @@ export function createHeroModel({ THREE, heroRoot, heroBody, extras = [], hero =
     for (const e of Array.isArray(events) ? events : []) {
       if (!e) continue;
       const d = e.data || {};
+      if (!!d.remote !== !!remote) continue; // C3: события соперника (data.remote) — только его модели
       switch (e.type) {
-        case 'player_dash': want = { name: 'Jump', speed: 2.2, full: true }; break;
-        case 'player_hit': S.recoil = 1; break;
-        case 'player_slash': want = { name: 'Punch', speed: 2.0 }; break;
-        case 'burst': want = { name: 'Punch', speed: 1.4 }; break;
-        case 'rune_cast': want = { name: 'Punch', speed: 1.2 }; break;
-        case 'parry': want = { name: 'Punch', speed: 2.4 }; break;
-        case 'sigil_cast': want = { name: 'Punch', speed: 1.3 }; break;
-        case 'player_cast': if (!want) want = { name: 'Punch', speed: d.ability === 'spark' ? 2.6 : 1.8 }; break;
+        case 'player_dash': {
+          const wd = d.worldDirection || P.dashDir;
+          let n = 'DodgeF';
+          if (wd) {
+            const dl = Math.atan2(num(wd.x) * c - num(wd.z) * s, num(wd.x) * s + num(wd.z) * c);
+            n = Math.abs(dl) < 0.8 ? 'DodgeF' : Math.abs(dl) > 2.35 ? 'DodgeB' : dl > 0 ? 'DodgeL' : 'DodgeR';
+          }
+          want = { name: n, speed: 1.5, full: true };
+          break;
+        }
+        case 'player_hit': S.recoil = 1; if (!want) want = { name: P.shielding ? 'BlockHit' : num(d.amount) >= 20 ? 'HitB' : 'Hit', speed: 1.4 }; break;
+        case 'player_slash': want = { name: 'Slash', speed: 1.8 }; break;
+        case 'burst': want = { name: 'Cast2', speed: 1.5 }; break;
+        case 'rune_cast': want = { name: 'CastRaise', speed: 1.4 }; break;
+        case 'parry': want = { name: 'BlockHit', speed: 1.8 }; break;
+        case 'sigil_cast': want = { name: 'Cast2', speed: 1.6 }; break;
+        case 'hand_spell_throw': want = { name: 'Throw', speed: 1.6 }; break;
+        case 'bow_release': if (!pose.wBow) want = { name: 'BowShoot', speed: 1.4 }; break;
+        case 'player_cast': if (!want) want = { name: 'Cast1', speed: d.ability === 'spark' ? 2.2 : 1.6 }; break;
         default: break;
       }
     }
     if (want) {
       playAct(want.name, { speed: want.speed, upperOnly: !want.full && moving });
     } else {
-      // удержания: щит / чары / стрельба «OK» — рука вперёд (поза «Punch» на пике)
-      const holdKey = P.action === 'shield' ? 'shield' : P.action === 'conjure' ? 'conjure' : P.action === 'cast' ? 'cast' : '';
+      // удержания: щит — блок, чары — каст в цикле, стрельба — рука вперёд
+      const holdKey = P.action === 'shield' ? 'shield' : P.action === 'conjure' ? 'conjure' : P.action === 'cast' ? 'cast' : P.stunned ? 'stun' : '';
       const busy = act && !holdName && time < actUntil;
       if (holdKey && !busy) {
-        if (holdName !== holdKey || actUpper !== moving) playAct('Punch', { holdKey, upperOnly: moving, fade: 0.15, freezeAt: holdKey === 'conjure' ? 0.35 : 0.5 });
+        if (holdName !== holdKey || actUpper !== moving) {
+          if (holdKey === 'shield') playAct('Blocking', { holdKey, upperOnly: moving, fade: 0.15, loop: true });
+          else if (holdKey === 'conjure') playAct('CastHold', { holdKey, upperOnly: moving, fade: 0.15, loop: true });
+          else if (holdKey === 'stun') playAct('HitB', { holdKey, upperOnly: false, fade: 0.2, freezeAt: 0.45 });
+          else playAct('Cast1', { holdKey, upperOnly: moving, fade: 0.15, freezeAt: 0.42 });
+        }
       } else if (!holdKey && holdName) stopAct(0.2);
       else if (act && !holdName && time >= actUntil) stopAct(0.25);
     }
 
-    // обёртка: корпус по ходу, наклон на бегу, отдача от удара
-    const k = 1 - Math.exp(-8 * dt);
-    S.turn += (turnWant * (holdName || act ? 0.4 : 1) - S.turn) * k;
-    const leanWant = lz > 2.5 ? (sprint ? 0.16 : 0.07) : 0;
+    updateLoco(dt, lx, lz, sp, sprint);
+
+    // обёртка: наклон на бегу и отдача от удара (поворот корпуса по ходу больше не нужен — есть стрейф)
+    const leanWant = lz > 2.5 ? (sprint ? 0.12 : 0.05) : 0;
     S.lean += (leanWant - S.lean) * (1 - Math.exp(-6 * dt));
     S.recoil = Math.max(0, S.recoil - dt * 3.5);
-    W.rotation.set(S.lean - 0.25 * Math.sin(Math.PI * S.recoil), S.turn, 0);
+    W.rotation.set(S.lean - 0.18 * Math.sin(Math.PI * S.recoil), 0, 0);
     cur.mixer.update(dt);
+
+    // lock-on: грудь к цели (C4 snap.lockTarget, по умолчанию — босс в бою)
+    let twist = 0;
+    const tgt = (snap.lockTarget && snap.lockTarget.position) || (P.encounter === 'engaged' && snap.boss && snap.boss.position) || null;
+    if (tgt && P.position) {
+      const dx = num(tgt.x) - num(P.position.x), dz = num(tgt.z) - num(P.position.z);
+      if (dx * dx + dz * dz > 0.25) twist = clamp(wrap(Math.atan2(dx, dz) - yaw), -0.7, 0.7);
+    }
+    applyLife(dt, !moving && !act, twist);
+    applyPose(dt);
     vrmTick(dt);
   }
 
-  // VRM: моргание раз в 2–5 с и обновление (нормализованный скелет → меш, физика волос/одежды)
+  // VRM: моргание раз в 2–5 с, обновление (нормализованный скелет → меш, пружины волос и одежды), ткань
   function vrmTick(dt) {
     const vrm = cur && cur.vrm;
     if (!vrm) return;
@@ -238,21 +650,50 @@ export function createHeroModel({ THREE, heroRoot, heroBody, extras = [], hero =
     S.blink = Math.max(0, S.blink - dt);
     const em = vrm.expressionManager;
     if (em) { try { em.setValue('blink', bw); } catch (e) { /* нет выражения */ } }
-    vrm.update(Math.min(dt, 1 / 20));
+    if (S.lod >= 2 && vrm.springBoneManager) {
+      // без пружин: только скелет и выражения
+      vrm.humanoid.update(); if (em) em.update();
+    } else vrm.update(Math.min(dt, 1 / 20));
+    if (cur.gear && cur.gear.update) cur.gear.update(dt, root, S.lod);
+    if (cur.shade && cur.shade.update) cur.shade.update(dt);
   }
+
+  // ---------------------------------------------------------------- C5
+  function setPose(p = {}) {
+    if (!p || typeof p !== 'object') return;
+    if ('bowDraw' in p) pose.bowDraw = clamp(num(p.bowDraw), 0, 1);
+    if ('bowActive' in p) pose.bowActive = !!p.bowActive;
+    if (p.aim && typeof p.aim === 'object') { pose.aimX = clamp(num(p.aim.x), -1, 1); pose.aimY = clamp(num(p.aim.y), -1, 1); }
+    if ('handSpell' in p) pose.handSpell = clamp(num(p.handSpell), 0, 1);
+  }
+  function setMirror(m) { mirror.data = m && m.valid ? m : null; }
+  function getAnchors() { return anchors; }
 
   function dispose() {
     S.disposed = true;
     clear();
     showProcedural(true);
+    if (ownRoot && root.parent) root.parent.remove(root);
   }
 
+  parentAnchors();
   setHero(hero);
 
   return {
-    update, setHero, dispose,
+    root, update, setHero, setPose, setMirror, getAnchors, setShading, setQuality, setLod, dispose,
     get ready() { return S.ready; },
     get hero() { return S.hero; },
-    state: () => ({ hero: S.hero, ready: S.ready, loco: locoName, locoRate: loco ? +loco.timeScale.toFixed(2) : 0, act: actName, upper: actUpper, hold: holdName }),
+    get vrm() { return cur ? cur.vrm : null; },
+    get mixer() { return cur ? cur.mixer : null; },
+    state: () => {
+      let loco = 'Idle', wMax = -1;
+      for (const n of LOCO) if (S.wLoco[n] > wMax) { wMax = S.wLoco[n]; loco = n; }
+      return {
+        hero: S.hero, ready: S.ready, loco, locoW: Object.fromEntries(LOCO.map((n) => [n, +S.wLoco[n].toFixed(2)])), phase: +S.phase.toFixed(3),
+        act: actName, upper: actUpper, hold: holdName, clips: cur ? Object.keys(cur.full).length : 0,
+        shading: opts.shading, lod: S.lod, pose: { bow: +pose.wBow.toFixed(2), spell: +pose.wSpell.toFixed(2), mirror: +mirror.w.toFixed(2) },
+        gear: cur && cur.gear ? cur.gear.names || [] : [],
+      };
+    },
   };
 }

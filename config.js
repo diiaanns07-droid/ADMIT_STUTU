@@ -30,6 +30,13 @@ export const DEPS = {
     handModelUrl: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
     license: 'Apache-2.0',
   },
+  // [NET] онлайн-дуэль через интернет: PeerJS (WebRTC DataChannel + бесплатный PeerServer 0.peerjs.com).
+  // Грузится обычным <script> только при выборе режима «Интернет» (window.peerjs.Peer).
+  peerjs: {
+    version: '1.5.5',
+    scriptUrl: 'https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js',
+    license: 'MIT',
+  },
 };
 
 // Параметры рендера, которыми владеет main.js (тени и детали — у world/effects).
@@ -101,6 +108,18 @@ export const config = {
 
   effects: {},
 
+  // [NET] онлайн-дуэль (net/net.js). peer: свой PeerServer — { host, port, path, secure, key }, null — облако PeerJS.
+  // iceServers: STUN Google; бесплатный TURN (если найдётся) — добавить сюда { urls, username, credential }.
+  net: {
+    peer: null,
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+    ],
+    relayPort: 8790,
+    connectTimeoutMs: 15000,
+  },
+
   // Звук временно выключен по просьбе владельца: AudioContext не создаётся, ползунок громкости скрыт.
   // Включить обратно: enabled: true.
   audio: { enabled: false },
@@ -114,6 +133,10 @@ export const config = {
     // 'stick' — прежний джойстик (поднять руку и замереть — центр)
     moveMode: 'steer',
     hero: 'ashen',          // выбранный герой: ashen | warrior | elf (modules/heroModel.js)
+    heroShading: 'realistic', // [HERO] C1: 'realistic' — PBR-материалы героев (modules/heroShading.js), 'anime' — MToon как было
+    startZone: 'arena',     // [FOREST] место старта: 'arena' — Пепельное плато, 'forest' — у врат Сияющего леса
+    netName: '',            // [NET] имя в онлайн-дуэли (C1)
+    bdoUi: true,            // [BDO] интерфейс в стиле Black Desert (false — прежний вид)
     handCombat: true,       // [HAND] лук (левый кулак + правая щепоть) и магия рукой (сгусток в ладони); false — выключить
   },
 

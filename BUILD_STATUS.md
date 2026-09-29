@@ -165,3 +165,45 @@
   на программном рендере переключение качества заметно подвисает на пересборке шейдеров.
 - «Камера занята» в настоящем браузере; реальное сворачивание вкладки (событие симулировано).
 - Звук на слух, Firefox и Safari.
+
+## V6 · [BDO] стиль Black Desert — API для других команд (черновик, дополняется)
+- **Настроение зоны (для №5 [FOREST])** — уже в main: `world.atmosphere.setZoneMood({ weight, sky, fog, sun, exposure, grade })`.
+  `weight` 0..1 (насколько герой в зоне; можно звать каждый кадр — смена плавная, ~1 с). Остальные поля
+  необязательны: без них берётся пресет `ZONE_MOODS.brightForest` из `modules/atmosphere.js` (светлое небо,
+  солнце вместо чёрного диска, бирюзово-золотой туман, ярче ключ и IBL, экспозиция ×1.22, грейд postfx
+  «тёплые света / бирюзовые тени»). Поля: `sky:{top,horizon,corona,coronaIntensity,sunDisc 0..1}`,
+  `fog:{color,glow,density}`, `sun:{color,intensity,env}`, `exposure`, `grade:{shadow:[r,g,b],high:[r,g,b],sat,contrast}`;
+  цвета — 0xRRGGBB, '#rrggbb' или THREE.Color. `setZoneMood(null)` или `weight:0` — обратно к затмению.
+  QA: `window.__ASHEN__.zoneMood({weight:1})`. Тест: `dev/bdo_mood.test.mjs` (нужен three: `ASHEN_THREE=…/three.module.js`).
+- **Титр зоны:** шлите `zone_enter {zoneId, name, subtitle}` — HUD покажет крупный титр. Без события HUD сам
+  узнаёт вход по `layout.landmarks` (добавьте свою зону туда же `{id, kind:'landmark', name, x, y, z, r}` —
+  тогда она будет и на мини-карте).
+- **Ударная волна для №7 [VFX]:** `import { queueShockwave } from './core/postfx.js'` (из modules — `'../core/postfx.js'`),
+  `queueShockwave(u, v, strength)` — экранные uv 0..1; искажение в grade-проходе, до 4 колец. Сильные события
+  (burst, rune_cast, boss_impact…) дают волну и так.
+- **DOF и витрина героя (для №4 [HERO]):** DOF делает postfx на `high` в режиме меню (`postfx.setMode(screen)` зовёт
+  main.js). Фокус по умолчанию 3.0 м (камера меню). Если у витрины другая дистанция — `postfx.setFocus(meters)`.
+  Своего DOF-прохода в heroShowcase лучше не делать (два DOF = двойная цена). Карточку героя (имя, класс,
+  стихия, описание) рисует ui.js — данные в `HERO_OPTIONS` (modules/ui.js), дополняйте поля там с тегом [HERO].
+- **Иконки для №6 [HAND]:** `modules/bdoIcons.js` → `iconSvg('bow' | 'spell_fire' | 'spell_storm' | 'spell_frost' | 'spell_earth')`.
+- **Чужие экраны и кнопки (№1, №2, №3, №5, №6):** используйте классы ui.css — `.ao-panel`, `.ao-btn ao-btn--primary|--secondary|--danger|--quiet`,
+  `.ao-card`, `.ao-seg` — в режиме BDO они сами получат рамки, орнамент и шрифты. Токены цветов/шрифтов для своих CSS
+  (netLobby.css): `var(--bdo-panel)`, `--bdo-gold`, `--bdo-bronze`, `--bdo-ivory`, `--bdo-blood`, `--bdo-mana`,
+  `--bdo-font-display` (Forum, с кириллицей), `--bdo-font-body`; canvas — `core/bdoTheme.js`.
+- **Настройка:** `bdoUi: true` (config.defaultSettings); `false` — прежний интерфейс.
+
+## V6 · [FOREST] Сияющий лес — API для других команд (черновик, дополняется)
+- **Зона** `modules/brightForest.js`: `BRIGHT_FOREST` (C7) — `{ id:'bright-forest', name:'Сияющий лес', subtitle:'Земли Древа',
+  x:18, z:-168, r:62, level:-2.2, duel:{ x:18, z:-168, r:20, spawns:[{x:6,z:-168,yaw:π/2},{x:30,z:-168,yaw:-π/2}] },
+  start:{x:14,z:-97,yaw:π}, gate, embers, road }`. Лес — к северу от арены, дорога от плато к вратам.
+- **Для №3 (PvP):** точки дуэли — `BRIGHT_FOREST.duel.spawns` или `world.layout.spawns.duel`; поставить героя в точку —
+  `combat.setSpawn({x,z,yaw})` до `combat.reset()` (`null` — старт по умолчанию). Поляна r=20 ровная (высота = level),
+  без коллайдеров внутри, кроме 6 укрытий по краю (центрально-симметричны, `FOREST_PLAN.covers`). Второй игрок мнёт
+  траву: `world.setForestHero2({x,y,z})` (или `null`).
+- **Для №8 (BDO):** при входе в лес main.js шлёт событие `zone_enter { zoneId:'bright-forest', name:'Сияющий лес',
+  subtitle:'Земли Древа' }` (C3). Настроение — `atmosphere.setZoneMood(forest.mood)` каждый кадр (формат ZONE_MOODS №8);
+  лес ещё рисует свой купол неба (облака, солнце) поверх затмения по weight. Пункт меню «Место старта» — хук `[FOREST]`
+  в ui.js (buildStartZone, в меню в одном ряду с «Управлением движением»).
+- **Настройка** `startZone: 'arena'|'forest'` (config, sanitizeSettings, ui). При 'forest' старт у врат леса, облёт-интро
+  у арены пропускается; в меню герой стоит у врат.
+- `world.forest` — `{ weight 0..1, inside, mood, drainEvents(), stats(), plan, map }`; `world.layout.zones.brightForest`.

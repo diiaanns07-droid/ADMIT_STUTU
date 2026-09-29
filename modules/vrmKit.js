@@ -6,7 +6,13 @@
 // «loadMixamoAnimation»: поворот кости в мире покоя источника → нормализованная кость VRM.
 // Перемещение таза переводится в мировые оси и масштабируется по высоте таза.
 //
-// export: loadVRM(THREE, url) → Promise<vrm>, retargetClip(THREE, clip, srcScene, vrm) → AnimationClip
+// [HERO] Вторая библиотека клипов — KayKit Adventurers (assets/heroes/anims_kaykit.glb, CC0, скелет
+// hips/spine/chest/head, upperarm.l…): стрейфы, шаг назад, рывки, касты, лук, блок, удары, победа.
+// Конечности переносятся режимом 'full': поворот кости в мире относительно покоя источника
+// (со скруткой предплечья и кисти), покой VRM сначала совмещается с покоем источника по направлению.
+//
+// export: loadVRM(THREE, url) → Promise<vrm>,
+//         retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo' | 'kaykit') → AnimationClip
 
 const MIXAMO_TO_VRM = {
   Hips: 'hips', Spine: 'spine', Spine1: 'chest', Spine2: 'upperChest', Neck: 'neck', Head: 'head',
@@ -69,24 +75,51 @@ const RIG = [
   ['rightFoot', 'RightFoot', 'dir', 'RightToeBase', 'rightToes'],
 ];
 
-export function retargetClip(THREE, clip, srcScene, vrm, fps = 30) {
+// [HERO] KayKit: у скелета нет шеи и ключиц — они остаются в покое VRM.
+const RIG_KAYKIT = [
+  ['hips', 'hips', 'delta'],
+  ['spine', 'spine', 'delta'], ['chest', 'chest', 'delta'], ['head', 'head', 'delta'],
+  ['leftUpperArm', 'upperarm.l', 'full', 'lowerarm.l', 'leftLowerArm'],
+  ['leftLowerArm', 'lowerarm.l', 'full', 'wrist.l', 'leftHand'],
+  ['leftHand', 'wrist.l', 'full', 'hand.l', 'leftMiddleProximal'],
+  ['rightUpperArm', 'upperarm.r', 'full', 'lowerarm.r', 'rightLowerArm'],
+  ['rightLowerArm', 'lowerarm.r', 'full', 'wrist.r', 'rightHand'],
+  ['rightHand', 'wrist.r', 'full', 'hand.r', 'rightMiddleProximal'],
+  ['leftUpperLeg', 'upperleg.l', 'full', 'lowerleg.l', 'leftLowerLeg'],
+  ['leftLowerLeg', 'lowerleg.l', 'full', 'foot.l', 'leftFoot'],
+  ['leftFoot', 'foot.l', 'full', 'toes.l', 'leftToes'],
+  ['rightUpperLeg', 'upperleg.r', 'full', 'lowerleg.r', 'rightLowerLeg'],
+  ['rightLowerLeg', 'lowerleg.r', 'full', 'foot.r', 'rightFoot'],
+  ['rightFoot', 'foot.r', 'full', 'toes.r', 'rightToes'],
+];
+export const RIGS = Object.freeze({ mixamo: RIG, kaykit: RIG_KAYKIT });
+
+export function retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo') {
   const H = vrm.humanoid;
+  const TABLE = RIGS[rig] || RIG;
   if (H.resetNormalizedPose) H.resetNormalizedPose();
   vrm.scene.updateMatrixWorld(true);
   srcScene.updateMatrixWorld(true);
   const wq = (o) => o.getWorldQuaternion(new THREE.Quaternion());
+  // GLTFLoader чистит имена узлов (PropertyBinding.sanitizeNodeName: «upperarm.l» → «upperarml»)
+  const byName = (n) => srcScene.getObjectByName(n) || (THREE.PropertyBinding ? srcScene.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(n)) : null);
   const wp = (o) => o.getWorldPosition(new THREE.Vector3());
   // покой: источник и VRM
   const bones = [];
-  for (const [vName, sName, mode, sChild, vChild] of RIG) {
-    const node = H.getNormalizedBoneNode(vName), src = srcScene.getObjectByName(sName);
+  for (const [vName, sName, mode, sChild, vChild] of TABLE) {
+    const node = H.getNormalizedBoneNode(vName), src = byName(sName);
     if (!node || !src) continue;
     const b = { vName, node, src, mode, restSrcQ: wq(src), restVrmW: wq(node) };
-    if (mode === 'dir') {
-      const sc = srcScene.getObjectByName(sChild), vc = H.getNormalizedBoneNode(vChild);
+    if (mode === 'dir' || mode === 'full') {
+      const sc = byName(sChild), vc = H.getNormalizedBoneNode(vChild);
       if (!sc || !vc) { b.mode = 'delta'; } else {
         b.srcChild = sc;
         b.restVrmDir = wp(vc).sub(wp(node)).normalize();
+        if (mode === 'full') {
+          // совмещение покоя: VRM (T-поза) → направление кости источника в покое, затем дельта источника
+          const srcDir = wp(sc).sub(wp(src)).normalize();
+          b.alignW = new THREE.Quaternion().setFromUnitVectors(b.restVrmDir, srcDir).multiply(b.restVrmW);
+        }
       }
     }
     bones.push(b);
@@ -94,7 +127,9 @@ export function retargetClip(THREE, clip, srcScene, vrm, fps = 30) {
   const byNode = new Map(bones.map((b) => [b.node, b]));
   const hips = bones.find((b) => b.vName === 'hips');
   const box = new THREE.Box3().setFromObject(srcScene);
-  const srcHipsH = hips ? wp(hips.src).y - box.min.y : 1;
+  // [HERO] библиотека без мешей (anims_kaykit.glb): рамка пустая — пол = начало сцены источника
+  const srcFloor = box.isEmpty() ? wp(srcScene).y : box.min.y;
+  const srcHipsH = hips ? wp(hips.src).y - srcFloor : 1;
   const vrmHipsH = hips ? wp(hips.node).y - wp(vrm.scene).y : 1;
   const posScale = srcHipsH > 1e-6 ? vrmHipsH / srcHipsH : 1;
   const restHipsSrcP = hips ? wp(hips.src) : new THREE.Vector3();
@@ -121,6 +156,9 @@ export function retargetClip(THREE, clip, srcScene, vrm, fps = 30) {
       if (b.mode === 'dir') {
         dir.copy(wp(b.srcChild)).sub(wp(b.src)).normalize();
         w = new THREE.Quaternion().setFromUnitVectors(b.restVrmDir, dir).multiply(b.restVrmW);
+      } else if (b.mode === 'full') {
+        dq.copy(b.restSrcQ).invert();
+        w = wq(b.src).multiply(dq).multiply(b.alignW); // D(t)·A·W_rest
       } else {
         dq.copy(b.restSrcQ).invert();
         w = wq(b.src).multiply(dq).multiply(b.restVrmW); // D(t)·W_rest

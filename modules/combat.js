@@ -2299,6 +2299,15 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   function getEffectiveConfig() { return JSON.parse(JSON.stringify(C)); }
   function getUpgrades() { return { ...upgradeMods }; }
 
+  // [FOREST] место старта (settings.startZone, точки дуэли PvP): действует со следующего reset();
+  // null — старт раскладки по умолчанию (layout.playerSpawn).
+  const SPAWN0 = LAY.playerSpawn;
+  function setSpawn(sp) {
+    if (isPlainObject(sp) && Number.isFinite(sp.x) && Number.isFinite(sp.z)) LAY.playerSpawn = { x: sp.x, z: sp.z, yaw: Number.isFinite(sp.yaw) ? sp.yaw : NaN };
+    else LAY.playerSpawn = SPAWN0;
+    return !!LAY.custom;
+  }
+
   // [HAND] лук и магия рукой (modules/combatHand.js): доступ к бою изнутри замыкания (st — геттером: reset его заменяет)
   try {
     hand = createCombatHand({
@@ -2308,5 +2317,5 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   } catch (e) { hand = null; console.warn('[combat] combatHand недоступен', e); }
 
   reset();
-  return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig, get hand() { return hand; } /* [HAND] */ };
+  return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig, setSpawn, get hand() { return hand; } /* [HAND] */ };
 }

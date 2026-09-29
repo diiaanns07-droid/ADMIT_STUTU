@@ -1,0 +1,334 @@
+// ASHEN OATH — второй герой в сцене: соперник по сети (№2 [NET]).
+//
+// createRemotePlayer({ THREE, scene, world, heroFactory, camera })
+//   → { push(st), pushEvents(list), update(dt), getState(), setInfo({name, hero}), setConnected(on),
+//       setVisible(on), dispose(), root }
+//   push(st)   — декодированный пакет st (net/sync.js decodeState) сразу при приёме;
+//   update(dt) — раз в кадр: буфер интерполяции ~100 мс + короткая экстраполяция (net/interp.js),
+//                сглаженный поворот, высота по земле мира, анимации героя, табличка над головой;
+//   getState() — для snap.opponent у №3 [PVP] (C4).
+// Модель — createHeroModel (C5) на своём root: герой, которого соперник выбрал в hello. Пока VRM
+// грузится (и для «Пепельного стража», у которого нет VRM-файла) — своё процедурное тело в плаще
+// с багровой руной. При обрыве связи — призрачный силуэт и надпись «Связь потеряна».
+
+import { createInterpBuffer } from '../net/interp.js';
+
+const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const damp = (k, dt) => 1 - Math.exp(-k * dt);
+const HERO_NAMES = { ashen: 'Пепельный страж', elf: 'Эльфийка', dark: 'Тёмная чародейка' };
+
+// ---------------------------------------------------------------- процедурное тело (общие ресурсы)
+let SHARED = null;
+function shared(THREE) {
+  if (SHARED && SHARED.THREE === THREE) return SHARED;
+  const std = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.78, metalness: 0.1, ...extra });
+  SHARED = {
+    THREE,
+    mat: {
+      cloak: std(0x2a1d22, { roughness: 0.9 }),
+      coat: std(0x3d3238),
+      skin: std(0xb89a86, { roughness: 0.6 }),
+      leather: std(0x2b2320),
+      gold: std(0xb08a48, { metalness: 0.7, roughness: 0.35 }),
+      rune: new THREE.MeshBasicMaterial({ color: 0xff4a3a, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }),
+      ghost: new THREE.MeshBasicMaterial({ color: 0x9fc4ff, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending }),
+    },
+    geo: {
+      leg: new THREE.CylinderGeometry(0.07, 0.055, 0.86, 8).translate(0, -0.43, 0),
+      boot: new THREE.BoxGeometry(0.11, 0.09, 0.24).translate(0, -0.86, 0.04),
+      torso: new THREE.CylinderGeometry(0.2, 0.16, 0.62, 10).translate(0, 0.31, 0),
+      cloak: new THREE.ConeGeometry(0.42, 1.25, 14, 1, true).translate(0, -0.35, 0),
+      arm: new THREE.CylinderGeometry(0.055, 0.045, 0.66, 8).translate(0, -0.33, 0),
+      hand: new THREE.SphereGeometry(0.055, 8, 6).translate(0, -0.68, 0),
+      head: new THREE.SphereGeometry(0.115, 14, 10),
+      hood: new THREE.ConeGeometry(0.17, 0.36, 12, 1, true).translate(0, 0.08, -0.02),
+      pauldron: new THREE.SphereGeometry(0.1, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+      rune: new THREE.RingGeometry(0.07, 0.1, 3, 1),
+    },
+  };
+  SHARED.mat.cloak.side = THREE.DoubleSide;
+  SHARED.mat.cloak.userData.netShared = true;
+  return SHARED;
+}
+
+function buildBody(THREE, ghost) {
+  const R = shared(THREE);
+  const m = (k) => (ghost ? R.mat.ghost : R.mat[k]);
+  const g = new THREE.Group();
+  g.name = ghost ? 'remote-ghost' : 'remote-body';
+  const mesh = (geo, mat, parent, x = 0, y = 0, z = 0) => {
+    const o = new THREE.Mesh(geo, mat);
+    o.position.set(x, y, z);
+    o.castShadow = !ghost;
+    parent.add(o);
+    return o;
+  };
+  const hips = new THREE.Group(); hips.position.y = 0.92; g.add(hips);
+  const legL = new THREE.Group(); legL.position.set(0.1, 0, 0); hips.add(legL);
+  const legR = new THREE.Group(); legR.position.set(-0.1, 0, 0); hips.add(legR);
+  mesh(R.geo.leg, m('leather'), legL); mesh(R.geo.boot, m('leather'), legL);
+  mesh(R.geo.leg, m('leather'), legR); mesh(R.geo.boot, m('leather'), legR);
+  const chest = new THREE.Group(); chest.position.y = 0.02; hips.add(chest);
+  mesh(R.geo.torso, m('coat'), chest);
+  const cloak = mesh(R.geo.cloak, m('cloak'), chest, 0, 0.58, -0.03);
+  cloak.scale.set(1, 1, 0.75);
+  const shL = new THREE.Group(); shL.position.set(0.24, 0.56, 0); chest.add(shL);
+  const shR = new THREE.Group(); shR.position.set(-0.24, 0.56, 0); chest.add(shR);
+  mesh(R.geo.arm, m('coat'), shL); mesh(R.geo.hand, m('skin'), shL);
+  mesh(R.geo.arm, m('coat'), shR); mesh(R.geo.hand, m('skin'), shR);
+  mesh(R.geo.pauldron, m('gold'), chest, 0.25, 0.58, 0);
+  mesh(R.geo.pauldron, m('gold'), chest, -0.25, 0.58, 0);
+  const head = new THREE.Group(); head.position.y = 0.78; chest.add(head);
+  mesh(R.geo.head, m('skin'), head);
+  mesh(R.geo.hood, m('cloak'), head);
+  // багровая руна на спине и на груди — видно, что это соперник, а не свой герой
+  const runeB = mesh(R.geo.rune, ghost ? R.mat.ghost : R.mat.rune, chest, 0, 0.36, -0.2);
+  runeB.rotation.y = Math.PI; runeB.castShadow = false;
+  const runeF = mesh(R.geo.rune, ghost ? R.mat.ghost : R.mat.rune, chest, 0, 0.4, 0.17);
+  runeF.scale.setScalar(0.6); runeF.castShadow = false;
+  return { group: g, hips, legL, legR, chest, shL, shR, head, runeB, runeF };
+}
+
+// ---------------------------------------------------------------- табличка над головой
+function makePlate(THREE) {
+  const W = 512, H = 128;
+  const cv = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+  if (!cv) return null;
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, fog: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.renderOrder = 998;
+  sprite.scale.set(1.7, 0.425, 1);
+  let key = '';
+  function draw({ name, hp, maxHp, energy, maxEnergy, status }) {
+    const k = `${name}|${Math.round(hp)}|${Math.round(maxHp)}|${Math.round((energy / Math.max(1, maxEnergy)) * 20)}|${status}`;
+    if (k === key) return;
+    key = k;
+    ctx.clearRect(0, 0, W, H);
+    // тёмная полупрозрачная плашка с тонкой золотой каймой
+    const r = 14, x0 = 8, y0 = 8, w = W - 16, h = H - 16;
+    ctx.beginPath();
+    ctx.moveTo(x0 + r, y0); ctx.lineTo(x0 + w - r, y0); ctx.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
+    ctx.lineTo(x0 + w, y0 + h - r); ctx.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
+    ctx.lineTo(x0 + r, y0 + h); ctx.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r);
+    ctx.lineTo(x0, y0 + r); ctx.quadraticCurveTo(x0, y0, x0 + r, y0);
+    ctx.closePath();
+    const bg = ctx.createLinearGradient(0, y0, 0, y0 + h);
+    bg.addColorStop(0, 'rgba(22,16,14,0.86)'); bg.addColorStop(1, 'rgba(8,6,6,0.9)');
+    ctx.fillStyle = bg; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(201,164,92,0.95)'; ctx.stroke();
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,226,160,0.25)';
+    ctx.strokeRect(x0 + 6, y0 + 6, w - 12, h - 12);
+    // имя
+    ctx.font = '600 36px "Cinzel", "Cormorant Garamond", Georgia, "Times New Roman", serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = status === 'lost' ? 'rgba(170,190,220,0.9)' : '#f1dca6';
+    ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 6;
+    const label = status === 'lost' ? `${name} · связь потеряна` : name;
+    ctx.fillText(label.length > 26 ? `${label.slice(0, 25)}…` : label, W / 2, 44, w - 40);
+    ctx.shadowBlur = 0;
+    // полоса HP (багровая) и тонкая энергии
+    const bx = 40, bw = W - 80, by = 74, bh = 20;
+    ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(bx, by, bw, bh);
+    const k1 = Math.max(0, Math.min(1, hp / Math.max(1, maxHp)));
+    const hg = ctx.createLinearGradient(0, by, 0, by + bh);
+    hg.addColorStop(0, status === 'lost' ? '#56607a' : '#d2383a'); hg.addColorStop(1, status === 'lost' ? '#323a4c' : '#7a1216');
+    ctx.fillStyle = hg; ctx.fillRect(bx + 2, by + 2, (bw - 4) * k1, bh - 4);
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(201,164,92,0.9)'; ctx.strokeRect(bx, by, bw, bh);
+    ctx.font = '600 16px Georgia, serif'; ctx.fillStyle = '#fff3d6';
+    ctx.fillText(`${Math.max(0, Math.round(hp))} / ${Math.round(maxHp)}`, W / 2, by + bh / 2 + 1);
+    const k2 = Math.max(0, Math.min(1, energy / Math.max(1, maxEnergy)));
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(bx, by + bh + 4, bw, 6);
+    ctx.fillStyle = '#e0b04a'; ctx.fillRect(bx + 1, by + bh + 5, (bw - 2) * k2, 4);
+    tex.needsUpdate = true;
+  }
+  return { sprite, draw, dispose() { tex.dispose(); mat.dispose(); } };
+}
+
+// ---------------------------------------------------------------- удалённый игрок
+export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, delayMs = 100 } = {}) {
+  const root = new THREE.Group();
+  root.name = 'remote-player';
+  root.visible = false;
+  scene.add(root);
+  const body = buildBody(THREE, false);
+  const ghost = buildBody(THREE, true);
+  ghost.group.visible = false;
+  root.add(body.group);
+  root.add(ghost.group);
+  const plate = makePlate(THREE);
+  if (plate) root.add(plate.sprite);
+
+  const buf = createInterpBuffer({ delayMs });
+  const S = {
+    name: 'Соперник', hero: 'ashen', connected: true, visible: true, got: false,
+    yaw: 0, rootY: null, walk: 0, t: 0, st: null, lastRecv: 0,
+    slashT: 9, castT: 9, burstT: 9, dashT: 9, parryT: 9,
+  };
+  let events = [];
+  let hm = null;
+
+  const groundAt = (x, z) => {
+    try {
+      if (world && typeof world.groundAt === 'function') { const y = world.groundAt(x, z); if (Number.isFinite(y)) return y; }
+      if (world && world.layout && typeof world.layout.groundY === 'function') { const y = world.layout.groundY(x, z); if (Number.isFinite(y)) return y; }
+    } catch (e) { /* ignore */ }
+    return null;
+  };
+
+  function makeHero(id) {
+    if (typeof heroFactory !== 'function') return;
+    try {
+      if (hm && typeof hm.setHero === 'function') { hm.setHero(id); return; }
+      hm = heroFactory({ heroRoot: root, heroBody: body.group, extras: [], hero: id });
+    } catch (e) { console.warn('[NET] модель соперника — процедурное тело:', e && e.message); hm = null; }
+  }
+
+  function setInfo({ name, hero } = {}) {
+    if (typeof name === 'string' && name.trim()) S.name = name.trim().slice(0, 20);
+    if (typeof hero === 'string' && hero !== S.hero) { S.hero = hero; makeHero(hero); }
+    else if (!hm && typeof hero === 'string') makeHero(hero);
+  }
+
+  function push(st) {
+    if (!st) return;
+    const t = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    S.lastRecv = t;
+    buf.push(st, t);
+    S.got = true;
+  }
+  function pushEvents(list) {
+    if (!Array.isArray(list)) return;
+    for (const e of list) {
+      if (!e) continue;
+      events.push(e);
+      switch (e.type) {
+        case 'player_slash': S.slashT = 0; break;
+        case 'player_cast': case 'rune_cast': case 'sigil_cast': case 'hand_spell_throw': case 'bow_release': S.castT = 0; break;
+        case 'burst': S.burstT = 0; break;
+        case 'player_dash': S.dashT = 0; break;
+        case 'parry': S.parryT = 0; break;
+        default: break;
+      }
+    }
+    if (events.length > 64) events.splice(0, events.length - 64);
+  }
+
+  function setConnected(on) { S.connected = !!on; }
+  function setVisible(on) { S.visible = !!on; root.visible = S.visible && S.got; }
+
+  // процедурное тело: шаг по пройденному пути, руки — по действиям
+  function animateBody(b, dt, st, sp) {
+    const A = b;
+    S.walk += sp * dt * 2.6;
+    const amp = Math.min(1, sp / 4.5) * 0.7;
+    const sw = Math.sin(S.walk) * amp;
+    A.legL.rotation.x = sw; A.legR.rotation.x = -sw;
+    A.hips.position.y = 0.92 + Math.abs(Math.cos(S.walk)) * amp * 0.05;
+    let aL = -sw * 0.8, aR = sw * 0.8, zL = 0.08, zR = -0.08;
+    const act = st ? st.action : 'idle';
+    if (st && st.shielding) { aL = -1.45; zL = -0.2; }
+    if (act === 'conjure' || (st && st.handSpell)) { aL = -1.2; aR = -1.2; zL = -0.35; zR = 0.35; }
+    if (st && st.bow) { aL = -1.55; aR = -1.4; zR = 0.5 * (st.bow.draw || 0); }
+    const cast = Math.max(0, 1 - S.castT / 0.35), slash = Math.max(0, 1 - S.slashT / 0.4), burst = Math.max(0, 1 - S.burstT / 0.5), parry = Math.max(0, 1 - S.parryT / 0.35);
+    if (cast > 0 || act === 'cast' || act === 'spark') { aR = -1.5; zR = 0; }
+    if (slash > 0) { aR = -1.2 + (1 - slash) * 0.6; zR = -1.4 + (1 - slash) * 2.6; }
+    if (burst > 0) { aL = -1.5; aR = -1.5; zL = -0.5 * burst; zR = 0.5 * burst; }
+    if (parry > 0) { aL = -1.6; zL = 0; }
+    const k = damp(18, dt);
+    A.shL.rotation.x += (aL - A.shL.rotation.x) * k; A.shL.rotation.z += (zL - A.shL.rotation.z) * k;
+    A.shR.rotation.x += (aR - A.shR.rotation.x) * k; A.shR.rotation.z += (zR - A.shR.rotation.z) * k;
+    const lean = Math.min(0.18, sp * 0.025) + Math.max(0, 1 - S.dashT / 0.3) * 0.3;
+    A.chest.rotation.x += (lean - A.chest.rotation.x) * k;
+    const pulse = 0.75 + 0.25 * Math.sin(S.t * 3);
+    A.runeB.material.opacity = A.runeB.material === shared(THREE).mat.ghost ? 0.22 : pulse;
+  }
+
+  const snapLike = { status: 'playing', player: null };
+  const _cam = new THREE.Vector3();
+
+  function update(dt) {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    S.t += dt;
+    S.slashT += dt; S.castT += dt; S.burstT += dt; S.dashT += dt; S.parryT += dt;
+    root.visible = S.visible && S.got;
+    if (!S.got) { events.length = 0; return; }
+    const s = buf.sample(now);
+    if (!s.ok) { events.length = 0; return; }
+    S.st = s.st;
+    // позиция и высота по земле мира
+    const gy = groundAt(s.x, s.z);
+    const y = gy !== null ? gy : s.y;
+    if (S.rootY === null || Math.abs(y - S.rootY) > 1.2 || dt <= 0) S.rootY = y;
+    else S.rootY += (y - S.rootY) * damp(y > S.rootY ? 16 : 11, dt);
+    root.position.set(s.x, S.rootY, s.z);
+    // поворот: интерполированный yaw + сглаживание
+    S.yaw += wrapPi(s.yaw - S.yaw) * damp(14, dt);
+    S.yaw = wrapPi(S.yaw);
+    root.rotation.y = S.yaw;
+
+    const st = s.st;
+    const lost = !S.connected;
+    // призрак при обрыве
+    ghost.group.visible = lost;
+    const model = root.getObjectByName('hero-model');
+    const vrmOn = !!(hm && hm.ready && model);
+    if (model) model.visible = !lost;
+    body.group.visible = !lost && !vrmOn;
+    const sp = Math.hypot(s.vx, s.vz);
+    if (lost) animateBody(ghost, dt, null, 0);
+    else if (!vrmOn) animateBody(body, dt, st, sp);
+    if (hm && !lost) {
+      const P = { ...st, position: { x: s.x, y: S.rootY, z: s.z }, yaw: S.yaw, velocity: { x: s.vx, z: s.vz }, speed: sp };
+      snapLike.player = P;
+      snapLike.status = st && st.dead ? 'defeat' : 'playing';
+      try { hm.update(dt, snapLike, events); } catch (e) { console.warn('[NET] heroModel соперника', e); }
+    }
+    events.length = 0;
+
+    if (plate) {
+      plate.sprite.position.set(0, (vrmOn ? 1.95 : 2.05) + 0.25, 0);
+      if (camera) {
+        camera.getWorldPosition(_cam);
+        const d = _cam.distanceTo(root.position);
+        const k = Math.min(2.4, Math.max(1, d / 9));
+        plate.sprite.scale.set(1.7 * k, 0.425 * k, 1);
+      }
+      plate.draw({ name: S.name, hp: num(st && st.hp), maxHp: num(st && st.maxHp, 100), energy: num(st && st.energy), maxEnergy: num(st && st.maxEnergy, 100), status: lost ? 'lost' : 'ok' });
+    }
+  }
+
+  function getState() {
+    const st = S.st;
+    if (!S.got || !st) return null;
+    return {
+      id: 'remote', name: S.name, hero: S.hero, heroName: HERO_NAMES[S.hero] || S.hero,
+      position: { x: root.position.x, y: root.position.y, z: root.position.z },
+      yaw: S.yaw,
+      velocity: { x: st.velocity.x, z: st.velocity.z }, speed: st.speed,
+      hp: st.hp, maxHp: st.maxHp, energy: st.energy, maxEnergy: st.maxEnergy,
+      action: st.action, locomotion: st.locomotion,
+      shielding: st.shielding, invulnerable: st.invulnerable, dashing: st.dashing,
+      stunned: st.stunned, slowed: st.slowed, dead: st.dead,
+      conjure: st.conjure, burstCharge: st.burstCharge, bow: st.bow, handSpell: st.handSpell,
+      connected: S.connected,
+      latest: buf.latest ? { position: { ...buf.latest.position }, ts: buf.latest.ts } : null,
+    };
+  }
+
+  function dispose() {
+    try { if (hm && typeof hm.dispose === 'function') hm.dispose(); } catch (e) { /* ignore */ }
+    hm = null;
+    if (plate) plate.dispose();
+    scene.remove(root);
+  }
+
+  return {
+    root, push, pushEvents, update, getState, setInfo, setConnected, setVisible, dispose,
+    debug: () => ({ size: buf.size, baseDelay: buf.baseDelay, hero: S.hero, name: S.name, connected: S.connected, model: hm && typeof hm.state === 'function' ? hm.state() : null, pos: { x: +root.position.x.toFixed(2), z: +root.position.z.toFixed(2) } }),
+  };
+}
