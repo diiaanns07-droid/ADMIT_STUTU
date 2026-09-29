@@ -368,7 +368,7 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     check('победа: время 2:47, урон 1000, HP 46 из 100', vText.includes('2:47') && vText.includes('1000') && vText.includes('46из100'), vText.slice(0, 120));
     ui.update(F('defeat'));
     const dSec = section('defeat');
-    check('поражение: у стража 42%, есть совет', dSec.textContent.includes('42%') && isVisible(dSec.querySelector('.ao-tip')));
+    check('поражение: у стража 42%, есть совет', dSec.textContent.includes('42%') && [...dSec.querySelectorAll('.ao-tip')].some(isVisible));
     reset();
     btnByText(dSec, 'Сразиться снова').click();
     check('«Сразиться снова» → onRestart', count('onRestart') === 1);

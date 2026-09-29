@@ -102,6 +102,17 @@ export const DEFAULT_COMBAT_CONFIG = deepFreeze({
     frameLockResync: 2.5,   // 1/с: при беге «вперёд» кадр плавно догоняет камеру
     frameLockResyncDeg: 8,  // «вперёд» — это в пределах ±столько градусов (шире — герой и камера гоняются)
     frameLockBlend: 0.25,   // с: новый кадр после поворота стика перенимается плавно
+    // [ASHEN_V4] движение по большой карте
+    sprintSpeed: 8.2,       // м/с: спринт вне арены (держишь полный бег, не поворачивая)
+    sprintDelay: 0.9,       // с полного бега до начала разгона
+    sprintRamp: 0.6,        // с на разгон до спринта
+    sprintTurnDeg: 45,      // резкий поворот (градусов) сбивает спринт
+    slopeUp: 0.35,          // в гору: скорость × (1 − slopeUp·уклон)
+    slopeDown: 0.12,        // с горы: × (1 + slopeDown·уклон)
+    slopeMin: 0.6, slopeMax: 1.12,
+    orbitStrafe: true,      // в арене боковой ход — по окружности вокруг Регента (дистанция не «уплывает»)
+    cruiseHold: 0.5,        // автобег: спринт держался столько на полной скорости…
+    cruiseMaxTime: 20,      // …и рука опущена — герой бежит сам (до стольких секунд), пока руку не поднимут
     energyRegen: 20,        // ед./с
     energyRegenDelay: 0.5,  // пауза регена после траты энергии
     hitGrace: 0.35,         // неуязвимость после полученного удара
@@ -113,6 +124,7 @@ export const DEFAULT_COMBAT_CONFIG = deepFreeze({
     cost: 20,
     cooldown: 0.8,          // от начала рывка
     iframeDuration: 0.28,   // от начала рывка
+    buffer: 0.25,           // [V4] дёрг раньше конца отката не больше чем на столько — запоминается и срабатывает при готовности
   },
   // [ASHEN_V2] «Искра» (правая, щелчок): быстрый снаряд
   spark: { damage: 14, cost: 5, cooldown: 0.3, speed: 38, radius: 0.16, lifetime: 1.1, castTime: 0.15, spawnHeight: 1.4, spawnForward: 0.6, spawnSide: 0.3 },
@@ -546,6 +558,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       input: { moveX: 0, moveZ: 0, attack: false, shield: false, valid: false, conjure: null, viewYaw: NaN },
       engaged: engaged0,
       frame: { yaw: null, stickA: 0, idle: 0, target: null },
+      move: { sprintT: 0, sprint: 0, dir: null, fullT: 0, cruise: null, blockedT: 0 },   // [V4] спринт и автобег
       aggroT: 0,
       pendingDash: 0,
       pendingDashCam: null,
@@ -557,6 +570,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       pendingBurstPower: null,
       pendingRune: null,
       pendingSigil: null,
+      dashBuffer: null,
       pendingThrow: null,
       debug: {
         steps: 0, brainCalls: 0, brainErrors: 0,
@@ -688,6 +702,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     }
     // [V3] гистерезис: бег с 4.2 м/с, обратно в шаг — ниже 3.2 (анимация не мигает на границе)
     if (P.gait === 'run' ? sp < 3.2 : sp > 4.2) P.gait = P.gait === 'run' ? 'walk' : 'run';
+    if (P.gait === 'run' && st.move.sprint > 0.5) return 'sprint';
     return P.gait === 'run' ? 'run' : 'walk';
   }
   function buildSnapshot() {
@@ -714,6 +729,8 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         velocity: { x: P.vx, z: P.vz },
         speed: Math.hypot(P.vx, P.vz),
         locomotion: locomotion(),
+        sprint: Math.round(st.move.sprint * 1000) / 1000,
+        cruise: !!st.move.cruise,
         lockedOn: st.engaged,
         encounter: st.engaged ? 'engaged' : 'explore',
         parryWindow: C.parry.window > 0 ? clamp(P.parryWin / C.parry.window, 0, 1) : 0,
@@ -805,6 +822,9 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     st.input.attack = input.attack === true;
     st.input.shield = input.shield === true;
     st.input.valid = true;
+    // [V4] состояние левой руки для автобега: опущена (покой) / взята (джойстик)
+    st.input.handDown = isPlainObject(input.stick) && input.stick.rest === true;
+    st.input.handUp = isPlainObject(input.stick) && input.stick.engaged === true;
     const dd = readVec2(input.dashDir);
     const dsh = Number(input.dash);
     if (dd) st.pendingDashCam = dd;
@@ -1136,8 +1156,10 @@ export function createCombat({ config, bossBrain, layout } = {}) {
 
   function tryDash() {
     const P = st.p;
-    const cam = st.pendingDashCam;
-    const dir = st.pendingDash;
+    let cam = st.pendingDashCam;
+    let dir = st.pendingDash;
+    // [V4] буфер рывка: дёрг за миг до конца отката/текущего рывка не теряется, а срабатывает при готовности
+    if ((!cam || dir === 0) && st.dashBuffer && st.dashBuffer.t > 0) { cam = st.dashBuffer.cam; dir = st.dashBuffer.dir; st.dashBuffer = null; }
     if (!cam || dir === 0) { st.pendingDash = 0; st.pendingDashCam = null; return; }
     st.pendingDash = 0; st.pendingDashCam = null; // одна попытка на один импульс
     let reason = '';
@@ -1145,9 +1167,12 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     else if (P.dashCd > EPS) reason = 'cooldown';
     else if (P.energy < C.dash.cost) reason = 'energy';
     if (reason) {
+      const left = Math.max(P.dashing ? Math.max(0, C.dash.duration - P.dashElapsed) : 0, P.dashCd);   // до настоящей готовности
+      if (reason !== 'energy' && left <= C.dash.buffer) { st.dashBuffer = { cam, dir, t: C.dash.buffer + 0.05 }; return; }
       emit('ability_denied', playerPos(), { ability: 'dash', reason, direction: dir });
       return;
     }
+    st.dashBuffer = null;
     const w = camToWorld(cam.x, cam.z);
     const wl = Math.hypot(w.x, w.z) || 1;
     P.dashing = true;
@@ -1193,7 +1218,20 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       const m = Math.min(1, Math.hypot(ix, iz));
       let tvx = 0, tvz = 0;
       const dz = cfg.moveDeadzone;
-      if (m > dz) {
+      const M = st.move;
+      // [V4] автобег: после спринта рука опущена — герой бежит сам; поднять руку (хватка) — стоп
+      if (M.cruise) {
+        M.cruise.t += h;
+        const why = st.engaged ? 'engaged' : st.input.handUp || m > dz ? 'hand' : M.cruise.t > cfg.cruiseMaxTime ? 'timeout' : M.blockedT > 0.35 ? 'blocked' : P.shielding ? 'shield' : null;
+        if (why) { emit('cruise_end', playerPos(), { reason: why }); M.cruise = null; M.sprint = why === 'hand' ? M.sprint : 0; M.blockedT = 0; }
+      }
+      if (M.cruise && m <= dz) {
+        const ux = Math.sin(M.cruise.dir), uz = Math.cos(M.cruise.dir);
+        const g0 = LAY.groundY(P.x, P.z), g1 = LAY.groundY(P.x + ux * 0.6, P.z + uz * 0.6), sl = (g1 - g0) / 0.6;
+        const k = clamp(1 - cfg.slopeUp * Math.max(0, sl) + cfg.slopeDown * Math.max(0, -sl), cfg.slopeMin, cfg.slopeMax);
+        tvx = ux * cfg.sprintSpeed * k; tvz = uz * cfg.sprintSpeed * k;
+        M.sprint = 1;
+      } else if (m > dz) {
         const mm = (m - dz) / (1 - dz);
         const spd = mm <= cfg.walkShare ? cfg.walkSpeed * (mm / cfg.walkShare)
           : cfg.walkSpeed + (cfg.runSpeed - cfg.walkSpeed) * (mm - cfg.walkShare) / (1 - cfg.walkShare);
@@ -1202,27 +1240,74 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         const ux = w.x / wl, uz = w.z / wl;
         let k = P.shielding ? C.shield.moveSpeedFactor : 1;
         if (P.vortex > 0) k *= 1 + C.runes.spira.speedBonus;
+        // [V4] спринт вне арены: полный ход держится, направление ровное
+        {
+          const M = st.move, a = Math.atan2(ux, uz);
+          const full = mm >= 0.97 && !st.engaged && !P.shielding;
+          const turned = M.dir !== null && Math.abs(wrapAngle(a - M.dir)) * 180 / Math.PI > cfg.sprintTurnDeg * h * 4;
+          if (full && !turned) M.sprintT += h; else if (!full || Math.abs(wrapAngle(a - (M.dir ?? a))) > Math.PI / 3) M.sprintT = 0;
+          M.dir = a;
+          const want = M.sprintT >= cfg.sprintDelay ? 1 : 0;
+          M.sprint = want >= M.sprint ? Math.min(1, M.sprint + h / cfg.sprintRamp) : Math.max(0, M.sprint - h / 0.25);
+        }
+        // [V4] склон: в гору медленнее, с горы чуть быстрее
+        {
+          const g0 = LAY.groundY(P.x, P.z), g1 = LAY.groundY(P.x + ux * 0.6, P.z + uz * 0.6);
+          const sl = (g1 - g0) / 0.6;
+          k *= clamp(1 - cfg.slopeUp * Math.max(0, sl) + cfg.slopeDown * Math.max(0, -sl), cfg.slopeMin, cfg.slopeMax);
+        }
         if (st.engaged) {
           const f = toBossUnit();
           const along = ux * f.x + uz * f.z;
           if (along < -0.5) k *= cfg.backpedalFactor;
           else if (Math.abs(along) < 0.5) k *= cfg.strafeFactor;
         }
-        tvx = ux * spd * k; tvz = uz * spd * k;
-      }
+        const spdS = spd + (cfg.sprintSpeed - cfg.runSpeed) * st.move.sprint * clamp((mm - 0.9) / 0.1, 0, 1);
+        tvx = ux * spdS * k; tvz = uz * spdS * k;
+        M.fullT = M.sprint >= 0.999 ? M.fullT + h : 0;
+      } else if (!st.engaged && M.sprint >= 0.999 && M.fullT >= cfg.cruiseHold && st.input.handDown && M.dir !== null && !P.shielding) {
+        M.cruise = { dir: M.dir, t: 0 }; M.blockedT = 0;
+        emit('cruise_start', playerPos(), { direction: M.dir });
+        tvx = Math.sin(M.dir) * cfg.sprintSpeed; tvz = Math.cos(M.dir) * cfg.sprintSpeed;
+      } else { M.sprintT = 0; M.fullT = 0; M.sprint = Math.max(0, M.sprint - h / 0.2); M.dir = null; }
       const speeding = tvx * tvx + tvz * tvz >= P.vx * P.vx + P.vz * P.vz;
       const a = 1 - Math.exp(-h / (speeding ? cfg.accelTime : cfg.stopTime));
       P.vx += (tvx - P.vx) * a;
       P.vz += (tvz - P.vz) * a;
       if (tvx === 0 && tvz === 0 && P.vx * P.vx + P.vz * P.vz < 0.0009) { P.vx = 0; P.vz = 0; }
       tx = P.vx * h; tz = P.vz * h;
+      // [V4] в арене боковая составляющая хода идёт по окружности вокруг Регента: касательный шаг
+      // иначе каждый кадр чуть отодвигает героя, и за полминуты кружения дистанция «уплывает»
+      if (st.engaged && cfg.orbitStrafe) {
+        const rx = P.x - BOSS.x, rz = P.z - BOSS.z, r = Math.hypot(rx, rz);
+        if (r > 1) {
+          const ur = { x: rx / r, z: rz / r }, ut = { x: -ur.z, z: ur.x };
+          const rad = tx * ur.x + tz * ur.z, lat = tx * ut.x + tz * ut.z;
+          const th = lat / r, c = Math.cos(th), sn = Math.sin(th);
+          const nx = rx * c - rz * sn, nz = rx * sn + rz * c;          // поворот вокруг Регента на дугу lat
+          const r2 = Math.max(0.5, r + rad);
+          tx = BOSS.x + nx / r * r2 - P.x; tz = BOSS.z + nz / r * r2 - P.z;
+        }
+      }
     }
     const x0 = P.x, z0 = P.z;
     const to = resolveMove(P.x, P.z, P.x + tx, P.z + tz);
     P.x = to.x; P.z = to.z;
+    // [V4] в арене скорость «переносится» вместе с поворотом героя вокруг Регента: иначе сглаженная
+    // скорость отстаёт от касательной, получает наружную составляющую, и дистанция растёт при кружении
+    if (st.engaged && C.player.orbitStrafe && !P.dashing) {
+      const a0 = Math.atan2(x0 - BOSS.x, z0 - BOSS.z), a1 = Math.atan2(P.x - BOSS.x, P.z - BOSS.z);
+      const d = wrapAngle(a1 - a0), c = Math.cos(d), sn = Math.sin(d);
+      const vx = P.vx * c + P.vz * sn, vz = -P.vx * sn + P.vz * c;
+      P.vx = vx; P.vz = vz;
+    }
     if (h > 0 && !P.dashing) {
       // упёрлись в стену — скорость гасится вдоль нормали (скольжение сохраняется)
       const rx = (P.x - x0) / h, rz = (P.z - z0) / h;
+      if (st.move.cruise) {
+        const want = Math.hypot(tx, tz) / h, got = Math.hypot(rx, rz);
+        st.move.blockedT = want > 1 && got < want * 0.3 ? st.move.blockedT + h : 0;
+      }
       if (rx * rx + rz * rz < P.vx * P.vx + P.vz * P.vz) { P.vx = rx; P.vz = rz; }
     }
     P.y = LAY.groundY(P.x, P.z);
@@ -2014,6 +2099,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     P.castTimer = Math.max(0, P.castTimer - h);
     B.hitReact = Math.max(0, B.hitReact - h);
     for (const k of RUNE_IDS) P.runeCd[k] = Math.max(0, P.runeCd[k] - h);
+    if (st.dashBuffer) { st.dashBuffer.t -= h; if (st.dashBuffer.t <= 0) st.dashBuffer = null; }
     for (const k of SIGIL_IDS) P.sigilCd[k] = Math.max(0, P.sigilCd[k] - h);
     if (P.bastion > 0) { P.bastion = Math.max(0, P.bastion - h); if (P.bastion <= 0) emit('bastion_end', playerPos(), { reason: 'expired' }); }
     if (B.mark > 0) { B.mark = Math.max(0, B.mark - h); if (B.mark <= 0) emit('mark_end', vcopy(BOSS), { reason: 'expired' }); }

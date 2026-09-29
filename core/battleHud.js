@@ -145,6 +145,7 @@ export function createBattleHud({ canvas } = {}) {
         case 'encounter_end':
           addCallout('РЕГЕНТ ЗАБЫЛ ВАС', W / 2, H * 0.34, DIM, 16, { vy: 0, dur: 1.6, scramble: true });
           break;
+        case 'cruise_start': addCallout('АВТОБЕГ', W / 2, H * 0.72, EMBER, 14, { vy: -6, dur: 1.2, scramble: true }); break;
         case 'ember_lit':   // [ASHEN_V2] уголь клятвы зажжён
           flash = { t: 0, dur: 0.45, color: 'rgba(255,170,90,', a: 0.3 };
           addCallout(`УГОЛЬ КЛЯТВЫ  +${num(d.points, 3)}`, W / 2, H * 0.3, GOLD_HI, 26, { vy: -8, dur: 2.4, serif: true, scramble: false });
@@ -249,6 +250,91 @@ export function createBattleHud({ canvas } = {}) {
         tag(`${Math.round(d)} м`, ex - Math.cos(ang) * 26, ey - Math.sin(ang) * 22 - 7, EMBER, `600 10px ${MONO}`, 'center');
       }
     }
+    ctx.globalAlpha = base;
+  }
+
+  // [ASHEN_V4] Крупный индикатор левого джойстика внизу по центру: игрок смотрит на героя, а не на
+  // крошечное превью камеры. Кольца: мёртвая зона, граница бега; точка — где рука относительно центра;
+  // стрелка — куда идёт герой. Без хватки — подсказка «поднимите и замрите» с прогрессом.
+  const stickFx = { dashT: 9, dashX: 0, dashY: 0, alpha: 0 };
+  function drawStickHud(input, snap, dtR, rm) {
+    const st = input && isObj(input.stick) ? input.stick : null;
+    const want = input ? 1 : 0;
+    stickFx.alpha += (want - stickFx.alpha) * (1 - Math.exp(-dtR * 8));
+    if (stickFx.alpha < 0.02) return;
+    const dd = input && isObj(input.dashDir) ? input.dashDir : null;
+    if (dd && (num(dd.x, 0) || num(dd.z, 0))) { stickFx.dashT = 0; stickFx.dashX = num(dd.x, 0); stickFx.dashY = -num(dd.z, 0); }
+    stickFx.dashT += dtR;
+    const R = clamp(Math.min(W, H) * 0.075, 40, 66);
+    const cx = W / 2, cy = H - R - 26;
+    const A = stickFx.alpha;
+    const base = ctx.globalAlpha;
+    const engaged = !!(st && st.engaged);
+    const running = engaged && st.gait === 'run', walking = engaged && st.gait === 'walk';
+    const sprint = snap && snap.player && num(snap.player.sprint, 0) > 0.5;
+    // подложка
+    ctx.globalAlpha = base * A * 0.55;
+    ctx.fillStyle = PLATE;
+    ctx.beginPath(); ctx.arc(cx, cy, R + 8, 0, Math.PI * 2); ctx.fill();
+    // зоны: шаг (внутри кольца бега) и бег (снаружи)
+    const rRun = R * 0.72;
+    const S = st && num(st.deadzone, 0) > 0 ? st.deadzone / 0.4 : 0;
+    const dzPx = st && S > 0 && num(st.runOn, 0) > 0 ? rRun * (st.deadzone / st.runOn) : R * 0.24;
+    ctx.globalAlpha = base * A * (running ? 0.9 : 0.45);
+    ctx.strokeStyle = sprint ? EMBER : GOLD; ctx.lineWidth = running ? 2 : 1.2;
+    ctx.setLineDash([4, 5]); ctx.beginPath(); ctx.arc(cx, cy, rRun, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.globalAlpha = base * A * 0.35; ctx.strokeStyle = STEEL; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = base * A * 0.5; ctx.fillStyle = 'rgba(201,164,92,0.18)';
+    ctx.beginPath(); ctx.arc(cx, cy, dzPx, 0, Math.PI * 2); ctx.fill();
+    // рука относительно центра
+    let label = '', col = DIM;
+    if (!st || !st.hand) { label = 'ЛЕВАЯ РУКА НЕ ВИДНА'; col = DIM; }
+    else if (!engaged) {
+      if (st.rest) { label = 'РУКА ОПУЩЕНА · ПОДНИМИТЕ И ЗАМРИТЕ'; col = DIM; }
+      else if (st.grabbing) {
+        label = 'ЗАМРИТЕ…'; col = GOLD_HI;
+        const k = clamp(num(st.grabProgress, 0.5), 0, 1);
+        ctx.globalAlpha = base * A; ctx.strokeStyle = GOLD_HI; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(cx, cy, R + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k); ctx.stroke();
+      } else { label = 'ПОДНИМИТЕ ЛЕВУЮ РУКУ И ЗАМРИТЕ'; col = GOLD; }
+    } else {
+      const aspect = num(st.aspect, 4 / 3);
+      if (st.anchor && S > 0) {
+        const ox = (st.hand.x - st.anchor.x) * aspect / S, oy = (st.hand.y - st.anchor.y) / S;
+        const k = rRun / Math.max(1e-3, st.runOn / S);
+        let px = ox * k, py = oy * k;
+        const l = Math.hypot(px, py); if (l > R) { px *= R / l; py *= R / l; }
+        ctx.globalAlpha = base * A * 0.5; ctx.strokeStyle = STEEL; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + px, cy + py); ctx.stroke();
+        ctx.globalAlpha = base * A; ctx.fillStyle = running ? GOLD_HI : walking ? BLUE : STEEL;
+        ctx.beginPath(); ctx.arc(cx + px, cy + py, 5.5, 0, Math.PI * 2); ctx.fill();
+      }
+      const mx = num(st.x, 0), mz = num(st.z, 0), m = Math.min(1, Math.hypot(mx, mz));
+      if (m > 0.01) {
+        // шаг (0.2…0.6) заполняет пространство до кольца бега, бег — до края
+        const ux = mx / m, uy = -mz / m, L = running ? R : dzPx + (rRun - dzPx) * clamp(m / 0.6, 0.35, 1);
+        ctx.globalAlpha = base * A * 0.95; ctx.strokeStyle = running ? (sprint ? EMBER : GOLD_HI) : BLUE; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(cx + ux * dzPx * 0.6, cy + uy * dzPx * 0.6); ctx.lineTo(cx + ux * L, cy + uy * L); ctx.stroke();
+        ctx.fillStyle = ctx.strokeStyle;
+        const ex = cx + ux * L, ey = cy + uy * L;
+        ctx.beginPath(); ctx.moveTo(ex + ux * 8, ey + uy * 8); ctx.lineTo(ex - uy * 6, ey + ux * 6); ctx.lineTo(ex + uy * 6, ey - ux * 6); ctx.closePath(); ctx.fill();
+      }
+      label = sprint ? 'СПРИНТ' : running ? 'БЕГ' : walking ? 'ШАГ' : 'СТОИТ';
+      col = sprint ? EMBER : running ? GOLD_HI : walking ? BLUE : STEEL;
+      if (st.source === 'wrist') label += ' · ПО ЗАПЯСТЬЮ';
+    }
+    if (snap && snap.player && snap.player.cruise) { label = 'АВТОБЕГ · ПОДНИМИТЕ РУКУ — СТОП'; col = EMBER; }
+    // вспышка рывка
+    if (stickFx.dashT < 0.45) {
+      const k = 1 - stickFx.dashT / 0.45, l = Math.hypot(stickFx.dashX, stickFx.dashY) || 1;
+      const ux = stickFx.dashX / l, uy = stickFx.dashY / l, a0 = Math.atan2(uy, ux);
+      ctx.globalAlpha = base * A * k; ctx.strokeStyle = EMBER; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(cx, cy, R + 6 + (1 - k) * 14, a0 - 0.55, a0 + 0.55); ctx.stroke();
+      label = 'РЫВОК'; col = EMBER;
+    }
+    ctx.globalAlpha = base * A;
+    tag(label, cx, cy + R + 10, col, `600 11px ${MONO}`, 'center');
     ctx.globalAlpha = base;
   }
 
@@ -534,6 +620,7 @@ export function createBattleHud({ canvas } = {}) {
       drawPois(snap, proj, f.pois);
       drawTelegraphs(snap, proj);
       drawHero(snap, proj, f.input);
+      if (!paused) drawStickHud(f.input, snap, dtR, rm);
       drawCombo(snap, dtR, rm);
       drawRune(f.input, rm, dtR);
       drawCoach(f.coach, dtR, rm);

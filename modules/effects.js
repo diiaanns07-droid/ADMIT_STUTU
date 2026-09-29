@@ -3131,6 +3131,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       case 'rune_hit': onRuneHit(ev, d); break;
       case 'sigil_hit': onSigilHit(ev, d); break;
       case 'slow_start': case 'slow_end': case 'vortex_end': case 'regen_end': break; // по снимку
+      case 'cruise_start': case 'cruise_end': break; // [V4] автобег — только HUD
       case 'bastion_start': case 'bastion_end': case 'mark_start': case 'mark_end': break; // по снимку
       case 'rune_cast': onRuneCast(ev, d); break;
       case 'perfect_dodge': onPerfectDodge(); break;

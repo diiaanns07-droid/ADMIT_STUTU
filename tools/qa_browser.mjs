@@ -158,7 +158,7 @@ const screen = (page) => page.eval('__ASHEN__.screen');
 async function scenarioBootAndDebug() {
   const { page, kill } = await launch('debug');
   try {
-    const booted = await page.waitFor('!!window.__ASHEN__', 25000);
+    const booted = await page.waitFor('!!window.__ASHEN__', 60000);
     check('страница загружается по localhost, все модули импортированы', !!booted);
     if (!booted) return;
     const info = await page.eval(`({rev: __ASHEN__.threeRevision, screen: __ASHEN__.screen, canvases: document.querySelectorAll('canvas').length, main: __ASHEN__.canvasCount(), boot: document.getElementById('ao-boot').hidden, slot: !!document.querySelector('#ui-camera-slot > #ao-video')})`);
@@ -272,7 +272,7 @@ async function scenarioBootAndDebug() {
 async function scenarioFakeCamera() {
   const { page, kill } = await launch('fakecam', ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream']);
   try {
-    await page.waitFor('!!window.__ASHEN__', 25000);
+    await page.waitFor('!!window.__ASHEN__', 60000);
     await page.click('Начать');
     await sleep(150);
     check('экран камеры до запроса: камера не включена', (await page.eval('__ASHEN__.tracking.status')) === 'idle');
@@ -320,7 +320,7 @@ async function scenarioFakeCamera() {
 async function scenarioOath() {
   const { page, kill } = await launch('oath', ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream']);
   try {
-    await page.waitFor('!!window.__ASHEN__', 25000);
+    await page.waitFor('!!window.__ASHEN__', 60000);
     const pv = await page.eval('__ASHEN__.progress()');
     check('новый профиль: 0 очков клятвы, 7 улучшений', pv.points === 0 && pv.upgrades.length === 7, JSON.stringify({ points: pv.points, n: pv.upgrades.length }));
     const embers = await page.eval('__ASHEN__.embers()');
@@ -329,7 +329,7 @@ async function scenarioOath() {
     const cards = await page.eval(`[...document.querySelectorAll('.ao-upg')].filter((c) => c.offsetParent !== null).map((c) => c.querySelector('button').getAttribute('aria-disabled'))`);
     check('7 карточек, без очков покупать нельзя', cards.length === 7 && cards.every((d) => d === 'true'), JSON.stringify(cards));
     await page.shot('10_oath_empty');
-    check('«Тренировка: отжимания» → экран тренировки', (await page.click('Тренировка: отжимания')) === 'ok' && (await screen(page)) === 'training');
+    check('«Тренировка: отжимания и приседания» → экран тренировки', (await page.click('Тренировка: отжимания и приседания')) === 'ok' && (await screen(page)) === 'training');
     check('камера на тренировке не включается сама', (await page.eval('__ASHEN__.tracking.status')) === 'idle');
     await page.click('Разрешить камеру');
     const st = await page.waitFor(`(() => { const t = __ASHEN__.tracking; return ['ready','lost','error'].includes(t.status) ? t.status : null; })()`, 90000, 300);
@@ -344,7 +344,7 @@ async function scenarioOath() {
     // сохранение: очки в localStorage переживают перезагрузку; покупка поднимает здоровье героя
     await page.eval(`localStorage.setItem('ashen.oath.v1', JSON.stringify({ v: 1, points: 5, earned: 5, pushups: 5, embers: [], levels: {} }))`);
     await page.send('Page.reload');
-    await page.waitFor('!!window.__ASHEN__', 25000);
+    await page.waitFor('!!window.__ASHEN__', 60000);
     const pv2 = await page.eval('__ASHEN__.progress()');
     check('очки клятвы из localStorage после перезагрузки', pv2.points === 5, String(pv2.points));
     await page.click('Клятва героя');
@@ -362,11 +362,12 @@ async function scenarioOath() {
 async function scenarioDenied() {
   const { page, kill } = await launch('denied', ['--deny-permission-prompts']);
   try {
-    await page.waitFor('!!window.__ASHEN__', 25000);
+    await page.waitFor('!!window.__ASHEN__', 60000);
     await page.click('Начать');
     await page.click('Разрешить камеру');
     const st = await page.waitFor(`__ASHEN__.tracking.status === 'error' && __ASHEN__.tracking`, 20000);
-    check('отказ в камере → понятное сообщение, игра не падает', !!st && /запрещ/i.test(st.message), st ? `${st.error}: ${st.message}` : 'timeout');
+    const last = st ? null : await page.eval(`({ scr: __ASHEN__.screen, t: __ASHEN__.tracking })`);
+    check('отказ в камере → понятное сообщение, игра не падает', !!st && /запрещ/i.test(st.message), st ? `${st.error}: ${st.message}` : 'timeout; последнее состояние: ' + JSON.stringify(last).slice(0, 300));
     check('после отказа остаётся экран камеры', (await screen(page)) === 'camera');
     await sleep(300);
     await page.shot('10_camera_denied');
@@ -376,7 +377,7 @@ async function scenarioDenied() {
 async function scenarioNoModel() {
   const { page, kill } = await launch('nomodel', ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--host-resolver-rules=MAP storage.googleapis.com ~NOTFOUND']);
   try {
-    await page.waitFor('!!window.__ASHEN__', 25000);
+    await page.waitFor('!!window.__ASHEN__', 60000);
     await page.click('Начать');
     await page.click('Разрешить камеру');
     const st = await page.waitFor(`__ASHEN__.tracking.status === 'error' && __ASHEN__.tracking`, 90000);

@@ -1063,6 +1063,85 @@ test('[V3] печати рисунком: ДЕЛЬТА — 4 удара луча
   assert(Math.abs(c.getSnapshot().player.hp - Math.min(100, hp0 + cfg.cor.heal)) < 1, `лечение: ${hp0} → ${c.getSnapshot().player.hp}`);
 });
 
+test('[V4] спринт вне арены: полный ход 3 с — разгон до sprintSpeed; в арене нет; резкий поворот сбивает', () => {
+  const cfg = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5() }).getConfig().player;
+  const open = { ...DEFAULT_LAYOUT, colliders: [], bounds: { minX: -200, maxX: 200, minZ: -200, maxZ: 200 }, isWalkable: () => true, playerSpawn: { x: 0, z: 40, yaw: 0 } };
+  let c = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5(), layout: open });
+  runFor(c, 0.8, 60, () => I({ moveZ: 1, viewYaw: 0 }));
+  near(c.getSnapshot().player.speed, cfg.runSpeed, 0.2, 'сначала обычный бег');
+  runFor(c, 2.2, 60, () => I({ moveZ: 1, viewYaw: 0 }));
+  let sp = c.getSnapshot().player;
+  assert(sp.speed > cfg.sprintSpeed - 0.3 && sp.locomotion === 'sprint' && sp.sprint > 0.95, `спринт: ${sp.speed.toFixed(2)} ${sp.locomotion}`);
+  runFor(c, 0.4, 60, () => I({ moveX: 1, viewYaw: 0 }));                      // резко вбок
+  sp = c.getSnapshot().player;
+  assert(sp.speed < cfg.sprintSpeed - 1, 'поворот сбил спринт: ' + sp.speed.toFixed(2));
+  c = createCombat({ config: { encounter: { enabled: false } }, bossBrain: createIdleTestBrain_NOT_No5(), layout: open });
+  runFor(c, 3, 60, () => I({ moveZ: 1, viewYaw: 0 }));
+  assert(c.getSnapshot().player.speed <= cfg.runSpeed + 0.05, 'в бою спринта нет: ' + c.getSnapshot().player.speed.toFixed(2));
+  // шаг (полстика) спринта не даёт
+  c = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5(), layout: open });
+  runFor(c, 3, 60, () => I({ moveZ: 0.6, viewYaw: 0 }));
+  assert(c.getSnapshot().player.sprint === 0, 'на шаге спринта нет');
+});
+
+test('[V4] автобег: после спринта рука опущена — бежит сам; взял руку — стоп; без спринта — стоп; в арене снимается', () => {
+  const cfg = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5() }).getConfig().player;
+  const open = { ...DEFAULT_LAYOUT, colliders: [], isWalkable: () => true, playerSpawn: { x: 0, z: 60, yaw: 0 } };
+  const down = { engaged: false, rest: true }, up = { engaged: true, rest: false };
+  let c = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5(), layout: open });
+  runFor(c, 3, 60, () => I({ moveZ: 1, viewYaw: 0, stick: up }));
+  let ev = runFor(c, 2, 60, () => I({ moveZ: 0, viewYaw: 0, stick: down }));
+  let p = c.getSnapshot().player;
+  assert(count(ev, 'cruise_start') === 1 && p.cruise && p.speed > cfg.sprintSpeed - 0.5, `автобег: ${p.speed.toFixed(2)} cruise=${p.cruise}`);
+  ev = runFor(c, 0.6, 60, () => I({ moveZ: 0, viewYaw: 0, stick: up }));
+  p = c.getSnapshot().player;
+  assert(count(ev, 'cruise_end', (e) => e.data.reason === 'hand') === 1 && !p.cruise && p.speed < 0.3, 'взял руку — стоп: ' + p.speed.toFixed(2));
+  // без спринта опустил руку — просто стоп
+  c = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5(), layout: open });
+  runFor(c, 0.5, 60, () => I({ moveZ: 1, viewYaw: 0, stick: up }));
+  ev = runFor(c, 0.8, 60, () => I({ moveZ: 0, viewYaw: 0, stick: down }));
+  assert(count(ev, 'cruise_start') === 0 && c.getSnapshot().player.speed < 0.3, 'без спринта — стоп');
+  // автобег к Регенту: вход в арену снимает
+  c = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5(), layout: { ...open, playerSpawn: { x: 0, z: 45, yaw: Math.PI } } });
+  runFor(c, 2.4, 60, () => I({ moveZ: 1, viewYaw: Math.PI, stick: up }));
+  ev = runFor(c, 6, 60, () => I({ moveZ: 0, viewYaw: Math.PI, stick: down }));
+  assert(count(ev, 'cruise_end', (e) => e.data.reason === 'engaged') === 1 && c.getSnapshot().player.encounter === 'engaged', 'арена сняла автобег');
+});
+
+test('[V4] буфер рывка: дёрг за 0.2 с до конца отката срабатывает при готовности; раньше — отказ', () => {
+  const c = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5() });
+  const cfg = c.getConfig().dash;
+  let ev = runFor(c, 0.05, 60, (t0) => I({ dashDir: t0 < 0.001 ? { x: 1, z: 0 } : null }));
+  assert(count(ev, 'player_dash') === 1, 'первый рывок');
+  // ждём, пока до конца отката останется ~0.15 с, и дёргаем снова
+  runFor(c, cfg.cooldown - 0.05 - 0.15, 60, () => I());
+  ev = runFor(c, 0.4, 60, (t0) => I({ dashDir: t0 < 0.001 ? { x: -1, z: 0 } : null }));
+  assert(count(ev, 'player_dash') === 1 && count(ev, 'ability_denied', (e) => e.data.ability === 'dash') === 0, 'буфер: рывок сработал без отказа');
+  // дёрг сразу после рывка (откат ещё почти весь) — отказ
+  const c2 = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5() });
+  runFor(c2, 0.3, 60, (t0) => I({ dashDir: t0 < 0.001 ? { x: 1, z: 0 } : null }));
+  ev = runFor(c2, 0.2, 60, (t0) => I({ dashDir: t0 < 0.001 ? { x: -1, z: 0 } : null }));
+  assert(count(ev, 'ability_denied', (e) => e.data.ability === 'dash' && e.data.reason === 'cooldown') === 1 && count(ev, 'player_dash') === 0, 'рано — отказ');
+});
+
+test('[V4] склон: в гору медленнее, с горы чуть быстрее', () => {
+  const slope = { ...DEFAULT_LAYOUT, colliders: [], isWalkable: () => true, groundY: (x, z) => 0.3 * z, playerSpawn: { x: 0, z: 40, yaw: 0 } };
+  const run = (dir) => { const c = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5(), layout: slope }); runFor(c, 0.7, 60, () => I({ moveZ: dir, viewYaw: 0 })); return c.getSnapshot().player.speed; };
+  const up = run(1), down = run(-1);
+  const flat = (() => { const c = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5(), layout: { ...slope, groundY: () => 0 } }); runFor(c, 0.7, 60, () => I({ moveZ: 1, viewYaw: 0 })); return c.getSnapshot().player.speed; })();
+  assert(up < flat * 0.93 && down > flat * 1.02, `в гору ${up.toFixed(2)}, ровно ${flat.toFixed(2)}, с горы ${down.toFixed(2)}`);
+});
+
+test('[V4] кружение вокруг Регента 10 с: дистанция держится (обход по окружности)', () => {
+  const c = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5() });
+  const r0 = c.getSnapshot().player.orbitRadius;
+  runFor(c, 10, 60, () => I({ moveX: 1 }));
+  const r1 = c.getSnapshot().player.orbitRadius;
+  assert(Math.abs(r1 - r0) < 0.1, `дистанция ${r0.toFixed(2)} → ${r1.toFixed(2)}`);
+  runFor(c, 1, 60, () => I({ moveZ: 1 }));
+  assert(c.getSnapshot().player.orbitRadius < r1 - 1, 'подход к Регенту по-прежнему работает');
+});
+
 test('[V3] неизвестная печать и руна игнорируются; снимок содержит откаты печатей', () => {
   const c = createCombat({ config: {}, bossBrain: createIdleTestBrain_NOT_No5() });
   const ev = runFor(c, 0.2, 60, (t0) => I({ sigil: t0 < 0.001 ? 'hack' : null, rune: t0 < 0.001 ? 'nope' : null }));

@@ -1806,6 +1806,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setHidden(simNote, !T.debugSim);
         const att = Math.max(0, num(T.attempts) | 0);
         setHidden(summary, att === 0);
+        // подход идёт (есть попытки или карточка ошибки) — инструкция по установке уже не нужна, место — карточкам
+        setHidden(stepsSquat, att > 0 || showFault);
         if (att > 0) {
           const score = isNum(T.formScore) ? Math.round(T.formScore * 100) : 0;
           setText(sumLine, `Чистых: ${reps} из ${att} · техника ${score}%`);

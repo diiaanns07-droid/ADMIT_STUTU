@@ -162,6 +162,7 @@ export function createLeftStick(configPatch = {}) {
     s.counters.pushes++;
     s.mirror = obs.mirror !== false;
     const aspect = fin(obs.aspect) && obs.aspect > 0 ? obs.aspect : 4 / 3;
+    s.aspect = aspect;
     const b = obs.body && fin(obs.body.x) && fin(obs.body.y) ? obs.body : null;
     if (b) {
       s.body = b;
@@ -417,7 +418,8 @@ export function createLeftStick(configPatch = {}) {
       gait: engaged ? s.gait : 'idle',
       rest: s.rest, grabbing: fresh && !s.engaged && !s.rest && s.stillSince !== null,
       hand: fresh ? s.handDisp : null, anchor: engaged ? s.anchorDisp : null,
-      deadzone: cfg.deadzone * s.S, full: cfg.full * s.S, runOn: cfg.runOn * s.S,
+      deadzone: cfg.deadzone * s.S, full: cfg.full * s.S, runOn: cfg.runOn * s.S, aspect: s.aspect || 4 / 3,
+      grabMs: cfg.grabMs, grabProgress: fresh && !s.engaged && s.stillSince !== null ? Math.min(1, (t - s.stillSince) / cfg.grabMs) : 0,
       source: fresh ? s.source : 'none',
     };
   }

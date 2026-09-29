@@ -121,14 +121,18 @@ export function createCameraRig(cfg) {
         s.heading = wrapAngle(s.heading + wrapAngle(md - s.heading) * (1 - Math.exp(-E.alignSharpness * dt)));
       }
     } else { s.steady = 0; s.lastMoveDir = null; }
+    // [V4] на спринте камера плавно отъезжает и смотрит дальше вперёд (скорость читается, дорогу видно)
+    const kWant = Math.max(0, Math.min(1, (sp - 5.8) / 2.2));
+    s.speedK = (s.speedK || 0) + (kWant - (s.speedK || 0)) * (1 - Math.exp(-(kWant > (s.speedK || 0) ? 1.5 : 3) * dt));
+    const dist = E.followDistance + 1.0 * s.speedK, look = E.lookAhead + 2.0 * s.speedK;
     const f = { x: Math.sin(s.heading), z: Math.cos(s.heading) };
     const right = { x: -f.z, z: f.x };
     const pos = {
-      x: player.x - f.x * E.followDistance + right.x * E.followShoulder,
-      y: (player.y || 0) + E.followHeight,
-      z: player.z - f.z * E.followDistance + right.z * E.followShoulder,
+      x: player.x - f.x * dist + right.x * E.followShoulder,
+      y: (player.y || 0) + E.followHeight + 0.25 * s.speedK,
+      z: player.z - f.z * dist + right.z * E.followShoulder,
     };
-    const target = { x: player.x + f.x * E.lookAhead, y: (player.y || 0) + E.lookHeight, z: player.z + f.z * E.lookAhead };
+    const target = { x: player.x + f.x * look, y: (player.y || 0) + E.lookHeight, z: player.z + f.z * look };
     return { pos, target, yaw: s.heading };
   }
 

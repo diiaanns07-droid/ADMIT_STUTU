@@ -3392,20 +3392,28 @@ float ashPuddle( vec2 xz ) {
   function resetGait() { gait.phase = 0; gait.w = 0; gait.rw = 0; gait.hipYaw = 0; gait.pelvis = 0; gait.pelvisOk = false; }
 
   function updateGait(dt, live) {
-    const g = gait, sp = hs.speed;
+    const g = gait;
+    let sp = hs.speed;
+    // [V4] поворот на месте (lock-on обходит Регента, разворот в explore) — ноги переступают, а не «едут»
+    const turnSp = Math.abs(hs.yawRate || 0) * 0.32;
+    const turning = sp < 0.5 && turnSp > 0.45;
+    if (turning) sp = Math.max(sp, Math.min(1.1, turnSp));
     const want = smoothstep(0.12, 0.7, sp) * live * (1 - hs.dashW) * (1 - hs.burstW * 0.85) * (1 - hs.victoryW);
     g.w += (want - g.w) * dampK(want > g.w ? 10 : 6, dt);
     g.rw += (smoothstep(2.9, 4.7, sp) - g.rw) * dampK(6, dt);
-    if (sp > 0.05) { g.dirX = hs.vx / sp; g.dirZ = hs.vz / sp; }
+    if (turning) { g.dirX = Math.sign(hs.yawRate) || 1; g.dirZ = 0; }
+    else if (sp > 0.05) { g.dirX = hs.vx / sp; g.dirZ = hs.vz / sp; }
     // Таз разворачивается в сторону хода (стрейф, диагональ назад), грудь компенсирует — ноги идут
     // почти «вперёд» в осях таза и не перекрещиваются. Назад-прямо — пятится без разворота.
     const th = Math.atan2(g.dirX, g.dirZ);
-    const hyT = (Math.abs(th) <= 1.75 ? th : th - Math.sign(th) * Math.PI) * 0.78 * smoothstep(0.1, 0.6, sp);
+    const hyT = (Math.abs(th) <= 1.75 ? th : th - Math.sign(th) * Math.PI) * 0.78 * smoothstep(0.1, 0.6, sp) * (turning ? 0.3 : 1);
     g.hipYaw += (clamp(hyT, -1.2, 1.2) - g.hipYaw) * dampK(7, dt);
     g.legX = Math.sin(th - g.hipYaw); g.legZ = Math.cos(th - g.hipYaw);
     const rw = g.rw, side = Math.abs(g.legX);
-    g.duty = lerp(0.6, 0.36, rw);
-    const trWalk = clamp(sp * 0.42, 0.25, 0.85), trRun = clamp(0.8 + (sp - 4) * 0.1, 0.8, 1.0);
+    // [V4] спринт (до ~8 м/с): длиннее шаг и короче опора — каденс не «семенит»
+    const sprintK = smoothstep(5.6, 8, sp);
+    g.duty = lerp(lerp(0.6, 0.36, rw), 0.31, sprintK);
+    const trWalk = clamp(sp * 0.42, 0.25, 0.85), trRun = clamp(0.8 + (sp - 4) * 0.11, 0.8, 1.25);
     g.travel = lerp(trWalk, trRun, rw) * lerp(1, 0.55, side);   // вбок шаг короче, ноги не перекрещиваются
     const center = lerp(-0.03, -0.1, rw);                       // бегун ставит стопу ближе к себе
     const liftH = lerp(0.09, 0.27, rw) * lerp(1, 0.6, side);
@@ -3574,11 +3582,17 @@ float ashPuddle( vec2 xz ) {
     const status = snap ? snap.status : 'playing';
     const pos = vec3(p && p.position, DEF_HERO.x, DEF_HERO.y, DEF_HERO.z);
     const bpos = vec3(b && b.position, 0, 0, 0);
-    heroRoot.position.set(pos.x, pos.y, pos.z);
+    // [V4] корпус по высоте сглажен (ступени, кочки не дёргают героя); стопы IK встают на настоящую землю
+    if (!Number.isFinite(hs.rootY) || Math.abs(pos.y - hs.rootY) > 1.2 || dt <= 0) hs.rootY = pos.y;
+    else hs.rootY += (pos.y - hs.rootY) * dampK(pos.y > hs.rootY ? 16 : 11, dt);
+    heroRoot.position.set(pos.x, hs.rootY, pos.z);
     const faceYaw = Math.atan2(bpos.x - pos.x, bpos.z - pos.z);
     const tYaw = num(p && p.yaw, faceYaw) + num(wc.yawOffset, 0);
+    const yaw0 = hs.yaw;
     hs.yaw += wrapAngle(tYaw - hs.yaw) * dampK(num(wc.heroYawRate, 18), dt);
     hs.yaw = wrapAngle(hs.yaw);
+    if (dt > 1e-4) hs.yawRate = (hs.yawRate || 0) + (wrapAngle(hs.yaw - yaw0) / dt - (hs.yawRate || 0)) * dampK(10, dt);
+    hs.sprint = num(p && p.sprint, 0);
     heroRoot.rotation.y = hs.yaw;
 
     // скорость: из снимка (V2), иначе по разнице позиций
@@ -3682,7 +3696,7 @@ float ashPuddle( vec2 xz ) {
       addCh(hOut, 'head', -lerp(0.02, 0.12, rw) * gw, -0.03 * twist * gw, 0);
       // вес над опорной ногой, наклон по ходу
       addCh(hOut, 'off', (FL.stance - FR.stance) * 0.022 * (1 - rw) * gw, 0, 0);
-      addCh(hOut, 'body', (0.04 + 0.07 * rw) * fz * gw, 0, -(0.04 + 0.06 * rw) * fx * gw);
+      addCh(hOut, 'body', (0.04 + 0.07 * rw + 0.07 * clamp(hs.sprint || 0, 0, 1)) * fz * gw, 0, -(0.04 + 0.06 * rw) * fx * gw);
     }
     // разгон/торможение наклоняют корпус, поворот на ходу — крен внутрь дуги
     addCh(hOut, 'body', clamp(hs.accZ * 0.028, -0.16, 0.16) * live * (1 - hs.dashW), 0, clamp(-hs.accX * 0.024, -0.2, 0.2) * live * (1 - hs.dashW));
