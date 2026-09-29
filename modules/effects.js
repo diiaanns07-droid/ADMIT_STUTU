@@ -26,6 +26,9 @@
 
 export const API_VERSION = 'ASHEN_V1';
 
+// [VFX] V6 «больше магии»: новые эффекты — в modules/fx/*.js, поверх этого модуля (откат — настройка fxMagic:false).
+import { createFxV6 } from './fx/index.js';
+
 const TAU = Math.PI * 2;
 const EMPTY_OBJ = Object.freeze({});
 const EMPTY_ARR = Object.freeze([]);
@@ -877,6 +880,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
   const L = { t: 1, dur: 1, peak: 0 };
 
   function lightFlash(pos, hex, strength, dur) {
+    if (v6 && v6.enabled) { v6.kit.light(pos, { color: hex, intensity: strength, dur, range: 14 }); return; } // [VFX] пул света V6
     if (!Q.light) return;
     const peak = strength * LIGHT_UNIT;
     if (L.t < L.dur && flashLight.intensity > peak * 0.8) return; // не перебиваем более сильную вспышку
@@ -1301,6 +1305,61 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     warnOnce,
   });
 
+  // ---------------------------------------------------------------- [VFX] слой V6 (modules/fx)
+  // Якоря героя: C5 heroModel.getAnchors() (Object3D) → world.getAnchors() (точки) → расчёт по снимку.
+  let anchorSrc = null, anchorFrame = -1, anchorNow = null, frameNo = 0, groundFn = null, lastInput = null;
+  const C5_NAMES = { handR: 'handR', handL: 'handL', chest: 'chest', head: 'head', staffTip: 'staffTip', bowSocket: 'bowSocket' };
+  const WORLD_NAMES = { handR: 'heroHandR', handL: 'heroHandL', chest: 'heroChest', head: 'heroHead', feet: 'heroFeet', staffTip: 'heroHandR', bowSocket: 'heroHandL' };
+  const _an = new V3(), _af = new V3();
+  function anchorsNow() {
+    if (anchorFrame === frameNo) return anchorNow;
+    anchorFrame = frameNo; anchorNow = null;
+    if (typeof anchorSrc === 'function') { try { anchorNow = anchorSrc() || null; } catch (e) { anchorNow = null; } }
+    return anchorNow;
+  }
+  function resolveAnchor(name, out, remote) {
+    const opp = snap && snap.opponent;
+    if (remote) {
+      if (!opp || !hasVec(opp.position)) return null;
+      const o = opp.position;
+      _af.set(fi.player.x - o.x, 0, fi.player.z - o.z);
+      if (_af.lengthSq() < 1e-6) _af.set(0, 0, 1);
+      _af.normalize();
+      const rx = -_af.z, rz = _af.x;
+      if (name === 'feet') return out.set(o.x, o.y, o.z);
+      if (name === 'chest') return out.set(o.x + _af.x * 0.1, o.y + CHEST_H, o.z + _af.z * 0.1);
+      if (name === 'head') return out.set(o.x, o.y + HERO_H - 0.1, o.z);
+      const side = name === 'handL' || name === 'bowSocket' ? -1 : 1;
+      return out.set(o.x + rx * 0.36 * side + _af.x * 0.42, o.y + HAND_H, o.z + rz * 0.36 * side + _af.z * 0.42);
+    }
+    if (name === 'feet') return out.set(fi.player.x, fi.player.y, fi.player.z);
+    const a = anchorsNow();
+    if (a) {
+      const c5 = C5_NAMES[name] && a[C5_NAMES[name]];
+      if (c5 && typeof c5.getWorldPosition === 'function') { c5.getWorldPosition(out); if (isNum(out.x)) return out; }
+      const w = WORLD_NAMES[name] && a[WORLD_NAMES[name]];
+      if (hasVec(w)) return out.set(w.x, w.y, w.z);
+    }
+    if (name === 'chest') return chestOf(out);
+    if (name === 'head') return out.set(fi.player.x, fi.player.y + HERO_H - 0.1, fi.player.z);
+    return handOf(out, name === 'handL' || name === 'bowSocket' ? -1 : 1);
+  }
+  let v6 = null;
+  if (liveSetting('fxMagic') !== false) {
+    try {
+      v6 = createFxV6({
+        THREE, root, camera, renderer, quality: liveSetting('quality') || 'medium', lightUnit: LIGHT_UNIT,
+        reducedMotion: () => reducedMotion(),
+        onShake: (v) => addTrauma(v), onKick: (dir, disp) => addKick(_an.copy(dir), disp),
+        anchor: resolveAnchor,
+        groundY: (x, z, fb) => (typeof groundFn === 'function' ? groundFn(x, z) : fb),
+        legacy: { flash: (...a) => fxFlash(...a), ring: (...a) => fxRing(...a), wall: (...a) => fxWall(...a), sparks: (...a) => sparks(...a), audio: (n, p, x) => audio.play(n, p, x), RAW, PAL },
+      });
+      flashLight.visible = false; // свет вспышек — пул V6
+    } catch (e) { v6 = null; warnOnce('v6', 'слой V6 не создан, старые эффекты:', e); }
+  }
+  const v6on = (key) => !!(v6 && v6.enabled && v6.suppressed(key));
+
   // ---------------------------------------------------------------- щит
   const diskMat = tpl.disk.clone();
   setRaw(diskMat.uniforms.uColor.value, RAW.heroAmber);
@@ -1341,7 +1400,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       sig.mark += ((wantMark ? 1 : 0) - sig.mark) * (1 - Math.exp(-dt * (wantMark ? 10 : 5)));
       sig.domePulse = Math.max(0, sig.domePulse - dt * 3);
     }
-    domeMesh.visible = sig.dome > 0.01;
+    domeMesh.visible = sig.dome > 0.01 && !v6on('dome');
     if (domeMesh.visible) {
       const left = pl && isNum(pl.bastionRemaining) ? pl.bastionRemaining : 0;
       const blink = left > 0 && left < 1.2 ? 0.6 + 0.4 * Math.sin(clock * 18) : 1;
@@ -1353,7 +1412,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     sig.auraT -= dt;
     if (playing && sig.auraT <= 0 && dt > 0) {
       sig.auraT = 0.28;
-      if (pl && pl.vortex) {
+      if (pl && pl.vortex && !v6on('vortex')) {
         const a = clock * 9;
         for (let i = 0; i < 3; i++) {
           const aa = a + i * TAU / 3, r = 1.2 + 0.4 * Math.sin(clock * 3 + i);
@@ -1361,17 +1420,17 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
           fxFlash(_s2, PAL.guardCold, 0.15, 0.5, 0.3, { opacity: 0.7, pull: 0.1 });
         }
       }
-      if (pl && pl.regen) {
+      if (pl && pl.regen && !v6on('regen')) {
         _s2.set(fi.player.x, GROUND_Y + 0.2, fi.player.z);
         _dir.set(0, 1, 0);
         sparks(_s2, { dir: _dir, count: 4, spread: 0.8, speed: [0.5, 1.4], rgb: RAW.heroGold, life: 1.0, size: 0.04, gravity: -0.3, drag: 0.8 });
       }
-      if (bo && bo.slowed) {
+      if (bo && bo.slowed && !v6on('slow')) {
         _s2.set(fi.boss.x, GROUND_Y + 0.05, fi.boss.z);
         fxRing(_s2, 2.0, 2.6, 0.5, RAW.guardCold, RAW.guardCore, 0.35, 3);
       }
     }
-    markMesh.visible = sig.mark > 0.01 && !!camera;
+    markMesh.visible = sig.mark > 0.01 && !!camera && !v6on('mark');
     if (markMesh.visible) {
       const c = bossCoreOf(_s1);
       markMesh.position.copy(c);
@@ -1402,8 +1461,8 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     if (want) audio.loop('shield-hum', 'shieldHum', chestOf(_s1));
     else audio.loopStop('shield-hum');
     const vis = shield.open > 0.001 || shield.flash > 0.01;
-    diskMesh.visible = vis;
-    shellMesh.visible = vis && Q.shell;
+    diskMesh.visible = vis && !v6on('shield');
+    shellMesh.visible = vis && Q.shell && !v6on('shield');
     if (!vis) return;
     const e = easeOutCubic(shield.open);
     shieldCenter(_s2);
@@ -2267,6 +2326,8 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       const pr = list[i];
       if (!pr || pr.id === undefined || pr.id === null || !hasVec(pr.position)) continue;
       const key = String(pr.id);
+      // [VFX] снаряды, которые рисует V6 (fx.suppress('proj:<kind>') / 'proj:caret' для игл «Акуса»)
+      if (v6 && (v6on('proj:' + pr.kind) || (key.startsWith('caret:') && v6on('proj:caret')))) continue;
       let v = projMap.get(key);
       if (!v) {
         v = acquireProj();
@@ -3113,6 +3174,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
   }
 
   function handleEvent(type, ev, d) {
+    if (v6 && v6.handle(type, ev, d)) return; // [VFX] V6 нарисовал событие целиком
     switch (type) {
       case 'player_cast': onPlayerCast(ev, d); break;
       case 'projectile_impact': onProjectileImpact(ev, d); break;
@@ -3223,6 +3285,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     frameImpactN = 0; frameImpactIds.clear();
     audio.stopAll();
     audio.duck(1, 0.6);
+    if (v6) { try { v6.clear(); } catch (e) { /* ignore */ } }
   }
 
   // ---------------------------------------------------------------- публичный API
@@ -3234,8 +3297,15 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     snap = snapshot && typeof snapshot === 'object' ? snapshot : null;
     updateFrameInfo(snap);
     checkRewind();
+    frameNo++;
+    if (v6) {
+      const want = liveSetting('fxMagic') !== false;
+      if (want !== v6.enabled) { v6.setEnabled(want); flashLight.visible = !want && Q.light; }
+      v6.setSnapshot(snap);
+    }
     frameImpactN = 0; frameImpactIds.clear();
     processEvents(events);
+    if (v6 && v6.enabled) { try { v6.update(dt, snap); } catch (e) { warnOnce('v6-upd', 'V6 update', e); } }
     arcReset();
     syncShield(dt);
     syncSigils(dt);
@@ -3266,8 +3336,9 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     glow.setCap(Q.glowCap);
     dust.setCap(Q.dustCap);
     // Low выключает точечный свет (однократная перекомпиляция материалов сцены при смене настройки).
-    flashLight.visible = Q.light;
+    flashLight.visible = Q.light && !(v6 && v6.enabled);
     if (!Q.light) { flashLight.intensity = 0; L.t = L.dur; }
+    if (v6) { try { v6.setQuality(name); } catch (e) { /* ignore */ } }
     shellMesh.visible = shellMesh.visible && Q.shell;
     for (const b of spellItems) if (b.active) setSpellKind(b, b.kind); // число колец/осколков по уровню
   }
@@ -3286,6 +3357,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     if (disposed) return;
     disposed = true;
     try { audio.dispose(); } catch (e) { /* ignore */ }
+    if (v6) { try { v6.dispose(); } catch (e) { /* ignore */ } v6 = null; }
     if (root.parent) root.parent.remove(root);
     const geos = new Set(), mats = new Set();
     root.traverse((o) => {
@@ -3309,6 +3381,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
   // Расширения (не входят в базовый контракт, перечислены в handoff).
   function setReducedMotion(value) {
     reducedMotionOverride = value === null || value === undefined ? null : !!value;
+    if (v6) { try { v6.setReducedMotion(reducedMotion()); } catch (e) { /* ignore */ } }
     if (reducedMotion()) { imp.trauma = 0; imp.kick.set(0, 0, 0); imp.kvel.set(0, 0, 0); imp.out.set(0, 0, 0); dashFx.ghostsLeft = 0; }
   }
   function getDebugInfo() {
@@ -3334,6 +3407,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       impulse: { x: imp.out.x, y: imp.out.y, z: imp.out.z, trauma: imp.trauma },
       events: { processed: stats.events, duplicatesSkipped: stats.duplicates, errors: stats.errors, cacheSize: seenIds.size },
       audio: audio.state(),
+      v6: v6 ? { enabled: v6.enabled, ...v6.stats() } : null,
     };
   }
 
@@ -3350,6 +3424,23 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     // расширения
     setReducedMotion,
     getDebugInfo,
+    // [VFX] V6: якоря героя (C5/world), ввод (след руны), земля, хит-стоп для main.js
+    setAnchors: (fn) => { anchorSrc = typeof fn === 'function' ? fn : null; anchorFrame = -1; },
+    setGround: (fn) => { groundFn = typeof fn === 'function' ? fn : null; },
+    setInput: (input) => { lastInput = input || null; if (v6) v6.setInput(lastInput); },
+    takeHitStop: () => (v6 && v6.enabled ? v6.takeHitStop() : 0),
+    // [VFX] делёж с modules/handVisuals.js (№6): V6 рисует стрелы, сгустки и попадания, лук и метку «Дождя стрел» — №6
+    linkHandVisuals: (hv) => {
+      if (!hv || typeof hv.setDelegated !== 'function') return;
+      const on = !!(v6 && v6.enabled);
+      if (hv.__fxDelegated === on) return;
+      try {
+        hv.setDelegated(on ? { arrows: true, orbs: true, palm: true, bow: false, rain: false } : { arrows: false, orbs: false, palm: false, bow: false, rain: false });
+        hv.__fxDelegated = on;
+        if (v6) v6.fx.external.bow = on;
+      } catch (e) { warnOnce('hv', 'handVisuals.setDelegated', e); }
+    },
+    get v6() { return v6; },
   };
 }
 

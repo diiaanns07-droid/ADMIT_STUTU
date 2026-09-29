@@ -312,3 +312,28 @@ DEBUG-клавиши, поза процедурного героя), `modules/co
   регистрировать цель, чтобы урон не прошёл дважды.
 - **Герой (C5):** VRM-героям позу даёт `[HERO] heroPoseFromInput` в main.js; процедурному стражу — `createHeroBowPose()` (core/handZone.js).
 - **VFX (№7):** `modules/handVisuals.js` — `setDelegated({ arrows, orbs, bow })` прячет мои заглушки, когда эффекты рисуют своё.
+
+## V6 · [VFX] «больше магии» — эффекты рун и заклинаний (№7, в работе)
+- **База `modules/fx/`** поверх `modules/effects.js` (старые эффекты — откат; настройка `fxMagic: true`, `false` — как раньше):
+  - `fx/kit.js` — GPU-частицы одним InstancedMesh (физика в вершинном шейдере: снос, сопротивление, гравитация,
+    турбулентность, закрутка вокруг оси, земля; цвет по жизни — градиенты, форма — атлас 16 спрайтов; аддитив и дым
+    одним проходом с премультипликацией); пул 0/2/3 PointLight (low/medium/high); акторы и таймлайн; экранная вспышка;
+    тряска/толчок камеры и хит-стоп (main.js берёт `effects.takeHitStop()`); мост к волне искажения postfx
+    (`queueShockwave`, если №8 его экспортирует). Ёмкость частиц: low 1400 / medium 4200 / high 8000
+    (+ старые пулы effects.js ≤ 950 на medium, итого < 6000).
+  - `fx/glyph.js` — магические круги (один draw call): кольца, руны по окружности, раскрытие, вращение, стили
+    rune/clock/hex/sigil; символ в центре — из SDF-атласа 20 знаков (10 рун, печати, стихии, лук); `runeStroke(id)`.
+  - `fx/bolts.js` — ветвящиеся молнии, треск, дуги по земле (один draw call).
+  - `fx/trails.js`, `fx/decals.js`, `fx/shock.js`, `fx/shieldHex.js` — ленты-следы, декали (ожог, кратер, иней, трещины…),
+    ударные волны и марево, гексагональный щит/купол.
+  - `fx/index.js` — реестр: обработчик V6 возвращает `true` — старый эффект пропускается; любая ошибка — старый эффект.
+  - Хореографии: `fx/runesFire.js` (▲ ϟ), `fx/runesLight.js` (○ ∞ ℓ), `fx/runesSky.js` (★ ⧗), `fx/runesWild.js` (@ ^ V),
+    `fx/sigils.js` (печати, искра, рассечение, выброс, сфера/призма), `fx/handMagic.js` (ладони, руна в воздухе),
+    `fx/bowHand.js` (лук и магия ладони по C3), `fx/combatFx.js` (удары по материалам, щит, появление/смерть, PvP).
+  - PvP: события с `data.remote = true` рисуются от соперника к нашему герою в холодном фиолетовом.
+- **Хуки в общих файлах** (все с тегом `[VFX]`): `main.js` — `effects.setAnchors` (C5 `heroModel.getAnchors()` →
+  `world.getAnchors()`), `effects.setGround(layout.groundY)`, `effects.setInput(input)` перед `effects.update`,
+  хит-стоп после него, `fxMagic` в `sanitizeSettings`, `__ASHEN__.fx()`; `config.js` — `fxMagic: true`.
+- **Проверка:** стенд `dev/effects_testbench.html` (кнопка на каждое заклинание, мс/частицы/draw calls, PvP, стресс);
+  снимки — `node dev/fx_shots.mjs --page "dev/effects_testbench.html?shot=1" --script ignis,fulgur --times 0.2,0.5`;
+  в игре — `node dev/fx_game.mjs --out DIR` (DEBUG-бой, руны клавишами, ошибки консоли).

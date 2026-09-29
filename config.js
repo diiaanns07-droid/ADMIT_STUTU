@@ -136,6 +136,7 @@ export const config = {
     heroShading: 'realistic', // [HERO] C1: 'realistic' — PBR-материалы героев (modules/heroShading.js), 'anime' — MToon как было
     startZone: 'arena',     // [FOREST] место старта: 'arena' — Пепельное плато, 'forest' — у врат Сияющего леса
     netName: '',            // [NET] имя в онлайн-дуэли (C1)
+    fxMagic: true,          // [VFX] эффекты V6 (modules/fx): false — прежние эффекты effects.js
     bdoUi: true,            // [BDO] интерфейс в стиле Black Desert (false — прежний вид)
     handCombat: true,       // [HAND] лук (левый кулак + правая щепоть) и магия рукой (сгусток в ладони); false — выключить
   },
