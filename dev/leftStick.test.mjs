@@ -35,6 +35,20 @@ function grabbed(t0 = 1000, opts) {
 }
 const at = (dxS, dyS) => ({ x: A.x + dxS * S, y: A.y + dyS * S });
 
+test('[V6] выброс трекинга: кисть на один кадр «прыгнула» (вбок, вниз, вверх) — ни рывка, ни сброса хватки, ход держится', () => {
+  for (const [gx, gy] of [[2.5, 0], [-2.5, 0], [0, 3], [0, -2.5], [2, 2]]) {
+    let { st, t } = grabbed();
+    t = run(st, t, 500, () => at(0, -1.3));                       // ведём вперёд
+    const z0 = st.read(t).z;
+    st.push({ t, hand: { ...at(gx, -1.3 + gy), scale: S }, body: BODY, mirror: true, aspect: ASPECT });
+    t += 33;
+    let minZ = 1;
+    for (let k = 0; k < 15; k++, t += 33) { st.push({ t, hand: { ...at(0, -1.3), scale: S }, body: BODY, mirror: true, aspect: ASPECT }); minZ = Math.min(minZ, st.read(t).z); }
+    ok(!st.takeDash(), `сбой (${gx}, ${gy}) — не рывок`);
+    ok(st.read(t).engaged && minZ > z0 - 0.02, `хватка и ход держатся: z0=${z0.toFixed(2)} min=${minZ.toFixed(2)}`);
+  }
+});
+
 test('хватка: замереть с поднятой рукой → engaged, выход 0', () => {
   const { st, t } = grabbed();
   const r = st.read(t);

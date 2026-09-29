@@ -114,7 +114,7 @@ function merge(base, patch) {
 export function createSteerStick(configPatch = {}) {
   let cfg = merge(DEFAULT_STEER_CONFIG, configPatch);
   // детектор рывка — тот же, что у джойстика; хватка ему не нужна (гейт — здесь)
-  const dash = createLeftStick({ freeDash: 1, flickMinOutFrames: 2 }, { acceptA: (d) => acceptSharp(d) });
+  const dash = createLeftStick({ freeDash: 1, flickMinOutFrames: 2, glitchGate: 0 }, { acceptA: (d) => acceptSharp(d) });
   let s;
   function reset() {
     s = {

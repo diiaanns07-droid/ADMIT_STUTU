@@ -90,6 +90,12 @@ export const DEFAULT_STICK_CONFIG = Object.freeze({
   wristMinSamples: 5,      // запястьем ведём, только если смещение выучено хотя бы по стольким кадрам
   wristMaxGapMs: 800,      // запястьем ведём не дольше столько после потери кисти
   freeDash: 0,             // 1 — рывок ловится и без хватки (схема «Руль», core/steerStick.js: там свой гейт)
+  // [V6] выбросы трекинга (кисть на один кадр «прыгнула»): скачок дальше glitchJumpS и быстрее
+  // glitchSpeedS (в ладонях S) откладывается до следующего кадра. «Руль» гейтит сам (glitchGate: 0).
+  glitchGate: 1,
+  glitchJumpS: 0.8,
+  glitchSpeedS: 24,
+  glitchMaxGapMs: 250,
 });
 
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -108,7 +114,7 @@ export function createLeftStick(configPatch = {}, hooks = {}) {
   let s;
   function reset() {
     s = {
-      lastT: null, lastSeen: null, mirror: true,
+      lastT: null, procT: null, gateRef: null, suspect: null, lastSeen: null, mirror: true,
       filt: null, filtV: 0,            // отфильтрованная позиция (отн. плеч) и её скорость (S/с)
       S: 0.1, rest: true,
       engaged: false, anchor: null, grabY: null, // центр (отн. плеч); высота точки хватки
@@ -157,13 +163,44 @@ export function createLeftStick(configPatch = {}, hooks = {}) {
     s.k += (r - s.k) * clamp(dtS * 1000 / tau, 0, 1);
   }
 
+  // [V6] выброс трекинга: кисть на один кадр «прыгнула» и вернулась (частый сбой MediaPipe) — раньше
+  // это давало ложный рывок и «опустил руку» (сброс хватки). Резкий скачок откладывается до следующего
+  // кадра с кистью: вернулась — сбой выброшен; рука правда ушла — отложенный кадр обрабатывается (на кадр
+  // позже). Скачок вниз, за которым кисть пропала (смаз при опускании руки), — настоящий.
   function push(obs) {
     if (!obs || !fin(obs.t)) return;
     const t = obs.t;
     if (s.lastT !== null && t <= s.lastT) return;
-    const dtS = s.lastT === null ? 0 : Math.min(0.25, (t - s.lastT) / 1000);
     s.lastT = t;
+    if (!(cfg.glitchGate > 0)) { process(obs); return; }
+    const h = obs.hand && fin(obs.hand.x) && fin(obs.hand.y) ? obs.hand : null;
+    const G = s.suspect, S = Math.max(0.02, s.S);
+    if (G && t - G.obs.t > cfg.glitchMaxGapMs) { s.suspect = null; s.counters.glitches++; }
+    else if (G && !h) { if (G.down) { s.suspect = null; process(G.obs); process(obs); } return; }
+    else if (G) {
+      s.suspect = null;
+      if (Math.hypot(h.x - G.ref.x, h.y - G.ref.y) / S < G.jump * 0.5) s.counters.glitches++;
+      else process(G.obs);
+      process(obs);
+      return;
+    }
+    if (h && s.gateRef && t - s.gateRef.t <= cfg.glitchMaxGapMs) {
+      const d = Math.hypot(h.x - s.gateRef.x, h.y - s.gateRef.y) / S;
+      const dtG = Math.min(66, Math.max(10, t - s.gateRef.t)) / 1000;
+      if (d > cfg.glitchJumpS && d / dtG > cfg.glitchSpeedS) {
+        s.suspect = { obs, jump: d, ref: { x: s.gateRef.x, y: s.gateRef.y }, down: h.y - s.gateRef.y > 0.7 * Math.abs(h.x - s.gateRef.x) };
+        return;
+      }
+    }
+    process(obs);
+  }
+
+  function process(obs) {
+    const t = obs.t;
+    const dtS = s.procT === null ? 0 : Math.min(0.25, Math.max(0, (t - s.procT) / 1000));
+    s.procT = t;
     s.counters.pushes++;
+    { const h0 = obs.hand && fin(obs.hand.x) && fin(obs.hand.y) ? obs.hand : null; if (h0) s.gateRef = { x: h0.x, y: h0.y, t }; }
     s.mirror = obs.mirror !== false;
     const aspect = fin(obs.aspect) && obs.aspect > 0 ? obs.aspect : 4 / 3;
     s.aspect = aspect;
