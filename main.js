@@ -62,6 +62,8 @@ function sanitizeSettings(patch, base) {
   // [NET] имя в онлайн-дуэли и IP ретранслятора LAN
   if (typeof patch.netName === 'string') out.netName = patch.netName.replace(/[<>\u0000-\u001f]/g, '').trim().slice(0, 16);
   if (typeof patch.netLanHost === 'string') out.netLanHost = patch.netLanHost.replace(/[^0-9A-Za-z.:\-]/g, '').slice(0, 64);
+  // [BDO] интерфейс в стиле Black Desert
+  if ('bdoUi' in patch) out.bdoUi = patch.bdoUi !== false;
   return out;
 }
 function loadSettings() {
@@ -840,6 +842,7 @@ function frame(now) {
     camera.lookAt(c.target.x, c.target.y, c.target.z);
   }
 
+  if (postfx && typeof postfx.setMode === 'function') { try { postfx.setMode(app.screen, settings); } catch (e) { /* ignore */ } } // [BDO] DOF меню и грейд по экрану
   if (postfx && postfx.enabled) feedPostFx(events);
   let rendered = false;
   if (postfx && postfx.enabled) { try { postfx.render(dtReal); rendered = true; } catch (e) { console.warn('[ASHEN] postfx.render', e); postfx = null; } }
@@ -853,6 +856,7 @@ function frame(now) {
     settings, resumeLeftMs: app.screen === 'playing' ? Math.max(0, app.resumeAt - now) : 0,
     pois: unlitEmbers(),
     coach: coachView(input),
+    layout: worldLayout, // [BDO] мини-карта и названия зон
   });
 
   perf.frames++;
@@ -890,6 +894,7 @@ window.__ASHEN__ = Object.freeze({
   netSession: () => netSession,                                    // [NET] для тестов и №3
   heroStep: (dt, snap, events) => { if (heroModel) heroModel.update(dt, snap, events || []); return heroModel ? heroModel.state() : null; }, // QA: шаг анимации без rAF
   squats: () => squats.getDebug(),
+  zoneMood: (m) => { try { world.atmosphere.setZoneMood(m); return true; } catch (e) { return false; } }, // [BDO] QA: настроение зоны
   heroMax: () => { const c = typeof combat.getEffectiveConfig === 'function' ? combat.getEffectiveConfig() : null; return c ? { hp: c.player.maxHp, energy: c.player.maxEnergy } : null; },
   embers: () => (worldLayout && Array.isArray(worldLayout.pois) ? worldLayout.pois.map((q) => ({ id: q.id, x: q.x, z: q.z, lit: progression.isEmberLit(q.id) })) : []),
   renderInfo: () => {

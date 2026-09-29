@@ -134,6 +134,7 @@ export const config = {
     moveMode: 'steer',
     hero: 'ashen',          // выбранный герой: ashen | warrior | elf (modules/heroModel.js)
     netName: '',            // [NET] имя в онлайн-дуэли (C1)
+    bdoUi: true,            // [BDO] интерфейс в стиле Black Desert (false — прежний вид)
   },
 
   settings: null,            // заполняет main.js (живой объект)
