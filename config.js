@@ -114,6 +114,7 @@ export const config = {
     // 'stick' — прежний джойстик (поднять руку и замереть — центр)
     moveMode: 'steer',
     hero: 'ashen',          // выбранный герой: ashen | warrior | elf (modules/heroModel.js)
+    fxMagic: true,          // [VFX] эффекты V6 (modules/fx): false — прежние эффекты effects.js
   },
 
   settings: null,            // заполняет main.js (живой объект)

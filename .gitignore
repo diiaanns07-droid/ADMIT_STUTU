@@ -7,3 +7,4 @@ node_modules/
 *.zip
 .claude/
 assets/vroid_src/
+dev/scratch/

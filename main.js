@@ -59,6 +59,8 @@ function sanitizeSettings(patch, base) {
   if ('reducedMotion' in patch) out.reducedMotion = !!patch.reducedMotion;
   if (patch.moveMode === 'steer' || patch.moveMode === 'stick') out.moveMode = patch.moveMode; // [V5] «Руль» / «Джойстик»
   if (typeof patch.hero === 'string' && HEROES[patch.hero]) out.hero = patch.hero;
+  // [VFX] эффекты V6 «больше магии» (false — прежние эффекты)
+  if ('fxMagic' in patch) out.fxMagic = patch.fxMagic !== false;
   return out;
 }
 function loadSettings() {
@@ -128,6 +130,11 @@ try {
 const bossBrain = make('boss.js', () => createBossBrain(config));
 const combat = make('combat.js', () => createCombat({ config, bossBrain, layout: worldLayout }));
 const effects = make('effects.js', () => createEffects({ THREE, scene, camera, renderer, config }));
+// [VFX] эффекты V6 крепятся к рукам героя (C5 heroModel.getAnchors → world.getAnchors) и к рельефу карты
+try {
+  if (effects.setAnchors) effects.setAnchors(() => (heroModel && typeof heroModel.getAnchors === 'function' ? heroModel.getAnchors() : (world && typeof world.getAnchors === 'function' ? world.getAnchors() : null)));
+  if (effects.setGround && worldLayout && typeof worldLayout.groundY === 'function') effects.setGround(worldLayout.groundY);
+} catch (e) { console.warn('[ASHEN] effects V6 hooks', e); }
 const debugInput = createDebugInput(window);
 // Постобработка (core/postfx.js) грузится динамически: до готовности и при любой ошибке — обычный render().
 let postfx = null;
@@ -765,7 +772,9 @@ function frame(now) {
   }
   try { world.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] world.update', e); }
   if (heroModel) { try { heroModel.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] heroModel.update', e); } }
+  if (effects.setInput) effects.setInput(input); // [VFX] след руны в воздухе, свечение ладоней
   try { effects.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] effects.update', e); }
+  if (effects.takeHitStop && app.screen === 'playing') { const hs = effects.takeHitStop(); if (hs > 0) timeFx.stopUntil = Math.max(timeFx.stopUntil, now + hs); } // [VFX] хит-стоп по силе удара
 
   // камера
   if (app.screen === 'intro' && lastSnapshot) {
