@@ -45,7 +45,9 @@ function urlOpts() {
 export function createNetSession({ THREE, scene, world, camera, heroFactory, heroes, settings, uiRoot, hooks = {} }) {
   const U = urlOpts();
   const S = {
-    net: null, mode: U.transport === 'lan' ? 'lan' : U.transport === 'local' ? 'local' : 'peer',
+    // режим: из адреса (тесты), иначе прошлый режим этого браузера (Интернет/LAN), иначе «Интернет»
+    net: null, mode: U.transport === 'lan' ? 'lan' : U.transport === 'local' ? 'local' : U.transport === 'peer' ? 'peer'
+      : (() => { const l = readLast(); return l && l.mode === 'lan' ? 'lan' : 'peer'; })(),
     status: 'idle', message: '', error: null, errorCode: null,
     meReady: false, oppReady: false, startAt: 0, started: false, startTimer: null,
     seq: 0, lastSt: -1e9, lastPr: -1e9, prSentEmpty: true,
