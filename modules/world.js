@@ -4150,5 +4150,6 @@ float ashPuddle( vec2 xz ) {
     layout,
     get assets() { return { pending: pbrState.pending, loaded: pbrState.loaded, failed: pbrState.failed }; },
     atmosphere: atmo,
+    hero: { root: heroRoot, body: heroBody, extras: [cape] }, // [ASHEN_V3] для скиннинговой модели героя (modules/heroModel.js)
   };
 }

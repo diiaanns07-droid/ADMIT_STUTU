@@ -18,6 +18,7 @@ import { createDebugInput, emptyInput } from './core/debugInput.js';
 import { createBossBrain } from './modules/boss.js';
 import { createCombat } from './modules/combat.js';
 import { createWorld } from './modules/world.js';
+import { createHeroModel } from './modules/heroModel.js';
 import { createEffects } from './modules/effects.js';
 import { createUI } from './modules/ui.js';
 import { createVision } from './modules/vision.js';
@@ -117,6 +118,11 @@ const app = {
 // [ASHEN_V2] мир создаётся первым: его раскладка (коллайдеры, земля, арена, старт) нужна бою и камере.
 const world = make('world.js', () => createWorld({ THREE, scene, renderer, camera, config }));
 const worldLayout = world && world.layout ? world.layout : null;
+// [ASHEN_V3] герой на модели KayKit «Mage» (CC0) с анимациями; не загрузилась — процедурный герой
+let heroModel = null;
+try {
+  if (world && world.hero) heroModel = createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, url: new URL('./assets/kaykit/Mage.glb', import.meta.url).href });
+} catch (e) { console.warn('[ASHEN] heroModel', e); }
 const bossBrain = make('boss.js', () => createBossBrain(config));
 const combat = make('combat.js', () => createCombat({ config, bossBrain, layout: worldLayout }));
 const effects = make('effects.js', () => createEffects({ THREE, scene, camera, renderer, config }));
@@ -752,6 +758,7 @@ function frame(now) {
     try { world.setMirror(app.debug ? null : mirrorFromPose(input, now)); } catch (e) { /* ignore */ }
   }
   try { world.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] world.update', e); }
+  if (heroModel) { try { heroModel.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] heroModel.update', e); } }
   try { effects.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] effects.update', e); }
 
   // камера
@@ -824,6 +831,8 @@ window.__ASHEN__ = Object.freeze({
   progress: () => progression.getView(),
   pushups: () => pushups.getDebug(),
   coach: () => coachStats.summary(),
+  hero: () => (heroModel ? heroModel.state() : null),
+  heroStep: (dt, snap, events) => { if (heroModel) heroModel.update(dt, snap, events || []); return heroModel ? heroModel.state() : null; }, // QA: шаг анимации без rAF
   squats: () => squats.getDebug(),
   heroMax: () => { const c = typeof combat.getEffectiveConfig === 'function' ? combat.getEffectiveConfig() : null; return c ? { hp: c.player.maxHp, energy: c.player.maxEnergy } : null; },
   embers: () => (worldLayout && Array.isArray(worldLayout.pois) ? worldLayout.pois.map((q) => ({ id: q.id, x: q.x, z: q.z, lit: progression.isEmberLit(q.id) })) : []),
