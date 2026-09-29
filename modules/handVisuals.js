@@ -1095,6 +1095,21 @@ export function createHandVisuals({ THREE, scene, config } = {}) {
       for (let i = 0; i < 5; i++) plStyle(i, 0.005 + 0.003 * ch, i === 2 ? cr : c, sk * (i === 2 ? 1.3 : 0.8));
       plFlush();
     }
+    // [HAND] дуга прицела: баллистика стрелы из snap.player.bow.launch (combatHand, с аим-ассистом)
+    const L = b && b.launch;
+    if (nocked && draw > 0.1 && L && L.from && L.vel && Number.isFinite(L.vel.x) && Number.isFinite(L.from.x)) {
+      const g = num(L.g, 9), sp = Math.hypot(L.vel.x, L.vel.y, L.vel.z) || 1, T = Math.min(1.4, 40 / sp), n = 18;
+      const k0 = vis * (0.16 + 0.34 * draw) * (L.assist ? 1.35 : 1) * (1 + 0.5 * ch);
+      let m = 0;
+      for (let i = 0; i < n; i++) {
+        const t = (T * (i + 1)) / n;
+        const px = L.from.x + L.vel.x * t, py = L.from.y + L.vel.y * t - 0.5 * g * t * t, pz = L.from.z + L.vel.z * t;
+        if (py < L.from.y - 6 || !plAdd(px, py, pz)) break;
+        m++;
+      }
+      for (let i = 0; i < m; i++) plStyle(i, 0.006 + 0.004 * ch, i % 2 ? c : cr, k0 * (1 - i / Math.max(1, m)));
+      plFlush();
+    }
     // наложенная стрела: от точки натяжения вперёд сквозь полочку лука
     const wantArrow = nocked && bow.relT > 0.08;
     bow.arrowVis = wantArrow ? approach(bow.arrowVis, 1, dt / 0.08) : 0;

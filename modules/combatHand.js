@@ -489,11 +489,22 @@ export function createCombatHand(api, patch = {}) {
     stepChains();
   }
 
+  // Предпросмотр полёта стрелы (для дуги прицела у визуала): точка и скорость вылета с аим-ассистом, как у spawnArrow.
+  function launchPreview(bow) {
+    const A = K.arrow, P = st().p;
+    const from = handPoint('left');
+    from.y = P.y + A.spawnHeight;
+    const speed = A.speedMin + (A.speedMax - A.speedMin) * bow.draw;
+    const aim = aimedDir(facing(), bow.aimX, bow.aimY, A.aimYawDeg, A.aimPitchDeg, from, speed, A.gravity, A.assistDeg, A.assistK);
+    return { from, vel: vec(aim.dir.x * speed, aim.dir.y * speed, aim.dir.z * speed), g: A.gravity, assist: aim.assist || null };
+  }
+
   // ───────── снимок ─────────
   function decorateSnapshot(snap) {
     if (!snap || typeof snap !== 'object') return snap;
     if (snap.player) {
       snap.player.bow = { ...S.bow };            // свежие объекты: потребители снимка могут их менять
+      if (S.bow.active && S.bow.draw > 0.05 && playing()) { try { snap.player.bow.launch = launchPreview(S.bow); } catch (e) { /* без дуги */ } }
       snap.player.handSpell = { ...S.spell };
       if (S.bow.active && (snap.player.action === 'idle' || snap.player.action === 'move')) snap.player.action = 'cast';
     }
