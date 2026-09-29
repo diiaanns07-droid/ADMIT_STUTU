@@ -87,13 +87,13 @@ const SPRITE_FN = [
   (u, v) => { const d = Math.sqrt(u * u + v * v); return Math.pow(sat(1 - d), 2.2); },                                     // glow
   (u, v) => { const d = Math.sqrt(u * u + v * v); return sat(Math.exp(-d * d * 60) * 1.2 + Math.pow(sat(1 - d), 3) * 0.45); }, // spark
   (u, v) => { const d = Math.sqrt(u * u * 0.9 + v * v * 9); return Math.pow(sat(1 - d), 1.6) * (1 - smooth(0.7, 1, Math.abs(u))); }, // streak
-  (u, v) => { const d = Math.sqrt(u * u + v * v); const n = fbm(u * 2.2 + 5, v * 2.2 + 9); return sat((1 - smooth(0.25, 1, d + (n - 0.5) * 0.7)) * (0.55 + 0.6 * n)); }, // smoke
+  (u, v) => { const d = Math.sqrt(u * u + v * v); const n = fbm(u * 2.2 + 5, v * 2.2 + 9); return sat((1 - smooth(0.25, 1, d + (n - 0.5) * 0.7)) * (0.55 + 0.6 * n)) * (1 - smooth(0.8, 0.98, d)); }, // smoke
   (u, v) => { const d = Math.sqrt(u * u + v * v); const r = Math.exp(-Math.abs(u) * 14) * sat(1 - Math.abs(v)) + Math.exp(-Math.abs(v) * 14) * sat(1 - Math.abs(u)); return sat(Math.pow(sat(1 - d), 3) * 0.9 + r * 0.8 * sat(1 - d * 0.85)); }, // star
   (u, v) => { const y = (v + 1) * 0.5; const w = Math.sin(Math.PI * Math.pow(sat(y), 0.8)) * 0.62; const e = Math.abs(u) / Math.max(1e-3, w); return sat((1 - smooth(0.7, 1, e)) * (0.7 + 0.3 * y)) * (y < 0.98 ? 1 : 0); }, // petal
   (u, v) => { const y = (v + 1) * 0.5; const w = Math.sin(Math.PI * sat(y)) * 0.5; const e = Math.abs(u) / Math.max(1e-3, w); const rib = Math.exp(-u * u * 900) * 0.35; return sat((1 - smooth(0.75, 1, e)) * (0.75 - rib + 0.25 * vnoise(u * 8, v * 8))); }, // leaf
   (u, v) => { const y = (v + 1) * 0.5; const w = (1 - y) * 0.45; const e = Math.abs(u) / Math.max(1e-3, w); const edge = smooth(0.55, 0.95, e); return sat((1 - smooth(0.9, 1, e)) * (0.45 + 0.55 * edge + 0.3 * (1 - y))) * (y > 0.02 ? 1 : 0); }, // shard
   (u, v) => { const d = Math.sqrt(u * u + v * v) + (fbm(u * 3 + 1, v * 3 + 2) - 0.5) * 0.5; return sat(Math.exp(-d * d * 7) * 1.3); }, // ember
-  (u, v) => { const d = Math.sqrt(u * u + v * v); return sat(Math.exp(-Math.pow((d - 0.78) / 0.07, 2)) + 0.25 * Math.exp(-Math.pow((d - 0.78) / 0.2, 2))); }, // ring
+  (u, v) => { const d = Math.sqrt(u * u + v * v); return sat(Math.exp(-Math.pow((d - 0.78) / 0.07, 2)) + 0.25 * Math.exp(-Math.pow((d - 0.78) / 0.2, 2))) * (1 - smooth(0.9, 0.99, d)); }, // ring
   (u, v) => { const a = Math.max(Math.exp(-u * u * 180) * sat(1 - Math.abs(v) * 1.05), Math.exp(-Math.pow(v - 0.35 * u, 2) * 180) * sat(1 - Math.abs(u) * 1.6)); const d = Math.sqrt(u * u + v * v); return sat(a + Math.pow(sat(1 - d), 3) * 0.3); }, // rune
   (u, v) => { const y = (v + 1) * 0.5; const w = 0.55 * Math.pow(sat(1 - y), 0.6) * sat(y * 3); const n = fbm(u * 3, v * 2 + 4); const e = Math.abs(u + (n - 0.5) * 0.35 * y) / Math.max(1e-3, w); return sat((1 - smooth(0.3, 1, e)) * (0.6 + 0.6 * (1 - y))); }, // flame (вершина вверх — v=+1)
   (u, v) => { const y = (v + 1) * 0.5; const head = Math.exp(-(u * u + Math.pow(v - 0.55, 2)) * 14); const tail = Math.exp(-u * u * 40 / Math.max(0.05, y + 0.1)) * sat(y * 1.4) * sat(1 - y) * 0.8; return sat(head + tail); }, // wisp

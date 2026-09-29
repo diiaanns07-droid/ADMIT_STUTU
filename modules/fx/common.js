@@ -146,8 +146,8 @@ export function fly(fx, from, to, dur, o) {
 export function explosion(fx, at, ground, el, remote, o) {
   o = o || {};
   const s = o.scale || 1, P = fx.pal(el, { remote }), R = rampOf(el, remote), kit = fx.kit;
-  kit.flash(at, { color: P.core, size: [0.6 * s, 3.2 * s], dur: 0.22, intensity: 5, sprite: 'star', pull: 0.6, rival: remote });
-  kit.flash(at, { color: P.hot, size: [1.0 * s, 4.2 * s], dur: 0.42, intensity: 2.6, sprite: 'glow', pull: 0.6, rival: remote });
+  kit.flash(at, { color: P.core, size: [0.6 * s, 2.8 * s], dur: 0.2, intensity: 4.5, sprite: 'star', pull: 0.6, rival: remote });
+  kit.flash(at, { color: P.hot, size: [0.9 * s, 3.4 * s], dur: 0.38, intensity: 2.0, sprite: 'glow', pull: 0.6, rival: remote });
   // огненный шар / облако стихии
   kit.emit({ at, radius: 0.35 * s, count: 34 * s, speed: [1.5 * s, 4.5 * s], life: [0.35, 0.75], size: [0.55 * s, 1.5 * s], ramp: o.ballRamp || R, intensity: 2.4, sprite: o.ballSprite || 'flame', drag: 3.5, gravity: -1.5, turb: 0.8, spin: [-1.5, 1.5], rival: remote, essential: true });
   // искры
@@ -157,7 +157,7 @@ export function explosion(fx, at, ground, el, remote, o) {
     kit.emit({ at: { x: ground.x, y: ground.y + 0.08, z: ground.z }, shape: 'ring', radius: 0.35 * s, count: 56 * s, radial: 9 * s, speed: [0, 0.4], dir: { x: 0, y: 1, z: 0 }, cone: 0.2, life: [0.25, 0.5], size: [0.45 * s, 0.1], ramp: R, intensity: 2.6, sprite: o.ringSprite || 'ember', drag: 4.5, rival: remote, essential: true });
     if (fx.shock) { try { fx.shock.ring({ pos: { x: ground.x, y: ground.y + 0.05, z: ground.z }, r0: 0.3, r1: 5.5 * s, dur: 0.5, color: P.mid, hot: P.core, intensity: 2, rival: remote ? 1 : 0 }); } catch (e) { /* ignore */ } }
   }
-  if (fx.shock && o.sphere !== false) { try { fx.shock.sphere({ pos: at, r0: 0.2, r1: 2.6 * s, dur: 0.35, color: P.hot, hot: P.core, intensity: 1.4, rival: remote ? 1 : 0 }); } catch (e) { /* ignore */ } }
+  if (fx.shock && o.sphere !== false) { try { fx.shock.sphere({ pos: at, r0: 0.2, r1: 1.9 * s, dur: 0.3, color: P.hot, hot: P.core, intensity: 0.9, rival: remote ? 1 : 0 }); } catch (e) { /* ignore */ } }
   // дым
   if (o.smoke !== false) {
     kit.emit({ at, radius: 0.6 * s, count: 22 * s, speed: [0.3, 1.4], life: [1.4, 2.6], size: [0.9 * s, 2.4 * s], ramp: SMOKE[el] || 'smoke', intensity: 1, sprite: 'smoke', blend: 'alpha', drag: 1.2, gravity: -0.7, turb: 0.5, spin: [-0.6, 0.6], delay: 0.12, rival: remote });
@@ -182,7 +182,7 @@ export function afterglow(fx, at, el, remote, o) {
 export function decal(fx, at, kind, radius, el, remote, o) {
   if (!fx.decals) return null;
   const P = fx.pal(el, { remote });
-  try { return fx.decals.spawn({ pos: at, radius, kind, life: (o && o.life) || 7, color: P.mid, hot: P.core, intensity: 1.6, rival: remote ? 1 : 0 }); } catch (e) { return null; }
+  try { return fx.decals.spawn({ pos: at, radius, kind, life: (o && o.life) || 7, color: P.mid, hot: P.core, intensity: (o && o.intensity) || 1.4, rival: remote ? 1 : 0 }); } catch (e) { return null; }
 }
 
 /** Лента-след (если есть подсистема). */
