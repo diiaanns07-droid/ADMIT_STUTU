@@ -85,14 +85,17 @@ try {
         q3: [P(2.0, 1.6, 1.5), P(0, 0, 1.15)],
         q3b: [P(-2.0, 1.8, 1.5), P(0, 0, 1.1)],
         face: [P(0.85, 0.2, 1.62), P(0, 0, 1.55)],
+        faceB: [P(-0.9, -0.3, 1.6), P(0, 0, 1.45)],
+        faceS: [P(0.3, 0.9, 1.6), P(0, 0, 1.5)],
         upper: [P(1.7, 0.3, 1.45), P(0, 0, 1.25)],
         low: [P(1.8, 0.8, 0.35), P(0, 0, 1.0)],
         top: [P(0.9, 0.2, 3.4), P(0, 0, 0.9)],
       };
-      const handView = (o, side) => { const p = at(o); return [p.clone().addScaledVector(f, 0.45).addScaledVector(r, side * 0.35).add(new THREE.Vector3(0, 0.12, 0)), p]; };
+      const handView = (o, side) => { const p = at(o); return [p.clone().addScaledVector(f, 0.62).addScaledVector(r, side * 0.42).add(new THREE.Vector3(0, 0.16, 0)), p]; };
       V.handR = handView(anc.handR, 1);
       V.handL = handView(anc.handL, -1);
       V.staff = [P(1.6, 1.2, 1.6), anc.staffTip.parent ? at(anc.staffTip).lerp(hp.clone().setY(hp.y + 1.0), 0.5) : P(0, 0, 1.2)];
+      { const tp = at(anc.staffTip); V.head = [tp.clone().addScaledVector(f, 0.55).addScaledVector(r, 0.25).add(new THREE.Vector3(0, 0.05, 0)), tp]; }
       const cv = document.createElement('canvas');
       cv.width = W * views.length; cv.height = H;
       const g = cv.getContext('2d');
@@ -102,7 +105,7 @@ try {
       camera.aspect = W / H;
       for (let i = 0; i < views.length; i++) {
         const v = V[views[i]] || V.front;
-        camera.fov = /^hand|face/.test(views[i]) ? 28 : 32;
+        camera.fov = /^hand|face|head/.test(views[i]) ? 28 : 32;
         camera.updateProjectionMatrix();
         camera.position.copy(v[0]); camera.lookAt(v[1]);
         renderer.render(scene, camera);

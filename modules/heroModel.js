@@ -29,37 +29,44 @@ export const HEROES = Object.freeze({
     id: 'ashen', name: 'Пепельный страж', vrm: null, glb: 'knight.glb', height: 1.84, cls: 'Воин-маг', element: 'Пепел и пламя',
     desc: ['Клятвенный страж павшего святилища.', 'Латы из закалённой стали, посох с углём клятвы.', 'Держит удар и отвечает огнём.'],
     gear: 'warden', stance: 'staff', adduct: 0.3, menuStance: 'Stance',
-    fx: { style: 'ember', color: 0xff7a2a, color2: 0xffd08a, armor: 0xff5a18, armorK: 2.6, visorEyes: 0xff8a30 },
+    fx: { style: 'ember', color: 0xff7a2a, color2: 0xffd08a, armor: 0xff5a18, armorK: 2.2, armorMode: 'seams', visorEyes: 0xff8a30 },
+    // воронёная сталь, тёмно-багровая ткань, золото кантов (атлас Quaternius Knight: серебро, красный, белый)
+    recolor: { MI_Knight: [
+      { h: [338, 14], minS: 0.35, toH: 354, s: 0.95, v: 0.5 },
+      { h: [24, 60], minS: 0.3, minV: 0.5, toH: 40, s: 0.95, v: 1.08 },
+      { h: [8, 48], minS: 0.2, maxV: 0.5, toH: 24, s: 0.85, v: 0.62 },
+      { h: [0, 360], minS: 0, toH: 28, s: 0.35, v: 0.62 },
+    ] },
   },
   // [HERO] V6: эльфийка и чародейка — реалистичные (тело и костюм Quaternius Ranger, перекраска, своё снаряжение)
   elf: {
     id: 'elf', name: 'Эльфийка', vrm: null, glb: 'ranger.glb', height: 1.74, cls: 'Лучница-заклинательница', element: 'Гроза',
     desc: ['Следопыт Сияющего леса.', 'Лук из белого ясеня и перстни-руны на пальцах.', 'Бьёт издалека и уходит рывком.'],
-    gear: 'sylvan', stance: 'bow', adduct: 0.3, menuStance: null, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, ears: true, hair: { color: 0xe6dcc0, len: 0.95 },
+    gear: 'sylvan', stance: 'bow', adduct: 0.3, menuStance: null, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, ears: true, hair: { color: 0xe6dcc0, len: 0.95, fringe: 'swept' },
     // зелёная ткань → белый шёлк с бирюзой, кожа доспеха → светлая замша
-    recolor: { MI_Ranger: [{ h: [65, 175], toH: 172, s: 0.35, v: 1.55 }, { h: [8, 48], toH: 38, s: 0.55, v: 1.45 }] },
-    fx: { style: 'wind', color: 0x9ff4ff, color2: 0xfff3c0, armor: 0x7fe8ff, armorK: 1.4, eyes: 0x7fe8ff, eyesK: 0.9 },
+    recolor: { MI_Ranger: [{ h: [65, 175], toH: 172, s: 0.35, v: 1.55 }, { h: [8, 48], toH: 38, s: 0.55, v: 1.45 }], MI_Regular_Female: [{ h: [0, 60], minS: 0.04, toH: 16, s: 0.52, v: 1.3 }] },
+    fx: { style: 'wind', color: 0x9ff4ff, color2: 0xfff3c0, armor: 0x7fe8ff, armorK: 1.1, armorMode: 'seams', eyes: 0x7fe8ff, eyesK: 0.3 },
   },
   dark: {
     id: 'dark', name: 'Тёмная чародейка', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Чародейка', element: 'Тьма и лёд',
     desc: ['Изгнанница из башни Затмения.', 'Посох с кристаллом ночи, плащ с живыми рунами.', 'Сковывает льдом и рвёт тьмой.'],
-    gear: 'witchQ', stance: 'staff', adduct: 0.3, menuStance: 'Stance', hide: ['Female_Ranger_Acc_Pauldrons'], hair: { color: 0x1c1426, len: 1.05 },
+    gear: 'witchQ', stance: 'staff', adduct: 0.3, menuStance: 'Stance', hide: ['Female_Ranger_Acc_Pauldrons'], hair: { color: 0x1c1426, len: 1.05, fringe: 'straight' },
     // зелёная ткань → глубокий фиолетовый, кожа → почти чёрная
-    recolor: { MI_Ranger: [{ h: [65, 175], toH: 272, s: 1.1, v: 0.62 }, { h: [8, 48], toH: 255, s: 0.35, v: 0.42 }] },
-    fx: { style: 'frost', color: 0xb58cff, color2: 0x9fe0ff, armor: 0xa77bff, armorK: 1.8, eyes: 0xa77bff, eyesK: 1.3 },
+    recolor: { MI_Ranger: [{ h: [65, 175], toH: 272, s: 1.1, v: 0.62 }, { h: [8, 48], toH: 255, s: 0.35, v: 0.42 }], MI_Regular_Female: [{ h: [0, 60], minS: 0.04, toH: 12, s: 0.45, v: 1.26 }] },
+    fx: { style: 'frost', color: 0xb58cff, color2: 0x9fe0ff, armor: 0xa77bff, armorK: 1.4, armorMode: 'seams', eyes: 0xa77bff, eyesK: 0.4 },
   },
   // [HERO] новые герои (Quaternius Modular Fantasy, CC0)
   ranger: {
     id: 'ranger', name: 'Лучница', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Лучница', element: 'Ветер',
     desc: ['Разведчица пограничных застав.', 'Капюшон следопыта, длинный лук и колчан за спиной.', 'Натягивает тетиву рукой — стрела летит в цель.'],
-    gear: 'scout', stance: 'bow', adduct: 0.3, menuStance: null, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, hair: { color: 0x5a3220, len: 0.85 },
+    gear: 'scout', stance: 'bow', adduct: 0.3, menuStance: null, recolor: { MI_Regular_Female: [{ h: [0, 60], minS: 0.04, toH: 19, s: 0.72, v: 1.14 }] }, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, hair: { color: 0x5a3220, len: 0.85, fringe: 'swept' },
     fx: { style: 'wind', color: 0xc8ff9a, color2: 0xffe08a },
   },
   archmage: {
     id: 'archmage', name: 'Архимаг', vrm: null, glb: 'wizard.glb', height: 1.8, cls: 'Архимаг', element: 'Буря',
     desc: ['Последний магистр Грозовой коллегии.', 'Посох-громоотвод и плащ, прошитый рунами.', 'Лепит сферы молний двумя руками.'],
     gear: 'magus', stance: 'staff', adduct: 0.3, menuStance: 'Stance',
-    fx: { style: 'storm', color: 0x8fd0ff, color2: 0xe8f6ff, armor: 0x6fc0ff, armorK: 2.2, eyes: 0x9fdcff, eyesK: 1.2 },
+    fx: { style: 'storm', color: 0x8fd0ff, color2: 0xe8f6ff, armor: 0x6fc0ff, armorK: 1.6, armorMode: 'seams', eyes: 0x9fdcff, eyesK: 0.3 },
   },
 });
 // прежние аниме-героини VRoid: не в меню и не в лобби (HEROES), но setHero их знает
@@ -505,7 +512,7 @@ export function createHeroModel({
     try {
       const m = await import('./heroShading.js');
       if (token !== S.token || cur !== c) return;
-      c.shade = m.shadeHero(THREE, c.vrm, { mode: opts.shading, atmosphere: opts.atmosphere, quality: opts.quality, heroId: c.def.id, fx: c.def.fx || null });
+      c.shade = m.shadeHero(THREE, c.vrm, { mode: opts.shading, atmosphere: opts.atmosphere, quality: opts.quality, heroId: c.def.id, fx: c.def.fx || null, hairColor: c.def.hair ? c.def.hair.color : null });
       heroTimeU = m.HERO_TIME;
     } catch (e) { console.warn('[HERO] heroShading недоступен, MToon как есть:', e && e.message); }
     try {

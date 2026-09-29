@@ -131,7 +131,9 @@ export function patchHeroLight(THREE, mat) {
 // [HERO] «Пробуждённые» латы: светящиеся жилы-трещины по металлу (маска — metalness карты ORM),
 // узор в осях позы привязки (прилипает к доспеху), пульс и бегущая снизу вверх волна. HDR > 1 — ловит bloom.
 export const HERO_TIME = { value: 0 };
-export function patchArmorGlow(THREE, mat, { color = 0xff7a2a, strength = 2.4, unit = 1, metalMask = true } = {}) {
+// mode 'seams' — свет сочится только по кромкам пластин (где карта нормалей круто гнётся) и едва заметно
+// по жилам; 'veins' — прежние жилы по всему металлу.
+export function patchArmorGlow(THREE, mat, { color = 0xff7a2a, strength = 2.4, unit = 1, metalMask = true, mode = 'veins' } = {}) {
   if (!mat || mat.userData.heroArmorGlow || !mat.isMeshStandardMaterial) return mat;
   mat.userData.heroArmorGlow = true;
   const U = { heroTime: HERO_TIME, heroArmorColor: { value: new THREE.Color(color) }, heroArmorK: { value: strength }, heroArmorUnit: { value: unit } };
@@ -155,11 +157,12 @@ export function patchArmorGlow(THREE, mat, { color = 0xff7a2a, strength = 2.4, u
     float mask = ${metalMask ? 'smoothstep( 0.45, 0.85, metalnessFactor )' : '1.0'};
     float flow = 0.45 + 0.55 * pow( 0.5 + 0.5 * sin( heroTime * 2.1 - hp.y * 5.0 ), 2.0 );
     float pulse = 0.8 + 0.2 * sin( heroTime * 5.3 + hp.x * 7.0 );
-    totalEmissiveRadiance += heroArmorColor * ( vein + fine * 0.18 ) * mask * flow * pulse * heroArmorK;
+    ${mode === 'seams' && mat.normalMap ? `float seam = smoothstep( 0.32, 0.8, length( mapN.xy ) );
+    totalEmissiveRadiance += heroArmorColor * seam * seam * 1.6 * mask * flow * pulse * heroArmorK;` : 'totalEmissiveRadiance += heroArmorColor * ( vein + fine * 0.18 ) * mask * flow * pulse * heroArmorK;'}
   }`);
   };
   const prevKey = mat.customProgramCacheKey;
-  mat.customProgramCacheKey = () => 'heroArmor:' + (metalMask ? 1 : 0) + ':' + (prevKey ? prevKey.call(mat) : '');
+  mat.customProgramCacheKey = () => 'heroArmor:' + mode + (metalMask ? 1 : 0) + ':' + (prevKey ? prevKey.call(mat) : '');
   mat.needsUpdate = true;
   return mat;
 }
@@ -190,7 +193,7 @@ function patchSkin(THREE, mat, uniforms) {
 }
 
 // [HERO] Перекраска атласа костюма (процедурно, на canvas): правила по тону HSV.
-//   rules: [{ h: [from°, to°], toH?, s?: множитель, v?: множитель, minS? }] — первое подходящее правило.
+//   rules: [{ h: [from°, to°], toH?, s?: множитель, v?: множитель, minS?, minV?, maxV? }] — первое подходящее правило.
 // Нужна, чтобы из одного костюма Quaternius сделать разных героев (эльфийка, чародейка).
 export function recolorTexture(THREE, tex, rules) {
   const img = tex && tex.image;
@@ -211,6 +214,7 @@ export function recolorTexture(THREE, tex, rules) {
     let sat = mx > 0 ? c / mx : 0, val = mx;
     for (const R of rules) {
       if (sat < (R.minS ?? 0.12)) continue;
+      if (val < (R.minV ?? 0) || val > (R.maxV ?? 1)) continue;
       const [a0, a1] = R.h;
       if (!(a0 <= a1 ? hue >= a0 && hue <= a1 : hue >= a0 || hue <= a1)) continue;
       if (R.toH !== undefined) hue = R.toH;
@@ -230,7 +234,7 @@ export function recolorTexture(THREE, tex, rules) {
   return t;
 }
 
-export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, quality = 'medium', fx = null } = {}) {
+export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, quality = 'medium', fx = null, hairColor = null } = {}) {
   const armorUs = []; // юниформы жил лат (вспышка на касте, мерцание при низком HP)
   // масштаб узора жил: единицы геометрии → метры (у Quaternius позиции в своих единицах)
   let armorUnit = 1;
@@ -310,6 +314,8 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     });
     if (orig.normalMap) m.normalScale.copy(orig.normalScale);
     if (kind === 'skin') { m.roughness = Math.max(0.45, orig.roughness * 0.85); }
+    // брови и волосы модели — в цвет причёски героини (серая текстура × цвет)
+    if (kind === 'hair' && hairColor !== null && hairColor !== undefined) m.color.set(hairColor).multiplyScalar(1.35);
     if (kind === 'iris') {
       m.roughness = 0.2;
       // светящаяся радужка (стихия героя): светится тёмная часть текстуры глаза, белок — нет
@@ -332,7 +338,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
       if (P.clearcoat && q === 'high') { m.clearcoat = P.clearcoat; m.clearcoatRoughness = P.clearcoatRoughness; }
     }
     if (kind === 'skin') patchSkin(THREE, m, skinU);
-    if (kind === 'armor' && fx && fx.armor && q !== 'low') { patchArmorGlow(THREE, m, { color: fx.armor, strength: fx.armorK || 2.4, unit: armorUnit }); armorUs.push({ U: m.userData.heroArmorU, base: fx.armorK || 2.4 }); }
+    if (kind === 'armor' && fx && fx.armor && q !== 'low') { patchArmorGlow(THREE, m, { color: fx.armor, strength: fx.armorK || 2.4, unit: armorUnit, mode: fx.armorMode || 'veins' }); armorUs.push({ U: m.userData.heroArmorU, base: fx.armorK || 2.4 }); }
     if (atmosphere) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, P.env); } catch (e) { /* ignore */ } }
     m.userData.heroKind = kind;
     patchHeroLight(THREE, m);
