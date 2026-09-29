@@ -77,7 +77,7 @@ try {
   out.steps.push(['start', await click('Начать')]); await sleep(300);
   out.steps.push(['nocam', await click('Продолжить без камеры (DEBUG)')]); await sleep(500);
   out.steps.push(['fight', await click('В бой')]); await sleep(1500);
-  await page.waitForFunction(() => window.__ASHEN__.screen === 'playing', null, { timeout: 150000 });
+  await page.waitForFunction(() => window.__ASHEN__.screen === 'playing', null, { timeout: 400000 });
   await sleep(800);
   await shot('01_start');
   await page.keyboard.down('KeyW');
