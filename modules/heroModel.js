@@ -658,7 +658,9 @@ export function createHeroModel({
     cur.vrm.scene.getWorldQuaternion(_qm);
     _obx.copy(dirModel).normalize().applyQuaternion(_qm);
     _oby.copy(thumbModel).applyQuaternion(_qm);
-    _oby.addScaledVector(_obx, -_oby.dot(_obx)).normalize();
+    _oby.addScaledVector(_obx, -_oby.dot(_obx));
+    if (_oby.lengthSq() < 1e-6) { _oby.set(0, 0, 1).applyQuaternion(_qm); _oby.addScaledVector(_obx, -_oby.dot(_obx)); }
+    _oby.normalize();
     _obz.crossVectors(_obx, _oby);
     _ob1.makeBasis(_obx, _oby, _obz);                               // желаемые оси кисти в мире
     // оси покоя в осях кисти (dL — к пальцам, aL — к большому): Q_мир = B(цель) · B(покой)ᵀ
@@ -790,6 +792,22 @@ export function createHeroModel({
         // экран: вправо = вправо героя (−x), вниз = −y; чуть вперёд, чтобы кисть не уходила в тело
         aimBone(up, rest, dA.set(-a.upper.x, -a.upper.y, 0.3), w);
         aimBone(lo, rest, dB.set(-a.fore.x, -a.fore.y, 0.45), w);
+      }
+    }
+    // посох в зеркале рук и в позе чар: кулак большим пальцем вверх — древко остаётся почти вертикальным
+    // (иначе при поднятой руке игрока посох ложился бы горизонтально или переворачивался)
+    if (cur.gear && cur.gear.staffTip && cur.hands) {
+      const actingNow = !!act && holdName !== 'stance';
+      const wUp = Math.max(mirror.w * 0.9, pose.wSpell) * (1 - pose.wBow) * (actingNow ? 0.3 : 1);
+      if (wUp > 0.01 && B.rightLowerArm && B.rightHand) {
+        B.rightHand.updateWorldMatrix(true, false);
+        B.rightLowerArm.getWorldPosition(_bw1); B.rightHand.getWorldPosition(_bw2);
+        cur.vrm.scene.getWorldQuaternion(_qm);
+        _bw2.sub(_bw1).normalize().applyQuaternion(_q.copy(_qm).invert());   // предплечье в осях героя
+        // рука поднята/опущена отвесно — запястье сгибается к «вперёд», древко поднимается по диагонали
+        const bend = smooth(0.55, 0.95, Math.abs(_bw2.y)) * 0.75;
+        if (bend > 0) { _bw3.set(_bw2.x * 0.3, 0, 1).normalize(); _bw2.lerp(_bw3, bend).normalize(); }
+        orientHand(cur.hands.right, _bw2, _upV.set(0, 1, 0.15), wUp);
       }
     }
   }
