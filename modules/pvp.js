@@ -41,16 +41,18 @@ export const PVP_DEFAULTS = Object.freeze({
   markBonus: 0.2, markMax: 6,
   knockTime: 0.2, knockMax: 3.5,
   dotTime: 3,
-  reflectMul: 1.0,            // парирование возвращает снаряд с этим уроном
+  reflectMul: 0.8,            // парирование возвращает снаряд с этим уроном
+  parrySuccessCd: 1.0,        // после удачного парирования — откат (в бою с Регентом его нет)
+  parryEnergy: 5,
   reflectSpeed: 30,
   counterStagger: 0.6,        // парированный удар вблизи (рассечение/хлопок) сбивает атакующего
-  heal: 1.6,                  // лечение в PvP × (HP больше, чем в бою с боссом)
+  heal: 0.85,                 // лечение в PvP × (при HP 400 то же лечение вчетверо слабее, чем у героя со 100 HP)
   alpha: { cooldownMul: 0.5, energy: 20 }, // ℓ «Альфа»: откаты не сбрасываются, а сокращаются вдвое
-  shield: { blockBase: 5, blockPerDmg: 0.35, brokenMul: 0.5 },
+  shield: { blockBase: 4, blockPerDmg: 0.25, brokenMul: 0.5 },
   // множители урона по способностям (урон боя с боссом × множитель, затем кап maxHitShare)
   dmg: {
-    bolt: 0.8, spark: 0.85, slash: 0.6, burst: 0.45, sphere: 0.5, prism: 0.5, ignis: 0.7, fulgur: 1.0,
-    stella: 0.8, caret: 0.9, vee: 0.9, clepsydra: 1, frame: 1, clap: 0.8, delta: 0.35, arrow: 0.6, hand_orb: 0.6,
+    bolt: 0.7, spark: 0.75, slash: 0.5, burst: 0.45, sphere: 0.5, prism: 0.5, ignis: 0.5, fulgur: 1.0,
+    stella: 0.55, caret: 0.9, vee: 0.9, clepsydra: 1, frame: 1, clap: 0.8, delta: 0.35, arrow: 0.6, hand_orb: 0.6,
     reflect: 1, default: 0.6,
   },
   // снаряды, которыми в PvP становятся мгновенные удары по Регенту
@@ -63,21 +65,21 @@ export const PVP_DEFAULTS = Object.freeze({
     burst: { speed: 28, radius: 0.55, visual: 'sphere', element: 'fire', knock: 2.6 },
     caret: { speed: 36, radius: 0.18, visual: 'bolt' },
   },
-  stella: { radius: 1.3, lead: 0.45, spread: 1.1 },
-  clap: { radius: 5.5, stun: 0.8, knock: 2.2 },
+  stella: { radius: 1.15, lead: 0.3, spread: 1.1 },
+  clap: { radius: 5.5, stun: 0.6, knock: 2.2 },
   delta: { width: 0.8, range: 30 },
   unblockable: ['stella', 'clap'],
   melee: ['slash', 'clap'],                    // парирование вблизи: без урона + сбивает атакующего
   noParry: ['stella', 'delta'],                // лучи и метеоры парированием не отбить
   // откаты и прочие поля боя, заменяемые на время PvP (путь в конфиге боя → значение)
   override: {
-    'bolt.interval': 0.42, 'spark.cooldown': 0.55, 'spark.cost': 7, 'slash.cooldown': 0.8,
+    'bolt.interval': 0.5, 'bolt.energyCost': 3, 'spark.cooldown': 0.8, 'spark.cost': 8, 'slash.cooldown': 1.1,
     'burst.cooldown': 11, 'throw.cooldown': 1.6,
-    'runes.ignis.cooldown': 9, 'runes.fulgur.cooldown': 14, 'runes.orbis.cooldown': 20, 'runes.stella.cooldown': 20,
-    'runes.spira.cooldown': 16, 'runes.lemnis.cooldown': 28, 'runes.caret.cooldown': 7, 'runes.vee.cooldown': 14,
+    'runes.ignis.cooldown': 9, 'runes.fulgur.cooldown': 14, 'runes.orbis.cooldown': 24, 'runes.stella.cooldown': 20,
+    'runes.spira.cooldown': 16, 'runes.lemnis.cooldown': 32, 'runes.caret.cooldown': 7, 'runes.vee.cooldown': 14,
     'runes.clepsydra.cooldown': 18, 'runes.alpha.cooldown': 40,
     'sigils.clap.cooldown': 14, 'sigils.gate.cooldown': 24, 'sigils.frame.cooldown': 18, 'sigils.delta.cooldown': 26,
-    'sigils.cor.cooldown': 34,
+    'sigils.cor.cooldown': 38,
   },
   rounds: { toWin: 2, maxRounds: 5, countdown: 3, fightBanner: 0.9, roundEnd: 2.8, slowmo: 0.5, slowScale: 0.3, roundTime: 100, disconnectWait: 20 },
   net: { stHz: 20, interpDelayMs: 100, silentAfterMs: 8000, helloEveryMs: 800, deadResendMs: 500 },   // обрыв: net.state 'lost' или тишина дольше silentAfterMs
@@ -150,7 +152,7 @@ export function buildHooks(K, PC, opts = {}) {
   let hi = 0;
   let ghosts = [];              // снаряды соперника для снимка (owner 'opponent')
   let view = null;              // состояние раунда для snap.pvp (ставит сессия)
-  const stats = { dealt: 0, taken: 0, sent: 0, landed: 0, dodged: 0, blocked: 0, parried: 0, casts: Object.create(null) };
+  const stats = { dealt: 0, taken: 0, sent: 0, landed: 0, dodged: 0, blocked: 0, parried: 0, maxTaken: 0, oppTaken: 0, casts: Object.create(null), takenBy: Object.create(null) };
 
   const P = () => K.st.p;
   const maxHit = () => C.player.maxHp * PC.maxHitShare;
@@ -459,7 +461,8 @@ export function buildHooks(K, PC, opts = {}) {
     }
     if (d.parry && !PC.noParry.includes(kind)) {
       Pp.parryHit = true;
-      Pp.energy = Math.min(C.player.maxEnergy, Pp.energy + C.parry.energyGain);
+      Pp.parryCd = Math.max(Pp.parryCd, PC.parrySuccessCd);
+      Pp.energy = Math.min(C.player.maxEnergy, Pp.energy + PC.parryEnergy);
       stats.parried++;
       if (!melee) {
         // снаряд летит назад: теперь это снаряд жертвы, и его попадание уйдёт атакующему как hit
@@ -482,6 +485,7 @@ export function buildHooks(K, PC, opts = {}) {
     if (d.ward) {
       st.stats.blocks++; stats.blocked++;
       if (Pp.ward > 0) { Pp.ward = 0; K.emit('ward_end', K.playerPos(), { reason: 'absorbed' }); }
+      for (const h of hist) h.ward = false;      // оберег одноразовый: буфер его больше не помнит
       K.emit('block', chest, { attackId: att.id, attackKind: kind, prevented: dmg, ward: true, energyAfter: Pp.energy, pvp: true });
       return deny('ward');
     }
@@ -514,7 +518,8 @@ export function buildHooks(K, PC, opts = {}) {
     const amount = Math.min(Pp.hp, maxHit(), dmg);
     Pp.hp -= amount;
     if (Pp.hp < 1e-6) Pp.hp = 0;
-    st.stats.damageTaken += amount; stats.taken += amount;
+    st.stats.damageTaken += amount; stats.taken += amount; stats.maxTaken = Math.max(stats.maxTaken, amount);
+    stats.takenBy[kind] = (stats.takenBy[kind] || 0) + amount;
     K.breakCombo('hit');
     if (amount >= PC.staggerAt) Pp.hitReact = Math.max(Pp.hitReact, PC.staggerTime);
     applyFx(fx, dir);
@@ -575,7 +580,7 @@ export function buildHooks(K, PC, opts = {}) {
       me.dotT = Math.max(0, me.dotT - h);
       if (acceptHits && !(me.spawnT > 0)) {
         const a = Math.min(Pp.hp, me.dotDps * dtd);
-        Pp.hp -= a; st.stats.damageTaken += a; stats.taken += a;
+        Pp.hp -= a; st.stats.damageTaken += a; stats.taken += a; stats.takenBy.dot = (stats.takenBy.dot || 0) + a;
         if (Pp.hp <= 1e-6) { Pp.hp = 0; die('dot'); }
       }
     }
@@ -636,7 +641,7 @@ export function buildHooks(K, PC, opts = {}) {
       position: { x: r2(Pp.x), y: r2(Pp.y), z: r2(Pp.z) }, yaw: r2(Pp.yaw), velocity: { x: r2(Pp.vx), z: r2(Pp.vz) },
       hp: r2(Pp.hp), maxHp: C.player.maxHp, energy: r2(Pp.energy), maxEnergy: C.player.maxEnergy,
       shielding: Pp.shielding, invulnerable: Pp.iframe > 0 || Pp.grace > 0, stunned: me.stunT > 0, slowed: me.slowT > 0, marked: me.markT > 0,
-      dashing: Pp.dashing, dead: !!Pp.dead, pr,
+      dashing: Pp.dashing, dead: !!Pp.dead, pr, taken: Math.round(stats.taken * 10) / 10,   // taken — для «нанесённого урона» соперника
     };
   }
   function r2(v) { return Math.round(v * 100) / 100; }
@@ -955,8 +960,10 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
   }
   function resetStats() {
     const st = H.stats;
-    st.dealt = 0; st.taken = 0; st.sent = 0; st.landed = 0; st.dodged = 0; st.blocked = 0; st.parried = 0;
+    st.dealt = 0; st.taken = 0; st.sent = 0; st.landed = 0; st.dodged = 0; st.blocked = 0; st.parried = 0; st.maxTaken = 0; st.oppTaken = 0;
     for (const k of Object.keys(st.casts)) delete st.casts[k];
+    for (const k of Object.keys(st.takenBy)) delete st.takenBy[k];
+    S.oppTakenBase = null;
   }
 
   // ---------------------------------------------------------------- сообщения
@@ -974,6 +981,8 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
     m = payload(m);
     S.lastRecv = now();
     buf.push(m, now());
+    // в дуэли 1×1 весь урон соперника — от меня (включая горение): «нанесено» = его «получено»
+    if (Number.isFinite(Number(m.taken))) H.stats.oppTaken = Math.max(0, Number(m.taken));
   };
   handlers.ev = (m) => {
     m = payload(m);
@@ -1172,7 +1181,7 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
       const c = coach && typeof coach === 'function' ? coach() : null;
       v.result = {
         won: v.winner === 'me', draw: v.winner === null, score: scoreMe(), reason: S.reason,
-        dealt: Math.round(H.stats.dealt), taken: Math.round(H.stats.taken), hitsSent: H.stats.sent, hitsLanded: H.stats.landed,
+        dealt: Math.round(Math.max(H.stats.dealt, H.stats.oppTaken)), taken: Math.round(H.stats.taken), hitsSent: H.stats.sent, hitsLanded: H.stats.landed,
         dodged: H.stats.dodged, blocked: H.stats.blocked, parried: H.stats.parried,
         accuracy: c && Number.isFinite(c.accuracy) ? c.accuracy : null, favorite: favorite(),
         time: Math.round((t - S.matchStart) / 1000),
