@@ -2327,7 +2327,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       if (!pr || pr.id === undefined || pr.id === null || !hasVec(pr.position)) continue;
       const key = String(pr.id);
       // [VFX] снаряды, которые рисует V6 (fx.suppress('proj:<kind>') / 'proj:caret' для игл «Акуса»)
-      if (v6 && (v6on('proj:' + pr.kind) || (key.startsWith('caret:') && v6on('proj:caret')))) continue;
+      if (v6 && (v6on('proj:' + pr.kind) || (key.startsWith('caret:') && v6on('proj:caret')) || (pr.remote && v6on('proj:remote')))) continue;
       let v = projMap.get(key);
       if (!v) {
         v = acquireProj();
@@ -3199,6 +3199,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       case 'perfect_dodge': onPerfectDodge(); break;
       case 'ward_end': onWardEnd(d); break;
       case 'ward_start': case 'boss_stunned': case 'telegraph_cancel': case 'combo_break': case 'boss_projectile': case 'ability_denied': break;
+      case 'pvp_opponent_cast': case 'pvp_round': break; // [VFX] PvP: касты соперника рисует V6 (fx/index.js), раунды — HUD
       case 'projectile_reflected': case 'encounter_start': case 'encounter_end': case 'conjure_start': case 'conjure_end': break; // [ASHEN_V2] без своего эффекта
       case 'victory': onOutcome('victory'); break;
       case 'defeat': onOutcome('defeat'); break;

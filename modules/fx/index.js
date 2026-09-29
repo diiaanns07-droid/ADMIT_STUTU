@@ -149,6 +149,10 @@ export function createFxV6(deps) {
   // ---------------------------------------------------------------- диспетчер
   function handle(type, ev, d) {
     if (!enabled) return false;
+    // PvP (modules/pvp.js №3): касты соперника приходят как pvp_opponent_cast {sourceType, ...данные, remote:true}
+    if (type === 'pvp_opponent_cast' && d && typeof d.sourceType === 'string' && d.sourceType !== type) {
+      return handle(d.sourceType, ev, d.remote ? d : Object.assign({}, d, { remote: true }));
+    }
     const list = handlers.get(type);
     if (!list) return false;
     let done = false;
