@@ -691,8 +691,9 @@ export function register(fx) {
   function orbFlyDraw(r, dt) {
     const R = r.R, el = r.el || 'fire', Pl = pal(el, R), col = haloOf(el, R), ramp = rampEl(el, R), rr = r.r;
     const hot = el === 'earth' && !R ? E.earth.hot : Pl.hot;
-    glowAt(r.pos, r.vel, rr * 3.4, 0.035, hot, 1.6, R, 'glow');
-    glowAt(r.pos, r.vel, rr * (el === 'earth' ? 1 : 1.5), 0.035, Pl.core, 3, R, 'glow');
+    // ореол сгустка скромнее: первые метры полёта — у самой камеры
+    glowAt(r.pos, r.vel, rr * 2.2, 0.035, hot, 1.2, R, 'glow');
+    glowAt(r.pos, r.vel, rr * (el === 'earth' ? 0.9 : 1.2), 0.035, Pl.core, 2.4, R, 'glow');
     if (r.tr) { try { r.tr.push(r.pos); } catch (e) { r.tr = null; } }
     else streakTrail(r.prev, r.pos, r.dir, 3, rr * 0.7, 0.22, ramp, 2.2, R);
     let n;
