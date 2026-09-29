@@ -123,11 +123,11 @@ if (argv.includes('--harness')) {
     const dt = (tr[i].t - tr[i - 1].t) / 1000;
     const d = Math.hypot(tr[i].x - tr[i - 1].x, tr[i].z - tr[i - 1].z);
     maxStep = Math.max(maxStep, d);
-    if (dt > 0) { const v = d / dt; maxV = Math.max(maxV, v); if (v > 31) bad++; }   // телепорт — быстрее двух скоростей рывка
+    if (dt > 0) { const v = d / dt; maxV = Math.max(maxV, v); if (v > 24) bad++; }   // телепорт — в 1,5 раза быстрее рывка
   }
   const ping = await G().evaluate(() => window.__net.ping);
   writeFileSync(join(OUT, 'harness-track.json'), JSON.stringify(tr));
-  check(`стенд: плавно при пинге ${PING} мс и ${Math.round(LOSS * 100)}% потерь (бег 6 м/с, рывки 15,6 м/с; телепорт — > 31 м/с)`, tr.length > 30 && bad === 0, `${tr.length} кадров (${fps.toFixed(0)} fps), max ${maxV.toFixed(1)} м/с, max шаг ${maxStep.toFixed(2)} м, пинг ${ping} мс`);
+  check(`стенд: плавно при пинге ${PING} мс и ${Math.round(LOSS * 100)}% потерь (бег 6 м/с, рывки 15,6 м/с; телепорт — > 24 м/с)`, tr.length > 30 && bad === 0, `${tr.length} кадров (${fps.toFixed(0)} fps), max ${maxV.toFixed(1)} м/с, max шаг ${maxStep.toFixed(2)} м, пинг ${ping} мс`);
   await pg.screenshot({ path: join(OUT, 'harness.png') });
   // «потерял Wi-Fi»: гость рвёт канал (DataChannel / сокет / BroadcastChannel) — оба видят lost, гость сам возвращается
   const H = () => pg.frames().find((f) => /role=host/.test(f.url()));
