@@ -198,6 +198,8 @@
   text-shadow: 0 0 22px rgba(227, 199, 146, 0.35), 0 3px 8px rgba(0, 0, 0, 0.9);
   user-select: all;
 }
+.nl-lanip { text-align: center; font-family: ui-monospace, Consolas, 'DejaVu Sans Mono', monospace; font-size: 17px; color: var(--nl-gold-hi); letter-spacing: 0.04em; }
+.nl-lancheck { color: var(--nl-text); }
 .nl-vs { display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch; gap: 8px; }
 .nl-vs__sep { align-self: center; font-family: var(--nl-display); font-size: 20px; color: var(--nl-gold); letter-spacing: 0.1em; }
 .nl-card {
