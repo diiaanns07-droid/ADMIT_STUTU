@@ -7,54 +7,57 @@
 // Материалы создаются на каждый вызов (у каждого героя свои); общие только процедурные текстуры.
 //
 // export: dressHero(THREE, vrm, { preset, heroId, model, atmosphere, quality, shading })
-//   → { names, staffTip, update(dt, root, lod), setLod(l), setQuality(q), setShading(m), setBowHeld(w), dispose() }
+//   → { names, staffTip, bow, cloth, update(dt, root, lod), setLod(l), setQuality(q), setShading(m), setBowHeld(on, grip, nock, draw), setGlow(k), dispose() }
+// opts.grips = { R, L } — узлы хвата кистей из heroModel (центр кулака; y — вдоль большого пальца).
 
 const PRESETS = {
   // Эльфийка: следопыт — кожа и золото, лук и колчан за спиной, короткий плащ, грозовые руны
   ranger: {
     metal: 0xc9a45c, metal2: 0x8c6a3a, leather: 0x4a3322, cloth: 0x1f5a44, glow: 0x7fe8ff,
     pauldrons: 'leather', bracers: true, belt: true, pouches: 3, dagger: 'left', rings: true,
-    cape: { w: 0.44, len: 0.95, color: 0x1d4f3d, trim: 0xc9a45c }, bow: true, quiver: true,
+    cape: { w: 0.44, len: 0.95, color: 0x1d4f3d, trim: 0xc9a45c, emblem: 'leaf' }, bow: { wood: 0x5a3a22 }, quiver: 'hip',
   },
   // Тёмная чародейка: воронёная сталь, фиолетово-ледяные руны, длинный плащ, посох с кристаллом
   witch: {
     metal: 0x3a3a48, metal2: 0x8f8fb5, leather: 0x241d2a, cloth: 0x19142a, glow: 0x9d7bff,
     pauldrons: 'plate', bracers: true, belt: true, pouches: 2, dagger: 'right', rings: true,
-    cape: { w: 0.5, len: 1.25, color: 0x16121f, trim: 0x8f8fb5 }, staff: { crystal: 0x8fd8ff, glow: 0x9d7bff },
+    cape: { w: 0.5, len: 1.25, color: 0x16121f, trim: 0x8f8fb5, emblem: 'moon' }, staff: { crystal: 0x8fd8ff, glow: 0x9d7bff, style: 'crescent', wood: 0x1b1522 },
   },
   // Пепельный страж (латы Quaternius Knight): плащ, посох с углём клятвы, пылающая печать на груди
   warden: {
     metal: 0x8a6a45, metal2: 0xd8b070, leather: 0x2c2018, cloth: 0x3a1f1a, glow: 0xff8a3a,
     pauldrons: null, bracers: false, belt: 'pouches', pouches: 2, dagger: null, rings: false, sigil: true,
-    cape: { w: 0.62, len: 1.3, color: 0x2a1a17, trim: 0xd8b070 }, staff: { crystal: 0xffb46a, glow: 0xff7a2a },
+    cape: { w: 0.66, len: 1.32, color: 0x2a1512, trim: 0xd8a860, emblem: 'flame' }, staff: { crystal: 0xffb46a, glow: 0xff7a2a, style: 'crown', wood: 0x2a1b14 },
   },
   // Эльфийка на теле Quaternius: короткий белый плащ, лук и колчан, грозовые руны
   sylvan: {
     metal: 0xd8c08a, metal2: 0xe8d6a0, leather: 0x8a6a4a, cloth: 0xe8e4d8, glow: 0x7fe8ff,
     pauldrons: null, bracers: false, belt: 'pouches', pouches: 1, dagger: 'left', rings: false, sigil: false,
-    cape: { w: 0.5, len: 0.95, color: 0xe6e2d6, trim: 0xd8c08a }, bow: true, quiver: true,
+    cape: { w: 0.5, len: 0.98, color: 0xe6e2d6, trim: 0xc9a45c, emblem: 'leaf' }, bow: { wood: 0xe9dfc8 }, quiver: 'hip',
   },
   // Тёмная чародейка на теле Quaternius: воронёные наплечники, длинный плащ, посох с кристаллом ночи
   witchQ: {
     metal: 0x34303e, metal2: 0x9a8fc4, leather: 0x1e1826, cloth: 0x160f22, glow: 0xa77bff,
     pauldrons: 'plate', bracers: false, belt: 'pouches', pouches: 2, dagger: 'right', rings: false, sigil: true,
-    cape: { w: 0.56, len: 1.3, color: 0x140e1e, trim: 0x9a8fc4 }, staff: { crystal: 0x9fe0ff, glow: 0xa77bff },
+    cape: { w: 0.6, len: 1.3, color: 0x1a1128, trim: 0xb8aee0, emblem: 'moon' }, staff: { crystal: 0x9fe0ff, glow: 0xa77bff, style: 'crescent', wood: 0x1b1522 },
   },
   // Лучница (Quaternius Ranger): лук и колчан, кинжал
   scout: {
     metal: 0xb0b4bc, metal2: 0xc9a45c, leather: 0x4a3322, cloth: 0x234a2a, glow: 0x9dffb0,
     pauldrons: null, bracers: false, belt: 'pouches', pouches: 2, dagger: 'right', rings: false,
-    bow: true, quiver: true,
+    bow: { wood: 0x5a3a22 }, quiver: 'back',
   },
   // Архимаг (Quaternius Wizard): посох-громоотвод, плащ с рунами, наручи, перстни
   magus: {
     metal: 0x6a6f7c, metal2: 0xd8b070, leather: 0x2a2230, cloth: 0x1c2438, glow: 0x8fd8ff,
     pauldrons: 'plate', bracers: true, belt: 'pouches', pouches: 2, dagger: null, rings: true, sigil: false,
-    cape: { w: 0.62, len: 1.35, color: 0x1a2236, trim: 0xd8b070 }, staff: { crystal: 0xbfe8ff, glow: 0x6fb8ff },
+    cape: { w: 0.66, len: 1.35, color: 0x16203a, trim: 0xd8b070, emblem: 'bolt' }, staff: { crystal: 0xbfe8ff, glow: 0x6fb8ff, style: 'hoop', wood: 0x4a3526 },
   },
 };
 
 import { patchHeroLight } from './heroShading.js';
+import { buildStaff, buildBow, buildArrow, buildQuiver, capeTextures, runeRingTexture, tube } from './heroForge.js';
+import { createCloth, fitCapsules } from './heroCloth.js';
 
 // ---------------------------------------------------------------- общие процедурные текстуры
 const texCache = {};
@@ -145,41 +148,6 @@ function plateGeo(THREE, r, arc, lames, drop) {
   }
   return geos;
 }
-function capeGeo(THREE, topW, w, len, cols = 12, rows = 18) {
-  const g = new THREE.PlaneGeometry(1, len, cols, rows);
-  g.translate(0, -len / 2, 0);
-  // сверху — по ширине плеч и огибает спину, книзу шире и ровнее; складки — лёгкая волна по ширине
-  const p = g.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    const t = Math.min(1, Math.max(0, -p.getY(i) / len)), u = p.getX(i) * 2; // u: −1..1
-    const width = topW + (w - topW) * Math.sqrt(t);
-    const wrapK = (1 - t) * 0.09 + 0.02;
-    p.setX(i, u * width * 0.5);
-    p.setZ(i, u * u * wrapK - 0.015 - t * t * 0.07 + Math.sin(u * 7.5) * 0.012 * t);
-  }
-  g.computeVertexNormals();
-  return g;
-}
-function bowGeo(THREE, len) {
-  const pts = [];
-  for (let i = 0; i <= 24; i++) {
-    const t = i / 24 - 0.5, y = t * len;
-    const z = -Math.cos(t * Math.PI) * len * 0.14 + Math.sign(t) * Math.pow(Math.abs(t * 2), 4) * len * 0.05;
-    pts.push(new THREE.Vector3(0, y, z));
-  }
-  const curve = new THREE.CatmullRomCurve3(pts);
-  const g = new THREE.TubeGeometry(curve, 40, 0.012, 6, false);
-  // толще к рукояти
-  const p = g.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    const y = p.getY(i) / (len / 2), k = 1 + (1 - Math.min(1, Math.abs(y))) * 0.7;
-    const c = curve.getPointAt(Math.min(1, Math.max(0, p.getY(i) / len + 0.5)));
-    p.setX(i, c.x + (p.getX(i) - c.x) * k); p.setZ(i, c.z + (p.getZ(i) - c.z) * k);
-  }
-  g.computeVertexNormals();
-  return { geo: g, tipZ: pts[0].z };
-}
-
 export function dressHero(THREE, vrm, opts = {}) {
   const { preset = 'ranger', model = null, atmosphere = null, quality = 'medium' } = opts;
   const P = PRESETS[preset] || PRESETS.ranger;
@@ -202,8 +170,25 @@ export function dressHero(THREE, vrm, opts = {}) {
     leather: Mt(new Std({ name: 'gear-leather', color: P.leather, metalness: 0, roughness: 0.72, roughnessMap: leath, bumpMap: leath, bumpScale: 0.6, ...(physical ? { sheen: 0.3, sheenRoughness: 0.6, sheenColor: new THREE.Color(0.35, 0.3, 0.25) } : {}) })),
     runeMetal: Mt(new Std({ name: 'gear-rune', color: P.metal, metalness: 1, roughness: 0.4, roughnessMap: rough, emissive: P.glow, emissiveMap: rune, emissiveIntensity: 2.4 })),
     glow: Mt(new THREE.MeshBasicMaterial({ name: 'gear-glow', color: new THREE.Color(P.glow).multiplyScalar(2.2), toneMapped: true })),
-    wood: Mt(new Std({ name: 'gear-wood', color: 0x3b2a1e, metalness: 0, roughness: 0.6, roughnessMap: leath })),
+    wood: Mt(new Std({ name: 'gear-wood', color: (P.staff && P.staff.wood) || (P.bow && P.bow.wood) || 0x3b2a1e, metalness: 0, roughness: 0.52, roughnessMap: leath, ...(physical ? { clearcoat: 0.35, clearcoatRoughness: 0.4 } : {}) })),
   };
+  // [HERO] оружие: огранённый кристалл (плоские грани, свет изнутри и по кромкам), ядро света, руны
+  const glowHex = (P.staff && P.staff.glow) || P.glow;
+  mats.crystal = Mt(new Std({ name: 'gear-crystal', color: (P.staff && P.staff.crystal) || P.glow, emissive: glowHex, emissiveIntensity: 0.9, roughness: 0.05, metalness: 0.1, flatShading: true, ...(physical ? { clearcoat: 1, clearcoatRoughness: 0.03, iridescence: 0.5, iridescenceIOR: 1.6 } : {}) }));
+  {
+    const cm0 = mats.crystal, prev = cm0.onBeforeCompile;
+    cm0.onBeforeCompile = (sh, r) => {
+      if (prev) prev.call(cm0, sh, r);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  { float fr = 1.0 - saturate( dot( normalize( normal ), normalize( vViewPosition ) ) ); totalEmissiveRadiance *= 0.55 + 2.2 * fr * fr; }`);
+    };
+    const pk = cm0.customProgramCacheKey;
+    cm0.customProgramCacheKey = () => 'gearCrystal:' + (pk ? pk.call(cm0) : '');
+  }
+  mats.core = Mt(new THREE.MeshBasicMaterial({ name: 'gear-core', color: new THREE.Color(glowHex).multiplyScalar(3.2), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+  mats.runeRing = Mt(new THREE.MeshBasicMaterial({ name: 'gear-runering', map: runeRingTexture(THREE), color: new THREE.Color(glowHex).multiplyScalar(2.4), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+  mats.inlay = Mt(new THREE.MeshBasicMaterial({ name: 'gear-inlay', color: new THREE.Color(P.glow).multiplyScalar(2.2) }));
+  mats.fletch = Mt(new Std({ name: 'gear-fletch', color: 0xf2ece0, roughness: 0.85, side: THREE.DoubleSide, ...(physical ? { sheen: 0.4, sheenRoughness: 0.5, sheenColor: new THREE.Color(1, 1, 1) } : {}) }));
   if (rune) { rune.repeat.set(1, 1); }
   const names = [];
   const parts = []; // { obj, bone }
@@ -215,18 +200,24 @@ export function dressHero(THREE, vrm, opts = {}) {
   const FWD = new THREE.Vector3(0, 0, 1).applyQuaternion(modelQ), LEFT = new THREE.Vector3(1, 0, 0).applyQuaternion(modelQ), UP = new THREE.Vector3(0, 1, 0);
   const tmpM = new THREE.Matrix4();
   // склейка неподвижных деталей группы по материалу: меньше вызовов отрисовки (подсумки, кольца, пряжки…)
-  const KEEP = /^(staff-halo|staff-crystal|hair-mesh|cape|bow-string-top|bow-string-bot)$/;
+  // (поддеревья с именами из KEEP не трогаем: они крутятся, светятся или двигаются сами)
+  const KEEP = /^(staff-halo|staff-crystal|staff-core|staff-shards|hair-mesh|cape|bow-string-top|bow-string-bot|arrow|bow-nocked)$/;
   function compact(grp) {
     grp.updateMatrixWorld(true);
     const inv = new THREE.Matrix4().copy(grp.matrixWorld).invert();
     const byMat = new Map();
-    grp.traverse((o) => {
-      if (!o.isMesh || !o.visible || KEEP.test(o.name) || o.children.some((c) => KEEP.test(c.name) || c.name === 'staff-tip')) return;
-      const g = o.geometry;
-      if (!g.attributes.position || !g.attributes.normal || !g.attributes.uv) return;
-      if (!byMat.has(o.material)) byMat.set(o.material, []);
-      byMat.get(o.material).push(o);
-    });
+    const walk = (o) => {
+      if (KEEP.test(o.name) || o.name === 'staff-tip') return;
+      if (o.isMesh && o.visible && !o.children.length) {
+        const g = o.geometry;
+        if (g.attributes.position && g.attributes.normal && g.attributes.uv) {
+          if (!byMat.has(o.material)) byMat.set(o.material, []);
+          byMat.get(o.material).push(o);
+        }
+      }
+      for (const c of o.children.slice()) walk(c);
+    };
+    walk(grp);
     for (const [mat, list] of byMat) {
       if (list.length < 2) continue;
       let nv = 0, ni = 0;
@@ -610,162 +601,164 @@ uniform float uTime; uniform vec3 uLag; uniform float uWind;`)
     }
   }
 
-  // ---------------- плащ (ветер и инерция в вершинном шейдере)
-  let capeU = null;
-  if (P.cape && bp[chestB]) {
-    const { w, len, color, trim } = P.cape;
-    capeU = { uTime: { value: 0 }, uLag: { value: new THREE.Vector3() }, uWind: { value: 1 } };
-    const cm = new Std({
-      name: 'gear-cape', color, roughness: 0.85, metalness: 0, side: THREE.DoubleSide,
-      ...(physical ? { sheen: 0.6, sheenRoughness: 0.7, sheenColor: new THREE.Color(trim).multiplyScalar(0.35) } : {}),
-      emissive: P.glow, emissiveMap: rune, emissiveIntensity: 0.55, // руна-волна поперёк плаща и тлеющая кромка
+  // ---------------- плащ: ткань (modules/heroCloth.js) — прибит к плечам, падает, развевается на бегу,
+  // не проходит сквозь ноги и корпус (капсулы по коже модели); вышитая кайма и герб (heroForge.capeTextures)
+  // капсулы тела: радиусы — по вершинам кожи (латы стража толще, чем ткань лучницы)
+  const capPairs = [
+    ['hips', chestB], [chestB, 'neck'], ['leftUpperLeg', 'leftLowerLeg'], ['rightUpperLeg', 'rightLowerLeg'],
+    ['leftLowerLeg', 'leftFoot'], ['rightLowerLeg', 'rightFoot'], ['leftUpperArm', 'leftLowerArm'], ['rightUpperArm', 'rightLowerArm'],
+  ];
+  const bodyCaps = [];
+  if (bp.hips && bp[chestB]) {
+    const pairs = capPairs.filter(([x, y]) => raw(x) && raw(y));
+    let radii = [];
+    try { radii = fitCapsules(THREE, vrm.scene, pairs.map(([x, y]) => ({ a: wpos(raw(x)), b: wpos(raw(y)) }))); } catch (e) { radii = []; }
+    const defR = { hips: 0.15, leftUpperLeg: 0.085, rightUpperLeg: 0.085, leftLowerLeg: 0.065, rightLowerLeg: 0.065, leftUpperArm: 0.055, rightUpperArm: 0.055 };
+    pairs.forEach(([x, y], i) => bodyCaps.push({ a: raw(x), b: raw(y), r: (radii[i] || defR[x] || 0.13) + 0.018, name: x }));
+  }
+  const torsoR = bodyCaps.length ? Math.max(bodyCaps[0].r, bodyCaps[1] ? bodyCaps[1].r : 0) : 0.16;
+  let cloth = null, capeMat = null;
+  if (P.cape && bp[chestB] && bp.hips && bp.leftUpperArm) {
+    const { w, len, color, trim, emblem } = P.cape;
+    const colliders = bodyCaps;
+    const rT = torsoR;
+    // исходная форма: верх — дуга по плечам и загривку, ниже — полотно за спиной, книзу шире
+    const cols = 13, rows = 18;
+    const neck = bp.neck || bp[chestB].clone().addScaledVector(UP, 0.14);
+    const shY = Math.max(bp.leftUpperArm.y, bp.rightUpperArm.y);
+    const yTop = Math.max(shY + 0.035, neck.y - 0.035);
+    const base = neck.clone().setY(yTop);
+    const halfTop = shoulderW * 0.5 + 0.025;
+    const rest = new Float32Array(cols * rows * 3);
+    for (let j = 0; j < rows; j++) {
+      const t = j / (rows - 1);
+      for (let i = 0; i < cols; i++) {
+        const u = (i / (cols - 1)) * 2 - 1;
+        let p;
+        if (j === 0) {
+          p = base.clone().addScaledVector(LEFT, u * halfTop).addScaledVector(FWD, -rT * 0.72 * (1 - 0.6 * u * u) + 0.015 * u * u).addScaledVector(UP, 0.02 * (1 - u * u));
+        } else {
+          const hw = halfTop + (w * 0.5 - halfTop) * Math.sqrt(t);
+          p = base.clone().addScaledVector(UP, -t * len).addScaledVector(LEFT, u * hw).addScaledVector(FWD, -(rT + 0.035) - 0.07 * t + 0.05 * u * u);
+        }
+        p.toArray(rest, (j * cols + i) * 3);
+      }
+    }
+    const tx = capeTextures(THREE, { base: color, trim, glow: P.glow, emblem, key: preset });
+    capeMat = Mt(new Std({
+      name: 'gear-cape', color: 0xffffff, map: tx.map || null, bumpMap: tx.bump || null, bumpScale: 1.4,
+      emissive: 0xffffff, emissiveMap: tx.emissive || null, emissiveIntensity: tx.emissive ? 1.1 : 0,
+      roughness: 0.82, metalness: 0, side: THREE.DoubleSide,
+      ...(physical ? { sheen: 0.8, sheenRoughness: 0.55, sheenColor: new THREE.Color(color).lerp(new THREE.Color(trim), 0.35).multiplyScalar(1.6) } : {}),
+    }));
+    const holder = model || vrm.scene;
+    const _mq = new THREE.Quaternion();
+    cloth = createCloth(THREE, {
+      cols, rows, rest, anchor: raw(chestB), parent: holder, colliders, material: capeMat,
+      pleats: 3.5, pleatDepth: w > 0.55 ? 0.016 : 0.012,
+      hips: raw('hips'), back: { lim: 0.035, h: Math.max(0.2, bp[chestB].y - bp.hips.y) },
+      fwd: (out) => out.set(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(_mq)),
+      floor: () => holder.getWorldPosition(new THREE.Vector3()).y,
     });
-    cm.onBeforeCompile = (shader) => {
-      Object.assign(shader.uniforms, capeU);
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>
-uniform float uTime; uniform vec3 uLag; uniform float uWind;
-varying float vCapeT;`)
-        .replace('#include <begin_vertex>', `#include <begin_vertex>
-  {
-    float t = clamp( -position.y / ${len.toFixed(3)}, 0.0, 1.0 );
-    float t2 = t * t;
-    vCapeT = t;
-    float x = position.x;
-    float wave = sin( uTime * 2.3 + t * 5.0 + x * 7.0 ) * 0.035 + sin( uTime * 3.7 + t * 9.0 - x * 11.0 ) * 0.015;
-    transformed.z += ( wave * uWind - 0.05 * uWind ) * t2 - uLag.z * t2 * 0.55;
-    transformed.x += sin( uTime * 1.7 + t * 3.0 ) * 0.02 * uWind * t2 - uLag.x * t2 * 0.45;
-    transformed.y += uLag.y * t2 * 0.3 + max( 0.0, -uLag.z ) * t2 * 0.25;
-  }`);
-      shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying float vCapeT;')
-        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-  totalEmissiveRadiance += emissive * smoothstep( 0.9, 0.995, vCapeT ) * 1.3;`);
-    };
-    cm.customProgramCacheKey = () => 'heroCape:' + len.toFixed(3);
-    Mt(cm);
-    const cape = new THREE.Mesh(G(capeGeo(THREE, Math.min(w * 0.8, shoulderW * 1.05), w, len)), cm);
-    cape.name = 'cape';
-    cape.frustumCulled = false;
-    const grp = new THREE.Group(); grp.name = 'cape-root';
-    grp.add(cape);
-    // застёжки на плечах
-    for (const s of [1, -1]) {
-      const clasp = new THREE.Mesh(G(new THREE.CylinderGeometry(0.02, 0.02, 0.012, 12)), mats.trim);
-      clasp.rotation.x = Math.PI / 2; clasp.position.set(s * w * 0.42, 0.015, 0.05);
-      const cg = new THREE.Mesh(G(new THREE.OctahedronGeometry(0.008)), mats.glow); cg.position.set(0, 0.008, 0); clasp.add(cg);
-      grp.add(clasp);
+    names.push('cape-root');
+    // воротник-валик по верху плаща (прячет край, где ткань прибита) и застёжки с цепью на груди
+    const grp = new THREE.Group(); grp.name = 'cape-collar';
+    const topPts = [];
+    for (let i = 0; i < cols; i++) topPts.push(new THREE.Vector3().fromArray(rest, i * 3));
+    const topCurve = new THREE.CatmullRomCurve3(topPts);
+    grp.add(new THREE.Mesh(G(tube(THREE, topCurve, 40, 10, (v) => 0.024 * (0.75 + 0.25 * Math.sin(v * Math.PI)))), capeMat));
+    const trimLine = new THREE.Mesh(G(tube(THREE, topCurve, 40, 6, () => 0.006)), mats.trim); trimLine.position.addScaledVector(UP, 0.012); grp.add(trimLine);
+    const claspG = G(new THREE.CylinderGeometry(0.024, 0.024, 0.01, 16)), claspGem = G(new THREE.OctahedronGeometry(0.01));
+    const ends = [topPts[0], topPts[cols - 1]].map((p) => p.clone().addScaledVector(FWD, 0.035).addScaledVector(UP, -0.03));
+    for (const e of ends) {
+      const clasp = new THREE.Mesh(claspG, mats.trim); clasp.position.copy(e); clasp.quaternion.copy(qFromTo(new THREE.Vector3(0, 1, 0), FWD)); grp.add(clasp);
+      const cg = new THREE.Mesh(claspGem, mats.glow); cg.position.copy(e).addScaledVector(FWD, 0.009); grp.add(cg);
     }
-    // верх плаща — под наплечниками/воротом, вплотную к лопаткам (сверху кромка не видна)
-    const neckY = bp.neck ? bp.neck.y : bp[chestB].y + 0.12;
-    const top = bp[chestB].clone().setY(bp[chestB].y * 0.35 + neckY * 0.65 - 0.03).addScaledVector(FWD, -0.085);
-    stick(grp, chestB, top, modelQ);
+    // цепь между застёжками: провисает на груди
+    const chest = bp[chestB];
+    const mid = chest.clone().addScaledVector(FWD, rT + 0.02).setY((ends[0].y + ends[1].y) / 2 - 0.09);
+    const chain = new THREE.QuadraticBezierCurve3(ends[0].clone().addScaledVector(FWD, 0.005), mid, ends[1].clone().addScaledVector(FWD, 0.005));
+    grp.add(new THREE.Mesh(G(tube(THREE, chain, 40, 5, () => 0.0035)), mats.trim));
+    // группа собрана в мировых координатах: переносим начало в грудь и прикрепляем
+    const c0 = chest.clone();
+    for (const m of grp.children) m.position.sub(c0);
+    grp.children.forEach((m) => m.updateMatrix());
+    stick(grp, chestB, c0, new THREE.Quaternion());
   }
 
-  // ---------------- посох с кристаллом (правая рука)
-  let staffTip = null;
+  // ---------------- посох: в кулаке правой (узел хвата heroModel: древко поперёк пальцев, навершие у большого)
+  let staffTip = null, staffRig = null;
   if (P.staff && bp.rightHand) {
-    const grp = new THREE.Group(); grp.name = 'staff';
-    const L = 1.62, grip = 0.72; // от низа до хвата
-    const shaft = new THREE.Mesh(G(new THREE.CylinderGeometry(0.013, 0.017, L, 8)), mats.wood); shaft.position.y = L / 2 - grip; grp.add(shaft);
-    for (const y of [0.1, 0.55, 1.2, 1.45]) {
-      const band = new THREE.Mesh(G(new THREE.TorusGeometry(0.018, 0.005, 5, 14)), mats.trim); band.rotation.x = Math.PI / 2; band.position.y = y - grip; grp.add(band);
+    staffRig = buildStaff(THREE, mats, { style: P.staff.style || 'crown' });
+    const holder = new THREE.Group(); holder.name = 'staff-holder';
+    holder.add(staffRig.group);
+    const slot = opts.grips && opts.grips.R;
+    if (slot) {
+      slot.add(holder);
+      holder.scale.setScalar(1 / (slot.getWorldScale(new THREE.Vector3()).x || 1));
+      try { compact(holder); } catch (e) { /* без склейки */ }
+      holder.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      parts.push({ obj: holder, bone: slot, staff: true });
+      names.push('staff');
+    } else {
+      // без слота (запасные клипы): вертикально в кулаке
+      const hand = bp.rightHand.clone();
+      const fing = bp.rightMiddleProximal || hand.clone().addScaledVector(UP, -0.08);
+      stick(holder, 'rightHand', hand.clone().lerp(fing, 0.8), modelQ);
+      parts[parts.length - 1].staff = true;
     }
-    const ferrule = new THREE.Mesh(G(new THREE.ConeGeometry(0.016, 0.06, 8)), mats.metal); ferrule.rotation.x = Math.PI; ferrule.position.y = -grip - 0.02; grp.add(ferrule);
-    // голова: оправа-«когти» и кристалл, вокруг — кольцо рун
-    const head = new THREE.Group(); head.position.y = L - grip; grp.add(head);
-    for (let i = 0; i < 3; i++) {
-      const claw = new THREE.Mesh(G(new THREE.TorusGeometry(0.05, 0.007, 5, 12, Math.PI * 0.8)), mats.metal);
-      claw.rotation.set(0, (i / 3) * Math.PI * 2, Math.PI / 2 + 0.2); claw.position.y = 0.05; head.add(claw);
-    }
-    const crystalMat = Mt(new Std({ name: 'gear-crystal', color: P.staff.crystal, emissive: P.staff.glow, emissiveIntensity: 2.2, roughness: 0.08, metalness: 0, ...(physical ? { transmission: 0.0, clearcoat: 1, clearcoatRoughness: 0.05 } : {}) }));
-    const crystal = new THREE.Mesh(G(new THREE.OctahedronGeometry(0.045, 0)), crystalMat); crystal.scale.set(0.8, 1.7, 0.8); crystal.position.y = 0.1; crystal.name = 'staff-crystal'; head.add(crystal);
-    const halo = new THREE.Mesh(G(new THREE.TorusGeometry(0.085, 0.004, 4, 32)), mats.glow); halo.position.y = 0.1; halo.rotation.x = Math.PI / 2; halo.name = 'staff-halo'; head.add(halo);
-    staffTip = new THREE.Object3D(); staffTip.name = 'staff-tip'; staffTip.position.y = 0.1; head.add(staffTip);
-    // в позе Idle: вертикально, чуть впереди и снаружи кулака
-    const hand = bp.rightHand.clone();
-    const fing = bp.rightMiddleProximal || hand.clone().addScaledVector(UP, -0.08);
-    const palm = hand.clone().lerp(fing, 0.75).addScaledVector(FWD, 0.015);
-    const q = qFromTo(new THREE.Vector3(0, 1, 0), UP.clone().addScaledVector(FWD, 0.12).normalize());
-    stick(grp, 'rightHand', palm, q);
-    parts[parts.length - 1].spin = halo; parts[parts.length - 1].crystal = crystal; parts[parts.length - 1].staff = true;
+    staffTip = staffRig.tip;
   }
 
-  // ---------------- лук и колчан за спиной
-  let bow = null;
+  // ---------------- лук за спиной (в бою — в кулаке левой) и колчан
+  let bow = null, bowRig = null, arrow = null;
+  const rT0 = torsoR - 0.018;
   if ((P.bow || P.quiver) && bp[chestB]) {
-    const back = bp[chestB].clone().addScaledVector(FWD, -0.14);
     if (P.bow) {
-      const grp = new THREE.Group(); grp.name = 'bow';
-      const { geo } = bowGeo(THREE, 1.18);
-      const limb = new THREE.Mesh(G(geo), mats.wood); grp.add(limb);
-      const tipZ = -Math.cos(0.5 * Math.PI) * 0.0 - 0.0;
-      void tipZ;
-      // тетива из двух половин (кончик → точка натяжения): при натяжении тянется к правой руке
-      const strG = G(new THREE.CylinderGeometry(0.0016, 0.0016, 1, 3)); strG.translate(0, 0.5, 0);
-      const strM = Mt(new THREE.MeshBasicMaterial({ color: 0xf2e8d0 }));
+      bowRig = buildBow(THREE, mats, { len: 1.3 });
+      const grp = bowRig.group;
+      // тетива из двух половин (кончик → точка натяжения): при натяжении тянется к пальцам правой
+      const strG = G(new THREE.CylinderGeometry(0.0014, 0.0014, 1, 4)); strG.translate(0, 0.5, 0);
+      const strM = Mt(new THREE.MeshBasicMaterial({ name: 'gear-string', color: 0xf2e8d0 }));
       const strTop = new THREE.Mesh(strG, strM), strBot = new THREE.Mesh(strG, strM);
       strTop.name = 'bow-string-top'; strBot.name = 'bow-string-bot';
       grp.add(strTop, strBot);
-      grp.userData.string = { top: strTop, bot: strBot, tipT: new THREE.Vector3(0, 0.58, 0.035), tipB: new THREE.Vector3(0, -0.58, 0.035) };
-      const gripM = new THREE.Mesh(G(new THREE.CylinderGeometry(0.018, 0.018, 0.12, 8)), mats.leather); gripM.position.z = -0.165; grp.add(gripM);
-      for (const y of [-0.52, 0.52]) { const tip = new THREE.Mesh(G(new THREE.ConeGeometry(0.01, 0.05, 5)), mats.trim); tip.position.set(0, y * 1.04, 0.015); tip.rotation.x = y > 0 ? 0 : Math.PI; grp.add(tip); }
-      const rg = new THREE.Mesh(G(new THREE.TorusGeometry(0.02, 0.004, 5, 14)), mats.glow); rg.position.set(0, 0.08, -0.16); rg.rotation.y = Math.PI / 2; grp.add(rg);
-      // диагональ за спиной: от правого плеча к левому бедру, тетивой к спине
-      const diag = UP.clone().multiplyScalar(0.95).addScaledVector(LEFT, -0.45).normalize();
+      grp.userData.string = { top: strTop, bot: strBot, tipT: bowRig.tipT, tipB: bowRig.tipB };
+      // стрела на тетиве (видна при натяжении)
+      arrow = buildArrow(THREE, mats, { len: 0.78 }); arrow.name = 'arrow'; arrow.visible = false;
+      grp.add(arrow);
+      // за спиной по диагонали: верх — у левого плеча, тетива наружу (от спины)
+      const diag = UP.clone().multiplyScalar(0.93).addScaledVector(LEFT, 0.42).normalize();
       const q = qFromTo(new THREE.Vector3(0, 1, 0), diag);
-      const zNow = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
-      const want = FWD.clone(); // тетива к спине, рукоять выгибается назад от тела
+      const zNow = new THREE.Vector3(0, 0, 1).applyQuaternion(q), want = FWD.clone().negate();
       q.premultiply(new THREE.Quaternion().setFromAxisAngle(diag, Math.atan2(zNow.clone().cross(want).dot(diag), zNow.dot(want))));
-      stick(grp, chestB, back.clone().addScaledVector(FWD, -0.08), q);
+      stick(grp, chestB, bp[chestB].clone().addScaledVector(FWD, -(rT0 + 0.035)).addScaledVector(UP, -0.04), q);
       bow = grp;
     }
     if (P.quiver) {
-      const grp = new THREE.Group(); grp.name = 'quiver';
-      const body = new THREE.Mesh(G(new THREE.CylinderGeometry(0.045, 0.035, 0.5, 10, 1, true)), mats.leather); body.material.side = THREE.DoubleSide; grp.add(body);
-      for (const y of [-0.2, 0.2]) { const r = new THREE.Mesh(G(new THREE.TorusGeometry(y > 0 ? 0.045 : 0.037, 0.005, 5, 14)), mats.trim); r.rotation.x = Math.PI / 2; r.position.y = y; grp.add(r); }
-      const shaftG = G(new THREE.CylinderGeometry(0.003, 0.003, 0.62, 4));
-      const fletchG = G(new THREE.BoxGeometry(0.018, 0.08, 0.002));
-      const fm = Mt(new Std({ color: 0xe8e1cf, roughness: 0.8, side: THREE.DoubleSide }));
-      for (let i = 0; i < 7; i++) {
-        const a = (i / 7) * Math.PI * 2, rr = 0.022;
-        const ar = new THREE.Mesh(shaftG, mats.wood); ar.position.set(Math.cos(a) * rr, 0.08 + (i % 3) * 0.02, Math.sin(a) * rr); grp.add(ar);
-        const fl = new THREE.Mesh(fletchG, fm); fl.position.set(Math.cos(a) * rr, 0.36 + (i % 3) * 0.02, Math.sin(a) * rr); fl.rotation.y = a; grp.add(fl);
+      const qv = buildQuiver(THREE, mats, { h: 0.5, arrows: 8 });
+      if (P.quiver === 'hip' && bp.hips) {
+        // на правом бедре, наклонён назад (плащ не мешает)
+        const dir = UP.clone().addScaledVector(FWD, -0.35).addScaledVector(LEFT, -0.12).normalize();
+        stick(qv, 'hips', bp.hips.clone().addScaledVector(LEFT, -0.17).addScaledVector(FWD, -0.05).addScaledVector(UP, -0.32), qFromTo(new THREE.Vector3(0, 1, 0), dir));
+      } else {
+        // за спиной: оперение над правым плечом
+        const dir = UP.clone().multiplyScalar(0.95).addScaledVector(LEFT, -0.32).normalize();
+        stick(qv, chestB, bp[chestB].clone().addScaledVector(FWD, -(rT0 + 0.06)).addScaledVector(LEFT, 0.05).addScaledVector(UP, -0.3), qFromTo(new THREE.Vector3(0, 1, 0), dir));
       }
-      const diag = UP.clone().multiplyScalar(0.95).addScaledVector(LEFT, 0.35).normalize();
-      stick(grp, chestB, back.clone().addScaledVector(LEFT, 0.07).addScaledVector(UP, -0.06).addScaledVector(FWD, -0.06), qFromTo(new THREE.Vector3(0, 1, 0), diag));
     }
   }
 
-  // ---------------- кадр: плащ, свечение, LOD
+  // ---------------- кадр: ткань, свечение, LOD
   let t = 0, lodL = 0;
   const prevPos = new THREE.Vector3(), vel = new THREE.Vector3(), lag = new THREE.Vector3(), _q = new THREE.Quaternion();
   let havePrev = false;
-  const capeRoot = parts.find((p) => p.obj.name === 'cape-root');
   function update(dt, root) {
     t += dt;
-    if (capeU) {
-      capeU.uTime.value = t;
-      if (root && dt > 1e-4) {
-        root.getWorldPosition(vel);
-        if (havePrev) {
-          const v = vel.clone().sub(prevPos).divideScalar(dt);
-          prevPos.copy(vel);
-          if (v.lengthSq() > 400) v.set(0, 0, 0); // телепорт
-          // скорость → в оси плаща (кость груди); инерция — пружина
-          if (capeRoot) { capeRoot.obj.getWorldQuaternion(_q); v.applyQuaternion(_q.invert()); }
-          const k = 1 - Math.exp(-5 * dt);
-          lag.x += (Math.max(-1.5, Math.min(1.5, v.x * 0.18)) - lag.x) * k;
-          lag.y += (0 - lag.y) * k;
-          lag.z += (Math.max(-1.6, Math.min(1.6, v.z * 0.2)) - lag.z) * k;
-          capeU.uLag.value.copy(lag);
-        } else { prevPos.copy(vel); havePrev = true; }
-      }
-    }
+    if (cloth) { try { cloth.update(dt, lodL); } catch (e) { /* ткань не критична */ } }
     if (hairU) {
       hairU.uTime.value = t;
-      if (capeU) hairU.uLag.value.copy(capeU.uLag.value);
-      else if (root && dt > 1e-4) {
+      if (root && dt > 1e-4) {
         root.getWorldPosition(vel);
         if (havePrev) {
           const v = vel.clone().sub(prevPos).divideScalar(dt); prevPos.copy(vel);
@@ -779,44 +772,34 @@ varying float vCapeT;`)
         } else { prevPos.copy(vel); havePrev = true; }
       }
     }
-    for (const p of parts) {
-      if (p.spin) p.spin.rotation.z = t * 0.9;
-      if (p.crystal) p.crystal.rotation.y = t * 0.6;
+    if (staffRig) {
+      staffRig.halo.rotation.y = t * 0.9;
+      staffRig.shards.rotation.y = -t * 0.7;
+      staffRig.shards.children.forEach((s, i) => { s.rotation.y = t * (1.2 + i * 0.3); s.position.y = (i - 1) * 0.02 + Math.sin(t * 1.6 + i * 2.1) * 0.012; });
+      staffRig.crystal.rotation.y = t * 0.35;
+      const pulse = 0.85 + 0.15 * Math.sin(t * 2.6) + 0.05 * Math.sin(t * 7.1);
+      staffRig.core.scale.setScalar(pulse * (0.8 + 0.3 * glowNow));
+      mats.core.opacity = Math.min(1, 0.55 + 0.3 * glowNow);
+      mats.crystal.emissiveIntensity = 0.75 + 0.35 * glowNow + 0.1 * Math.sin(t * 2.6);
     }
     mats.runeMetal.emissiveIntensity = (2.0 + Math.sin(t * 2.1) * 0.6) * glowNow;
     mats.glow.color.copy(glowBase).multiplyScalar(0.6 + 0.4 * glowNow);
+    mats.inlay.color.copy(inlayBase).multiplyScalar((0.7 + 0.3 * Math.sin(t * 1.7)) * (0.6 + 0.4 * glowNow));
+    if (capeMat) capeMat.emissiveIntensity = (0.8 + 0.25 * Math.sin(t * 1.3)) * Math.min(2, glowNow);
     if (visorMat) visorMat.opacity = Math.min(1, 0.55 + 0.25 * Math.sin(t * 3.3) + 0.3 * (glowNow - 1));
   }
   function setLod(l) {
     lodL = l;
     for (const p of parts) p.obj.traverse((o) => { if (o.isMesh) o.castShadow = l === 0; });
-    if (capeU) capeU.uWind.value = l >= 2 ? 0 : 1;
+    if (cloth) { cloth.mesh.castShadow = l === 0; cloth.setWind(l >= 2 ? 0 : 1); }
     if (hairU) hairU.uWind.value = l >= 2 ? 0 : 1;
   }
-  // посох идёт за кулаком, но остаётся почти вертикальным (лёгкий наклон по предплечью): иначе при
-  // поднятой руке (зеркало рук игрока) он переворачивался бы вниз
-  const staffPart = parts.find((p) => p.staff);
-  let staffFree = false;
-  const _sm = new THREE.Matrix4(), _sx = new THREE.Vector3(), _sy = new THREE.Vector3(), _sz = new THREE.Vector3(), _spi = new THREE.Matrix4();
-  function followStaff(grip, forearm, fwd) {
-    if (!staffPart) return;
-    const obj = staffPart.obj;
-    if (!staffFree) { staffFree = true; (model || vrm.scene).attach(obj); }
-    _sy.copy(UP).addScaledVector(forearm, 0.35).normalize();
-    _sz.copy(fwd).addScaledVector(_sy, -fwd.dot(_sy)).normalize();
-    _sx.crossVectors(_sy, _sz).normalize();
-    _sm.makeBasis(_sx, _sy, _sz).setPosition(grip);
-    const par = obj.parent; par.updateWorldMatrix(true, false);
-    _sm.premultiply(_spi.copy(par.matrixWorld).invert());
-    _sm.decompose(obj.position, obj.quaternion, obj.scale);
-  }
 
-  // лук в левой руке (поза лука C5): отцепить от спины и держать рукоять в кулаке, тетивой к лучнику
-  const bowHome = bow ? { parent: bow.parent, pos: bow.position.clone(), quat: bow.quaternion.clone() } : null;
+  // лук в кулаке левой (поза лука C5): узел хвата heroModel (центр кулака, y — вдоль большого пальца,
+  // z — к лучнику); тетива — к пальцам правой по натяжению, стрела лежит на полке и смотрит в цель
+  const bowHome = bow ? { parent: bow.parent, pos: bow.position.clone(), quat: bow.quaternion.clone(), scale: bow.scale.clone() } : null;
   let bowHeld = false;
-  const _bm = new THREE.Matrix4(), _bx = new THREE.Vector3(), _by = new THREE.Vector3(), _bz = new THREE.Vector3(), _bp = new THREE.Vector3(), _pi = new THREE.Matrix4();
-  // тетива: две половины от кончиков к точке натяжения (в осях лука); без натяжения — прямая
-  const _nk = new THREE.Vector3(), _sd = new THREE.Vector3(), _sq = new THREE.Quaternion(), _sY = new THREE.Vector3(0, 1, 0), _inv = new THREE.Matrix4();
+  const _nk = new THREE.Vector3(), _sd = new THREE.Vector3(), _sq = new THREE.Quaternion(), _sY = new THREE.Vector3(0, 1, 0), _inv = new THREE.Matrix4(), _ws = new THREE.Vector3();
   function layString(nockLocal) {
     const S = bow && bow.userData.string;
     if (!S) return;
@@ -828,55 +811,73 @@ varying float vCapeT;`)
       seg.scale.set(1, L, 1);
     }
   }
-  if (bow) layString(_nk.set(0, 0, 0.035));
-  function setBowHeld(on, hand, aimDir, up, drawHand = null, draw = 0) {
+  if (bow) layString(bowRig.nockRest);
+  function setBowHeld(on, grip, nockNode = null, draw = 0) {
     if (!bow || !bowHome) return;
-    if (!on && bowHeld) layString(_nk.set(0, 0, 0.035));
-    if (on && !bowHeld) { bowHeld = true; (model || vrm.scene).attach(bow); }
-    if (!on && bowHeld) { bowHeld = false; bowHome.parent.add(bow); bow.position.copy(bowHome.pos); bow.quaternion.copy(bowHome.quat); return; }
-    if (!bowHeld || !hand || !aimDir) return;
-    // базис лука: y — плечи лука (вверх, чуть наклонены), z — к лучнику (против прицела)
-    _bz.copy(aimDir).negate().normalize();
-    _by.copy(up || UP).addScaledVector(_bz, -_bz.dot(up || UP)).normalize();
-    _by.applyAxisAngle(_bz, 0.18);                                   // лёгкий «кант» лука
-    _bx.crossVectors(_by, _bz).normalize();
-    hand.getWorldPosition(_bp);
-    _bp.addScaledVector(_bz, 0.165);                                 // рукоять (z = −0.165) — в кулаке
-    _bm.makeBasis(_bx, _by, _bz).setPosition(_bp);
-    const par = bow.parent; par.updateWorldMatrix(true, false);
-    _bm.premultiply(_pi.copy(par.matrixWorld).invert());
-    _bm.decompose(bow.position, bow.quaternion, bow.scale);
-    // натяжение: точка тетивы — к кулаку правой руки (не дальше 0,75 м от рукояти)
-    if (drawHand && draw > 0.04) {
+    if (!on) {
+      if (bowHeld) {
+        bowHeld = false;
+        bowHome.parent.add(bow); bow.position.copy(bowHome.pos); bow.quaternion.copy(bowHome.quat); bow.scale.copy(bowHome.scale);
+        layString(bowRig.nockRest);
+      }
+      if (arrow) arrow.visible = false;
+      return;
+    }
+    if (!grip) return;
+    if (!bowHeld || bow.parent !== grip) {
+      bowHeld = true;
+      grip.add(bow); bow.position.set(0, 0, 0); bow.quaternion.identity();
+      bow.scale.setScalar(1 / (grip.getWorldScale(_ws).x || 1));
+    }
+    if (nockNode && draw > 0.03) {
       bow.updateWorldMatrix(true, false);
-      drawHand.getWorldPosition(_nk);
+      nockNode.getWorldPosition(_nk);
       _nk.applyMatrix4(_inv.copy(bow.matrixWorld).invert());
-      _nk.x *= 0.3;
-      _nk.lerp(_sd.set(0, 0, 0.035), 1 - Math.min(1, draw * 1.2));
-      if (_nk.length() > 0.75) _nk.setLength(0.75);
+      _nk.x *= 0.25; _nk.y *= 0.4;                                     // тетива остаётся в плоскости лука
+      _nk.lerp(bowRig.nockRest, 1 - Math.min(1, draw * 1.25));
+      if (_nk.z < bowRig.nockRest.z) _nk.z = bowRig.nockRest.z;
+      if (_nk.length() > 0.78) _nk.setLength(0.78);
       layString(_nk);
-    } else layString(_nk.set(0, 0, 0.035));
+    } else { _nk.copy(bowRig.nockRest); layString(_nk); }
+    if (arrow) {
+      arrow.visible = draw > 0.03;
+      if (arrow.visible) {
+        // хвостовик — на тетиве, древко — через полку к цели
+        arrow.position.copy(_nk);
+        _sd.copy(bowRig.rest).sub(_nk).normalize();
+        arrow.quaternion.setFromUnitVectors(_sY, _sd);
+      }
+    }
   }
   function dispose() {
+    if (cloth) cloth.dispose();
     for (const p of parts) if (p.obj.parent) p.obj.parent.remove(p.obj);
+    if (bow && bow.parent) bow.parent.remove(bow);
     for (const g of owned.geo) g.dispose();
+    if (bowRig || staffRig) {
+      const extra = new Set();
+      for (const r of [bowRig && bowRig.group, staffRig && staffRig.group, arrow]) if (r) r.traverse((o) => { if (o.isMesh && o.geometry) extra.add(o.geometry); });
+      for (const g of extra) g.dispose();
+    }
     for (const m of owned.mat) { if (atmosphere && atmosphere.releaseEnv) { try { atmosphere.releaseEnv(m); } catch (e) { /* ignore */ } } m.dispose(); }
     parts.length = 0;
   }
-  void lodL;
   // качество: на 'low' — без sheen/clearcoat/anisotropy/transmission (дешёвый шейдер), выше — как было
-  const physSaved = owned.mat.filter((m) => m.isMeshPhysicalMaterial).map((m) => ({ m, v: { sheen: m.sheen, clearcoat: m.clearcoat, anisotropy: m.anisotropy, transmission: m.transmission } }));
-  // low — без всех четырёх; medium — только sheen (clearcoat/anisotropy/transmission — на 'high')
+  const physSaved = owned.mat.filter((m) => m.isMeshPhysicalMaterial).map((m) => ({ m, v: { sheen: m.sheen, clearcoat: m.clearcoat, anisotropy: m.anisotropy, transmission: m.transmission, iridescence: m.iridescence } }));
+  // low — без всех; medium — только sheen (clearcoat/anisotropy/transmission/iridescence — на 'high')
   let qTier = null;
   function setQuality(q) {
-    const t = q === 'low' || q === 'high' ? q : 'medium';
-    if (t === qTier) return;
-    qTier = t;
-    for (const { m, v } of physSaved) for (const k of Object.keys(v)) m[k] = t === 'high' || (t === 'medium' && k === 'sheen') ? v[k] : 0;
+    const tq = q === 'low' || q === 'high' ? q : 'medium';
+    if (tq === qTier) return;
+    qTier = tq;
+    for (const { m, v } of physSaved) for (const k of Object.keys(v)) m[k] = tq === 'high' || (tq === 'medium' && k === 'sheen') ? v[k] : 0;
   }
   setQuality(quality);
-  const glowBase = mats.glow.color.clone();
+  const glowBase = mats.glow.color.clone(), inlayBase = mats.inlay.color.clone();
   let glowNow = 1;
   function setGlow(k) { glowNow = k; }
-  return { names, staffTip, bow, setGlow, get glow() { return glowNow; }, followStaff: staffPart ? followStaff : null, update, setLod, setQuality, setShading() {}, setBowHeld, dispose, parts: () => parts.map((p) => p.obj.name) };
+  return {
+    names, staffTip, bow, cloth, setGlow, get glow() { return glowNow; }, update, setLod, setQuality, setShading() {}, setBowHeld, dispose,
+    parts: () => parts.map((p) => p.obj.name),
+  };
 }

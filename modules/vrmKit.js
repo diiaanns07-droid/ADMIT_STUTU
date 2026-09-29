@@ -119,15 +119,17 @@ const RIG = [
 ];
 
 // [HERO] KayKit: у скелета нет шеи и ключиц — они остаются в покое VRM.
+// Кисть: у KayKit wrist.r в клипах неподвижна, настоящий поворот запястья — у её дочерней hand.r
+// (6-е поле — кость, с которой берётся поворот; направление покоя — как прежде, wrist → hand).
 const RIG_KAYKIT = [
   ['hips', 'hips', 'delta'],
   ['spine', 'spine', 'delta'], ['chest', 'chest', 'delta'], ['head', 'head', 'delta'],
   ['leftUpperArm', 'upperarm.l', 'full', 'lowerarm.l', 'leftLowerArm'],
   ['leftLowerArm', 'lowerarm.l', 'full', 'wrist.l', 'leftHand'],
-  ['leftHand', 'wrist.l', 'full', 'hand.l', 'leftMiddleProximal'],
+  ['leftHand', 'wrist.l', 'full', 'hand.l', 'leftMiddleProximal', 'hand.l'],
   ['rightUpperArm', 'upperarm.r', 'full', 'lowerarm.r', 'rightLowerArm'],
   ['rightLowerArm', 'lowerarm.r', 'full', 'wrist.r', 'rightHand'],
-  ['rightHand', 'wrist.r', 'full', 'hand.r', 'rightMiddleProximal'],
+  ['rightHand', 'wrist.r', 'full', 'hand.r', 'rightMiddleProximal', 'hand.r'],
   ['leftUpperLeg', 'upperleg.l', 'full', 'lowerleg.l', 'leftLowerLeg'],
   ['leftLowerLeg', 'lowerleg.l', 'full', 'foot.l', 'leftFoot'],
   ['leftFoot', 'foot.l', 'full', 'toes.l', 'leftToes'],
@@ -136,7 +138,6 @@ const RIG_KAYKIT = [
   ['rightFoot', 'foot.r', 'full', 'toes.r', 'rightToes'],
 ];
 export const RIGS = Object.freeze({ mixamo: RIG, kaykit: RIG_KAYKIT });
-
 export function retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo') {
   const H = vrm.humanoid;
   const TABLE = RIGS[rig] || RIG;
@@ -149,10 +150,11 @@ export function retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo
   const wp = (o) => o.getWorldPosition(new THREE.Vector3());
   // покой: источник и VRM
   const bones = [];
-  for (const [vName, sName, mode, sChild, vChild] of TABLE) {
+  for (const [vName, sName, mode, sChild, vChild, sRot] of TABLE) {
     const node = H.getNormalizedBoneNode(vName), src = byName(sName);
     if (!node || !src) continue;
-    const b = { vName, node, src, mode, restSrcQ: wq(src), restVrmW: wq(node) };
+    const rot = (sRot && byName(sRot)) || src; // кость, с которой берётся поворот
+    const b = { vName, node, src, rot, mode, restSrcQ: wq(rot), restVrmW: wq(node) };
     if (mode === 'dir' || mode === 'full') {
       const sc = byName(sChild), vc = H.getNormalizedBoneNode(vChild);
       if (!sc || !vc) { b.mode = 'delta'; } else {
@@ -204,7 +206,7 @@ export function retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo
         w = new THREE.Quaternion().setFromUnitVectors(b.restVrmDir, dir).multiply(b.restVrmW);
       } else if (b.mode === 'full') {
         dq.copy(b.restSrcQ).invert();
-        w = wq(b.src).multiply(dq).multiply(b.alignW); // D(t)·A·W_rest
+        w = wq(b.rot).multiply(dq).multiply(b.alignW); // D(t)·A·W_rest
       } else {
         dq.copy(b.restSrcQ).invert();
         w = wq(b.src).multiply(dq).multiply(b.restVrmW); // D(t)·W_rest

@@ -210,7 +210,7 @@ export function createHeroModel({
   let cur = null;   // { model, vrm, mixer, full, upper, stride, gear, shade, bones }
   let act = null, actName = '', actUntil = 0, actUpper = false, holdName = '';
   let time = 0, lastStatus = '';
-  const pose = { bowDraw: 0, aimX: 0, aimY: 0, handSpell: 0, bowActive: false, w: 0, wBow: 0, wSpell: 0, draw: 0 };
+  const pose = { bowDraw: 0, aimX: 0, aimY: 0, handSpell: 0, bowActive: false, w: 0, wBow: 0, wSpell: 0, wStaff: 0, draw: 0 };
   const mirror = { data: null, w: 0 };
 
   // ---------------------------------------------------------------- якоря C5 (постоянные объекты)
@@ -343,12 +343,13 @@ export function createHeroModel({
       const bones = {};
       for (const n of ['hips', 'spine', 'chest', 'upperChest', 'neck', 'head', 'leftUpperArm', 'leftLowerArm', 'leftHand', 'rightUpperArm', 'rightLowerArm', 'rightHand', 'leftShoulder', 'rightShoulder']) bones[n] = nb(n);
       const midR = nb('rightMiddleProximal');
+      const hands = setupHands(vrm, wrapG);
       // кости без дорожек в клипах (у KayKit — шея, ключицы, верх груди): их сбрасываем в покой каждый
       // кадр, иначе дыхание и поза накапливались бы
       const tracked = new Set();
       for (const clip of Object.values(lib.clips)) for (const tr of clip.tracks) tracked.add(tr.name.split('.')[0]);
       const free = Object.values(bones).filter((b) => b && !tracked.has(b.name));
-      cur = { model: wrapG, vrm, mixer, full, upper, lower, midR, stride: lib.stride, loops: lib.loops, bones, free, scale: k, def, gear: null, shade: null, url };
+      cur = { model: wrapG, vrm, mixer, full, upper, lower, midR, stride: lib.stride, loops: lib.loops, bones, free, scale: k, def, gear: null, shade: null, url, hands, rig: lib.rig };
       // оболочка: реалистичные материалы (modules/heroShading.js) и снаряжение (modules/heroGear.js)
       await dressUp(token);
       if (S.disposed || token !== S.token) return;
@@ -369,6 +370,118 @@ export function createHeroModel({
   function disposeVrm(vrm) { import('@pixiv/three-vrm').then((V) => { try { V.VRMUtils.deepDispose(vrm.scene); } catch (e) { /* ignore */ } }).catch(() => {}); }
   // [HERO] модель не загрузилась: страж — процедурное тело мира, прочие — запасная модель
   void disposeVrm;
+
+  // ---------------------------------------------------------------- кисти: хват оружия и пальцы
+  // В покое нормализованного скелета (T-поза, ладони вниз) по костям кисти находим центр кулака и оси:
+  // древко (посох, рукоять лука) проходит сквозь кулак поперёк пальцев — вдоль оси «мизинец → большой палец».
+  // Узлы хвата (дети нормализованных кистей): y — к большому пальцу, z — к запястью, x = y × z.
+  //   правая — heroStaffGrip (посох), левая — heroBowGrip (лук: тетива к лучнику).
+  // (Клипы KayKit держат оружие «варежкой» вдоль предплечья — для настоящих пальцев это не годится.)
+  const FING = ['Index', 'Middle', 'Ring', 'Little'];
+  function setupHands(vrm, wrapG) {
+    const H = vrm.humanoid;
+    const nb = (n) => H.getNormalizedBoneNode(n);
+    if (H.resetNormalizedPose) H.resetNormalizedPose();
+    wrapG.updateWorldMatrix(true, true);
+    const wp = (o) => o.getWorldPosition(new THREE.Vector3());
+    const out = { left: null, right: null, bowGrip: null, staffGrip: null, nock: nb('rightMiddleIntermediate') || nb('rightIndexProximal') || nb('rightHand') };
+    const k = wrapG.getWorldScale(new THREE.Vector3()).x || 1;
+    for (const side of ['left', 'right']) {
+      const hand = nb(side + 'Hand');
+      if (!hand) continue;
+      const s = side === 'left' ? 1 : -1;
+      const fingers = FING.map((f) => ['Proximal', 'Intermediate', 'Distal'].map((j) => nb(`${side}${f}${j}`)));
+      const thumb = ['Metacarpal', 'Proximal', 'Distal'].map((j) => nb(`${side}Thumb${j}`));
+      const H0 = { side, s, hand, fingers, thumb, w: { relax: 1, grip: 0, hook: 0, open: 0 } };
+      const Ph = wp(hand), Pm = fingers[1][0] ? wp(fingers[1][0]) : Ph.clone().add(new THREE.Vector3(0.08 * s, 0, 0));
+      const Pi = fingers[0][0] ? wp(fingers[0][0]) : Pm, Pl = fingers[3][0] ? wp(fingers[3][0]) : Pm;
+      const d = Pm.clone().sub(Ph); const len = d.length(); d.normalize();
+      const across = Pi.clone().sub(Pl); if (across.lengthSq() < 1e-8) across.set(0, 0, 1);
+      across.addScaledVector(d, -across.dot(d)).normalize();             // к большому пальцу
+      const n = d.clone().cross(across).normalize(); if (n.y > 0) n.negate(); // ладонь (вниз в T-позе)
+      // центр кулака: у костяшек, на толщину пальцев к ладони
+      const c = Ph.clone().addScaledVector(d, len * 0.92).addScaledVector(n, 0.026 * k).addScaledVector(across, -0.004 * k);
+      H0.grip = hand.worldToLocal(c.clone());
+      // оси в покое (у нормализованных костей покой — единичный поворот: оси кисти = оси пальцев)
+      const inv = new THREE.Matrix4().copy(hand.matrixWorld).invert();
+      const dL = d.clone().transformDirection(inv), nL = n.clone().transformDirection(inv), aL = across.clone().transformDirection(inv);
+      H0.axCurl = dL.clone().cross(nL).normalize();       // палец → к ладони
+      H0.axSpread = dL.clone().cross(aL).normalize();     // палец → к большому
+      H0.axThFlex = aL.clone().cross(nL).normalize();     // большой → к ладони
+      H0.axThIn = aL.clone().cross(dL).normalize();       // большой → к пальцам
+      H0.dL = dL; H0.aL = aL; H0.nL = nL;
+      out[side] = H0;
+      const g = new THREE.Object3D(); g.name = side === 'left' ? 'heroBowGrip' : 'heroStaffGrip';
+      hand.add(g); g.position.copy(H0.grip);
+      const by = across.clone(), bz = d.clone().negate(), bx = by.clone().cross(bz).normalize();
+      const qW = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(bx, by, bz));
+      g.quaternion.copy(hand.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(qW));
+      if (side === 'left') out.bowGrip = g; else out.staffGrip = g;
+    }
+    return out;
+  }
+  // позы пальцев: сгиб [прокс., средн., дист.] для указательного…мизинца, развод пальцев, большой палец
+  // [сгиб к ладони, увод к пальцам, сгиб 2-й фаланги, сгиб 3-й]
+  const HAND_POSES = {
+    relax: { curl: [[0.22, 0.34, 0.2], [0.28, 0.42, 0.24], [0.34, 0.48, 0.26], [0.42, 0.52, 0.28]], spread: [0.08, 0.01, -0.05, -0.12], thumb: [0.28, 0.12, 0.22, 0.18] },
+    grip: { curl: [[1.3, 1.5, 0.9], [1.38, 1.55, 0.92], [1.45, 1.55, 0.92], [1.5, 1.5, 0.9]], spread: [0.03, 0, -0.03, -0.07], thumb: [0.75, 0.38, 0.5, 0.45] },
+    hook: { curl: [[0.4, 1.25, 0.85], [0.45, 1.3, 0.9], [0.55, 1.3, 0.85], [1.25, 1.45, 0.9]], spread: [0.05, 0, -0.04, -0.08], thumb: [0.65, 0.32, 0.6, 0.5] },
+    open: { curl: [[0.04, 0.08, 0.05], [0.05, 0.08, 0.05], [0.08, 0.1, 0.06], [0.1, 0.12, 0.08]], spread: [0.17, 0.02, -0.13, -0.26], thumb: [0.02, 0.32, 0.05, 0.05] },
+  };
+  const HP_KEYS = Object.keys(HAND_POSES);
+  const _fq = new THREE.Quaternion(), _fq2 = new THREE.Quaternion();
+  function applyFingers(dt, want) {
+    const hs = cur && cur.hands;
+    if (!hs) return;
+    const kf = 1 - Math.exp(-14 * dt);
+    for (const side of ['left', 'right']) {
+      const h = hs[side];
+      if (!h) continue;
+      const tw = want[side] || { relax: 1 };
+      let sum = 0;
+      for (const key of HP_KEYS) { h.w[key] += ((tw[key] || 0) - h.w[key]) * kf; sum += h.w[key]; }
+      sum = sum || 1;
+      for (let f = 0; f < 4; f++) {
+        let spread = 0;
+        const c = [0, 0, 0];
+        for (const key of HP_KEYS) {
+          const w = h.w[key] / sum;
+          if (w < 1e-4) continue;
+          const P = HAND_POSES[key];
+          spread += P.spread[f] * w;
+          for (let j = 0; j < 3; j++) c[j] += P.curl[f][j] * w;
+        }
+        for (let j = 0; j < 3; j++) {
+          const b = h.fingers[f][j];
+          if (!b) continue;
+          b.quaternion.setFromAxisAngle(h.axCurl, c[j]);
+          if (j === 0) b.quaternion.premultiply(_fq.setFromAxisAngle(h.axSpread, spread));
+        }
+      }
+      const t = [0, 0, 0, 0];
+      for (const key of HP_KEYS) { const w = h.w[key] / sum; if (w < 1e-4) continue; for (let j = 0; j < 4; j++) t[j] += HAND_POSES[key].thumb[j] * w; }
+      const [m, p, d] = h.thumb;
+      if (m) m.quaternion.setFromAxisAngle(h.axThFlex, t[0]).premultiply(_fq.setFromAxisAngle(h.axThIn, t[1]));
+      if (p) p.quaternion.setFromAxisAngle(h.axThFlex, t[2] * 0.6).premultiply(_fq2.setFromAxisAngle(h.axThIn, t[2] * 0.5));
+      if (d) d.quaternion.setFromAxisAngle(h.axThFlex, t[3] * 0.5).premultiply(_fq2.setFromAxisAngle(h.axThIn, t[3] * 0.6));
+    }
+  }
+  // чего хотят кисти в этом кадре: посох — кулак правой, лук — кулак левой и «крюк» правой, чары — ладони
+  const _hw = { left: { relax: 1 }, right: { relax: 1 } };
+  function handWants() {
+    const staff = !!(cur.gear && cur.gear.staffTip);
+    const bowHeld = !!pose.bowHeld;
+    const spell = pose.wSpell > 0.3 && pose.wBow < 0.5;
+    const L = _hw.left, R = _hw.right;
+    L.relax = 1; L.grip = 0; L.hook = 0; L.open = 0;
+    R.relax = 1; R.grip = 0; R.hook = 0; R.open = 0;
+    if (bowHeld) { L.relax = 0; L.grip = 1; }
+    else if (spell) { L.relax = 0; L.open = 1; }
+    if (staff) { R.relax = 0; R.grip = 1; }
+    else if (bowHeld) { const d = clamp(pose.draw * 3, 0, 1); R.relax = 1 - d; R.hook = d; }
+    else if (spell) { R.relax = 0; R.open = 1; }
+    return _hw;
+  }
 
   // перекраска атласа костюма (heroShading.recolorTexture) — у каждого экземпляра своя текстура
   async function recolorHero(vrm, rules) {
@@ -403,7 +516,7 @@ export function createHeroModel({
       const add = c.def.adduct ?? 0.22; // та же поза рук, что в игре (см. applyLife)
       adduct(c.bones.leftUpperArm, -add); adduct(c.bones.rightUpperArm, add);
       c.vrm.update(0);
-      c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null, fx: c.def.fx || null });
+      c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null, fx: c.def.fx || null, grips: c.hands ? { R: c.hands.staffGrip, L: c.hands.bowGrip } : null });
       if (c.full.Idle) c.full.Idle.stop();
     } catch (e) { console.warn('[HERO] heroGear недоступен, без снаряжения:', e && e.message); }
     // аура класса (частицы стихии в шейдере) — modules/heroAura.js
@@ -530,8 +643,30 @@ export function createHeroModel({
     bone.quaternion.slerp(_q, clamp(w, 0, 1));
     bone.updateWorldMatrix(false, false);
   }
+  // Кисть (нормализованная) развернуть: пальцы — по dirModel, большой палец — к thumbModel (оси героя).
+  const _ob1 = new THREE.Matrix4(), _ob2 = new THREE.Matrix4(), _obx = new THREE.Vector3(), _oby = new THREE.Vector3(), _obz = new THREE.Vector3();
+  function orientHand(h, dirModel, thumbModel, w) {
+    if (!h || !h.hand || w <= 0.001) return;
+    const bone = h.hand;
+    cur.vrm.scene.getWorldQuaternion(_qm);
+    _obx.copy(dirModel).normalize().applyQuaternion(_qm);
+    _oby.copy(thumbModel).applyQuaternion(_qm);
+    _oby.addScaledVector(_obx, -_oby.dot(_obx)).normalize();
+    _obz.crossVectors(_obx, _oby);
+    _ob1.makeBasis(_obx, _oby, _obz);                               // желаемые оси кисти в мире
+    // оси покоя в осях кисти (dL — к пальцам, aL — к большому): Q_мир = B(цель) · B(покой)ᵀ
+    _v.copy(h.dL); _v2.copy(h.aL).addScaledVector(h.dL, -h.aL.dot(h.dL)).normalize();
+    _rest.crossVectors(_v, _v2);
+    _ob2.makeBasis(_v, _v2, _rest).transpose().premultiply(_ob1);
+    _q.setFromRotationMatrix(_ob2);
+    bone.parent.updateWorldMatrix(true, false);
+    bone.parent.getWorldQuaternion(_q2);
+    _q.premultiply(_q2.invert());
+    bone.quaternion.slerp(_q, clamp(w, 0, 1));
+    bone.updateWorldMatrix(false, false);
+  }
   const RL = new THREE.Vector3(1, 0, 0), RR = new THREE.Vector3(-1, 0, 0);
-  const _aimV = new THREE.Vector3(), _upV = new THREE.Vector3();
+  const _upV = new THREE.Vector3();
   const dA = new THREE.Vector3(), dB = new THREE.Vector3();
   function applyPose(dt) {
     const B = cur.bones;
@@ -553,19 +688,32 @@ export function createHeroModel({
       aimBone(B.rightUpperArm, RR, dB, w);
       dB.set(0.2 + 0.9 * d, 0.1 + 0.1 * d + ay * 0.3, 1 - 0.6 * d); // предплечье: к тетиве → к щеке
       aimBone(B.rightLowerArm, RR, dB, w);
+      // кисть левой: костяшки по линии прицела, большой палец вверх — лук стоит вертикально с лёгким кантом
+      if (cur.hands) orientHand(cur.hands.left, dA, _upV.set(-0.22, 1, 0), w);
     }
-    // лук из-за спины — в левую руку (рукоять в кулаке, тетивой к лучнику)
+    // лук из-за спины — в кулак левой (узел хвата: рукоять в кулаке, тетивой к лучнику)
     if (cur.gear && cur.gear.setBowHeld && cur.gear.bow) {
       const held = pose.wBow > 0.35 || (pose.bowHeld && pose.wBow > 0.2);
       pose.bowHeld = held;
-      if (held) {
+      if (held && cur.hands && cur.hands.bowGrip) {
         cur.vrm.scene.updateMatrixWorld(true);
-        B.leftUpperArm.getWorldPosition(_v2);
-        anchors.handL.getWorldPosition(_aimV);
-        _aimV.sub(_v2).normalize();
-        cur.model.getWorldQuaternion(_qm); _upV.set(0, 1, 0);
-        cur.gear.setBowHeld(true, anchors.handL, _aimV, _upV, anchors.handR, pose.draw);
+        cur.gear.setBowHeld(true, cur.hands.bowGrip, cur.hands.nock, pose.draw);
       } else cur.gear.setBowHeld(false);
+    }
+    // посох: правая «несёт» его — плечо вниз, локоть согнут, предплечье вперёд, кулак большим пальцем вверх,
+    // древко стоит вертикально (на бегу — наклон вперёд и мах руки в такт шагу). Во время действий слой
+    // слабеет — посох идёт за кистью клипа (каст — навершием к цели, удар — взмах).
+    if (cur.gear && cur.gear.staffTip && cur.hands) {
+      const acting = !!act && holdName !== 'stance';
+      pose.wStaff += ((acting ? 0.12 : 1) - pose.wStaff) * kf(acting ? 12 : 5);
+      const w = pose.wStaff * (1 - pose.wBow) * (1 - pose.wSpell) * (1 - 0.85 * mirror.w);
+      if (w > 0.01) {
+        const mv = clamp(1 - S.wLoco.Idle, 0, 1), run = clamp(S.wLoco.Run + 0.6 * (S.wLoco.StrafeL + S.wLoco.StrafeR), 0, 1);
+        const sw = Math.sin(S.phase * Math.PI * 2) * 0.2 * mv;
+        aimBone(B.rightUpperArm, RR, dB.set(-0.16, -1, 0.14 + sw + 0.12 * run), w);
+        aimBone(B.rightLowerArm, RR, dB.set(-0.2, -0.32 + 0.22 * run, 1), w);
+        orientHand(cur.hands.right, dB.set(-0.1, -0.12, 1), _upV.set(-0.05, 1, 0.1 + 0.5 * run), w);
+      }
     }
     // чары рукой: обе ладони перед грудью, сфера между ними; с силой руки расходятся
     if (pose.wSpell > 0.01 && pose.wBow < 0.9) {
@@ -607,21 +755,6 @@ export function createHeroModel({
     // local' = P⁻¹ · R · P · local
     bone.quaternion.premultiply(_qp).premultiply(_qa).premultiply(_qp.invert());
   }
-  // посох за кулаком правой руки (по нормализованному скелету — поза этого кадра, без запаздывания)
-  const _g1 = new THREE.Vector3(), _g2 = new THREE.Vector3(), _g3 = new THREE.Vector3(), _gq = new THREE.Quaternion();
-  function staffFollow() {
-    const B = cur.bones;
-    if (!cur.gear || !cur.gear.followStaff || !B.rightHand || !B.rightLowerArm) return;
-    B.rightHand.updateWorldMatrix(true, false);
-    B.rightHand.getWorldPosition(_g1);
-    B.rightLowerArm.getWorldPosition(_g2);
-    if (cur.midR) { cur.midR.updateWorldMatrix(true, false); cur.midR.getWorldPosition(_g3); } else _g3.copy(_g1);
-    const fore = _g2.sub(_g1).negate().normalize();                   // локоть → кисть
-    const grip = _g3.sub(_g1).multiplyScalar(0.75).add(_g1);
-    cur.model.getWorldQuaternion(_gq);
-    cur.gear.followStaff(grip, fore, _g1.set(0, 0, 1).applyQuaternion(_gq));
-  }
-
   // дыхание, оглядывание в покое, доворот груди к цели
   function applyLife(dt, idle, twist) {
     const B = cur.bones;
@@ -696,7 +829,7 @@ export function createHeroModel({
       saveClean();
       applyLife(dt, true, 0);
       applyPose(dt);
-      staffFollow();
+      applyFingers(dt, handWants());
       vrmTick(dt);
       return;
     }
@@ -716,7 +849,7 @@ export function createHeroModel({
     if (dead || status === 'victory') {
       W.rotation.set(0, 0, 0);
       updateLoco(dt, 0, 0, 0, false);
-      cur.mixer.update(dt); saveClean(); staffFollow(); vrmTick(dt); return;
+      cur.mixer.update(dt); saveClean(); applyFingers(dt, handWants()); vrmTick(dt); return;
     }
 
     // скорость в осях героя (вперёд = +z, влево = +x)
@@ -804,7 +937,7 @@ export function createHeroModel({
     }
     applyLife(dt, !moving && !act, twist);
     applyPose(dt);
-    staffFollow();
+    applyFingers(dt, handWants());
     // жилы и аура: вспышка магии, при ранении — вздрог, при низком HP — мерцание и угасание
     S.flare = Math.max(0, (S.flare || 0) - dt * 2.2);
     S.hurt = Math.max(0, (S.hurt || 0) - dt * 3);
