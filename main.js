@@ -525,6 +525,7 @@ function openNet() {
             if (app.debug) startFight(); else setScreen('camera');
           },
           onLeave: () => { app.netInfo = null; if (pvpCtl && pvpCtl.active) pvpCtl.stop(true); },   // [PVP] соперник/лобби закрыты — дуэль кончилась
+          fxSupportsRemote: () => !!(effects && effects.supportsRemote),   // [NET] №7: true — эффекты сами рисуют события соперника
         },
       });
       return netSession;

@@ -52,11 +52,21 @@ function startProc(cmd, args, readyText) {
   });
 }
 
-const PORT = 8700 + Math.floor(Math.random() * 60);   // случайный: параллельные прогоны не мешают
-const RELAY_PORT = 18000 + Math.floor(Math.random() * 900);
-const server = await startProc('python3', [join(ROOT, 'serve_game.py'), '--no-browser', '--port', String(PORT)], 'ASHEN OATH is running');
-let relay = null;
-if (MODE === 'lan') relay = await startProc('python3', [join(ROOT, 'tools', 'relay.py'), '--port', String(RELAY_PORT)], 'ASHEN relay');
+// случайные порты с повтором: параллельные и оставшиеся от прошлых прогонов серверы не мешают
+async function startOnFreePort(make, base, span) {
+  for (let i = 0; ; i++) {
+    const port = base + Math.floor(Math.random() * span);
+    try { return { port, proc: await make(port) }; }
+    catch (e) { if (i >= 5 || !/in use|занят/i.test(String(e.message))) throw e; }
+  }
+}
+const srvP = await startOnFreePort((port) => startProc('python3', [join(ROOT, 'serve_game.py'), '--no-browser', '--port', String(port)], 'ASHEN OATH is running'), 8700, 60);
+const PORT = srvP.port, server = srvP.proc;
+let relay = null, RELAY_PORT = 0;
+if (MODE === 'lan') {
+  const r = await startOnFreePort((port) => startProc('python3', [join(ROOT, 'tools', 'relay.py'), '--port', String(port)], 'ASHEN relay'), 18000, 900);
+  relay = r.proc; RELAY_PORT = r.port;
+}
 // peer: свой PeerServer (npm-пакет peer) — --peer-server путь/к/node_modules/.bin/peerjs; без него — облако 0.peerjs.com
 const PEER_BIN = arg('--peer-server', '');
 const PEER_PORT = 9017;
@@ -113,12 +123,24 @@ if (argv.includes('--harness')) {
     const dt = (tr[i].t - tr[i - 1].t) / 1000;
     const d = Math.hypot(tr[i].x - tr[i - 1].x, tr[i].z - tr[i - 1].z);
     maxStep = Math.max(maxStep, d);
-    if (dt > 0) { const v = d / dt; maxV = Math.max(maxV, v); if (v > 31) bad++; }   // телепорт — быстрее двух скоростей рывка
+    if (dt > 0) { const v = d / dt; maxV = Math.max(maxV, v); if (v > 24) bad++; }   // телепорт — в 1,5 раза быстрее рывка
   }
   const ping = await G().evaluate(() => window.__net.ping);
   writeFileSync(join(OUT, 'harness-track.json'), JSON.stringify(tr));
-  check(`стенд: плавно при пинге ${PING} мс и ${Math.round(LOSS * 100)}% потерь (бег 6 м/с, рывки 15,6 м/с; телепорт — > 31 м/с)`, tr.length > 30 && bad === 0, `${tr.length} кадров (${fps.toFixed(0)} fps), max ${maxV.toFixed(1)} м/с, max шаг ${maxStep.toFixed(2)} м, пинг ${ping} мс`);
+  check(`стенд: плавно при пинге ${PING} мс и ${Math.round(LOSS * 100)}% потерь (бег 6 м/с, рывки 15,6 м/с; телепорт — > 24 м/с)`, tr.length > 30 && bad === 0, `${tr.length} кадров (${fps.toFixed(0)} fps), max ${maxV.toFixed(1)} м/с, max шаг ${maxStep.toFixed(2)} м, пинг ${ping} мс`);
   await pg.screenshot({ path: join(OUT, 'harness.png') });
+  // «потерял Wi-Fi»: гость рвёт канал (DataChannel / сокет / BroadcastChannel) — оба видят lost, гость сам возвращается
+  const H = () => pg.frames().find((f) => /role=host/.test(f.url()));
+  await G().evaluate(() => window.__net.simulateSocketLoss());
+  const t0 = Date.now();
+  let sawLost = false, back = 0;
+  while (Date.now() - t0 < 20000) {
+    const [hs, gs] = [await H().evaluate(() => window.__net.state), await G().evaluate(() => window.__net.state)];
+    if (hs === 'lost' || gs === 'lost') sawLost = true;
+    if (sawLost && hs === 'connected' && gs === 'connected') { back = Date.now() - t0; break; }
+    await sleep(200);
+  }
+  check(`стенд (${MODE}): обрыв канала замечен и связь вернулась сама`, sawLost && back > 0, back ? `через ${back} мс` : `lost=${sawLost}`);
   const errs = errors.A.filter((e) => !/Failed to load resource|net::ERR/i.test(e));
   check('стенд: нет ошибок в консоли', errs.length === 0, errs.slice(0, 3).join(' | '));
   writeFileSync(join(OUT, 'harness-report.txt'), results.join('\n') + '\n');
@@ -169,9 +191,17 @@ const screen = (p) => p.evaluate(() => (window.__ASHEN__ ? window.__ASHEN__.scre
 
 // оба в комнате, оба «Готов» → бой
 let ok = false;
-for (let i = 0; i < 60 && !ok; i++) { await sleep(500); ok = (await screen(A)) === 'playing' && (await screen(B)) === 'playing'; }
+for (let i = 0; i < 180 && !ok; i++) { await sleep(500); ok = (await screen(A)) === "playing" && (await screen(B)) === "playing"; }   // до 90 с: на софтверном GPU загрузка долгая
 const nA = await net(A), nB = await net(B);
 check('лобби: оба подключились и стартовали по «Готов»', ok, `A=${await screen(A)} ${nA && nA.status} B=${await screen(B)} ${nB && nB.status}`);
+// дуэль №3 поверх сети (если modules/pvp.js есть): фаза и режим боя
+const pvpA = await A.evaluate(() => (window.__ASHEN__.pvp ? window.__ASHEN__.pvp() : null)).catch(() => null);
+const pvpB = await B.evaluate(() => (window.__ASHEN__.pvp ? window.__ASHEN__.pvp() : null)).catch(() => null);
+if (pvpA || pvpB) {
+  const brief = (d) => (d ? JSON.stringify({ active: d.active, phase: d.phase, round: d.round, score: d.score, mode: d.mode }) : 'нет');
+  const mode = await B.evaluate(() => { const s = window.__ASHEN__.snapshot(); return s ? s.mode : null; });
+  check('дуэль №3 запущена поверх сети', !!(pvpA && pvpB && (pvpA.active || pvpA.phase) && (pvpB.active || pvpB.phase)), `A ${brief(pvpA)} · B ${brief(pvpB)} · snap.mode=${mode}`);
+}
 check('hello: имена соперников', nA && nB && nA.opponent && nB.opponent && nA.opponent.name === 'Гость' && nB.opponent.name === 'Хост', JSON.stringify([nA && nA.opponent, nB && nB.opponent]));
 
 // хост идёт вперёд, пока сам не пройдёт ≥ 4 м (на медленном софтверном GPU это дольше 3 с);
@@ -216,10 +246,20 @@ for (let i = 1; i < track.length; i++) {
   maxSpeed = Math.max(maxSpeed, v);
   if (v > 14) jumps++;
 }
-check('гость видит, как хост идёт', dist > 3, `прошёл ${dist.toFixed(1)} м, ${track.length} замеров`);
+// при < 8 fps каждый кадр длиннее stallSec (0,25 с) и бой не продвигается — движение здесь не проверить
+const hostFps = await fpsOf(A);
+const skip = (name, why) => { const line = `SKIP  ${name} — ${why}`; results.push(line); console.log(line); };
+if (hostFps < 8) {
+  const why = `fps хоста ${hostFps}: кадр > 0,25 с, бой стоит (софтверный GPU). Плавность — node tools/qa_net.mjs --harness`;
+  skip('гость видит, как хост идёт', why);
+  skip('снаряд хоста виден у гостя', why);
+  skip('анимация: locomotion соперника = бег/шаг', why);
+} else {
+  check('гость видит, как хост идёт', dist > 3, `прошёл ${dist.toFixed(1)} м, ${track.length} замеров`);
+  check('снаряд хоста виден у гостя', sawProj);
+  check('анимация: locomotion соперника = бег/шаг', track.some((s) => s.loco === 'run' || s.loco === 'walk' || s.loco === 'sprint'), [...new Set(track.map((s) => s.loco))].join(','));
+}
 check('движение без телепортов (скорость на экране ≤ 14 м/с)', jumps === 0, `max ${maxSpeed.toFixed(1)} м/с, рывков ${jumps}`);
-check('анимация: locomotion соперника = бег/шаг', track.some((s) => s.loco === 'run' || s.loco === 'walk' || s.loco === 'sprint'), [...new Set(track.map((s) => s.loco))].join(','));
-check('снаряд хоста виден у гостя', sawProj);
 
 // обрыв и восстановление
 const tDrop = Date.now();

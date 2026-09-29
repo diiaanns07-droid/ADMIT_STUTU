@@ -45,7 +45,11 @@ export function createNetLobby({ root, actions }) {
   for (const [m, b] of Object.entries(modeBtns)) b.addEventListener('click', () => A.mode && A.mode(m));
   const lanIn = el('input', { class: 'nl-input nl-input--mono', type: 'text', inputmode: 'decimal', placeholder: '192.168.1.23', spellcheck: 'false', 'aria-label': 'IP ноутбука-хоста' });
   const lanHint = el('p', { class: 'nl-hint' });
-  const lanBox = el('div', { class: 'nl-lan' }, el('label', { class: 'nl-label', text: 'IP ноутбука, где запущен ретранслятор' }), lanIn, lanHint);
+  const lanCheckBtn = el('button', { type: 'button', class: 'nl-btn nl-btn--small', text: 'Проверить' });
+  lanCheckBtn.addEventListener('click', () => A.checkLan && A.checkLan(lanIn.value));
+  const lanCheck = el('p', { class: 'nl-hint nl-lancheck', 'aria-live': 'polite' });
+  const lanBox = el('div', { class: 'nl-lan' }, el('label', { class: 'nl-label', text: 'IP ноутбука, где запущен ретранслятор' }),
+    el('div', { class: 'nl-joinrow' }, lanIn, lanCheckBtn), lanHint, lanCheck);
   const modeHint = el('p', { class: 'nl-hint nl-modehint' });
 
   const hostBtn = el('button', { type: 'button', class: 'nl-btn nl-btn--primary', text: 'Создать комнату' });
@@ -77,9 +81,11 @@ export function createNetLobby({ root, actions }) {
   const leaveBtn = el('button', { type: 'button', class: 'nl-btn nl-btn--quiet', text: 'Выйти из комнаты' });
   leaveBtn.addEventListener('click', () => A.leave && A.leave());
   const countdown = el('div', { class: 'nl-countdown', 'aria-live': 'assertive' });
+  const lanIpLine = el('div', { class: 'nl-lanip' });
   const roomBox = el('div', { class: 'nl-room' },
     el('div', { class: 'nl-code-label', text: 'Код комнаты' }),
     el('div', { class: 'nl-coderow' }, codeBig, copyBtn),
+    lanIpLine,
     el('div', { class: 'nl-vs' }, meCard, el('div', { class: 'nl-vs__sep', text: 'VS' }), oppCard),
     countdown,
     el('div', { class: 'nl-roomrow' }, readyBtn, leaveBtn));
@@ -161,6 +167,12 @@ export function createNetLobby({ root, actions }) {
       ? 'Эта страница открыта по https — браузер заблокирует ws:// (mixed content). Для LAN откройте игру у себя через «python serve_game.py» (http://127.0.0.1:8765).'
       : 'Пусто — ретранслятор на этом же ноутбуке (127.0.0.1). Порт 8790.';
     lanHint.classList.toggle('is-warn', !!v.https);
+    lanCheck.textContent = v.lanCheck || '';
+    lanCheck.hidden = !v.lanCheck;
+    lanCheckBtn.disabled = inRoom;
+    const ips = v.isHost && v.mode === 'lan' && Array.isArray(v.lanIps) && v.lanIps.length ? v.lanIps : null;
+    lanIpLine.hidden = !ips;
+    lanIpLine.textContent = ips ? `IP для соперника: ${ips.join('  или  ')}` : '';
     // до комнаты — кнопки, в комнате — код и готовность
     if (!inRoom && !codeIn.value && v.lastCode && document.activeElement !== codeIn) codeIn.value = v.lastCode; // прошлая комната
     actionsBox.hidden = inRoom;

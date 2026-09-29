@@ -278,7 +278,7 @@ export function createHandMagic(configPatch = {}) {
       out.sculpt = st.sculpt;
     }
     const p = st.pulse;
-    if (p && (!fin(t) || t - p.t <= cfg.pulseTtlMs)) {
+    if (p && (p.debug || !fin(t) || t - p.t <= cfg.pulseTtlMs)) {   // DEBUG-импульс (клавиша) не сгорает: кадры бывают редкими
       if (p.kind === 'throw') {
         out.phase = 'throw'; out.element = p.element; out.power = p.power; out.size = p.size; out.dir = p.dir; out.how = p.how;
         out.strength = p.strength; out.twoHand = p.twoHand; out.center = p.center;
@@ -313,7 +313,7 @@ export function createHandMagic(configPatch = {}) {
     const t = fin(now) ? now : st.lastT || 0;
     st.lastT = t;
     st.phase = 'form'; st.element = element; st.power = 0; st.size = cfg.sizeMin; st.since = t; st.bornAt = t;
-    st.pulse = { kind: 'form', t, element, power: 0 };
+    st.pulse = { kind: 'form', t, element, power: 0, debug: true };
     st.counters.forms++;
   }
   function forceTick(now, sculpt = 0) {
@@ -328,6 +328,7 @@ export function createHandMagic(configPatch = {}) {
   function forceThrow(now, dir = { x: 0, y: 0 }) {
     if (st.phase === 'idle') return;
     doThrow(fin(now) ? now : st.lastT || 0, dir, 'push', 1);
+    if (st.pulse) st.pulse.debug = true;
   }
 
   return {

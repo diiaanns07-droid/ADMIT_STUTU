@@ -2351,6 +2351,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     hand = createCombatHand({
       C, BOSS, get st() { return st; }, playerPos, playerChest, bossAim, toBossUnit, damageBoss, emit, deny,
       groundY: (x, z) => LAY.groundY(x, z),
+      get pvp() { return PV && PV.on ? PV : null; },   // [HAND] дуэль: стрелы/сгустки → PV.projectileHit со стихией (fx)
     });
   } catch (e) { hand = null; console.warn('[combat] combatHand недоступен', e); }
 

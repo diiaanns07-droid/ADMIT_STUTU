@@ -108,6 +108,10 @@ function frame(now) {
   dashT = Math.max(0, dashT - dt);
   P.velocity = { x: vx, z: vz };
   P.dashing = dashT > 0;
+  // авто-режим: щит (каждые 3 с на 1 с) и сгусток огня в руке — видно, что соперник их показывает
+  P.shielding = auto && role === 'host' && (t % 3) > 2;
+  P.handSpell = auto && role === 'host' && (t % 4) < 1.5 ? { phase: 'hold', element: ['fire', 'storm', 'frost', 'earth'][Math.floor(t / 4) % 4], power: 0.8, dir: { x: 0, y: 0 } } : null;
+  if (keys.has('KeyK')) P.shielding = true;
   const sp = Math.hypot(vx, vz);
   if (sp > 0.1) P.yaw = Math.atan2(vx, vz);
   P.locomotion = P.dashing ? 'dash' : sp > 4.2 ? 'run' : sp > 0.3 ? 'walk' : 'idle';
@@ -119,7 +123,7 @@ function frame(now) {
     while (events.length) { const x = encodeEvent(events.shift()); if (x) net.send('ev', { e: x }); }
   } else events.length = 0;
   if (inEv.length) remote.pushEvents(inEv.splice(0));
-  remote.update(dt);
+  remote.update(dt, now);
   const s = remote.getState();
   if (s) window.__track.push({ t: now, x: s.position.x, z: s.position.z, connected: s.connected });
   if (window.__track.length > 4000) window.__track.splice(0, 1000);

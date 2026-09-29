@@ -36,6 +36,9 @@ export const DEFAULT_BOW_CONFIG = Object.freeze({
   pinchOffExt: 0.62,       // …или больше этого при почти выпрямленном указательном (вылет ≥ pinchExtReach)
   pinchExtReach: 1.2,
   pinchOpenReach: 1.27,    // …или указательный выпрямлен совсем (у «ok» HaGRID вылет ≤ 1.22)
+  releaseFrames: 2,        // выстрел: щепоть разжата столько кадров подряд (шум трекинга у уха — не выстрел)…
+  releaseWide: 1.0,        //   …или сразу, если пальцы разошлись шире этого (/ длина ладони)
+  rightLostMs: 320,        // правая кисть у лица пропала не дольше — стрела остаётся наложенной
   pinchIndexMinReach: 0.8, // указательный в щепоти не загнут в кулак целиком…
   pinchIndexMaxReach: 1.26,//   …и не выпрямлен, как у открытой ладони
   pinchTight: 0.35,        // кончики совсем сомкнуты (у ладоней HaGRID ≥ 0.47) — щепоть и при почти прямом указательном…
@@ -378,7 +381,7 @@ export function createBowGesture(configPatch = {}) {
     }
     st.phase = st.fistSince !== null ? 'ready' : 'idle';
     st.nockSince = null; st.nockedAt = null; st.fullSince = null; st.charged = false;
-    st.draw = 0; st.drawRaw = 0; st.hist.length = 0; st.pinchClosed = false;
+    st.draw = 0; st.drawRaw = 0; st.hist.length = 0; st.pinchClosed = false; st.openFrames = 0;
   }
   function endStance(t) {
     if (st.phase === 'nocked' || st.phase === 'drawing') unnock(t, 'cancel');
@@ -449,13 +452,16 @@ export function createBowGesture(configPatch = {}) {
     if (st.phase === 'nocked' || st.phase === 'drawing') {
       if (!R) {
         if (st.rightLostAt === null) st.rightLostAt = t;
-        if (t - st.rightLostAt > cfg.lostGraceMs) unnock(t, 'cancel');
+        if (t - st.rightLostAt > cfg.rightLostMs) unnock(t, 'cancel');
+        st.openFrames = 0;
       } else {
         st.rightLostAt = null;
-        // разжатая щепоть — выстрел (или «опустил тетиву», если натяжения не было). Натяжение кадра
+        // разжатая щепоть — выстрел (или «опустил тетиву», если натяжения не было). Натяжение кадров
         // выпуска не считаем: у раскрытой кисти «щепоть» (середина большого и указательного) прыгает.
-        if (!isPinch(R, true)) fire(t);
-        else {
+        const open = !isPinch(R, true);
+        st.openFrames = open ? (st.openFrames || 0) + 1 : 0;
+        if (open && (st.openFrames >= cfg.releaseFrames || R.pinchD >= cfg.releaseWide)) fire(t);
+        else if (!open) {
           if (Lx) computeDraw(Lx, R, body, dt, frame);
           if (st.phase === 'nocked' && st.draw >= cfg.minDraw) st.phase = 'drawing';
           // полное натяжение → заряд
