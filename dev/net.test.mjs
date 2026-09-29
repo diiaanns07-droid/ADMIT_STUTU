@@ -202,7 +202,7 @@ await t('net local: hello, ping, st/ev, обрыв 3 с → lost → восст�
   assert.ok(await until(() => A.state === 'lost' && B.state === 'lost', 4500), log.join(' '));
   const dt = Date.now() - t0;
   // 3 с считаются от последнего полученного пакета (он мог прийти до 0,5 с раньше обрыва)
-  assert.ok(dt >= 2000 && dt <= 3500, `обнаружено за ${dt} мс`);
+  assert.ok(dt >= 2000 && dt <= 3800, `обнаружено за ${dt} мс`);   // 3 с тишины + шаг таймера 0,25 с + запас под нагрузкой
   // провод вернули — связь сама восстанавливается
   assert.ok(await until(() => A.state === 'connected' && B.state === 'connected', 5000), log.join(' '));
   // гость уходит — хост снова ждёт
@@ -219,6 +219,21 @@ await t('net local: hello, ping, st/ev, обрыв 3 с → lost → восст�
   assert.ok(await until(() => opened === 'Вера', 2000), `open: ${opened}`);
   B2.close();
   A.close();
+});
+await t('net local: фриз своей вкладки на 4 с (компиляция шейдеров) — не обрыв', async () => {
+  const A = createNet({ transport: 'local', name: 'A' });
+  const B = createNet({ transport: 'local', name: 'B' });
+  const code = await A.host();
+  await B.join(code);
+  assert.ok(await until(() => A.state === 'connected' && B.state === 'connected'));
+  const lost = [];
+  A.on('lost', () => lost.push('A')); B.on('lost', () => lost.push('B'));
+  const t0 = Date.now();
+  while (Date.now() - t0 < 4000) { /* главный поток занят, как при долгом кадре */ }
+  await sleep(1200);
+  assert.deepEqual(lost, [], 'ложный обрыв после фриза');
+  assert.equal(A.state, 'connected');
+  A.close(); B.close();
 });
 await t('net local: третий игрок в полную комнату не попадает', async () => {
   const A = createNet({ transport: 'local', name: 'A' });

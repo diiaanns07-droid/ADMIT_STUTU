@@ -81,7 +81,7 @@ export function createNet(opts = {}) {
     profile: { name: String(opts.name || 'Игрок'), hero: String(opts.hero || 'ashen') },
     remote: null,                // { name, hero, v }
     lastRecv: 0, pingTimer: null, watchTimer: null, rejoinTimer: null,
-    rtt: 0, rttSamples: [], offSamples: [], offset: 0, everOpen: false, closed: false,
+    rtt: 0, rttSamples: [], offSamples: [], offset: 0, everOpen: false, closed: false, silence: 0,
     joinOpts: null, sent: 0, recv: 0, bytesOut: 0, bytesIn: 0,
   };
 
@@ -103,6 +103,7 @@ export function createNet(opts = {}) {
     tr.onMessage = (msg) => {
       if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return;
       S.lastRecv = nowMs();
+      S.silence = 0;
       S.recv++;
       if (S.state === 'lost' && msg.t !== 'bye') { setState('connected'); emit('reconnected', S.remote); }
       switch (msg.t) {
@@ -130,6 +131,7 @@ export function createNet(opts = {}) {
     };
     tr.onPeerOpen = () => {
       S.lastRecv = nowMs();
+      S.silence = 0;
       rawSend({ t: 'hello', v: NET_VERSION, name: S.profile.name, hero: S.profile.hero });
       sendPing();
     };
@@ -189,19 +191,20 @@ export function createNet(opts = {}) {
     if (S.state !== 'connected') return;
     setState('lost');
     emit('lost', { reason: why });
-    if (!S.isHost) scheduleRejoin();
+    if (!S.isHost) scheduleRejoin(300);   // первая попытка — сразу, дальше каждые 2 с
   }
   function startTimers() {
     stopTimers();
     S.pingTimer = setInterval(() => { if (S.state === 'connected' || S.state === 'lost') sendPing(); }, PING_EVERY_MS);
     let lastWatch = nowMs();
+    S.silence = 0;
     S.watchTimer = setInterval(() => {
       const t = nowMs(), gap = t - lastWatch;
       lastWatch = t;
-      // своя вкладка «спала» (фриз на компиляции шейдеров, загрузка модели): пакеты соперника ещё
-      // в очереди — это не обрыв, отсчёт 3 с начинаем заново
-      if (gap > 1500) { S.lastRecv = Math.max(S.lastRecv, t - 1000); return; }
-      if (S.state === 'connected' && t - S.lastRecv > LOST_AFTER_MS) markLost('timeout');
+      // «время тишины»: фриз своей вкладки (шейдеры, загрузка модели) добавляет не больше 0,5 с —
+      // пакеты соперника за это время ещё лежат в очереди, это не обрыв
+      S.silence += Math.min(gap, 500);
+      if (S.state === 'connected' && S.silence > LOST_AFTER_MS) markLost('timeout');
     }, 250);
   }
   function stopTimers() {
@@ -210,7 +213,7 @@ export function createNet(opts = {}) {
   }
 
   // гость: тот же код, новые попытки каждые 2 с, пока не вернётся связь или не закроют
-  function scheduleRejoin() {
+  function scheduleRejoin(delayMs = 2000) {
     clearTimeout(S.rejoinTimer);
     S.rejoinTimer = setTimeout(async () => {
       if (S.closed || S.isHost || S.state !== 'lost') return;
@@ -219,7 +222,7 @@ export function createNet(opts = {}) {
         else if (S.tr) { try { S.tr.close(); } catch (e) { /* ignore */ } await openTransport(); await S.tr.join(S.code, S.joinOpts || {}); }
       } catch (e) { /* попробуем ещё */ }
       if (S.state === 'lost') scheduleRejoin();
-    }, 2000);
+    }, delayMs);
   }
 
   async function openTransport() {
