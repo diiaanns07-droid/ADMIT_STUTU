@@ -8,6 +8,8 @@ import { caster, runeCircle, handGlyph, gather, muzzle, fly, explosion, afterglo
 export function register(fx) {
   const V3 = fx.THREE.Vector3;
   const kit = fx.kit;
+  // player_cast {ability:'rune'} (main.js дублирует rune_cast) — у рун V6 своё накопление у ладони
+  fx.on('player_cast', () => true, (d) => d.ability === 'rune');
 
   // ------------------------------------------------------------ ▲ ИГНИС
   // Раскалённое ядро копья, спиральный огненный хвост, марево, взрыв с огненным кольцом и тлеющими углями.
@@ -65,13 +67,13 @@ export function register(fx) {
         onHit(p) {
           if (tr) tr.stop(); if (tr2) tr2.stop();
           if (haze && haze.kill) haze.kill();
-          explosion(fx, p, c.targetGround, 'fire', R, { scale: 1.15, shake: 0.38, hitstop: 65 });
+          explosion(fx, p, c.targetGround, 'fire', R, { scale: 1.35, shake: 0.38, hitstop: 65 });
           // огненное кольцо: языки пламени бегут по земле наружу
           kit.emit({ at: { x: c.targetGround.x, y: c.targetGround.y + 0.1, z: c.targetGround.z }, shape: 'ring', radius: 0.6, count: 46, radial: 6.5, speed: [0, 0.3], dir: { x: 0, y: 1, z: 0 }, cone: 0.1, life: [0.35, 0.6], size: [0.7, 0.25], ramp, intensity: 2.4, sprite: 'flame', rot: 0, drag: 3.2, gravity: -0.6, rival: R, essential: true });
           decal(fx, c.targetGround, 'scorch', 2.6, 'fire', R, { life: 9 });
           decal(fx, c.targetGround, 'crater', 1.5, 'fire', R, { life: 6 });
           afterglow(fx, p, 'fire', R, { radius: 1.1, count: 40, dur: 2.2, ramp: R ? 'rival' : 'ember' });
-          kit.screenFlash(R ? 0x9a6bff : 0xff8a3a, 0.08, 0.12);
+          kit.screenFlash(R ? 0x9a6bff : 0xff8a3a, 0.045, 0.12);
           fx.legacy.audio && fx.legacy.audio('burst', p);
         },
       });
@@ -111,7 +113,7 @@ export function register(fx) {
         kit.emit({ at: sky, shape: 'line', to: tgt, count: 60, speed: [0, 0.3], life: [0.1, 0.25], size: [0.2, 0.05], ramp: 'storm', intensity: 4, sprite: 'glow', essential: true, rival: R });
       }
       muzzle(fx, c.hand, c.dir, 'storm', R, { size: 0.9, count: 18 });
-      kit.screenFlash(R ? 0xb49cff : 0xdff2ff, 0.4, 0.09);
+      kit.screenFlash(R ? 0xb49cff : 0xdff2ff, 0.3, 0.08);
       kit.flash(tgt, { color: P.core, size: [1.2, 5.5], dur: 0.3, intensity: 5, sprite: 'star', pull: 0.8 });
       kit.flash(tgt, { color: P.mid, size: [1.5, 6], dur: 0.5, intensity: 2.2, sprite: 'glow', pull: 0.8 });
       kit.emit({ at: tgt, count: 90, speed: [4, 13], life: [0.3, 0.8], size: [0.06, 0.012], ramp: rampOf('storm', R), intensity: 3.6, sprite: 'spark', stretch: 0.04, gravity: 6, drag: 1.5, ground: c.targetGround.y + 0.03, essential: true, rival: R });

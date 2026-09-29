@@ -56,6 +56,14 @@ await page.route(/cdn\.jsdelivr\.net|fonts\.googleapis|fonts\.gstatic|storage\.g
   if (local && existsSync(local)) route.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8', body: await readFile(local) });
   else route.fulfill({ status: 404, body: '' });
 });
+// Время игры = фиксированный шаг 1/30 с на кадр rAF (SwiftShader рисует медленно, а main.js считает кадр > 0,25 с разрывом).
+await page.addInitScript(() => {
+  const raf = window.requestAnimationFrame.bind(window);
+  const pn = performance.now.bind(performance);
+  let t = pn();
+  performance.now = () => t;
+  window.requestAnimationFrame = (cb) => raf(() => { t += 1000 / 30; cb(t); });
+});
 await page.addInitScript(([q, nov6]) => { try { const k = 'ashen-oath.settings.v1'; const s = JSON.parse(localStorage.getItem(k) || '{}'); s.quality = q; s.fxMagic = !nov6; localStorage.setItem(k, JSON.stringify(s)); } catch (e) {} }, [QUALITY, argv.includes('--nov6')]);
 const click = (label) => page.evaluate((l) => { const b = [...document.querySelectorAll('button')].find((b) => b.offsetParent !== null && b.textContent.trim() === l); if (!b) return 'missing'; b.click(); return 'ok'; }, label);
 const shot = (n) => page.screenshot({ path: join(OUT, n + '.png') });
