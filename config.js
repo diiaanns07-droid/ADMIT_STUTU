@@ -138,6 +138,7 @@ export const config = {
     netName: '',            // [NET] имя в онлайн-дуэли (C1)
     fxMagic: true,          // [VFX] эффекты V6 (modules/fx): false — прежние эффекты effects.js
     bdoUi: true,            // [BDO] интерфейс в стиле Black Desert (false — прежний вид)
+    handCombat: true,       // [HAND] лук (левый кулак + правая щепоть) и магия рукой (сгусток в ладони); false — выключить
   },
 
   settings: null,            // заполняет main.js (живой объект)

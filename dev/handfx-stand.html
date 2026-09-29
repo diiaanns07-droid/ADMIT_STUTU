@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд hand FX — DEBUG / НЕ CV</title>
+<style>
+  :root { --gold: #c9a45c; --ember: #ff6a3c; --ink: #dfe8f5; --dim: #8d97a6; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #0b0d11; color: var(--ink); font: 13px/1.4 "Segoe UI", system-ui, sans-serif; }
+  body { padding: 12px 16px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+  h1 { margin: 0; font: 600 15px 'Palatino Linotype', Georgia, serif; letter-spacing: 0.14em; color: #efe6d2; }
+  .badge { font: 700 11px "Consolas", monospace; letter-spacing: 0.08em; color: #1a0c06; background: var(--ember); padding: 2px 7px; border-radius: 2px; }
+  .note { color: var(--dim); font-size: 11px; }
+  .note a { color: var(--gold); margin-right: 6px; }
+  .row { display: flex; align-items: flex-start; gap: 16px; }
+  figure { margin: 0; }
+  figcaption { font: 11px "Consolas", monospace; color: var(--dim); margin-top: 4px; }
+  /* Слот как .ao-camera-slot в игре: video и overlay абсолютно, inset 0, object-fit: contain. */
+  .slot { position: relative; overflow: hidden; background: #07080b; border: 1px solid #2a2419; }
+  .slot > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: contain; }
+  #full { width: 820px; height: 615px; }
+  #mini { width: 200px; height: 150px; }
+  #wide { width: 280px; height: 210px; }
+  #panel { font: 11px/1.5 "Consolas", monospace; color: var(--dim); white-space: pre; margin-top: 10px; }
+  #panel b { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>HAND FX</h1>
+  <span class="badge">DEBUG / НЕ CV</span>
+  <span class="note">
+    <a href="?scene=bow">bow</a><a href="?scene=fire">fire</a><a href="?scene=storm">storm</a><a href="?scene=frost">frost</a><a href="?scene=earth">earth</a><a href="?scene=two">two</a><a href="?scene=rain">rain</a>
+    · ?el=fire|storm|frost|earth · ?q=low|medium|high · ?rm=1 · ?t=сек (заморозить) · ?perf=1
+  </span>
+</header>
+<div class="row">
+  <figure><div class="slot" id="full"><canvas class="video"></canvas><canvas class="ov"></canvas></div><figcaption id="capFull">full · 820×615 · кадр 640×480</figcaption></figure>
+  <div>
+    <figure><div class="slot" id="mini"><canvas class="video"></canvas><canvas class="ov"></canvas></div><figcaption>mini · 200×150 (док боя)</figcaption></figure>
+    <figure style="margin-top:10px"><div class="slot" id="wide"><canvas class="video"></canvas><canvas class="ov"></canvas></div><figcaption>contain · кадр 16:9 в слоте 4:3</figcaption></figure>
+    <div id="panel">…</div>
+  </div>
+</div>
+<script type="module">
+import { createHandFxOverlay } from '../core/handFxOverlay.js';
+
+const Q = new URLSearchParams(location.search);
+const SCENE = Q.get('scene') || 'bow';
+const EL_PARAM = Q.get('el');
+const RM = Q.get('rm') === '1';
+const QUALITY = Q.get('q') || 'medium';
+const FREEZE = Q.has('t') ? Math.max(0, parseFloat(Q.get('t')) || 0) : null;
+const PERF = Q.get('perf') === '1';
+const settings = { quality: QUALITY, reducedMotion: RM };
+
+// предупреждения модуля (draw ловит исключения и пишет console.warn) — видны в панели
+let fxWarnings = 0;
+const origWarn = console.warn.bind(console);
+console.warn = (...a) => { if (String(a[0]).includes('[handFxOverlay]')) fxWarnings++; origWarn(...a); };
+
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const smooth = (a, b, t) => { const x = clamp((t - a) / (b - a), 0, 1); return x * x * (3 - 2 * x); };
+const lerp = (a, b, k) => a + (b - a) * k;
+
+// ---------------------------------------------------------------- синтетическая кисть (2D)
+// Локальные координаты: запястье (0,0), пальцы к −y, единица — запястье → MCP среднего. Раскладка — ПРАВАЯ
+// кисть ладонью к камере на зеркальном превью (большой палец к −x, к центру тела).
+const MCPL = [[-0.34, -0.93], [-0.08, -1.0], [0.17, -0.95], [0.38, -0.83]];
+const SEGS = [[0.40, 0.24, 0.2], [0.45, 0.27, 0.21], [0.42, 0.26, 0.2], [0.33, 0.2, 0.18]];
+const SPLAY = [-0.12, 0, 0.1, 0.22];
+const FLEX = [70, 95, 65].map((d) => d * Math.PI / 180);
+const THUMB = {
+  out: [[-0.24, -0.2], [-0.47, -0.38], [-0.62, -0.56], [-0.74, -0.72]],
+  in: [[-0.24, -0.2], [-0.42, -0.42], [-0.34, -0.64], [-0.12, -0.72]],
+};
+function hand2D(o) {
+  const side = o.side || 'right', curl = o.curl || [0, 0, 0, 0], spread = o.spread ?? 1, aspect = o.aspect || 4 / 3;
+  const L = new Array(21);
+  L[0] = [0, 0];
+  for (let f = 0; f < 4; f++) {
+    let x = MCPL[f][0] * (0.9 + 0.1 * spread), y = MCPL[f][1];
+    L[5 + f * 4] = [x, y];
+    const ang = SPLAY[f] * spread;
+    let phi = 0;
+    for (let j = 0; j < 3; j++) {
+      phi += curl[f] * FLEX[j];
+      const l = SEGS[f][j];
+      x += Math.sin(ang) * l * Math.cos(phi) * (phi > Math.PI / 2 ? 0.6 : 1);
+      y += -Math.cos(ang) * l * Math.cos(phi);
+      L[6 + f * 4 + j] = [x, y];
+    }
+  }
+  const th = o.thumb === 'in' ? THUMB.in : THUMB.out;
+  for (let j = 0; j < 4; j++) L[1 + j] = [th[j][0], th[j][1]];
+  if (o.thumb === 'pinch') {
+    const tip = L[8];
+    L[4] = [tip[0] - 0.03, tip[1] + 0.04];
+    L[3] = [(L[2][0] + L[4][0]) / 2 - 0.1, (L[2][1] + L[4][1]) / 2 + 0.02];
+  }
+  const c = Math.cos(o.rot || 0), s = Math.sin(o.rot || 0), mx = side === 'left' ? -1 : 1;
+  const R = L.map(([x, y]) => { x *= mx; return [x * c - y * s, x * s + y * c]; });
+  let pcx = 0, pcy = 0;
+  for (const k of [0, 5, 9, 13, 17]) { pcx += R[k][0] / 5; pcy += R[k][1] / 5; }
+  const sc = o.s || 0.1;
+  const lm = R.map(([x, y]) => ({ x: o.cx + (x - pcx) * sc / aspect, y: o.cy + (y - pcy) * sc }));
+  return finishHand(lm, o.shape || 'other', o.normal || null, aspect);
+}
+function finishHand(lm, shape, normal, aspect) {
+  let cx = 0, cy = 0;
+  for (const k of [0, 5, 9, 13, 17]) { cx += lm[k].x / 5; cy += lm[k].y / 5; }
+  const scale = Math.hypot((lm[9].x - lm[0].x) * aspect, lm[9].y - lm[0].y);
+  return { lm, center: { x: cx, y: cy }, pinch: { x: (lm[4].x + lm[8].x) / 2, y: (lm[4].y + lm[8].y) / 2 }, scale, shape, normal };
+}
+function shiftHand(h, dx, dy) {
+  for (const p of h.lm) { p.x += dx; p.y += dy; }
+  h.center.x += dx; h.center.y += dy; h.pinch.x += dx; h.pinch.y += dy;
+  return h;
+}
+
+// ---------------------------------------------------------------- сценарии
+const ELS = [null, 'fire', 'storm', 'frost', 'earth'];
+const BOW_LOOP = 4.4, SPELL_LOOP = 5.2;
+function elFor(loop, spell) {
+  if (EL_PARAM) return EL_PARAM === 'none' ? null : EL_PARAM;
+  if (spell) return ELS[1 + (loop % 4)];
+  return ELS[loop % 5];
+}
+
+function bowScene(T, aspect, prevT) {
+  const loop = Math.floor(T / BOW_LOOP), t = T - loop * BOW_LOOP, tp = prevT - loop * BOW_LOOP;
+  const rain = SCENE === 'rain';
+  const el = rain ? (EL_PARAM || null) : elFor(loop, false);
+  const sway = Math.sin(T * 1.3) * 0.006;
+  const up = rain ? 0.12 : 0;
+  const LF = { x: 0.3 + (rain ? 0.08 : 0), y: 0.5 + sway - up };
+  const left = hand2D({ side: 'left', cx: LF.x, cy: LF.y, s: 0.1, rot: Math.PI / 2 - 0.35 - (rain ? 0.7 : 0), curl: [1, 1, 1, 1], thumb: 'in', shape: 'fist', aspect });
+  let phase = 'ready', draw = 0, charged = false, release = false;
+  if (t >= 0.5 && t < 0.7) phase = 'nocked';
+  else if (t >= 0.7 && t < 3.4) { phase = 'drawing'; draw = smooth(0.7, 2.6, t); charged = t > 2.9; }
+  if (t >= 3.4 && tp < 3.4) release = true;
+  let right;
+  const rot = -Math.PI / 2 - 0.12 - (rain ? 0.55 : 0);
+  if (phase === 'nocked' || phase === 'drawing') {
+    const px = LF.x + 0.09 + 0.3 * draw + (rain ? -0.05 * draw : 0), py = LF.y - 0.01 - 0.03 * draw + (rain ? 0.22 * draw : 0);
+    right = hand2D({ side: 'right', cx: 0.5, cy: 0.5, s: 0.095, rot, curl: [0.45, 0.78, 0.86, 0.9], thumb: 'pinch', shape: 'pinch', aspect });
+    shiftHand(right, px - right.pinch.x, py - right.pinch.y);
+  } else {
+    const k = t < 0.5 ? smooth(0, 0.5, t) : 1 - smooth(3.4, 4.2, t) * 0.6;
+    const cx = t < 0.5 ? lerp(0.72, 0.48, k) : lerp(0.72, LF.x + 0.4, k);
+    right = hand2D({ side: 'right', cx, cy: 0.5 + (rain ? 0.08 : 0), s: 0.095, rot: rot + 0.3, curl: [0.1, 0.15, 0.2, 0.25], thumb: 'out', shape: 'open', aspect });
+  }
+  const aimY = rain ? 0.8 : 0.1;
+  return {
+    hands: { left, right },
+    bow: { active: true, phase, draw, aimX: -0.2, aimY, charged, element: el, release, rain: release && rain },
+    spell: { phase: 'idle' },
+    info: `bow · ${phase} · draw ${draw.toFixed(2)}${charged ? ' · CHARGED' : ''} · el ${el || 'none'}${release ? ' · RELEASE' : ''}`,
+  };
+}
+
+function spellScene(T, aspect, prevT) {
+  const loop = Math.floor(T / SPELL_LOOP), t = T - loop * SPELL_LOOP, tp = prevT - loop * SPELL_LOOP;
+  const two = SCENE === 'two';
+  const el = SCENE === 'fire' || SCENE === 'storm' || SCENE === 'frost' || SCENE === 'earth' ? SCENE : elFor(loop, true);
+  let phase = 'idle', power = 0, size = 0.3;
+  if (t >= 0.4 && t < 0.66) phase = 'form';
+  else if (t >= 0.66 && t < 4.2) { phase = 'hold'; power = clamp((t - 0.66) / 1.5, 0, 1); size = 0.3 + 0.7 * clamp((t - 0.66) / 2.0, 0, 1); }
+  if (t >= 4.2 && tp < 4.2) phase = 'throw';
+  const sx = Math.sin(T * 1.3) * 0.012, sy = Math.sin(T * 1.7) * 0.01;
+  let right, left = null;
+  if (two) {
+    right = hand2D({ side: 'right', cx: 0.63 + sx, cy: 0.58 + sy, s: 0.11, rot: -0.25, curl: [0.2, 0.2, 0.25, 0.3], thumb: 'out', shape: 'open', normal: { x: -0.8, y: -0.3, z: 0.4 }, aspect });
+    left = hand2D({ side: 'left', cx: 0.36 - sx, cy: 0.6 + sy, s: 0.11, rot: 0.25, curl: [0.2, 0.2, 0.25, 0.3], thumb: 'out', shape: 'open', normal: { x: 0.8, y: -0.3, z: 0.4 }, aspect });
+  } else if (el === 'storm') {
+    right = hand2D({ side: 'right', cx: 0.62 + sx, cy: 0.6 + sy, s: 0.12, rot: -0.3, curl: [0.5, 0.45, 0.5, 0.55], thumb: 'out', spread: 1.6, shape: 'claw', normal: { x: 0, y: -0.2, z: 0.9 }, aspect });
+  } else if (el === 'earth') {
+    right = hand2D({ side: 'right', cx: 0.62 + sx, cy: 0.64 + sy, s: 0.11, rot: -0.4, curl: [1, 1, 1, 1], thumb: 'in', shape: 'fist', normal: { x: 0, y: -0.8, z: 0.3 }, aspect });
+  } else if (el === 'frost') {
+    right = hand2D({ side: 'right', cx: 0.62 + sx, cy: 0.5 + sy, s: 0.11, rot: -1.1, curl: [0.15, 0.12, 0.15, 0.2], thumb: 'out', spread: 1.2, shape: 'open', normal: { x: 0, y: 0.8, z: 0.3 }, aspect });
+  } else {
+    right = hand2D({ side: 'right', cx: 0.62 + sx, cy: 0.64 + sy, s: 0.11, rot: -0.35, curl: [0.18, 0.14, 0.18, 0.24], thumb: 'out', spread: 1.1, shape: 'open', normal: { x: 0, y: -0.85, z: 0.25 }, aspect });
+  }
+  return {
+    hands: { left, right },
+    bow: { active: false, phase: 'idle' },
+    spell: { phase, element: el, power, size, twoHand: two && phase !== 'idle', dir: { x: -0.35, y: 0.94 } },
+    info: `spell · ${phase} · ${el} · power ${power.toFixed(2)} · size ${size.toFixed(2)}${two ? ' · twoHand' : ''}`,
+  };
+}
+
+function scene(T, aspect, prevT) {
+  return SCENE === 'bow' || SCENE === 'rain' ? bowScene(T, aspect, prevT) : spellScene(T, aspect, prevT);
+}
+
+// ---------------------------------------------------------------- «камера»: тусклый кадр с силуэтом и кистями
+const SKIN = '#7d5d4b', SKIN_D = '#5c4337', SLEEVE = '#231d1a';
+function makeBackdrop(W, H) {
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const bg = g.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#1c1a18'); bg.addColorStop(1, '#0b0a09');
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  const win = g.createRadialGradient(W * 0.85, H * 0.15, 0, W * 0.85, H * 0.15, H * 0.8);
+  win.addColorStop(0, 'rgba(70,78,92,0.35)'); win.addColorStop(1, 'rgba(70,78,92,0)');
+  g.fillStyle = win; g.fillRect(0, 0, W, H);
+  g.fillStyle = 'rgba(40,36,32,0.6)'; g.fillRect(W * 0.06, H * 0.12, W * 0.16, H * 0.5);   // шкаф
+  // корпус и голова
+  g.fillStyle = '#1d1917';
+  g.beginPath(); g.moveTo(W * 0.3, H); g.bezierCurveTo(W * 0.3, H * 0.72, W * 0.36, H * 0.64, W * 0.5, H * 0.63);
+  g.bezierCurveTo(W * 0.64, H * 0.64, W * 0.7, H * 0.72, W * 0.7, H); g.fill();
+  g.fillStyle = '#3d2f28'; g.fillRect(W * 0.47, H * 0.5, W * 0.06, H * 0.14);
+  const face = g.createRadialGradient(W * 0.49, H * 0.34, 4, W * 0.5, H * 0.37, H * 0.13);
+  face.addColorStop(0, '#6b5245'); face.addColorStop(1, '#3a2c25');
+  g.fillStyle = face; g.beginPath(); g.ellipse(W * 0.5, H * 0.37, H * 0.085, H * 0.115, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#161210'; g.beginPath(); g.ellipse(W * 0.5, H * 0.29, H * 0.095, H * 0.07, 0, Math.PI, 0); g.fill();
+  // шум сенсора и виньетка
+  const img = g.getImageData(0, 0, W, H), d = img.data;
+  let s = 99;
+  for (let i = 0; i < d.length; i += 4) { s = (s * 16807) % 2147483647; const n = (s / 2147483647 - 0.5) * 14; d[i] += n; d[i + 1] += n; d[i + 2] += n; }
+  g.putImageData(img, 0, 0);
+  const vg = g.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.85);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.6)');
+  g.fillStyle = vg; g.fillRect(0, 0, W, H);
+  return c;
+}
+const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [5, 6], [6, 7], [7, 8], [9, 10], [10, 11], [11, 12], [13, 14], [14, 15], [15, 16], [17, 18], [18, 19], [19, 20], [0, 5], [5, 9], [9, 13], [13, 17], [0, 17]];
+function drawVideoHand(g, h, W, H, shoulderX) {
+  if (!h) return;
+  const P = (i) => [h.lm[i].x * W, h.lm[i].y * H];
+  const s = h.scale * H;
+  // рука от плеча
+  const w0 = P(0), sh = [shoulderX * W, H * 0.7], el = [(w0[0] + sh[0]) / 2 + (shoulderX < 0.5 ? -1 : 1) * H * 0.05, Math.max(w0[1], sh[1]) + H * 0.08];
+  g.strokeStyle = SLEEVE; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.lineWidth = s * 0.75; g.beginPath(); g.moveTo(...sh); g.lineTo(...el); g.lineTo(...w0); g.stroke();
+  g.strokeStyle = SKIN_D; g.lineWidth = s * 0.55; g.beginPath(); g.moveTo(el[0] * 0.3 + w0[0] * 0.7, el[1] * 0.3 + w0[1] * 0.7); g.lineTo(...w0); g.stroke();
+  // ладонь
+  g.fillStyle = SKIN; g.beginPath();
+  for (const k of [0, 1, 2, 5, 9, 13, 17]) { const p = P(k); k ? g.lineTo(...p) : g.moveTo(...p); }
+  g.closePath(); g.fill();
+  g.strokeStyle = SKIN; g.lineWidth = s * 0.3; g.stroke();
+  for (let f = 0; f < 5; f++) {
+    const b = f === 0 ? 1 : f * 4 + 1;
+    g.lineWidth = s * (f === 0 ? 0.26 : f === 4 ? 0.19 : 0.22);
+    g.beginPath(); g.moveTo(...P(b)); for (let j = 1; j < 4; j++) g.lineTo(...P(b + j)); g.stroke();
+  }
+}
+function drawVideo(cv, data, W, H, backdrop) {
+  const g = cv.getContext('2d');
+  g.filter = 'none';
+  g.drawImage(backdrop, 0, 0);
+  g.filter = 'blur(1.2px)';
+  drawVideoHand(g, data.hands.left, W, H, 0.4);
+  drawVideoHand(g, data.hands.right, W, H, 0.6);
+  g.filter = 'none';
+  g.fillStyle = 'rgba(10,8,6,0.18)'; g.fillRect(0, 0, W, H);
+}
+
+// ---------------------------------------------------------------- HUD-эмуляция (как trackingHud: resize + clear + тонкий скелет)
+function hudPass(ov, fwh, data, mini) {
+  const cw = ov.clientWidth | 0, ch = ov.clientHeight | 0;
+  const d = Math.min(2, Math.max(0.5, window.devicePixelRatio || 1));
+  const bw = Math.round(cw * d), bh = Math.round(ch * d);
+  if (ov.width !== bw || ov.height !== bh) { ov.width = bw; ov.height = bh; }
+  const g = ov.getContext('2d');
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+  g.clearRect(0, 0, bw, bh);
+  g.setTransform(d, 0, 0, d, 0, 0);
+  const a = fwh[0] / fwh[1];
+  let rx, ry, rw, rh;
+  if (cw / ch > a) { rh = ch; rw = ch * a; rx = (cw - rw) / 2; ry = 0; } else { rw = cw; rh = cw / a; rx = 0; ry = (ch - rh) / 2; }
+  g.strokeStyle = 'rgba(201,164,92,0.32)'; g.lineWidth = mini ? 0.6 : 1;
+  for (const h of [data.hands.left, data.hands.right]) {
+    if (!h) continue;
+    g.beginPath();
+    for (const [i, j] of BONES) { g.moveTo(rx + h.lm[i].x * rw, ry + h.lm[i].y * rh); g.lineTo(rx + h.lm[j].x * rw, ry + h.lm[j].y * rh); }
+    g.stroke();
+  }
+  return g;
+}
+
+// ---------------------------------------------------------------- слоты
+const SLOTS = [
+  { id: 'full', mode: 'full', fw: 640, fh: 480 },
+  { id: 'mini', mode: 'mini', fw: 640, fh: 480 },
+  { id: 'wide', mode: 'full', fw: 640, fh: 360 },
+].map((s) => {
+  const el = document.getElementById(s.id);
+  const video = el.querySelector('canvas.video'), ov = el.querySelector('canvas.ov');
+  video.width = s.fw; video.height = s.fh;
+  return { ...s, video, ov, fx: createHandFxOverlay({ canvas: ov }), backdrop: makeBackdrop(s.fw, s.fh), last: null };
+});
+
+const panel = document.getElementById('panel');
+let prevT = -1;
+function render(T, withVideo) {
+  let info = '';
+  for (const s of SLOTS) {
+    const data = scene(T, s.fw / s.fh, prevT);
+    data.settings = settings; data.mode = s.mode; data.pose = { frameW: s.fw, frameH: s.fh };
+    hudPass(s.ov, [s.fw, s.fh], data, s.mode === 'mini');
+    s.fx.draw(10000 + T * 1000, data);
+    if (withVideo) drawVideo(s.video, data, s.fw, s.fh, s.backdrop);
+    info = data.info;
+  }
+  prevT = T;
+  return info;
+}
+
+// ---------------------------------------------------------------- perf: время draw() на 300 кадрах
+function perfRun() {
+  const out = {};
+  for (const q of ['low', 'medium', 'high']) {
+    for (const mode of ['full', 'mini']) {
+      const s = mode === 'mini' ? SLOTS[1] : SLOTS[0];   // mini — настоящий canvas дока 200×150
+      const fx = createHandFxOverlay({ canvas: s.ov });
+      const st = { quality: q, reducedMotion: false };
+      let tDraw = 0, tFlush = 0, tBase = 0, maxDraw = 0, pt = 0.5;
+      const g = s.ov.getContext('2d', { willReadFrequently: false });
+      for (let i = 0; i < 360; i++) {
+        const T = 0.5 + i / 60;
+        const data = scene(T, 4 / 3, pt); pt = T;
+        data.settings = st; data.mode = mode; data.pose = { frameW: 640, frameH: 480 };
+        hudPass(s.ov, [640, 480], data, mode === 'mini');
+        const b0 = performance.now(); g.getImageData(0, 0, 1, 1); const b1 = performance.now();
+        hudPass(s.ov, [640, 480], data, mode === 'mini');
+        const t0 = performance.now();
+        fx.draw(10000 + T * 1000, data);
+        const t1 = performance.now();
+        g.getImageData(0, 0, 1, 1);
+        const t2 = performance.now();
+        if (i >= 60) { tDraw += t1 - t0; tFlush += t2 - t0; tBase += b1 - b0; if (t1 - t0 > maxDraw) maxDraw = t1 - t0; }
+      }
+      fx.dispose();
+      out[q + '/' + mode] = { drawMs: +(tDraw / 300).toFixed(3), maxDrawMs: +maxDraw.toFixed(3), drawPlusRasterMs: +((tFlush - tBase) / 300).toFixed(3) };
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- fuzz: мусорные входы не должны бросать
+function fuzz() {
+  // отдельный невидимый для глаза canvas (за экраном), чтобы мусор не рисовался в слотах
+  const cv = document.createElement('canvas');
+  cv.style.cssText = 'position:absolute;left:-400px;top:0;width:120px;height:90px';
+  document.body.appendChild(cv);
+  const fx = createHandFxOverlay({ canvas: cv });
+  const junk = [null, undefined, 0, 'x', {}, { hands: null }, { hands: { left: {}, right: { lm: [1, 2] } } },
+    { hands: { right: { center: { x: NaN, y: 1 }, scale: -1 } }, spell: { phase: 'hold', element: 'wat', size: 9 } },
+    { hands: { left: { center: { x: 0.3, y: 0.5 } }, right: { pinch: { x: 0.5, y: 0.5 } } }, bow: { phase: 'drawing', draw: 'a', release: true, rain: true } },
+    { spell: { phase: 'throw', dir: null } }, { bow: { release: true } }, { pose: { frameW: -5 }, mode: 'mini', settings: { quality: 'ultra' } }];
+  let errs = 0;
+  const ow = console.warn; console.warn = () => { errs++; };
+  try { junk.forEach((d, i) => { try { fx.draw(i * 16, d); } catch (e) { errs += 100; } }); fx.draw(NaN, junk[8]); fx.clear(); fx.dispose(); fx.draw(0, junk[8]); }
+  finally { console.warn = ow; }
+  return errs;
+}
+
+// ---------------------------------------------------------------- запуск
+if (PERF) {
+  const res = perfRun();
+  window.__perf = res;
+  panel.innerHTML = '<b>perf (300 кадров, scene ' + SCENE + ')</b>\n' + Object.entries(res).map(([k, v]) => `${k.padEnd(12)} draw ${v.drawMs.toFixed(3)} ms · max ${v.maxDrawMs.toFixed(2)} · +raster ${v.drawPlusRasterMs.toFixed(3)}`).join('\n');
+  render(1.5, true);
+  window.__ready = true;
+} else if (FREEZE !== null) {
+  const t0 = Math.max(0, FREEZE - 1.6);
+  prevT = t0 - 1 / 60;
+  for (let T = t0; T < FREEZE; T += 1 / 60) render(T, false);
+  const info = render(FREEZE, true);
+  const errs = fuzz();
+  panel.innerHTML = `<b>${info}</b>\nt = ${FREEZE.toFixed(2)} s (заморожено) · q ${QUALITY}${RM ? ' · reducedMotion' : ''}\nfuzz warnings: ${errs} · draw warnings: ${fxWarnings}`;
+  window.__ready = true;
+} else {
+  const start = performance.now();
+  let frames = 0, acc = 0, info = '';
+  const loop = () => {
+    const T = (performance.now() - start) / 1000;
+    const t0 = performance.now();
+    info = render(T, true);
+    acc += performance.now() - t0; frames++;
+    if (frames % 30 === 0) { panel.innerHTML = `<b>${info}</b>\nstand frame ${(acc / 30).toFixed(2)} ms (все слоты + видео) · q ${QUALITY}${RM ? ' · rm' : ''} · draw warnings: ${fxWarnings}`; acc = 0; }
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+  window.__ready = true;
+}
+</script>
+</body>
+</html>

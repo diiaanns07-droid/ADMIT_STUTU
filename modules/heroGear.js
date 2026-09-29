@@ -28,6 +28,18 @@ const PRESETS = {
     pauldrons: null, bracers: false, belt: 'pouches', pouches: 2, dagger: null, rings: false, sigil: true,
     cape: { w: 0.62, len: 1.3, color: 0x2a1a17, trim: 0xd8b070 }, staff: { crystal: 0xffb46a, glow: 0xff7a2a },
   },
+  // Эльфийка на теле Quaternius: короткий белый плащ, лук и колчан, грозовые руны
+  sylvan: {
+    metal: 0xd8c08a, metal2: 0xe8d6a0, leather: 0x8a6a4a, cloth: 0xe8e4d8, glow: 0x7fe8ff,
+    pauldrons: null, bracers: false, belt: 'pouches', pouches: 1, dagger: 'left', rings: false, sigil: false,
+    cape: { w: 0.5, len: 0.95, color: 0xe6e2d6, trim: 0xd8c08a }, bow: true, quiver: true,
+  },
+  // Тёмная чародейка на теле Quaternius: воронёные наплечники, длинный плащ, посох с кристаллом ночи
+  witchQ: {
+    metal: 0x34303e, metal2: 0x9a8fc4, leather: 0x1e1826, cloth: 0x160f22, glow: 0xa77bff,
+    pauldrons: 'plate', bracers: false, belt: 'pouches', pouches: 2, dagger: 'right', rings: false, sigil: true,
+    cape: { w: 0.56, len: 1.3, color: 0x140e1e, trim: 0x9a8fc4 }, staff: { crystal: 0x9fe0ff, glow: 0xa77bff },
+  },
   // Лучница (Quaternius Ranger): лук и колчан, кинжал
   scout: {
     metal: 0xb0b4bc, metal2: 0xc9a45c, leather: 0x4a3322, cloth: 0x234a2a, glow: 0x9dffb0,
@@ -144,7 +156,8 @@ function bowGeo(THREE, len) {
   return { geo: g, tipZ: pts[0].z };
 }
 
-export function dressHero(THREE, vrm, { preset = 'ranger', model = null, atmosphere = null, quality = 'medium', shading = 'realistic' } = {}) {
+export function dressHero(THREE, vrm, opts = {}) {
+  const { preset = 'ranger', model = null, atmosphere = null, quality = 'medium' } = opts;
   const P = PRESETS[preset] || PRESETS.ranger;
   const H = vrm.humanoid;
   const raw = (b) => (H.getRawBoneNode ? H.getRawBoneNode(b) : null) || H.getNormalizedBoneNode(b);
@@ -313,6 +326,19 @@ export function dressHero(THREE, vrm, { preset = 'ranger', model = null, atmosph
     }
     const c = bp.hips.clone(); c.y = y;
     stick(grp, 'hips', c, modelQ);
+  }
+
+  // ---------------- острые уши эльфа (сквозь капюшон — узнаваемый силуэт)
+  if (opts.ears && bp.head) {
+    const skin = Mt(new Std({ name: 'gear-ear', color: 0xc08463, roughness: 0.55, ...(physical ? { sheen: 0.2, sheenColor: new THREE.Color(1, 0.7, 0.6) } : {}) }));
+    const earG = G(new THREE.ConeGeometry(0.013, 0.07, 6));
+    earG.translate(0, 0.033, 0);
+    for (const s of [1, -1]) {
+      const ear = new THREE.Mesh(earG, skin); ear.name = `elf-ear-${s > 0 ? 'l' : 'r'}`;
+      ear.scale.set(1, 1, 0.45);
+      const dir = LEFT.clone().multiplyScalar(s).addScaledVector(UP, 0.85).addScaledVector(FWD, -0.55).normalize();
+      stick(ear, 'head', bp.head.clone().addScaledVector(UP, 0.068).addScaledVector(LEFT, s * 0.066).addScaledVector(FWD, -0.012), qFromTo(new THREE.Vector3(0, 1, 0), dir));
+    }
   }
 
   // ---------------- кольца-руны
