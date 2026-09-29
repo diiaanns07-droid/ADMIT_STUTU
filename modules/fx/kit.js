@@ -341,11 +341,13 @@ export function createFxKit(deps) {
   }
   function flushParticles() {
     if (dirtyHi < 0) return;
-    const lo = wrapped ? 0 : dirtyLo, hi = wrapped ? cap - 1 : dirtyHi;
+    const lo = wrapped ? 0 : dirtyLo, hi = wrapped ? Math.max(cap, highWater) - 1 : dirtyHi;
     for (const k in A) {
       const at = A[k];
-      at.clearUpdateRanges();
-      at.addUpdateRange(lo * 4, (hi - lo + 1) * 4);
+      // Диапазоны копятся до рендера (three сам очищает их после выгрузки): если здесь их стереть,
+      // а рендера между двумя flush не было (clear() → update()), на GPU останутся старые частицы.
+      if (at.updateRanges && at.updateRanges.length > 24) { at.clearUpdateRanges(); at.addUpdateRange(0, Math.max(cap, highWater) * 4); }
+      else at.addUpdateRange(lo * 4, (hi - lo + 1) * 4);
       at.needsUpdate = true;
     }
     dirtyLo = Infinity; dirtyHi = -1; wrapped = false; lastIdx = -1;
