@@ -926,7 +926,7 @@ function frame(now) {
     try { world.setMirror(app.debug ? null : mirrorFromPose(input, now)); } catch (e) { /* ignore */ }
   }
   // [HERO] руки VRM-героя повторяют руки игрока; C5: поза лука и чар рукой из ввода C2
-  if (heroModel && heroModel.setMirror) { try { heroModel.setMirror(app.debug ? null : mirrorFromPose(input, now)); heroModel.setPose(heroPoseFromInput(input)); } catch (e) { /* ignore */ } }
+  if (heroModel && heroModel.setMirror) { try { heroModel.setMirror(app.debug ? null : mirrorFromPose(input, now)); if (app.screen !== 'menu') heroModel.setPose(heroPoseFromInput(input)); } catch (e) { /* ignore */ } }
   // [NET] соперник: отправка st/ev/pr, его модель; его события (data.remote=true) и снаряды — в эффекты.
   // world и heroModel получают только свои события: иначе свой герой повторял бы чужие удары.
   let fxEvents = events, fxSnap = lastSnapshot;

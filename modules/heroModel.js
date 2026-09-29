@@ -34,7 +34,7 @@ export const HEROES = Object.freeze({
   elf: {
     id: 'elf', name: 'Эльфийка', vrm: null, glb: 'ranger.glb', height: 1.74, cls: 'Лучница-заклинательница', element: 'Гроза',
     desc: ['Следопыт Сияющего леса.', 'Лук из белого ясеня и перстни-руны на пальцах.', 'Бьёт издалека и уходит рывком.'],
-    gear: 'sylvan', stance: 'bow', adduct: 0.3, menuStance: 'IdleCalm', ears: true, hair: { color: 0xe6dcc0, len: 0.95 },
+    gear: 'sylvan', stance: 'bow', adduct: 0.3, menuStance: null, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, ears: true, hair: { color: 0xe6dcc0, len: 0.95 },
     // зелёная ткань → белый шёлк с бирюзой, кожа доспеха → светлая замша
     recolor: { MI_Ranger: [{ h: [65, 175], toH: 172, s: 0.35, v: 1.55 }, { h: [8, 48], toH: 38, s: 0.55, v: 1.45 }] },
   },
@@ -45,7 +45,20 @@ export const HEROES = Object.freeze({
     // зелёная ткань → глубокий фиолетовый, кожа → почти чёрная
     recolor: { MI_Ranger: [{ h: [65, 175], toH: 272, s: 1.1, v: 0.62 }, { h: [8, 48], toH: 255, s: 0.35, v: 0.42 }] },
   },
-  // прежние аниме-героини VRoid (в меню не показываются; heroShading 'anime' — как было)
+  // [HERO] новые герои (Quaternius Modular Fantasy, CC0)
+  ranger: {
+    id: 'ranger', name: 'Лучница', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Лучница', element: 'Ветер',
+    desc: ['Разведчица пограничных застав.', 'Капюшон следопыта, длинный лук и колчан за спиной.', 'Натягивает тетиву рукой — стрела летит в цель.'],
+    gear: 'scout', stance: 'bow', adduct: 0.3, menuStance: null, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, hair: { color: 0x5a3220, len: 0.85 },
+  },
+  archmage: {
+    id: 'archmage', name: 'Архимаг', vrm: null, glb: 'wizard.glb', height: 1.8, cls: 'Архимаг', element: 'Буря',
+    desc: ['Последний магистр Грозовой коллегии.', 'Посох-громоотвод и плащ, прошитый рунами.', 'Лепит сферы молний двумя руками.'],
+    gear: 'magus', stance: 'staff', adduct: 0.3, menuStance: 'Stance',
+  },
+});
+// прежние аниме-героини VRoid: не в меню и не в лобби (HEROES), но setHero их знает
+export const EXTRA_HEROES = Object.freeze({
   elfVroid: {
     id: 'elfVroid', name: 'Эльфийка (VRoid)', vrm: 'elf.vrm', height: 1.72, cls: 'Лучница-заклинательница', element: 'Гроза',
     desc: ['Следопыт Сияющего леса.', 'Аниме-модель VRoid (CC0).', 'Прежний вид героини.'],
@@ -56,20 +69,9 @@ export const HEROES = Object.freeze({
     desc: ['Изгнанница из башни Затмения.', 'Аниме-модель VRoid (CC0).', 'Прежний вид героини.'],
     gear: 'witch', stance: 'staff', menuStance: 'CastHold', hidden: true,
   },
-  // [HERO] новые герои (Quaternius Modular Fantasy, CC0)
-  ranger: {
-    id: 'ranger', name: 'Лучница', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Лучница', element: 'Ветер',
-    desc: ['Разведчица пограничных застав.', 'Капюшон следопыта, длинный лук и колчан за спиной.', 'Натягивает тетиву рукой — стрела летит в цель.'],
-    gear: 'scout', stance: 'bow', adduct: 0.3, menuStance: 'IdleCalm', hair: { color: 0x5a3220, len: 0.85 },
-  },
-  archmage: {
-    id: 'archmage', name: 'Архимаг', vrm: null, glb: 'wizard.glb', height: 1.8, cls: 'Архимаг', element: 'Буря',
-    desc: ['Последний магистр Грозовой коллегии.', 'Посох-громоотвод и плащ, прошитый рунами.', 'Лепит сферы молний двумя руками.'],
-    gear: 'magus', stance: 'staff', adduct: 0.3, menuStance: 'Stance',
-  },
 });
 // порядок карточек в меню (№8 может брать отсюда)
-export const HERO_ORDER = Object.freeze(['ashen', 'elf', 'dark', 'ranger', 'archmage']); // elfVroid/darkVroid — скрытые
+export const HERO_ORDER = Object.freeze(['ashen', 'elf', 'dark', 'ranger', 'archmage']);
 
 // Клипы: [имя в игре, файл, имя клипа в файле, петля]. Первый найденный файл — основной.
 const KAY = 'anims_kaykit.glb';
@@ -211,6 +213,7 @@ export function createHeroModel({
   for (const n of ANCHOR_NAMES) { const o = new THREE.Object3D(); o.name = `hero-anchor-${n}`; anchors[n] = o; }
   function parentAnchors() {
     const put = (name, parent, x, y, z) => { const a = anchors[name]; if (!parent) return; parent.add(a); a.position.set(x, y, z); a.quaternion.identity(); };
+    for (const n of ANCHOR_NAMES) { const a = anchors[n]; if (a.parent) a.parent.remove(a); }
     if (cur && cur.vrm) {
       const H = cur.vrm.humanoid;
       const raw = (b) => (H.getRawBoneNode ? H.getRawBoneNode(b) : null) || H.getNormalizedBoneNode(b);
@@ -268,19 +271,21 @@ export function createHeroModel({
       if (cur.model.parent) cur.model.parent.remove(cur.model);
     }
     if (curScene) import('@pixiv/three-vrm').then((V) => { try { V.VRMUtils.deepDispose(curScene); } catch (e) { /* ignore */ } }).catch(() => {});
-    cur = null; act = null; actName = ''; holdName = ''; lastStatus = '';
+    cur = null; act = null; actName = ''; holdName = ''; lastStatus = ''; S.dead = false; S.pend = null;
     S.ready = false;
   }
 
   async function setHero(id) {
-    let def = HEROES[id] || HEROES.ashen;
+    let def = HEROES[id] || EXTRA_HEROES[id] || HEROES.ashen;
     // удалённый экземпляр не может взять процедурное тело мира: страж — на запасной модели
     if (!def.vrm && !def.glb && !heroBody) def = { ...def, glb: HEROES.ashen.glb, height: 1.84, fallbackOf: def.id };
     if (def.id === S.hero && (S.ready || (!def.vrm && !def.glb))) return;
     const token = ++S.token;
     S.hero = def.id;
     clear();
-    if (!def.vrm && !def.glb) { showProcedural(true); parentAnchors(); S.ready = !!heroBody; return; }
+    // пока грузится новая модель — виден процедурный герой, якоря на его маркерах (или на root)
+    showProcedural(true); parentAnchors();
+    if (!def.vrm && !def.glb) { S.ready = !!heroBody; return; }
     try {
       const url = def.glb ? new URL(def.glb, heroesBase).href : new URL(def.vrm, new URL(vrmUrl, base)).href;
       const vrm = def.glb ? await loadHumanoidGLB(THREE, url) : await loadVRM(THREE, url);
@@ -344,6 +349,7 @@ export function createHeroModel({
       for (const n of LOCO) if (full[n]) { full[n].play(); full[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); if (lower[n]) { lower[n].play(); lower[n].setEffectiveWeight(0); } }
       mixer.update(0);
       parentAnchors();
+      if (S.lod) { const l = S.lod; S.lod = -1; applyLod(l); }   // LOD, заданный до загрузки
       S.ready = true;
       if (stance) setStance(stance);
     } catch (e) {
@@ -640,7 +646,8 @@ export function createHeroModel({
       const want = d > 55 ? 2 : d > 28 ? 1 : 0;
       if (want !== S.lod) applyLod(want);
     }
-    // LOD: реже обновляем удалённого/дальнего героя
+    // LOD: реже обновляем удалённого/дальнего героя; события пропущенных кадров — в очередь
+    if (S.lod >= 2 && Array.isArray(events) && events.length) { S.pend = (S.pend || []).concat(events).slice(-32); }
     if (S.lod >= 2) { S.lodAcc += dt; if (S.lodAcc < 0.1) return; dt = S.lodAcc; S.lodAcc = 0; }
     restoreClean();
     resetFree();
@@ -657,13 +664,17 @@ export function createHeroModel({
     const status = snap.status || 'playing';
     const yaw = root.rotation.y;
     const W = cur.model;
+    // смерть — по статусу боя или по action 'dead' (PvP: статус боя не меняется); воскрешение — стоп
+    const dead = status === 'defeat' || P.action === 'dead' || !!P.dead;
+    if (dead && !S.dead) playAct('Death', { speed: 1, fade: 0.2 });
+    else if (!dead && S.dead) stopAct(0.1);
+    S.dead = dead;
     if (status !== lastStatus) {
-      if (status === 'defeat' || P.action === 'dead') playAct('Death', { speed: 1, fade: 0.2 });
-      else if (status === 'victory') playAct('Victory', { loop: true, speed: 1, fade: 0.3 });
-      else if (lastStatus === 'defeat' || lastStatus === 'victory') stopAct(0.1);
+      if (status === 'victory' && !dead) playAct('Victory', { loop: true, speed: 1, fade: 0.3 });
+      else if (lastStatus === 'victory') stopAct(0.1);
       lastStatus = status;
     }
-    if (status === 'defeat' || status === 'victory') {
+    if (dead || status === 'victory') {
       W.rotation.set(0, 0, 0);
       updateLoco(dt, 0, 0, 0, false);
       cur.mixer.update(dt); saveClean(); vrmTick(dt); return;
@@ -682,9 +693,11 @@ export function createHeroModel({
     const sprint = num(P.sprint) > 0.5 || !!P.cruise;
     const moving = sp > 0.6;
 
-    // действия по событиям боя
+    // действия по событиям боя (+ события кадров, пропущенных на LOD 2)
     let want = null;
-    for (const e of Array.isArray(events) ? events : []) {
+    let evList = Array.isArray(events) ? events : [];
+    if (S.pend && S.pend.length) { evList = S.pend.concat(S.lod >= 2 ? [] : evList); S.pend = null; }
+    for (const e of evList) {
       if (!e) continue;
       const d = e.data || {};
       if (!!d.remote !== !!remote) continue; // C3: события соперника (data.remote) — только его модели
@@ -800,6 +813,7 @@ export function createHeroModel({
   return {
     root, update, setHero, setPose, setMirror, getAnchors, setShading, setQuality, setLod, setStance, dispose,
     menuStance: (id) => (HEROES[id] && HEROES[id].menuStance) || null,
+    menuPose: (id) => (HEROES[id] && HEROES[id].menuPose) || null,
     get ready() { return S.ready; },
     get hero() { return S.hero; },
     get vrm() { return cur ? cur.vrm : null; },
