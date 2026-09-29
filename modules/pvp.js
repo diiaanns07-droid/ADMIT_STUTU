@@ -290,6 +290,20 @@ export function buildHooks(K, PC, opts = {}) {
     });
     return id;
   }
+  // лук и магия рукой №6 (modules/combatHand.js, registerTarget): их swept-тест по сопернику → hit с fx стихии
+  function handHit(h) {
+    if (!isObj(h) || !opp.has || opp.dead || K.st.status !== 'playing') return;
+    const kind = h.kind === 'arrow' ? 'arrow' : 'hand_orb';
+    const fx = {};
+    const kb = isObj(h.knockback) ? Math.hypot(num(h.knockback.x, 0), num(h.knockback.z, 0)) : 0;
+    if (num(h.slowSec, 0) > 0) fx.slow = num(h.slowSec, 0);
+    if (kb > 0) fx.knock = kb;
+    if (num(h.burnSec, 0) > 0 && num(h.burnDps, 0) > 0) fx.dot = h.burnSec * h.burnDps * mulOf(kind);
+    if (h.element === 'earth' && h.twoHand) fx.stun = 0.5;
+    const d = kb > 0 ? h.knockback : isObj(h.dir) ? h.dir : null;
+    sendHit(h.chain && h.kind === 'chain' ? 'hand_orb' : kind, num(h.damage, 0) * mulOf(kind), fx, isObj(h.point) ? h.point : null, d ? { x: num(d.x, 0), z: num(d.z, 0) } : null);
+  }
+  function targetPos() { return opp.has && !opp.dead ? { x: BOSS.x, y: BOSS.y, z: BOSS.z } : null; }
   function burst(dmg, power, both, cleared, chest, to) {
     const S = PC.shots.burst;
     shoot('burst', dmg, { knock: S.knock * (0.7 + 0.6 * power) });
@@ -678,7 +692,7 @@ export function buildHooks(K, PC, opts = {}) {
     get floorY() { return Math.min(K.st.p.y, opp.has ? BOSS.y : K.st.p.y); },   // уровень земли дуэли (для «снаряд ушёл в пол»)
     enable, disable, aim, encounter, damage, projectileHit, burst, rune, sigil, preStep, decorate, setOpponent, applyRemoteHit,
     // для сессии
-    onAck, myState, respawn, grantSpawnInvuln, count,
+    onAck, myState, respawn, grantSpawnInvuln, count, handHit, targetPos,
     drainOutbox() { return outbox.splice(0, outbox.length); },
     setPing(ms) { ping = Math.max(0, num(ms, 0)); },
     setTag(t) { tag = String(t || 'p'); },
@@ -1070,6 +1084,14 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
       net.on(t, fn);
     }
     if (!EXT) net.on('bye', handlers.left);
+    // лук и магия рукой №6: соперник — цель их hit-теста, Регент в дуэли не цель
+    try {
+      const hand = combat.hand;
+      if (hand && typeof hand.registerTarget === 'function') {
+        S.unregHand = hand.registerTarget({ id: 'opponent', kind: 'player', getPosition: () => H.targetPos(), radius: PC.hitbox.radius, height: PC.hitbox.height, onHit: (h) => H.handHit(h) });
+        if (typeof hand.setBossTargetable === 'function') hand.setBossTargetable(false);
+      }
+    } catch (e) { S.unregHand = null; }
     if (EXT && net.remote && net.remote.name) { H.opponent.name = String(net.remote.name).slice(0, 24); H.opponent.hero = net.remote.hero || null; S.oppHello = { ...net.remote }; }
     S.lastRecv = now();
     setPhase('lobby');
@@ -1081,6 +1103,11 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
     S.active = false;
     for (const [t, fn] of Object.entries(handlers)) { try { net.off(t, fn); } catch (e) { /* ignore */ } }
     try { net.off('bye', handlers.left); } catch (e) { /* ignore */ }
+    try {
+      if (typeof S.unregHand === 'function') S.unregHand();
+      S.unregHand = null;
+      if (combat.hand && typeof combat.hand.setBossTargetable === 'function') combat.hand.setBossTargetable(true);
+    } catch (e) { /* ignore */ }
     combat.setMode('boss');
   }
   function leave() {

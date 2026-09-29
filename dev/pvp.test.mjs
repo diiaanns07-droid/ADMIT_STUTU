@@ -119,6 +119,22 @@ test('поляна ниже нуля (лес, y = −2.2): искра и сфе�
   assert(hits.includes('spark') && hits.includes('sphere'), `попадания: ${hits}`);
 });
 
+test('лук №6 (registerTarget): ледяная стрела бьёт соперника, fx замедления уходит в hit, Регент не цель', () => {
+  const D = makeDuel();
+  D.untilPhase('fight'); D.run(1.7);
+  if (!D.A.hand) return;                              // модуль лука не подключён — нечего проверять
+  const bowIn = (o = {}) => inp({ bow: { active: true, phase: 'drawing', draw: 0, aimX: 0, aimY: 0, charged: false, release: false, element: null, ...o } });
+  D.step(1 / 60, bowIn({ draw: 0 })); D.step(1 / 60, bowIn({ draw: 0 }));
+  for (let k = 1; k <= 12; k++) D.step(1 / 60, bowIn({ draw: k / 12, charged: k === 12, element: 'frost' }));
+  D.step(1 / 60, bowIn({ draw: 1, charged: true, release: true, element: 'frost' }));
+  D.run(2.5, () => bowIn({ phase: 'ready', draw: 0 }));
+  const hits = type(D.evB, 'player_hit').filter((e) => e.data.attackKind === 'arrow');
+  assert(hits.length >= 1, `стрела не попала: ${JSON.stringify(type(D.evB, 'player_hit').map((e) => e.data.attackKind))}`);
+  assert(hits[0].data.fx && hits[0].data.fx.slow > 0, `нет замедления: ${JSON.stringify(hits[0].data.fx)}`);
+  assert(D.A.getSnapshot().boss.hp > 0 && !type(D.evA, 'boss_hit').some((e) => !e.data.pvp), 'Регент получил урон в дуэли');
+  assert(hits[0].data.amount <= 72, 'кап');
+});
+
 test('неуязвимость 1,5 с после появления', () => {
   const D = makeDuel();
   D.untilPhase('fight');
