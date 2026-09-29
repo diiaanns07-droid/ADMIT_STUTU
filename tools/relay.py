@@ -177,6 +177,10 @@ async def on_client(reader, writer):
     peer = writer.get_extra_info("peername")
     hs = await handshake(reader, writer)
     if not hs:
+        try:
+            writer.close()   # битый запрос или обычный HTTP: сокет не держим
+        except Exception:
+            pass
         return
     code, role, key = hs
     sock = writer.get_extra_info("socket")
