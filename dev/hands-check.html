@@ -31,7 +31,7 @@
 <body>
 <h1>ПЕРСТНИ · проверка жестов пальцев <span class="badge">DEV</span></h1>
 <p style="color:var(--dim);max-width:90ch">Жесты: <b>OK</b> правой (кольцо большой+указательный, остальные пальцы прямо) — огонь; <b>открытая ладонь</b> левой к камере — щит; <b>кулак → резко раскрыть</b> — выброс (сила = сколько держали кулак); <b>указательный</b> правой рисует руну: треугольник — ИГНИС, молния-зигзаг — ФУЛЬГУР, круг — ОРБИС; быстрый <b>взмах</b> открытой правой ладонью — рывок.</p>
-<div class="row" style="margin:10px 0"><button id="start">Включить камеру</button><span id="st" style="color:var(--dim)"></span></div>
+<div class="row" style="margin:10px 0"><button id="start">Включить камеру</button><button id="save" title="Файл для node dev/replay.mjs">Сохранить запись кистей</button><span id="st" style="color:var(--dim)"></span></div>
 <div class="row">
   <div class="slot" id="slot"><video id="v" playsinline muted></video><canvas id="ov"></canvas></div>
   <div class="panel" id="panel">—</div>
@@ -50,12 +50,35 @@ const vision = await createVision({ video, overlayCanvas: null, config: { ...con
 const frames = [];
 const events = [];
 window.__HC = { vision, frames, events };
+// [V6 · CONTROLS] запись кистей с начала проверки — «Сохранить запись» отдаёт файл для node dev/replay.mjs
+if (vision.startRecording) vision.startRecording({ source: 'hands-check' });
 document.getElementById('start').onclick = async () => {
   try { await vision.start(); } catch (e) { st.textContent = 'ошибка: ' + e.message; }
+};
+document.getElementById('save').onclick = () => {
+  const rec = vision.takeRecording && vision.takeRecording({ note: 'hands-check' });
+  if (!rec || !rec.frames.length) { st.textContent = 'запись пуста — включите камеру'; return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(rec)], { type: 'application/json' }));
+  a.download = `ashen-hands-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`;
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  st.textContent = `сохранено кадров: ${rec.frames.length}`;
 };
 const q = new URLSearchParams(location.search);
 if (q.get('auto') === '1') vision.start().catch((e) => { st.textContent = 'ошибка: ' + e.message; });
 
+// [V6 · CONTROLS] руль и толчок щита: что видит распознавание (пороги — из core/handGestures.js)
+const f2 = (v) => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(2) : '–');
+function steerPanel(h, d) {
+  const s = h.stick, sd = d && d.stick, p = d && d.left && d.left.push;
+  if (!s || s.mode !== 'steer') return '<div class="ev">схема: джойстик</div>';
+  const need = 1.24, fastNeed = 1 + (need - 1) * 0.5;
+  const mark = (v, lim) => (typeof v === 'number' && v >= lim ? '<b>' + f2(v) + '</b>' : f2(v));
+  return `<div style="margin-top:8px">РУЛЬ: ${s.engaged ? '<b>' + (s.hold === 'shield' ? 'ЩИТ — СТОИМ' : s.gait) + '</b>' : 'стоп'} · поворот ${f2(s.x)} · ход ${f2(s.z)}</div>
+    <div class="ev">рука: уровень ${f2(s.level)} (шаг от ${f2(s.levels && s.levels.walkOn)}, бег от ${f2(s.levels && s.levels.runOn)}) · вбок ${f2(s.lateral)} · вверх/вниз ${f2(s.levelSpeed)} sw/с</div>
+    <div class="ev">нейтраль ${f2(sd && sd.neutral)} (выучено ${sd && sd.counters ? sd.counters.learned : 0} раз) · сбоев трекинга ${sd && sd.counters ? sd.counters.glitches : 0} · отклонено рывков-руления ${sd && sd.counters ? sd.counters.dashSteer : 0}</div>
+    <div class="ev">толчок щита: рост ×${mark(p && p.span, need)} (нужно ${need}) · быстрый участок ×${mark(p && p.fast, fastNeed)} (нужно ${f2(fastNeed)}) · world ×${f2(p && p.scale)} · поворот ладони ${f2(p && p.turned)} · сдвиг ${f2(p && p.shift)}</div>`;
+}
 const fmt = (H) => H ? `${H.shape.padEnd(8)} ладонь:${H.palmFacing.padEnd(7)} заряд:${(H.charge * 100).toFixed(0).padStart(3)}%` : '— не видно —';
 function loop() {
   requestAnimationFrame(loop);
@@ -78,7 +101,8 @@ function loop() {
     <div class="big">${h.attack ? '▲ ОГОНЬ ' : ''}${h.shield ? '◆ ЩИТ ' : ''}${h.drawing ? '✎ РУНА… ' : ''}${h.charge > 0.05 ? '▣ ЗАРЯД ' + (h.charge * 100).toFixed(0) + '%' : ''}</div>
     <div class="ev">последняя руна: ${h.lastRune ? h.lastRune.rune + ' (' + h.lastRune.score.toFixed(2) + ')' : '—'}</div>
     <div class="ev">распознавание: ${d && d.lastRecognition ? JSON.stringify({ r: d.lastRecognition.rune, why: d.lastRecognition.reason, s: d.lastRecognition.score && +d.lastRecognition.score.toFixed(2) }) : '—'}</div>
-    <div class="ev">счётчики: ${d ? JSON.stringify(d.counters) : ''}</div>`;
+    <div class="ev">счётчики: ${d ? JSON.stringify(d.counters) : ''}</div>
+    ${steerPanel(h, d)}`;
 }
 loop();
 </script>

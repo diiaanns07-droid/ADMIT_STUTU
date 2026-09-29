@@ -34,7 +34,8 @@ const DEBUG = argv.includes('--debug');
 const PUSH = +argOf('--push', 1.35);
 const FAST_MS = +argOf('--fast', 150);
 let RIGHT = argv.includes('--right');
-let GLITCH = +argOf('--glitch', 0);           // доля кадров-выбросов: кисть на один кадр «прыгает» (сбой MediaPipe)        // правая рука всё время колдует: «OK», руны, выброс, «Искра»          // длительность «резкого» движения руля, мс
+let GLITCH = +argOf('--glitch', 0);
+const BODY_GLITCH = +argOf('--body-glitch', 0);  // доля кадров, где середина плеч позы «прыгает» на 0.1–0.3 sw           // доля кадров-выбросов: кисть на один кадр «прыгает» (сбой MediaPipe)        // правая рука всё время колдует: «OK», руны, выброс, «Искра»          // длительность «резкого» движения руля, мс
 const OFFSET = +argOf('--offset', 0);          // привычная ладонь игрока смещена от нейтрали игры (sw, + к середине груди)
 const LEVEL = +argOf('--level', 0);            // и выше (+) / ниже (−) «уровня груди» (sw)          // сила осознанного толчка щита: во столько раз кисть растёт в кадре
 const G_OPTS = JSON.parse(argOf('--cfg', '{}')); // подмена настроек handGestures (подбор порогов)
@@ -157,7 +158,8 @@ function simulate(seed, gOpts = {}) {
       const obs = {
         tMs: t, frameW: 640, frameH: 480, mirror: true, hands,
         poseWrists: { left: wr, right: hands[1] ? { x: hands[1].landmarks[0].x, y: hands[1].landmarks[0].y, visibility: 0.9 } : null },
-        bodyCenter: { x: S.cx + 0.004 * gauss(), y: S.cy + 0.004 * gauss() }, shoulderWidth: S.sw * (1 + 0.02 * gauss()),
+        bodyCenter: (() => { const bg = BODY_GLITCH > 0 && rnd() < BODY_GLITCH; const j = bg ? (rnd() < 0.5 ? -1 : 1) * (0.1 + 0.2 * rnd()) * S.sw : 0; return { x: S.cx + j / S.aspect + 0.004 * gauss(), y: S.cy + (bg ? (rnd() - 0.5) * 0.2 * S.sw : 0) + 0.004 * gauss() }; })(),
+        shoulderWidth: S.sw * (1 + 0.02 * gauss()),
       };
       g.push(obs);
       if (recorder) recorder.add(obs);
