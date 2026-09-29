@@ -81,7 +81,8 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   // (жест «стоп»); держится, пока ладонь смотрит в камеру. Ведение героя открытой ладонью и
   // хватка джойстика щит больше не включают. shieldHoldMs > 0 — старый путь «ладонь стоит».
   shieldPushRatio: 1.15,   // кисть выросла в кадре (относительно плеч) за shieldPushMs — толчок
-  shieldPushMs: 240,       // [V6] 320 → 240: толчок быстрый; в длинном окне медленный дрейф руки набегал до порога
+  shieldPushMs: 320,
+  shieldPushMsSteer: 240,  // [V6] в «Руле» окно короче: толчок быстрый, а в длинном окне медленный дрейф руки набегал до порога
   shieldPushKeepMs: 450,   // толчок годится столько, пока форма «ладонь» признаётся
   shieldHoldMs: 0,
   shieldStickMax: 0.2,     // |выход джойстика| меньше — ладонь «стоит»
@@ -94,7 +95,7 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   shieldPushFrames: 2,     // толчок признаётся, только если держится столько кадров подряд (не один выброс шума)
   shieldPushRatioSteer: 1.24, // в «Руле» ладонь и так поднята к камере — толчок нужен заметнее
   shieldPushScaleCheck: 1.1,  // и размер по world-точкам тоже вырос хотя бы во столько (кисть приблизилась, а не развернулась)
-  shieldPushFast: 1.12,    // и был быстрый участок: размах вырос во столько…
+  shieldPushFastShare: 0.5, // и был быстрый участок: размах вырос на эту долю порога толчка (в «Руле» +12 %)…
   shieldPushFastMs: 100,   //   …примерно за столько мс (толчок, а не медленный дрейф руки к камере)
   shieldPushPinMargin: 0.06, // толчок, прерванный пропуском кадров, досчитывается с таким запасом к порогу
   shieldPushTurnMax: 0.15, // за время толчка ладонь почти не повернулась (|z| нормали изменился меньше): разворот ладони к камере — не толчок
@@ -801,11 +802,12 @@ export function createHandGestures(configPatch = {}) {
     else {
       const pcx = (data.img[0].x + data.img[9].x) / 2 * st.aspect, pcy = (data.img[0].y + data.img[9].y) / 2;
       H.scaleHist.push({ t, s: H.scaleF, p: H.spanF, nz: H.nzF, sw, x: pcx, y: pcy });
-      while (H.scaleHist.length > 30 || (H.scaleHist.length && t - H.scaleHist[0].t > cfg.shieldPushMs + 60)) H.scaleHist.shift();
+      const pm = moveMode === 'steer' ? cfg.shieldPushMsSteer : cfg.shieldPushMs;
+      while (H.scaleHist.length > 30 || (H.scaleHist.length && t - H.scaleHist[0].t > pm + 60)) H.scaleHist.shift();
       const hs = H.scaleHist, n = hs.length, b = hs[0];
       let pushing = false, base = 0, baseNz = null, baseT0 = t;
       const ratio = moveMode === 'steer' ? cfg.shieldPushRatioSteer : cfg.shieldPushRatio;
-      if (n >= 3 && t - b.t >= cfg.shieldPushMs * 0.5 && b.s > 1e-6 && b.p > 1e-6) {
+      if (n >= 3 && t - b.t >= pm * 0.5 && b.s > 1e-6 && b.p > 1e-6) {
         // размер образца в масштабе текущих плеч (наклон всем корпусом не считается);
         // база — минимум в окне (откуда толчок начался): рука перед толчком могла чуть отъехать назад
         const k = (q) => (sw && q.sw ? sw / q.sw : 1);
@@ -821,14 +823,14 @@ export function createHandGestures(configPatch = {}) {
         const cur = (H.spanF + hs[n - 2].p * k(hs[n - 2])) / 2;
         const scaleUp = (H.scaleF + hs[n - 2].s * k(hs[n - 2])) / 2 / minS;
         const shift = Math.hypot(pcx - b.x, pcy - b.y) / Math.max(1e-4, f.scale);
-        // толчок — быстрый: где-то в окне размах вырос на shieldPushFast за ~shieldPushFastMs.
+        // толчок — быстрый: где-то в окне размах вырос на долю shieldPushFastShare порога за ~shieldPushFastMs.
         // Медленный дрейф руки к камере (≈3 % за такое время) так не может, сколько бы ни набежало за окно
         let fast = 0;
         for (let j = 1, i = 0; j < n; j++) {
           while (i + 1 < j && hs[j].t - hs[i + 1].t >= cfg.shieldPushFastMs) i++;
           if (hs[j].t - hs[i].t >= cfg.shieldPushFastMs * 0.6) fast = Math.max(fast, (hs[j].p * k(hs[j])) / Math.max(1e-6, hs[i].p * k(hs[i])));
         }
-        pushing = base > 1e-6 && cur / base >= ratio && fast >= cfg.shieldPushFast && scaleUp >= cfg.shieldPushScaleCheck
+        pushing = base > 1e-6 && cur / base >= ratio && fast >= 1 + (ratio - 1) * cfg.shieldPushFastShare && scaleUp >= cfg.shieldPushScaleCheck
           && shift < cfg.shieldPushShift && turned < cfg.shieldPushTurnMax;
         H.pushDbg = { span: cur / Math.max(1e-6, base), fast, scale: scaleUp, shift, turned };
       }

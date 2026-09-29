@@ -788,6 +788,15 @@ test('[V6] «Руль»: ладонь разворачивается из реб
   ok(g.peek(t).shield, 'а толчок той же ладонью — щит: ' + JSON.stringify(g.getDebug().left.push));
 });
 
+test('[V6] «Джойстик»: мягкий толчок (+18 % за 0,25 с) по-прежнему щит — строгие пороги только в «Руле»', () => {
+  const g = createHandGestures();
+  let t = run(g, 1000, 900, () => [L_AT({ ...SHAPES.open, size: 0.12 })], 33, BODYX);
+  const t0 = t;
+  let shield = false;
+  t = run(g, t, 600, (tt) => { const u = Math.min(1, (tt - t0) / 250), e = u * u * (3 - 2 * u); shield = shield || g.peek(tt).shield; return [L_AT({ ...SHAPES.open, size: 0.12 * (1 + 0.18 * e) })]; }, 33, BODYX);
+  ok(shield, 'щит: ' + JSON.stringify(g.getDebug().left.push));
+});
+
 test('[V6] «Руль»: рука медленно подъезжает к камере (+30 % за 1,5 с) — не щит', () => {
   const g = createHandGestures({ moveMode: 'steer' });
   let t = run(g, 1000, 900, () => [L_AT({ ...SHAPES.open, cy: 0.45, size: 0.12 })], 33, BODYX);
