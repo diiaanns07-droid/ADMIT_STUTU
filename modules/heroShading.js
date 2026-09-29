@@ -543,6 +543,34 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
         const pk = m.customProgramCacheKey;
         m.customProgramCacheKey = () => 'heroEyes:' + (pk ? pk.call(m) : '');
       }
+      // [HERO] радужка вблизи: лимбальное кольцо, радиальные волокна, светлый венчик у зрачка; запечённый в
+      // текстуру блик убран (глаз теперь поворачивается — блик «ездил» бы с ним; живой блик — ниже).
+      // Текстура Quaternius: радужка — диск в центре (0.5, 0.5), радиус ≈ 0.105.
+      if (m.map) {
+        const prevI = m.onBeforeCompile;
+        m.onBeforeCompile = (sh, r) => {
+          if (prevI) prevI.call(m, sh, r);
+          sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+  {
+    vec2 irD = ( vMapUv - vec2( 0.5 ) ) / 0.105;
+    float irR = length( irD ), irA = atan( irD.y, irD.x );
+    float irIn = 1.0 - smoothstep( 0.96, 1.06, irR );
+    float irL = dot( diffuseColor.rgb, vec3( 0.333 ) );
+    // запечённый блик: яркие пиксели внутри радужки → цвет зрачка/радужки вокруг
+    float irHi = smoothstep( 0.55, 0.8, irL ) * ( 1.0 - smoothstep( 0.55, 0.75, irR ) );
+    diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * 0.12 + vec3( 0.02 ), irHi );
+    // волокна и венчик
+    float fib = 0.5 + 0.5 * sin( irA * 41.0 + sin( irA * 7.0 ) * 2.0 + irR * 5.0 ) * sin( irA * 23.0 - irR * 9.0 );
+    float band = smoothstep( 0.3, 0.45, irR ) * ( 1.0 - smoothstep( 0.9, 1.0, irR ) );
+    diffuseColor.rgb *= 1.0 + ( fib - 0.5 ) * 0.45 * band * irIn;
+    diffuseColor.rgb *= 1.0 + 0.22 * smoothstep( 0.36, 0.5, irR ) * ( 1.0 - smoothstep( 0.5, 0.66, irR ) );
+    // лимбальное кольцо — тёмный ободок по краю радужки
+    diffuseColor.rgb *= 1.0 - 0.6 * smoothstep( 0.8, 0.97, irR ) * ( 1.0 - smoothstep( 1.0, 1.12, irR ) );
+  }`);
+        };
+        const pkI = m.customProgramCacheKey;
+        m.customProgramCacheKey = () => 'heroIris:' + (pkI ? pkI.call(m) : '');
+      }
       // блик в глазах: отражение «студийного» источника сверху-слева (глаза — сферы, выходит точка)
       const prevC = m.onBeforeCompile;
       m.onBeforeCompile = (sh, r) => {
