@@ -333,6 +333,7 @@ function rigState(snap, impulse) {
 }
 
 function startFight() {
+  if (pvpCtl && pvpCtl.active && pvpCtl.inMatch) { app.introShown = true; setScreen('playing'); return; } // [PVP] матч идёт: вернуться в бой без сброса
   resetFight();
   battleHud.reset();
   coachStats.reset();
@@ -436,6 +437,7 @@ const callbacks = {
   onRestart() {
     unlockAudio();
     if (app.screen === 'error') { location.reload(); return; }
+    if (pvpCtl && pvpCtl.active) { if (app.screen === 'paused' && canResume()) callbacks.onResume(); return; } // [PVP] в дуэли «заново» = продолжить (без лечения посреди раунда)
     if (!app.debug && !trackingReady()) { resetFight(); setScreen(vision ? 'calibration' : 'camera'); return; }
     startFight();
   },

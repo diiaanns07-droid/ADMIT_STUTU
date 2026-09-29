@@ -37,10 +37,12 @@ function makeDuel(opts = {}) {
   const evA = [], evB = [];
   const D = {
     A, B, sA, sB, pair, evA, evB, clock, get T() { return T; },
+    pausedB: false,        // true — B «на паузе»: бой B не шагает, но кадр сессии (сеть, фазы) идёт, как в main.js
     step(dt, inA, inB) {
       T += dt * 1000;
       pair.pump();
       for (const [s, c, input, ev] of [[sA, A, inA, evA], [sB, B, inB, evB]]) {
+        if (s === sB && D.pausedB) { s.frame(); continue; }
         const gi = s.beforeUpdate(input || { valid: true, source: 'test', moveX: 0, moveZ: 0 });
         c.update(dt, gi);
         const out = s.afterUpdate(c.drainEvents());
@@ -389,6 +391,97 @@ test('реванш — только когда подтвердили обе с�
   assert(D.sA.phase === 'countdown' && D.sB.phase === 'countdown', `реванш: ${D.sA.phase}/${D.sB.phase}`);
   assert(D.sA.getView().score.join() === '0,0', 'счёт с нуля');
   near(D.B.getSnapshot().player.hp, 400, 1e-9, 'полные HP');
+});
+
+
+// ------------------------------------------------------------ регресс по ревизии
+test('улучшения «Клятвы героя» в дуэли не действуют и возвращаются после неё', () => {
+  const c = createCombat({ config: {}, bossBrain: idleBrain() });
+  c.setUpgrades({ maxEnergy: 60, runSpeedMul: 1.2, sparkDamageMul: 1.8, dashCooldownMul: 0.7, parryWindowAdd: 0.09 });
+  const up = c.getEffectiveConfig();
+  const s = createPvpSession({ combat: c, net: createMemoryNetPair().a, clock: () => 0 });
+  s.start();
+  const pv = c.getEffectiveConfig();
+  const B = DEFAULT_COMBAT_CONFIG;
+  assert(pv.player.maxEnergy === B.player.maxEnergy && pv.player.runSpeed === B.player.runSpeed && pv.spark.damage === B.spark.damage
+    && pv.dash.cooldown === B.dash.cooldown && Math.abs(pv.parry.window - B.parry.window) < 1e-9, `в дуэли остались улучшения: ${JSON.stringify({ e: pv.player.maxEnergy, r: pv.player.runSpeed, s: pv.spark.damage })}`);
+  c.setUpgrades({ maxEnergy: 80 });                        // покупка во время дуэли
+  assert(c.getEffectiveConfig().player.maxEnergy === B.player.maxEnergy, 'покупка в дуэли не действует');
+  s.stop();
+  const back = c.getEffectiveConfig();
+  assert(back.player.maxEnergy === B.player.maxEnergy + 80 && back.player.runSpeed === B.player.runSpeed, `после дуэли — последняя покупка: ${back.player.maxEnergy}`);
+  assert(up.player.maxEnergy === B.player.maxEnergy + 60, 'до дуэли улучшения были');
+});
+
+test('пауза посреди рывка не даёт вечной неуязвимости', () => {
+  const D = makeDuel();
+  D.untilPhase('fight'); D.run(1.7);
+  D.step(1 / 60, null, inp({ dashDir: { x: 1, z: 0 } }));
+  D.pausedB = true;                                        // B встал на паузу в рывке
+  D.run(1.0);
+  for (let i = 0; i < 3; i++) { D.step(1 / 60, inp({ spark: true })); D.run(0.9); }
+  const landed = type(D.evA, 'boss_hit').filter((e) => e.data.pvp);   // события B на паузе не выгружаются (как в main.js)
+  assert(landed.length >= 2 && D.B.getSnapshot().player.hp < 400, `удары не проходят по «замороженному» B: ${JSON.stringify(type(D.evA, 'pvp_hit_denied').map((e) => e.data.reason))}`);
+});
+
+test('смерть на паузе засчитывается сразу (проверка в кадре, не только в бою)', () => {
+  const D = makeDuel({ cfg: { rounds: { roundTime: 100 } } });
+  D.untilPhase('fight'); D.run(1.7);
+  D.pausedB = true;
+  const kA = killer(D, 'A');
+  for (let i = 0; i < 60 * 60 && D.sA.phase === 'fight'; i++) D.step(1 / 60, kA(D));
+  assert(D.sA.phase === 'round_end' && D.sA.state.reason === 'ko', `раунд: ${D.sA.phase} ${D.sA.state.reason}`);
+  assert(D.sA.getView().score[0] === 1, 'очко хосту');
+});
+
+test('потерянные round_end/match_end доходят повтором хоста; гость не застревает', () => {
+  const D = makeDuel({ cfg: { rounds: { countdown: 1, roundEnd: 1 } } });
+  const kA = killer(D, 'A');
+  // бить до 1:0 во втором раунде, затем рвать связь в конце второго раунда
+  for (let i = 0; i < 60 * 200 && !(D.sA.state.round === 2 && D.sA.phase === 'fight'); i++) D.step(1 / 60, kA(D));
+  for (let i = 0; i < 60 * 60 && D.sA.phase === 'fight'; i++) D.step(1 / 60, kA(D));
+  D.pair.a.dropped = true;                                 // хост «говорит в пустоту» ~2 с (меньше порога обрыва)
+  D.run(2);
+  D.pair.a.dropped = false;
+  D.run(3);
+  assert(D.sA.phase === 'match_end' && D.sB.phase === 'match_end', `фазы ${D.sA.phase}/${D.sB.phase}`);
+  assert(D.sB.getView().winner === 'opponent' && D.sB.getView().score.join() === '0,2', `гость: ${D.sB.getView().winner} ${D.sB.getView().score}`);
+  D.sA.requestRematch(); D.sB.requestRematch(); D.run(1);
+  assert(D.sA.phase === 'countdown' && D.sB.phase === 'countdown', `реванш: ${D.sA.phase}/${D.sB.phase}`);
+});
+
+test('односторонняя техпобеда: второй игрок узнаёт о поражении, когда связь вернулась', () => {
+  const D = makeDuel();
+  D.untilPhase('fight'); D.run(1);
+  D.pair.a.state = 'lost';                                 // хост потерял гостя, гость ничего не заметил
+  D.pair.b.dropped = true;                                 // и пакеты гостя не доходят
+  D.run(21);
+  assert(D.sA.phase === 'match_end' && D.sA.state.reason === 'disconnect', `хост: ${D.sA.phase}`);
+  D.pair.a.state = 'connected'; D.pair.b.dropped = false;
+  D.run(2);
+  assert(D.sB.phase === 'match_end' && D.sB.getView().winner === 'opponent' && D.sB.state.reason === 'disconnect', `гость: ${D.sB.phase} ${D.sB.getView().winner}`);
+});
+
+test('обе стороны заявили техпобеду — ничья', () => {
+  const D = makeDuel();
+  D.untilPhase('fight'); D.run(1);
+  D.pair.a.state = 'lost'; D.pair.b.state = 'lost';
+  D.run(21);
+  assert(D.sA.state.claim && D.sB.state.claim, 'обе заявили');
+  D.pair.a.state = 'connected'; D.pair.b.state = 'connected';
+  D.run(2.5);
+  assert(D.sA.getView().winner === null && D.sB.getView().winner === null, `итог: ${D.sA.getView().winner}/${D.sB.getView().winner}`);
+});
+
+test('выход соперника в лобби не даёт «победу», посреди матча — техпобеда до 2', () => {
+  let D = makeDuel();
+  D.sB.setReady(false); D.run(0.5);
+  D.sB.leave(); D.run(0.5);
+  assert(D.sA.phase === 'lobby', `лобби: ${D.sA.phase}`);
+  D = makeDuel();
+  D.untilPhase('fight'); D.run(1);
+  D.sB.leave(); D.run(0.5);
+  assert(D.sA.phase === 'match_end' && D.sA.getView().result.won && D.sA.getView().score[0] === 2, `выход: ${D.sA.phase} ${D.sA.getView().score}`);
 });
 
 // ------------------------------------------------------------ 3. боты и баланс
