@@ -1322,7 +1322,7 @@ export function createPvpView({ THREE, scene, camera, root, onRematch, onMenu, e
   (root || doc.body).appendChild(el);
   const $ = (s) => el.querySelector(s);
   const center = $('.pvp-center'), modal = $('.pvp-modal'), lobby = $('.pvp-lobby'), tag = $('.pvp-tag');
-  let lastKey = '', lastModal = '';
+  let lastKey = '', lastModal = '', lastTop = '';
   // заглушка модели соперника: капсула с кольцом (если №2 не рисует удалённого героя)
   let stub = null;
   if (THREE && scene && !externalModel) {
@@ -1361,14 +1361,21 @@ export function createPvpView({ THREE, scene, camera, root, onRematch, onMenu, e
     if (m) m.onclick = () => { if (onMenu) onMenu(); };
   }
   function update(v, snap) {
-    if (!v || !v.active) { el.hidden = true; if (stub) stub.g.visible = false; return; }
-    el.hidden = false;
-    $('.pvp-me .pvp-pips').innerHTML = pips(v.score[0], v.toWin);
-    $('.pvp-opp .pvp-pips').innerHTML = pips(v.score[1], v.toWin);
-    $('.pvp-mys').textContent = v.score[0]; $('.pvp-ops').textContent = v.score[1];
-    $('.pvp-on').textContent = v.oppName || 'Соперник';
-    $('.pvp-rd').textContent = v.phase === 'lobby' ? 'ДУЭЛЬ' : `РАУНД ${v.round}${v.phase === 'fight' ? ' · ' + Math.floor(v.roundTime) + ' с' : ''}${v.ping ? ' · ' + v.ping + ' мс' : ''}`;
-    lobby.textContent = v.phase === 'lobby' ? (v.oppReady ? 'Соперник готов…' : v.oppConnected ? 'Ждём, пока соперник войдёт в бой…' : 'Ожидание соперника…') : '';
+    if (!v || !v.active) { if (!el.hidden) el.hidden = true; if (stub) stub.g.visible = false; lastTop = ''; return; }
+    if (el.hidden) el.hidden = false;
+    // DOM трогаем только при изменении (панель живёт каждый кадр)
+    const rd = v.phase === 'lobby' ? 'ДУЭЛЬ' : `РАУНД ${v.round}${v.phase === 'fight' ? ' · ' + Math.floor(v.roundTime) + ' с' : ''}${v.ping ? ' · ' + v.ping + ' мс' : ''}`;
+    const lb = v.phase === 'lobby' ? (v.oppReady ? 'Соперник готов…' : v.oppConnected ? 'Ждём, пока соперник войдёт в бой…' : 'Ожидание соперника…') : '';
+    const topKey = `${v.score[0]}|${v.score[1]}|${v.toWin}|${v.oppName}|${rd}|${lb}`;
+    if (topKey !== lastTop) {
+      lastTop = topKey;
+      $('.pvp-me .pvp-pips').innerHTML = pips(v.score[0], v.toWin);
+      $('.pvp-opp .pvp-pips').innerHTML = pips(v.score[1], v.toWin);
+      $('.pvp-mys').textContent = v.score[0]; $('.pvp-ops').textContent = v.score[1];
+      $('.pvp-on').textContent = v.oppName || 'Соперник';
+      $('.pvp-rd').textContent = rd;
+      lobby.textContent = lb;
+    }
     if (v.phase === 'countdown') {
       const n = Math.ceil(v.countdown);
       center1(n > 0 ? String(n) : 'БОЙ!', n > 0 ? '' : 'fight', n > 0 ? `раунд ${v.round}` : '');
@@ -1411,8 +1418,9 @@ export function createPvpView({ THREE, scene, camera, root, onRematch, onMenu, e
       if (vis) {
         const W = el.clientWidth || window.innerWidth, Hh = el.clientHeight || window.innerHeight;
         tag.style.left = `${(_v.x + 1) * 0.5 * W}px`; tag.style.top = `${(1 - _v.y) * 0.5 * Hh}px`;
-        tag.querySelector('.nm').textContent = o.name || 'Соперник';
-        tag.querySelector('.bar i').style.width = `${Math.max(0, Math.min(100, 100 * o.hp / Math.max(1, o.maxHp)))}%`;
+        const nm = o.name || 'Соперник', w = `${Math.round(Math.max(0, Math.min(100, 100 * o.hp / Math.max(1, o.maxHp))))}%`;
+        if (tag._nm !== nm) { tag._nm = nm; tag.querySelector('.nm').textContent = nm; }
+        if (tag._w !== w) { tag._w = w; tag.querySelector('.bar i').style.width = w; }
       }
     } else tag.style.display = 'none';
   }

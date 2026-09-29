@@ -161,6 +161,15 @@ try {
   report.dash = { react: await dsh };
   await sleep(1200);
   report.dash.B = await stats(B);
+  if (argv.includes('--disconnect')) {
+    // обрыв: вкладка B закрывается посреди боя → у A пауза «Соперник отключился…»/техническая победа
+    await focus(A);
+    await B.close();
+    const seen = [];
+    for (let i = 0; i < 60; i++) { const v = (await pv(A)).view; seen.push(`${v.phase}${v.phase === 'paused' ? ':' + Math.ceil(v.disconnectLeft) : ''}`); if (v.phase === 'match_end') break; await sleep(1000); }
+    report.disconnect = { seen: [...new Set(seen)], end: (await pv(A)).view.result };
+    await shot(A, '5_disconnect_A.png');
+  }
   if (FULL) {
     // матч из трёх раундов: 1 — бьёт A, 2 — бьёт B, 3 — снова A (итог 2:1). Все приёмы по кругу;
     // нажатия — событиями внутри страницы (debugInput слушает window), вперёд выводится вкладка атакующего.
@@ -191,7 +200,7 @@ try {
     report.endA = (await pv(A)).view; report.endB = (await pv(B)).view;
     await shot(A, '4_result_A.png'); await shot(B, '4_result_B.png');
   }
-  await shot(A, '2_fight_A.png'); await shot(B, '2_fight_B.png');
+  if (!argv.includes('--disconnect')) { await shot(A, '2_fight_A.png'); await shot(B, '2_fight_B.png'); }
 } catch (e) { report.error = String(e && e.stack || e); report.netB = await B.evaluate(() => { const n = window.__ASHEN__ && window.__ASHEN__.net && window.__ASHEN__.net(); return { screen: window.__ASHEN__ && window.__ASHEN__.screen, n: n && { status: n.status, message: n.message, error: n.error, errorCode: n.errorCode, code: n.code } , url: location.href }; }).catch((x) => String(x)); }
 report.errors = errors;
 console.log(JSON.stringify({ ...report, errors }, null, 1));
