@@ -128,6 +128,42 @@ export function patchHeroLight(THREE, mat) {
   return mat;
 }
 
+// [HERO] «Пробуждённые» латы: светящиеся жилы-трещины по металлу (маска — metalness карты ORM),
+// узор в осях позы привязки (прилипает к доспеху), пульс и бегущая снизу вверх волна. HDR > 1 — ловит bloom.
+export const HERO_TIME = { value: 0 };
+export function patchArmorGlow(THREE, mat, { color = 0xff7a2a, strength = 2.4, unit = 1, metalMask = true } = {}) {
+  if (!mat || mat.userData.heroArmorGlow || !mat.isMeshStandardMaterial) return mat;
+  mat.userData.heroArmorGlow = true;
+  const U = { heroTime: HERO_TIME, heroArmorColor: { value: new THREE.Color(color) }, heroArmorK: { value: strength }, heroArmorUnit: { value: unit } };
+  mat.userData.heroArmorU = U;
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader, r) => {
+    if (prev) prev.call(mat, shader, r);
+    Object.assign(shader.uniforms, U);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vHeroObj;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vHeroObj = position;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vHeroObj;\nuniform float heroTime;\nuniform vec3 heroArmorColor;\nuniform float heroArmorK;\nuniform float heroArmorUnit;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  {
+    vec3 hp = vHeroObj * heroArmorUnit;
+    vec3 q = hp * 11.0;
+    float a = abs( sin( q.x + sin( q.y * 1.7 + q.z ) * 1.3 ) * sin( q.y * 1.3 + sin( q.z * 1.9 - q.x ) * 1.1 ) * sin( q.z * 1.1 + sin( q.x * 2.3 ) * 0.9 ) );
+    float vein = 1.0 - smoothstep( 0.0, 0.045, a );
+    float fine = 1.0 - smoothstep( 0.0, 0.02, abs( sin( q.y * 3.1 + sin( q.x * 2.7 ) * 2.0 ) ) );
+    float mask = ${metalMask ? 'smoothstep( 0.45, 0.85, metalnessFactor )' : '1.0'};
+    float flow = 0.45 + 0.55 * pow( 0.5 + 0.5 * sin( heroTime * 2.1 - hp.y * 5.0 ), 2.0 );
+    float pulse = 0.8 + 0.2 * sin( heroTime * 5.3 + hp.x * 7.0 );
+    totalEmissiveRadiance += heroArmorColor * ( vein + fine * 0.18 ) * mask * flow * pulse * heroArmorK;
+  }`);
+  };
+  const prevKey = mat.customProgramCacheKey;
+  mat.customProgramCacheKey = () => 'heroArmor:' + (metalMask ? 1 : 0) + ':' + (prevKey ? prevKey.call(mat) : '');
+  mat.needsUpdate = true;
+  return mat;
+}
+
 // «Обёрнутый» свет кожи: лишний диффуз у терминатора, тёплый — как свет, прошедший под кожей.
 function patchSkin(THREE, mat, uniforms) {
   const prev = mat.onBeforeCompile;
@@ -194,7 +230,14 @@ export function recolorTexture(THREE, tex, rules) {
   return t;
 }
 
-export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, quality = 'medium' } = {}) {
+export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, quality = 'medium', fx = null } = {}) {
+  // масштаб узора жил: единицы геометрии → метры (у Quaternius позиции в своих единицах)
+  let armorUnit = 1;
+  if (fx && fx.armor) {
+    let hMax = 0;
+    vrm.scene.traverse((o) => { if (o.isMesh && o.geometry) { if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); const b = o.geometry.boundingBox; hMax = Math.max(hMax, b.max.y - b.min.y, b.max.z - b.min.z); } });
+    if (hMax > 1e-6) armorUnit = 1.8 / hMax;
+  }
   const entries = []; // { mesh, index|-1, orig, real }
   const owned = [];
   const hidden = new THREE.MeshBasicMaterial({ visible: false });
@@ -274,6 +317,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
       if (P.clearcoat && q === 'high') { m.clearcoat = P.clearcoat; m.clearcoatRoughness = P.clearcoatRoughness; }
     }
     if (kind === 'skin') patchSkin(THREE, m, skinU);
+    if (kind === 'armor' && fx && fx.armor && q !== 'low') patchArmorGlow(THREE, m, { color: fx.armor, strength: fx.armorK || 2.4, unit: armorUnit });
     if (atmosphere) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, P.env); } catch (e) { /* ignore */ } }
     m.userData.heroKind = kind;
     patchHeroLight(THREE, m);

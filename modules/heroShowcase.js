@@ -23,9 +23,26 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     new THREE.CircleGeometry(1.35, 40),
     new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-      uniforms: { uK: { value: 0 }, uColor: { value: new THREE.Color(0xffc890) } },
+      uniforms: { uK: { value: 0 }, uColor: { value: new THREE.Color(0xffc890) }, uTime: { value: 0 } },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: 'uniform float uK; uniform vec3 uColor; varying vec2 vUv; void main(){ float r = length(vUv - 0.5) * 2.0; float a = pow(max(0.0, 1.0 - r), 2.2) * uK; gl_FragColor = vec4(uColor * a * 0.55, a); }',
+      // рунный круг пьедестала: мягкое пятно, три кольца, глифы по кольцу (вращаются), лучи между кольцами
+      fragmentShader: `uniform float uK; uniform vec3 uColor; uniform float uTime; varying vec2 vUv;
+        const float TAU = 6.2831853;
+        void main(){
+          vec2 p = (vUv - 0.5) * 2.0; float r = length(p); float a = atan(p.y, p.x);
+          float pool = pow(max(0.0, 1.0 - r), 2.2) * 0.55;
+          float ring = smoothstep(0.014, 0.0, abs(r - 0.84)) + smoothstep(0.008, 0.0, abs(r - 0.75)) * 0.8 + smoothstep(0.007, 0.0, abs(r - 0.47)) * 0.7;
+          float ar = a + uTime * 0.12;
+          float sec = floor(ar / TAU * 28.0); float f = fract(ar / TAU * 28.0);
+          float h = fract(sin(sec * 12.9898) * 43758.5453);
+          float band = step(0.76, r) * step(r, 0.83);
+          float glyph = band * step(0.2, f) * step(f, 0.8) * step(0.25, h) * smoothstep(0.02, 0.0, abs(r - (0.775 + 0.04 * h)) - 0.008 * (1.0 + h));
+          glyph += band * smoothstep(0.03, 0.0, abs(f - 0.5) - 0.05) * step(0.6, h);
+          float sp = step(0.48, r) * step(r, 0.74) * smoothstep(0.018, 0.0, abs(sin((a - uTime * 0.07) * 4.0))) * (0.4 + 0.6 * smoothstep(0.74, 0.5, r));
+          float pulse = 0.85 + 0.15 * sin(uTime * 1.7);
+          float c = (pool + (ring + glyph * 0.9 + sp * 0.5) * pulse) * smoothstep(1.0, 0.92, r);
+          gl_FragColor = vec4(uColor * c * uK, c * uK);
+        }`,
     }),
   );
   pool.rotation.x = -Math.PI / 2;
@@ -59,6 +76,11 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       const id = heroModel.hero;
       const st = active ? (heroModel.menuStance ? heroModel.menuStance(id) : null) : null;
       if (st !== S.stance) { S.stance = st; heroModel.setStance(st); }
+      // выбран другой герой — короткий «выход» (жест силы), затем стойка
+      if (active && heroModel.ready && id !== S.lastHero) {
+        if (S.lastHero && heroModel.flourish) heroModel.flourish('CastRaise');
+        S.lastHero = id;
+      }
       // поза класса (лучницы: лук в руке, опущен наготове); вне меню позу задаёт ввод (main.js)
       const mp = active && heroModel.menuPose ? heroModel.menuPose(id) : null;
       if (mp) { heroModel.setPose(mp); S.posed = true; }
@@ -69,7 +91,11 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       return false;
     }
     place();
-    pool.material.uniforms.uK.value = 0.55 * w;
+    pool.material.uniforms.uK.value = 0.9 * w;
+    pool.material.uniforms.uTime.value = S.t;
+    // цвет круга — стихия выбранного героя
+    const fxc = heroModel && heroModel.heroFx ? heroModel.heroFx(heroModel.hero) : null;
+    if (fxc && fxc.color !== S.poolHex) { S.poolHex = fxc.color; pool.material.uniforms.uColor.value.set(fxc.color); }
     if (!active || !camera) {
       if (HL && HL.heroKeyColor.value) { HL.heroKeyColor.value.multiplyScalar(0.9); HL.heroRimColor.value.multiplyScalar(0.9); HL.heroFillColor.value.multiplyScalar(0.9); }
       return false;

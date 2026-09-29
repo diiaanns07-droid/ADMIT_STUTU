@@ -29,6 +29,7 @@ export const HEROES = Object.freeze({
     id: 'ashen', name: 'Пепельный страж', vrm: null, glb: 'knight.glb', height: 1.84, cls: 'Воин-маг', element: 'Пепел и пламя',
     desc: ['Клятвенный страж павшего святилища.', 'Латы из закалённой стали, посох с углём клятвы.', 'Держит удар и отвечает огнём.'],
     gear: 'warden', stance: 'staff', adduct: 0.3, menuStance: 'Stance',
+    fx: { style: 'ember', color: 0xff7a2a, color2: 0xffd08a, armor: 0xff5a18, armorK: 2.6 },
   },
   // [HERO] V6: эльфийка и чародейка — реалистичные (тело и костюм Quaternius Ranger, перекраска, своё снаряжение)
   elf: {
@@ -37,6 +38,7 @@ export const HEROES = Object.freeze({
     gear: 'sylvan', stance: 'bow', adduct: 0.3, menuStance: null, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, ears: true, hair: { color: 0xe6dcc0, len: 0.95 },
     // зелёная ткань → белый шёлк с бирюзой, кожа доспеха → светлая замша
     recolor: { MI_Ranger: [{ h: [65, 175], toH: 172, s: 0.35, v: 1.55 }, { h: [8, 48], toH: 38, s: 0.55, v: 1.45 }] },
+    fx: { style: 'wind', color: 0x9ff4ff, color2: 0xfff3c0, armor: 0x7fe8ff, armorK: 1.4 },
   },
   dark: {
     id: 'dark', name: 'Тёмная чародейка', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Чародейка', element: 'Тьма и лёд',
@@ -44,17 +46,20 @@ export const HEROES = Object.freeze({
     gear: 'witchQ', stance: 'staff', adduct: 0.3, menuStance: 'Stance', hide: ['Female_Ranger_Acc_Pauldrons'], hair: { color: 0x1c1426, len: 1.05 },
     // зелёная ткань → глубокий фиолетовый, кожа → почти чёрная
     recolor: { MI_Ranger: [{ h: [65, 175], toH: 272, s: 1.1, v: 0.62 }, { h: [8, 48], toH: 255, s: 0.35, v: 0.42 }] },
+    fx: { style: 'frost', color: 0xb58cff, color2: 0x9fe0ff, armor: 0xa77bff, armorK: 1.8 },
   },
   // [HERO] новые герои (Quaternius Modular Fantasy, CC0)
   ranger: {
     id: 'ranger', name: 'Лучница', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Лучница', element: 'Ветер',
     desc: ['Разведчица пограничных застав.', 'Капюшон следопыта, длинный лук и колчан за спиной.', 'Натягивает тетиву рукой — стрела летит в цель.'],
     gear: 'scout', stance: 'bow', adduct: 0.3, menuStance: null, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, hair: { color: 0x5a3220, len: 0.85 },
+    fx: { style: 'wind', color: 0xc8ff9a, color2: 0xffe08a },
   },
   archmage: {
     id: 'archmage', name: 'Архимаг', vrm: null, glb: 'wizard.glb', height: 1.8, cls: 'Архимаг', element: 'Буря',
     desc: ['Последний магистр Грозовой коллегии.', 'Посох-громоотвод и плащ, прошитый рунами.', 'Лепит сферы молний двумя руками.'],
     gear: 'magus', stance: 'staff', adduct: 0.3, menuStance: 'Stance',
+    fx: { style: 'storm', color: 0x8fd0ff, color2: 0xe8f6ff, armor: 0x6fc0ff, armorK: 2.2 },
   },
 });
 // прежние аниме-героини VRoid: не в меню и не в лобби (HEROES), но setHero их знает
@@ -268,6 +273,7 @@ export function createHeroModel({
       cur.mixer.uncacheRoot(cur.vrm.scene);
       if (cur.gear && cur.gear.dispose) { try { cur.gear.dispose(); } catch (e) { /* ignore */ } }
       if (cur.shade && cur.shade.dispose) { try { cur.shade.dispose(); } catch (e) { /* ignore */ } }
+      if (cur.aura) { try { cur.aura.dispose(); } catch (e) { /* ignore */ } }
       if (cur.model.parent) cur.model.parent.remove(cur.model);
     }
     if (curScene) import('@pixiv/three-vrm').then((V) => { try { V.VRMUtils.deepDispose(curScene); } catch (e) { /* ignore */ } }).catch(() => {});
@@ -359,6 +365,7 @@ export function createHeroModel({
     }
   }
   const upperClips = new WeakMap(), lowerClips = new WeakMap();
+  let heroTimeU = null; // общее время шейдеров героев (жилы лат, аура)
   function disposeVrm(vrm) { import('@pixiv/three-vrm').then((V) => { try { V.VRMUtils.deepDispose(vrm.scene); } catch (e) { /* ignore */ } }).catch(() => {}); }
   // [HERO] модель не загрузилась: страж — процедурное тело мира, прочие — запасная модель
   void disposeVrm;
@@ -385,7 +392,8 @@ export function createHeroModel({
     try {
       const m = await import('./heroShading.js');
       if (token !== S.token || cur !== c) return;
-      c.shade = m.shadeHero(THREE, c.vrm, { mode: opts.shading, atmosphere: opts.atmosphere, quality: opts.quality, heroId: c.def.id });
+      c.shade = m.shadeHero(THREE, c.vrm, { mode: opts.shading, atmosphere: opts.atmosphere, quality: opts.quality, heroId: c.def.id, fx: c.def.fx || null });
+      heroTimeU = m.HERO_TIME;
     } catch (e) { console.warn('[HERO] heroShading недоступен, MToon как есть:', e && e.message); }
     try {
       const g = await import('./heroGear.js');
@@ -398,6 +406,14 @@ export function createHeroModel({
       c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null });
       if (c.full.Idle) c.full.Idle.stop();
     } catch (e) { console.warn('[HERO] heroGear недоступен, без снаряжения:', e && e.message); }
+    // аура класса (частицы стихии в шейдере) — modules/heroAura.js
+    if (c.def.fx) {
+      try {
+        const am = await import('./heroAura.js');
+        if (token !== S.token || cur !== c) return;
+        c.aura = am.createHeroAura(THREE, c.model, c.def.fx, { quality: opts.quality, height: (c.def.height || 1.8) / (c.scale || 1) });
+      } catch (e) { console.warn('[HERO] аура недоступна:', e && e.message); }
+    }
   }
 
   function setShading(mode) {
@@ -421,6 +437,7 @@ export function createHeroModel({
     S.lod = l;
     if (cur) cur.vrm.scene.traverse((o) => { if (o.isMesh) o.castShadow = l === 0; });
     if (cur && cur.gear && cur.gear.setLod) cur.gear.setLod(l);
+    if (cur && cur.aura) cur.aura.setLod(l);
   }
 
   // ---------------------------------------------------------------- слой действий
@@ -650,6 +667,7 @@ export function createHeroModel({
   function update(dt, snap, events) {
     if (!S.ready || !cur) return;
     time += dt;
+    if (heroTimeU) heroTimeU.value = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
     const P = snap && snap.player;
     if (ownRoot && P && P.position) {
       root.position.set(num(P.position.x), num(P.position.y), num(P.position.z));
@@ -669,6 +687,7 @@ export function createHeroModel({
     resetFree();
     if (!P) { // меню: покой (или стойка витрины)
       S.yawRate = 0; S.prevYaw = null;
+      if (act && !holdName && time >= actUntil) { stopAct(0.3); if (stance) setStance(stance); }
       updateLoco(dt, 0, 0, 0, false);
       cur.mixer.update(dt);
       saveClean();
@@ -796,6 +815,7 @@ export function createHeroModel({
       vrm.humanoid.update(); if (em) em.update();
     } else vrm.update(Math.min(dt, 1 / 20));
     if (cur.gear && cur.gear.update) cur.gear.update(dt, root, S.lod);
+    if (cur.aura) cur.aura.update(heroTimeU ? heroTimeU.value : time);
     if (cur.shade && cur.shade.update) cur.shade.update(dt);
   }
 
@@ -832,6 +852,9 @@ export function createHeroModel({
     root, update, setHero, setPose, setMirror, getAnchors, setShading, setQuality, setLod, setStance, dispose,
     menuStance: (id) => (HEROES[id] && HEROES[id].menuStance) || null,
     menuPose: (id) => (HEROES[id] && HEROES[id].menuPose) || null,
+    heroFx: (id) => (HEROES[id] && HEROES[id].fx) || null,
+    // жест «выхода» в меню: клип один раз на всё тело, затем снова стойка
+    flourish(name = 'CastRaise') { if (cur && cur.full[name]) playAct(name, { speed: 1.1, fade: 0.2 }); },
     get ready() { return S.ready; },
     get hero() { return S.hero; },
     get vrm() { return cur ? cur.vrm : null; },
