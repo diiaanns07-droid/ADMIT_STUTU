@@ -15,31 +15,31 @@ const PRESETS = {
   ranger: {
     metal: 0xc9a45c, metal2: 0x8c6a3a, leather: 0x4a3322, cloth: 0x1f5a44, glow: 0x7fe8ff,
     pauldrons: 'leather', bracers: true, belt: true, pouches: 3, dagger: 'left', rings: true,
-    cape: { w: 0.44, len: 0.95, color: 0x1d4f3d, trim: 0xc9a45c, emblem: 'leaf' }, bow: { wood: 0x5a3a22 }, quiver: 'hip',
+    cape: { w: 0.44, len: 0.95, color: 0x1d4f3d, trim: 0xc9a45c, emblem: 'leaf', lining: 0x6b5a2e }, bow: { wood: 0x5a3a22 }, quiver: 'hip',
   },
   // Тёмная чародейка: воронёная сталь, фиолетово-ледяные руны, длинный плащ, посох с кристаллом
   witch: {
     metal: 0x3a3a48, metal2: 0x8f8fb5, leather: 0x241d2a, cloth: 0x19142a, glow: 0x9d7bff,
     pauldrons: 'plate', bracers: true, belt: true, pouches: 2, dagger: 'right', rings: true,
-    cape: { w: 0.5, len: 1.25, color: 0x16121f, trim: 0x8f8fb5, emblem: 'moon' }, staff: { crystal: 0x8fd8ff, glow: 0x9d7bff, style: 'crescent', wood: 0x1b1522 },
+    cape: { w: 0.5, len: 1.25, color: 0x16121f, trim: 0x8f8fb5, emblem: 'moon', lining: 0x3b2160 }, staff: { crystal: 0x8fd8ff, glow: 0x9d7bff, style: 'crescent', wood: 0x1b1522 },
   },
   // Пепельный страж (латы Quaternius Knight): плащ, посох с углём клятвы, пылающая печать на груди
   warden: {
     metal: 0x8a6a45, metal2: 0xd8b070, leather: 0x2c2018, cloth: 0x3a1f1a, glow: 0xff8a3a,
     pauldrons: null, bracers: false, belt: 'pouches', pouches: 2, dagger: null, rings: false, sigil: true,
-    cape: { w: 0.66, len: 1.32, color: 0x2a1512, trim: 0xd8a860, emblem: 'flame' }, staff: { crystal: 0xffb46a, glow: 0xff7a2a, style: 'crown', wood: 0x2a1b14 },
+    cape: { w: 0.66, len: 1.32, color: 0x2a1512, trim: 0xd8a860, emblem: 'flame', lining: 0x6a140f }, staff: { crystal: 0xffb46a, glow: 0xff7a2a, style: 'crown', wood: 0x2a1b14 },
   },
   // Эльфийка на теле Quaternius: короткий белый плащ, лук и колчан, грозовые руны
   sylvan: {
     metal: 0xd8c08a, metal2: 0xe8d6a0, leather: 0x8a6a4a, cloth: 0xe8e4d8, glow: 0x7fe8ff,
     pauldrons: null, bracers: false, belt: 'pouches', pouches: 1, dagger: 'left', rings: false, sigil: false,
-    cape: { w: 0.5, len: 0.98, color: 0xd6cdb8, trim: 0xc9a45c, emblem: 'leaf' }, bow: { wood: 0xb9a888, rough: 0.62 }, quiver: 'hip',
+    cape: { w: 0.5, len: 0.98, color: 0xd6cdb8, trim: 0xc9a45c, emblem: 'leaf', lining: 0x5f7d6a }, bow: { wood: 0xb9a888, rough: 0.62 }, quiver: 'hip',
   },
   // Тёмная чародейка на теле Quaternius: воронёные наплечники, длинный плащ, посох с кристаллом ночи
   witchQ: {
     metal: 0x34303e, metal2: 0x9a8fc4, leather: 0x1e1826, cloth: 0x160f22, glow: 0xa77bff,
     pauldrons: 'plate', bracers: false, belt: 'pouches', pouches: 2, dagger: 'right', rings: false, sigil: true,
-    cape: { w: 0.6, len: 1.3, color: 0x1a1128, trim: 0xb8aee0, emblem: 'moon' }, staff: { crystal: 0x9fe0ff, glow: 0xa77bff, style: 'crescent', wood: 0x1b1522 },
+    cape: { w: 0.6, len: 1.3, color: 0x1a1128, trim: 0xb8aee0, emblem: 'moon', lining: 0x40235f }, staff: { crystal: 0x9fe0ff, glow: 0xa77bff, style: 'crescent', wood: 0x1b1522 },
   },
   // Лучница (Quaternius Ranger): лук и колчан, кинжал
   scout: {
@@ -51,12 +51,12 @@ const PRESETS = {
   magus: {
     metal: 0x6a6f7c, metal2: 0xd8b070, leather: 0x2a2230, cloth: 0x1c2438, glow: 0x8fd8ff,
     pauldrons: 'plate', bracers: true, belt: 'pouches', pouches: 2, dagger: null, rings: true, sigil: false,
-    cape: { w: 0.66, len: 1.35, color: 0x16203a, trim: 0xd8b070, emblem: 'bolt' }, staff: { crystal: 0xbfe8ff, glow: 0x6fb8ff, style: 'hoop', wood: 0x4a3526 },
+    cape: { w: 0.66, len: 1.35, color: 0x16203a, trim: 0xd8b070, emblem: 'bolt', lining: 0x7a5a22 }, staff: { crystal: 0xbfe8ff, glow: 0x6fb8ff, style: 'hoop', wood: 0x4a3526 },
   },
 };
 
 import { patchHeroLight } from './heroShading.js';
-import { buildStaff, buildBow, buildArrow, buildQuiver, buildBrooch, capeTextures, runeRingTexture, tube, gem as gemGeo } from './heroForge.js';
+import { buildStaff, buildBow, buildArrow, buildQuiver, buildBrooch, capeTextures, runeRingTexture, glintTexture, tube, gem as gemGeo } from './heroForge.js';
 import { createCloth, createStrands, fitCapsules } from './heroCloth.js';
 
 // ---------------------------------------------------------------- общие процедурные текстуры
@@ -152,7 +152,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   const G = (g) => { owned.geo.push(g); return g; };
   const Mt = (m) => {
     owned.mat.push(m);
-    if (atmosphere && !m.isMeshBasicMaterial && !m.isShaderMaterial) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, m.metalness > 0.5 ? 0.9 : 0.4); } catch (e) { /* ignore */ } }
+    if (atmosphere && !m.isMeshBasicMaterial && !m.isShaderMaterial && !m.isSpriteMaterial) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, m.metalness > 0.5 ? 0.9 : 0.4); } catch (e) { /* ignore */ } }
     if (m.isMeshStandardMaterial) patchHeroLight(THREE, m);
     return m;
   };
@@ -183,6 +183,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   mats.core = Mt(new THREE.MeshBasicMaterial({ name: 'gear-core', color: new THREE.Color(glowHex).multiplyScalar(3.2), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
   mats.runeRing = Mt(new THREE.MeshBasicMaterial({ name: 'gear-runering', map: runeRingTexture(THREE), color: new THREE.Color(glowHex).multiplyScalar(2.4), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
   mats.inlay = Mt(new THREE.MeshBasicMaterial({ name: 'gear-inlay', color: new THREE.Color(P.glow).multiplyScalar(2.2) }));
+  mats.glint = Mt(new THREE.SpriteMaterial({ name: 'gear-glint', map: glintTexture(THREE), color: new THREE.Color(glowHex).lerp(new THREE.Color(1, 1, 1), 0.35).multiplyScalar(1.6), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
   mats.fletch = Mt(new Std({ name: 'gear-fletch', color: 0xf2ece0, roughness: 0.85, side: THREE.DoubleSide, ...(physical ? { sheen: 0.4, sheenRoughness: 0.5, sheenColor: new THREE.Color(1, 1, 1) } : {}) }));
   if (rune) { rune.repeat.set(1, 1); }
   const names = [];
@@ -640,6 +641,23 @@ export function dressHero(THREE, vrm, opts = {}) {
       roughness: 0.82, metalness: 0, side: THREE.DoubleSide,
       ...(physical ? { sheen: 0.8, sheenRoughness: 0.55, sheenColor: new THREE.Color(color).lerp(new THREE.Color(trim), 0.35).multiplyScalar(1.6) } : {}),
     }));
+    // подкладка: изнанка плаща (сторона к телу) — шёлк своего цвета, без вышивки и свечения
+    if (P.cape.lining) {
+      const lin = { value: new THREE.Color(P.cape.lining) };
+      const prevC = capeMat.onBeforeCompile;
+      capeMat.onBeforeCompile = (sh, r) => {
+        if (prevC) prevC.call(capeMat, sh, r);
+        sh.uniforms.capeLining = lin;
+        sh.fragmentShader = sh.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform vec3 capeLining;')
+          .replace('#include <map_fragment>', `#include <map_fragment>
+  if ( gl_FrontFacing ) diffuseColor.rgb = capeLining * ( 0.8 + 0.4 * dot( diffuseColor.rgb, vec3( 0.3, 0.59, 0.11 ) ) );`)
+          .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  if ( gl_FrontFacing ) totalEmissiveRadiance *= 0.0;`);
+      };
+      const pk = capeMat.customProgramCacheKey;
+      capeMat.customProgramCacheKey = () => 'capeLining:' + (pk ? pk.call(capeMat) : '');
+    }
     const holder = model || vrm.scene;
     const _mq = new THREE.Quaternion();
     cloth = createCloth(THREE, {
@@ -799,6 +817,12 @@ export function dressHero(THREE, vrm, opts = {}) {
       staffRig.core.scale.setScalar(pulse * (0.8 + 0.3 * glowNow));
       mats.core.opacity = Math.min(1, 0.55 + 0.3 * glowNow);
       mats.crystal.emissiveIntensity = 0.75 + 0.35 * glowNow + 0.1 * Math.sin(t * 2.6);
+      if (staffRig.glint) {
+        const tw = 0.5 + 0.5 * Math.sin(t * 1.9) * Math.sin(t * 3.3 + 1.1);
+        staffRig.glint.scale.setScalar((0.12 + 0.12 * tw) * (0.8 + 0.3 * glowNow));
+        mats.glint.rotation = t * 0.25;
+        mats.glint.opacity = 0.45 + 0.55 * tw;
+      }
     }
     mats.runeMetal.emissiveIntensity = (2.0 + Math.sin(t * 2.1) * 0.6) * glowNow;
     mats.glow.color.copy(glowBase).multiplyScalar(0.6 + 0.4 * glowNow);
@@ -891,7 +915,8 @@ export function dressHero(THREE, vrm, opts = {}) {
     const tq = q === 'low' || q === 'high' ? q : 'medium';
     if (tq === qTier) return;
     qTier = tq;
-    for (const { m, v } of physSaved) for (const k of Object.keys(v)) m[k] = tq === 'high' || (tq === 'medium' && k === 'sheen') ? v[k] : 0;
+    // на 'medium' — sheen у всех и анизотропный блик у волос (главное в образе героинь)
+    for (const { m, v } of physSaved) for (const k of Object.keys(v)) m[k] = tq === 'high' || (tq === 'medium' && (k === 'sheen' || (k === 'anisotropy' && m.name === 'gear-hair'))) ? v[k] : 0;
   }
   setQuality(quality);
   const glowBase = mats.glow.color.clone(), inlayBase = mats.inlay.color.clone();

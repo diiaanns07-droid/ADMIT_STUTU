@@ -237,7 +237,13 @@ export function buildStaff(THREE, M, S = {}) {
     shards.add(s);
   }
   const tip = new THREE.Object3D(); tip.name = 'staff-tip'; tip.position.y = crystY; head.add(tip);
-  return { group: grp, tip, crystal, core, halo, shards, top, length: top - bottom + 0.3 };
+  // звёздный блик кристалла (спрайт, аддитивно): мерцает и медленно вращается
+  let glint = null;
+  const gt = glintTexture(THREE);
+  if (gt && M.glint) {
+    glint = new THREE.Sprite(M.glint); glint.name = 'staff-glint'; glint.scale.setScalar(0.2); glint.position.y = crystY + 0.02; head.add(glint);
+  }
+  return { group: grp, tip, crystal, core, halo, shards, glint, top, length: top - bottom + 0.3 };
 }
 
 // ---------------------------------------------------------------- лук
@@ -489,6 +495,31 @@ export function capeTextures(THREE, { base = 0x2a1a17, trim = 0xd8b070, glow = 0
   const tex = (cv, color) => { const t = new THREE.CanvasTexture(cv); t.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; return t; };
   void key;
   return { map: tex(cm, true), bump: tex(cb, false), emissive: tex(ce, true) };
+}
+
+// Звёздный блик: четыре луча и мягкое ядро (белое на чёрном, для аддитивного спрайта).
+let glintTex = null;
+export function glintTexture(THREE) {
+  if (glintTex) return glintTex;
+  if (typeof document === 'undefined') return null;
+  const N = 128, cv = document.createElement('canvas'); cv.width = N; cv.height = N;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, N, N);
+  const c = N / 2;
+  const core = g.createRadialGradient(c, c, 0, c, c, N * 0.22);
+  core.addColorStop(0, 'rgba(255,255,255,1)'); core.addColorStop(0.35, 'rgba(255,255,255,0.35)'); core.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = core; g.fillRect(0, 0, N, N);
+  g.globalCompositeOperation = 'lighter';
+  for (const [a, len, w] of [[0, 0.5, 3], [Math.PI / 2, 0.5, 3], [Math.PI / 4, 0.28, 1.6], [-Math.PI / 4, 0.28, 1.6]]) {
+    g.save(); g.translate(c, c); g.rotate(a);
+    const gr = g.createLinearGradient(-N * len, 0, N * len, 0);
+    gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.95)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(-N * len, -w, N * len * 2, w * 2);
+    g.restore();
+  }
+  glintTex = new THREE.CanvasTexture(cv);
+  glintTex.colorSpace = THREE.SRGBColorSpace;
+  return glintTex;
 }
 
 // Руны по кругу (для кольца посоха): белые знаки на чёрном, альфа по яркости.
