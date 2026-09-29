@@ -207,3 +207,35 @@
 - **Настройка** `startZone: 'arena'|'forest'` (config, sanitizeSettings, ui). При 'forest' старт у врат леса, облёт-интро
   у арены пропускается; в меню герой стоит у врат.
 - `world.forest` — `{ weight 0..1, inside, mood, drainEvents(), stats(), plan, map }`; `world.layout.zones.brightForest`.
+
+## V6 · [NET] онлайн-дуэль — API для других команд (черновик, дополняется)
+- **Как устроено.** Кнопка меню «Онлайн-дуэль» → `openNet()` в main.js лениво грузит `net/session.js`
+  (в одиночной игре не грузится ни один файл сети, `netSession === null`). Сессия = `net/net.js` (C6) +
+  `modules/remotePlayer.js` (второй герой) + `modules/netLobby.js` (экран лобби). Оба нажали «Готов» →
+  хост назначает старт по общим часам (`go {at}`), у обоих через 3,2 с вызывается `app.onNetReady(info)`.
+- **Для №3 [PVP]:** поставьте в main.js хук `app.onNetReady = (info) => pvp.start(info)` (иначе стартует обычный бой).
+  `info = { net, remote, isHost, code, opponent:{name, hero}, mode, seed }`.
+  `net.send(type, payload)` / `net.on(type, fn)` / `net.off` — свои сообщения C6 (`hit`, `hitAck`, `duel`) идут как есть.
+  `net.state`: `'connecting'|'connected'|'lost'|'idle'`; события `net.on('lost'|'reconnected'|'left'|'error', fn)`.
+  `net.sharedNow()` — общее время по часам хоста (мс, для `duel.at`), `net.sharedToLocal(t)` → мой performance.now.
+  `net.ping` — RTT, мс. `remote.getState()` → готовый `snap.opponent` (C4: id, name, hero, position — уже
+  интерполированная, то, что видит игрок; yaw, hp, maxHp, energy, maxEnergy, action, shielding, invulnerable,
+  stunned, slowed, dashing, connected, bow, handSpell, conjure, latest — последний сырой пакет).
+  `window.__ASHEN__.netSession()` — сессия целиком (для тестов). Своё состояние сеть шлёт сама из
+  `combat.getSnapshot().player` (20 Гц): если PvP добавит в player поля (stunned, slowed) — они уйдут флагами.
+- **Для №7 [VFX]:** события соперника приходят в `effects.update` с `data.remote = true` и `id` с префиксом `r-`
+  (C3). Пересылаются: player_cast, player_slash, player_dash, shield_start/end, parry, burst, rune_cast,
+  sigil_cast, rune_hit, sigil_hit, projectile_reflected, projectile_impact (свои снаряды), ward_*, bastion_*,
+  bow_draw_start, bow_release, arrow_hit, hand_spell_form/throw/hit/cancel. Сейчас effects рисует часть из них
+  у своего героя (например, шлейф рывка берёт `fi.player`) — для remote берите `ev.position` или якоря
+  `netSession.remote.getAnchors()` (C5: handL, handR, chest, head, bowSocket, staffTip) и цвет соперника.
+  Снаряды соперника добавляются в `snapshot.projectiles` для effects: `owner:'opponent'`, `remote:true`, id `r:…`.
+  world.js и свой heroModel события соперника НЕ получают (иначе свой герой повторял бы чужие удары).
+- **Для №8 [BDO]:** лобби — `modules/netLobby.css` (классы `nl-*`), уже на токенах `--bdo-*`; кнопка в меню —
+  одна строка `netBtn` в ui.js с тегом [NET], стиль подтягивайте как хотите.
+- **Транспорты:** `'peer'` — PeerJS 1.5.5 (DEPS.peerjs, облако 0.peerjs.com, ID `ashen-oath-v1-<КОД>`, STUN Google,
+  TURN — в `config.net.iceServers`); `'lan'` — `tools/relay.py` (ws://IP:8790, stdlib; Windows — START_ONLINE_HOST.cmd);
+  `'local'` — BroadcastChannel (две вкладки, `?netPing=150&netJitter=15&netLoss=0.05`).
+- **Проверка:** `node dev/net.test.mjs` (коды, упаковка, интерполяция 150 мс/5%, обрыв/восстановление),
+  `node dev/net-lan.test.mjs` (relay.py + WebSocket), `dev/net-two-tabs.html` (две игры рядом, `?harness=1` — лёгкий
+  стенд), `node tools/qa_net.mjs --mode local|lan|peer [--harness] [--cdn DIR]`.

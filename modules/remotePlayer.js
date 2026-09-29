@@ -1,8 +1,8 @@
 // ASHEN OATH — второй герой в сцене: соперник по сети (№2 [NET]).
 //
 // createRemotePlayer({ THREE, scene, world, heroFactory, camera })
-//   → { push(st), pushEvents(list), update(dt), getState(), setInfo({name, hero}), setConnected(on),
-//       setVisible(on), dispose(), root }
+//   → { push(st), pushEvents(list), update(dt), getState(), getAnchors(), setInfo({name, hero}),
+//       setConnected(on), setVisible(on), dispose(), root }
 //   push(st)   — декодированный пакет st (net/sync.js decodeState) сразу при приёме;
 //   update(dt) — раз в кадр: буфер интерполяции ~100 мс + короткая экстраполяция (net/interp.js),
 //                сглаженный поворот, высота по земле мира, анимации героя, табличка над головой;
@@ -184,7 +184,8 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
     if (typeof heroFactory !== 'function') return;
     try {
       if (hm && typeof hm.setHero === 'function') { hm.setHero(id); return; }
-      hm = heroFactory({ heroRoot: root, heroBody: body.group, extras: [], hero: id });
+      // без heroBody: страж у удалённого игрока — на запасной VRM (№4), своё процедурное тело — пока грузится
+      hm = heroFactory({ heroRoot: root, heroBody: null, extras: [], hero: id, remote: true });
     } catch (e) { console.warn('[NET] модель соперника — процедурное тело:', e && e.message); hm = null; }
   }
 
@@ -266,6 +267,7 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
     if (S.rootY === null || Math.abs(y - S.rootY) > 1.2 || dt <= 0) S.rootY = y;
     else S.rootY += (y - S.rootY) * damp(y > S.rootY ? 16 : 11, dt);
     root.position.set(s.x, S.rootY, s.z);
+    if (world && typeof world.setForestHero2 === 'function') { try { world.setForestHero2(root.position); } catch (e) { /* ignore */ } } // трава Сияющего леса мнётся и под соперником
     // поворот: интерполированный yaw + сглаживание
     S.yaw += wrapPi(s.yaw - S.yaw) * damp(14, dt);
     S.yaw = wrapPi(S.yaw);
@@ -286,6 +288,12 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
       const P = { ...st, position: { x: s.x, y: S.rootY, z: s.z }, yaw: S.yaw, velocity: { x: s.vx, z: s.vz }, speed: sp };
       snapLike.player = P;
       snapLike.status = st && st.dead ? 'defeat' : 'playing';
+      // C5: поза лука / чар рукой поверх анимаций — из st.bow / st.handSpell соперника
+      if (typeof hm.setPose === 'function') {
+        const bw = st && st.bow, hs = st && st.handSpell;
+        const hsW = hs ? (hs.phase === 'hold' ? 1 : hs.phase === 'form' ? 0.6 : hs.phase === 'throw' ? 0.3 : 0) : 0;
+        try { hm.setPose({ bowDraw: bw ? bw.draw : 0, aim: { x: bw ? bw.aimX : 0, y: bw ? bw.aimY : 0 }, handSpell: hsW }); } catch (e) { /* ignore */ }
+      }
       try { hm.update(dt, snapLike, events); } catch (e) { console.warn('[NET] heroModel соперника', e); }
     }
     events.length = 0;
@@ -321,14 +329,21 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
   }
 
   function dispose() {
+    if (world && typeof world.setForestHero2 === 'function') { try { world.setForestHero2(null); } catch (e) { /* ignore */ } }
     try { if (hm && typeof hm.dispose === 'function') hm.dispose(); } catch (e) { /* ignore */ }
     hm = null;
     if (plate) plate.dispose();
     scene.remove(root);
   }
 
+  // C5: якоря рук/груди/головы соперника — эффекты №7 и №6 крепят к ним его заклинания
+  function getAnchors() {
+    try { if (hm && hm.ready && typeof hm.getAnchors === 'function') return hm.getAnchors(); } catch (e) { /* ignore */ }
+    return { handL: body.shL, handR: body.shR, chest: body.chest, head: body.head, bowSocket: body.chest, staffTip: body.shR };
+  }
+
   return {
-    root, push, pushEvents, update, getState, setInfo, setConnected, setVisible, dispose,
+    root, push, pushEvents, update, getState, getAnchors, setInfo, setConnected, setVisible, dispose,
     debug: () => ({ size: buf.size, baseDelay: buf.baseDelay, hero: S.hero, name: S.name, connected: S.connected, model: hm && typeof hm.state === 'function' ? hm.state() : null, pos: { x: +root.position.x.toFixed(2), z: +root.position.z.toFixed(2) } }),
   };
 }
