@@ -69,6 +69,7 @@ net.on('st', (m) => { const st = decodeState(m); if (st) remote.push(st); });
 const inEv = [];
 net.on('ev', (m) => { const e = decodeEvent(m); if (e) inEv.push(e); });
 window.__net = net;
+window.__remote = remote;
 window.__track = [];
 
 const keys = new Set();
