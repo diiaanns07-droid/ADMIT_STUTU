@@ -1083,7 +1083,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         wrap.append(
           buildRange({
             key: 'sensitivity', prefix, label: 'Чувствительность движений', min: 50, max: 200, step: 5,
-            hint: 'Чем выше, тем меньший наклон нужен для движения.',
+            hint: 'Выше — меньше отводить руку для поворота и легче толчок щита (но чаще случайный); ниже — наоборот.',
             toRaw: (v) => Math.round(v * 100), fromRaw: (r) => r / 100, format: (v) => `${v.toFixed(2).replace('.', ',')}×`,
           }),
         );

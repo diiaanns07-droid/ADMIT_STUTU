@@ -952,6 +952,8 @@ export async function createVision(options = {}) {
         stick: { deadzone: 0.4 / Math.sqrt(k), walkFull: 1.05 / k, runOn: 1.2 / k, runOff: 0.95 / k, full: 1.6 / k },
         // [V5] «Руль»: выше чувствительность — уже мёртвая зона и короче ход руки до полного поворота
         steer: { dzOn: 0.2 / Math.sqrt(k), dzOff: 0.13 / Math.sqrt(k), turnFull: Math.max(0.62 / k, 0.2 / Math.sqrt(k) + 0.12) },
+        // [V6] и толчок щита слабее (выше — легче поднять, но и случайный щит вероятнее; ниже — наоборот)
+        shieldPushRatioSteer: 1 + 0.24 / Math.sqrt(k), shieldPushRatio: 1 + 0.15 / Math.sqrt(k),
       });
     } catch { /* ignore */ }
   }
