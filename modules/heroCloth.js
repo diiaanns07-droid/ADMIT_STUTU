@@ -523,7 +523,7 @@ export function createStrands(THREE, o) {
     for (const k of LK) {
       if (k.lk.static && k.done) continue;
       k.done = true;
-      const nr = k.nr, flat = k.lk.flat ?? 0.45, taper = k.lk.taper ?? 0.92;
+      const nr = k.nr, flat = k.lk.flat ?? 0.45, taper = k.lk.taper ?? 0.92, nb = k.lk.nBlend ?? 0.9;
       axisPts.length = 0;
       for (let j = 0; j < nr; j++) axisPts.push(crp(k, j / (nr - 1), axisPool[j]));
       for (let j = 0; j < nr; j++) {
@@ -555,7 +555,8 @@ export function createStrands(THREE, o) {
           const ca = RC[i], sa = RS[i];
           const q = (k.rb + j * (RU + 1) + i) * 3;
           pos[q] = cx + sx * ca * r + ox * sa * r * flat; pos[q + 1] = cy + sy * ca * r + oy * sa * r * flat; pos[q + 2] = cz + sz * ca * r + oz * sa * r * flat;
-          let nx = (sx / ls) * ca * flat + (ox / lo) * sa, ny = (sy / ls) * ca * flat + (oy / lo) * sa, nz = (sz / ls) * ca * flat + (oz / lo) * sa;
+          // нормаль сечения, смешанная с «наружу от тела»: причёска светится единой массой, без кромки на каждой пряди
+          let nx = (sx / ls) * ca * flat + (ox / lo) * (sa + nb), ny = (sy / ls) * ca * flat + (oy / lo) * (sa + nb), nz = (sz / ls) * ca * flat + (oz / lo) * (sa + nb);
           const ln = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
           nrm[q] = nx / ln; nrm[q + 1] = ny / ln; nrm[q + 2] = nz / ln;
         }

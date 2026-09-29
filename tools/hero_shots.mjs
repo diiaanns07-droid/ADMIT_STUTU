@@ -1,6 +1,7 @@
 // [HERO] Снимки героев для сравнения «до/после» и замер цены героя.
 // node tools/hero_shots.mjs --out DIR [--browser PATH] [--vendor DIR] [--size 1600x900] [--heroes ashen,elf,dark]
 //   [--shading realistic|anime] [--no-battle] [--vt] (виртуальное время: бой идёт и в SwiftShader)
+//   [--clip x,y,w,h] — кадрирование снимка меню (доли кадра)
 // node tools/hero_shots.mjs --stand 'dev/hero_stand.html?a=elf&b=dark' [--stand '…'] --out DIR
 //   — стенд героев: снимок и результаты проверок C5 (window.__HS__) в stand.json
 // Playwright (глобальный пакет) + serve_game.py. Если CDN (cdn.jsdelivr.net) недоступен, --vendor DIR
@@ -118,7 +119,10 @@ try {
     const steps = Number(argOf('--menu-step', '0'));
     if (steps) { await page.evaluate((n) => { for (let i = 0; i < n; i++) __ASHEN__.heroStep(1 / 30, null, []); }, steps); await sleep(1500); }
     const st = { hero: await page.evaluate(() => __ASHEN__.hero()), showcase: await page.evaluate(() => (__ASHEN__.heroShowcase ? __ASHEN__.heroShowcase() : null)) };
-    console.error('fps', await page.evaluate(() => __ASHEN__.fps)); await page.screenshot({ path: join(OUT, `${nn()}_${hero}_menu.png`), timeout: 120000 });
+    // --clip x,y,w,h (доли кадра 0..1) — крупный план витрины
+    const clipArg = argOf('--clip');
+    const clip = clipArg ? (([x, y, w, h]) => ({ x: x * W, y: y * H, width: w * W, height: h * H }))(clipArg.split(',').map(Number)) : undefined;
+    console.error('fps', await page.evaluate(() => __ASHEN__.fps)); await page.screenshot({ path: join(OUT, `${nn()}_${hero}_menu.png`), timeout: 120000, clip });
     // цена героя: среднее время heroModel.update (без рендера)
     st.updateMs = await page.evaluate(() => {
       if (!__ASHEN__.heroStep) return null;

@@ -117,7 +117,7 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       HL.heroKeyDir.value.copy(key.position).sub(c).normalize().transformDirection(camera.matrixWorldInverse);
       HL.heroRimDir.value.copy(rim.position).sub(c).normalize().transformDirection(camera.matrixWorldInverse);
       HL.heroKeyColor.value.setRGB(1.0, 0.82, 0.66).multiplyScalar(1.45 * w * q);
-      HL.heroRimColor.value.setRGB(0.62, 0.78, 1.0).multiplyScalar(2.0 * w);
+      HL.heroRimColor.value.setRGB(0.62, 0.78, 1.0).multiplyScalar(1.4 * w);
       HL.heroFillColor.value.setRGB(0.36, 0.4, 0.52).multiplyScalar(0.3 * w);
     }
     const pf = getPostfx && getPostfx();

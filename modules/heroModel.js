@@ -50,7 +50,8 @@ export const HEROES = Object.freeze({
   dark: {
     id: 'dark', name: 'Тёмная чародейка', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Чародейка', element: 'Тьма и лёд',
     desc: ['Изгнанница из башни Затмения.', 'Посох с кристаллом ночи, плащ с живыми рунами.', 'Сковывает льдом и рвёт тьмой.'],
-    gear: 'witchQ', stance: 'staff', adduct: 0.3, menuStance: 'Stance', hide: ['Female_Ranger_Acc_Pauldrons'], hair: { color: 0x1c1426, len: 1.05, fringe: 'straight' },
+    // [HERO] на витрине — спокойная стойка (широкая «двуручная» не к лицу чародейке)
+    gear: 'witchQ', stance: 'staff', adduct: 0.3, menuStance: null, hide: ['Female_Ranger_Acc_Pauldrons'], hair: { color: 0x1c1426, len: 1.05, fringe: 'straight' },
     // зелёная ткань → глубокий фиолетовый, кожа → почти чёрная
     recolor: { MI_Ranger: [{ h: [65, 175], toH: 272, s: 1.1, v: 0.62 }, { h: [8, 48], toH: 255, s: 0.35, v: 0.42 }], MI_Regular_Female: [{ h: [0, 60], minS: 0.04, toH: 12, s: 0.45, v: 1.26 }] },
     fx: { style: 'frost', color: 0xb58cff, color2: 0x9fe0ff, armor: 0xa77bff, armorK: 1.4, armorMode: 'seams', eyes: 0xa77bff, eyesK: 0.4 },

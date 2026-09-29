@@ -478,7 +478,7 @@ export function createAtmosphere({ THREE, scene, renderer, camera, parent, G, M,
     hero: {
       // [HERO] герой отделяется от тёмной арены: контровая кромка ярче и чуть уже, заполняющий свет сильнее
       rim: col(0xc8d8f0), fill: col(0x9db0c8), under: col(0x000000),
-      p: { x: 3.4, y: 0.85, z: 0.58, w: 0 }, underH: { value: 1 },
+      p: { x: 4.0, y: 0.62, z: 0.55, w: 0 }, underH: { value: 1 },
     },
     boss: {
       rim: col(0xff5a3c), fill: col(0x8e9bb0), under: col(0xff3d2e),

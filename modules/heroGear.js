@@ -718,7 +718,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       for (const [a, len] of [[0.7, 0.16], [2.6, 0.11]]) {
         const pts = [];
         for (let i = 0; i < 6; i++) pts.push(sg.localToWorld(new THREE.Vector3(Math.cos(a) * 0.038, top + 0.05 - (i / 5) * len, -Math.sin(a) * 0.038)));
-        locks.push({ pts, pin: 1, r0: 0.0028, r1: 0.0024, flat: 1, taper: 0, seed: a, tone: 1, stiff: 0.05, vScale: 3 });
+        locks.push({ pts, pin: 1, r0: 0.0028, r1: 0.0024, flat: 1, taper: 0, seed: a, tone: 1, stiff: 0.05, vScale: 3, nBlend: 0 });
       }
       const _rq = new THREE.Quaternion(), holderR = model || vrm.scene;
       ribbons = createStrands(THREE, { locks, anchor: sg, parent: holderR, colliders: [{ a: c0, b: c1, r: 0.024 }], material: mats.trim, drag: 0.8, carry: 0.45,
