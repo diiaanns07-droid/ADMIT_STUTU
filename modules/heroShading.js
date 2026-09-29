@@ -80,6 +80,54 @@ function weaveNormal(THREE) {
   return weaveTex;
 }
 
+// [HERO] Свет витрины (меню): ключевой, контровой и заполняющий — только на материалах героев, в шейдере.
+// Настоящие источники не добавляются: число источников сцены не меняется (нет перекомпиляции всех
+// материалов) и мир не платит за лишние источники в бою. Юниформы общие; вне меню интенсивность 0.
+// Направления — в осях камеры (view space), их ставит modules/heroShowcase.js каждый кадр.
+export const HERO_LIGHT = {
+  heroKeyColor: { value: null }, heroKeyDir: { value: null },
+  heroRimColor: { value: null }, heroRimDir: { value: null }, heroFillColor: { value: null },
+};
+let heroLightInit = false;
+function initHeroLight(THREE) {
+  if (heroLightInit) return;
+  heroLightInit = true;
+  HERO_LIGHT.heroKeyColor.value = new THREE.Color(0, 0, 0); HERO_LIGHT.heroKeyDir.value = new THREE.Vector3(0, 0, 1);
+  HERO_LIGHT.heroRimColor.value = new THREE.Color(0, 0, 0); HERO_LIGHT.heroRimDir.value = new THREE.Vector3(0, 1, 0);
+  HERO_LIGHT.heroFillColor.value = new THREE.Color(0, 0, 0);
+}
+export function patchHeroLight(THREE, mat) {
+  if (!mat || mat.userData.heroLight || !(mat.isMeshStandardMaterial)) return mat;
+  initHeroLight(THREE);
+  mat.userData.heroLight = true;
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader, r) => {
+    if (prev) prev.call(mat, shader, r);
+    Object.assign(shader.uniforms, HERO_LIGHT);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 heroKeyColor;\nuniform vec3 heroKeyDir;\nuniform vec3 heroRimColor;\nuniform vec3 heroRimDir;\nuniform vec3 heroFillColor;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  {
+    vec3 hN = normal;
+    vec3 hV = normalize( vViewPosition );
+    float hNL = dot( hN, heroKeyDir );
+    float hDiff = mix( saturate( hNL ), saturate( ( hNL + 0.35 ) / 1.35 ), 0.35 );
+    float hMet = 1.0 - 0.8 * metalnessFactor;
+    totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * hDiff * hMet;
+    vec3 hH = normalize( heroKeyDir + hV );
+    float hSpec = pow( saturate( dot( hN, hH ) ), mix( 90.0, 12.0, roughnessFactor ) ) * ( 1.0 - roughnessFactor );
+    totalEmissiveRadiance += heroKeyColor * hSpec * mix( vec3( 0.5 ), diffuseColor.rgb, metalnessFactor );
+    float hF = pow( 1.0 - saturate( dot( hN, hV ) ), 2.6 );
+    totalEmissiveRadiance += heroRimColor * hF * saturate( dot( hN, heroRimDir ) * 0.6 + 0.45 );
+    totalEmissiveRadiance += diffuseColor.rgb * heroFillColor * ( 0.4 + 0.6 * saturate( dot( hN, hV ) ) ) * hMet;
+  }`);
+  };
+  const prevKey = mat.customProgramCacheKey;
+  mat.customProgramCacheKey = () => 'heroLight:' + (prevKey ? prevKey.call(mat) : '');
+  mat.needsUpdate = true;
+  return mat;
+}
+
 // «Обёрнутый» свет кожи: лишний диффуз у терминатора, тёплый — как свет, прошедший под кожей.
 function patchSkin(THREE, mat, uniforms) {
   const prev = mat.onBeforeCompile;
@@ -198,6 +246,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
       } catch (e) { /* атмосфера без патча */ }
     }
     m.userData.heroKind = kind;
+    patchHeroLight(THREE, m);
     owned.push(m);
     return m;
   }
@@ -226,6 +275,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     if (kind === 'skin') patchSkin(THREE, m, skinU);
     if (atmosphere) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, P.env); } catch (e) { /* ignore */ } }
     m.userData.heroKind = kind;
+    patchHeroLight(THREE, m);
     owned.push(m);
     return m;
   }
@@ -262,7 +312,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
       const current = e.index >= 0 ? e.mesh.material[e.index] : e.mesh.material;
       if (current !== e.orig && e.orig && e.orig.dispose) { try { e.orig.dispose(); } catch (err) { /* ignore */ } }
     }
-    for (const m of owned) { const inUse = false; if (!inUse) m.dispose(); }
+    for (const m of owned) { if (atmosphere && atmosphere.releaseEnv) { try { atmosphere.releaseEnv(m); } catch (e) { /* ignore */ } } m.dispose(); }
     owned.length = 0;
   }
 

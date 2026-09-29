@@ -54,6 +54,8 @@ const PRESETS = {
   },
 };
 
+import { patchHeroLight } from './heroShading.js';
+
 // ---------------------------------------------------------------- общие процедурные текстуры
 const texCache = {};
 function canvasTex(THREE, key, N, draw, color = false) {
@@ -188,6 +190,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   const Mt = (m) => {
     owned.mat.push(m);
     if (atmosphere && !m.isMeshBasicMaterial && !m.isShaderMaterial) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, m.metalness > 0.5 ? 0.9 : 0.4); } catch (e) { /* ignore */ } }
+    if (m.isMeshStandardMaterial) patchHeroLight(THREE, m);
     return m;
   };
   const physical = quality !== 'low';
@@ -761,9 +764,18 @@ varying float vCapeT;`)
   function dispose() {
     for (const p of parts) if (p.obj.parent) p.obj.parent.remove(p.obj);
     for (const g of owned.geo) g.dispose();
-    for (const m of owned.mat) m.dispose();
+    for (const m of owned.mat) { if (atmosphere && atmosphere.releaseEnv) { try { atmosphere.releaseEnv(m); } catch (e) { /* ignore */ } } m.dispose(); }
     parts.length = 0;
   }
   void lodL;
-  return { names, staffTip, bow, update, setLod, setQuality() {}, setShading() {}, setBowHeld, dispose, parts: () => parts.map((p) => p.obj.name) };
+  // качество: на 'low' — без sheen/clearcoat/anisotropy/transmission (дешёвый шейдер), выше — как было
+  const physSaved = owned.mat.filter((m) => m.isMeshPhysicalMaterial).map((m) => ({ m, v: { sheen: m.sheen, clearcoat: m.clearcoat, anisotropy: m.anisotropy, transmission: m.transmission } }));
+  let qTier = quality === 'low' ? 'low' : 'hi';
+  function setQuality(q) {
+    const t = q === 'low' ? 'low' : 'hi';
+    if (t === qTier) return;
+    qTier = t;
+    for (const { m, v } of physSaved) for (const k of Object.keys(v)) m[k] = t === 'low' ? 0 : v[k];
+  }
+  return { names, staffTip, bow, update, setLod, setQuality, setShading() {}, setBowHeld, dispose, parts: () => parts.map((p) => p.obj.name) };
 }

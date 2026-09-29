@@ -1,6 +1,8 @@
 // ASHEN OATH — [HERO] витрина героя в меню (экран выбора в духе BDO).
 // Крупный герой в кинематографичном свете: тёплый ключевой (спереди-справа-сверху), холодный контровой
-// (сзади-слева, отрисовывает силуэт), мягкий заполняющий и световое пятно на земле. Медленный облёт камеры
+// (сзади-слева, отрисовывает силуэт), мягкий заполняющий и световое пятно на земле. Свет — шейдерный,
+// только на материалах героев (heroShading.HERO_LIGHT): источники сцены не добавляются, поэтому при
+// выходе из меню ничего не перекомпилируется и мир в бою не платит за лишние источники. Медленный облёт камеры
 // по дуге перед героем, герой в стойке класса (HEROES[id].menuStance через heroModel.setStance).
 // DOF и виньетку делает postfx №8 на 'high' (режим меню) — здесь только фокус на дистанцию до героя.
 // Разметку карточки (имя, класс, стихия, описание) рисует ui.js №8 из HERO_OPTIONS.
@@ -13,16 +15,9 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
   const group = new THREE.Group();
   group.name = 'hero-showcase';
   scene.add(group);
-  const key = new THREE.SpotLight(0xffd2a8, 0, 9, 0.52, 0.75, 1.6);
-  key.name = 'showcase-key';
-  const rim = new THREE.SpotLight(0x9cc6ff, 0, 9, 0.6, 0.6, 1.4);
-  rim.name = 'showcase-rim';
-  const rim2 = new THREE.SpotLight(0xffb070, 0, 8, 0.55, 0.7, 1.6);
-  rim2.name = 'showcase-rim-warm';
-  const fill = new THREE.PointLight(0x8aa0c8, 0, 7, 1.8);
-  fill.name = 'showcase-fill';
-  for (const l of [key, rim, rim2, fill]) { l.castShadow = false; group.add(l); }
-  for (const l of [key, rim, rim2]) group.add(l.target);
+  let HL = null;
+  import('./heroShading.js').then((m) => { HL = m.HERO_LIGHT; }).catch(() => {});
+  const key = { position: new THREE.Vector3() }, rim = { position: new THREE.Vector3() }, rim2 = { position: new THREE.Vector3() }, fill = { position: new THREE.Vector3() };
   // световое пятно на земле под героем (аддитивный круг)
   const pool = new THREE.Mesh(
     new THREE.CircleGeometry(1.35, 40),
@@ -50,7 +45,6 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     at(rim, -2.3, -1.2, 2.5);
     at(rim2, -2.0, 1.6, 1.4);
     at(fill, 1.6, -1.8, 1.2);
-    for (const l of [key, rim, rim2]) l.target.position.set(hp.x, hp.y + 1.1, hp.z);
     pool.position.set(hp.x, hp.y + 0.02, hp.z);
   }
 
@@ -65,16 +59,21 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       const id = heroModel.hero;
       const st = active ? (heroModel.menuStance ? heroModel.menuStance(id) : null) : null;
       if (st !== S.stance) { S.stance = st; heroModel.setStance(st); }
+      // поза класса (лучницы: лук в руке, опущен наготове); вне меню позу задаёт ввод (main.js)
+      const mp = active && heroModel.menuPose ? heroModel.menuPose(id) : null;
+      if (mp) { heroModel.setPose(mp); S.posed = true; }
+      else if (S.posed) { heroModel.setPose({ bowActive: false, bowDraw: 0, handSpell: 0 }); S.posed = false; }
     }
-    if (!group.visible) return false;
+    if (!group.visible) {
+      if (HL && HL.heroKeyColor.value) { HL.heroKeyColor.value.setRGB(0, 0, 0); HL.heroRimColor.value.setRGB(0, 0, 0); HL.heroFillColor.value.setRGB(0, 0, 0); }
+      return false;
+    }
     place();
-    const q = settings.quality === 'low' ? 0.7 : 1;
-    key.intensity = 140 * w * q;
-    rim.intensity = 220 * w;
-    rim2.intensity = 60 * w;
-    fill.intensity = 10 * w;
-    pool.material.uniforms.uK.value = 0.9 * w;
-    if (!active || !camera) return false;
+    pool.material.uniforms.uK.value = 0.55 * w;
+    if (!active || !camera) {
+      if (HL && HL.heroKeyColor.value) { HL.heroKeyColor.value.multiplyScalar(0.9); HL.heroRimColor.value.multiplyScalar(0.9); HL.heroFillColor.value.multiplyScalar(0.9); }
+      return false;
+    }
     // облёт: дуга ±32° перед героем, дистанция «по пояс», герой справа от панели меню
     const reduced = !!settings.reducedMotion;
     S.angle += dt * (reduced ? 0.03 : 0.11);
@@ -84,6 +83,17 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
     _tgt.set(hp.x - rx * 0.85, hp.y + 1.12, hp.z - rz * 0.85);
     camera.lookAt(_tgt);
+    // шейдерный свет героев: направления на источники — в осях камеры
+    if (HL && HL.heroKeyColor.value) {
+      camera.updateMatrixWorld();
+      const c = _p.copy(hp).setY(hp.y + 1.2);
+      const q = settings.quality === 'low' ? 0.8 : 1;
+      HL.heroKeyDir.value.copy(key.position).sub(c).normalize().transformDirection(camera.matrixWorldInverse);
+      HL.heroRimDir.value.copy(rim.position).sub(c).normalize().transformDirection(camera.matrixWorldInverse);
+      HL.heroKeyColor.value.setRGB(1.0, 0.8, 0.62).multiplyScalar(1.15 * w * q);
+      HL.heroRimColor.value.setRGB(0.6, 0.76, 1.0).multiplyScalar(1.5 * w);
+      HL.heroFillColor.value.setRGB(0.32, 0.38, 0.5).multiplyScalar(0.22 * w);
+    }
     const pf = getPostfx && getPostfx();
     if (pf && typeof pf.setFocus === 'function') { try { _p.copy(hp).setY(hp.y + 1.2); pf.setFocus(camera.position.distanceTo(_p)); } catch (e) { /* ignore */ } }
     void heroes;
@@ -93,7 +103,7 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
   function dispose() {
     scene.remove(group);
     pool.geometry.dispose(); pool.material.dispose();
-    for (const l of [key, rim, rim2, fill]) l.dispose && l.dispose();
+    if (HL && HL.heroKeyColor.value) { HL.heroKeyColor.value.setRGB(0, 0, 0); HL.heroRimColor.value.setRGB(0, 0, 0); HL.heroFillColor.value.setRGB(0, 0, 0); }
   }
   return { update, dispose, get weight() { return S.w; }, group };
 }

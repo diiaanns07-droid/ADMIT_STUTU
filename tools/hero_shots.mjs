@@ -99,7 +99,10 @@ try {
     await page.waitForFunction(() => !!window.__ASHEN__, null, { timeout: 60000 });
     await page.waitForFunction(() => { const a = __ASHEN__.worldAssets(); return a && a.pending === 0; }, null, { timeout: 60000 }).catch(() => {});
     if (hero !== 'ashen') await page.waitForFunction(() => { const h = __ASHEN__.hero(); return h && h.ready; }, null, { timeout: 90000 }).catch(() => log.push('hero not ready'));
-    await sleep(2500);
+    await sleep(Number(argOf('--menu-wait', '2500')));
+    // SwiftShader даёт ~1 кадр/с: кадры > 0,25 с игра считает разрывом и время не идёт — прокручиваем героя вручную
+    const steps = Number(argOf('--menu-step', '0'));
+    if (steps) { await page.evaluate((n) => { for (let i = 0; i < n; i++) __ASHEN__.heroStep(1 / 30, null, []); }, steps); await sleep(1500); }
     const st = { hero: await page.evaluate(() => __ASHEN__.hero()), showcase: await page.evaluate(() => (__ASHEN__.heroShowcase ? __ASHEN__.heroShowcase() : null)) };
     console.error('fps', await page.evaluate(() => __ASHEN__.fps)); await page.screenshot({ path: join(OUT, `${nn()}_${hero}_menu.png`), timeout: 120000 });
     // цена героя: среднее время heroModel.update (без рендера)
