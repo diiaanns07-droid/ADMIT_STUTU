@@ -101,7 +101,7 @@ function logCall(name, arg) {
   console.log('[ui-preview]', line);
 }
 
-const settings = { quality: 'medium', volume: 0.8, reducedMotion: false, sensitivity: 1 };
+const settings = { quality: 'medium', volume: 0.8, reducedMotion: false, sensitivity: 1, bdoUi: params.get('bdo') !== '0' }; // [BDO] &bdo=0 — прежний вид
 let mode = params.get('f') && params.get('f') !== 'flow' ? 'fixture' : 'flow';
 let fixtureName = FIXTURES[params.get('f')] ? params.get('f') : 'menu';
 

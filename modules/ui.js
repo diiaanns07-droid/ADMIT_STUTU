@@ -2238,6 +2238,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     if (screen !== state.screen) enterScreen(screen);
     setHidden(debugBadge, !debug);
     setClass(ui, 'ao-reduced-motion', ctx.settings.reducedMotion);
+    setClass(doc.documentElement, 'ao-bdo', !(vm.settings && vm.settings.bdoUi === false)); // [BDO] стиль Black Desert (настройка bdoUi)
     syncSettings(ctx.settings);
     UPDATERS[screen](ctx);
     if (state.focusPending) {
