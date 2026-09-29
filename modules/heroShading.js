@@ -397,6 +397,19 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
         const pk = m.customProgramCacheKey;
         m.customProgramCacheKey = () => 'heroEyes:' + (pk ? pk.call(m) : '');
       }
+      // блик в глазах: отражение «студийного» источника сверху-слева (глаза — сферы, выходит точка)
+      const prevC = m.onBeforeCompile;
+      m.onBeforeCompile = (sh, r) => {
+        if (prevC) prevC.call(m, sh, r);
+        sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  {
+    vec3 eyR = reflect( - normalize( vViewPosition ), normalize( normal ) );
+    float eyC = pow( saturate( dot( eyR, normalize( vec3( -0.35, 0.55, 0.76 ) ) ) ), 220.0 );
+    totalEmissiveRadiance += vec3( 1.25 ) * eyC;
+  }`);
+      };
+      const pkC = m.customProgramCacheKey;
+      m.customProgramCacheKey = () => 'heroCatch:' + (pkC ? pkC.call(m) : '');
     }
     if (physical) {
       m.specularIntensity = P.specularIntensity;
