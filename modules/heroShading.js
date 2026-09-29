@@ -195,7 +195,73 @@ function patchSkin(THREE, mat, uniforms) {
 // [HERO] Перекраска атласа костюма (процедурно, на canvas): правила по тону HSV.
 //   rules: [{ h: [from°, to°], toH?, s?: множитель, v?: множитель, minS?, minV?, maxV? }] — первое подходящее правило.
 // Нужна, чтобы из одного костюма Quaternius сделать разных героев (эльфийка, чародейка).
-export function recolorTexture(THREE, tex, rules) {
+// [HERO] Макияж на атласе кожи Quaternius (женское лицо — левый верх атласа 512²: глаза ~(66,90)/(118,90),
+// губы ~(92,133), щёки ~(55,118)/(130,118); координаты в долях атласа). spec: { lips, lipsA, shadow, shadowA,
+// liner, blush, blushA, freckles } — цвета 0xRRGGBB. Рисуется поверх перекрашенного холста.
+export function makeupPainter(spec) {
+  if (!spec) return null;
+  const hex = (c, a) => { const r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255; return `rgba(${r},${g},${b},${a})`; };
+  return (g, W, H) => {
+    const X = (u) => u * W, Y = (v) => v * H, S = W / 512;
+    const eyes = [[66 / 512, 90 / 512, -1], [118 / 512, 90 / 512, 1]];
+    g.save();
+    // тени: мягкое пятно над веком, вытянуто к виску
+    if (spec.shadow !== undefined) {
+      g.globalCompositeOperation = 'multiply';
+      for (const [u, v, side] of eyes) {
+        const cx = X(u) + side * 2 * S, cy = Y(v) - 4 * S;
+        const gr = g.createRadialGradient(cx, cy, 0, cx, cy, 15 * S);
+        gr.addColorStop(0, hex(spec.shadow, spec.shadowA ?? 0.55)); gr.addColorStop(1, hex(spec.shadow, 0));
+        g.fillStyle = gr; g.save(); g.translate(cx, cy); g.scale(1.35, 0.7); g.translate(-cx, -cy);
+        g.beginPath(); g.arc(cx, cy, 15 * S, 0, Math.PI * 2); g.fill(); g.restore();
+      }
+    }
+    // подводка: дуга по верхнему веку и «стрелка» к виску
+    if (spec.liner !== undefined) {
+      g.globalCompositeOperation = 'source-over';
+      g.strokeStyle = hex(spec.liner, 0.85); g.lineCap = 'round'; g.lineWidth = 1.6 * S;
+      for (const [u, v, side] of eyes) {
+        const cx = X(u), cy = Y(v);
+        g.beginPath(); g.moveTo(cx - side * 11 * S, cy - 1 * S);
+        g.quadraticCurveTo(cx, cy - 7 * S, cx + side * 11 * S, cy - 2 * S);
+        g.lineTo(cx + side * 16 * S, cy - 5 * S); g.stroke();
+      }
+    }
+    // румянец
+    if (spec.blush !== undefined) {
+      g.globalCompositeOperation = 'source-over';
+      for (const u of [55 / 512, 130 / 512]) {
+        const cx = X(u), cy = Y(118 / 512);
+        const gr = g.createRadialGradient(cx, cy, 0, cx, cy, 16 * S);
+        gr.addColorStop(0, hex(spec.blush, spec.blushA ?? 0.22)); gr.addColorStop(1, hex(spec.blush, 0));
+        g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, 16 * S, 0, Math.PI * 2); g.fill();
+      }
+    }
+    // губы: мягкий эллипс цвета, поверх — лёгкий блик
+    if (spec.lips !== undefined) {
+      const cx = X(92 / 512), cy = Y(133 / 512);
+      g.globalCompositeOperation = 'multiply';
+      const gr = g.createRadialGradient(cx, cy, 0, cx, cy, 13 * S);
+      gr.addColorStop(0, hex(spec.lips, spec.lipsA ?? 0.8)); gr.addColorStop(0.7, hex(spec.lips, (spec.lipsA ?? 0.8) * 0.8)); gr.addColorStop(1, hex(spec.lips, 0));
+      g.fillStyle = gr; g.save(); g.translate(cx, cy); g.scale(1.25, 0.55); g.translate(-cx, -cy);
+      g.beginPath(); g.arc(cx, cy, 13 * S, 0, Math.PI * 2); g.fill(); g.restore();
+    }
+    // веснушки по щекам и носу
+    if (spec.freckles) {
+      g.globalCompositeOperation = 'multiply';
+      let sd = 5;
+      const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+      for (let i = 0; i < 60; i++) {
+        const side = i % 2 ? 1 : -1, cx = X(92 / 512) + side * (8 + rnd() * 30) * S, cy = Y((108 + rnd() * 18) / 512);
+        g.fillStyle = hex(spec.freckles, 0.25 + rnd() * 0.25);
+        g.beginPath(); g.arc(cx, cy, (0.6 + rnd() * 0.8) * S, 0, Math.PI * 2); g.fill();
+      }
+    }
+    g.restore();
+  };
+}
+
+export function recolorTexture(THREE, tex, rules, paint = null) {
   const img = tex && tex.image;
   if (!img || typeof document === 'undefined' || !rules || !rules.length) return tex;
   const w = img.width, h = img.height;
@@ -228,6 +294,7 @@ export function recolorTexture(THREE, tex, rules) {
     px[i] = (rr + m) * 255; px[i + 1] = (g2 + m) * 255; px[i + 2] = (bb + m) * 255;
   }
   g.putImageData(d, 0, 0);
+  if (paint) { try { paint(g, w, h); } catch (e) { /* без макияжа */ } }
   const t = new THREE.CanvasTexture(cv);
   t.flipY = tex.flipY; t.colorSpace = tex.colorSpace; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT;
   t.channel = tex.channel; t.anisotropy = tex.anisotropy || 4;
