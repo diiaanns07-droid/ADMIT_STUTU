@@ -328,6 +328,34 @@ test('[V6] руль не дрожит: рука в зоне поворота с 
   ok(hi - lo < 0.12, `разброс поворота ${(hi - lo).toFixed(3)}`);
 });
 
+test('[V6] привычка игрока: рука «прямо» на 0.3 sw не там, где ждёт игра — после пары подъёмов герой идёт прямо', () => {
+  const st = createSteerStick();
+  const HAB = -0.3;   // игроку удобнее держать ладонь ближе к середине груди
+  let t = run(st, 1000, 400, () => P(HAB, -1.5));
+  t = run(st, t, 330, () => P(HAB, CHEST));
+  const before = Math.abs(st.read(t).x);
+  ok(before > 0.1, 'пока привычка не выучена, такая рука заворачивает: ' + before);
+  t = run(st, t, 900, () => P(HAB, CHEST));
+  for (let k = 0; k < 2; k++) { t = run(st, t, 400, () => P(HAB, -1.5)); t = run(st, t, 1200, () => P(HAB, CHEST)); }
+  const after = Math.abs(st.read(t).x);
+  ok(after < 0.02, `после двух подъёмов — прямо: |x|=${after.toFixed(3)} (нейтраль ${st.getDebug().neutral})`);
+  // и поворот от новой нейтрали работает в обе стороны
+  t = run(st, t, 500, () => P(HAB + 0.45, CHEST));
+  ok(st.read(t).x < -0.3, 'наружу — влево: ' + st.read(t).x);
+  t = run(st, t, 500, () => P(HAB - 0.45, CHEST));
+  ok(st.read(t).x > 0.3, 'к груди — вправо: ' + st.read(t).x);
+});
+
+test('[V6] привычка не «съедает» поворот: подняли руку и сразу увели вбок — нейтраль не сдвигается', () => {
+  const st = createSteerStick();
+  let t = run(st, 1000, 400, () => P(0, -1.5));
+  const n0 = st.getDebug().neutral;
+  t = run(st, t, 66, () => P(0, CHEST));
+  t = run(st, t, 900, () => P(0.5, CHEST));
+  ok(st.getDebug().neutral === n0, `нейтраль ${n0} → ${st.getDebug().neutral}`);
+  ok(st.read(t).x < -0.4, 'поворот полный: ' + st.read(t).x);
+});
+
 test('мусор на входе не ломает модуль', () => {
   const st = createSteerStick();
   st.push(null); st.push({}); st.push({ t: NaN }); st.push({ t: 5, hand: { x: NaN, y: 1 } });

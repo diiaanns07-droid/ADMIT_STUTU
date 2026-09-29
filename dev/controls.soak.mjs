@@ -10,7 +10,10 @@
 //   • спотыкания: кадры «стоим» посреди ходьбы; мигание ход/стоп;
 //   • дрожь руля: |поворот| на прямых участках, разброс поворота на дуге;
 //   • задержки: подъём руки → ход, опускание → стоп, толчок → щит;
-//   • осознанный щит: поднялся ли, опустился ли после «убрал ладонь».
+//   • осознанный щит: поднялся ли, опустился ли после «убрал ладонь»;
+//   • игрок держит ладонь на ~10 см левее/правее нейтрали игры: герой всё равно идёт прямо.
+// Ключи: --seeds N, --seed S (один прогон), --push K (сила толчка), --offset/--level (привычка игрока),
+//   --cfg '{...}' (подмена настроек handGestures), --debug (по фазам), --json.
 // Итог — таблица и жёсткие пороги (код выхода 1, если хуже порогов).
 
 import { createHandGestures } from '../core/handGestures.js';
@@ -22,7 +25,9 @@ const SEEDS = +argOf('--seeds', 8);
 const ONLY = argOf('--seed', null);   // --seed N: один прогон с этим зерном
 const JSON_OUT = argv.includes('--json');
 const DEBUG = argv.includes('--debug');
-const PUSH = +argOf('--push', 1.35);          // сила осознанного толчка щита: во столько раз кисть растёт в кадре
+const PUSH = +argOf('--push', 1.35);
+const OFFSET = +argOf('--offset', 0);          // привычная ладонь игрока смещена от нейтрали игры (sw, + к середине груди)
+const LEVEL = +argOf('--level', 0);            // и выше (+) / ниже (−) «уровня груди» (sw)          // сила осознанного толчка щита: во столько раз кисть растёт в кадре
 const G_OPTS = JSON.parse(argOf('--cfg', '{}')); // подмена настроек handGestures (подбор порогов)
 const byTag = {};   // --debug: по фазам — кадры, стоим при ходьбе, ложный щит
 const DT = 33;
@@ -30,8 +35,8 @@ const DT = 33;
 // Сценарий: фазы { ms, want, hand(u, k) → { x, y, size, shape, palm, yaw } | null }.
 // x, y — координаты показа в ширинах плеч от середины плеч (x вправо на экране, y вниз).
 // want: 'rest' | 'walk' | 'run' | 'turnL' | 'turnR' | 'shield' | 'any'
-const NX = -0.55;            // нейтраль руля (перед левым плечом) на зеркальном экране
-const CHEST = 0.28;          // «на уровне груди» (y вниз): ход
+let NX = -0.55 + OFFSET;     // нейтраль руля (перед левым плечом) на зеркальном экране — у этого игрока
+const CHEST = 0.28 - LEVEL;  // «на уровне груди» (y вниз): ход
 const SHOULDER = -0.25;      // «у плеча и выше»: бег
 const LAP = 1.45;            // на коленях
 const SIZE = 0.075;
@@ -199,6 +204,17 @@ const runs = [];
 if (ONLY !== null) runs.push(simulate(+ONLY, G_OPTS));
 else for (let s = 0; s < SEEDS; s++) runs.push(simulate(1000 + s * 7919, G_OPTS));
 const R = summarize(runs);
+// игроки, которым удобнее держать ладонь на ~10 см левее / правее нейтрали игры (привычка учится за подъёмы)
+if (ONLY === null && !argv.includes('--offset')) {
+  const off = [];
+  for (const o of [-0.3, 0.3]) {
+    NX = -0.55 + o;
+    for (let s = 0; s < Math.max(2, SEEDS / 4); s++) off.push(simulate(5000 + s * 7919 + (o > 0 ? 1 : 0), G_OPTS));
+  }
+  NX = -0.55 + OFFSET;
+  const O = summarize(off);
+  R.offsetTurnAvg = O.straightTurnAvg; R.offsetShieldUpPct = O.shieldUpPct; R.offsetWrongTurn = O.wrongTurn;
+}
 if (DEBUG) console.table(byTag);
 if (JSON_OUT) console.log(JSON.stringify(R));
 else {
@@ -217,6 +233,9 @@ const LIMITS = [
   ['stopMs', (v) => v <= 250, 'рука вниз → стоп, мс'],
   ['shieldUpPct', (v) => v >= 90, 'осознанный толчок поднимает щит (кисть в симуляции теряется сериями кадров), %'],
   ['shieldDropped', (v) => v === `${runs.length}/${runs.length}`, 'убрал ладонь назад — щит опустился'],
+  ['offsetTurnAvg', (v) => v === undefined || v <= 0.06, 'рука «не там» на 10 см: руль на прямой'],
+  ['offsetShieldUpPct', (v) => v === undefined || v >= 90, 'рука «не там» на 10 см: толчок поднимает щит, %'],
+  ['offsetWrongTurn', (v) => v === undefined || v === 0, 'рука «не там» на 10 см: поворот не в ту сторону'],
 ];
 let bad = 0;
 if (!JSON_OUT) console.log('');

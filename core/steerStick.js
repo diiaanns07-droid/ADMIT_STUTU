@@ -27,8 +27,17 @@ import { createLeftStick } from './leftStick.js';
 export const DEFAULT_STEER_CONFIG = Object.freeze({
   // поворот (всё в ширинах плеч sw; «наружу» = к левому краю тела игрока)
   neutralX: 0.55,          // нейтраль ладони: столько sw от середины плеч наружу (≈ перед левым плечом)
-  neutralAdapt: 0.15,      // нейтраль подстраивается под привычное положение руки в пределах ±столько
+  neutralAdapt: 0.35,      // нейтраль подстраивается под привычное положение руки в пределах ±столько
+                           // ([V6] 0.15 → 0.35: рука «не там» на 10 см — и герой всё время заворачивал)
   neutralTauMs: 5000,      // медленно: пока рука в мёртвой зоне
+  // [V6] привычка игрока: после подъёма руки она спокойно встаёт «прямо» — там, где удобно этому
+  // игроку. Среднее положение за окно после подъёма сдвигает нейтраль (на долю learnWeight за подъём),
+  // если рука стояла спокойно (не рулила сразу же). За 2–3 подъёма нейтраль встаёт под игрока.
+  learnFromMs: 150,        // окно после подъёма руки…
+  learnToMs: 450,
+  learnWeight: 0.5,        //   …сдвиг нейтрали к среднему за подъём
+  learnMaxSd: 0.07,        //   рука стояла спокойно: разброс по горизонтали меньше (sw)…
+  learnMaxMove: 0.15,      //   …и не ушла вбок от места подъёма дальше (sw): подняли и сразу рулят — не привычка
   dzOn: 0.2,               // поворот начинается дальше стольких sw от нейтрали…
   dzOff: 0.13,             // …и кончается ближе стольких (гистерезис — не мигает)
   turnFull: 0.62,          // здесь поворот полный (1)
@@ -101,12 +110,13 @@ export function createSteerStick(configPatch = {}) {
       source: 'none', raised: false, raisedSince: null, running: false,
       turning: false, turnF: 0, fwdF: null, lastTgt: 0, neutral: cfg.neutralX, rawHist: [],
       out: { x: 0, z: 0 }, gait: 'idle', busy: false,
+      learn: null,           // [V6] накопление положения ладони после подъёма: { n, sum, sum2, done }
       wOff: null, wOffN: 0,
       zone: 'none', zoneHist: [{ t: -Infinity, zone: 'none' }],
       levelHist: [], outHist: [], riseT: -Infinity,
       freezeUntil: -Infinity, freezeOut: null, pendingDash: null,
       handDisp: null,
-      counters: { pushes: 0, raises: 0, stops: 0, exits: 0, dashes: 0, dashRejected: 0, wristFrames: 0 },
+      counters: { pushes: 0, raises: 0, stops: 0, exits: 0, dashes: 0, dashRejected: 0, wristFrames: 0, learned: 0 },
     };
     dash.reset();
   }
@@ -232,8 +242,23 @@ export function createSteerStick(configPatch = {}) {
     // вперёд: поднята ли рука (гистерезис; опускание — по сырому уровню, без задержки фильтра)
     if (!s.raised) {
       // подъём — по сырому уровню (отклик без задержки фильтра); от дрожания у порога — гистерезис walkOn/walkOff
-      if (lvRaw >= cfg.walkOn) { s.raised = true; s.raisedSince = t; s.counters.raises++; }
+      if (lvRaw >= cfg.walkOn) { s.raised = true; s.raisedSince = t; s.counters.raises++; s.learn = { n: 0, sum: 0, sum2: 0, done: false, x0: (h.x - R.x) / W }; }
     } else if (lvRaw < cfg.walkOff || h.y > cfg.exitBottomY) stop(t, 'lowered');
+
+    // [V6] привычное положение руки: окно после подъёма → нейтраль
+    if (s.raised && s.learn && !s.learn.done && s.source === 'hand') {
+      const since = t - s.raisedSince, L = s.learn;
+      if (since >= cfg.learnFromMs && since <= cfg.learnToMs) { L.n++; L.sum += outward; L.sum2 += outward * outward; }
+      else if (since > cfg.learnToMs) {
+        L.done = true;
+        const m = L.n ? L.sum / L.n : 0, sd = L.n ? Math.sqrt(Math.max(0, L.sum2 / L.n - m * m)) : Infinity;
+        // рука встала там же, где была при подъёме (подняли — и держат), а не ушла вбок рулить
+        if (L.n >= 5 && sd <= cfg.learnMaxSd && Math.abs(m - L.x0) <= cfg.learnMaxMove) {
+          s.neutral = clamp(s.neutral + (m - s.neutral) * cfg.learnWeight, cfg.neutralX - cfg.neutralAdapt, cfg.neutralX + cfg.neutralAdapt);
+          s.counters.learned++;
+        }
+      }
+    }
 
     let out = { x: 0, z: 0 };
     if (s.raised) {
