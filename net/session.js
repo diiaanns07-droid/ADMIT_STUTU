@@ -52,7 +52,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     inEvents: [], remoteProj: [], remoteProjAt: 0,
     lanHost: U.lanHost || (settings && settings.netLanHost) || '',
     lobbyOpen: false, busy: false, oppGone: false,
-    lanIps: null, lanCheck: '',
+    lanIps: null, lanCheck: '', netCheck: '',
   };
   const remote = createRemotePlayer({ THREE, scene, world, heroFactory, camera });
   // значок связи в бою: соперник и пинг; при обрыве — «переподключение»
@@ -232,6 +232,18 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     }
   }
 
+  // «Интернет»: проверить сервер комнат и STUN до создания комнаты (net/diag.js)
+  async function checkInternet() {
+    S.netCheck = 'Проверяем сервер комнат и STUN…'; changed();
+    try {
+      const [{ diagnoseInternet }, cfgMod] = await Promise.all([import('./diag.js'), import('../config.js').catch(() => null)]);
+      const netCfg = cfgMod && cfgMod.config && cfgMod.config.net ? cfgMod.config.net : {};
+      const r = await diagnoseInternet({ iceServers: netCfg.iceServers, peer: netCfg.peer });
+      S.netCheck = `${r.lines.join('\n')}\n${r.verdict}`;
+    } catch (e) { S.netCheck = `Проверка не удалась: ${(e && e.message) || e}`; }
+    changed();
+  }
+
   function setLanHost(v) {
     S.lanHost = String(v || '').trim().replace(/^wss?:\/\//, '').replace(/\/.*$/, '');
     if (hooks.saveSettings) hooks.saveSettings({ netLanHost: S.lanHost });
@@ -359,7 +371,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
       opponent: net && net.remote ? { ...net.remote, heroName: heroes && heroes[net.remote.hero] ? heroes[net.remote.hero].name : net.remote.hero } : null,
       meReady: S.meReady, oppReady: S.oppReady, startIn: S.startAt ? Math.max(0, S.startAt - performance.now()) : 0, started: S.started,
       name: p.name, hero: p.hero, lanHost: S.lanHost, https: typeof location !== 'undefined' && location.protocol === 'https:',
-      lanIps: S.mode === 'lan' ? S.lanIps : null, lanCheck: S.lanCheck,
+      lanIps: S.mode === 'lan' ? S.lanIps : null, lanCheck: S.lanCheck, netCheck: S.mode === 'peer' ? S.netCheck : '',
       lastCode: (() => { const l = readLast(); return l && l.role === 'guest' ? l.code : ''; })(),
       heroes: heroes ? Object.values(heroes).filter((h) => h && !h.hidden).map((h) => ({ id: h.id, name: h.name })) : [],
       showLocal: S.mode === 'local' || U.transport === 'local' || !!(hooks.isDebug && hooks.isDebug()),
@@ -382,6 +394,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
           close: () => closeLobby(),
           mode: (m2) => { if (!S.net || S.net.state === 'idle') { S.mode = m2; S.error = null; changed(); } },
           checkLan: (ip) => checkLan(ip),
+          checkInternet: () => checkInternet(),
           profile: (patch) => { if (hooks.saveSettings) hooks.saveSettings(patch); if (S.net) S.net.setProfile(profile()); sendLobby(); changed(); },
         },
       });

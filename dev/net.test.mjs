@@ -241,5 +241,20 @@ await t('net local: sharedNow() у хоста и гостя совпадает (
   A.close(); B.close();
 });
 
+await t('проверка сети «Интернет»: сервер комнат отвечает / нет; без WebRTC — совет раздать с телефона или LAN', async () => {
+  const { createServer } = await import('node:http');
+  const { checkPeerServer, diagnoseInternet } = await import('../net/diag.js');
+  const srv = createServer((req, res) => { if (/\/peerjs\/id/.test(req.url)) { res.writeHead(200); res.end('abc'); } else { res.writeHead(404); res.end(); } });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const port = srv.address().port;
+  assert.equal(await checkPeerServer({ host: '127.0.0.1', port, secure: false, path: '/' }), true);
+  assert.equal(await checkPeerServer({ host: '127.0.0.1', port, secure: false, path: '/nope/' }), false);
+  const d = await diagnoseInternet({ peer: { host: '127.0.0.1', port, secure: false, path: '/' } });
+  assert.equal(d.server, 'ok');
+  assert.equal(d.good, false);                              // в Node нет RTCPeerConnection
+  assert.match(d.verdict, /телефона|LAN/);
+  srv.close();
+});
+
 console.log(`\nnet: ${pass} проверок пройдено${process.exitCode ? ', ЕСТЬ ОШИБКИ' : ''}`);
 setTimeout(() => process.exit(process.exitCode || 0), 100);

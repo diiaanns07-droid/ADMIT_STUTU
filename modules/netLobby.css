@@ -153,6 +153,8 @@
 .nl-hint { margin: 2px 0 0; color: var(--nl-muted); font-size: 13px; line-height: 1.45; }
 .nl-hint.is-warn { color: var(--nl-warn); }
 .nl-lan { display: flex; flex-direction: column; gap: 6px; }
+.nl-netbox { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.nl-netcheck { white-space: pre-line; color: var(--nl-text); }
 
 .nl-btn {
   padding: 10px 16px;

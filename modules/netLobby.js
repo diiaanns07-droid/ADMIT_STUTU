@@ -51,6 +51,10 @@ export function createNetLobby({ root, actions }) {
   const lanBox = el('div', { class: 'nl-lan' }, el('label', { class: 'nl-label', text: 'IP ноутбука, где запущен ретранслятор' }),
     el('div', { class: 'nl-joinrow' }, lanIn, lanCheckBtn), lanHint, lanCheck);
   const modeHint = el('p', { class: 'nl-hint nl-modehint' });
+  const netCheckBtn = el('button', { type: 'button', class: 'nl-btn nl-btn--small', text: 'Проверить сеть' });
+  netCheckBtn.addEventListener('click', () => A.checkInternet && A.checkInternet());
+  const netCheck = el('p', { class: 'nl-hint nl-netcheck', 'aria-live': 'polite' });
+  const netBox = el('div', { class: 'nl-netbox' }, netCheckBtn, netCheck);
 
   const hostBtn = el('button', { type: 'button', class: 'nl-btn nl-btn--primary', text: 'Создать комнату' });
   hostBtn.addEventListener('click', () => A.host && A.host(V.mode, lanIn.value));
@@ -115,7 +119,7 @@ export function createNetLobby({ root, actions }) {
         el('div', { class: 'nl-label', text: 'Герой' }), heroBox,
         el('div', { class: 'nl-label', text: 'Связь' }),
         el('div', { class: 'nl-segs', role: 'group', 'aria-label': 'Режим связи' }, modeBtns.peer, modeBtns.lan, modeBtns.local),
-        modeHint, lanBox),
+        modeHint, netBox, lanBox),
       el('div', { class: 'nl-col nl-col--room' }, actionsBox, roomBox, status, msg, errBox)));
   const overlay = el('div', { class: 'nl-overlay', hidden: true }, panel);
   overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); A.close && A.close(); } });
@@ -162,6 +166,9 @@ export function createNetLobby({ root, actions }) {
     modeBtns.local.hidden = !v.showLocal;
     modeHint.textContent = MODE_HINT[v.mode] || '';
     lanBox.hidden = v.mode !== 'lan';
+    netBox.hidden = v.mode !== 'peer' || inRoom;
+    netCheck.textContent = v.netCheck || '';
+    netCheck.hidden = !v.netCheck;
     lanIn.disabled = inRoom;
     lanHint.textContent = v.https
       ? 'Эта страница открыта по https — браузер заблокирует ws:// (mixed content). Для LAN откройте игру у себя через «python serve_game.py» (http://127.0.0.1:8765).'
