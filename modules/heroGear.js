@@ -1009,7 +1009,10 @@ export function dressHero(THREE, vrm, opts = {}) {
       lids = { pivots: [], meshes: [], face: faceMesh, q0: [], axis: LEFT.clone(), k: 0, rot: F.rot };
       for (const e of eyes) {
         const piv = new THREE.Group(); piv.name = 'eyelid';
-        const lid = new THREE.Mesh(lidGeo(e), faceMesh.material); lid.name = 'eyelid-skin'; lid.visible = false;
+        const lid = new THREE.Mesh(lidGeo(e), faceMesh.material); lid.name = 'eyelid-skin';
+        // открытый глаз — шторка в нулевом масштабе (рисуется, но невидима): шейдер собирается сразу, а не рывком
+        // на первом моргании
+        lid.scale.setScalar(1e-4);
         const up = new THREE.Mesh(lashStrip(e, -0.85, 1.4, yU, F.dU, (t) => F.lenU * (0.5 + 0.28 * ss(0.15, 0.95, t)) * (0.4 + 0.6 * Math.sin(Math.PI * Math.min(1, t * 1.08 + 0.04))), 1), mUp);
         up.name = 'lash-up';
         piv.add(lid, up);
@@ -1106,9 +1109,9 @@ export function dressHero(THREE, vrm, opts = {}) {
     for (let i = 0; i < lids.pivots.length; i++) {
       lids.pivots[i].quaternion.copy(lids.q0[i]).multiply(_bq);
       const m = lids.meshes[i];
-      m.visible = k > 0.03;
+      m.scale.setScalar(k > 0.03 ? 1 : 1e-4);
       // материал лица меняется со сменой качества и режима — шторка берёт текущий
-      if (m.visible && m.material !== lids.face.material) m.material = lids.face.material;
+      if (m.material !== lids.face.material) m.material = lids.face.material;
     }
   }
 
