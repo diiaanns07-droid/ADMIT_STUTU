@@ -142,15 +142,28 @@ export function createHeroModel({ THREE, heroRoot, heroBody, extras = [], url, h
     const c = Math.cos(yaw), s = Math.sin(yaw);
     const lx = vx * c - vz * s, lz = vx * s + vz * c;
     const sp = Math.hypot(vx, vz);
+    // [V4] скорость поворота: поворот на месте (обход Регента, разворот) — переступаем, а не «едем»
+    if (dt > 1e-4) {
+      let dy = yaw - (S.prevYaw ?? yaw);
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      S.yawRate = (S.yawRate || 0) + (dy / dt - (S.yawRate || 0)) * (1 - Math.exp(-10 * dt));
+    }
+    S.prevYaw = yaw;
+    const sprint = num(P.sprint) > 0.5 || !!P.cruise; // [V4] спринт и автобег друга (до 8 м/с)
     let lname = 'Idle', rate = 1;
     if (sp > 0.35) {
       if (lz < -0.5 && Math.abs(lz) > Math.abs(lx)) { lname = 'Walking_Backwards'; rate = sp / 2.2; }
       else if (Math.abs(lx) > Math.abs(lz) * 1.3 && sp > 2.2) { lname = lx > 0 ? 'Running_Strafe_Left' : 'Running_Strafe_Right'; rate = sp / 4.5; }
       else if (sp < 3.0) { lname = 'Walking_A'; rate = sp / 1.9; }
+      else if (sprint || sp > 6.2) { lname = 'Running_B'; rate = sp / 6.0; }
       else { lname = 'Running_A'; rate = sp / 5.0; }
-    }
+    } else if (Math.abs(S.yawRate || 0) > 1.4) { lname = 'Walking_A'; rate = 0.8; }
     setLoco(lname);
     if (loco) loco.timeScale = Math.min(1.8, Math.max(0.6, rate));
+    // наклон корпуса вперёд на бегу и сильнее на спринте (вперёд = +z, наклон — поворот вокруг x)
+    const leanWant = lz > 2.5 ? (sprint ? 0.16 : 0.06) : 0;
+    S.lean = (S.lean || 0) + (leanWant - (S.lean || 0)) * (1 - Math.exp(-6 * dt));
+    model.rotation.x = S.lean;
     const moving = sp > 0.6;
 
     // одиночные действия по событиям
