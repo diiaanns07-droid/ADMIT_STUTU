@@ -28,6 +28,7 @@ const PRESETS = {
     metal: 0x8a6a45, metal2: 0xd8b070, leather: 0x2c2018, cloth: 0x3a1f1a, glow: 0xff8a3a,
     pauldrons: null, bracers: false, belt: 'pouches', pouches: 2, dagger: null, rings: false, sigil: true,
     cape: { w: 0.66, len: 1.32, color: 0x2a1512, trim: 0xd8a860, emblem: 'flame', lining: 0x6a140f }, staff: { crystal: 0xffb46a, glow: 0xff7a2a, style: 'crown', wood: 0x2a1b14 },
+    plume: { color: 0x8c1a12, len: 0.46 },
   },
   // Эльфийка на теле Quaternius: короткий белый плащ, лук и колчан, грозовые руны
   sylvan: {
@@ -589,6 +590,69 @@ export function dressHero(THREE, vrm, opts = {}) {
     names.push('hair');
   }
 
+  // ---------------- плюмаж на шлеме (страж): гребень алых прядей по верху шлема, струится назад
+  let plume = null;
+  if (P.plume && bp.head) {
+    const headBone = raw('head');
+    // профиль верха шлема по средней линии: для полос по «вперёд» — наибольшая высота
+    const prof = new Map();
+    const hv = new THREE.Vector3(), rel = new THREE.Vector3();
+    vrm.scene.traverse((o) => {
+      if (!o.isSkinnedMesh || !/armet|helm/i.test(o.name) || !o.geometry.attributes.position) return;
+      const n = o.geometry.attributes.position.count;
+      for (let i = 0; i < n; i++) {
+        o.getVertexPosition(i, hv); hv.applyMatrix4(o.matrixWorld); rel.copy(hv).sub(bp.head);
+        if (Math.abs(rel.dot(LEFT)) > 0.02) continue;
+        const z = rel.dot(FWD), y = rel.dot(UP), key = Math.round(z / 0.012);
+        if (!prof.has(key) || prof.get(key) < y) prof.set(key, y);
+      }
+    });
+    const keys = [...prof.keys()].sort((a, b) => a - b);
+    if (keys.length > 6) {
+      const zMin = keys[0] * 0.012, zMax = keys[keys.length - 1] * 0.012;
+      const yAt = (z) => { const k = Math.round(z / 0.012); for (let d = 0; d < 4; d++) { if (prof.has(k + d)) return prof.get(k + d); if (prof.has(k - d)) return prof.get(k - d); } return 0; };
+      const topY = Math.max(...prof.values());
+      const toW = (z, y, x = 0) => bp.head.clone().addScaledVector(FWD, z).addScaledVector(UP, y).addScaledVector(LEFT, x);
+      const locks = [];
+      const n = 11, L = P.plume.len || 0.5;
+      let sd = 3;
+      const rr = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+      for (let i = 0; i < n; i++) {
+        const u = i / (n - 1);
+        const z = zMax - 0.03 - u * (zMax - zMin) * 0.62;            // от лба к затылку по гребню
+        const y0 = yAt(z) + 0.006;
+        if (y0 < topY - 0.09) continue;
+        for (const x of [-0.006, 0.006]) {
+          // корень гребня — жёсткая дуга вверх-назад (4 прибитые точки), дальше хвост свободно падает за спину
+          const h = 0.05 + 0.03 * (1 - u);
+          const pts = [toW(z, y0, x), toW(z - 0.03, y0 + h * 0.8, x), toW(z - 0.08, y0 + h, x * 1.5), toW(z - 0.13, y0 + h * 0.75, x * 2)];
+          const len = L * (0.6 + 0.4 * u) * (0.9 + 0.2 * rr());
+          for (let k = 4; k < 10; k++) {
+            const t = (k - 3) / 6;
+            pts.push(toW(z - 0.13 - t * len * 0.45, y0 + h * 0.75 - t * len * 0.85, x * (2 + 4 * t)));
+          }
+          locks.push({ pts, pin: 4, r0: 0.015 + 0.004 * (1 - u), r1: 0.011, flat: 0.3, seed: rr(), tone: 0.9 + rr() * 0.2, stiff: 0.6, taper: 0.9, back: true });
+        }
+      }
+      const plC = new THREE.Color(P.plume.color || 0x7a1510);
+      const pm = Mt(new Std({
+        name: 'gear-plume', color: plC, map: hairStrandTex(THREE), vertexColors: true, roughness: 0.55, metalness: 0,
+        ...(physical ? { sheen: 0.6, sheenRoughness: 0.4, sheenColor: plC.clone().multiplyScalar(1.8) } : {}),
+      }));
+      const helmR = Math.max(0.1, (zMax - zMin) * 0.5);
+      const hc = new THREE.Object3D(); hc.name = 'plume-helm'; headBone.add(hc);
+      hc.position.copy(headBone.worldToLocal(toW((zMax + zMin) * 0.5, topY - helmR * 0.95)));
+      const colliders = [{ a: hc, b: hc, r: helmR * 0.98 }];
+      for (const c of bodyCaps) if (/hips|Chest|chest|UpperArm/.test(c.name)) colliders.push({ a: c.a, b: c.b, r: c.r });
+      const _pq = new THREE.Quaternion(), holderP = model || vrm.scene;
+      plume = createStrands(THREE, { locks, anchor: headBone, parent: headBone, colliders, material: pm, drag: 2.0, carry: 0.6,
+        spine: [raw('neck') || raw(chestB), raw('hips')], fwd: (out) => out.set(0, 0, 1).applyQuaternion(holderP.getWorldQuaternion(_pq)) });
+      plume.mesh.name = 'plume';
+      parts.push({ obj: plume.mesh, bone: headBone }, { obj: hc, bone: headBone });
+      names.push('plume');
+    }
+  }
+
   // ---------------- кольца-руны
   if (P.rings) {
     for (const bn of ['leftIndexProximal', 'rightMiddleProximal', 'leftRingProximal']) {
@@ -795,6 +859,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     if (cloth) { try { cloth.update(dt, lodL); } catch (e) { /* ткань не критична */ } }
     let t1 = now(); perf.cloth += (t1 - t0 - perf.cloth) * 0.1; t0 = t1;
     if (hair) { try { hair.update(dt, lodL); } catch (e) { /* пряди не критичны */ } }
+    if (plume) { try { plume.update(dt, lodL); } catch (e) { /* плюмаж не критичен */ } }
     if (ribbons) {
       try {
         ribbons.update(dt, lodL);
@@ -840,6 +905,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     for (const p of parts) p.obj.traverse((o) => { if (o.isMesh) o.castShadow = l === 0; });
     if (cloth) { cloth.mesh.castShadow = l === 0; cloth.setWind(l >= 2 ? 0 : 1); }
     if (hair) hair.setWind(l >= 2 ? 0 : 1);
+    if (plume) plume.setWind(l >= 2 ? 0 : 1);
     if (ribbons) { ribbons.setWind(l >= 2 ? 0 : 1); ribbons.mesh.castShadow = l === 0; }
   }
 
@@ -900,6 +966,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   function dispose() {
     if (cloth) cloth.dispose();
     if (hair) hair.dispose();
+    if (plume) plume.dispose();
     if (ribbons) { ribbons.dispose(); for (const g of ribbons.pendants || []) if (g.parent) g.parent.remove(g); }
     for (const p of parts) if (p.obj.parent) p.obj.parent.remove(p.obj);
     if (bow && bow.parent) bow.parent.remove(bow);

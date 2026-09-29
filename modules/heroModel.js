@@ -458,10 +458,11 @@ export function createHeroModel({
           spread += P.spread[f] * w;
           for (let j = 0; j < 3; j++) c[j] += P.curl[f][j] * w;
         }
+        const alive = (h.w.relax / sum) * 0.045 * Math.sin(time * (0.55 + 0.13 * f) + f * 1.7 + (h.s > 0 ? 0 : 2.3));
         for (let j = 0; j < 3; j++) {
           const b = h.fingers[f][j];
           if (!b) continue;
-          b.quaternion.setFromAxisAngle(h.axCurl, c[j]);
+          b.quaternion.setFromAxisAngle(h.axCurl, c[j] + alive * (1 + 0.3 * j));
           if (j === 0) b.quaternion.premultiply(_fq.setFromAxisAngle(h.axSpread, spread));
         }
       }
@@ -825,7 +826,8 @@ export function createHeroModel({
     bone.quaternion.premultiply(_qp).premultiply(_qa).premultiply(_qp.invert());
   }
   // дыхание, оглядывание в покое, доворот груди к цели
-  function applyLife(dt, idle, twist) {
+  const _lk = new THREE.Vector3();
+  function applyLife(dt, idle, twist, menu = false) {
     const B = cur.bones;
     const add = (cur.def.adduct ?? 0.22) * (act ? 0.35 : 1);
     adduct(B.leftUpperArm, -add);
@@ -837,7 +839,17 @@ export function createHeroModel({
     if (B.leftShoulder) B.leftShoulder.rotateZ(br * 0.6);
     if (B.rightShoulder) B.rightShoulder.rotateZ(-br * 0.6);
     S.lookT -= dt;
-    if (S.lookT <= 0) { S.lookT = 2.5 + Math.random() * 3.5; S.lookWant = S.idleT > 4 ? (Math.random() - 0.5) * 0.6 : 0; }
+    if (S.lookT <= 0) {
+      S.lookT = 2.5 + Math.random() * 3.5;
+      // на витрине меню герой то и дело смотрит на игрока (в камеру), иначе — оглядывается
+      S.lookCam = menu && !!defaults.camera && Math.random() < 0.55;
+      S.lookWant = S.idleT > 4 ? (Math.random() - 0.5) * 0.6 : 0;
+    }
+    if (S.lookCam && menu && defaults.camera) {
+      root.getWorldPosition(_lk);
+      const ang = wrap(Math.atan2(defaults.camera.position.x - _lk.x, defaults.camera.position.z - _lk.z) - root.rotation.y);
+      S.lookWant = Math.abs(ang) < 1.4 ? clamp(ang, -0.75, 0.75) : 0;
+    }
     if (!idle) S.lookWant = 0;
     S.look += (S.lookWant - S.look) * (1 - Math.exp(-1.6 * dt));
     if (B.neck) B.neck.rotateY(S.look * 0.45);
@@ -896,7 +908,7 @@ export function createHeroModel({
       updateLoco(dt, 0, 0, 0, false);
       cur.mixer.update(dt);
       saveClean();
-      applyLife(dt, true, 0);
+      applyLife(dt, true, 0, true);
       applyPose(dt);
       applyFingers(dt, handWants());
       vrmTick(dt);

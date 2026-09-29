@@ -46,7 +46,8 @@ export function createCloth(THREE, o) {
   const rc = (cols - 1) * SU + 1, rr = (rows - 1) * SV + 1, RN = rc * rr;
   const geo = new THREE.BufferGeometry();
   const rpos = new Float32Array(RN * 3), ruv = new Float32Array(RN * 2);
-  for (let j = 0; j < rr; j++) for (let i = 0; i < rc; i++) { const k = j * rc + i; ruv[k * 2] = i / (rc - 1); ruv[k * 2 + 1] = 1 - j / (rr - 1); }
+  // u — справа налево героя, развёрнуто так, чтобы снаружи (вид из-за спины) герб читался не зеркально
+  for (let j = 0; j < rr; j++) for (let i = 0; i < rc; i++) { const k = j * rc + i; ruv[k * 2] = 1 - i / (rc - 1); ruv[k * 2 + 1] = 1 - j / (rr - 1); }
   const idx = [];
   for (let j = 0; j < rr - 1; j++) for (let i = 0; i < rc - 1; i++) {
     const a0 = j * rc + i, a1 = a0 + 1, b0 = a0 + rc, b1 = b0 + 1;
