@@ -22,7 +22,7 @@ const SIZES = argOf('--sizes', '1366x768').split(',').map((s) => s.split('x').ma
 const WAIT = +argOf('--wait', '2500');
 const CDN = argOf('--cdn', process.env.ASHEN_CDN_MIRROR || '');
 const EVAL = argOf('--eval', '');
-const PORT = 8900 + Math.floor(Math.random() * 90);
+let PORT = 20000 + Math.floor(Math.random() * 20000);
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -64,7 +64,8 @@ async function mirror(ctx) {
 
 const { chromium } = loadPlaywright();
 const exe = argOf('--browser', existsSync('/opt/pw-browsers/chromium-1194/chrome-linux/chrome') ? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' : undefined);
-const server = await startServer();
+let server = null;
+for (let i = 0; i < 6 && !server; i++) { try { server = await startServer(); } catch (e) { if (i === 5) throw e; PORT = 20000 + Math.floor(Math.random() * 20000); } } // порт мог быть занят параллельным запуском
 const browser = await chromium.launch({ executablePath: exe, args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'] });
 const errors = [];
 try {
