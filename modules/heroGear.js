@@ -599,7 +599,7 @@ export function dressHero(THREE, vrm, opts = {}) {
         const p0 = 0.52 + 0.3 * side * side;                   // корни — под краем капюшона (по бокам ниже)
         const pts = [];
         for (let j = 0; j <= 5; j++) { const t = j / 5; pts.push(sk3(a + (a - Math.PI) * 0.12 * t, p0 + (polarBrow - 0.06 - p0) * t - side * 0.04 * t, 1.02 + 0.045 * Math.sin(Math.PI * t * 0.8) + 0.02 * t)); }
-        locks.push({ pts, pin: pts.length, static: true, r0: 0.017, r1: 0.014, flat: 0.32, taper: 0.4, seed: rr(), tone: 0.95 + rr() * 0.1, vScale: 0.4 });
+        locks.push({ pts, pin: pts.length, static: true, r0: 0.017, r1: 0.014, flat: 0.32, taper: 0.4, seed: rr(), tone: 0.95 + rr() * 0.1, vScale: 0.4, blunt: true });
       }
     } else {
       // набок: густая чёлка из-под капюшона, кончики сметены к правому виску (левая бровь открыта)

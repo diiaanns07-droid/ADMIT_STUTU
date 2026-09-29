@@ -389,7 +389,7 @@ export function createStrands(THREE, o) {
       for (let i = 0; i <= RU; i++) {
         const q = base + j * (RU + 1) + i;
         uv[q * 2] = (i / RU) * 0.5 + (seed % 1) * 0.5; uv[q * 2 + 1] = t * (k.lk.vScale ?? 1.5) + seed;
-        uv1[q * 2] = i / RU + (seed * 7.3) % 1; uv1[q * 2 + 1] = t;
+        uv1[q * 2] = i / RU + (seed * 7.3) % 1; uv1[q * 2 + 1] = k.lk.blunt ? t * 0.6 : t;   // blunt — ровный срез (чёлка «химе»)
         // корни темнее (тень под капюшоном), кончики светлее, у каждой пряди свой тон
         const c = tone * (0.62 + 0.45 * Math.min(1, t * 1.6)) * (0.97 + 0.04 * Math.sin(i * 2.1 + seed * 9));
         col[q * 3] = col[q * 3 + 1] = col[q * 3 + 2] = c;
