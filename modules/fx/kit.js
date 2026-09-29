@@ -25,7 +25,7 @@ const num = (v, d) => (isNum(v) ? v : d);
 // Уровни качества V6. particles — ёмкость GPU-пула (вместе со старыми пулами effects.js ≤ 6000 на medium).
 export const KIT_QUALITY = Object.freeze({
   low: Object.freeze({ name: 'low', particles: 1400, decor: 0.45, lights: 0, distort: false, glyphDetail: 0, trails: 8, screen: 0.7 }),
-  medium: Object.freeze({ name: 'medium', particles: 4200, decor: 0.8, lights: 2, distort: true, glyphDetail: 1, trails: 16, screen: 1 }),
+  medium: Object.freeze({ name: 'medium', particles: 4200, decor: 0.8, lights: 1, distort: true, glyphDetail: 1, trails: 16, screen: 1 }),
   high: Object.freeze({ name: 'high', particles: 8000, decor: 1.0, lights: 3, distort: true, glyphDetail: 2, trails: 24, screen: 1 }),
 });
 const MAX_PARTICLES = KIT_QUALITY.high.particles;
