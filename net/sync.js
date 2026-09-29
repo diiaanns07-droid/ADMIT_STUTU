@@ -43,9 +43,10 @@ export function encodeState(P, input, seq, ts) {
   if (num(P.burstCharge) > 0.01) o.b = r2(P.burstCharge);
   if (P.conjure && typeof P.conjure === 'object') o.c = [String(P.conjure.kind || 'orb'), r2(P.conjure.size), r2(P.conjure.charge)];
   if (P.dashing && P.dashDir && typeof P.dashDir === 'object') o.d = [r2(P.dashDir.x), r2(P.dashDir.z)];
-  const bow = input && input.bow;
+  // лук и чары рукой: из снимка (после гашения конфликтов №6), иначе из ввода (C2)
+  const bow = (P.bow && typeof P.bow === 'object' ? P.bow : null) || (input && input.bow);
   if (bow && bow.active) o.bw = [r2(bow.draw), r2(bow.aimX), r2(bow.aimY), bow.charged ? 1 : 0, bow.element || 0];
-  const hs = input && input.handSpell;
+  const hs = (P.handSpell && typeof P.handSpell === 'object' ? P.handSpell : null) || (input && input.handSpell);
   if (hs && hs.phase && hs.phase !== 'idle') {
     o.hs = [Math.max(0, HS_PHASES.indexOf(hs.phase)), hs.element || 'fire', r2(hs.power), r2(hs.dir && hs.dir.x), r2(hs.dir && hs.dir.y)];
   }
@@ -82,7 +83,7 @@ export const NET_EVENT_TYPES = new Set([
   'player_cast', 'player_slash', 'player_dash', 'shield_start', 'shield_end', 'parry', 'burst',
   'rune_cast', 'sigil_cast', 'rune_hit', 'sigil_hit', 'projectile_reflected', 'projectile_impact',
   'ward_start', 'ward_end', 'bastion_start', 'bastion_end',
-  'bow_draw_start', 'bow_release', 'arrow_hit',
+  'bow_draw_start', 'bow_release', 'arrow_hit', 'bow_cancel', 'bow_element', 'arrow_rain', 'hand_chain',
   'hand_spell_form', 'hand_spell_throw', 'hand_spell_hit', 'hand_spell_cancel',
 ]);
 

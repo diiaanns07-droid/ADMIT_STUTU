@@ -4,7 +4,7 @@
 //   → { push(st), pushEvents(list), update(dt), getState(), getAnchors(), setInfo({name, hero}),
 //       setConnected(on), setVisible(on), dispose(), root }
 //   push(st)   — декодированный пакет st (net/sync.js decodeState) сразу при приёме;
-//   update(dt) — раз в кадр: буфер интерполяции ~100 мс + короткая экстраполяция (net/interp.js),
+//   update(dt, nowMs?) — раз в кадр: буфер интерполяции ~100 мс + короткая экстраполяция (net/interp.js),
 //                сглаженный поворот, высота по земле мира, анимации героя, табличка над головой;
 //   getState() — для snap.opponent у №3 [PVP] (C4).
 // Модель — createHeroModel (C5) на своём root: герой, которого соперник выбрал в hello. Пока VRM
@@ -163,6 +163,60 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
   const plate = makePlate(THREE);
   if (plate) root.add(plate.sprite);
 
+  // признаки состояния соперника, которые effects рисует только у своего героя: щит, сфера чар, сгусток стихии
+  const ELEM = { fire: 0xff6a2a, storm: 0x8fb8ff, frost: 0x9fe6ff, earth: 0xc79a52 };
+  const addMat = (color, opacity) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  const fx = new THREE.Group(); fx.name = 'remote-fx'; root.add(fx);
+  // щит — френель: яркая кромка, прозрачный центр (соперника видно сквозь щит)
+  const shieldMat = new THREE.ShaderMaterial({
+    uniforms: { color: { value: new THREE.Color(0xff6a3c) }, opacity: { value: 0.5 } },
+    vertexShader: 'varying vec3 vN; varying vec3 vV; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
+    fragmentShader: 'uniform vec3 color; uniform float opacity; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.4); gl_FragColor = vec4(color * (0.35 + 1.8 * f), opacity * (0.08 + 0.92 * f)); }',
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  const shield = new THREE.Mesh(new THREE.SphereGeometry(0.95, 24, 12, -Math.PI * 0.42, Math.PI * 0.84, Math.PI * 0.12, Math.PI * 0.62), shieldMat);
+  shield.position.set(0, 1.05, 0.12); shield.visible = false; fx.add(shield);
+  const rimMat = addMat(0xffc27a, 0.5);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.015, 6, 40), rimMat);
+  rim.position.set(0, 1.15, 0.72); rim.visible = false; fx.add(rim);
+  const orbMat = addMat(0xffb070, 0.85);
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 12), orbMat);
+  orb.position.set(0, 1.25, 0.45); orb.visible = false; fx.add(orb);
+  const spellMat = addMat(0xff6a2a, 0.9);
+  const spell = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), spellMat);
+  spell.position.set(-0.28, 1.2, 0.35); spell.visible = false; fx.add(spell);
+  function updateFx(st, lost) {
+    const on = !lost && !!st;
+    const pulse = 0.85 + 0.15 * Math.sin(S.t * 9);
+    shield.visible = rim.visible = on && !!st.shielding;
+    if (shield.visible) { shieldMat.uniforms.opacity.value = 0.55 * pulse; rimMat.opacity = 0.45 * pulse; }
+    const cj = on && st.conjure;
+    orb.visible = !!cj;
+    if (cj) { orb.scale.setScalar(0.6 + 1.4 * Math.min(1, cj.size || 0.3)); orbMat.opacity = 0.55 + 0.4 * Math.min(1, cj.charge || 0); orbMat.color.setHex(cj.kind === 'prism' ? 0xd9b8ff : 0xffb070); }
+    const hs = on && st.handSpell && st.handSpell.phase !== 'idle' && st.handSpell.phase !== 'throw' ? st.handSpell : null;
+    spell.visible = !!hs;
+    if (hs) { spell.scale.setScalar(0.6 + 1.2 * Math.min(1, hs.power || 0.3)); spellMat.color.setHex(ELEM[hs.element] || 0xff6a2a); spellMat.opacity = 0.42 + 0.15 * pulse; }
+    // сгусток — у правой руки модели, если есть якорь
+    if (hs && hm && hm.ready && typeof hm.getAnchors === 'function') {
+      try { const a = hm.getAnchors().handR; if (a && a.parent) { a.getWorldPosition(_hand); fx.worldToLocal(_hand); spell.position.copy(_hand); } } catch (e) { /* ignore */ }
+    }
+  }
+  const _hand = new THREE.Vector3();
+
+  // призрак из самой модели героя: на время обрыва меши получают светящийся полупрозрачный материал
+  // (встроенный MeshBasicMaterial сам поддерживает скиннинг и морфы), потом родные возвращаются
+  const ghostMat = new THREE.MeshBasicMaterial({ color: 0x9fc4ff, transparent: true, opacity: 0.28, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+  let ghosted = null;   // [{ mesh, mat }]
+  function setModelGhost(model, on) {
+    if (on && !ghosted && model) {
+      ghosted = [];
+      model.traverse((o) => { if ((o.isMesh || o.isSkinnedMesh) && o.material) { ghosted.push({ mesh: o, mat: o.material, cast: o.castShadow }); o.material = Array.isArray(o.material) ? o.material.map(() => ghostMat) : ghostMat; o.castShadow = false; } });
+    } else if (!on && ghosted) {
+      for (const g of ghosted) { g.mesh.material = g.mat; g.mesh.castShadow = g.cast; }
+      ghosted = null;
+    }
+  }
+
   const buf = createInterpBuffer({ delayMs });
   const S = {
     name: 'Соперник', hero: 'ashen', connected: true, visible: true, got: false,
@@ -250,10 +304,12 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
   }
 
   const snapLike = { status: 'playing', player: null };
+  const EMPTY_EVENTS = Object.freeze([]);
   const _cam = new THREE.Vector3();
 
-  function update(dt) {
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  // nowMs — время кадра (rAF): интерполяция идёт ровно по кадрам, без дрожи от момента вызова
+  function update(dt, nowMs) {
+    const now = Number.isFinite(nowMs) ? nowMs : typeof performance !== 'undefined' ? performance.now() : Date.now();
     S.t += dt;
     S.slashT += dt; S.castT += dt; S.burstT += dt; S.dashT += dt; S.parryT += dt;
     root.visible = S.visible && S.got;
@@ -275,26 +331,32 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
 
     const st = s.st;
     const lost = !S.connected;
-    // призрак при обрыве
-    ghost.group.visible = lost;
+    // призрак при обрыве: модель героя становится светящимся силуэтом; без модели — процедурный призрак
     const model = root.getObjectByName('hero-model');
     const vrmOn = !!(hm && hm.ready && model);
-    if (model) model.visible = !lost;
+    if (ghosted && (!vrmOn || !model)) ghosted = null;      // модель сменилась — старые меши уже не наши
+    setModelGhost(vrmOn ? model : null, lost && vrmOn);
+    if (ghosted) ghostMat.opacity = 0.2 + 0.1 * Math.sin(S.t * 4);
+    ghost.group.visible = lost && !vrmOn;
+    if (model) model.visible = true;
     body.group.visible = !lost && !vrmOn;
     const sp = Math.hypot(s.vx, s.vz);
     if (lost) animateBody(ghost, dt, null, 0);
     else if (!vrmOn) animateBody(body, dt, st, sp);
-    if (hm && !lost) {
-      const P = { ...st, position: { x: s.x, y: S.rootY, z: s.z }, yaw: S.yaw, velocity: { x: s.vx, z: s.vz }, speed: sp };
+    updateFx(st, lost);
+    if (hm) {
+      // при обрыве модель стоит в покое (скорость 0), а не бежит на месте
+      const P = lost ? { ...st, position: { x: s.x, y: S.rootY, z: s.z }, yaw: S.yaw, velocity: { x: 0, z: 0 }, speed: 0, action: 'idle', locomotion: 'idle', shielding: false, conjure: null, bow: null, handSpell: null }
+        : { ...st, position: { x: s.x, y: S.rootY, z: s.z }, yaw: S.yaw, velocity: { x: s.vx, z: s.vz }, speed: sp };
       snapLike.player = P;
       snapLike.status = st && st.dead ? 'defeat' : 'playing';
       // C5: поза лука / чар рукой поверх анимаций — из st.bow / st.handSpell соперника
       if (typeof hm.setPose === 'function') {
-        const bw = st && st.bow, hs = st && st.handSpell;
+        const bw = P.bow, hs = P.handSpell;
         const hsW = hs ? (hs.phase === 'hold' ? 1 : hs.phase === 'form' ? 0.6 : hs.phase === 'throw' ? 0.3 : 0) : 0;
         try { hm.setPose({ bowDraw: bw ? bw.draw : 0, aim: { x: bw ? bw.aimX : 0, y: bw ? bw.aimY : 0 }, handSpell: hsW }); } catch (e) { /* ignore */ }
       }
-      try { hm.update(dt, snapLike, events); } catch (e) { console.warn('[NET] heroModel соперника', e); }
+      try { hm.update(dt, snapLike, lost ? EMPTY_EVENTS : events); } catch (e) { console.warn('[NET] heroModel соперника', e); }
     }
     events.length = 0;
 
@@ -303,8 +365,7 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
       if (camera) {
         camera.getWorldPosition(_cam);
         const d = _cam.distanceTo(root.position);
-        // LOD модели соперника (C5): вдали пружины волос/ткани реже, без теней — бережём слабые ноутбуки
-        if (hm && typeof hm.setLod === 'function') { try { hm.setLod(d > 28 ? 2 : d > 12 ? 1 : 0); } catch (e) { /* ignore */ } }
+        // LOD модели соперника ведёт сам heroModel (авто-LOD по камере, №4) — здесь не трогаем
         const k = Math.min(2.4, Math.max(1, d / 9));
         plate.sprite.scale.set(1.7 * k, 0.425 * k, 1);
       }
@@ -331,6 +392,9 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
   }
 
   function dispose() {
+    setModelGhost(null, false);
+    ghostMat.dispose();
+    for (const m of [shield, rim, orb, spell]) { m.geometry.dispose(); m.material.dispose(); }
     if (world && typeof world.setForestHero2 === 'function') { try { world.setForestHero2(null); } catch (e) { /* ignore */ } }
     try { if (hm && typeof hm.dispose === 'function') hm.dispose(); } catch (e) { /* ignore */ }
     hm = null;

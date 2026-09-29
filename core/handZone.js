@@ -68,7 +68,8 @@ export function createHandZone({ target = typeof window !== 'undefined' ? window
     }
     if (c === 'KeyM' && dbg.orb) { dbg.orb = false; magic.forceThrow(now, { x: dbgAimX(), y: dbg.keys.has('KeyW') ? 0.4 : 0 }); }
   }
-  function onBlur() { dbg.keys.clear(); dbg.drawing = false; if (dbg.orb) { dbg.orb = false; magic.reset(); } }
+  function dbgRelease() { dbg.keys.clear(); dbg.drawing = false; dbg.release = null; if (dbg.orb) { dbg.orb = false; magic.reset(); } }
+  function onBlur() { dbgRelease(); }
   if (target && target.addEventListener) {
     target.addEventListener('keydown', onKeyDown, true);   // capture: раньше core/debugInput.js
     target.addEventListener('keyup', onKeyUp, true);
@@ -120,7 +121,9 @@ export function createHandZone({ target = typeof window !== 'undefined' ? window
   const HG_BOTH_HINTS = /^(orb_|prism_|throw_|gate_|frame_)/;   // двуручные подсказки: во время лука руки заняты луком
   function apply(input, now, ctx = {}) {
     if (!input || typeof input !== 'object') return input;
-    dbg.on = !!(ctx.debug && ctx.playing);
+    const on = !!(ctx.debug && ctx.playing && enabled && ctx.enabled !== false);
+    if (dbg.on && !on) dbgRelease();   // пауза/выход из боя: отпускание N/M во время паузы не должно «залипнуть»
+    dbg.on = on;
     if (!enabled || ctx.enabled === false) { input.bow = null; input.handSpell = null; return input; }
     const t = fin(now) ? now : performance.now();
     let bv, runeTaken = null;

@@ -23,6 +23,9 @@ function readLast() {
 function saveLast(code, role, mode) { try { localStorage.setItem(LAST_KEY, JSON.stringify({ code, role, mode, at: Date.now() })); } catch (e) { /* ignore */ } }
 const PR_EVERY_MS = 100;   // 10 Гц
 const START_DELAY_MS = 3200;
+// эти события effects.js пока рисует у СВОЕГО героя (шлейф рывка, вспышка оберега на груди, толчок камеры) —
+// до поддержки remote в эффектах (effects.supportsRemote === true, №7) они идут только модели соперника
+const FX_LOCAL_ONLY = new Set(['player_dash', 'ward_start', 'ward_end', 'bastion_start', 'bastion_end']);
 
 function urlOpts() {
   const o = {};
@@ -49,6 +52,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     inEvents: [], remoteProj: [], remoteProjAt: 0,
     lanHost: U.lanHost || (settings && settings.netLanHost) || '',
     lobbyOpen: false, busy: false, oppGone: false,
+    lanIps: null, lanCheck: '',
   };
   const remote = createRemotePlayer({ THREE, scene, world, heroFactory, camera });
   // значок связи в бою: соперник и пинг; при обрыве — «переподключение»
@@ -140,6 +144,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
       const code = await net.host({ code: want });
       saveLast(code, 'host', mode);
       S.message = 'Комната создана. Продиктуйте код сопернику.';
+      if (mode === 'lan') fetchLanInfo();
       return code;
     } catch (e) {
       S.error = (e && e.message) || String(e); S.errorCode = e && e.code;
@@ -157,9 +162,19 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     S.busy = true;
     S.message = `Входим в комнату ${code}…`;
     changed();
-    const net = newNet(mode);
+    let net = newNet(mode);
     try {
-      await net.join(code);
+      // комната могла ещё не успеть зарегистрироваться (гость быстрее хоста) — ещё две попытки
+      for (let i = 0; ; i++) {
+        try { await net.join(code); break; }
+        catch (e) {
+          if (!(e && e.code === 'room_not_found') || i >= 2 || S.net !== net) throw e;
+          S.message = `Комната ${code} пока не найдена — пробуем ещё раз…`; changed();
+          await new Promise((r) => setTimeout(r, 1500));
+          if (S.net !== net) throw e;
+          net = newNet(mode);
+        }
+      }
       saveLast(code, 'guest', mode);
       S.message = 'Вы в комнате.';
       return true;
@@ -168,6 +183,39 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
       S.message = '';
       return false;
     } finally { S.busy = false; changed(); }
+  }
+
+  // LAN: ретранслятор знает IP этого ноутбука — показать хосту в лобби (GET /info)
+  function relayBase(hostStr) {
+    const h = String(hostStr || '').trim() || '127.0.0.1';
+    return `http://${/:\d+$/.test(h) ? h : `${h}:8790`}`;
+  }
+  async function fetchJson(url, ms) {
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const to = setTimeout(() => ctl && ctl.abort(), ms);
+    try { const r = await fetch(url, { signal: ctl ? ctl.signal : undefined, cache: 'no-store' }); return r; } finally { clearTimeout(to); }
+  }
+  async function fetchLanInfo() {
+    try {
+      const r = await fetchJson(`${relayBase(S.lanHost)}/info`, 3000);
+      const j = await r.json();
+      if (j && Array.isArray(j.ips)) { S.lanIps = j.ips.filter((ip) => !/^127\./.test(ip)); changed(); }
+    } catch (e) { /* старый ретранслятор без /info — не страшно */ }
+  }
+  // гость: «Проверить» — отвечает ли ретранслятор по этому IP (брандмауэр, другая сеть, изоляция Wi-Fi)
+  async function checkLan(hostStr) {
+    if (hostStr !== undefined) setLanHost(hostStr);
+    if (typeof location !== 'undefined' && location.protocol === 'https:') { S.lanCheck = NET_ERRORS.lan_mixed; changed(); return false; }
+    S.lanCheck = 'Проверяем…'; changed();
+    try {
+      const r = await fetchJson(`${relayBase(S.lanHost)}/`, 3000);
+      const ok = r.ok && /ASHEN relay OK/.test(await r.text());
+      S.lanCheck = ok ? `Ретранслятор ${S.lanHost || '127.0.0.1'} отвечает — можно входить по коду.` : 'По этому адресу отвечает что-то другое, не ретранслятор.';
+      changed(); return ok;
+    } catch (e) {
+      S.lanCheck = `Нет ответа от ${S.lanHost || '127.0.0.1'}:8790. Проверьте IP, одну сеть и брандмауэр (разрешить Python для частных сетей); гостевой Wi-Fi часто изолирует ноутбуки — раздача с телефона помогает.`;
+      changed(); return false;
+    }
   }
 
   function setLanHost(v) {
@@ -257,8 +305,12 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     // соперник: события → его модель и общий массив (data.remote = true)
     let inc = null;
     if (S.inEvents.length) { inc = S.inEvents.splice(0, S.inEvents.length); remote.pushEvents(inc); }
-    remote.update(dt);
-    if (inc && inc.length) outEvents = outEvents.length ? outEvents.concat(inc) : inc;
+    remote.update(dt, now);
+    if (inc && inc.length) {
+      const fxOk = typeof hooks.fxSupportsRemote === 'function' && hooks.fxSupportsRemote();
+      const fxInc = fxOk ? inc : inc.filter((e) => !FX_LOCAL_ONLY.has(e.type));
+      if (fxInc.length) outEvents = outEvents.length ? outEvents.concat(fxInc) : fxInc;
+    }
     // снаряды соперника: последний снимок + экстраполяция по скорости
     if (S.remoteProj.length && snap) {
       const age = now - S.remoteProjAt;
@@ -268,6 +320,11 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
         const list = S.remoteProj.map((p) => ({ ...p, position: { x: p.position.x + p.velocity.x * lead, y: p.position.y + p.velocity.y * lead, z: p.position.z + p.velocity.z * lead } }));
         outSnap = { ...snap, projectiles: (snap.projectiles || []).concat(list) };
       }
+    }
+    // C4: snap.opponent для эффектов (якоря соперника у №7), пока №3 не заполнил его в самом бою
+    if (outSnap && !outSnap.opponent && net && net.state !== 'idle' && !S.oppGone) {
+      const opp = remote.getState();
+      if (opp) outSnap = { ...outSnap, opponent: opp };
     }
     return { events: outEvents, snapshot: outSnap };
   }
@@ -282,6 +339,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
       opponent: net && net.remote ? { ...net.remote, heroName: heroes && heroes[net.remote.hero] ? heroes[net.remote.hero].name : net.remote.hero } : null,
       meReady: S.meReady, oppReady: S.oppReady, startIn: S.startAt ? Math.max(0, S.startAt - performance.now()) : 0, started: S.started,
       name: p.name, hero: p.hero, lanHost: S.lanHost, https: typeof location !== 'undefined' && location.protocol === 'https:',
+      lanIps: S.mode === 'lan' ? S.lanIps : null, lanCheck: S.lanCheck,
       lastCode: (() => { const l = readLast(); return l && l.role === 'guest' ? l.code : ''; })(),
       heroes: heroes ? Object.values(heroes).map((h) => ({ id: h.id, name: h.name })) : [],
       showLocal: S.mode === 'local' || U.transport === 'local' || !!(hooks.isDebug && hooks.isDebug()),
@@ -302,7 +360,8 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
           ready: (on) => setReady(on),
           leave: () => leave(),
           close: () => closeLobby(),
-          mode: (m2) => { if (!S.net || S.net.state === 'idle') { S.mode = m2; changed(); } },
+          mode: (m2) => { if (!S.net || S.net.state === 'idle') { S.mode = m2; S.error = null; changed(); } },
+          checkLan: (ip) => checkLan(ip),
           profile: (patch) => { if (hooks.saveSettings) hooks.saveSettings(patch); if (S.net) S.net.setProfile(profile()); sendLobby(); changed(); },
         },
       });
@@ -314,6 +373,11 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
   function closeLobby() {
     S.lobbyOpen = false;
     if (lobby) lobby.show(false);
+  }
+
+  // закрыли вкладку/окно — сказать «пока» сразу (bye уходит синхронно), чтобы соперник не ждал 3 с обрыва
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', (e) => { if (!e.persisted && S.net) { try { S.net.close(); } catch (x) { /* ignore */ } } });
   }
 
   // автозапуск для тестов: ?net=local&netAuto=host&room=TEST&netReady
