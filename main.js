@@ -562,7 +562,18 @@ const trackingHud = createTrackingHud({ canvas: overlay });
 // простые 3D-заглушки (modules/handVisuals.js; их заменит №7 [VFX]). Любая ошибка — игра без них.
 let handZone = null, heroBowPose = null, handFx = null, handVisuals = null;
 // точки кистей активного героя (C5 heroModel.getAnchors — у VRM и процедурного), иначе — маркеры мира
-const _hAnc = { heroHandL: { x: 0, y: 0, z: 0 }, heroHandR: { x: 0, y: 0, z: 0 }, heroChest: { x: 0, y: 0, z: 0 }, heroHead: { x: 0, y: 0, z: 0 } }, _hV = new THREE.Vector3();
+const _hAnc = { heroHandL: { x: 0, y: 0, z: 0 }, heroHandR: { x: 0, y: 0, z: 0 }, heroChest: { x: 0, y: 0, z: 0 }, heroHead: { x: 0, y: 0, z: 0 }, heroBow: false }, _hV = new THREE.Vector3();
+// [HAND] у героя свой лук (лучницы HERO: снаряжение 'bow' переходит в левую руку) — 3D-лук handVisuals не рисуем, чтобы не было двух луков
+let _hBowKey = null, _hBowAt = -1e9;
+function heroOwnBow() {
+  const key = `${heroModel.hero}|${heroModel.ready}`, t = performance.now();
+  if (key !== _hBowKey || t - _hBowAt > 2000) {
+    _hBowKey = key; _hBowAt = t;
+    let st = null; try { st = heroModel.state(); } catch (e) { st = null; }
+    _hAnc.heroBow = !!(st && Array.isArray(st.gear) && st.gear.includes('bow'));
+  }
+  return _hAnc.heroBow;
+}
 function handAnchors() {
   try {
     const a = heroModel && typeof heroModel.getAnchors === 'function' ? heroModel.getAnchors() : null;
@@ -571,6 +582,7 @@ function handAnchors() {
         const o = a[n]; if (!o) continue;
         o.getWorldPosition(_hV); _hAnc[k].x = _hV.x; _hAnc[k].y = _hV.y; _hAnc[k].z = _hV.z;
       }
+      heroOwnBow();
       return _hAnc;
     }
   } catch (e) { /* ниже — маркеры мира */ }
