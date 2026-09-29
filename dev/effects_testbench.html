@@ -451,7 +451,7 @@ function frame(dt) {
   if (postfx && postfx.enabled) postfx.render(sdt || 1 / 60); else renderer.render(scene, camera);
   const t2 = performance.now();
   perf.upd += t1 - t0; perf.ren += t2 - t1; perf.n++;
-  if (perf.n >= 30) { perf.updAvg = perf.upd / perf.n; perf.renAvg = perf.ren / perf.n; perf.upd = perf.ren = 0; perf.n = 0; }
+  if (perf.n >= 10) { perf.updAvg = perf.upd / perf.n; perf.renAvg = perf.ren / perf.n; perf.upd = perf.ren = 0; perf.n = 0; }
 }
 function info() {
   const d = fx.getDebugInfo();
