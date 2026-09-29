@@ -79,11 +79,27 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       // выбран другой герой — короткий «выход» (жест силы), затем стойка
       if (active && heroModel.ready && id !== S.lastHero) {
         if (S.lastHero && heroModel.flourish) heroModel.flourish('CastRaise');
-        S.lastHero = id;
+        S.lastHero = id; S.idleT = 0; S.nextGesture = 7 + Math.random() * 4;
       }
       // поза класса (лучницы: лук в руке, опущен наготове); вне меню позу задаёт ввод (main.js)
       const mp = active && heroModel.menuPose ? heroModel.menuPose(id) : null;
-      if (mp) { heroModel.setPose(mp); S.posed = true; }
+      // [HERO] жест на витрине раз в 10–16 с: маги вздымают посох, лучницы вскидывают лук и натягивают тетиву
+      if (active && heroModel.ready && !settings.reducedMotion) {
+        S.idleT = (S.idleT || 0) + dt;
+        if (S.idleT > (S.nextGesture || 9)) {
+          S.idleT = 0; S.nextGesture = 10 + Math.random() * 6;
+          if (mp) S.drawT = 2.2; else if (heroModel.flourish) heroModel.flourish('CastRaise');
+        }
+      }
+      if (mp) {
+        let p = mp;
+        if (S.drawT > 0) {
+          S.drawT = Math.max(0, S.drawT - dt);
+          const k = Math.sin(Math.PI * (1 - S.drawT / 2.2)) ** 0.8;
+          p = { bowActive: true, bowDraw: mp.bowDraw + (0.9 - mp.bowDraw) * k, aim: { x: mp.aim.x + (0.15 - mp.aim.x) * k, y: mp.aim.y + (0.05 - mp.aim.y) * k } };
+        }
+        heroModel.setPose(p); S.posed = true;
+      }
       else if (S.posed) { heroModel.setPose({ bowActive: false, bowDraw: 0, handSpell: 0 }); S.posed = false; }
     }
     if (!group.visible) {
