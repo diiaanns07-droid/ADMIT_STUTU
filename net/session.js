@@ -305,7 +305,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     // соперник: события → его модель и общий массив (data.remote = true)
     let inc = null;
     if (S.inEvents.length) { inc = S.inEvents.splice(0, S.inEvents.length); remote.pushEvents(inc); }
-    remote.update(dt);
+    remote.update(dt, now);
     if (inc && inc.length) {
       const fxOk = typeof hooks.fxSupportsRemote === 'function' && hooks.fxSupportsRemote();
       const fxInc = fxOk ? inc : inc.filter((e) => !FX_LOCAL_ONLY.has(e.type));
@@ -373,6 +373,11 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
   function closeLobby() {
     S.lobbyOpen = false;
     if (lobby) lobby.show(false);
+  }
+
+  // закрыли вкладку/окно — сказать «пока» сразу (bye уходит синхронно), чтобы соперник не ждал 3 с обрыва
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', (e) => { if (!e.persisted && S.net) { try { S.net.close(); } catch (x) { /* ignore */ } } });
   }
 
   // автозапуск для тестов: ?net=local&netAuto=host&room=TEST&netReady

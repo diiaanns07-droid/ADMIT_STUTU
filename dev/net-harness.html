@@ -123,7 +123,7 @@ function frame(now) {
     while (events.length) { const x = encodeEvent(events.shift()); if (x) net.send('ev', { e: x }); }
   } else events.length = 0;
   if (inEv.length) remote.pushEvents(inEv.splice(0));
-  remote.update(dt);
+  remote.update(dt, now);
   const s = remote.getState();
   if (s) window.__track.push({ t: now, x: s.position.x, z: s.position.z, connected: s.connected });
   if (window.__track.length > 4000) window.__track.splice(0, 1000);

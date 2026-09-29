@@ -4,7 +4,7 @@
 //   → { push(st), pushEvents(list), update(dt), getState(), getAnchors(), setInfo({name, hero}),
 //       setConnected(on), setVisible(on), dispose(), root }
 //   push(st)   — декодированный пакет st (net/sync.js decodeState) сразу при приёме;
-//   update(dt) — раз в кадр: буфер интерполяции ~100 мс + короткая экстраполяция (net/interp.js),
+//   update(dt, nowMs?) — раз в кадр: буфер интерполяции ~100 мс + короткая экстраполяция (net/interp.js),
 //                сглаженный поворот, высота по земле мира, анимации героя, табличка над головой;
 //   getState() — для snap.opponent у №3 [PVP] (C4).
 // Модель — createHeroModel (C5) на своём root: герой, которого соперник выбрал в hello. Пока VRM
@@ -292,8 +292,9 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
   const snapLike = { status: 'playing', player: null };
   const _cam = new THREE.Vector3();
 
-  function update(dt) {
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  // nowMs — время кадра (rAF): интерполяция идёт ровно по кадрам, без дрожи от момента вызова
+  function update(dt, nowMs) {
+    const now = Number.isFinite(nowMs) ? nowMs : typeof performance !== 'undefined' ? performance.now() : Date.now();
     S.t += dt;
     S.slashT += dt; S.castT += dt; S.burstT += dt; S.dashT += dt; S.parryT += dt;
     root.visible = S.visible && S.got;
