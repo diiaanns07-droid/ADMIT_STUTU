@@ -163,6 +163,7 @@ export function explosion(fx, at, ground, el, remote, o) {
     kit.emit({ at, radius: 0.6 * s, count: 22 * s, speed: [0.3, 1.4], life: [1.4, 2.6], size: [0.9 * s, 2.4 * s], ramp: SMOKE[el] || 'smoke', intensity: 1, sprite: 'smoke', blend: 'alpha', drag: 1.2, gravity: -0.7, turb: 0.5, spin: [-0.6, 0.6], delay: 0.12, rival: remote });
   }
   kit.light(at, { color: P.hot, intensity: 1.6 * s, range: 14, dur: 0.6, attack: 0.04 });
+  if (kit.distort) kit.distort(at, 0.6 * s);
   kit.shake(o.shake ?? 0.32 * s);
   kit.hitstop(o.hitstop ?? 55 * s);
 }

@@ -619,6 +619,21 @@ export function createFxKit(deps) {
   function hitstop(ms) { hitStopMs = Math.max(hitStopMs, clamp(num(ms, 0), 0, 160) * (reduced() ? 0.5 : 1)); }
   function takeHitStop() { const v = hitStopMs; hitStopMs = 0; return v; }
 
+  // ---------------------------------------------------------------- искажение воздуха (postfx №8)
+  // Если core/postfx.js экспортирует queueShockwave(u, v, strength) — настоящая волна искажения на экране.
+  let queueWave = null;
+  try {
+    import('../../core/postfx.js').then((m) => { if (m && typeof m.queueShockwave === 'function') queueWave = m.queueShockwave; }).catch(() => {});
+  } catch (e) { /* нет динамического импорта */ }
+  const _pw = new V3();
+  /** Волна искажения в точке мира (strength 0..1). Без поддержки postfx — ничего. */
+  function distort(pos, strength) {
+    if (!queueWave || !camera || !pos || !Q.distort) return false;
+    _pw.set(pos.x, pos.y, pos.z).project(camera);
+    if (_pw.z > 1 || Math.abs(_pw.x) > 1.3 || Math.abs(_pw.y) > 1.3) return false;
+    try { queueWave(_pw.x * 0.5 + 0.5, _pw.y * 0.5 + 0.5, clamp(num(strength, 0.5), 0, 1) * (reduced() ? 0.4 : 1)); return true; } catch (e) { return false; }
+  }
+
   // ---------------------------------------------------------------- опорные точки
   const _anch = new V3();
   function anchor(name, out, remote) {
@@ -679,7 +694,7 @@ export function createFxKit(deps) {
     get clock() { return clock; },
     get Q() { return Q; },
     reduced,
-    emit, flash, light, screenFlash, actor, after,
+    emit, flash, light, screenFlash, actor, after, distort,
     shake, kick, hitstop, takeHitStop,
     anchor, groundY, cameraPos,
     rampFor, rampRow, SPRITES, ELEMENTS,
