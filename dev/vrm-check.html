@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>ASHEN — стенд VRM-героев</title>
+<style>html,body{margin:0;background:#1a1d24;color:#ddd;font:12px monospace}#info{position:fixed;left:8px;top:8px;white-space:pre}</style>
+<script type="importmap">{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/",
+  "@pixiv/three-vrm":"https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"}}</script>
+</head><body><div id="info">загрузка…</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { loadVRM, retargetClip } from '../modules/vrmKit.js';
+import { clone as skClone } from 'three/addons/utils/SkeletonUtils.js';
+const q = new URLSearchParams(location.search);
+const dir = q.get('dir') || '../assets/vroid_src/';
+const files = (q.get('f') || 'Darkness_Shibu,Sakurada_Fumiriya,Sendagaya_Shino,HairSample_Male').split(',');
+const clipName = q.get('clip') || 'Walk';
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(innerWidth, innerHeight); renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x2a3140);
+const cam = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.1, 100);
+cam.position.set(0, 1.3, 7.5); cam.lookAt(0, 0.9, 0);
+scene.add(new THREE.HemisphereLight(0xdde6ff, 0x404040, 1.8));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(2, 4, 5); scene.add(sun);
+const src = await new GLTFLoader().loadAsync('../assets/quaternius/woman.glb');
+const srcH = await new GLTFLoader().loadAsync('../assets/quaternius/human.glb');
+const all = [...src.animations, ...srcH.animations];
+const findClip = (n) => all.find((c) => c.name.split('|').pop() === n) || all.find((c) => c.name.split('|').pop() === n + 'ing');
+const mixers = [], vrms = [], info = [];
+for (let i = 0; i < files.length; i++) {
+  try {
+    const t0 = performance.now();
+    const vrm = await loadVRM(THREE, dir + files[i] + '.vrm');
+    vrm.scene.position.x = (i - (files.length - 1) / 2) * 1.25;
+    scene.add(vrm.scene);
+    const c = findClip(clipName);
+    const srcScene = src.animations.includes(c) ? src.scene : srcH.scene;
+    const clip = retargetClip(THREE, c, skClone(srcScene), vrm);
+    const mix = new THREE.AnimationMixer(vrm.scene);
+    mix.clipAction(clip).play();
+    mixers.push(mix); vrms.push(vrm);
+    info.push(`${files[i]}: meta=${vrm.meta && vrm.meta.metaVersion} tracks=${clip.tracks.length} ${Math.round(performance.now() - t0)}мс`);
+  } catch (e) { info.push(`${files[i]}: ОШИБКА ${e.message}`); }
+}
+document.getElementById('info').textContent = info.join('\n');
+const step = (dt) => { mixers.forEach((m) => m.update(dt)); vrms.forEach((v) => v.update(dt)); renderer.render(scene, cam); };
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => step(Math.min(0.05, clock.getDelta())));
+window.__render = (dt = 0.3) => step(dt);
+window.__vrms = vrms; window.__ready = true;
+</script></body></html>

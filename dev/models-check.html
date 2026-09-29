@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>ASHEN — стенд моделей героев</title>
+<style>html,body{margin:0;background:#1a1d24;color:#ddd;font:12px monospace}#info{position:fixed;left:8px;top:8px;white-space:pre}</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"}}</script>
+</head><body><div id="info"></div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const q = new URLSearchParams(location.search);
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(innerWidth, innerHeight); renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x2a3140);
+const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 100);
+cam.position.set(0, 1.4, 6.5); cam.lookAt(0, 0.95, 0);
+scene.add(new THREE.HemisphereLight(0xdde6ff, 0x404040, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(2, 4, 5); scene.add(sun);
+const loader = new GLTFLoader();
+const mixers = [];
+const info = [];
+const list = (q.get('m') || 'human,woman').split(',');
+const load = (u) => loader.loadAsync(u);
+const [a, b] = await Promise.all(list.map((n) => load(`../assets/quaternius/${n}.glb`)));
+window.__models = { a, b };
+[a, b].forEach((g, i) => {
+  if (!g) return;
+  const m = g.scene; m.position.x = (i - 0.5) * 2.2;
+  const box = new THREE.Box3().setFromObject(m); const h = box.max.y - box.min.y;
+  m.scale.setScalar(1.8 / h); m.position.y = -box.min.y * 1.8 / h;
+  scene.add(m);
+  const mix = new THREE.AnimationMixer(m); mixers.push(mix);
+  const clip = g.animations.find((c) => /Idle$/.test(c.name)) || g.animations[0];
+  mix.clipAction(clip).play();
+  info.push(`${list[i]}: h=${h.toFixed(2)} clips=${g.animations.map((c) => c.name.split('|').pop()).join(',')}`);
+});
+document.getElementById('info').textContent = info.join('\n');
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => { const dt = clock.getDelta(); mixers.forEach((m) => m.update(dt)); renderer.render(scene, cam); });
+window.__render = (dt = 0.5) => { mixers.forEach((m) => m.update(dt)); renderer.render(scene, cam); };
+window.__scene = scene; window.__THREE = THREE;
+window.__ready = true;
+</script></body></html>

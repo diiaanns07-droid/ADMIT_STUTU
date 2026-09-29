@@ -36,12 +36,15 @@ MediaPipe 1.0.x **сознательно не используется**: в е�
 (общественное достояние, указание автора не требуется): `dark_rock_02` и `monastery_stone_floor`. Список страниц и где что используется — `assets/polyhaven/LICENSE.md`.
 Если файлы не загрузились, игра остаётся на процедурных текстурах.
 
-## Модель героя (в архиве, CC0)
-`assets/kaykit/Mage.glb` — персонаж «Mage» с анимациями из **KayKit : Adventurers Character Pack 1.0**,
-автор **Kay Lousberg** (https://kaylousberg.com), лицензия **CC0 1.0**,
-источник: https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0 (текст — `assets/kaykit/LICENSE.txt`).
-Цвета материалов приглушены под сцену, анимации смешиваются в `modules/heroModel.js`.
-Если файл не загрузился, остаётся процедурный герой.
+## Герои и эльфы (в архиве, CC0)
+- `assets/vroid/*.vrm` — ранние образцы **VRoid Studio** (pixiv), выпущенные под **CC0 1.0**:
+  AvatarSample_F (эльфийка), Darkness (тёмная чародейка), AvatarSample_E и _G (жительницы деревни).
+  Источник и условия — `assets/vroid/LICENSE.md`. Текстуры уменьшены (`tools/shrink_vrm.py`).
+  Загрузка — **@pixiv/three-vrm 3.5.5** (MIT, с cdn.jsdelivr.net): физика волос и одежды, моргание.
+- `assets/quaternius/human.glb`, `woman.glb` — «Animated Human» и «Animated Woman» от **Quaternius**
+  (CC0 1.0, Poly Pizza; ссылки — `assets/quaternius/LICENSE.md`). Их анимации (шаг, бег, удар, прыжок,
+  смерть, сидя…) переносятся на VRM-персонажей по направлениям костей (`modules/vrmKit.js`).
+- Если модель не загрузилась, остаётся процедурный Пепельный страж.
 
 ## Собственные ресурсы
 Вся геометрия процедурная (включая Регента, колоссов и шпили), небо с затмением и туман — шейдеры,
