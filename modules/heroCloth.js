@@ -42,7 +42,7 @@ export function createCloth(THREE, o) {
   const CI = Int32Array.from(ci), CL = Float32Array.from(cl), CS = Float32Array.from(cs), NC = CL.length;
 
   // ---------------------------------------------------------------- меш (гуще сетки частиц)
-  const SU = 3, SV = 2;
+  const SU = 2, SV = 2;
   const rc = (cols - 1) * SU + 1, rr = (rows - 1) * SV + 1, RN = rc * rr;
   const geo = new THREE.BufferGeometry();
   const rpos = new Float32Array(RN * 3), ruv = new Float32Array(RN * 2);
@@ -115,7 +115,7 @@ export function createCloth(THREE, o) {
     P[k * 3] = x; P[k * 3 + 1] = y; P[k * 3 + 2] = z;
   }
   let floorY = -1e9, backLim = 0.02, backH = 0.5;
-  const DRAG = 2.2, DAMP = 0.992, ITER = 5, VCAP = 3.2, VMAX = 3.5, CARRY = o.carry ?? 0.6;
+  const DRAG = 2.2, DAMP = 0.992, ITER = 4, VCAP = 3.2, VMAX = 3.5, CARRY = o.carry ?? 0.6;
   // перенос движения тела на ткань (без рывка): доля CARRY сдвига кости груди за кадр прикладывается к
   // частицам и их прошлым положениям; встречный воздух видит эту долю как скорость (vA)
   const Mprev = new THREE.Matrix4(), Md = new THREE.Matrix4();
@@ -235,7 +235,7 @@ export function createCloth(THREE, o) {
       rpos[k * 3 + 1] = e[1] * x + e[5] * y + e[9] * z + e[13];
       rpos[k * 3 + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
     }
-    geo.computeVertexNormals();
+    gridNormals();
     // складки-плиссе: смещение вдоль нормали, глубже к подолу; затем нормали заново (свет ловит складки)
     if (pleatDepth > 0) {
       const nr = geo.attributes.normal.array;
@@ -249,9 +249,28 @@ export function createCloth(THREE, o) {
           rpos[k * 3] += nr[k * 3] * d; rpos[k * 3 + 1] += nr[k * 3 + 1] * d; rpos[k * 3 + 2] += nr[k * 3 + 2] * d;
         }
       }
-      geo.computeVertexNormals();
+      gridNormals();
     }
     geo.attributes.position.needsUpdate = true;
+    geo.attributes.normal.needsUpdate = true;
+  }
+  // нормали сетки разностями соседей (быстрее общего computeVertexNormals; ориентация — как у треугольников)
+  function gridNormals() {
+    const nr = geo.attributes.normal.array;
+    for (let j = 0; j < rr; j++) {
+      const j0 = j > 0 ? j - 1 : j, j1 = j < rr - 1 ? j + 1 : j;
+      for (let i = 0; i < rc; i++) {
+        const i0 = i > 0 ? i - 1 : i, i1 = i < rc - 1 ? i + 1 : i;
+        const a3 = (j * rc + i1) * 3, b3 = (j * rc + i0) * 3, c3 = (j1 * rc + i) * 3, d3 = (j0 * rc + i) * 3;
+        const ux = rpos[a3] - rpos[b3], uy = rpos[a3 + 1] - rpos[b3 + 1], uz = rpos[a3 + 2] - rpos[b3 + 2];
+        const vx = rpos[c3] - rpos[d3], vy = rpos[c3 + 1] - rpos[d3 + 1], vz = rpos[c3 + 2] - rpos[d3 + 2];
+        // треугольник (a0, b0, a1): нормаль = (вниз) × (вправо)
+        let nx = vy * uz - vz * uy, ny = vz * ux - vx * uz, nz = vx * uy - vy * ux;
+        const l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+        const k3 = (j * rc + i) * 3;
+        nr[k3] = nx / l; nr[k3 + 1] = ny / l; nr[k3 + 2] = nz / l;
+      }
+    }
   }
 
   function refresh() {
@@ -344,6 +363,7 @@ export function createStrands(THREE, o) {
   }
   // меш: на каждую прядь SS точек оси × RU вершин сечения
   const SUB = 3, RU = 8;
+  const RC = Array.from({ length: RU + 1 }, (_, i) => Math.cos((i / RU) * Math.PI * 2)), RS = Array.from({ length: RU + 1 }, (_, i) => Math.sin((i / RU) * Math.PI * 2));
   const rings = LK.map((k) => (k.n - 1) * SUB + 1);
   let RV = 0; for (const r of rings) RV += r * (RU + 1);
   const pos = new Float32Array(RV * 3), nrm = new Float32Array(RV * 3), uv = new Float32Array(RV * 2), col = new Float32Array(RV * 3);
@@ -482,6 +502,7 @@ export function createStrands(THREE, o) {
   // отрисовка: ось — Catmull-Rom по частицам, сечение — эллипс (плоская сторона — к оси тела)
   const inv = new THREE.Matrix4(), c0 = new THREE.Vector3(), c1 = new THREE.Vector3(), T = new THREE.Vector3(), O = new THREE.Vector3(), S = new THREE.Vector3(), tmp = new THREE.Vector3();
   const axisPts = [];
+  const axisPool = Array.from({ length: Math.max(...rings) }, () => new THREE.Vector3());
   const crp = (k, u, out) => {
     const f = u * (k.n - 1), i1 = Math.min(k.n - 2, Math.floor(f)), t = f - i1;
     const at = (i) => k.s + Math.max(0, Math.min(k.n - 1, i));
@@ -503,7 +524,7 @@ export function createStrands(THREE, o) {
       k.done = true;
       const nr = k.nr, flat = k.lk.flat ?? 0.45, taper = k.lk.taper ?? 0.92;
       axisPts.length = 0;
-      for (let j = 0; j < nr; j++) axisPts.push(crp(k, j / (nr - 1), new THREE.Vector3()));
+      for (let j = 0; j < nr; j++) axisPts.push(crp(k, j / (nr - 1), axisPool[j]));
       for (let j = 0; j < nr; j++) {
         const t = j / (nr - 1);
         c0.copy(axisPts[j]);
@@ -523,13 +544,19 @@ export function createStrands(THREE, o) {
         const r0 = k.lk.r0 ?? 0.015, r1 = k.lk.r1 ?? 0.006;
         let r = r0 + (r1 - r0) * t;
         r *= (0.55 + 0.45 * Math.min(1, t * 6)) * (1 - taper * Math.pow(Math.max(0, (t - 0.72) / 0.28), 1.6));
+        // центр и оси сечения — сразу в осях родителя меша (матрица без сдвига для направлений)
+        const e = inv.elements;
+        const cx = e[0] * c0.x + e[4] * c0.y + e[8] * c0.z + e[12], cy = e[1] * c0.x + e[5] * c0.y + e[9] * c0.z + e[13], cz = e[2] * c0.x + e[6] * c0.y + e[10] * c0.z + e[14];
+        const sx = e[0] * S.x + e[4] * S.y + e[8] * S.z, sy = e[1] * S.x + e[5] * S.y + e[9] * S.z, sz = e[2] * S.x + e[6] * S.y + e[10] * S.z;
+        const ox = e[0] * O.x + e[4] * O.y + e[8] * O.z, oy = e[1] * O.x + e[5] * O.y + e[9] * O.z, oz = e[2] * O.x + e[6] * O.y + e[10] * O.z;
+        const ls = Math.sqrt(sx * sx + sy * sy + sz * sz) || 1, lo = Math.sqrt(ox * ox + oy * oy + oz * oz) || 1;
         for (let i = 0; i <= RU; i++) {
-          const a = (i / RU) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
-          const q = k.rb + j * (RU + 1) + i;
-          tmp.copy(c0).addScaledVector(S, ca * r).addScaledVector(O, sa * r * flat).applyMatrix4(inv);
-          pos[q * 3] = tmp.x; pos[q * 3 + 1] = tmp.y; pos[q * 3 + 2] = tmp.z;
-          tmp.copy(S).multiplyScalar(ca * flat).addScaledVector(O, sa).normalize().transformDirection(inv);
-          nrm[q * 3] = tmp.x; nrm[q * 3 + 1] = tmp.y; nrm[q * 3 + 2] = tmp.z;
+          const ca = RC[i], sa = RS[i];
+          const q = (k.rb + j * (RU + 1) + i) * 3;
+          pos[q] = cx + sx * ca * r + ox * sa * r * flat; pos[q + 1] = cy + sy * ca * r + oy * sa * r * flat; pos[q + 2] = cz + sz * ca * r + oz * sa * r * flat;
+          let nx = (sx / ls) * ca * flat + (ox / lo) * sa, ny = (sy / ls) * ca * flat + (oy / lo) * sa, nz = (sz / ls) * ca * flat + (oz / lo) * sa;
+          const ln = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+          nrm[q] = nx / ln; nrm[q + 1] = ny / ln; nrm[q + 2] = nz / ln;
         }
       }
     }

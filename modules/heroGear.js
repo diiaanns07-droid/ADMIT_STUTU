@@ -733,10 +733,15 @@ export function dressHero(THREE, vrm, opts = {}) {
 
   // ---------------- кадр: ткань, свечение, LOD
   let t = 0, lodL = 0;
+  const perf = { cloth: 0, hair: 0 }; // мс на кадр (скользящее среднее) — для QA
   function update(dt) {
     t += dt;
+    const now = typeof performance !== 'undefined' ? () => performance.now() : () => Date.now();
+    let t0 = now();
     if (cloth) { try { cloth.update(dt, lodL); } catch (e) { /* ткань не критична */ } }
+    let t1 = now(); perf.cloth += (t1 - t0 - perf.cloth) * 0.1; t0 = t1;
     if (hair) { try { hair.update(dt, lodL); } catch (e) { /* пряди не критичны */ } }
+    t1 = now(); perf.hair += (t1 - t0 - perf.hair) * 0.1;
     if (staffRig) {
       staffRig.halo.rotation.y = t * 0.9;
       staffRig.shards.rotation.y = -t * 0.7;
@@ -843,7 +848,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   let glowNow = 1;
   function setGlow(k) { glowNow = k; }
   return {
-    names, staffTip, bow, cloth, setGlow, get glow() { return glowNow; }, update, setLod, setQuality, setShading() {}, setBowHeld, dispose,
+    names, staffTip, bow, cloth, perf, setGlow, get glow() { return glowNow; }, update, setLod, setQuality, setShading() {}, setBowHeld, dispose,
     parts: () => parts.map((p) => p.obj.name),
   };
 }

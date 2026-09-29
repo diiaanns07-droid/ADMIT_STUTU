@@ -1068,6 +1068,7 @@ export function createHeroModel({
         act: actName, actW: act ? +act.getEffectiveWeight().toFixed(2) : 0, actRun: act ? act.isRunning() : false, upper: actUpper, hold: holdName, clips: cur ? Object.keys(cur.full).length : 0,
         shading: opts.shading, lod: S.lod, pose: { bow: +pose.wBow.toFixed(2), spell: +pose.wSpell.toFixed(2), mirror: +mirror.w.toFixed(2) },
         gear: cur && cur.gear ? cur.gear.names || [] : [],
+        gearMs: cur && cur.gear && cur.gear.perf ? { cloth: +cur.gear.perf.cloth.toFixed(3), hair: +cur.gear.perf.hair.toFixed(3) } : null,
       };
     },
   };
