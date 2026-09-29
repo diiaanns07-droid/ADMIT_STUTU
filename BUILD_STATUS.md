@@ -166,6 +166,22 @@
 - «Камера занята» в настоящем браузере; реальное сворачивание вкладки (событие симулировано).
 - Звук на слух, Firefox и Safari.
 
+## V6 · [HERO] герои — API для других команд (черновик, дополняется)
+- **C5 готов** (`modules/heroModel.js`): `createHeroModel({ THREE, scene, hero, remote:true })` без `heroRoot` —
+  свой root (ставится по `snapLike.player.position/yaw`), свой миксер и материалы (проверено: 2 героя, 0 общих
+  материалов — `dev/hero_stand.html`). `update(dt, snapLike, events)`; для `remote:true` берутся только события
+  с `data.remote`, для своего — только без него. `getAnchors()` → `{ handL, handR, chest, head, bowSocket, staffTip }`
+  — постоянные `THREE.Object3D` (при смене героя переезжают на новые кости; у процедурного героя — маркеры рига).
+  `setPose({ bowActive, bowDraw 0..1, aim:{x,y}, handSpell 0..1 })` — поза лука/чар поверх анимаций; main.js уже
+  зовёт её из `input.bow`/`input.handSpell` (C2), №6 может звать сам. `setMirror(m)` — руки героя за руками игрока.
+  `setStance(clip)` — стойка витрины. Общие настройки для экземпляров NET — `configureHeroes({ atmosphere, shading, quality })`.
+- **Герои:** `HEROES` + `HERO_ORDER` — ashen (Пепельный страж, латы Knight), elf, dark (VRoid), **ranger** (Лучница),
+  **archmage** (Архимаг) — Quaternius CC0 (`assets/heroes/`). У каждого `name, cls, element, desc[3]`.
+- **Для №8 (BDO):** в `HERO_OPTIONS` (ui.js) добавлены 2 героя и 4-е поле `{ cls, element, desc }` с тегом [HERO] —
+  карточек теперь 5 (3+2); описание (3 строки) можно показывать под выбранной карточкой. Витрина меню —
+  `modules/heroShowcase.js` (свой свет, облёт, `postfx.setFocus(dist)` если есть).
+- **Настройка** `heroShading: 'realistic'|'anime'` (C1). 'realistic' — MeshPhysicalMaterial (`modules/heroShading.js`).
+
 ## V6 · [BDO] стиль Black Desert — API для других команд (черновик, дополняется)
 - **Настроение зоны (для №5 [FOREST])** — уже в main: `world.atmosphere.setZoneMood({ weight, sky, fog, sun, exposure, grade })`.
   `weight` 0..1 (насколько герой в зоне; можно звать каждый кадр — смена плавная, ~1 с). Остальные поля
