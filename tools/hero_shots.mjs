@@ -70,6 +70,7 @@ if (STANDS.length) {
     await page.goto(`http://127.0.0.1:${PORT}/${u}`);
     const res = await page.waitForFunction(() => window.__HS__, null, { timeout: 180000 }).then((h) => h.jsonValue()).catch((e) => ({ error: String(e) }));
     await sleep(Number(argOf('--wait', '1500')));
+    if (argv.includes('--drift')) res.drift = await page.evaluate(() => window.__HS_DRIFT__ && window.__HS_DRIFT__());
     const name = `stand_${String(k++).padStart(2, '0')}`;
     await page.screenshot({ path: join(OUT, name + '.png'), timeout: 120000 });
     out[name] = { url: u, res, log: log.slice(0, 30) };

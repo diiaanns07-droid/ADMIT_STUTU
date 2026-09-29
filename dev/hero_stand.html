@@ -131,6 +131,33 @@ async function checks() {
   window.__HS__ = res;
 }
 checks();
+// дрейф головы: голова относительно таза по сценариям (должна оставаться в пределах ±1 рад и не накапливаться)
+window.__HS_DRIFT__ = () => {
+  window.__HS_MANUAL__ = true;
+  const out = {};
+  const qh = new THREE.Quaternion(), qp = new THREE.Quaternion(), e = new THREE.Euler();
+  const rel = (m) => {
+    const H = m.vrm.humanoid, h = H.getRawBoneNode('head'), p = H.getRawBoneNode('hips');
+    h.getWorldQuaternion(qh); p.getWorldQuaternion(qp);
+    qh.premultiply(qp.invert()); e.setFromQuaternion(qh, 'YXZ'); return +e.y.toFixed(2);
+  };
+  const scen = {
+    idle: (i, s) => { s.player.velocity = { x: 0, z: 0 }; },
+    walkTurn: (i, s) => { s.player.yaw += 0.03; s.player.velocity = { x: Math.sin(s.player.yaw) * 1.5, z: Math.cos(s.player.yaw) * 1.5 }; },
+    spin: (i, s) => { s.player.yaw += 0.12; s.player.velocity = { x: 0, z: 0 }; },
+    lock: (i, s) => { s.player.encounter = 'engaged'; s.boss = { position: { x: 5, y: 0, z: 5 } }; s.player.yaw += 0.02; s.player.velocity = { x: 2, z: 0 }; },
+  };
+  for (const [name, fn] of Object.entries(scen)) {
+    for (const m of [a, b]) {
+      const s = { status: 'playing', player: { position: { x: 0, y: 0, z: 0 }, yaw: 0, velocity: { x: 0, z: 0 }, action: 'idle' } };
+      const tr = [];
+      for (let i = 0; i < 900; i++) { fn(i, s); m.update(1 / 60, s, []); if (i % 150 === 0) tr.push(rel(m)); }
+      out[`${m.hero}:${name}`] = tr;
+    }
+  }
+  window.__HS_MANUAL__ = false;
+  return out;
+};
 window.__HS_API__ = { a, b, scene, camera, renderer, THREE, HEROES, step, place };
 </script>
 </body>
