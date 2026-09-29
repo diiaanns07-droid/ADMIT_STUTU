@@ -1,5 +1,6 @@
 // Визуальные снимки боя для арт-проверки (Visual Bible, разд. 25).
-// node tools/qa_shots.mjs [--out DIR] [--browser PATH] [--size 1600x900] [--quality medium] [--gpu] [--phase2]
+// node tools/qa_shots.mjs [--out DIR] [--browser PATH] [--size 1600x900] [--quality medium] [--gpu] [--phase2] [--forest]
+// [FOREST] --forest: после боя — ракурсы Сияющего леса и Поляны дуэлей (dev/world_tour.html), замер кадра на поляне.
 // Запускает serve_game.py, входит в бой в режиме DEBUG (без камеры) и снимает несколько ракурсов.
 // Кроме PNG пишет stats.json: яркость (sRGB) по зонам кадра — проверка «ни один пиксель игровой зоны
 // не темнее 18–20». Это снимки headless-браузера (часто программный рендер SwiftShader), не замер FPS.
@@ -226,6 +227,32 @@ try {
     stats.phase2state = await page.eval('({ scr: __ASHEN__.screen, stage: __ASHEN__.snapshot().boss.stage, hp: __ASHEN__.snapshot().boss.hp })');
   }
   stats.render = await page.eval('({ ...__ASHEN__.renderInfo(), fps: __ASHEN__.fps, postfx: __ASHEN__.postfx, assets: __ASHEN__.worldAssets() })');
+  // [FOREST] --forest: ракурсы Сияющего леса и Поляны дуэлей — стенд dev/world_tour.html (настоящий world.js + postfx)
+  if (argv.includes('--forest')) {
+    await page.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/dev/world_tour.html?q=${QUALITY}` });
+    if (!(await page.waitFor('!!window.__TOUR__ && !!__TOUR__.world.forest', 60000))) throw new Error('стенд карты не загрузился или нет леса');
+    await page.eval('(() => { const h = document.getElementById("hud"), b = document.getElementById("bar"); if (h) h.style.display = "none"; if (b) b.style.display = "none"; })()');
+    const FOREST_SHOTS = [
+      ['20_forest_gate', 'place', [14, -97, 180]],                    // у врат: вход в лес, Древо с корнем-аркой
+      ['21_forest_arch', 'place', [15, -124, 180]],                   // под корнем-аркой, вид на поляну
+      ['22_duel_glade', 'place', [6, -168, 90]],                      // точка дуэли A → центр
+      ['23_duel_glade_b', 'place', [30, -168, -90]],                  // точка дуэли B → центр
+      ['24_duel_top', 'fly', [18, 26, -128, 18, -2, -170]],           // Поляна дуэлей сверху: кольцо рун, укрытия
+      ['25_forest_lake', 'place', [-4, -184, 200]],                   // берег озера, водопад
+      ['26_forest_shrine', 'place', [46, -171, 100]],                 // святилище-руина
+      ['27_forest_overview', 'fly', [60, 60, -90, 10, 0, -185]],      // общий вид
+    ];
+    stats.forest = {};
+    for (const [name, kind, v] of FOREST_SHOTS) {
+      if (kind === 'place') await page.eval(`(__TOUR__.fly(null), __TOUR__.place(${v.join(',')}), true)`);
+      else await page.eval(`(__TOUR__.fly([${v.join(',')}]), true)`);
+      await sleep(1500);
+      stats.forest[name] = zoneStats(decodePNG(await page.shot(name)));
+    }
+    await page.eval('(__TOUR__.fly(null), __TOUR__.place(6, -168, 90), true)');
+    stats.forest.bench = await page.eval('__TOUR__.bench(60, 1280, 720)');
+    stats.forest.zone = await page.eval('__TOUR__.world.forest.stats()');
+  }
 } catch (e) {
   console.error('ОШИБКА:', e.message);
   process.exitCode = 1;

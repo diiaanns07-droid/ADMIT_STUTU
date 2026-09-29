@@ -18,7 +18,7 @@ import { createDebugInput, emptyInput } from './core/debugInput.js';
 import { createBossBrain } from './modules/boss.js';
 import { createCombat } from './modules/combat.js';
 import { createWorld } from './modules/world.js';
-import { createHeroModel, HEROES } from './modules/heroModel.js';
+import { createHeroModel, HEROES, configureHeroes } from './modules/heroModel.js';
 import { createEffects } from './modules/effects.js';
 import { createUI } from './modules/ui.js';
 import { createVision } from './modules/vision.js';
@@ -59,6 +59,10 @@ function sanitizeSettings(patch, base) {
   if ('reducedMotion' in patch) out.reducedMotion = !!patch.reducedMotion;
   if (patch.moveMode === 'steer' || patch.moveMode === 'stick') out.moveMode = patch.moveMode; // [V5] «Руль» / «Джойстик»
   if (typeof patch.hero === 'string' && HEROES[patch.hero]) out.hero = patch.hero;
+  // [HERO] C1: шейдинг героев
+  if (patch.heroShading === 'realistic' || patch.heroShading === 'anime') out.heroShading = patch.heroShading;
+  // [FOREST] место старта: Пепельное плато / Сияющий лес
+  if (patch.startZone === 'arena' || patch.startZone === 'forest') out.startZone = patch.startZone;
   // [NET] имя в онлайн-дуэли и IP ретранслятора LAN
   if (typeof patch.netName === 'string') out.netName = patch.netName.replace(/[<>\u0000-\u001f]/g, '').trim().slice(0, 16);
   if (typeof patch.netLanHost === 'string') out.netLanHost = patch.netLanHost.replace(/[^0-9A-Za-z.:\-]/g, '').slice(0, 64);
@@ -128,7 +132,9 @@ const worldLayout = world && world.layout ? world.layout : null;
 // [ASHEN_V3] выбор героя: процедурный Пепельный страж или VRoid-героини (CC0, VRM) с анимациями Quaternius
 let heroModel = null;
 try {
-  if (world && world.hero) heroModel = createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, hero: settings.hero, baseUrl: new URL('./assets/quaternius/', import.meta.url).href });
+  // [HERO] C5: общие настройки (атмосфера, шейдинг) — и для удалённого героя NET
+  configureHeroes({ atmosphere: world && world.atmosphere, shading: settings.heroShading, quality: settings.quality });
+  if (world && world.hero) heroModel = createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, markers: world.hero.markers, atmosphere: world.atmosphere, shading: settings.heroShading, quality: settings.quality, hero: settings.hero, baseUrl: new URL('./assets/quaternius/', import.meta.url).href }); // [HERO] markers/atmosphere/shading
 } catch (e) { console.warn('[ASHEN] heroModel', e); }
 const bossBrain = make('boss.js', () => createBossBrain(config));
 const combat = make('combat.js', () => createCombat({ config, bossBrain, layout: worldLayout }));
@@ -202,6 +208,22 @@ function checkEmbers(snap, events) {
   }
   return out;
 }
+// [FOREST] вход в Сияющий лес → событие zone_enter (титр зоны рисует ui/battleHud, №8)
+function forestZoneEvents(events, snap) {
+  const f = world && world.forest;
+  if (!f || typeof f.drainEvents !== 'function') return events;
+  const got = f.drainEvents();
+  if (!got.length) return events;
+  const out = events === NO_EVENTS ? [] : events;
+  const p = snap && snap.player ? snap.player.position : { x: 0, y: 0, z: 0 };
+  for (const z of got) out.push({ id: `zone-enter-${z.zoneId}-${Math.round(performance.now())}`, type: 'zone_enter', position: { x: p.x, y: p.y, z: p.z }, data: { zoneId: z.zoneId, name: z.name, subtitle: z.subtitle } });
+  return out;
+}
+// [FOREST] место старта из настроек: combat.setSpawn до reset (точки — world.layout.spawns)
+function applyStartZone() {
+  if (typeof combat.setSpawn !== 'function' || !worldLayout || !worldLayout.spawns) return;
+  combat.setSpawn(settings.startZone === 'forest' ? worldLayout.spawns.forest : null);
+}
 function unlitEmbers() {
   if (!worldLayout || !Array.isArray(worldLayout.pois)) return null;
   return worldLayout.pois.filter((q) => q.kind === 'ember' && !progression.isEmberLit(q.id));
@@ -271,6 +293,7 @@ function setScreen(screen) {
 }
 
 function resetFight() {
+  applyStartZone();            // [FOREST] место старта
   combat.reset();              // сбрасывает и bossBrain
   world.reset();
   effects.reset();
@@ -300,7 +323,7 @@ function startFight() {
   app.resumableFight = false;
   app.resumeAt = 0;
   effects.setVolume(gameVolume());
-  if (!app.introShown) {
+  if (!app.introShown && settings.startZone !== 'forest') {   // [FOREST] облёт интро — только у арены
     app.introShown = true;
     app.intro = { t: 0, duration: settings.reducedMotion ? 2.6 : 5, awakened: false };
     setScreen('intro');
@@ -400,8 +423,11 @@ const callbacks = {
   onSettings(patch) {
     const next = sanitizeSettings(patch, settings);
     if (heroModel && next.hero !== settings.hero) heroModel.setHero(next.hero);
+    if (heroModel && next.heroShading !== settings.heroShading) { try { heroModel.setShading(next.heroShading); configureHeroes({ shading: next.heroShading }); } catch (e) { /* ignore */ } } // [HERO]
     const motionChanged = next.reducedMotion !== settings.reducedMotion;
+    const zoneChanged = next.startZone !== settings.startZone;   // [FOREST]
     Object.assign(settings, next); // мутация на месте: config.settings === settings
+    if (zoneChanged && app.screen === 'menu') { try { resetFight(); } catch (e) { console.warn('[ASHEN] startZone', e); } }   // [FOREST] герой в меню — у выбранного места старта
     applySettings();
     if (motionChanged && typeof world.configure === 'function') world.configure({ reducedMotion: settings.reducedMotion });
     if (motionChanged && postfx) { try { postfx.setReducedMotion(!!settings.reducedMotion); } catch (e) { /* ignore */ } }
@@ -525,6 +551,7 @@ function applySettings() {
     world.setQuality(settings.quality);   // тени (castShadow), пепел, огни жаровен, декор
     effects.setQuality(settings.quality); // пулы частиц, вспышечный свет
     if (postfx) { try { postfx.setQuality(settings.quality); } catch (e) { /* ignore */ } }
+    if (heroModel && heroModel.setQuality) { try { heroModel.setQuality(settings.quality); configureHeroes({ quality: settings.quality }); } catch (e) { /* ignore */ } } // [HERO]
   }
   effects.setVolume(app.screen === 'paused' ? 0 : gameVolume());
   if (vision) vision.configure({ sensitivity: settings.sensitivity, moveMode: settings.moveMode });
@@ -561,6 +588,18 @@ function mirrorFromPose(input, now) {
     lean: input && input.valid ? input.moveX || 0 : 0,
     depth: input && input.valid ? input.moveZ || 0 : 0,
   };
+}
+
+// [HERO] C2 → C5: input.bow / input.handSpell → heroModel.setPose (№6 может звать setPose и сам)
+const _heroPose = { bowActive: false, bowDraw: 0, aim: { x: 0, y: 0 }, handSpell: 0 };
+function heroPoseFromInput(input) {
+  const b = input && input.bow, h = input && input.handSpell;
+  _heroPose.bowActive = !!(b && b.active);
+  _heroPose.bowDraw = b && b.active ? Math.max(0, Math.min(1, +b.draw || 0)) : 0;
+  _heroPose.aim.x = b && b.active ? +b.aimX || 0 : h && h.dir ? +h.dir.x || 0 : 0;
+  _heroPose.aim.y = b && b.active ? +b.aimY || 0 : h && h.dir ? -(+h.dir.y || 0) : 0;
+  _heroPose.handSpell = h && (h.phase === 'form' || h.phase === 'hold') ? Math.max(0.35, Math.min(1, +h.power || 0)) : 0;
+  return _heroPose;
 }
 
 // ---------------------------------------------------------------- трекинг-HUD
@@ -762,6 +801,7 @@ function frame(now) {
     timeEvents(events, now);
     lastSnapshot = combat.getSnapshot();
     events = checkEmbers(lastSnapshot, events);
+    events = forestZoneEvents(events, lastSnapshot);   // [FOREST]
     if (lastSnapshot.status === 'victory') setScreen('victory');
     else if (lastSnapshot.status === 'defeat') setScreen('defeat');
   }
@@ -802,6 +842,8 @@ function frame(now) {
   if (typeof world.setMirror === 'function') {
     try { world.setMirror(app.debug ? null : mirrorFromPose(input, now)); } catch (e) { /* ignore */ }
   }
+  // [HERO] руки VRM-героя повторяют руки игрока; C5: поза лука и чар рукой из ввода C2
+  if (heroModel && heroModel.setMirror) { try { heroModel.setMirror(app.debug ? null : mirrorFromPose(input, now)); heroModel.setPose(heroPoseFromInput(input)); } catch (e) { /* ignore */ } }
   // [NET] соперник: отправка st/ev/pr, его модель; его события (data.remote=true) и снаряды — в эффекты.
   // world и heroModel получают только свои события: иначе свой герой повторял бы чужие удары.
   let fxEvents = events, fxSnap = lastSnapshot;
@@ -865,6 +907,7 @@ function frame(now) {
 
 applySettings();
 resize();
+if (settings.startZone === 'forest') { try { resetFight(); } catch (e) { console.warn('[ASHEN] startZone', e); } }   // [FOREST] в меню герой у врат леса
 renderUI();
 requestAnimationFrame(frame);
 boot.done();
@@ -890,6 +933,7 @@ window.__ASHEN__ = Object.freeze({
   pushups: () => pushups.getDebug(),
   coach: () => coachStats.summary(),
   hero: () => (heroModel ? heroModel.state() : null),
+  heroAnchors: () => { if (!heroModel || !heroModel.getAnchors) return null; const a = heroModel.getAnchors(), v = new THREE.Vector3(); return Object.fromEntries(Object.entries(a).map(([k, o]) => { o.getWorldPosition(v); return [k, { x: +v.x.toFixed(3), y: +v.y.toFixed(3), z: +v.z.toFixed(3), attached: !!o.parent }]; })); }, // [HERO] C5
   net: () => (netSession ? netSession.debug() : null),             // [NET]
   netSession: () => netSession,                                    // [NET] для тестов и №3
   heroStep: (dt, snap, events) => { if (heroModel) heroModel.update(dt, snap, events || []); return heroModel ? heroModel.state() : null; }, // QA: шаг анимации без rAF

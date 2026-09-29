@@ -133,6 +133,8 @@ export const config = {
     // 'stick' — прежний джойстик (поднять руку и замереть — центр)
     moveMode: 'steer',
     hero: 'ashen',          // выбранный герой: ashen | warrior | elf (modules/heroModel.js)
+    heroShading: 'realistic', // [HERO] C1: 'realistic' — PBR-материалы героев (modules/heroShading.js), 'anime' — MToon как было
+    startZone: 'arena',     // [FOREST] место старта: 'arena' — Пепельное плато, 'forest' — у врат Сияющего леса
     netName: '',            // [NET] имя в онлайн-дуэли (C1)
     bdoUi: true,            // [BDO] интерфейс в стиле Black Desert (false — прежний вид)
   },
