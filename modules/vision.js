@@ -1615,10 +1615,15 @@ export async function createVision(options = {}) {
       // закрывает левое плечо и сдвигает его точку. Иначе — последняя хорошая (до 700 мс).
       const shOk = (p) => p && finite(p.x) && finite(p.y) && (!finite(p.visibility) || p.visibility >= 0.6);
       let body = null;
-      if (lms && shOk(lms[11]) && shOk(lms[12])) { body = { x: (lms[11].x + lms[12].x) / 2, y: (lms[11].y + lms[12].y) / 2 }; lastBody = { ...body, t: tMs }; }
-      else if (lastBody && tMs - lastBody.t <= 700) body = { x: lastBody.x, y: lastBody.y };
-      // ширина плеч (в высотах кадра): толчок кистями к камере отличаем от наклона всем корпусом
-      const sw = lms && shOk(lms[11]) && shOk(lms[12]) && h > 0 ? Math.hypot((lms[11].x - lms[12].x) * (w / h), lms[11].y - lms[12].y) : null;
+      // ширина плеч (в высотах кадра): толчок кистями к камере отличаем от наклона всем корпусом.
+      // [V6] Как и середина плеч — последняя надёжная до 700 мс: в «Руле» левая ладонь часто закрывает
+      // левое плечо, и без ширины плеч щит не опускался, когда ладонь убирают назад.
+      let sw = null;
+      if (lms && shOk(lms[11]) && shOk(lms[12])) {
+        body = { x: (lms[11].x + lms[12].x) / 2, y: (lms[11].y + lms[12].y) / 2 };
+        sw = h > 0 ? Math.hypot((lms[11].x - lms[12].x) * (w / h), lms[11].y - lms[12].y) : null;
+        lastBody = { ...body, sw, t: tMs };
+      } else if (lastBody && tMs - lastBody.t <= 700) { body = { x: lastBody.x, y: lastBody.y }; sw = lastBody.sw; }
       const handObs = { tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, hands: Array.isArray(hands) ? hands : [], poseWrists: { left: wr(15), right: wr(16) }, bodyCenter: body, shoulderWidth: sw };
       handsInterp.push(handObs);
       if (recorder) { try { recorder.add(handObs); } catch (e) { /* [CONTROLS] запись не ломает трекинг */ } }

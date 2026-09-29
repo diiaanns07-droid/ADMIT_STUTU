@@ -678,7 +678,7 @@ export function createHandGestures(configPatch = {}) {
       burstBlockedUntil: -Infinity, pendingBurst: null,
       parryBlockedUntil: -Infinity, sparkBlockedUntil: -Infinity, strokeBlockedUntil: -Infinity,
       stickState: null,
-      shield: { on: false, openSince: null, badSince: null, base: null, peak: null, back: 0, lastT: null, vertT: null },
+      shield: { on: false, openSince: null, badSince: null, base: null, peak: null, baseRaw: null, peakRaw: null, back: 0, lastT: null, vertT: null },
       stroke: null, trail: [], trailUntil: -Infinity, lastRune: null, runeBlockedUntil: -Infinity, lastRecognition: null,
       tipF: null,
       swipe: { armed: true, until: -Infinity },
@@ -853,10 +853,11 @@ export function createHandGestures(configPatch = {}) {
         H.pushRun++;
         if (H.pushRun === 1) {
           H.pushBaseRun = sw ? base / sw : null;   // размах ладони до толчка (в ширинах плеч)
+          H.pushBaseRunRaw = base;                 //   и в кадре (плеч не видно — сравниваем так)
           H.pushPin = { t, p: base, pn: sw ? base / sw : null, sw: !!sw, nz: baseNz };
           H.pushT0 = baseT0;   // когда толчок начался (самая маленькая кисть в окне)
         }
-        if (H.pushRun >= cfg.shieldPushFrames) { H.pushAt = t; H.pushBase = H.pushBaseRun; }
+        if (H.pushRun >= cfg.shieldPushFrames) { H.pushAt = t; H.pushBase = H.pushBaseRun; H.pushBaseRaw = H.pushBaseRunRaw; }
       } else { H.pushRun = 0; H.pushPin = null; }
     }
   }
@@ -966,7 +967,7 @@ export function createHandGestures(configPatch = {}) {
         if (S.badSince === null) S.badSince = t;
         // кисть видна, но не ладонь к камере — опускаем быстро; кисть просто пропала из трекинга — ждём дольше
         const seenWrong = L.present && L.lastSeen === t;
-        if (busy || t - S.badSince >= (seenWrong ? cfg.shieldDropMs : cfg.shieldLostMs)) { S.on = false; S.badSince = null; S.base = null; S.back = 0; }
+        if (busy || t - S.badSince >= (seenWrong ? cfg.shieldDropMs : cfg.shieldLostMs)) { S.on = false; S.badSince = null; S.base = null; S.baseRaw = null; S.back = 0; }
       }
       return;
     }
@@ -975,12 +976,17 @@ export function createHandGestures(configPatch = {}) {
     if (S.on) {
       // [V6] ладонь убрали назад (к размеру до толчка) — щит опускается, даже если она к камере:
       // иначе в «Руле» случайный щит держался бы, пока рука ведёт героя (ладонь и так к камере)
-      if (S.base !== null && L.scaleN !== null) {
-        S.peak = Math.max(S.peak || 0, L.scaleN);
-        const thr = Math.max(S.base * (1 + cfg.shieldRetract), S.peak - (S.peak - S.base) * cfg.shieldRetractShare);
+      // размер — в ширинах плеч; плеч не видно (ладонь закрыла плечо) — в кадре
+      const norm = S.base !== null && L.scaleN !== null;
+      const cur = norm ? L.scaleN : S.baseRaw !== null && fin(L.spanF) ? L.spanF : null;
+      if (cur !== null) {
+        const base = norm ? S.base : S.baseRaw;
+        if (norm) S.peak = Math.max(S.peak || 0, cur); else S.peakRaw = Math.max(S.peakRaw || 0, cur);
+        const peak = norm ? S.peak : S.peakRaw;
+        const thr = Math.max(base * (1 + cfg.shieldRetract), peak - (peak - base) * cfg.shieldRetractShare);
         const dt = S.lastT === null ? 0 : Math.min(100, t - S.lastT);
-        S.back = L.scaleN < thr ? S.back + dt : Math.max(0, S.back - dt);
-        if (S.back >= cfg.shieldRetractMs) { S.on = false; S.back = 0; S.base = null; L.pushAt = -Infinity; }
+        S.back = cur < thr ? S.back + dt : Math.max(0, S.back - dt);
+        if (S.back >= cfg.shieldRetractMs) { S.on = false; S.back = 0; S.base = null; S.baseRaw = null; L.pushAt = -Infinity; }
       }
       S.lastT = t;
       return;
@@ -996,8 +1002,10 @@ export function createHandGestures(configPatch = {}) {
       || t - (S.vertT ?? -Infinity) < 40 || (fin(L.pushT0) && L.pushT0 <= (S.vertT ?? -Infinity)));
     // и ладонь всё ещё впереди: толчок, после которого кисть пропала и вернулась уже назад, щит не ставит
     const ratio = moveMode === 'steer' ? cfg.shieldPushRatioSteer : cfg.shieldPushRatio;
-    const stillForward = L.pushBase === null || L.spanNowN === null || L.scaleN === null
-      || Math.min(L.spanNowN, L.scaleN) >= L.pushBase * (1 + (ratio - 1) * cfg.shieldStillShare);
+    const needK = 1 + (ratio - 1) * cfg.shieldStillShare;
+    const stillForward = L.pushBase !== null && L.spanNowN !== null && L.scaleN !== null
+      ? Math.min(L.spanNowN, L.scaleN) >= L.pushBase * needK
+      : !fin(L.pushBaseRaw) || !fin(L.spanNow) || Math.min(L.spanNow, L.spanF) >= L.pushBaseRaw * needK;
     const fresh = t - L.pushAt <= cfg.shieldPushKeepMs;
     // толчок во время руления (рука идёт к плечу, вбок) или после которого ладонь уже не впереди —
     // аннулируется, а не ждёт конца движения (иначе щит вставал в конце подъёма руки на бег)
@@ -1006,6 +1014,7 @@ export function createHandGestures(configPatch = {}) {
     if (pushed || (cfg.shieldHoldMs > 0 && still && t - S.openSince >= cfg.shieldHoldMs)) {
       S.on = true; S.back = 0; S.lastT = t;
       S.base = pushed ? L.pushBase : null; S.peak = L.scaleN;
+      S.baseRaw = pushed && fin(L.pushBaseRaw) ? L.pushBaseRaw : null; S.peakRaw = fin(L.spanF) ? L.spanF : null;
     }
   }
 

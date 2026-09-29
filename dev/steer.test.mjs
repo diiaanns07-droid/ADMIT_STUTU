@@ -514,6 +514,20 @@ test('[V6] «Руль»: резко к плечу на бег (кисть рас
   ok(g.peek(t).shield, 'толчок у плеча — щит: ' + JSON.stringify(g.getDebug().left.push));
 });
 
+test('[V6] «Руль», плечо закрыто ладонью (нет ширины плеч): толчок — щит; убрал ладонь назад — щит опущен, идём', () => {
+  const g = createHandGestures({ moveMode: 'steer' });
+  const noSw = (t, hands) => ({ ...obs(t, hands), shoulderWidth: null });
+  const g9 = (t0, ms, fn) => { let t = t0; for (; t < t0 + ms; t += 33) g.push(noSw(t, fn(t))); return t; };
+  let t = g9(1000, 900, () => [LH(0, CHEST, BODYN, 0.12)]);
+  const t0 = t;
+  t = g9(t, 400, (tt) => [LH(0, CHEST, BODYN, 0.12 + 0.05 * Math.min(1, (tt - t0) / 180))]);
+  ok(g.peek(t).shield, 'толчок — щит');
+  const t1 = t;
+  t = g9(t, 600, (tt) => [LH(0, CHEST, BODYN, 0.17 - 0.05 * Math.min(1, (tt - t1) / 200))]);
+  const f = g.peek(t);
+  ok(!f.shield && f.moveZ > 0, 'убрал ладонь — идём: ' + JSON.stringify({ sh: f.shield, z: f.moveZ }));
+});
+
 test('[ОШИБКА] рука поднята, но ниже груди → подсказка steer_low (одна, не спам)', () => {
   const g = createHandGestures({ moveMode: 'steer' });
   let t = g8(g, 1000, 600, () => [LH(0, -1.5)]);

@@ -35,7 +35,8 @@ const PUSH = +argOf('--push', 1.35);
 const FAST_MS = +argOf('--fast', 150);
 let RIGHT = argv.includes('--right');
 let GLITCH = +argOf('--glitch', 0);
-const BODY_GLITCH = +argOf('--body-glitch', 0);  // доля кадров, где середина плеч позы «прыгает» на 0.1–0.3 sw           // доля кадров-выбросов: кисть на один кадр «прыгает» (сбой MediaPipe)        // правая рука всё время колдует: «OK», руны, выброс, «Искра»          // длительность «резкого» движения руля, мс
+const BODY_GLITCH = +argOf('--body-glitch', 0);
+let NO_SW = argv.includes('--no-sw');          // ширины плеч нет (левая ладонь закрыла плечо — поза не уверена)  // доля кадров, где середина плеч позы «прыгает» на 0.1–0.3 sw           // доля кадров-выбросов: кисть на один кадр «прыгает» (сбой MediaPipe)        // правая рука всё время колдует: «OK», руны, выброс, «Искра»          // длительность «резкого» движения руля, мс
 const OFFSET = +argOf('--offset', 0);          // привычная ладонь игрока смещена от нейтрали игры (sw, + к середине груди)
 const LEVEL = +argOf('--level', 0);            // и выше (+) / ниже (−) «уровня груди» (sw)          // сила осознанного толчка щита: во столько раз кисть растёт в кадре
 const G_OPTS = JSON.parse(argOf('--cfg', '{}')); // подмена настроек handGestures (подбор порогов)
@@ -159,7 +160,7 @@ function simulate(seed, gOpts = {}) {
         tMs: t, frameW: 640, frameH: 480, mirror: true, hands,
         poseWrists: { left: wr, right: hands[1] ? { x: hands[1].landmarks[0].x, y: hands[1].landmarks[0].y, visibility: 0.9 } : null },
         bodyCenter: (() => { const bg = BODY_GLITCH > 0 && rnd() < BODY_GLITCH; const j = bg ? (rnd() < 0.5 ? -1 : 1) * (0.1 + 0.2 * rnd()) * S.sw : 0; return { x: S.cx + j / S.aspect + 0.004 * gauss(), y: S.cy + (bg ? (rnd() - 0.5) * 0.2 * S.sw : 0) + 0.004 * gauss() }; })(),
-        shoulderWidth: S.sw * (1 + 0.02 * gauss()),
+        shoulderWidth: NO_SW ? null : S.sw * (1 + 0.02 * gauss()),
       };
       g.push(obs);
       if (recorder) recorder.add(obs);
@@ -267,6 +268,15 @@ if (ONLY === null && !RIGHT) {
   const Q = summarize(rr);
   R.rightFalseShieldOn = Q.falseShieldOn; R.rightWalkStopPct = Q.walkStopPct; R.rightCastStopPct = Q.castStopPct;
 }
+// левая ладонь закрыла плечо: ширины плеч нет — щит и «убрал ладонь» сравнивают размер кисти в кадре
+if (ONLY === null && !NO_SW) {
+  NO_SW = true;
+  const nn = [];
+  for (let s = 0; s < Math.max(8, SEEDS); s++) nn.push(simulate(17000 + s * 7919, G_OPTS));
+  NO_SW = false;
+  const N = summarize(nn);
+  R.noSwFalseShieldOn = N.falseShieldOn; R.noSwShieldUpPct = N.shieldUpPct; R.noSwShieldDropped = N.shieldDropped; R.noSwRuns = nn.length;
+}
 // сбои трекинга: 1 % кадров кисть на один кадр «прыгает» на 0.2–0.4 ширины плеч и/или меняет размер
 if (ONLY === null && !GLITCH) {
   GLITCH = 0.01;
@@ -300,6 +310,9 @@ const LIMITS = [
   ['offsetWrongTurn', (v) => v === undefined || v === 0, 'рука «не там» на 10 см: поворот не в ту сторону'],
   ['rightFalseShieldOn', (v) => v === undefined || v === 0, 'правая колдует: щит не поднимается сам'],
   ['rightWalkStopPct', (v) => v === undefined || v <= 3, 'правая колдует: герой идёт, % кадров «стоим»'],
+  ['noSwFalseShieldOn', (v) => v === undefined || v === 0, 'плечо закрыто ладонью: щит не поднимается сам'],
+  ['noSwShieldUpPct', (v) => v === undefined || v >= 80, 'плечо закрыто ладонью: толчок поднимает щит, %'],
+  ['noSwShieldDropped', (v) => v === undefined || v === `${R.noSwRuns}/${R.noSwRuns}`, 'плечо закрыто ладонью: убрал ладонь — щит опустился'],
   ['glitchFalseDash', (v) => v === undefined || v <= 2, 'сбои трекинга 1 %: ложные рывки'],
   ['glitchWrongTurn', (v) => v === undefined || v === 0, 'сбои трекинга 1 %: поворот не в ту сторону'],
   ['glitchWalkStopPct', (v) => v === undefined || v <= 3, 'сбои трекинга 1 %: герой идёт, % кадров «стоим»'],
