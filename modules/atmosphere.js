@@ -292,11 +292,13 @@ export function createAtmosphere({ THREE, scene, renderer, camera, parent, G, M,
     domeLow: col(0x1a2230), domeHigh: col(0x0b0f16), domeCorona: col(0x3b4a5a), ground: col(0x120e0c),
     corona: col(0xb9c9e6), coronaRed: col(0xff6a4a), coronaDawn: col(0xffe2b8),
     key: col(0xb9c9e6), keyDawn: col(0xffd9a0),
+    fogClear: col(0x3e5249),   // [ASHEN_V3] воздух эльфийской деревни: теплее и светлее (setLocalClear)
   };
   const state = {
     disposed: false, reduced: !!reducedMotion, quality,
     orbit: 0, orbitPrev: null, follow: 0, followTarget: 0,
     red: 0, dawn: 0, dark: 0, flash: 0, flashT: 0, nextFlash: 14 + rnd() * 16, strike: 0, time: 0,
+    clear: 0,          // [ASHEN_V3] 0..1 — местное прояснение (эльфийская деревня): туман реже и теплее
   };
 
   const dirFrom = (azDeg, elDeg) => new THREE.Vector3(
@@ -579,9 +581,10 @@ varying vec3 vAshWorldPos;`;
     skyUniforms.uDiscR.value = deg(ECLIPSE.discRadius) * (1 - state.dawn * 0.12);
     const fb = skyUniforms.uFogBase.value.copy(P.fogBase).lerp(P.fogDawn, state.dawn * 0.6);
     fb.multiplyScalar(1 - state.dark * 0.35);
+    if (state.clear > 0) fb.lerp(P.fogClear, state.clear * 0.5);
     fog.color.copy(fb);
     scene.background && scene.background.isColor && scene.background.copy(fb);
-    fogA.w = FOG.density * (1 - state.dawn * 0.5);
+    fogA.w = FOG.density * (1 - state.dawn * 0.5) * (1 - 0.45 * state.clear);
     fogLow.w = state.red * 0.8 * (1 - state.dawn);
     skyUniforms.uFogLow.value.w = fogLow.w;
     rayUniforms.uColor.value.copy(cor).multiplyScalar(0.8).lerp(P.key, 0.4);
@@ -623,6 +626,8 @@ varying vec3 vAshWorldPos;`;
   function configure(patch = {}) {
     if ('reducedMotion' in patch) state.reduced = !!patch.reducedMotion;
   }
+  // [ASHEN_V3] местное прояснение воздуха (0 — как везде, 1 — центр эльфийской деревни)
+  function setLocalClear(k) { state.clear = clamp(Number(k) || 0, 0, 1); }
 
   function dispose() {
     if (state.disposed) return;
@@ -644,7 +649,7 @@ varying vec3 vAshWorldPos;`;
   setQuality(quality);
   return {
     sunDir, keyDir, sunBase, keyBase, skyRadius, get envTexture() { return envTexture; },
-    fogColor: fog.color, useEnv, patchLit, patchUnlit, flash, update, setQuality, configure, dispose,
+    fogColor: fog.color, useEnv, patchLit, patchUnlit, flash, update, setQuality, configure, dispose, setLocalClear,
     get yaw() { return state.follow; },
   };
 }

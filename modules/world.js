@@ -14,6 +14,7 @@
  * направление взгляда = (sin(yaw), 0, cos(yaw)). Для другого соглашения есть config.world.yawOffset.
  */
 import { createAtmosphere } from './atmosphere.js';
+import { createElfVillage, ELF_VILLAGE } from './elfVillage.js';
 
 export const API_VERSION = 'ASHEN_V1';
 
@@ -1044,6 +1045,7 @@ float ashPuddle( vec2 xz ) {
     graves: { id: 'graves', name: 'Кладбище колоссов', x: 140,  z: -95,  r: 46 },
     hill:   { id: 'hill',   name: 'Холм клятвы',       x: -95,  z: -140, r: 14, top: 22 },
     gate:   { id: 'gate',   name: 'Павшие врата',      x: 0,    z: 214,  r: 16 },
+    elves:  { id: ELF_VILLAGE.id, name: ELF_VILLAGE.name, x: ELF_VILLAGE.x, z: ELF_VILLAGE.z, r: ELF_VILLAGE.r, level: ELF_VILLAGE.level },
   };
   const LAKE_ISLAND = { x: -72.9, z: 100.3, r: 5 };
   const LAKE_SHORE = { x: -61.8, z: 84.9 };
@@ -1057,6 +1059,7 @@ float ashPuddle( vec2 xz ) {
     [[0, 36], [4, 90], [-4, 150], [0, 230]],                           // → Павшие врата
     [[96, 96], [138, 46], [152, -20], [140, -95]],                     // город ↔ кладбище
     [[-142, 4], [-122, 50], [-100, 85]],                               // лес ↔ озеро
+    [[22, 4], [70, 6], [118, 10], [ELF_VILLAGE.x + ELF_VILLAGE.gate.dx - 6, ELF_VILLAGE.z + ELF_VILLAGE.gate.dz]], // → Эльфийская деревня
   ];
   const ROAD_HW = 1.9;
   const roadSegs = [];
@@ -1113,6 +1116,8 @@ float ashPuddle( vec2 xz ) {
     if (d < Z.graves.r + 34) { w = smoothstep(Z.graves.r + 34, Z.graves.r, d); y = lerp(y, -5 + (noise.fbm(x / 14, z / 14, 0, 2) - 0.5) * 2.2, w); }
     d = Math.hypot(x - Z.gate.x, z - Z.gate.z);
     if (d < Z.gate.r + 24) { w = smoothstep(Z.gate.r + 24, Z.gate.r, d); y = lerp(y, -1, w); }
+    d = Math.hypot(x - Z.elves.x, z - Z.elves.z);    // эльфийская деревня: ровная поляна
+    if (d < Z.elves.r + 24) { w = smoothstep(Z.elves.r + 24, Z.elves.r - 3, d); y = lerp(y, Z.elves.level + (noise.n2(x * 0.07 + 3.1, z * 0.07 + 7.7, 0) - 0.5) * 0.24, w); }
     d = Math.hypot(x - Z.hill.x, z - Z.hill.z);
     if (d < 130) y = smax(y, Z.hill.top - Math.max(0, d - Z.hill.r) * 0.4, 5);
     const L = Z.lake;
@@ -1224,6 +1229,8 @@ float ashPuddle( vec2 xz ) {
         v0 *= lerp(1, 0.62, fF); cr -= 0.05 * fF; cb += 0.02 * fF;
         const fG = smoothstep(ZONES.graves.r + 20, ZONES.graves.r - 10, Math.hypot(x - ZONES.graves.x, z - ZONES.graves.z));
         cr += 0.06 * fG; cb -= 0.07 * fG;
+        const fE = smoothstep(ZONES.elves.r + 12, ZONES.elves.r - 6, Math.hypot(x - ZONES.elves.x, z - ZONES.elves.z));
+        if (fE > 0) { v0 = lerp(v0, 1.25 * (0.85 + noise.n2(x * 0.11, z * 0.11, 0) * 0.3), fE); cr = lerp(cr, 0.62, fE); cg = lerp(cg, 1.0, fE); cb = lerp(cb, 0.46, fE); } // мох деревни
         const dl = Math.hypot(x - ZONES.lake.x, z - ZONES.lake.z) - ZONES.lake.r;
         v0 *= lerp(1, 0.62, smoothstep(6, -2, dl));
         const ed = edgeDist(x, z);
@@ -1936,7 +1943,9 @@ float ashPuddle( vec2 xz ) {
       const k = Math.max(1, (pl.length / 2) | 0);
       const [ax, az] = pl[k - 1], [bx, bz] = pl[k];
       const len = Math.hypot(bx - ax, bz - az) || 1, nx = -(bz - az) / len, nz = (bx - ax) / len;
-      const x = (ax + bx) / 2 + nx * (ROAD_HW + 1.6), z = (az + bz) / 2 + nz * (ROAD_HW + 1.6);
+      // камень — на середине отрезка, но не в эльфийской деревне (там он вставал прямо в воротах)
+      const tm = [0.5, 0.3, 0.7, 0.2, 0.8].find((t) => Math.hypot(ax + (bx - ax) * t + nx * (ROAD_HW + 1.6) - ZONES.elves.x, az + (bz - az) * t + nz * (ROAD_HW + 1.6) - ZONES.elves.z) > ZONES.elves.r + 6) ?? 0.5;
+      const x = ax + (bx - ax) * tm + nx * (ROAD_HW + 1.6), z = az + (bz - az) * tm + nz * (ROAD_HW + 1.6);
       const y0 = gyT(x, z), yaw = Math.atan2(nx, nz);
       const g = chiseled(0.9, 2.8, 0.6, { bevel: 0.1, jitter: 0.06, taperTop: 0.7, uvScale: 2, seed: 1400 + i });
       g.translate(0, 1.2, 0); g.rotateZ((rnd() - 0.5) * 0.1);
@@ -1959,9 +1968,11 @@ float ashPuddle( vec2 xz ) {
     { x: ZONES.hill.x, z: ZONES.hill.z, name: ZONES.hill.name },
     { x: 5, z: ZONES.gate.z + 9, name: ZONES.gate.name },
     { ...cityW(24, 24), name: ZONES.city.name },
+    { x: ZONES.elves.x + ELF_VILLAGE.ember.dx, z: ZONES.elves.z + ELF_VILLAGE.ember.dz, name: ZONES.elves.name },
   ];
   for (const s of EMBER_SPOTS) CLEARINGS.push({ x: s.x, z: s.z, r: 4.5 });
   CLEARINGS.push({ x: -142, z: 16, r: 10 });   // поляна в лесу
+  CLEARINGS.push({ x: ZONES.elves.x, z: ZONES.elves.z, r: ZONES.elves.r + 7 });   // эльфийская деревня
 
   /* ---------- Пепельный лес и одиночные деревья, валуны, камешки, скальный вал у края ---------- */
   {
@@ -2015,7 +2026,7 @@ float ashPuddle( vec2 xz ) {
     let nP = 0;
     for (let i = 0; i < 6000 && nP < 700; i++) {
       const x = (rnd() - 0.5) * 480, z = (rnd() - 0.5) * 480;
-      if (Math.hypot(x, z) < 40 || edgeDist(x, z) < 4 || inDeepWater(x, z)) continue;
+      if (Math.hypot(x, z) < 40 || edgeDist(x, z) < 4 || inDeepWater(x, z) || Math.hypot(x - ZONES.elves.x, z - ZONES.elves.z) < ZONES.elves.r + 6) continue;
       addBoulder(x, z, 0.15 + Math.pow(rnd(), 2) * 0.5, rnd, false, nP < 350 ? 1 : 2); nP++;
     }
     landmark(Fz);
@@ -2294,6 +2305,19 @@ float ashPuddle( vec2 xz ) {
   ash.name = 'ambient-ash';
   env.add(ash);
 
+  /* ============ [ASHEN_V3] ЭЛЬФИЙСКАЯ ДЕРЕВНЯ (modules/elfVillage.js) ============ */
+  // Строится после рельефа и зон, до углей и раскладки: её коллайдеры входят в layout.colliders,
+  // уголь №10 ищет место с учётом её построек. Ошибка деревни не должна ломать мир.
+  let elfVillage = null;
+  try {
+    elfVillage = createElfVillage({
+      THREE, parent: env, groundY: terrainH, quality: initialQuality, reducedMotion: wc.reducedMotion,
+      camera, atmosphere: atmo, lightUnit: LI.point, seed: wc.seed + 4242,
+    });
+    for (const c of elfVillage.colliders) { if (c.type === 'circle') addCircle(c.x, c.z, c.r); else addSegment(c.ax, c.az, c.bx, c.bz, c.r); }
+  } catch (e) { console.error('[world] эльфийская деревня не построена:', e); elfVillage = null; }
+  landmark(ZONES.elves);
+
   /* ======================= УГЛИ КЛЯТВЫ (ASHEN_V2) ======================= */
   // Пять алтарей на плато вне арены: плита с чашей угля и три стоячих камня со светящимися
   // прорезями. Незажжённый тлеет и светит тонким столбом — маяк, видный издалека. Герой подходит —
@@ -2302,7 +2326,7 @@ float ashPuddle( vec2 xz ) {
   const EMBERS = [];
   const EMBER_POIS = [];
   {
-    // [ASHEN_V3] углей 10: два на плато, у святилища и по зонам большой карты (EMBER_SPOTS)
+    // [ASHEN_V3] углей 11: два на плато, у святилища, по зонам большой карты и в эльфийской деревне (EMBER_SPOTS)
     const isFree = (x, z, m) => colliderFree(x, z, m) && edgeDist(x, z) > 9 && !inDeepWater(x, z)
       && Math.abs(terrainH(x + 1.2, z) - terrainH(x - 1.2, z)) < 0.7 && Math.abs(terrainH(x, z + 1.2) - terrainH(x, z - 1.2)) < 0.7;
     const standG = G(chiseled(0.28, 1.55, 0.22, { bevel: 0.04, jitter: 0.02, taperTop: 0.7 }));
@@ -2417,6 +2441,7 @@ float ashPuddle( vec2 xz ) {
     if (r < 11.6) return -0.3;
     if (r < 12.3) return -0.6;
     if (r < 12.95) return -0.9;
+    if (elfVillage) { const b = elfVillage.groundAt(x, z); if (b !== null) return Math.max(b, terrainH(x, z)); } // горбатый мостик
     return terrainH(x, z);
   }
   // [ASHEN_V3] ходить можно до скального вала у края мира и по мелководью озера
@@ -3963,6 +3988,10 @@ float ashPuddle( vec2 xz ) {
     const rm = wc.reducedMotion ? 0.4 : 1;
     if (camera) for (const c of culledChunks) c.mesh.visible = Math.hypot(camera.position.x - c.x, camera.position.z - c.z) - c.r < c.cull;
     updateEmbers(dt);
+    if (elfVillage) {
+      elfVillage.update(dt, heroRoot.position);
+      ashGeo.setDrawRange(0, Math.round(QUALITY_PRESETS[quality].ash * (1 - 0.85 * elfVillage.weight)));   // в деревне пепел почти не падает
+    }
     for (let i = 0; i < braziers.length; i++) {
       const bz = braziers[i];
       const f = 0.82 + 0.1 * Math.sin(time * 11.3 + bz.phase) + 0.08 * Math.sin(time * 23.7 + bz.phase * 2.1) * rm;
@@ -4074,6 +4103,7 @@ float ashPuddle( vec2 xz ) {
     clothEvery = q.clothNormals;
     matBlob.opacity = moonLight.castShadow ? 0.42 : 0.62;
     atmo.setQuality(quality);
+    if (elfVillage) elfVillage.setQuality(quality);
   }
 
   function reset() {
@@ -4094,6 +4124,7 @@ float ashPuddle( vec2 xz ) {
     if (disposed) return;
     disposed = true;
     if (root.parent) root.parent.remove(root);
+    if (elfVillage) elfVillage.dispose();
     atmo.dispose();
     if (renderer && renderer.shadowMap && wc.manageShadowMap && prevShadowEnabled !== undefined) renderer.shadowMap.enabled = prevShadowEnabled;
     root.traverse((o) => {
@@ -4120,6 +4151,7 @@ float ashPuddle( vec2 xz ) {
     if (!patch || typeof patch !== 'object') return;
     for (const k of ['reducedMotion', 'yawOffset', 'heroYawRate', 'bossYawRate']) if (k in patch) wc[k] = patch[k];
     if ('reducedMotion' in patch) atmo.configure({ reducedMotion: !!patch.reducedMotion });
+    if ('reducedMotion' in patch && elfVillage) elfVillage.configure({ reducedMotion: !!patch.reducedMotion });
     if ('ambientAsh' in patch) { wc.ambientAsh = !!patch.ambientAsh; ash.visible = wc.ambientAsh; }
     if ('quality' in patch) setQuality(patch.quality);
   }
@@ -4150,6 +4182,7 @@ float ashPuddle( vec2 xz ) {
     layout,
     get assets() { return { pending: pbrState.pending, loaded: pbrState.loaded, failed: pbrState.failed }; },
     atmosphere: atmo,
+    village: elfVillage,   // [ASHEN_V3] эльфийская деревня (stats(), weight, center) — для стендов и QA
     hero: { root: heroRoot, body: heroBody, extras: [cape] }, // [ASHEN_V3] для скиннинговой модели героя (modules/heroModel.js)
   };
 }

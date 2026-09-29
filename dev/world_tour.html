@@ -18,7 +18,8 @@
 <div id="bar"></div>
 <div id="err"></div>
 <script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/" } }
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/",
+  "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js" } }
 </script>
 <script type="module">
 // Стенд большой карты (ASHEN_V3): настоящий world.js + postfx + камера исследования (cameraRig),
@@ -66,6 +67,23 @@ function go(pl, yawDeg) {
   rig.reset(state());
 }
 places.forEach((pl, i) => { const b = document.createElement('button'); b.textContent = pl.name; b.onclick = () => go(pl); bar.appendChild(b); });
+// Эльфийская деревня: вход у врат и облёт камерой (кадры для скриншотов: __TOUR__.elf(0..4))
+const V = world.village;
+const ELF_SHOTS = V ? [
+  { hero: [-34, 0.5, 90] },                                             // у врат, взгляд на Древо
+  { hero: [-9, 3, 110] },                                               // площадь у Древа
+  { fly: [-36, 17, -31, 2, 7, 3] },                                     // сверху: крона, дома
+  { fly: [3, 3.4, 5, 17, 0, -8] },                                      // ручей, мостик, пруд
+  { fly: [-40, 14, 16, 0, 10, 0] },                                     // общий вид с дороги
+] : [];
+function elfShot(i) {
+  const s = ELF_SHOTS[i]; if (!s) return false;
+  const c = V.center;
+  if (s.hero) { fly = null; hero.x = c.x + s.hero[0]; hero.z = c.z + s.hero[1]; hero.yaw = (s.hero[2] * Math.PI) / 180; rig.reset(state()); }
+  else { hero.x = c.x + s.fly[3]; hero.z = c.z + s.fly[5] + 4; rig.reset(state()); fly = [c.x + s.fly[0], c.y + s.fly[1], c.z + s.fly[2], c.x + s.fly[3], c.y + s.fly[4], c.z + s.fly[5]]; }
+  return true;
+}
+if (V) { const b = document.createElement('button'); b.textContent = '✦ Эльфы: облёт'; let k = 0; b.onclick = () => { elfShot(k); k = (k + 1) % ELF_SHOTS.length; }; bar.appendChild(b); }
 function state() {
   const y = L.groundY(hero.x, hero.z);
   return { player: { x: hero.x, y, z: hero.z }, playerYaw: hero.yaw, velocity: { x: 0, z: 0 }, boss: { x: 0, y: 0, z: 0 }, engaged: false,
@@ -131,7 +149,18 @@ function bench(n = 60, W = 1280, H = 720) {
   const ms = (performance.now() - t) / n;
   return { msPerFrame: +ms.toFixed(2), fps: +(1000 / ms).toFixed(0), calls, tris, w: renderer.domElement.width, h: renderer.domElement.height };
 }
-window.__TOUR__ = { world, renderer, bench, fly: (v) => { fly = v; }, go: (id, yaw) => { const pl = places.find((p) => p.id === id); if (pl) go(pl, yaw); return !!pl; }, place: (x, z, yawDeg) => { hero.x = x; hero.z = z; hero.yaw = (yawDeg * Math.PI) / 180; rig.reset(state()); },
+// Шаг без rAF (скрытая вкладка): n кадров update+render в текущем размере окна.
+function step(n = 1, dt = 1 / 60) {
+  for (let i = 0; i < n; i++) {
+    world.update(dt, snap(), []);
+    const c = rig.update(dt, state());
+    if (fly) { camera.position.set(fly[0], fly[1], fly[2]); camera.lookAt(fly[3], fly[4], fly[5]); }
+    else { camera.position.set(c.position.x, c.position.y, c.position.z); camera.lookAt(c.target.x, c.target.y, c.target.z); }
+    if (postfx && postfx.enabled) postfx.render(dt); else renderer.render(scene, camera);
+  }
+  return { calls: renderer.info.render.calls, tris: renderer.info.render.triangles };
+}
+window.__TOUR__ = { world, renderer, bench, step, elf: elfShot, village: () => (V ? V.stats() : null), fly: (v) => { fly = v; }, go: (id, yaw) => { const pl = places.find((p) => p.id === id); if (pl) go(pl, yaw); return !!pl; }, place: (x, z, yawDeg) => { hero.x = x; hero.z = z; hero.yaw = (yawDeg * Math.PI) / 180; rig.reset(state()); },
   stats: () => ({ fps, ...info, buildMs, colliders: L.colliders.length, embers: L.pois.map((p) => [p.id, p.name, Math.round(p.x), Math.round(p.z)]), assets: world.assets }), places: () => places.map((p) => [p.id, p.name, Math.round(p.x), Math.round(p.z)]) };
 requestAnimationFrame(frame);
 </script>
