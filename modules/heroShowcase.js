@@ -119,7 +119,9 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     _f.set(Math.sin(yaw), 0, Math.cos(yaw));        // вперёд героя
     _r.set(-Math.cos(yaw), 0, Math.sin(yaw));        // вправо героя
     const at = (l, fwd, right, up) => l.position.copy(hp).addScaledVector(_f, fwd).addScaledVector(_r, right).setY(hp.y + up);
-    at(key, 2.2, 1.5, 2.7);
+    // при приближении ключ уходит вбок и ниже — портретный свет (лицо лепится светотенью, а не заливается)
+    const zk = U.zoom * U.zoom * (3 - 2 * U.zoom);
+    at(key, 2.2 - 1.0 * zk, 1.5 + 0.9 * zk, 2.7 - 0.6 * zk);
     at(rim, -2.3, -1.2, 2.5);
     at(rim2, -2.0, 1.6, 1.4);
     at(fill, 1.6, -1.8, 1.2);
@@ -225,7 +227,7 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       const q = settings.quality === 'low' ? 0.8 : 1;
       HL.heroKeyDir.value.copy(key.position).sub(c).normalize().transformDirection(camera.matrixWorldInverse);
       HL.heroRimDir.value.copy(rim.position).sub(c).normalize().transformDirection(camera.matrixWorldInverse);
-      HL.heroKeyColor.value.setRGB(1.0, 0.82, 0.66).multiplyScalar(1.45 * w * q);
+      HL.heroKeyColor.value.setRGB(1.0, 0.82, 0.66).multiplyScalar(1.45 * w * q * (1 + 0.3 * U.zoom));   // портретный ключ сбоку — чуть ярче
       HL.heroRimColor.value.setRGB(0.62, 0.78, 1.0).multiplyScalar(1.4 * w);
       HL.heroFillColor.value.setRGB(0.36, 0.4, 0.52).multiplyScalar(0.3 * w);
     }
