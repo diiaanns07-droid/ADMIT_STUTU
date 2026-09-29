@@ -215,7 +215,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   const FWD = new THREE.Vector3(0, 0, 1).applyQuaternion(modelQ), LEFT = new THREE.Vector3(1, 0, 0).applyQuaternion(modelQ), UP = new THREE.Vector3(0, 1, 0);
   const tmpM = new THREE.Matrix4();
   // склейка неподвижных деталей группы по материалу: меньше вызовов отрисовки (подсумки, кольца, пряжки…)
-  const KEEP = /^(staff-halo|staff-crystal|hair-mesh|cape)$/;
+  const KEEP = /^(staff-halo|staff-crystal|hair-mesh|cape|bow-string-top|bow-string-bot)$/;
   function compact(grp) {
     grp.updateMatrixWorld(true);
     const inv = new THREE.Matrix4().copy(grp.matrixWorld).invert();
@@ -655,8 +655,13 @@ varying float vCapeT;`)
       const limb = new THREE.Mesh(G(geo), mats.wood); grp.add(limb);
       const tipZ = -Math.cos(0.5 * Math.PI) * 0.0 - 0.0;
       void tipZ;
-      const strG = G(new THREE.CylinderGeometry(0.0016, 0.0016, 1.16, 3));
-      const str = new THREE.Mesh(strG, Mt(new THREE.MeshBasicMaterial({ color: 0xf2e8d0 }))); str.position.z = 0.035; grp.add(str);
+      // тетива из двух половин (кончик → точка натяжения): при натяжении тянется к правой руке
+      const strG = G(new THREE.CylinderGeometry(0.0016, 0.0016, 1, 3)); strG.translate(0, 0.5, 0);
+      const strM = Mt(new THREE.MeshBasicMaterial({ color: 0xf2e8d0 }));
+      const strTop = new THREE.Mesh(strG, strM), strBot = new THREE.Mesh(strG, strM);
+      strTop.name = 'bow-string-top'; strBot.name = 'bow-string-bot';
+      grp.add(strTop, strBot);
+      grp.userData.string = { top: strTop, bot: strBot, tipT: new THREE.Vector3(0, 0.58, 0.035), tipB: new THREE.Vector3(0, -0.58, 0.035) };
       const gripM = new THREE.Mesh(G(new THREE.CylinderGeometry(0.018, 0.018, 0.12, 8)), mats.leather); gripM.position.z = -0.165; grp.add(gripM);
       for (const y of [-0.52, 0.52]) { const tip = new THREE.Mesh(G(new THREE.ConeGeometry(0.01, 0.05, 5)), mats.trim); tip.position.set(0, y * 1.04, 0.015); tip.rotation.x = y > 0 ? 0 : Math.PI; grp.add(tip); }
       const rg = new THREE.Mesh(G(new THREE.TorusGeometry(0.02, 0.004, 5, 14)), mats.glow); rg.position.set(0, 0.08, -0.16); rg.rotation.y = Math.PI / 2; grp.add(rg);
@@ -762,8 +767,23 @@ varying float vCapeT;`)
   const bowHome = bow ? { parent: bow.parent, pos: bow.position.clone(), quat: bow.quaternion.clone() } : null;
   let bowHeld = false;
   const _bm = new THREE.Matrix4(), _bx = new THREE.Vector3(), _by = new THREE.Vector3(), _bz = new THREE.Vector3(), _bp = new THREE.Vector3(), _pi = new THREE.Matrix4();
-  function setBowHeld(on, hand, aimDir, up) {
+  // тетива: две половины от кончиков к точке натяжения (в осях лука); без натяжения — прямая
+  const _nk = new THREE.Vector3(), _sd = new THREE.Vector3(), _sq = new THREE.Quaternion(), _sY = new THREE.Vector3(0, 1, 0), _inv = new THREE.Matrix4();
+  function layString(nockLocal) {
+    const S = bow && bow.userData.string;
+    if (!S) return;
+    for (const [seg, tip] of [[S.top, S.tipT], [S.bot, S.tipB]]) {
+      _sd.copy(tip).sub(nockLocal);
+      const L = _sd.length();
+      seg.position.copy(nockLocal);
+      seg.quaternion.copy(_sq.setFromUnitVectors(_sY, _sd.divideScalar(Math.max(1e-6, L))));
+      seg.scale.set(1, L, 1);
+    }
+  }
+  if (bow) layString(_nk.set(0, 0, 0.035));
+  function setBowHeld(on, hand, aimDir, up, drawHand = null, draw = 0) {
     if (!bow || !bowHome) return;
+    if (!on && bowHeld) layString(_nk.set(0, 0, 0.035));
     if (on && !bowHeld) { bowHeld = true; (model || vrm.scene).attach(bow); }
     if (!on && bowHeld) { bowHeld = false; bowHome.parent.add(bow); bow.position.copy(bowHome.pos); bow.quaternion.copy(bowHome.quat); return; }
     if (!bowHeld || !hand || !aimDir) return;
@@ -778,6 +798,16 @@ varying float vCapeT;`)
     const par = bow.parent; par.updateWorldMatrix(true, false);
     _bm.premultiply(_pi.copy(par.matrixWorld).invert());
     _bm.decompose(bow.position, bow.quaternion, bow.scale);
+    // натяжение: точка тетивы — к кулаку правой руки (не дальше 0,75 м от рукояти)
+    if (drawHand && draw > 0.04) {
+      bow.updateWorldMatrix(true, false);
+      drawHand.getWorldPosition(_nk);
+      _nk.applyMatrix4(_inv.copy(bow.matrixWorld).invert());
+      _nk.x *= 0.3;
+      _nk.lerp(_sd.set(0, 0, 0.035), 1 - Math.min(1, draw * 1.2));
+      if (_nk.length() > 0.75) _nk.setLength(0.75);
+      layString(_nk);
+    } else layString(_nk.set(0, 0, 0.035));
   }
   function dispose() {
     for (const p of parts) if (p.obj.parent) p.obj.parent.remove(p.obj);
