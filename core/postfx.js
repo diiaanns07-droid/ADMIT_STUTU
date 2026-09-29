@@ -329,6 +329,15 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
     if (k > S.punch) { S.punch = k; S.punchC.x = Number.isFinite(x) ? x : 0.5; S.punchC.y = Number.isFinite(y) ? y : 0.5; }
   }
 
+  // [HERO] ослабление bloom (витрина меню при приближении к лицу: светлый герой на полэкрана иначе
+  // уходит в молочную пелену): k = 1 — как задано, меньше — слабее и выше порог
+  function setBloomK(k) {
+    if (!P.bloom) return;
+    k = Math.max(0, Math.min(1, Number.isFinite(+k) ? +k : 1));
+    P.bloom.strength = BLOOM.strength * k;
+    P.bloom.threshold = BLOOM.threshold + (1 - k) * 1.2;
+  }
+
   function setReducedMotion(b) {
     S.reduced = !!b;
     try { applyTier(); } catch (e) { /* ignore */ }
@@ -343,7 +352,7 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
   const whenReady = init().then((ok) => !!ok && !S.failed, (e) => { fail('init', e); return false; });
 
   return {
-    render, setSize, setQuality, setReducedMotion, setSun, punch, dispose, whenReady,
+    render, setSize, setQuality, setReducedMotion, setSun, punch, setBloomK, dispose, whenReady,
     get enabled() { return active(); },
     get ready() { return S.ready && !S.failed; },
     get tier() { return S.tier; },

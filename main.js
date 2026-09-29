@@ -143,7 +143,7 @@ try {
 } catch (e) { console.warn('[ASHEN] heroModel', e); }
 // [HERO] витрина героя в меню: кинематографичный свет и облёт (modules/heroShowcase.js); ошибка — прежняя камера меню
 let heroShowcase = null;
-if (heroModel && world && world.hero) import('./modules/heroShowcase.js').then((m) => { try { heroShowcase = m.createHeroShowcase({ THREE, scene, heroRoot: world.hero.root, heroModel, getPostfx: () => postfx, settings }); } catch (e) { console.warn('[HERO] витрина', e); } }).catch((e) => console.warn('[HERO] heroShowcase.js', e && e.message));
+if (heroModel && world && world.hero) import('./modules/heroShowcase.js').then((m) => { try { heroShowcase = m.createHeroShowcase({ THREE, scene, heroRoot: world.hero.root, heroModel, getPostfx: () => postfx, settings, dom: canvas }); } catch (e) { console.warn('[HERO] витрина', e); } }).catch((e) => console.warn('[HERO] heroShowcase.js', e && e.message));
 const bossBrain = make('boss.js', () => createBossBrain(config));
 const combat = make('combat.js', () => createCombat({ config, bossBrain, layout: worldLayout }));
 const effects = make('effects.js', () => createEffects({ THREE, scene, camera, renderer, config }));
@@ -1039,7 +1039,7 @@ window.__ASHEN__ = Object.freeze({
   pushups: () => pushups.getDebug(),
   coach: () => coachStats.summary(),
   hero: () => (heroModel ? heroModel.state() : null),
-  heroShowcase: () => (heroShowcase ? { weight: heroShowcase.weight, lights: heroShowcase.group.children.filter((o) => o.isLight).map((l) => [l.name, +l.intensity.toFixed(1)]) } : null), // [HERO] QA
+  heroShowcase: () => (heroShowcase ? { weight: heroShowcase.weight, zoom: +heroShowcase.zoom.toFixed(2), lights: heroShowcase.group.children.filter((o) => o.isLight).map((l) => [l.name, +l.intensity.toFixed(1)]) } : null), // [HERO] QA
   heroAnchors: () => { if (!heroModel || !heroModel.getAnchors) return null; const a = heroModel.getAnchors(), v = new THREE.Vector3(); return Object.fromEntries(Object.entries(a).map(([k, o]) => { o.getWorldPosition(v); return [k, { x: +v.x.toFixed(3), y: +v.y.toFixed(3), z: +v.z.toFixed(3), attached: !!o.parent }]; })); }, // [HERO] C5
   net: () => (netSession ? netSession.debug() : null),             // [NET]
   netSession: () => netSession,                                    // [NET] для тестов и №3

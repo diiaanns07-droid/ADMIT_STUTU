@@ -368,6 +368,8 @@ export function createStrands(THREE, o) {
   const rings = LK.map((k) => (k.n - 1) * SUB + 1);
   let RV = 0; for (const r of rings) RV += r * (RU + 1);
   const pos = new Float32Array(RV * 3), nrm = new Float32Array(RV * 3), uv = new Float32Array(RV * 2), col = new Float32Array(RV * 3);
+  // uv1: обход сечения (0..1) × доля длины пряди — для альфа-карты кончиков (рассыпаются на пучки)
+  const uv1 = new Float32Array(RV * 2);
   const idx = [];
   let base = 0;
   LK.forEach((k, li) => {
@@ -377,6 +379,7 @@ export function createStrands(THREE, o) {
       for (let i = 0; i <= RU; i++) {
         const q = base + j * (RU + 1) + i;
         uv[q * 2] = (i / RU) * 0.5 + (seed % 1) * 0.5; uv[q * 2 + 1] = t * (k.lk.vScale ?? 1.5) + seed;
+        uv1[q * 2] = i / RU + (seed * 7.3) % 1; uv1[q * 2 + 1] = t;
         // корни темнее (тень под капюшоном), кончики светлее, у каждой пряди свой тон
         const c = tone * (0.62 + 0.45 * Math.min(1, t * 1.6)) * (0.97 + 0.04 * Math.sin(i * 2.1 + seed * 9));
         col[q * 3] = col[q * 3 + 1] = col[q * 3 + 2] = c;
@@ -390,6 +393,7 @@ export function createStrands(THREE, o) {
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
   geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3).setUsage(THREE.DynamicDrawUsage));
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.setAttribute('uv1', new THREE.BufferAttribute(uv1, 2));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   // явные касательные (вдоль обхода сечения): анизотропный блик и рельеф не строят их из производных
   // развёртки — на сужающихся кончиках те вырождаются, и NaN разносился bloom-ом по кадру

@@ -42,7 +42,7 @@ export const HEROES = Object.freeze({
   elf: {
     id: 'elf', name: 'Эльфийка', vrm: null, glb: 'ranger.glb', height: 1.74, cls: 'Лучница-заклинательница', element: 'Гроза',
     desc: ['Следопыт Сияющего леса.', 'Лук из белого ясеня и перстни-руны на пальцах.', 'Бьёт издалека и уходит рывком.'],
-    gear: 'sylvan', stance: 'bow', adduct: 0.3, menuStance: null, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, ears: true, hair: { color: 0xe6dcc0, len: 0.95, fringe: 'swept' }, circlet: { gem: 0x7fe8ff },
+    gear: 'sylvan', stance: 'bow', adduct: 0.3, menuStance: null, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, ears: true, hair: { color: 0xe6dcc0, len: 0.95, fringe: 'swept' }, circlet: { gem: 0x7fe8ff }, lashes: 0x5a4230, hoodTrim: { base: 0xe9efe9, thread: 0xd4ad62 },
     makeup: { lips: 0xd97c86, lipsA: 0.7, shadow: 0xb08a6a, shadowA: 0.35, liner: 0x3a2a20, blush: 0xf09090, blushA: 0.16 },
     // зелёная ткань → белый шёлк с бирюзой, кожа доспеха → светлая замша
     recolor: { MI_Ranger: [{ h: [0, 360], minS: 0, metal: 'only', toH: 195, s: 0.3, v: 1.12 }, { h: [65, 175], toH: 172, s: 0.35, v: 1.55, metal: false }, { h: [8, 48], toH: 38, s: 0.55, v: 1.45, metal: false }], MI_Regular_Female: [{ h: [0, 60], minS: 0.04, toH: 16, s: 0.52, v: 1.3 }] },
@@ -52,7 +52,7 @@ export const HEROES = Object.freeze({
     id: 'dark', name: 'Тёмная чародейка', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Чародейка', element: 'Тьма и лёд',
     desc: ['Изгнанница из башни Затмения.', 'Посох с кристаллом ночи, плащ с живыми рунами.', 'Сковывает льдом и рвёт тьмой.'],
     // [HERO] на витрине — спокойная стойка (широкая «двуручная» не к лицу чародейке)
-    gear: 'witchQ', stance: 'staff', adduct: 0.3, menuStance: null, hide: ['Female_Ranger_Acc_Pauldrons'], makeup: { lips: 0x7a2a52, lipsA: 0.85, shadow: 0x5a3a7a, shadowA: 0.6, liner: 0x0c0610, blush: 0xc08aa0, blushA: 0.1 }, hair: { color: 0x1c1426, len: 1.05, fringe: 'straight' },
+    gear: 'witchQ', stance: 'staff', adduct: 0.3, menuStance: null, hide: ['Female_Ranger_Acc_Pauldrons'], makeup: { lips: 0x7a2a52, lipsA: 0.85, shadow: 0x5a3a7a, shadowA: 0.6, liner: 0x0c0610, blush: 0xc08aa0, blushA: 0.1 }, hair: { color: 0x1c1426, len: 1.05, fringe: 'straight' }, lashes: 0x08050c, hoodTrim: { base: 0x1c1228, thread: 0xb49cff },
     // зелёная ткань → глубокий фиолетовый, кожа → почти чёрная
     recolor: { MI_Ranger: [{ h: [0, 360], minS: 0, metal: 'only', toH: 262, s: 0.45, v: 0.92 }, { h: [65, 175], toH: 272, s: 1.1, v: 0.62, metal: false }, { h: [8, 48], toH: 255, s: 0.35, v: 0.42, metal: false }], MI_Regular_Female: [{ h: [0, 60], minS: 0.04, toH: 12, s: 0.45, v: 1.26 }] },
     fx: { style: 'frost', color: 0xb58cff, color2: 0x9fe0ff, armor: 0xa77bff, armorK: 1.4, armorMode: 'seams', eyes: 0xa77bff, eyesK: 0.4 },
@@ -62,13 +62,14 @@ export const HEROES = Object.freeze({
     id: 'ranger', name: 'Лучница', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Лучница', element: 'Ветер',
     desc: ['Разведчица пограничных застав.', 'Капюшон следопыта, длинный лук и колчан за спиной.', 'Натягивает тетиву рукой — стрела летит в цель.'],
     gear: 'scout', stance: 'bow', adduct: 0.3, menuStance: null, recolor: { MI_Regular_Female: [{ h: [0, 60], minS: 0.04, toH: 19, s: 0.72, v: 1.14 }] },
-    makeup: { lips: 0xc8706a, lipsA: 0.55, liner: 0x2a1a12, blush: 0xe89080, blushA: 0.2, freckles: 0x8a5a3a }, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, hair: { color: 0x5a3220, len: 0.85, fringe: 'swept' },
+    makeup: { lips: 0xc8706a, lipsA: 0.55, liner: 0x2a1a12, blush: 0xe89080, blushA: 0.2, freckles: 0x8a5a3a }, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, hair: { color: 0x5a3220, len: 0.85, fringe: 'swept' }, lashes: 0x1c120c, hoodTrim: { base: 0x24381c, thread: 0xc9a05a },
     fx: { style: 'wind', color: 0xc8ff9a, color2: 0xffe08a },
   },
   archmage: {
     id: 'archmage', name: 'Архимаг', vrm: null, glb: 'wizard.glb', height: 1.8, cls: 'Архимаг', element: 'Буря',
     desc: ['Последний магистр Грозовой коллегии.', 'Посох-громоотвод и плащ, прошитый рунами.', 'Лепит сферы молний двумя руками.'],
     gear: 'magus', stance: 'staff', adduct: 0.3, menuStance: 'Stance',
+    lashes: 0x5a524a,
     fx: { style: 'storm', color: 0x8fd0ff, color2: 0xe8f6ff, armor: 0x6fc0ff, armorK: 1.6, armorMode: 'seams', eyes: 0x9fdcff, eyesK: 0.3 },
   },
 });
@@ -504,7 +505,8 @@ export function createHeroModel({
         for (const mt of [].concat(o.material)) {
           const R = mt && rules[mt.name];
           if (!R || !mt.map || mt.userData.recolored) continue;
-          const nt = m.recolorTexture(THREE, mt.map, R, /^MI_Regular_Female/.test(mt.name) ? paint : null, mt.metalnessMap ? mt.metalnessMap.image : null);
+          const face = /^MI_Regular_Female/.test(mt.name) && !!paint;
+          const nt = m.recolorTexture(THREE, mt.map, R, face ? paint : null, mt.metalnessMap ? mt.metalnessMap.image : null, face ? 2 : 1);
           if (nt !== mt.map) { mt.map = nt; mt.userData.recolored = true; mt.needsUpdate = true; }
         }
       });
@@ -528,7 +530,7 @@ export function createHeroModel({
       const add = c.def.adduct ?? 0.22; // та же поза рук, что в игре (см. applyLife)
       adduct(c.bones.leftUpperArm, -add); adduct(c.bones.rightUpperArm, add);
       c.vrm.update(0);
-      c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null, circlet: c.def.circlet || null, fx: c.def.fx || null, grips: c.hands ? { R: c.hands.staffGrip, L: c.hands.bowGrip } : null });
+      c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null, circlet: c.def.circlet || null, lashes: c.def.lashes || null, hoodTrim: c.def.hoodTrim || null, fx: c.def.fx || null, grips: c.hands ? { R: c.hands.staffGrip, L: c.hands.bowGrip } : null });
       if (c.full.Idle) c.full.Idle.stop();
     } catch (e) { console.warn('[HERO] heroGear недоступен, без снаряжения:', e && e.message); }
     // аура класса (частицы стихии в шейдере) — modules/heroAura.js
@@ -846,7 +848,8 @@ export function createHeroModel({
     if (S.lookT <= 0) {
       S.lookT = 2.5 + Math.random() * 3.5;
       // на витрине меню герой то и дело смотрит на игрока (в камеру), иначе — оглядывается
-      S.lookCam = menu && !!defaults.camera && Math.random() < 0.55;
+      // приближенная витрина (setGaze) — почти всё время смотрит в камеру
+      S.lookCam = menu && !!defaults.camera && Math.random() < 0.55 + 0.4 * (S.gaze || 0);
       S.lookWant = S.idleT > 4 ? (Math.random() - 0.5) * 0.6 : 0;
     }
     if (S.lookCam && menu && defaults.camera) {
@@ -1039,12 +1042,15 @@ export function createHeroModel({
   function vrmTick(dt) {
     const vrm = cur && cur.vrm;
     if (!vrm) return;
+    // моргание: быстро закрыть (35%), медленнее открыть; изредка — двойное
     S.blinkT -= dt;
-    if (S.blinkT <= 0) { S.blink = 0.14; S.blinkT = 2 + Math.random() * 3; }
-    const bw = S.blink > 0 ? Math.sin(Math.PI * (1 - S.blink / 0.14)) : 0;
+    if (S.blinkT <= 0) { S.blink = 0.2; S.blinkT = Math.random() < 0.15 ? 0.32 : 2 + Math.random() * 3.5; }
+    const bt = S.blink > 0 ? 1 - S.blink / 0.2 : 1;
+    const bw = bt < 1 ? (bt < 0.35 ? Math.sin((bt / 0.35) * Math.PI / 2) : Math.cos(((bt - 0.35) / 0.65) * Math.PI / 2) ** 2) : 0;
     S.blink = Math.max(0, S.blink - dt);
     const em = vrm.expressionManager;
     if (em) { try { em.setValue('blink', bw); } catch (e) { /* нет выражения */ } }
+    if (cur.gear && cur.gear.setBlink) cur.gear.setBlink(S.lod >= 2 ? 0 : bw);   // веки-шторки героинь (heroGear)
     if (S.lod >= 2 && vrm.springBoneManager) {
       // без пружин: только скелет и выражения
       vrm.humanoid.update(); if (em) em.update();
@@ -1089,10 +1095,12 @@ export function createHeroModel({
     menuPose: (id) => (HEROES[id] && HEROES[id].menuPose) || null,
     heroFx: (id) => (HEROES[id] && HEROES[id].fx) || null,
     // жест «выхода» в меню: клип один раз на всё тело, затем снова стойка
-    flourish(name = 'CastRaise') { if (cur && cur.full[name]) playAct(name, { speed: 1.1, fade: 0.2 }); },
+    setGaze(k) { const g = k > 0.5 ? 1 : 0; if (g !== (S.gaze || 0)) { S.gaze = g; if (g) S.lookT = 0; } },
+        flourish(name = 'CastRaise') { if (cur && cur.full[name]) playAct(name, { speed: 1.1, fade: 0.2 }); },
     get ready() { return S.ready; },
     get hero() { return S.hero; },
     get vrm() { return cur ? cur.vrm : null; },
+    get gear() { return cur ? cur.gear : null; },   // QA
     get mixer() { return cur ? cur.mixer : null; },
     state: () => {
       let loco = 'Idle', wMax = -1;

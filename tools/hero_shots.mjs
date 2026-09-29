@@ -1,7 +1,7 @@
 // [HERO] Снимки героев для сравнения «до/после» и замер цены героя.
 // node tools/hero_shots.mjs --out DIR [--browser PATH] [--vendor DIR] [--size 1600x900] [--heroes ashen,elf,dark]
 //   [--shading realistic|anime] [--no-battle] [--vt] (виртуальное время: бой идёт и в SwiftShader)
-//   [--clip x,y,w,h] — кадрирование снимка меню (доли кадра)
+//   [--clip x,y,w,h] — кадрирование снимка меню (доли кадра); [--zoom] — ещё снимки витрины: колесо (лицо) и поворот мышью
 // node tools/hero_shots.mjs --stand 'dev/hero_stand.html?a=elf&b=dark' [--stand '…'] --out DIR
 //   — стенд героев: снимок и результаты проверок C5 (window.__HS__) в stand.json
 // Playwright (глобальный пакет) + serve_game.py. Если CDN (cdn.jsdelivr.net) недоступен, --vendor DIR
@@ -136,6 +136,19 @@ try {
     }, shot.toString('base64'));
     if (frame.dark > 0.6 || frame.white > 0.35) { log.push(`WARN кадр меню подозрительный (NaN в шейдере?): ${JSON.stringify(frame)}`); console.error('WARN frame', hero, frame); }
     st.frame = frame;
+    // --zoom: колесо мыши над героем (приближение витрины к лицу) и перетаскивание (поворот) — настоящими событиями
+    if (argv.includes('--zoom')) {
+      await page.mouse.move(W * 0.72, H * 0.45);
+      for (let i = 0; i < 4; i++) { await page.mouse.wheel(0, -300); await frames(page, 2, 200); }
+      await frames(page, 50, 2500);
+      await page.screenshot({ path: join(OUT, `${nn()}_${hero}_menu_zoom.png`), timeout: 120000 });
+      st.zoom = await page.evaluate(() => (__ASHEN__.heroShowcase ? __ASHEN__.heroShowcase() : null));
+      await page.mouse.down();
+      for (let i = 1; i <= 6; i++) { await page.mouse.move(W * 0.72 + i * W * 0.03, H * 0.45); await frames(page, 1, 100); }
+      await page.mouse.up();
+      await frames(page, 30, 1500);
+      await page.screenshot({ path: join(OUT, `${nn()}_${hero}_menu_turn.png`), timeout: 120000 });
+    }
     // цена героя: среднее время heroModel.update (без рендера)
     st.updateMs = await page.evaluate(() => {
       if (!__ASHEN__.heroStep) return null;

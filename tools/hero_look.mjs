@@ -1,6 +1,6 @@
 // [HERO] Быстрый осмотр героя на стенде: один запуск dev/hero_stand.html → лист ракурсов (PNG).
 // node tools/hero_look.mjs --vendor DIR --out DIR --url 'dev/hero_stand.html?a=ashen&solo=1&yaw=0' \
-//   [--steps 60] [--views front,back,side,left,face,handR,handL,q3] [--size 420x560] [--name sheet]
+//   [--steps 60] [--views front,back,side,left,face,eyes,eyesS,handR,handL,q3] [--size 420x560] [--name sheet]
 //   [--run 'js'] — выполнить код в странице перед шагами (доступен window.__HS_API__); по одному на каждый --url
 // Время стенда идёт вручную (step(1/30) × steps): SwiftShader даёт ~1 кадр/с, а так поза детерминирована.
 // Ракурсы считаются от героя A (позиция и поворот его root). Итог: DIR/<name>.png — ракурсы в ряд.
@@ -99,6 +99,7 @@ try {
       V.handL = handView(anc.handL, -1);
       V.staff = [P(1.6, 1.2, 1.6), anc.staffTip.parent ? at(anc.staffTip).lerp(hp.clone().setY(hp.y + 1.0), 0.5) : P(0, 0, 1.2)];
       { const tp = at(anc.staffTip); V.head = [tp.clone().addScaledVector(f, 0.55).addScaledVector(r, 0.25).add(new THREE.Vector3(0, 0.05, 0)), tp]; }
+      { const hd = at(anc.head); V.eyes = [hd.clone().addScaledVector(f, 0.24).addScaledVector(r, 0.05).add(new THREE.Vector3(0, 0.03, 0)), hd.clone().add(new THREE.Vector3(0, 0.0, 0)).addScaledVector(f, 0.05)]; V.eyesS = [hd.clone().addScaledVector(f, 0.17).addScaledVector(r, 0.2).add(new THREE.Vector3(0, 0.02, 0)), hd.clone().add(new THREE.Vector3(0, 0.0, 0)).addScaledVector(f, 0.07)]; }
       const cv = document.createElement('canvas');
       cv.width = W * views.length; cv.height = H;
       const g = cv.getContext('2d');

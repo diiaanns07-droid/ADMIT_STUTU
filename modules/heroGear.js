@@ -133,6 +133,86 @@ function hairStrandTex(THREE) {
   }, true);
 }
 
+// ресницы: белые изогнутые волоски на прозрачном (цвет — в материале), корень внизу холста, кончик вверху;
+// dense — верхние (пучками, гуще к внешнему углу), иначе — редкие нижние
+function lashTex(THREE, dense) {
+  return canvasTex(THREE, dense ? 'lashU2' : 'lashL2', 256, (g, N) => {
+    g.clearRect(0, 0, N, N);
+    g.fillStyle = '#fff';
+    // сплошная линия роста у корня (читается как подводка, не рассыпается при альфа-тесте)
+    g.fillRect(0, N * (dense ? 0.86 : 0.9), N, N);
+    // пучки: клин от корня к кончику, загиб наружу (к внешнему углу — сильнее)
+    const n = dense ? 46 : 22;
+    for (let i = 0; i < n; i++) {
+      const u = (i + 0.3 + rnd() * 0.4) / n;
+      const x0 = u * N, lean = (u - 0.3) * 0.55 + (rnd() - 0.5) * 0.25;
+      const h = N * (dense ? 0.78 + 0.22 * rnd() : 0.55 + 0.45 * rnd());
+      const w0 = dense ? 7 + rnd() * 4 : 4 + rnd() * 2;
+      const x1 = x0 + lean * h, xm = x0 + lean * h * 0.3;
+      g.beginPath();
+      g.moveTo(x0 - w0 / 2, N);
+      g.quadraticCurveTo(xm - w0 * 0.25, N - h * 0.5, x1, N - h);
+      g.quadraticCurveTo(xm + w0 * 0.25, N - h * 0.5, x0 + w0 / 2, N);
+      g.closePath(); g.fill();
+    }
+  }, true);
+}
+
+// кончики прядей (альфа по uv1: u — обход сечения, v — доля длины): до 70% длины сплошь, дальше —
+// клинья-пучки своей длины (кончик локона рассыпается, а не обрывается «трубкой»)
+function hairTipTex(THREE) {
+  const t = canvasTex(THREE, 'hairTip', 256, (g, N) => {
+    g.fillStyle = '#000'; g.fillRect(0, 0, N, N);
+    g.fillStyle = '#fff';
+    // холст: y = 0 — v = 1 (кончик), y = N — корень (flipY)
+    g.fillRect(0, N * 0.3, N, N * 0.7);
+    const n = 14;
+    for (let i = 0; i < n; i++) {
+      const x0 = (i / n) * N, w = N / n, end = 0.86 + 0.14 * rnd(), mid = x0 + w * (0.35 + 0.3 * rnd());
+      g.beginPath();
+      g.moveTo(x0 - w * 0.15, N * 0.31);
+      g.quadraticCurveTo(x0 + w * 0.05, N * (1 - (0.7 + end) / 2), mid, N * (1 - end));
+      g.quadraticCurveTo(x0 + w * 0.95, N * (1 - (0.7 + end) / 2), x0 + w * 1.15, N * 0.31);
+      g.closePath(); g.fill();
+    }
+  }, false);
+  if (t) { t.channel = 1; t.wrapT = THREE.ClampToEdgeWrapping; }
+  return t;
+}
+
+// вышитая кайма (лента вдоль края ткани, u — вдоль, повтор): основа, две нити по краям, вьюнок с листьями
+// и бусины; key — свой холст на сочетание цветов. Возвращает { map, bump }.
+function trimTex(THREE, base, thread) {
+  const key = 'trim:' + base + ':' + thread;
+  const col = (hex, k = 1) => { const c = new THREE.Color(hex).multiplyScalar(k); return `rgb(${Math.round(Math.min(1, c.r) * 255)},${Math.round(Math.min(1, c.g) * 255)},${Math.round(Math.min(1, c.b) * 255)})`; };
+  const draw = (g, N, bump) => {
+    g.fillStyle = bump ? 'rgb(90,90,90)' : col(base); g.fillRect(0, 0, N, N);
+    // плетение основы
+    for (let y = 0; y < N; y += 2) for (let x = (y / 2) % 2 ? 0 : 2; x < N; x += 4) { g.fillStyle = bump ? 'rgba(120,120,120,0.5)' : 'rgba(255,255,255,0.05)'; g.fillRect(x, y, 2, 2); }
+    const th = bump ? '#fff' : col(thread), thD = bump ? 'rgb(200,200,200)' : col(thread, 0.6);
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    // нити по краям
+    g.strokeStyle = th; g.lineWidth = N * 0.05;
+    for (const y of [N * 0.1, N * 0.9]) { g.beginPath(); g.moveTo(0, y); g.lineTo(N, y); g.stroke(); }
+    g.strokeStyle = thD; g.lineWidth = N * 0.02;
+    for (const y of [N * 0.19, N * 0.81]) { g.beginPath(); g.moveTo(0, y); g.lineTo(N, y); g.stroke(); }
+    // вьюнок: синусоида с листьями и бусинами (4 периода на холст — стык бесшовный)
+    g.strokeStyle = th; g.fillStyle = th; g.lineWidth = N * 0.03;
+    g.beginPath();
+    for (let x = 0; x <= N; x += 2) { const y = N * 0.5 + Math.sin((x / N) * Math.PI * 8) * N * 0.17; if (x === 0) g.moveTo(x, y); else g.lineTo(x, y); }
+    g.stroke();
+    for (let k = 0; k < 8; k++) {
+      const x = ((k + 0.5) / 8) * N, s = k % 2 ? 1 : -1, y = N * 0.5 + s * N * 0.17;
+      g.beginPath(); g.arc(x, y, N * 0.045, 0, Math.PI * 2); g.fill();
+      const lx = x + N * 0.03, ly = N * 0.5;
+      g.beginPath(); g.moveTo(lx, ly); g.quadraticCurveTo(lx + N * 0.03, ly - s * N * 0.2, lx + N * 0.06, ly - s * N * 0.08); g.quadraticCurveTo(lx + N * 0.02, ly - s * N * 0.05, lx, ly); g.fill();
+    }
+  };
+  const map = canvasTex(THREE, key, 256, (g, N) => draw(g, N, false), true);
+  const bump = canvasTex(THREE, key + ':b', 256, (g, N) => draw(g, N, true), false);
+  return { map, bump };
+}
+
 // ---------------------------------------------------------------- геометрия
 function plateGeo(THREE, r, arc, lames, drop) {
   // наплечник: несколько выпуклых пластин-«ламелей» одна под другой
@@ -576,6 +656,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     const strandTex = hairStrandTex(THREE);
     const hm = new Std({
       name: 'gear-hair', color: hairC, map: strandTex, bumpMap: strandTex, bumpScale: 2.2, vertexColors: true,
+      alphaMap: hairTipTex(THREE), alphaTest: 0.5, side: THREE.DoubleSide,
       roughness: 0.4, metalness: 0, envMapIntensity: 0.5,
       ...(physical ? { sheen: 0.4, sheenRoughness: 0.35, sheenColor: hairC.clone().multiplyScalar(1.5).lerp(new THREE.Color(1, 1, 1), 0.15), anisotropy: 0.65, anisotropyRotation: Math.PI / 2, specularIntensity: 0.5 } : {}),
     });
@@ -607,6 +688,214 @@ export function dressHero(THREE, vrm, opts = {}) {
     hair = createStrands(THREE, { locks, anchor: headBone, parent: headBone, colliders, material: hm, spine: [raw('neck') || raw(chestB), raw('hips')], fwd: (out) => out.set(0, 0, 1).applyQuaternion(holderH.getWorldQuaternion(_hq)) });
     parts.push({ obj: hair.mesh, bone: headBone }, { obj: skullC, bone: headBone });
     names.push('hair');
+  }
+
+  // ---------------- ресницы и моргание (лица Quaternius Regular: глаза — сферы, век-морфов нет)
+  // Замер лиц: у женского кромка верхнего века почти по экватору глаза (+0.1…0.17 r), нижнего — на −0.47 r;
+  // у мужского веки толще и дальше от яблока (кромка ~1.17 r), верхнее — выше (+0.22 r).
+  // Верхние ресницы — лента с альфа-текстурой по кромке века, загиб вверх, длиннее к внешнему углу;
+  // нижние — короткие и редкие. Моргание: «шторка» — сферический сегмент кожи (материал лица, UV века
+  // на атласе) чуть снаружи яблока, под кожей верхнего века; поворачивается вниз вокруг оси глаз
+  // вместе с верхними ресницами. Открытый глаз — шторка скрыта (не рисуется).
+  let lids = null;
+  if (opts.lashes && bp.head) {
+    let eyesMesh = null, faceMesh = null;
+    vrm.scene.traverse((o) => {
+      if (!o.isMesh || Array.isArray(o.material) || !o.material) return;
+      if (/^MI_Eyes/.test(o.material.name)) eyesMesh = o;
+      else if (/^MI_Regular_(Female|Male)/.test(o.material.name)) faceMesh = o;
+    });
+    const eyes = [];
+    if (eyesMesh && faceMesh) {
+      const v = new THREE.Vector3(), B = {};
+      const pa = eyesMesh.geometry.attributes.position;
+      for (let i = 0; i < pa.count; i++) {
+        eyesMesh.getVertexPosition(i, v); v.applyMatrix4(eyesMesh.matrixWorld).sub(bp.head);
+        const x = v.dot(LEFT), y = v.dot(UP), z = v.dot(FWD), k = x > 0 ? 1 : -1;
+        const b = B[k] || (B[k] = { lo: [9, 9, 9], hi: [-9, -9, -9] });
+        [x, y, z].forEach((c, j) => { b.lo[j] = Math.min(b.lo[j], c); b.hi[j] = Math.max(b.hi[j], c); });
+      }
+      for (const k of [1, -1]) {
+        const b = B[k];
+        if (!b) continue;
+        const r = Math.max(b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2]) / 2;
+        if (!(r > 0.006 && r < 0.03)) continue;
+        const c = bp.head.clone().addScaledVector(LEFT, (b.lo[0] + b.hi[0]) / 2).addScaledVector(UP, (b.lo[1] + b.hi[1]) / 2).addScaledVector(FWD, (b.lo[2] + b.hi[2]) / 2);
+        eyes.push({ s: k, c, r });
+      }
+    }
+    if (eyes.length === 2) {
+      const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+      const male = /^MI_Regular_Male/.test(faceMesh.material.name);
+      // кромки век (высота в долях радиуса) по азимуту a: 0 — вперёд, + — к внешнему углу;
+      // dU/dL — радиус кромок, lidR — радиус шторки (под кожей века), rot — поворот шторки до закрытия
+      const F = male ? {
+        yU: (a) => (a < 0.3 ? 0.22 - 0.2 * ((0.3 - a) / 1.1) ** 2 : 0.22 - 0.06 * ((a - 0.3) / 0.8) ** 2),
+        yL: (a) => -0.52 + 0.25 * ((a + 0.1) / 0.95) ** 2,
+        dU: 1.17, dL: 1.12, lidR: 1.07, rot: 0.8, lenU: 0.55, lenL: 0.6, uvY: 86,
+      } : {
+        yU: (a) => (a < 0.55 ? 0.17 - 0.08 * ((0.55 - a) / 1.4) ** 2 : 0.17 - 0.13 * ((a - 0.55) / 0.88) ** 2),
+        yL: (a) => (a < 0 ? -0.49 + 0.1 * (a / 0.93) ** 2 : -0.5 + 0.3 * (a / 1.17) ** 2),
+        dU: 1.1, dL: 1.1, lidR: 1.035, rot: 0.74, lenU: 1, lenL: 1, uvY: 87,
+      };
+      const yU = F.yU, yL = F.yL;
+      // радиус-вектор на сфере глаза: вперёд FWD, наружу LEFT·s, вверх UP; y — высота/радиус
+      const radial = (s, a, y) => {
+        const sb = Math.max(-0.97, Math.min(0.97, y)), cb = Math.sqrt(1 - sb * sb);
+        return new THREE.Vector3().addScaledVector(FWD, cb * Math.cos(a)).addScaledVector(LEFT, s * cb * Math.sin(a)).addScaledVector(UP, sb);
+      };
+      const lashC = new THREE.Color(opts.lashes);
+      const lashM = (dense) => { const t = lashTex(THREE, dense); return Mt(new Std({ name: dense ? 'gear-lash-up' : 'gear-lash-low', color: lashC, map: t, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.55, metalness: 0 })); };
+      const mUp = lashM(true), mLow = lashM(false);
+      // лента ресниц: ряды корень → середина → кончик, столбцы по азимуту
+      function lashStrip(e, a0, a1, rim, dR, len, up) {
+        const N = 18, rows = 3, pos = [], uv = [], idx = [];
+        for (let i = 0; i <= N; i++) {
+          const t = i / N, a = a0 + (a1 - a0) * t;
+          const rootN = radial(e.s, a, (rim(a) - 0.03 * up) / dR), root = rootN.clone().multiplyScalar(e.r * dR);
+          const L = len(t) * e.r;
+          const outN = radial(e.s, a, up > 0 ? 0.1 : -0.1);
+          for (let k = 0; k < rows; k++) {
+            const f = k / (rows - 1);
+            // растут наружу от века и загибаются: верхние — вверх, нижние — вниз
+            const p = root.clone().addScaledVector(outN, L * (0.95 * f - 0.22 * f * f)).addScaledVector(UP, up * L * (0.08 * f + 0.6 * f * f));
+            pos.push(p.x, p.y, p.z); uv.push(t, f);
+          }
+        }
+        for (let i = 0; i < N; i++) for (let k = 0; k < rows - 1; k++) { const a = i * rows + k, b = a + rows; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        g.setIndex(idx); g.computeVertexNormals();
+        return G(g);
+      }
+      // шторка века: сегмент сферы 1.035 r от кромки вверх, UV — кожа над глазом на атласе лица
+      function lidGeo(e) {
+        const NA = 16, NB = 6, pos = [], nor = [], uv = [], idx = [];
+        const a0 = -1.3, a1 = 1.6, uc = e.s > 0 ? 118 : 66;
+        for (let i = 0; i <= NA; i++) {
+          const a = a0 + (a1 - a0) * (i / NA), bEdge = Math.asin(Math.max(-0.9, Math.min(0.9, yU(Math.min(1.45, a)) / F.lidR)));
+          for (let j = 0; j <= NB; j++) {
+            const f = j / NB, b = bEdge + (1.05 - bEdge) * f;
+            const n = radial(e.s, a, Math.sin(b));
+            const p = n.clone().multiplyScalar(e.r * F.lidR);
+            pos.push(p.x, p.y, p.z); nor.push(n.x, n.y, n.z);
+            uv.push((uc + e.s * a * 9) / 512, (F.uvY - 16 * f) / 512);
+          }
+        }
+        for (let i = 0; i < NA; i++) for (let j = 0; j < NB; j++) { const a = i * (NB + 1) + j, b = a + NB + 1; idx.push(a, a + 1, b, b, a + 1, b + 1); }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        g.setIndex(idx);
+        // обход треугольников — наружу (лицевой стороной к камере)
+        const A = new THREE.Vector3().fromArray(pos, idx[0] * 3), Bv = new THREE.Vector3().fromArray(pos, idx[1] * 3), Cv = new THREE.Vector3().fromArray(pos, idx[2] * 3);
+        const fn = Bv.sub(A).cross(Cv.sub(A));
+        if (fn.dot(new THREE.Vector3().fromArray(nor, idx[0] * 3)) < 0) { for (let k = 0; k < idx.length; k += 3) { const t = idx[k + 1]; idx[k + 1] = idx[k + 2]; idx[k + 2] = t; } g.setIndex(idx); }
+        return G(g);
+      }
+      lids = { pivots: [], meshes: [], face: faceMesh, q0: [], axis: LEFT.clone(), k: 0, rot: F.rot };
+      for (const e of eyes) {
+        const piv = new THREE.Group(); piv.name = 'eyelid';
+        const lid = new THREE.Mesh(lidGeo(e), faceMesh.material); lid.name = 'eyelid-skin'; lid.visible = false;
+        const up = new THREE.Mesh(lashStrip(e, -0.85, 1.4, yU, F.dU, (t) => F.lenU * (0.5 + 0.28 * ss(0.15, 0.95, t)) * (0.4 + 0.6 * Math.sin(Math.PI * Math.min(1, t * 1.08 + 0.04))), 1), mUp);
+        up.name = 'lash-up';
+        piv.add(lid, up);
+        const low = new THREE.Group(); low.name = 'lash-low';
+        low.add(new THREE.Mesh(lashStrip(e, -0.7, 1.15, yL, F.dL, (t) => F.lenL * 0.2 * (0.3 + 0.7 * Math.sin(Math.PI * t)) * (0.6 + 0.6 * t), -1), mLow));
+        stick(piv, 'head', e.c, new THREE.Quaternion());
+        stick(low, 'head', e.c, new THREE.Quaternion());
+        for (const o of [piv, low]) o.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; m.userData.noShadow = true; } });
+        lids.lashes = (lids.lashes || []).concat(up, low);
+        lids.pivots.push(piv); lids.meshes.push(lid); lids.q0.push(piv.quaternion.clone());
+      }
+      // ось поворота — «влево» героя в осях шторки (она поставлена в мировых осях позы привязки)
+    }
+  }
+  // ---------------- вышитая кайма капюшона (героини): лента по переднему краю капюшона вокруг лица.
+  // Капюшон Quaternius — замкнутая сетка с валиком по краю (граничных рёбер нет), поэтому кромка — это
+  // самые передние вершины капюшона по направлениям вокруг лица; дуга от скулы через лоб к другой скуле
+  // (внизу капюшон переходит в воротник). Кривая сглаживается, выбросы (вершины изнанки) отбрасываются.
+  if (opts.hoodTrim && bp.head) {
+    let hood = null;
+    vrm.scene.traverse((o) => { if (o.isMesh && /Hood/i.test(o.name) && o.visible) hood = o; });
+    if (hood) {
+      const cy = 0.08, B = 30, a0 = -0.72, a1 = Math.PI + 0.72;   // азимут вокруг лица: от щеки через темя
+      const best = new Array(B).fill(null);
+      const v = new THREE.Vector3(), pa = hood.geometry.attributes.position;
+      for (let i = 0; i < pa.count; i++) {
+        hood.getVertexPosition(i, v); v.applyMatrix4(hood.matrixWorld).sub(bp.head);
+        const x = v.dot(LEFT), y = v.dot(UP), z = v.dot(FWD);
+        let ph = Math.atan2(y - cy, x); if (ph < a0) ph += Math.PI * 2;
+        if (ph < a0 || ph > a1) continue;
+        const b = Math.min(B - 1, Math.floor(((ph - a0) / (a1 - a0)) * B));
+        if (!best[b] || z > best[b].z) best[b] = { x, y, z, ph };
+      }
+      const ok = best.filter(Boolean);
+      if (ok.length > B * 0.7) {
+        // выбросы: вершина заметно глубже соседей — изнанка/щель; заменяем средним соседей
+        const zs = best.map((b) => (b ? b.z : null));
+        for (let i = 0; i < B; i++) {
+          const nb = [zs[i - 2], zs[i - 1], zs[i + 1], zs[i + 2]].filter((z) => z !== null && z !== undefined);
+          const m = nb.length ? nb.reduce((s2, z) => s2 + z, 0) / nb.length : null;
+          if (!best[i] || (m !== null && best[i].z < m - 0.025)) {
+            const pv = best[i - 1] || best[i + 1];
+            if (pv && m !== null) best[i] = { ...pv, z: m, ph: a0 + ((i + 0.5) / B) * (a1 - a0) };
+          }
+        }
+        let pts = best.filter(Boolean).map((b) => ({ r: Math.hypot(b.x, b.y - cy), z: b.z, ph: b.ph }));
+        // сглаживание радиуса и глубины (скользящее среднее ×2)
+        for (let pass = 0; pass < 2; pass++) pts = pts.map((p, i) => { const A = pts[Math.max(0, i - 1)], C2 = pts[Math.min(pts.length - 1, i + 1)]; return { ph: p.ph, r: (A.r + 2 * p.r + C2.r) / 4, z: (A.z + 2 * p.z + C2.z) / 4 }; });
+        const w = 0.017, rows = [[-0.5, -0.004], [0, 0.0025], [0.5, -0.006]];
+        const pos = [], uv = [], idx = [];
+        let arc = 0, prevC = null;
+        const n = pts.length;
+        pts.forEach((p, i) => {
+          const R = new THREE.Vector3().addScaledVector(LEFT, Math.cos(p.ph)).addScaledVector(UP, Math.sin(p.ph));
+          const C = bp.head.clone().addScaledVector(LEFT, p.r * Math.cos(p.ph)).addScaledVector(UP, cy + p.r * Math.sin(p.ph)).addScaledVector(FWD, p.z);
+          if (prevC) arc += C.distanceTo(prevC);
+          prevC = C;
+          // концы ленты сужаются (уходят под волосы у скул)
+          const t = i / (n - 1), taper = Math.min(1, t / 0.08, (1 - t) / 0.08);
+          for (const [k, dz] of rows) {
+            const P = C.clone().addScaledVector(R, k * w * taper).addScaledVector(FWD, dz);
+            pos.push(P.x, P.y, P.z); uv.push(arc / (w * 4), k + 0.5);
+          }
+        });
+        for (let i = 0; i < n - 1; i++) for (let k = 0; k < 2; k++) { const a = i * 3 + k, b = a + 3; idx.push(a, a + 1, b, b, a + 1, b + 1); }
+        const c0 = bp.head.clone();
+        for (let i = 0; i < pos.length; i += 3) { pos[i] -= c0.x; pos[i + 1] -= c0.y; pos[i + 2] -= c0.z; }
+        const tg = new THREE.BufferGeometry();
+        tg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); tg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        tg.setIndex(idx); tg.computeVertexNormals();
+        // лицевая сторона — вперёд
+        const nz = tg.attributes.normal;
+        let dot = 0; for (let i = 0; i < nz.count; i++) dot += nz.getX(i) * FWD.x + nz.getY(i) * FWD.y + nz.getZ(i) * FWD.z;
+        if (dot < 0) { for (let k = 0; k < idx.length; k += 3) { const t2 = idx[k + 1]; idx[k + 1] = idx[k + 2]; idx[k + 2] = t2; } tg.setIndex(idx); tg.computeVertexNormals(); }
+        const HT = opts.hoodTrim, tx = trimTex(THREE, HT.base, HT.thread);
+        const tm = Mt(new Std({ name: 'gear-hood-trim', color: 0xffffff, map: tx.map, bumpMap: tx.bump, bumpScale: 1.4, roughness: 0.5, metalness: 0.25, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, ...(physical ? { sheen: 0.5, sheenRoughness: 0.4, sheenColor: new THREE.Color(HT.thread) } : {}) }));
+        if (tx.map) { tx.map.wrapS = THREE.RepeatWrapping; tx.map.wrapT = THREE.ClampToEdgeWrapping; }
+        const trim = new THREE.Mesh(G(tg), tm); trim.name = 'hood-trim';
+        const grp = new THREE.Group(); grp.name = 'hood-trim-grp'; grp.add(trim);
+        stick(grp, 'head', c0, new THREE.Quaternion());
+        trim.castShadow = false; trim.userData.noShadow = true;
+      }
+    }
+  }
+
+  const _bq = new THREE.Quaternion();
+  function setBlink(k) {
+    if (!lids) return;
+    if (lids.hold !== undefined && lids.hold !== null) k = lids.hold;   // QA: зафиксированное моргание (holdBlink)
+    k = Math.max(0, Math.min(1, k || 0));
+    if (Math.abs(k - lids.k) < 1e-4) return;
+    lids.k = k;
+    _bq.setFromAxisAngle(lids.axis, lids.rot * k);
+    for (let i = 0; i < lids.pivots.length; i++) {
+      lids.pivots[i].quaternion.copy(lids.q0[i]).multiply(_bq);
+      const m = lids.meshes[i];
+      m.visible = k > 0.03;
+      // материал лица меняется со сменой качества и режима — шторка берёт текущий
+      if (m.visible && m.material !== lids.face.material) m.material = lids.face.material;
+    }
   }
 
   // ---------------- плюмаж на шлеме (страж): гребень алых прядей по верху шлема, струится назад
@@ -922,7 +1211,9 @@ export function dressHero(THREE, vrm, opts = {}) {
   }
   function setLod(l) {
     lodL = l;
-    for (const p of parts) p.obj.traverse((o) => { if (o.isMesh) o.castShadow = l === 0; });
+    for (const p of parts) p.obj.traverse((o) => { if (o.isMesh && !o.userData.noShadow) o.castShadow = l === 0; });
+    // ресницы вдали — субпиксельные полоски с альфа-тестом (мерцали бы): только на ближнем плане
+    if (lids && lids.lashes) for (const o of lids.lashes) o.visible = l === 0;
     if (cloth) { cloth.mesh.castShadow = l === 0; cloth.setWind(l >= 2 ? 0 : 1); }
     if (hair) hair.setWind(l >= 2 ? 0 : 1);
     if (plume) plume.setWind(l >= 2 ? 0 : 1);
@@ -1037,7 +1328,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   let glowNow = 1;
   function setGlow(k) { glowNow = k; }
   return {
-    names, staffTip, bow, cloth, perf, setGlow, get glow() { return glowNow; }, update, setLod, setQuality, setShading() {}, setBowHeld, dispose,
+    names, staffTip, bow, cloth, perf, setGlow, get glow() { return glowNow; }, update, setLod, setQuality, setShading() {}, setBowHeld, setBlink, holdBlink(k) { if (lids) { lids.hold = k; setBlink(k); } }, get lids() { return lids ? lids.pivots.length : 0; }, dispose,
     parts: () => parts.map((p) => p.obj.name),
   };
 }

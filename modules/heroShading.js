@@ -174,8 +174,9 @@ export function patchArmorGlow(THREE, mat, { color = 0xff7a2a, strength = 2.4, u
 // Нормаль — по Миккелсену (градиент высоты в экранных производных, без нормализации — в метрах);
 // каждая октава гаснет, когда пиксель крупнее половины её длины волны (без муара и мерцания),
 // наклон ограничен — у силуэта (вырожденный якобиан) нормаль не ломается и не даёт NaN.
+// mode 'skin' — кожа: зерно 3/9 мм и пятна шероховатости; lips — влажный блеск губ (UV женского лица).
 export const HERO_MICRO = { value: 1 };
-export function patchMicro(THREE, mat, { unit = 1 } = {}) {
+export function patchMicro(THREE, mat, { unit = 1, mode = 'gear', lips = false } = {}) {
   if (!mat || mat.userData.heroMicro || !mat.isMeshStandardMaterial) return mat;
   mat.userData.heroMicro = true;
   const U = { heroMicroK: HERO_MICRO, heroMicroUnit: { value: unit } };
@@ -205,22 +206,28 @@ float hmAA( float lambda, float fw ) { return 1.0 - smoothstep( 0.3 * lambda, 0.
   {
     // пятна «захватанности»: металл местами матовее, местами полирован; ткань — чуть неровная
     float sm = hmNoise( hmP * 16.0 ) * 0.5 + hmNoise( hmP * 47.0 ) * 0.5 - 0.5;
-    roughnessFactor = clamp( roughnessFactor + sm * mix( 0.08, 0.16, hmMet ) * heroMicroK, 0.06, 1.0 );
+    ${mode === 'skin' ? 'roughnessFactor = clamp( roughnessFactor + sm * 0.1 * heroMicroK, 0.2, 1.0 );' : 'roughnessFactor = clamp( roughnessFactor + sm * mix( 0.08, 0.16, hmMet ) * heroMicroK, 0.06, 1.0 );'}
+    ${lips ? `// губы (атлас женского лица Quaternius: центр 92,133 из 512) — влажный блеск
+    vec2 hmL = ( vMapUv - vec2( 0.1797, 0.2598 ) ) / vec2( 0.03, 0.0125 );
+    roughnessFactor = mix( roughnessFactor, 0.2, ( 1.0 - smoothstep( 0.55, 1.0, length( hmL ) ) ) * 0.85 );` : ''}
   }`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
   {
     float hmH;
-    {
+    ${mode === 'skin' ? `{
+      // кожа: мелкое зерно 3 мм и мягкая неровность 9 мм (едва заметно — «живой» блик вместо пластика)
+      hmH = ( ( hmNoise( hmP * 330.0 ) - 0.5 ) * 0.00006 * hmAA( 0.003, hmFw ) + ( hmNoise( hmP * 110.0 + 5.0 ) - 0.5 ) * 0.00012 * hmAA( 0.009, hmFw ) ) * heroMicroK;
+    }` : `{
       // ткань/кожа: плетение (три семейства плоскостей — клетка на любой ориентации поверхности)
       vec3 w = sin( hmP * 2617.99 );   // 2π / 2.4 мм
       float weave = ( w.x * w.y + w.y * w.z + w.z * w.x ) * 0.00006 * hmAA( 0.0024, hmFw );
-      float grain = ( hmNoise( hmP * 200.0 ) - 0.5 ) * 0.00035 * hmAA( 0.005, hmFw );
-      float soft = ( hmNoise( hmP * 40.0 ) - 0.5 ) * 0.0012 * hmAA( 0.025, hmFw );
+      float grain = ( hmNoise( hmP * 200.0 ) - 0.5 ) * 0.0002 * hmAA( 0.005, hmFw );
+      float soft = ( hmNoise( hmP * 40.0 ) - 0.5 ) * 0.0005 * hmAA( 0.025, hmFw );
       // металл: кованые вмятины и мелкое зерно
       float dent = ( hmNoise( hmP * 33.0 + 7.0 ) - 0.5 ) * 0.0012 * hmAA( 0.03, hmFw );
       float mgr = ( hmNoise( hmP * 330.0 + 3.0 ) - 0.5 ) * 0.00012 * hmAA( 0.003, hmFw );
       hmH = mix( weave + grain + soft, dent + mgr, hmMet ) * heroMicroK;
-    }
+    }`}
     vec3 hmSp = - vViewPosition;
     vec3 hmDx = dFdx( hmSp ), hmDy = dFdy( hmSp );
     float hmBx = dFdx( hmH ), hmBy = dFdy( hmH );
@@ -235,7 +242,7 @@ float hmAA( float lambda, float fw ) { return 1.0 - smoothstep( 0.3 * lambda, 0.
   }`);
   };
   const prevKey = mat.customProgramCacheKey;
-  mat.customProgramCacheKey = () => 'heroMicro:' + (prevKey ? prevKey.call(mat) : '');
+  mat.customProgramCacheKey = () => 'heroMicro:' + mode + (lips ? 'L' : '') + ':' + (prevKey ? prevKey.call(mat) : '');
   mat.needsUpdate = true;
   return mat;
 }
@@ -324,10 +331,11 @@ export function makeupPainter(spec) {
       g.globalCompositeOperation = 'multiply';
       let sd = 5;
       const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
-      for (let i = 0; i < 60; i++) {
-        const side = i % 2 ? 1 : -1, cx = X(92 / 512) + side * (8 + rnd() * 30) * S, cy = Y((108 + rnd() * 18) / 512);
-        g.fillStyle = hex(spec.freckles, 0.25 + rnd() * 0.25);
-        g.beginPath(); g.arc(cx, cy, (0.6 + rnd() * 0.8) * S, 0, Math.PI * 2); g.fill();
+      // мелкие и частые, гуще на спинке носа и скулах
+      for (let i = 0; i < 140; i++) {
+        const side = i % 2 ? 1 : -1, k = rnd(), cx = X(92 / 512) + side * (3 + k * k * 32) * S, cy = Y((106 + rnd() * 16 + k * 6) / 512);
+        g.fillStyle = hex(spec.freckles, 0.14 + rnd() * 0.26);
+        g.beginPath(); g.arc(cx, cy, (0.3 + rnd() * 0.45) * S, 0, Math.PI * 2); g.fill();
       }
     }
     g.restore();
@@ -337,15 +345,17 @@ export function makeupPainter(spec) {
 // Правила применяются мягко: у порогов тона/насыщенности/яркости — полосы перехода, а веса правил
 // сглаживаются 3×3 (иначе на атласе 512² металл с шумной слабой насыщенностью покрывается «камуфляжем»).
 // rule.metal === false — не трогать металл, 'only' — только металл (маска — канал B карты ORM: orm = изображение).
-export function recolorTexture(THREE, tex, rules, paint = null, orm = null) {
+export function recolorTexture(THREE, tex, rules, paint = null, orm = null, scale = 1) {
   const img = tex && tex.image;
   if (!img || typeof document === 'undefined' || !rules || !rules.length) return tex;
-  const w = img.width, h = img.height;
+  // scale 2 — холст вдвое крупнее (лицо с макияжем: подводка и веснушки чётче вблизи)
+  const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
   if (!w || !h) return tex;
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
   const g = cv.getContext('2d', { willReadFrequently: true });
-  g.drawImage(img, 0, 0);
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+  g.drawImage(img, 0, 0, w, h);
   const d = g.getImageData(0, 0, w, h), px = d.data;
   let met = null;
   if (orm && orm.width && rules.some((R) => R.metal === false || R.metal === 'only')) {
@@ -547,6 +557,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     }
     if (kind === 'skin') patchSkin(THREE, m, skinU);
     if (kind === 'armor' && q !== 'low') patchMicro(THREE, m, { unit: armorUnit });
+    if (kind === 'skin' && q !== 'low' && m.map) patchMicro(THREE, m, { unit: armorUnit, mode: 'skin', lips: /^MI_Regular_Female/.test(orig.name) });
     if (kind === 'armor' && fx && fx.armor && q !== 'low') { patchArmorGlow(THREE, m, { color: fx.armor, strength: fx.armorK || 2.4, unit: armorUnit, mode: fx.armorMode || 'veins' }); armorUs.push({ U: m.userData.heroArmorU, base: fx.armorK || 2.4 }); }
     if (atmosphere) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, P.env); } catch (e) { /* ignore */ } }
     m.userData.heroKind = kind;
