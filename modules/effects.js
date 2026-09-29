@@ -1373,6 +1373,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     } catch (e) { v6 = null; warnOnce('v6', 'слой V6 не создан, старые эффекты:', e); }
   }
   const v6on = (key) => !!(v6 && v6.enabled && v6.suppressed(key));
+  let v6RM = null;
 
   // ---------------------------------------------------------------- щит
   const diskMat = tpl.disk.clone();
@@ -3318,6 +3319,8 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     checkRewind();
     frameNo++;
     if (v6) {
+      const rm = reducedMotion();
+      if (rm !== v6RM) { v6RM = rm; try { v6.setReducedMotion(rm); } catch (e) { /* ignore */ } } // живое переключение в настройках
       const want = liveSetting('fxMagic') !== false;
       if (want !== v6.enabled) { v6.setEnabled(want); flashLight.visible = !want && Q.light; }
       v6.setSnapshot(snap);
