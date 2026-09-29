@@ -375,6 +375,11 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     if (lobby) lobby.show(false);
   }
 
+  // закрыли вкладку/окно — сказать «пока» сразу (bye уходит синхронно), чтобы соперник не ждал 3 с обрыва
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', (e) => { if (!e.persisted && S.net) { try { S.net.close(); } catch (x) { /* ignore */ } } });
+  }
+
   // автозапуск для тестов: ?net=local&netAuto=host&room=TEST&netReady
   if (U.auto === 'host' || U.auto === 'join') {
     (async () => {
