@@ -160,9 +160,19 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     S.busy = true;
     S.message = `Входим в комнату ${code}…`;
     changed();
-    const net = newNet(mode);
+    let net = newNet(mode);
     try {
-      await net.join(code);
+      // комната могла ещё не успеть зарегистрироваться (гость быстрее хоста) — ещё две попытки
+      for (let i = 0; ; i++) {
+        try { await net.join(code); break; }
+        catch (e) {
+          if (!(e && e.code === 'room_not_found') || i >= 2 || S.net !== net) throw e;
+          S.message = `Комната ${code} пока не найдена — пробуем ещё раз…`; changed();
+          await new Promise((r) => setTimeout(r, 1500));
+          if (S.net !== net) throw e;
+          net = newNet(mode);
+        }
+      }
       saveLast(code, 'guest', mode);
       S.message = 'Вы в комнате.';
       return true;
@@ -275,6 +285,11 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
         const list = S.remoteProj.map((p) => ({ ...p, position: { x: p.position.x + p.velocity.x * lead, y: p.position.y + p.velocity.y * lead, z: p.position.z + p.velocity.z * lead } }));
         outSnap = { ...snap, projectiles: (snap.projectiles || []).concat(list) };
       }
+    }
+    // C4: snap.opponent для эффектов (якоря соперника у №7), пока №3 не заполнил его в самом бою
+    if (outSnap && !outSnap.opponent && net && net.state !== 'idle' && !S.oppGone) {
+      const opp = remote.getState();
+      if (opp) outSnap = { ...outSnap, opponent: opp };
     }
     return { events: outEvents, snapshot: outSnap };
   }

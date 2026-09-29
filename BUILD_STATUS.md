@@ -246,6 +246,8 @@
   у своего героя (например, шлейф рывка берёт `fi.player`) — для remote берите `ev.position` или якоря
   `netSession.remote.getAnchors()` (C5: handL, handR, chest, head, bowSocket, staffTip) и цвет соперника.
   Снаряды соперника добавляются в `snapshot.projectiles` для effects: `owner:'opponent'`, `remote:true`, id `r:…`.
+  Пока №3 не заполняет `snap.opponent` в бою, сеть сама кладёт его в снимок для effects (из `remote.getState()`),
+  так что `resolveAnchor(…, remote)` у №7 уже получает позицию соперника.
   world.js и свой heroModel события соперника НЕ получают (иначе свой герой повторял бы чужие удары).
   Пока в API effects нет `supportsRemote: true`, события `player_dash`, `ward_*`, `bastion_*` соперника в effects
   не передаются (сейчас они рисуются у своего героя: шлейф рывка, вспышка на груди, толчок камеры). Сделаете их
