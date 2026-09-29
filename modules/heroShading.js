@@ -15,6 +15,11 @@
 
 export function classifyMaterial(name = '') {
   const n = String(name);
+  // Quaternius (GLB-герои): MI_Regular_* — кожа, MI_Hair_* — волосы, MI_Eyes — глаза, остальное — снаряжение
+  if (/^MI_Regular/i.test(n)) return 'skin';
+  if (/^MI_Hair/i.test(n)) return 'hair';
+  if (/^MI_Eye/i.test(n)) return 'iris';
+  if (/^MI_/i.test(n)) return 'armor';
   if (/EyeHighlight/i.test(n)) return 'eyeHi';
   if (/EyeIris|EyeExtra/i.test(n)) return 'iris';
   if (/EyeWhite/i.test(n)) return 'eyeWhite';
@@ -36,6 +41,8 @@ const PRESET = {
   eyeWhite: { roughness: 0.35, specularIntensity: 0.5, clearcoat: 0.6, clearcoatRoughness: 0.08, env: 0.7 },
   lash: { roughness: 0.9, specularIntensity: 0.1, env: 0.1 },
   other: { roughness: 0.65, specularIntensity: 0.4, env: 0.45 },
+  // атлас снаряжения Quaternius: металл и кожа по карте ORM; лак и лёгкий sheen поверх
+  armor: { specularIntensity: 0.5, clearcoat: 0.18, clearcoatRoughness: 0.4, sheen: 0.12, sheenRoughness: 0.7, sheenColor: [0.5, 0.45, 0.4], env: 0.85 },
 };
 
 // Шум «плетения» ткани — карта нормалей 128×128, одна на модуль (текстура не материал: делить можно).
@@ -110,6 +117,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     if (!orig) return orig;
     if (orig.isOutline) return hidden;
     const isMToon = !!(orig.isMToonMaterial || (orig.uniforms && orig.uniforms.litFactor));
+    if (!isMToon && orig.isMeshStandardMaterial) return buildFromStandard(orig, q);
     if (!isMToon) return orig;
     const kind = classifyMaterial(orig.name);
     const P = PRESET[kind] || PRESET.other;
@@ -148,6 +156,34 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
         atmosphere.useEnv(m, P.env);
       } catch (e) { /* атмосфера без патча */ }
     }
+    m.userData.heroKind = kind;
+    owned.push(m);
+    return m;
+  }
+
+  // GLB-герой (MeshStandardMaterial с картами ORM): те же текстуры, Physical и классовые добавки
+  function buildFromStandard(orig, q) {
+    const kind = classifyMaterial(orig.name);
+    const P = PRESET[kind] || PRESET.other;
+    const physical = q !== 'low';
+    const Ctor = physical ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
+    const m = new Ctor({
+      name: `${orig.name}#real`, map: orig.map, color: orig.color.clone(), side: orig.side,
+      transparent: orig.transparent, alphaTest: orig.alphaTest, depthWrite: orig.depthWrite,
+      normalMap: orig.normalMap, roughnessMap: orig.roughnessMap, metalnessMap: orig.metalnessMap, aoMap: orig.aoMap,
+      roughness: orig.roughness, metalness: orig.metalness, emissive: orig.emissive.clone(), emissiveMap: orig.emissiveMap, emissiveIntensity: orig.emissiveIntensity,
+    });
+    if (orig.normalMap) m.normalScale.copy(orig.normalScale);
+    if (kind === 'skin') { m.roughness = Math.max(0.45, orig.roughness * 0.85); }
+    if (kind === 'iris') { m.roughness = 0.2; }
+    if (physical) {
+      m.specularIntensity = P.specularIntensity;
+      if (P.sheen) { m.sheen = P.sheen; m.sheenRoughness = P.sheenRoughness; m.sheenColor = new THREE.Color(...P.sheenColor); }
+      if (P.anisotropy) { m.anisotropy = P.anisotropy * 0.7; m.anisotropyRotation = Math.PI / 2; }
+      if (P.clearcoat) { m.clearcoat = P.clearcoat; m.clearcoatRoughness = P.clearcoatRoughness; }
+    }
+    if (kind === 'skin') patchSkin(THREE, m, skinU);
+    if (atmosphere) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, P.env); } catch (e) { /* ignore */ } }
     m.userData.heroKind = kind;
     owned.push(m);
     return m;

@@ -21,14 +21,14 @@
 // heroRoot не задан — экземпляр создаёт свой root (для удалённого игрока) и сам ставит его по snapLike.player.
 // snapLike: нужен только { player: { position, yaw, velocity, action, hp, … как в snapshot } }.
 
-import { loadVRM, retargetClip } from './vrmKit.js';
+import { loadVRM, loadHumanoidGLB, retargetClip } from './vrmKit.js';
 
 // Карточки героев: имя, класс, стихия и три строки описания — для меню №8 и витрины (heroShowcase).
 export const HEROES = Object.freeze({
   ashen: {
-    id: 'ashen', name: 'Пепельный страж', vrm: null, cls: 'Воин-маг', element: 'Пепел и пламя',
-    desc: ['Клятвенный страж павшего святилища.', 'Латы из закалённой бронзы, посох-клинок с углём клятвы.', 'Держит удар и отвечает огнём.'],
-    gear: 'warden', stance: 'staff',
+    id: 'ashen', name: 'Пепельный страж', vrm: null, glb: 'knight.glb', height: 1.84, cls: 'Воин-маг', element: 'Пепел и пламя',
+    desc: ['Клятвенный страж павшего святилища.', 'Латы из закалённой стали, посох с углём клятвы.', 'Держит удар и отвечает огнём.'],
+    gear: 'warden', stance: 'staff', adduct: 0.3,
   },
   elf: {
     id: 'elf', name: 'Эльфийка', vrm: 'elf.vrm', height: 1.72, cls: 'Лучница-заклинательница', element: 'Гроза',
@@ -40,7 +40,20 @@ export const HEROES = Object.freeze({
     desc: ['Изгнанница из башни Затмения.', 'Посох с кристаллом ночи, плащ с живыми рунами.', 'Сковывает льдом и рвёт тьмой.'],
     gear: 'witch', stance: 'staff',
   },
+  // [HERO] новые герои (Quaternius Modular Fantasy, CC0)
+  ranger: {
+    id: 'ranger', name: 'Лучница', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Лучница', element: 'Ветер',
+    desc: ['Разведчица пограничных застав.', 'Капюшон следопыта, длинный лук и колчан за спиной.', 'Натягивает тетиву рукой — стрела летит в цель.'],
+    gear: 'scout', stance: 'bow', adduct: 0.3,
+  },
+  archmage: {
+    id: 'archmage', name: 'Архимаг', vrm: null, glb: 'wizard.glb', height: 1.8, cls: 'Архимаг', element: 'Буря',
+    desc: ['Последний магистр Грозовой коллегии.', 'Посох-громоотвод и плащ, прошитый рунами.', 'Лепит сферы молний двумя руками.'],
+    gear: 'magus', stance: 'staff', adduct: 0.3,
+  },
 });
+// порядок карточек в меню (№8 может брать отсюда)
+export const HERO_ORDER = Object.freeze(['ashen', 'elf', 'dark', 'ranger', 'archmage']);
 
 // Клипы: [имя в игре, файл, имя клипа в файле, петля]. Первый найденный файл — основной.
 const KAY = 'anims_kaykit.glb';
@@ -246,15 +259,15 @@ export function createHeroModel({
   async function setHero(id) {
     let def = HEROES[id] || HEROES.ashen;
     // удалённый экземпляр не может взять процедурное тело мира: страж — на запасной модели
-    if (!def.vrm && !heroBody) def = { ...def, vrm: HEROES.dark.vrm, height: 1.78, fallbackOf: def.id };
-    if (def.id === S.hero && (S.ready || !def.vrm)) return;
+    if (!def.vrm && !def.glb && !heroBody) def = { ...def, vrm: HEROES.dark.vrm, height: 1.78, fallbackOf: def.id };
+    if (def.id === S.hero && (S.ready || (!def.vrm && !def.glb))) return;
     const token = ++S.token;
     S.hero = def.id;
     clear();
-    if (!def.vrm) { showProcedural(true); parentAnchors(); S.ready = !!heroBody; return; }
+    if (!def.vrm && !def.glb) { showProcedural(true); parentAnchors(); S.ready = !!heroBody; return; }
     try {
-      const url = new URL(def.vrm, new URL(vrmUrl, base)).href;
-      const vrm = await loadVRM(THREE, url);
+      const url = def.glb ? new URL(def.glb, heroesBase).href : new URL(def.vrm, new URL(vrmUrl, base)).href;
+      const vrm = def.glb ? await loadHumanoidGLB(THREE, url) : await loadVRM(THREE, url);
       if (S.disposed || token !== S.token) { disposeVrm(vrm); return; }
       const lib = await buildClips(THREE, vrm, url, libUrls);
       if (S.disposed || token !== S.token) { disposeVrm(vrm); return; }
@@ -311,6 +324,8 @@ export function createHeroModel({
   }
   const upperClips = new WeakMap();
   function disposeVrm(vrm) { import('@pixiv/three-vrm').then((V) => { try { V.VRMUtils.deepDispose(vrm.scene); } catch (e) { /* ignore */ } }).catch(() => {}); }
+  // [HERO] модель не загрузилась: страж — процедурное тело мира, прочие — запасная модель
+  void disposeVrm;
 
   async function dressUp(token) {
     if (!cur) return;
@@ -325,6 +340,8 @@ export function createHeroModel({
       if (token !== S.token || cur !== c) return;
       // снаряжение крепится в позе Idle (кадр 0): рукоять посоха вертикально в опущенной руке
       if (c.full.Idle) { c.full.Idle.play(); c.full.Idle.setEffectiveWeight(1); c.mixer.update(0); }
+      const add = c.def.adduct ?? 0.22; // та же поза рук, что в игре (см. applyLife)
+      adduct(c.bones.leftUpperArm, -add); adduct(c.bones.rightUpperArm, add);
       c.vrm.update(0);
       c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading });
       if (c.full.Idle) c.full.Idle.stop();
