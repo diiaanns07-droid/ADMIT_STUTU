@@ -62,6 +62,9 @@ try {
     }
   };
   check('меню', true);
+  // программный рендер даёт 2–4 кадра/с: каждый кадр длиннее loop.stallSec (0,25 с) считался бы разрывом и время
+  // боя стояло бы. Для теста поднимаем порог через тот же модуль config.js (объект общий с main.js).
+  await page.evaluate(() => import('./config.js').then((m) => { m.config.loop.stallSec = 30; }));
   console.log('  клики:', await click('Отладка с клавиатуры'), await click('Начать'));
   await sleep(300);
   console.log('  клики:', await click('Продолжить без камеры (DEBUG)'));
@@ -69,11 +72,14 @@ try {
   if (argv.includes('--tutorial')) await page.screenshot({ path: join(OUT, 'hand_tutorial.png'), fullPage: true });
   console.log('  клики:', await click('В бой'));
   await until(() => window.__ASHEN__.screen === 'playing', 400000, 'бой');
-  check('бой (DEBUG)', true, `fps ${await page.evaluate(() => window.__ASHEN__.fps)}`);
-  // подойти к арене: держать W, пока герой не в lock-on (или 12 м до Регента)
-  await page.keyboard.down('KeyW');
-  await until(() => { const s = window.__ASHEN__.snapshot(); return s.player.lockedOn || Math.hypot(s.player.position.x - s.boss.position.x, s.player.position.z - s.boss.position.z) < 12; }, 300000, 'арена');
-  await page.keyboard.up('KeyW');
+  check('бой (DEBUG)', (await page.evaluate(() => window.__ASHEN__.screen)) === 'playing', `fps ${await page.evaluate(() => window.__ASHEN__.fps)}`);
+  console.log('  ошибки консоли после входа в бой:', errors.length ? errors.slice(0, 3).join(' | ') : 'нет');
+  // --walk: подойти к арене (держать W до lock-on); без него — стреляем с места старта (Регент в ~26 м, аим-ассист)
+  if (argv.includes('--walk')) {
+    await page.keyboard.down('KeyW');
+    await until(() => { const s = window.__ASHEN__.snapshot(); return s.player.lockedOn || Math.hypot(s.player.position.x - s.boss.position.x, s.player.position.z - s.boss.position.z) < 12; }, 300000, 'арена');
+    await page.keyboard.up('KeyW');
+  }
   const s0 = await snap();
   const hp0 = s0.boss.hp;
   console.log('  до Регента:', Math.hypot(s0.player.position.x - s0.boss.position.x, s0.player.position.z - s0.boss.position.z).toFixed(1), 'м, lockedOn', s0.player.lockedOn);
