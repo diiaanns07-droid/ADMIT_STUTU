@@ -657,7 +657,7 @@ export function createGlyphs(deps) {
       s.symScale = clamp(num(o.symbolScale, 0.55), 0.05, 1);
       hexLin((isNum(o.color) ? o.color : ELEMENTS.gold.mid) & 0xffffff, s.col);
       hexLin((isNum(o.hot) ? o.hot : ELEMENTS.gold.hot) & 0xffffff, s.hot);
-      s.intensity = clamp(num(o.intensity, 1.6), 0, 30);
+      s.intensity = Math.min(2.4, clamp(num(o.intensity, 1.6), 0, 30) * 0.85); // [VFX] калибровка под bloom игры
       s.dur = o.dur === Infinity ? Infinity : Math.max(0.05, num(o.dur, 1.6));
       s.unfold = clamp(num(o.unfold, 0.35), 0, 10);
       s.fade = clamp(num(o.fade, 0.35), 0.01, 10);

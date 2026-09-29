@@ -4,6 +4,7 @@
 // API:
 //   createHandVisuals({ THREE, scene, config }) -> {
 //     update(dt, snap, events, anchors), setQuality('low'|'medium'|'high'), reset(), dispose(),
+//     (anchors.heroBow === true — у героя свой лук в руке: 3D-лук не рисуем, прицельная дуга и вспышки остаются)
 //     setDelegated({ arrows, orbs, bow, palm?, rain? }), info(), root }
 //   THREE передаётся снаружи (модуль three не импортирует). config.settings — живой объект { quality, reducedMotion }:
 //     reducedMotion читается каждый кадр, quality — когда меняется (setQuality() тоже работает).
@@ -207,6 +208,7 @@ export function createHandVisuals({ THREE, scene, config } = {}) {
   const S = {
     q: 'medium', Q: QUALITY.medium, lastSettingsQ: null, rm: false, time: 0, errors: 0, lastWarn: -1e9, disposed: false,
     dlg: { arrows: false, orbs: false, bow: false, palm: null, rain: null },
+    heroBow: false,   // anchors.heroBow: у героя свой лук в руке (HERO) — свой 3D-лук не рисуем
   };
   const dlgPalm = () => (S.dlg.palm === null ? S.dlg.orbs : S.dlg.palm);
   const dlgRain = () => (S.dlg.rain === null ? S.dlg.arrows : S.dlg.rain);
@@ -1019,12 +1021,33 @@ export function createHandVisuals({ THREE, scene, config } = {}) {
     haveHands = true;
   }
 
+  // [HAND] дуга прицела: баллистика стрелы из snap.player.bow.launch (combatHand, с аим-ассистом)
+  function aimArc(L, vis, draw, ch, c, cr) {
+    if (!(draw > 0.1) || !L || !L.from || !L.vel || !Number.isFinite(L.vel.x) || !Number.isFinite(L.from.x)) return;
+    const g = num(L.g, 9), sp = Math.hypot(L.vel.x, L.vel.y, L.vel.z) || 1, T = Math.min(1.4, 40 / sp), n = 18;
+    const k0 = vis * (0.16 + 0.34 * draw) * (L.assist ? 1.35 : 1) * (1 + 0.5 * ch);
+    let m = 0;
+    for (let i = 0; i < n; i++) {
+      const t = (T * (i + 1)) / n;
+      const px = L.from.x + L.vel.x * t, py = L.from.y + L.vel.y * t - 0.5 * g * t * t, pz = L.from.z + L.vel.z * t;
+      if (py < L.from.y - 6 || !plAdd(px, py, pz)) break;
+      m++;
+    }
+    for (let i = 0; i < m; i++) plStyle(i, 0.006 + 0.004 * ch, i % 2 ? c : cr, k0 * (1 - i / Math.max(1, m)));
+    plFlush();
+  }
+
   // ---------------------------------------------------------------- лук: кадр
   function updateBow(dt, b, pl, playing) {
     const phase = b && typeof b.phase === 'string' ? b.phase : 'idle';
-    const want = !S.dlg.bow && playing && haveHands && !!b && (b.active === true || phase === 'ready' || phase === 'nocked' || phase === 'drawing');
+    const want = !S.dlg.bow && !S.heroBow && playing && haveHands && !!b && (b.active === true || phase === 'ready' || phase === 'nocked' || phase === 'drawing');
     bow.vis = approach(bow.vis, want ? 1 : 0, dt / 0.2);
     bow.relT += dt;
+    // у героя свой лук в руке (HERO): только дуга прицела, лук — у модели героя
+    if (S.heroBow && !S.dlg.bow && playing && b && (phase === 'nocked' || phase === 'drawing')) {
+      const el = elIndex(b.element);
+      aimArc(b.launch, 1, clamp01(num(b.draw, 0)), b.charged ? 1 : 0, EC[el], ECORE[el]);
+    }
     if (bow.vis <= 0.001) {
       bowGroup.visible = false; strLine.visible = false; nockArrow.visible = false; bow.aimInit = false; bow.arrowVis = 0;
       return;
@@ -1108,21 +1131,7 @@ export function createHandVisuals({ THREE, scene, config } = {}) {
       for (let i = 0; i < 5; i++) plStyle(i, 0.005 + 0.003 * ch, i === 2 ? cr : c, sk * (i === 2 ? 1.3 : 0.8));
       plFlush();
     }
-    // [HAND] дуга прицела: баллистика стрелы из snap.player.bow.launch (combatHand, с аим-ассистом)
-    const L = b && b.launch;
-    if (nocked && draw > 0.1 && L && L.from && L.vel && Number.isFinite(L.vel.x) && Number.isFinite(L.from.x)) {
-      const g = num(L.g, 9), sp = Math.hypot(L.vel.x, L.vel.y, L.vel.z) || 1, T = Math.min(1.4, 40 / sp), n = 18;
-      const k0 = vis * (0.16 + 0.34 * draw) * (L.assist ? 1.35 : 1) * (1 + 0.5 * ch);
-      let m = 0;
-      for (let i = 0; i < n; i++) {
-        const t = (T * (i + 1)) / n;
-        const px = L.from.x + L.vel.x * t, py = L.from.y + L.vel.y * t - 0.5 * g * t * t, pz = L.from.z + L.vel.z * t;
-        if (py < L.from.y - 6 || !plAdd(px, py, pz)) break;
-        m++;
-      }
-      for (let i = 0; i < m; i++) plStyle(i, 0.006 + 0.004 * ch, i % 2 ? c : cr, k0 * (1 - i / Math.max(1, m)));
-      plFlush();
-    }
+    if (nocked) aimArc(b && b.launch, vis, draw, ch, c, cr);
     // наложенная стрела: от точки натяжения вперёд сквозь полочку лука
     const wantArrow = nocked && bow.relT > 0.08;
     bow.arrowVis = wantArrow ? approach(bow.arrowVis, 1, dt / 0.08) : 0;
@@ -1352,6 +1361,7 @@ export function createHandVisuals({ THREE, scene, config } = {}) {
       const playing = !!pl && (sn.status === undefined || sn.status === null || sn.status === 'playing');
       const b = pl && pl.bow && typeof pl.bow === 'object' ? pl.bow : null;
       curBow = b;
+      S.heroBow = !!(anchors && anchors.heroBow === true);
       resolveHands(pl, anchors);
       if (Array.isArray(events)) for (let i = 0, n = Math.min(events.length, 256); i < n; i++) onEvent(events[i]);
       updateBow(dt, b, pl, playing);
@@ -1422,7 +1432,7 @@ export function createHandVisuals({ THREE, scene, config } = {}) {
     for (const f of flashes) if (f.on) fl++;
     for (const r of rains) if (r.on) rn++;
     return {
-      version: HAND_VISUALS_VERSION, quality: S.q, reducedMotion: S.rm, bow: bow.vis > 0.001, bowDraw: bow.draw, palm: palm.shown ? palm.el : null,
+      version: HAND_VISUALS_VERSION, quality: S.q, reducedMotion: S.rm, bow: bow.vis > 0.001, heroBow: S.heroBow, bowDraw: bow.draw, palm: palm.shown ? palm.el : null,
       arrows, orbs, flashes: fl, rains: rn, particles: pN, billboards: bbN, ribbonVerts: ribN, shards: shardN + pebbleN, errors: S.errors, delegated: { ...S.dlg },
     };
   }

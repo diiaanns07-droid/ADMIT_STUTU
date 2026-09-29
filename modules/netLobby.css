@@ -153,6 +153,8 @@
 .nl-hint { margin: 2px 0 0; color: var(--nl-muted); font-size: 13px; line-height: 1.45; }
 .nl-hint.is-warn { color: var(--nl-warn); }
 .nl-lan { display: flex; flex-direction: column; gap: 6px; }
+.nl-netbox { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.nl-netcheck { white-space: pre-line; color: var(--nl-text); }
 
 .nl-btn {
   padding: 10px 16px;
@@ -261,3 +263,19 @@
 .nl-badge.is-slow .nl-badge__dot { background: #deae55; box-shadow: 0 0 6px rgba(222, 174, 85, 0.7); }
 .nl-badge.is-lost { border-color: rgba(224, 72, 74, 0.8); }
 .nl-badge.is-lost .nl-badge__dot { background: #e0484a; animation: nl-pulse 0.6s ease-in-out infinite; }
+
+/* низкие экраны ноутбуков (1366×650 и т. п.): лобби без прокрутки */
+@media (max-height: 720px) {
+  .nl-overlay { padding: 8px 16px; }
+  .nl-panel { padding: 14px 22px 14px; max-height: calc(100vh - 16px); }
+  .nl-head { margin-bottom: 10px; padding-bottom: 8px; }
+  .nl-head__orn, .nl-sub { display: none; }
+  .nl-title { font-size: 26px; }
+  .nl-col { gap: 5px; }
+  .nl-label { margin-top: 2px; font-size: 12px; }
+  .nl-input { padding: 7px 10px; font-size: 15px; }
+  .nl-hero, .nl-seg { padding: 6px 8px; font-size: 14px; }
+  .nl-hint { font-size: 12px; line-height: 1.35; }
+  .nl-code { font-size: 46px; }
+  .nl-room { gap: 7px; }
+}

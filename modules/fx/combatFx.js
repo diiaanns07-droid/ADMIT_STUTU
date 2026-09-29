@@ -549,4 +549,40 @@ export function register(fx) {
     life.init = true; life.status = st; life.time = isNum(snap.time) ? snap.time : null;
     life.plDead = plDead; life.opDead = op ? opDead : null;
   });
+
+  // ---------------------------------------------------------------- [VFX] снаряды соперника (PvP) — холодный фиолетовый
+  // Снаряды с remote:true (modules/pvp.js) рисуются здесь целиком: ядро, вытянутый штрих, лента-след; стрелы и
+  // сгустки — в bowHand.js, иглы «Акуса» — в runesWild.js.
+  fx.suppress('proj:remote');
+  const rTr = new Map();
+  let rTag = 0;
+  const rCore = { at: new V3(), count: 1, speed: [0, 0], life: [0.05, 0.07], size: [0.34, 0.26], ramp: 'rival', intensity: 2.6, sprite: 'glow', essential: true, rival: true };
+  const rStreak = { at: new V3(), dir: new V3(), cone: 0.01, count: 1, speed: [20, 24], life: [0.04, 0.06], size: [0.14, 0.08], ramp: 'rival', intensity: 3, sprite: 'streak', stretch: 0.03, essential: true, rival: true };
+  const rSpark = { at: new V3(), count: 1, radius: 0.1, speed: [0.3, 1.2], life: [0.2, 0.4], size: [0.05, 0.01], ramp: 'rival', intensity: 2.6, sprite: 'spark', drag: 2, rival: true };
+  fx.every((dt, snap) => {
+    const list = snap && Array.isArray(snap.projectiles) ? snap.projectiles : null;
+    rTag++;
+    if (list) {
+      for (let i = 0; i < list.length; i++) {
+        const pr = list[i];
+        if (!pr || !pr.remote || !pr.position || pr.kind === 'arrow' || pr.kind === 'hand_orb') continue;
+        const id = String(pr.id);
+        let r = rTr.get(id);
+        if (!r) {
+          let tr = null;
+          if (fx.trails) { try { tr = fx.trails.create({ width: Math.max(0.12, (pr.radius || 0.2) * 0.9), life: 0.2, color: fx.E.rival.mid, hot: fx.E.rival.core, intensity: 2.2, style: 'energy', maxPoints: 16, rival: 1 }); } catch (e) { tr = null; } }
+          r = { tr, seen: 0 }; rTr.set(id, r);
+        }
+        r.seen = rTag;
+        const p = pr.position, v = pr.velocity;
+        const big = Math.max(0.6, Math.min(2.5, (pr.radius || 0.2) / 0.2));
+        rCore.at.set(p.x, p.y, p.z); rCore.size[0] = 0.34 * big; rCore.size[1] = 0.26 * big;
+        if (dt > 0) kit.emit(rCore);
+        if (v && dt > 0) { rStreak.at.set(p.x, p.y, p.z); rStreak.dir.set(v.x, v.y, v.z); kit.emit(rStreak); }
+        if (dt > 0 && Math.random() < 0.5) { rSpark.at.set(p.x, p.y, p.z); kit.emit(rSpark); }
+        if (r.tr) { try { r.tr.push(p); } catch (e) { /* ignore */ } }
+      }
+    }
+    for (const [id, r] of rTr) if (r.seen !== rTag) { if (r.tr) { try { r.tr.stop(); } catch (e) { /* ignore */ } } rTr.delete(id); }
+  });
 }

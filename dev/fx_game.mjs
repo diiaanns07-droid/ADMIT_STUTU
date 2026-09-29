@@ -69,8 +69,8 @@ const click = (label) => page.evaluate((l) => { const b = [...document.querySele
 const shot = (n) => page.screenshot({ path: join(OUT, n + '.png') });
 const out = { steps: [] };
 try {
-  await page.goto(`http://127.0.0.1:${srv.address().port}/`, { waitUntil: 'load' });
-  await page.waitForFunction(() => !!window.__ASHEN__, null, { timeout: 40000 });
+  await page.goto(`http://127.0.0.1:${srv.address().port}/`, { waitUntil: 'load', timeout: 180000 });
+  await page.waitForFunction(() => !!window.__ASHEN__, null, { timeout: 180000 });
   await sleep(2500);
   await shot('00_menu');
   out.steps.push(['debug', await click('Отладка с клавиатуры')]); await sleep(200);

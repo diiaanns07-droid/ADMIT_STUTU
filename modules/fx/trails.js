@@ -261,7 +261,7 @@ export function createTrails(deps) {
     s.width = clamp(num(o.width, df.width), 0.005, 6);
     s.life = clamp(num(o.life, df.life), 0.03, 10);
     s.taper = clamp(num(o.taper, 1), 0, 1);
-    s.intensity = clamp(num(o.intensity, 2.0), 0, 50);
+    s.intensity = Math.min(3, clamp(num(o.intensity, 2.0), 0, 50) * 0.75); // [VFX] калибровка под bloom игры
     s.rival = clamp(num(o.rival, 0), 0, 1);
     s.maxP = clampI(num(o.maxPoints, 32) * Q.pts, 4, MAXP);
     s.minDist = clamp(num(o.minDist, 0.05), 0.001, 5);

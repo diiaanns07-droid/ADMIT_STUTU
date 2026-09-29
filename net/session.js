@@ -3,7 +3,7 @@
 //
 // createNetSession({ THREE, scene, world, camera, heroFactory, heroes, settings, uiRoot, hooks })
 //   hooks: { saveSettings(patch), onReady(info), onLeave(), setDebug(on), isDebug() }
-//   → { openLobby(), closeLobby(), frame(dt, now, snap, input, events) → { events, snapshot },
+//   → { openLobby(), closeLobby(), frame(dt, now, snap, input, events, screen?) → { events, snapshot },
 //       host(mode, lanHost), join(mode, code, lanHost), setReady(on), leave(),
 //       net, remote, get active, getOpponent(), debug() }
 //
@@ -52,9 +52,9 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     inEvents: [], remoteProj: [], remoteProjAt: 0,
     lanHost: U.lanHost || (settings && settings.netLanHost) || '',
     lobbyOpen: false, busy: false, oppGone: false,
-    lanIps: null, lanCheck: '',
+    lanIps: null, lanCheck: '', netCheck: '',
   };
-  const remote = createRemotePlayer({ THREE, scene, world, heroFactory, camera });
+  const remote = createRemotePlayer({ THREE, scene, world, heroFactory, camera, heroes });
   // значок связи в бою: соперник и пинг; при обрыве — «переподключение»
   let badge = null, badgeKey = '', badgeAt = 0, lostSince = 0;
   function updateBadge(now, inFight) {
@@ -84,7 +84,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     badge.classList.toggle('is-lost', !!lost);
     badge.classList.toggle('is-slow', !lost && net.ping > 180);
     badge.querySelector('.nl-badge__txt').textContent = !lost ? `${opp} · пинг ${Math.round(net.ping)} мс`
-      : long ? `${opp} · нет связи ${lostSec} с — ждём; выйти: Esc → меню` : `${opp} · связь потеряна — переподключение…`;
+      : long ? `${opp} · нет связи ${lostSec} с — переподключение…` : `${opp} · связь потеряна — переподключение…`;
   }
   remote.setVisible(true);
   let lobby = null;
@@ -232,6 +232,18 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     }
   }
 
+  // «Интернет»: проверить сервер комнат и STUN до создания комнаты (net/diag.js)
+  async function checkInternet() {
+    S.netCheck = 'Проверяем сервер комнат и STUN…'; changed();
+    try {
+      const [{ diagnoseInternet }, cfgMod] = await Promise.all([import('./diag.js'), import('../config.js').catch(() => null)]);
+      const netCfg = cfgMod && cfgMod.config && cfgMod.config.net ? cfgMod.config.net : {};
+      const r = await diagnoseInternet({ iceServers: netCfg.iceServers, peer: netCfg.peer });
+      S.netCheck = `${r.lines.join('\n')}\n${r.verdict}`;
+    } catch (e) { S.netCheck = `Проверка не удалась: ${(e && e.message) || e}`; }
+    changed();
+  }
+
   function setLanHost(v) {
     S.lanHost = String(v || '').trim().replace(/^wss?:\/\//, '').replace(/\/.*$/, '');
     if (hooks.saveSettings) hooks.saveSettings({ netLanHost: S.lanHost });
@@ -296,7 +308,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
 
   // ------------------------------------------------------------ кадр
   const EMPTY = Object.freeze([]);
-  function frame(dt, now, snap, input, events) {
+  function frame(dt, now, snap, input, events, screen) {
     const net = S.net;
     const live = net && (net.state === 'connected' || net.state === 'lost');
     let outEvents = events || EMPTY, outSnap = snap;
@@ -321,7 +333,8 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     }
     // соперник виден только в бою (в меню снимка нет) и пока он в комнате
     remote.setVisible(!!snap && !!net && net.state !== 'idle' && !S.oppGone);
-    updateBadge(now, !!snap);
+    // в дуэли №3 имя соперника и пинг уже в панели раунда — значок только вне PvP
+    updateBadge(now, !!snap && snap.mode !== 'pvp' && (screen === undefined || screen === 'playing' || screen === 'paused' || screen === 'intro'));
     // соперник: события → его модель и общий массив (data.remote = true)
     let inc = null;
     if (S.inEvents.length) { inc = S.inEvents.splice(0, S.inEvents.length); remote.pushEvents(inc); }
@@ -359,9 +372,9 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
       opponent: net && net.remote ? { ...net.remote, heroName: heroes && heroes[net.remote.hero] ? heroes[net.remote.hero].name : net.remote.hero } : null,
       meReady: S.meReady, oppReady: S.oppReady, startIn: S.startAt ? Math.max(0, S.startAt - performance.now()) : 0, started: S.started,
       name: p.name, hero: p.hero, lanHost: S.lanHost, https: typeof location !== 'undefined' && location.protocol === 'https:',
-      lanIps: S.mode === 'lan' ? S.lanIps : null, lanCheck: S.lanCheck,
+      lanIps: S.mode === 'lan' ? S.lanIps : null, lanCheck: S.lanCheck, netCheck: S.mode === 'peer' ? S.netCheck : '',
       lastCode: (() => { const l = readLast(); return l && l.role === 'guest' ? l.code : ''; })(),
-      heroes: heroes ? Object.values(heroes).map((h) => ({ id: h.id, name: h.name })) : [],
+      heroes: heroes ? Object.values(heroes).filter((h) => h && !h.hidden).map((h) => ({ id: h.id, name: h.name })) : [],
       showLocal: S.mode === 'local' || U.transport === 'local' || !!(hooks.isDebug && hooks.isDebug()),
     };
   }
@@ -382,6 +395,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
           close: () => closeLobby(),
           mode: (m2) => { if (!S.net || S.net.state === 'idle') { S.mode = m2; S.error = null; changed(); } },
           checkLan: (ip) => checkLan(ip),
+          checkInternet: () => checkInternet(),
           profile: (patch) => { if (hooks.saveSettings) hooks.saveSettings(patch); if (S.net) S.net.setProfile(profile()); sendLobby(); changed(); },
         },
       });

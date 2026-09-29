@@ -149,7 +149,7 @@ export function register(fx) {
     kit.flash(st, { color: P.hot, size: [0.5, 2.4], dur: 0.2, intensity: 3.2, sprite: 'star', pull: 0, rival: R });
     let tr = null;
     if (fx.trails) {
-      try { tr = fx.trails.create({ width: 0.55 * sc, life: 0.42, color: P.mid, hot: P.core, intensity: 2.6, style: 'fire', maxPoints: 26, minDist: 0.25, rival: R ? 1 : 0 }); } catch (e) { tr = null; }
+      try { tr = fx.trails.create({ width: 0.42 * sc, life: 0.36, color: P.mid, hot: P.core, intensity: 1.8, style: 'fire', maxPoints: 26, minDist: 0.25, rival: R ? 1 : 0 }); } catch (e) { tr = null; }
       if (tr && tr.push) { try { tr.push(st); } catch (e) { tr = null; } }
     }
     const prev = new V3().copy(st);
@@ -190,7 +190,7 @@ export function register(fx) {
     // сигнал в небо: золотой росчерк вверх из ладони
     kit.after(0.08, () => {
       kit.flash(c.hand, { color: P.core, size: [0.2, 1.0], dur: 0.16, intensity: 3.5, sprite: 'star', pull: 0.6, rival: R });
-      kit.emit({ at: c.hand, dir: UP, cone: 0.04, count: 2, speed: [34, 40], life: [0.22, 0.3], size: [0.26, 0.1], ramp: 'whiteHold', intensity: 4, sprite: 'streak', stretch: 0.03, essential: true, rival: R });
+      kit.emit({ at: c.hand, dir: UP, cone: 0.04, count: 1, speed: [34, 40], life: [0.16, 0.2], size: [0.1, 0.05], ramp: ramp, intensity: 2.2, sprite: 'streak', stretch: 0.012, essential: true, rival: R }); // у камеры — тонкий росчерк, не столб
       kit.emit({ at: c.hand, dir: UP, cone: 0.55, count: 12, speed: [3, 8], life: [0.2, 0.45], size: [0.06, 0.01], ramp, intensity: 3, sprite: 'spark', stretch: 0.03, drag: 3, essential: true, rival: R });
     });
 
@@ -204,17 +204,17 @@ export function register(fx) {
     t1.normalize();
     const t2 = new V3().crossVectors(t1, n).normalize();
     const RR = 2.7;
-    spawnGlyph({ pos: rift, normal: n, radius: RR, symbol: 'stella', symbolScale: 0.42, style: 'hex', color: P.deep, hot: P.hot, intensity: 3.4, dur: 1.5, unfold: 0.22, fade: 0.4, spin: 0.9, rings: 3, rival });
-    const g2 = spawnGlyph({ pos: rift, normal: n, radius: RR * 0.58, style: 'rune', color: P.mid, hot: P.core, intensity: 2.8, dur: 1.35, unfold: 0.18, fade: 0.35, spin: -2.4, rings: 2, ticks: 20, rival });
+    spawnGlyph({ pos: rift, normal: n, radius: RR, symbol: 'stella', symbolScale: 0.42, style: 'hex', color: P.deep, hot: P.hot, intensity: 2.3, dur: 1.5, unfold: 0.22, fade: 0.4, spin: 0.9, rings: 3, rival });
+    const g2 = spawnGlyph({ pos: rift, normal: n, radius: RR * 0.58, style: 'rune', color: P.mid, hot: P.core, intensity: 1.9, dur: 1.35, unfold: 0.18, fade: 0.35, spin: -2.4, rings: 2, ticks: 20, rival });
     if (g2 && g2.flare) kit.after(0.05, () => g2.flare(1));
     kit.flash(rift, { color: P.deep, size: [3, 9.5], dur: 0.7, intensity: 1.7, sprite: 'glow', pull: 0, rival: R });
-    kit.flash(rift, { color: P.hot, size: [1.2, 5.5], dur: 0.28, intensity: 3.6, sprite: 'star', pull: 0, rival: R });
+    kit.flash(rift, { color: P.hot, size: [1.0, 3.6], dur: 0.26, intensity: 3.0, sprite: 'star', pull: 0, rival: R });
     kit.flash(rift, { color: P.deep, size: [6.2, 7.4], dur: 1.45, intensity: 1.0, sprite: 'glow', pull: 0, fadeIn: 0.12, rival: R });
     kit.flash(rift, { color: P.hot, size: [2.0, 2.6], dur: 1.35, intensity: 2.0, sprite: 'glow', pull: 0, fadeIn: 0.1, rival: R });
     // светящаяся «трещина» поперёк разлома
     const ta = new V3().copy(rift).addScaledVector(t1, -RR * 0.78).addScaledVector(t2, 0.45);
     const tb = new V3().copy(rift).addScaledVector(t1, RR * 0.78).addScaledVector(t2, -0.45);
-    kit.emit({ at: ta, shape: 'line', to: tb, count: 20, speed: [0, 0.12], life: [1.05, 1.35], size: [0.5, 0.3], ramp: 'whiteHold', intensity: 3.2, sprite: 'glow', fadeIn: 0.12, essential: true, rival: R });
+    kit.emit({ at: ta, shape: 'line', to: tb, count: 20, speed: [0, 0.12], life: [1.05, 1.35], size: [0.32, 0.18], ramp: 'whiteHold', intensity: 2.0, sprite: 'glow', fadeIn: 0.12, essential: true, rival: R });
     ta.lerp(rift, 0.5); tb.lerp(rift, 0.5);
     kit.emit({ at: ta, shape: 'line', to: tb, count: 8, speed: [0, 0.1], life: [1.0, 1.3], size: [1.3, 0.9], color: P.deep, intensity: 2.2, sprite: 'glow', fadeIn: 0.15, essential: true, rival: R });
     // водоворот искр, втягивающийся в разлом

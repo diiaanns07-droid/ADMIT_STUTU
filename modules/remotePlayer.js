@@ -150,7 +150,7 @@ function makePlate(THREE) {
 }
 
 // ---------------------------------------------------------------- удалённый игрок
-export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, delayMs = 100 } = {}) {
+export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, heroes = null, delayMs = 100 } = {}) {
   const root = new THREE.Group();
   root.name = 'remote-player';
   root.visible = false;
@@ -366,7 +366,7 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
         camera.getWorldPosition(_cam);
         const d = _cam.distanceTo(root.position);
         // LOD модели соперника ведёт сам heroModel (авто-LOD по камере, №4) — здесь не трогаем
-        const k = Math.min(2.4, Math.max(1, d / 9));
+        const k = Math.min(3.6, Math.max(1, d / 9));   // почти постоянный экранный размер до ~32 м
         plate.sprite.scale.set(1.7 * k, 0.425 * k, 1);
       }
       plate.draw({ name: S.name, hp: num(st && st.hp), maxHp: num(st && st.maxHp, 100), energy: num(st && st.energy), maxEnergy: num(st && st.maxEnergy, 100), status: lost ? 'lost' : 'ok' });
@@ -377,7 +377,7 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
     const st = S.st;
     if (!S.got || !st) return null;
     return {
-      id: 'remote', name: S.name, hero: S.hero, heroName: HERO_NAMES[S.hero] || S.hero,
+      id: 'remote', name: S.name, hero: S.hero, heroName: (heroes && heroes[S.hero] && heroes[S.hero].name) || HERO_NAMES[S.hero] || S.hero,
       position: { x: root.position.x, y: root.position.y, z: root.position.z },
       yaw: S.yaw,
       velocity: { x: st.velocity.x, z: st.velocity.z }, speed: st.speed,
