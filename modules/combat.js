@@ -2290,6 +2290,15 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   function getEffectiveConfig() { return JSON.parse(JSON.stringify(C)); }
   function getUpgrades() { return { ...upgradeMods }; }
 
+  // [FOREST] место старта (settings.startZone, точки дуэли PvP): действует со следующего reset();
+  // null — старт раскладки по умолчанию (layout.playerSpawn).
+  const SPAWN0 = LAY.playerSpawn;
+  function setSpawn(sp) {
+    if (isPlainObject(sp) && Number.isFinite(sp.x) && Number.isFinite(sp.z)) LAY.playerSpawn = { x: sp.x, z: sp.z, yaw: Number.isFinite(sp.yaw) ? sp.yaw : NaN };
+    else LAY.playerSpawn = SPAWN0;
+    return !!LAY.custom;
+  }
+
   reset();
-  return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig };
+  return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig, setSpawn };
 }

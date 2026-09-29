@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>[HERO] стенд героев — C5, шейдинг, снаряжение</title>
+<!-- Стенд: два экземпляра createHeroModel в одной сцене (C5: свои root, миксер, материалы),
+     якоря getAnchors(), поза setPose(), клипы. Параметры URL:
+       ?a=elf&b=dark — герои; &shading=anime; &pose=bow|spell; &clip=Walk; &cam=face|full|back; &q=low|medium|high
+     window.__HS__ — результаты проверок для dev/hero_stand.test (Playwright). -->
+<style>html,body{margin:0;height:100%;background:#0b0d12;color:#ddd;font:12px system-ui}#info{position:fixed;left:8px;top:8px;white-space:pre}</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/",
+  "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+} }
+</script>
+</head>
+<body>
+<div id="info">загрузка…</div>
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { createHeroModel, HEROES } from '../modules/heroModel.js';
+
+const qs = new URLSearchParams(location.search);
+const A = qs.get('a') || 'elf', B = qs.get('b') || 'dark';
+const shading = qs.get('shading') || 'realistic';
+const quality = qs.get('q') || 'medium';
+const W = innerWidth, H = innerHeight;
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(W, H); renderer.setPixelRatio(1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x151a24);
+const pm = new THREE.PMREMGenerator(renderer);
+scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.35;
+const camera = new THREE.PerspectiveCamera(32, W / H, 0.05, 100);
+// свет витрины: ключевой тёплый, контровой холодный, заполняющий
+const key = new THREE.DirectionalLight(0xffe2c4, 2.6); key.position.set(2.5, 3.5, 3); key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024); key.shadow.camera.left = -2; key.shadow.camera.right = 2; key.shadow.camera.top = 2.5; key.shadow.camera.bottom = -0.5; key.shadow.bias = -0.0004; key.shadow.normalBias = 0.02;
+const rim = new THREE.DirectionalLight(0x9fc4ff, 3.2); rim.position.set(-2, 2.5, -3.5);
+const fill = new THREE.HemisphereLight(0x8090b0, 0x201814, 0.6);
+scene.add(key, rim, fill);
+const floor = new THREE.Mesh(new THREE.CircleGeometry(4, 48), new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.8 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+
+const a = createHeroModel({ THREE, scene, hero: A, shading, quality, vrmUrl: '../assets/vroid/', baseUrl: '../assets/quaternius/' });
+const b = createHeroModel({ THREE, scene, hero: B, shading, quality, vrmUrl: '../assets/vroid/', baseUrl: '../assets/quaternius/', remote: true });
+const spread = qs.get('solo') ? 0 : 0.55;
+const snapA = { status: 'playing', player: { position: { x: -spread, y: 0, z: 0 }, yaw: 0.35, velocity: { x: 0, z: 0 }, action: 'idle' } };
+const snapB = { status: 'playing', player: { position: { x: spread, y: 0, z: 0 }, yaw: -0.35, velocity: { x: 0, z: 0 }, action: 'idle' } };
+if (qs.get('solo')) b.root.visible = false;
+const poseKind = qs.get('pose');
+const clipWant = qs.get('clip');
+const cam = qs.get('cam') || 'full';
+function place() {
+  if (cam === 'face') { camera.position.set(-spread + 0.25, 1.62, 0.95); camera.lookAt(-spread + 0.05, 1.55, 0); }
+  else if (cam === 'back') { camera.position.set(0, 1.5, -3.6); camera.lookAt(0, 1.0, 0); }
+  else if (cam === 'upper') { camera.position.set(0.2, 1.45, 2.4); camera.lookAt(0, 1.2, 0); }
+  else { camera.position.set(0.15, 1.2, 4.2); camera.lookAt(0, 0.95, 0); }
+}
+place();
+
+let t = 0;
+const clock = new THREE.Clock();
+function step(dt) {
+  t += dt;
+  const evA = [], evB = [];
+  if (clipWant === 'Walk') { snapA.player.velocity = { x: Math.sin(0.35) * 1.5, z: Math.cos(0.35) * 1.5 }; snapB.player.velocity = { x: 1.8, z: 0 }; }
+  if (clipWant === 'Run') { snapA.player.velocity = { x: Math.sin(0.35) * 4.5, z: Math.cos(0.35) * 4.5 }; snapB.player.velocity = { x: 0, z: -1.4 }; }
+  if (poseKind === 'bow') { a.setPose({ bowActive: true, bowDraw: 0.5 + 0.5 * Math.sin(t * 1.3), aim: { x: 0, y: 0.1 } }); b.setPose({ bowActive: true, bowDraw: 1, aim: { x: 0.2, y: 0 } }); }
+  if (poseKind === 'spell') { a.setPose({ handSpell: 1, aim: { x: 0, y: 0 } }); b.setPose({ handSpell: 0.6 }); }
+  if (poseKind === 'shield') { snapA.player.action = 'shield'; snapB.player.action = 'conjure'; }
+  const menu = !!qs.get('stance');
+  if (menu && a.ready && !a.__st) { a.__st = 1; a.setStance(qs.get('stance')); }
+  if (menu && b.ready && !b.__st) { b.__st = 1; b.setStance(qs.get('stance2') || qs.get('stance')); }
+  if (menu) { a.root.position.set(-spread, 0, 0); a.root.rotation.y = 0.35; b.root.position.set(spread, 0, 0); b.root.rotation.y = -0.35; }
+  a.update(dt, menu ? null : snapA, evA);
+  b.update(dt, menu ? null : snapB, evB);
+}
+function frame() {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, clock.getDelta());
+  if (!window.__HS_MANUAL__) step(dt);
+  renderer.render(scene, camera);
+  info.textContent = `${A}: ${JSON.stringify(a.state())}\n${B}: ${JSON.stringify(b.state())}\ncalls ${renderer.info.render.calls} tris ${renderer.info.render.triangles} progs ${renderer.info.programs.length}`;
+}
+frame();
+
+// проверки C5 для автотеста
+function matsOf(model) {
+  const s = new Set();
+  model.root.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) s.add(m); });
+  return s;
+}
+async function checks() {
+  const t0 = performance.now();
+  while (!(a.ready && b.ready) && performance.now() - t0 < 120000) await new Promise((r) => setTimeout(r, 200));
+  const ma = matsOf(a), mb = matsOf(b);
+  let shared = 0; for (const m of ma) if (mb.has(m)) shared++;
+  const anc = a.getAnchors(), ancB = b.getAnchors();
+  const names = ['handL', 'handR', 'chest', 'head', 'bowSocket', 'staffTip'];
+  const wp = (o) => { const v = new THREE.Vector3(); o.getWorldPosition(v); return { x: +v.x.toFixed(3), y: +v.y.toFixed(3), z: +v.z.toFixed(3) }; };
+  scene.updateMatrixWorld(true);
+  const res = {
+    ready: a.ready && b.ready, heroes: [a.hero, b.hero],
+    distinctRoots: a.root !== b.root, distinctMixers: !!a.mixer && a.mixer !== b.mixer,
+    materialsA: ma.size, materialsB: mb.size, sharedMaterials: shared,
+    anchorsOk: names.every((n) => anc[n] && anc[n].isObject3D && anc[n].parent) && names.every((n) => ancB[n] && ancB[n] !== anc[n]),
+    anchors: Object.fromEntries(names.map((n) => [n, wp(anc[n])])),
+    stateA: a.state(), stateB: b.state(),
+  };
+  // setPose: кисть левой руки уходит вперёд
+  const before = wp(anc.handL);
+  window.__HS_MANUAL__ = true;
+  for (let i = 0; i < 30; i++) { a.setPose({ bowActive: true, bowDraw: 1, aim: { x: 0, y: 0 } }); step(1 / 30); }
+  scene.updateMatrixWorld(true);
+  const after = wp(anc.handL);
+  res.poseMovesHand = Math.hypot(after.x - before.x, after.y - before.y, after.z - before.z);
+  a.setPose({ bowActive: false, bowDraw: 0 });
+  window.__HS_MANUAL__ = false;
+  // цена update одного героя
+  const t1 = performance.now();
+  for (let i = 0; i < 120; i++) a.update(1 / 60, snapA, []);
+  res.updateMs = +((performance.now() - t1) / 120).toFixed(3);
+  window.__HS__ = res;
+}
+checks();
+// дрейф головы: голова относительно таза по сценариям (должна оставаться в пределах ±1 рад и не накапливаться)
+window.__HS_DRIFT__ = () => {
+  window.__HS_MANUAL__ = true;
+  const out = {};
+  const qh = new THREE.Quaternion(), qp = new THREE.Quaternion(), e = new THREE.Euler();
+  const rel = (m) => {
+    const H = m.vrm.humanoid, h = H.getRawBoneNode('head'), p = H.getRawBoneNode('hips');
+    h.getWorldQuaternion(qh); p.getWorldQuaternion(qp);
+    qh.premultiply(qp.invert()); e.setFromQuaternion(qh, 'YXZ'); return +e.y.toFixed(2);
+  };
+  const scen = {
+    idle: (i, s) => { s.player.velocity = { x: 0, z: 0 }; },
+    walkTurn: (i, s) => { s.player.yaw += 0.03; s.player.velocity = { x: Math.sin(s.player.yaw) * 1.5, z: Math.cos(s.player.yaw) * 1.5 }; },
+    spin: (i, s) => { s.player.yaw += 0.12; s.player.velocity = { x: 0, z: 0 }; },
+    lock: (i, s) => { s.player.encounter = 'engaged'; s.boss = { position: { x: 5, y: 0, z: 5 } }; s.player.yaw += 0.02; s.player.velocity = { x: 2, z: 0 }; },
+  };
+  for (const [name, fn] of Object.entries(scen)) {
+    for (const m of [a, b]) {
+      const s = { status: 'playing', player: { position: { x: 0, y: 0, z: 0 }, yaw: 0, velocity: { x: 0, z: 0 }, action: 'idle' } };
+      const tr = [];
+      for (let i = 0; i < 900; i++) { fn(i, s); m.update(1 / 60, s, []); if (i % 150 === 0) tr.push(rel(m)); }
+      out[`${m.hero}:${name}`] = tr;
+    }
+  }
+  window.__HS_MANUAL__ = false;
+  return out;
+};
+window.__HS_API__ = { a, b, scene, camera, renderer, THREE, HEROES, step, place };
+</script>
+</body>
+</html>

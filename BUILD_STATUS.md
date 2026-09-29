@@ -166,6 +166,22 @@
 - «Камера занята» в настоящем браузере; реальное сворачивание вкладки (событие симулировано).
 - Звук на слух, Firefox и Safari.
 
+## V6 · [HERO] герои — API для других команд (черновик, дополняется)
+- **C5 готов** (`modules/heroModel.js`): `createHeroModel({ THREE, scene, hero, remote:true })` без `heroRoot` —
+  свой root (ставится по `snapLike.player.position/yaw`), свой миксер и материалы (проверено: 2 героя, 0 общих
+  материалов — `dev/hero_stand.html`). `update(dt, snapLike, events)`; для `remote:true` берутся только события
+  с `data.remote`, для своего — только без него. `getAnchors()` → `{ handL, handR, chest, head, bowSocket, staffTip }`
+  — постоянные `THREE.Object3D` (при смене героя переезжают на новые кости; у процедурного героя — маркеры рига).
+  `setPose({ bowActive, bowDraw 0..1, aim:{x,y}, handSpell 0..1 })` — поза лука/чар поверх анимаций; main.js уже
+  зовёт её из `input.bow`/`input.handSpell` (C2), №6 может звать сам. `setMirror(m)` — руки героя за руками игрока.
+  `setStance(clip)` — стойка витрины. Общие настройки для экземпляров NET — `configureHeroes({ atmosphere, shading, quality })`.
+- **Герои:** `HEROES` + `HERO_ORDER` — ashen (Пепельный страж, латы Knight), elf, dark (VRoid), **ranger** (Лучница),
+  **archmage** (Архимаг) — Quaternius CC0 (`assets/heroes/`). У каждого `name, cls, element, desc[3]`.
+- **Для №8 (BDO):** в `HERO_OPTIONS` (ui.js) добавлены 2 героя и 4-е поле `{ cls, element, desc }` с тегом [HERO] —
+  карточек теперь 5 (3+2); описание (3 строки) можно показывать под выбранной карточкой. Витрина меню —
+  `modules/heroShowcase.js` (свой свет, облёт, `postfx.setFocus(dist)` если есть).
+- **Настройка** `heroShading: 'realistic'|'anime'` (C1). 'realistic' — MeshPhysicalMaterial (`modules/heroShading.js`).
+
 ## V6 · [BDO] стиль Black Desert — API для других команд (черновик, дополняется)
 - **Настроение зоны (для №5 [FOREST])** — уже в main: `world.atmosphere.setZoneMood({ weight, sky, fog, sun, exposure, grade })`.
   `weight` 0..1 (насколько герой в зоне; можно звать каждый кадр — смена плавная, ~1 с). Остальные поля
@@ -192,6 +208,53 @@
   `--bdo-font-display` (Forum, с кириллицей), `--bdo-font-body`; canvas — `core/bdoTheme.js`.
 - **Настройка:** `bdoUi: true` (config.defaultSettings); `false` — прежний интерфейс.
 
+## V6 · [FOREST] Сияющий лес — API для других команд (черновик, дополняется)
+- **Зона** `modules/brightForest.js`: `BRIGHT_FOREST` (C7) — `{ id:'bright-forest', name:'Сияющий лес', subtitle:'Земли Древа',
+  x:18, z:-168, r:62, level:-2.2, duel:{ x:18, z:-168, r:20, spawns:[{x:6,z:-168,yaw:π/2},{x:30,z:-168,yaw:-π/2}] },
+  start:{x:14,z:-97,yaw:π}, gate, embers, road }`. Лес — к северу от арены, дорога от плато к вратам.
+- **Для №3 (PvP):** точки дуэли — `BRIGHT_FOREST.duel.spawns` или `world.layout.spawns.duel`; поставить героя в точку —
+  `combat.setSpawn({x,z,yaw})` до `combat.reset()` (`null` — старт по умолчанию). Поляна r=20 ровная (высота = level),
+  без коллайдеров внутри, кроме 6 укрытий по краю (центрально-симметричны, `FOREST_PLAN.covers`). Второй игрок мнёт
+  траву: `world.setForestHero2({x,y,z})` (или `null`).
+- **Для №8 (BDO):** при входе в лес main.js шлёт событие `zone_enter { zoneId:'bright-forest', name:'Сияющий лес',
+  subtitle:'Земли Древа' }` (C3). Настроение — `atmosphere.setZoneMood(forest.mood)` каждый кадр (формат ZONE_MOODS №8);
+  лес ещё рисует свой купол неба (облака, солнце) поверх затмения по weight. Пункт меню «Место старта» — хук `[FOREST]`
+  в ui.js (buildStartZone, в меню в одном ряду с «Управлением движением»).
+- **Настройка** `startZone: 'arena'|'forest'` (config, sanitizeSettings, ui). При 'forest' старт у врат леса, облёт-интро
+  у арены пропускается; в меню герой стоит у врат.
+- `world.forest` — `{ weight 0..1, inside, mood, drainEvents(), stats(), plan, map }`; `world.layout.zones.brightForest`.
+
+## V6 · [NET] онлайн-дуэль — API для других команд (черновик, дополняется)
+- **Как устроено.** Кнопка меню «Онлайн-дуэль» → `openNet()` в main.js лениво грузит `net/session.js`
+  (в одиночной игре не грузится ни один файл сети, `netSession === null`). Сессия = `net/net.js` (C6) +
+  `modules/remotePlayer.js` (второй герой) + `modules/netLobby.js` (экран лобби). Оба нажали «Готов» →
+  хост назначает старт по общим часам (`go {at}`), у обоих через 3,2 с вызывается `app.onNetReady(info)`.
+- **Для №3 [PVP]:** поставьте в main.js хук `app.onNetReady = (info) => pvp.start(info)` (иначе стартует обычный бой).
+  `info = { net, remote, isHost, code, opponent:{name, hero}, mode, seed }`.
+  `net.send(type, payload)` / `net.on(type, fn)` / `net.off` — свои сообщения C6 (`hit`, `hitAck`, `duel`) идут как есть.
+  `net.state`: `'connecting'|'connected'|'lost'|'idle'`; события `net.on('lost'|'reconnected'|'left'|'error', fn)`.
+  `net.sharedNow()` — общее время по часам хоста (мс, для `duel.at`), `net.sharedToLocal(t)` → мой performance.now.
+  `net.ping` — RTT, мс. `remote.getState()` → готовый `snap.opponent` (C4: id, name, hero, position — уже
+  интерполированная, то, что видит игрок; yaw, hp, maxHp, energy, maxEnergy, action, shielding, invulnerable,
+  stunned, slowed, dashing, connected, bow, handSpell, conjure, latest — последний сырой пакет).
+  `window.__ASHEN__.netSession()` — сессия целиком (для тестов). Своё состояние сеть шлёт сама из
+  `combat.getSnapshot().player` (20 Гц): если PvP добавит в player поля (stunned, slowed) — они уйдут флагами.
+- **Для №7 [VFX]:** события соперника приходят в `effects.update` с `data.remote = true` и `id` с префиксом `r-`
+  (C3). Пересылаются: player_cast, player_slash, player_dash, shield_start/end, parry, burst, rune_cast,
+  sigil_cast, rune_hit, sigil_hit, projectile_reflected, projectile_impact (свои снаряды), ward_*, bastion_*,
+  bow_draw_start, bow_release, arrow_hit, hand_spell_form/throw/hit/cancel. Сейчас effects рисует часть из них
+  у своего героя (например, шлейф рывка берёт `fi.player`) — для remote берите `ev.position` или якоря
+  `netSession.remote.getAnchors()` (C5: handL, handR, chest, head, bowSocket, staffTip) и цвет соперника.
+  Снаряды соперника добавляются в `snapshot.projectiles` для effects: `owner:'opponent'`, `remote:true`, id `r:…`.
+  world.js и свой heroModel события соперника НЕ получают (иначе свой герой повторял бы чужие удары).
+- **Для №8 [BDO]:** лобби — `modules/netLobby.css` (классы `nl-*`), уже на токенах `--bdo-*`; кнопка в меню —
+  одна строка `netBtn` в ui.js с тегом [NET], стиль подтягивайте как хотите.
+- **Транспорты:** `'peer'` — PeerJS 1.5.5 (DEPS.peerjs, облако 0.peerjs.com, ID `ashen-oath-v1-<КОД>`, STUN Google,
+  TURN — в `config.net.iceServers`); `'lan'` — `tools/relay.py` (ws://IP:8790, stdlib; Windows — START_ONLINE_HOST.cmd);
+  `'local'` — BroadcastChannel (две вкладки, `?netPing=150&netJitter=15&netLoss=0.05`).
+- **Проверка:** `node dev/net.test.mjs` (коды, упаковка, интерполяция 150 мс/5%, обрыв/восстановление),
+  `node dev/net-lan.test.mjs` (relay.py + WebSocket), `dev/net-two-tabs.html` (две игры рядом, `?harness=1` — лёгкий
+  стенд), `node tools/qa_net.mjs --mode local|lan|peer [--harness] [--cdn DIR]`.
 ## V6 · [VFX] «больше магии» — эффекты рун и заклинаний (№7, в работе)
 - **База `modules/fx/`** поверх `modules/effects.js` (старые эффекты — откат; настройка `fxMagic: true`, `false` — как раньше):
   - `fx/kit.js` — GPU-частицы одним InstancedMesh (физика в вершинном шейдере: снос, сопротивление, гравитация,

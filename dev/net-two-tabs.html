@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHEN OATH — дуэль в двух окнах (NET, local)</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #0b0b0d; color: #e8e0cc; font: 14px/1.4 'Segoe UI', system-ui, sans-serif; }
+  header { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 6px 12px; border-bottom: 1px solid #5a4a2e; background: #15130f; }
+  header b { font-family: Georgia, serif; color: #e3c792; letter-spacing: .08em; }
+  header label { display: inline-flex; gap: 6px; align-items: center; }
+  header input { width: 64px; background: #050506; color: #eee; border: 1px solid #5a4a2e; padding: 2px 6px; }
+  header button { background: #2a2218; color: #f0e2c0; border: 1px solid #c4a265; padding: 3px 10px; cursor: pointer; }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; height: calc(100% - 44px); }
+  iframe { width: 100%; height: 100%; border: 0; background: #000; }
+  .tag { position: absolute; bottom: 8px; padding: 2px 8px; background: rgba(0,0,0,.6); border: 1px solid #c4a265; font-family: Georgia, serif; pointer-events: none; }
+</style>
+</head>
+<body>
+<header>
+  <b>ДВЕ ВКЛАДКИ · NET</b>
+  <span>Кликните в левое окно и ходите WASD (U — «Искра», K — щит, Пробел — рывок) — правое окно видит героя-соперника.</span>
+  <label>пинг, мс <input id="ping" type="number" value="150" min="0" max="1000"></label>
+  <label>потери <input id="loss" type="number" value="0.05" step="0.01" min="0" max="0.9"></label>
+  <button id="restart" type="button">Перезапуск</button>
+  <button id="drop" type="button">Обрыв 4 с</button>
+</header>
+<main>
+  <div style="position:relative"><iframe id="host" title="Хост"></iframe><span class="tag" style="left:8px">Хост</span></div>
+  <div style="position:relative"><iframe id="guest" title="Гость"></iframe><span class="tag" style="left:8px">Гость</span></div>
+</main>
+<script>
+  // Код комнаты — свой на каждый запуск, чтобы две пары окон не мешали друг другу.
+  const A = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const q = new URLSearchParams(location.search);
+  if (q.has('ping')) document.getElementById('ping').value = q.get('ping');
+  if (q.has('loss')) document.getElementById('loss').value = q.get('loss');
+  function start() {
+    let room = '';
+    for (let i = 0; i < 4; i++) room += A[Math.floor(Math.random() * A.length)];
+    const ping = +document.getElementById('ping').value || 0;
+    const loss = +document.getElementById('loss').value || 0;
+    // ?harness=1 — лёгкий стенд сети (dev/net-harness.html) вместо полной игры
+    const page = q.get('harness') ? 'net-harness.html' : '../index.html';
+    // ?net=lan|peer и параметры peerHost/peerPort/peerSecure/lanHost передаются в оба окна как есть
+    const pass = ['peerHost', 'peerPort', 'peerPath', 'peerSecure', 'lanHost', 'hero', 'near', 'auto'].filter((k) => q.has(k)).map((k) => `&${k}=${encodeURIComponent(q.get(k))}`).join('');
+    const base = `${page}?debug=1&net=${q.get('net') || 'local'}&room=${room}&netReady&netPing=${ping}&netJitter=15&netLoss=${loss}${pass}`;
+    document.getElementById('host').src = `${base}&netAuto=host&role=host&netName=${encodeURIComponent('Хост')}&netHero=${q.get('heroA') || 'ashen'}`;
+    setTimeout(() => { document.getElementById('guest').src = `${base}&netAuto=join&role=guest&netName=${encodeURIComponent('Гость')}&netHero=${q.get('heroB') || 'ashen'}`; }, 800);
+    window.__room = room;
+  }
+  document.getElementById('restart').onclick = start;
+  document.getElementById('drop').onclick = () => {
+    try {
+      const w = document.getElementById('host').contentWindow;
+      (w.__net || w.__ASHEN__.netSession().net).simulateDrop(4000);
+    } catch (e) { console.warn(e); }
+  };
+  start();
+</script>
+</body>
+</html>

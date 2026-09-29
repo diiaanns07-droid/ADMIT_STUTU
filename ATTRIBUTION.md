@@ -9,6 +9,7 @@
 | MediaPipe Tasks Vision | 0.10.35 | https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/ | Apache-2.0, © Google LLC |
 | Pose Landmarker (lite, float16, v1) | 1 | https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task | модель Google MediaPipe; условия — в карточке модели на developers.google.com/edge/mediapipe |
 | Hand Landmarker (float16, v1) | 1 | https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task | модель Google MediaPipe; условия — в карточке модели |
+| PeerJS [NET] | 1.5.5 | https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js (грузится только в режиме «Онлайн-дуэль → Интернет»); сигнальный сервер — облако PeerJS 0.peerjs.com; STUN — stun.l.google.com | MIT, © 2013 Michelle Bu, Eric Zhang and PeerJS contributors |
 
 MediaPipe 1.0.x **сознательно не используется**: в его JS-бандле есть отправка метрик
 использования на `odml.pa.googleapis.com/v1/log`.
@@ -24,6 +25,7 @@ MediaPipe 1.0.x **сознательно не используется**: в е�
 | `modules/effects.js` | №6 | обработчики rune_cast, perfect_dodge, ward_end; размеры свечения чар и волн броска под порог bloom 1.0 |
 | `modules/ui.js`, `modules/ui.css` | №7 | тексты обучения/плиток под пальцы; русские ключевые слова ошибок; `@media (max-height: 680px)`; имя босса «Регент Нимба»; карточка «Чары двумя руками», сетка обучения 3+2 |
 | `main.js`, `config.js`, `core/*` (cameraRig, debugInput, handGestures, trackingHud, battleHud), `index.html`, `styles.css`, `serve_game.py`, `START_GAME.cmd`, `tools/*` | №1 | — |
+| `net/*`, `modules/remotePlayer.js`, `modules/netLobby.js`, `modules/netLobby.css`, `tools/relay.py`, `START_ONLINE_HOST.cmd` | №2 [NET] | новые (онлайн-дуэль) |
 | `dev/*` (тесты и стенды) | №2–№7 | пути импорта → `../modules/`; в стендах three → 0.185.1; в `vision.test.mjs` ожидаемые версии → 0.10.35 |
 
 ## Тестовые данные (только в `dev/`, в игре не используются)
@@ -45,6 +47,11 @@ MediaPipe 1.0.x **сознательно не используется**: в е�
   (CC0 1.0, Poly Pizza; ссылки — `assets/quaternius/LICENSE.md`). Их анимации (шаг, бег, удар, прыжок,
   смерть, сидя…) переносятся на VRM-персонажей по направлениям костей (`modules/vrmKit.js`).
 - Если модель не загрузилась, остаётся процедурный Пепельный страж.
+- [HERO] `assets/heroes/knight.glb`, `wizard.glb`, `ranger.glb` — тела и костюмы **Quaternius** (Modular
+  Character Outfits — Fantasy, Universal Base Characters), **CC0 1.0**: Пепельный страж (латы Knight),
+  Архимаг (Wizard), Лучница (Ranger). `assets/heroes/anims_kaykit.glb` — 35 клипов **KayKit Adventurers 1.0**
+  (Kay Lousberg, **CC0 1.0**), меши убраны. Источники и ссылки на лицензии — `assets/heroes/LICENSE.md`.
+  Снаряжение (плащи, посохи, лук, наплечники, пояса) — процедурное (`modules/heroGear.js`).
 
 ## Собственные ресурсы
 Вся геометрия процедурная (включая Регента, колоссов и шпили), небо с затмением и туман — шейдеры,
