@@ -50,7 +50,9 @@ export const DEFAULT_BOW_CONFIG = Object.freeze({
   nockMs: 110,             // щепоть у кулака столько — стрела наложена
   stanceKeepMs: 1500,      // после выстрела/наложения стойка держится столько без новой щепоти
   // натяжение
-  drawFull: 0.75,          // |щепоть − кулак| (ширин плеч) при полном натяжении: кулак перед грудью → щепоть у правого плеча ≈ 0.75, у уха ≈ 0.9
+  drawFull: 0.75,          // |щепоть − кулак| (ширин плеч) при полном натяжении, если поза не видна (кулак перед грудью → правое плечо ≈ 0.75)
+  drawFullFrac: 0.9,       // с позой: полное = столько от расстояния «кулак → правое плечо/ухо» (ближайшее)…
+  drawFullMin: 0.55, drawFullMax: 1.3,
   drawBaseMin: 0.12,       // стартовое расстояние (от него считаем) не меньше
   drawDepthFull: 1.6,      // рост отношения масштабов кистей (левая / правая) с момента наложения — «полная глубина»
   drawDepthWeight: 0.45,
@@ -271,7 +273,7 @@ export function createBowGesture(configPatch = {}) {
       fistSince: null, fistLostAt: null, lastFist: null,
       nockSince: null, nockedAt: null, keepUntil: -Infinity,
       rightLostAt: null,
-      base: 0.3, ratio0: 1, drawRaw: 0, draw: 0, hist: [],   // hist: {t, draw, aimX, aimY}
+      base: 0.3, ratio0: 1, drawRaw: 0, draw: 0, full: 0, hist: [],   // hist: {t, draw, aimX, aimY}
       fullSince: null, charged: false,
       aimX: 0, aimY: 0,
       pinchClosed: false,
@@ -322,10 +324,20 @@ export function createBowGesture(configPatch = {}) {
     return t - S[key];
   }
 
-  function computeDraw(L, R, body, dt) {
+  function fullDist(L, frame, sw) {
+    // полное натяжение — щепоть у правого плеча или уха (по позе); без позы — cfg.drawFull
+    const tg = [frame && frame.shoulders && frame.shoulders.right, frame && frame.ears && frame.ears.right].filter(Boolean);
+    if (!tg.length) return cfg.drawFull;
+    let m = Infinity;
+    for (const p of tg) m = Math.min(m, dist2(p, L.center) / sw);
+    return clamp(m * cfg.drawFullFrac, cfg.drawFullMin, cfg.drawFullMax);
+  }
+  function computeDraw(L, R, body, dt, frame) {
     const sw = body && body.sw ? body.sw : Math.max(1e-6, L.scale) * 3.6;
     const d = dist2(R.pinchPt, L.center) / sw;
-    const d2 = clamp01((d - st.base) / Math.max(0.2, cfg.drawFull - st.base));
+    const full = fullDist(L, frame, sw);
+    st.full = st.full > 0 && dt > 0 ? st.full + (full - st.full) * (1 - Math.exp(-dt / 150)) : full;   // кулак ведут прицелом — цель плавает
+    const d2 = clamp01((d - st.base) / Math.max(0.2, st.full - st.base));
     const ratio = L.scale / Math.max(1e-6, R.scale);
     const dz = clamp01(Math.log(Math.max(1e-6, ratio / st.ratio0)) / Math.log(cfg.drawDepthFull));
     const w = cfg.drawDepthWeight;
@@ -427,7 +439,7 @@ export function createBowGesture(configPatch = {}) {
           const sw = body && body.sw ? body.sw : Math.max(1e-6, Lx.scale) * 3.6;
           st.base = Math.max(cfg.drawBaseMin, dist2(R.pinchPt, Lx.center) / sw);
           st.ratio0 = clamp(Lx.scale / Math.max(1e-6, R.scale), 0.5, 2);
-          st.draw = 0; st.drawRaw = 0; st.hist.length = 0;
+          st.draw = 0; st.drawRaw = 0; st.hist.length = 0; st.full = 0;
           st.counters.nocks++;
           st.keepUntil = t + cfg.stanceKeepMs;
           st.lastEvent = { type: 'nock', t };
@@ -444,7 +456,7 @@ export function createBowGesture(configPatch = {}) {
         // выпуска не считаем: у раскрытой кисти «щепоть» (середина большого и указательного) прыгает.
         if (!isPinch(R, true)) fire(t);
         else {
-          if (Lx) computeDraw(Lx, R, body, dt);
+          if (Lx) computeDraw(Lx, R, body, dt, frame);
           if (st.phase === 'nocked' && st.draw >= cfg.minDraw) st.phase = 'drawing';
           // полное натяжение → заряд
           if (st.draw >= cfg.chargedOn) { if (st.fullSince === null) st.fullSince = t; if (t - st.fullSince >= cfg.chargedHoldMs) st.charged = true; }
@@ -533,7 +545,7 @@ export function createBowGesture(configPatch = {}) {
     configure(patch) { cfg = mergeConfig(cfg, patch); },
     get config() { return cfg; },
     getDebug() {
-      return { version: BOW_VERSION, phase: st.phase, active: st.active, draw: st.draw, drawRaw: st.drawRaw, base: st.base, ratio0: st.ratio0, aimX: st.aimX, aimY: st.aimY, charged: st.charged, element: st.element, counters: { ...st.counters }, lastEvent: st.lastEvent };
+      return { version: BOW_VERSION, phase: st.phase, active: st.active, draw: st.draw, drawRaw: st.drawRaw, base: st.base, full: st.full, ratio0: st.ratio0, aimX: st.aimX, aimY: st.aimY, charged: st.charged, element: st.element, counters: { ...st.counters }, lastEvent: st.lastEvent };
     },
   };
 }

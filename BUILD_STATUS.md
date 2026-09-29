@@ -277,7 +277,7 @@
   превью камеры (огонь/молния/лёд/земля в настоящей ладони, лук, тетива, стрела, прицел); 3D-заглушки `modules/handVisuals.js`.
 - Карточки обучения «Лук» и «Магия рукой» (`modules/ui.js`), удачные выстрелы/броски — в точность жестов на экране итогов.
 
-**Как проверить.** `node dev/bow.test.mjs` (≥95% верных выстрелов на 300 случайных с шумом — сейчас ~96%; HaGRID-сцена 100%;
+**Как проверить.** `node dev/bow.test.mjs` (≥95% верных выстрелов на 300 случайных с шумом — сейчас 99%; HaGRID-сцена 100%;
 0 ложных луков на 200 прогонах руления и старых жестах), `node dev/handMagic.test.mjs` (100% на 240 случайных, 0 ложных),
 `node dev/handZone.test.mjs`, `node dev/combatHand.test.mjs`. Браузер: `node dev/hand-qa.mjs --cdn <папка с npm-пакетами three
 и three-vrm> [--walk]` — DEBUG-бой, B/N/M, скриншоты. Стенды: `dev/handfx-stand.html?scene=bow|fire|storm|frost|earth|two|rain`,

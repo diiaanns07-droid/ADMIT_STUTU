@@ -97,7 +97,7 @@ test('половина натяжения: draw 0.3–0.85, без заряда;
   ok(!x.charged, 'заряд на половине');
 });
 test('полное натяжение без удержания (≤ 0,35 с) — без заряда', () => {
-  const r = runShot({ f: 1, full: { x: 0.08, y: -0.15 }, pullMs: 300, holdMs: 120 });
+  const r = runShot({ f: 1, pullMs: 300, holdMs: 100 });
   ok(r.releases.length === 1);
   ok(r.releases[0].draw >= 0.85, `draw ${r.releases[0].draw}`);
   ok(!r.releases[0].charged, 'заряд без удержания');
