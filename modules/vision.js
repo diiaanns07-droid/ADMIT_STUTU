@@ -1936,7 +1936,7 @@ export async function createVision(options = {}) {
 
   // [CONTROLS] запись наблюдений кистей: startRecording() — начать (если ещё не идёт),
   // takeRecording() — забрать записанное (объект для JSON) и продолжить с чистого листа.
-  function startRecording(meta = {}) { if (!recorder) recorder = createInputRecorder({ meta }); return true; }
+  function startRecording(meta = {}, maxFrames) { if (!recorder) recorder = createInputRecorder({ meta, ...(maxFrames > 0 ? { maxFrames } : {}) }); return true; }
   function takeRecording(extra = {}) {
     if (!recorder) return null;
     const snap = recorder.snapshot({ moveMode: cfg.moveMode, sensitivity: cfg.sensitivity, ...extra });

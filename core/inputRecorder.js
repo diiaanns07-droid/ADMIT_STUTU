@@ -3,8 +3,8 @@
 // (push(obs)): кисти (21 точка кадра + world), запястья позы, середину и ширину плеч. Видео
 // не пишется — только числа (≈1,5 КБ на кадр, минута при 30 кадр/с ≈ 3 МБ).
 //
-// В игре: адрес с ?rec=1 — запись идёт, пока открыт бой; F8 — сохранить файл (запись продолжается
-// с чистого листа). Разбор: node dev/replay.mjs файл.json — где поднимался щит, рывки, остановки,
+// В игре запись идёт всегда (последние 90 с в памяти): F8 — сохранить файл, когда что-то пошло не так
+// (запись продолжается с чистого листа). С ?rec=1 — длинная запись (до 10 мин) и значок «● ЗАПИСЬ». Разбор: node dev/replay.mjs файл.json — где поднимался щит, рывки, остановки,
 // дрожь руля; тот же файл можно прогнать с другими порогами (--cfg '{…}').
 //
 // Формат (version 1): { version, kind: 'ashen-hands', createdAt, moveMode, frames: [
@@ -66,21 +66,25 @@ export function unpackFrame(f) {
   };
 }
 
+// в памяти точки кистей — Float32Array (≈1 КБ на кисть вместо ≈3 КБ массивов); в файл — обычные числа
+const compact = (f) => ({ ...f, hs: f.hs.map((h) => ({ ...h, lm: Float32Array.from(h.lm), wd: h.wd ? Float32Array.from(h.wd) : null })) });
+const expand = (f) => ({ ...f, hs: f.hs.map((h) => ({ ...h, lm: Array.from(h.lm, r4), wd: h.wd ? Array.from(h.wd, r5) : null })) });
+
 /** Запись в памяти: add(obs) на каждый кадр, snapshot() — объект для JSON, clear() — с чистого листа. */
-export function createInputRecorder({ maxFrames = 36000, meta = {} } = {}) {
+export function createInputRecorder({ maxFrames = 18000, meta = {} } = {}) {
   let frames = [];
   let dropped = 0;
   return {
     add(obs) {
       const f = packObservation(obs);
       if (!f) return;
-      frames.push(f);
+      frames.push(compact(f));
       if (frames.length > maxFrames) { frames.shift(); dropped++; }
     },
     size: () => frames.length,
     clear() { frames = []; dropped = 0; },
     snapshot(extra = {}) {
-      return { version: RECORDING_VERSION, kind: 'ashen-hands', createdAt: new Date().toISOString(), dropped, ...meta, ...extra, frames: frames.slice() };
+      return { version: RECORDING_VERSION, kind: 'ashen-hands', createdAt: new Date().toISOString(), dropped, ...meta, ...extra, frames: frames.map(expand) };
     },
   };
 }

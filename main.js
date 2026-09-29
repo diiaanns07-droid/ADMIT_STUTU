@@ -374,7 +374,9 @@ async function ensureVision() {
     }).then((v) => {
       vision = v;
       if (handZone && typeof v.setHandTap === 'function') v.setHandTap((o) => handZone.pushObs(o)); // [HAND]
-      if (REC_ON && typeof v.startRecording === 'function') { v.startRecording({ source: 'ashen-game', hero: settings.hero }); showRecBadge(); } // [CONTROLS]
+      // [CONTROLS] запись кистей всегда: последние 90 с (≈3 МБ в памяти) — F8 сохраняет их файлом, когда
+      // что-то пошло не так (щит встал сам, герой споткнулся). ?rec=1 — длинная запись (10 мин) и значок.
+      if (typeof v.startRecording === 'function') { v.startRecording({ source: 'ashen-game', hero: settings.hero }, REC_ON ? 18000 : 2700); if (REC_ON) showRecBadge(); }
       return v;
     }, (e) => { visionPromise = null; throw e; });
   }
@@ -745,8 +747,8 @@ document.addEventListener('visibilitychange', () => {
     pause('user');
   }
 });
-// [CONTROLS] запись кистей для разбора управления: адрес с ?rec=1, F8 — сохранить файл
-// (разбор: node dev/replay.mjs файл.json). Видео не пишется — только точки кистей и плеч.
+// [CONTROLS] запись кистей для разбора управления: F8 — сохранить последние 90 с (с ?rec=1 — всю запись
+// до 10 мин и значок). Разбор: node dev/replay.mjs файл.json. Видео не пишется — только точки кистей и плеч.
 let recBadge = null;
 function showRecBadge() {
   if (recBadge || typeof document === 'undefined') return;
@@ -759,15 +761,24 @@ function showRecBadge() {
 function saveRecording() {
   if (!vision || typeof vision.takeRecording !== 'function') return;
   const rec = vision.takeRecording({ note: 'F8' });
-  if (!rec || !rec.frames.length) return;
+  if (!rec || !rec.frames.length) { flashRecNote('Запись кистей пуста — включите камеру'); return; }
   const blob = new Blob([JSON.stringify(rec)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `ashen-hands-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  flashRecNote(`Сохранено: последние ${Math.round((rec.frames[rec.frames.length - 1].t - rec.frames[0].t) / 1000)} с кистей → ${a.download}`);
 }
-if (REC_ON) window.addEventListener('keydown', (e) => { if (e.code === 'F8' && !e.repeat) { e.preventDefault(); saveRecording(); } });
+function flashRecNote(text) {
+  if (typeof document === 'undefined') return;
+  const n = document.createElement('div');
+  n.textContent = text;
+  n.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:9999;font:13px/1.3 system-ui,sans-serif;color:#fff;background:rgba(20,24,30,.9);border:1px solid #c9a45c;padding:6px 12px;border-radius:4px;pointer-events:none';
+  document.body.appendChild(n);
+  setTimeout(() => n.remove(), 3500);
+}
+window.addEventListener('keydown', (e) => { if (e.code === 'F8' && !e.repeat) { e.preventDefault(); saveRecording(); } });
 window.addEventListener('keydown', (e) => {
   if (e.code !== 'Escape' || e.repeat) return;
   if (app.screen === 'playing') { e.preventDefault(); pause('user'); }
