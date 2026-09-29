@@ -934,6 +934,11 @@
 .ao-herocard:has(.ao-herocard__input:checked) .ao-herocard__name { color: var(--ao-gold-hi, #e3c792); }
 .ao-herocard:has(.ao-herocard__input:focus-visible) { outline: 2px solid var(--ao-gold-hi, #e3c792); outline-offset: 2px; }
 @media (max-width: 520px) { .ao-heroes { grid-template-columns: 1fr; } }
+@media (max-height: 720px) {
+  .ao-herocard__sub { display: none; }
+  .ao-herocard { padding: 0.4rem 0.6rem; }
+  .ao-heropick { margin: 0.1rem 0 0.5rem; }
+}
 .ao-menu__settings {
   margin-top: 1.15rem;
 }
