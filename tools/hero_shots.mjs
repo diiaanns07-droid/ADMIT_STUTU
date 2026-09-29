@@ -87,7 +87,8 @@ try {
   for (const hero of HEROES) {
     const ctx = await browser.newContext({ viewport: { width: W, height: H } });
     await routeVendor(ctx);
-    const settings = { hero, quality: 'medium' };
+    const settings = { hero, quality: argOf('--quality', 'medium') };
+    if (argOf('--zone')) settings.startZone = argOf('--zone');
     if (SHADING) settings.heroShading = SHADING;
     await ctx.addInitScript((s) => { try { localStorage.setItem('ashen-oath.settings.v1', JSON.stringify(s)); } catch (e) { /* ignore */ } }, settings);
     const page = await ctx.newPage();
@@ -99,7 +100,7 @@ try {
     await page.waitForFunction(() => { const a = __ASHEN__.worldAssets(); return a && a.pending === 0; }, null, { timeout: 60000 }).catch(() => {});
     if (hero !== 'ashen') await page.waitForFunction(() => { const h = __ASHEN__.hero(); return h && h.ready; }, null, { timeout: 90000 }).catch(() => log.push('hero not ready'));
     await sleep(2500);
-    const st = { hero: await page.evaluate(() => __ASHEN__.hero()) };
+    const st = { hero: await page.evaluate(() => __ASHEN__.hero()), showcase: await page.evaluate(() => (__ASHEN__.heroShowcase ? __ASHEN__.heroShowcase() : null)) };
     console.error('fps', await page.evaluate(() => __ASHEN__.fps)); await page.screenshot({ path: join(OUT, `${nn()}_${hero}_menu.png`), timeout: 120000 });
     // цена героя: среднее время heroModel.update (без рендера)
     st.updateMs = await page.evaluate(() => {

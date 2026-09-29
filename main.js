@@ -138,7 +138,7 @@ const worldLayout = world && world.layout ? world.layout : null;
 let heroModel = null;
 try {
   // [HERO] C5: общие настройки (атмосфера, шейдинг) — и для удалённого героя NET
-  configureHeroes({ atmosphere: world && world.atmosphere, shading: settings.heroShading, quality: settings.quality });
+  configureHeroes({ atmosphere: world && world.atmosphere, shading: settings.heroShading, quality: settings.quality, camera });
   if (world && world.hero) heroModel = createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, markers: world.hero.markers, atmosphere: world.atmosphere, shading: settings.heroShading, quality: settings.quality, hero: settings.hero, baseUrl: new URL('./assets/quaternius/', import.meta.url).href }); // [HERO] markers/atmosphere/shading
 } catch (e) { console.warn('[ASHEN] heroModel', e); }
 // [HERO] витрина героя в меню: кинематографичный свет и облёт (modules/heroShowcase.js); ошибка — прежняя камера меню
@@ -989,6 +989,7 @@ window.__ASHEN__ = Object.freeze({
   pushups: () => pushups.getDebug(),
   coach: () => coachStats.summary(),
   hero: () => (heroModel ? heroModel.state() : null),
+  heroShowcase: () => (heroShowcase ? { weight: heroShowcase.weight, lights: heroShowcase.group.children.filter((o) => o.isLight).map((l) => [l.name, +l.intensity.toFixed(1)]) } : null), // [HERO] QA
   heroAnchors: () => { if (!heroModel || !heroModel.getAnchors) return null; const a = heroModel.getAnchors(), v = new THREE.Vector3(); return Object.fromEntries(Object.entries(a).map(([k, o]) => { o.getWorldPosition(v); return [k, { x: +v.x.toFixed(3), y: +v.y.toFixed(3), z: +v.z.toFixed(3), attached: !!o.parent }]; })); }, // [HERO] C5
   net: () => (netSession ? netSession.debug() : null),             // [NET]
   netSession: () => netSession,                                    // [NET] для тестов и №3
