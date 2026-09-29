@@ -32,7 +32,13 @@ const CAMERA_STARTING = ['permission', 'loading'];
 const BOSS_NAME = 'Регент Нимба';
 const QUALITY_OPTIONS = [['low', 'Низкое'], ['medium', 'Среднее'], ['high', 'Высокое']];
 const QUALITY_VALUES = QUALITY_OPTIONS.map((q) => q[0]);
-const DEFAULT_SETTINGS = Object.freeze({ quality: 'medium', volume: 0.8, reducedMotion: false, sensitivity: 1 });
+const DEFAULT_SETTINGS = Object.freeze({ quality: 'medium', volume: 0.8, reducedMotion: false, sensitivity: 1, hero: 'ashen' });
+// [ASHEN_V3] выбор героя (модели — modules/heroModel.js)
+const HERO_OPTIONS = [
+  ['ashen', 'Пепельный страж', 'Плащ с руной, в стиле мира'],
+  ['elf', 'Эльфийка', 'Лесная стража в бирюзовом доспехе'],
+  ['dark', 'Тёмная чародейка', 'Магия затмения, фиолетовый наряд'],
+];
 const PENDING_MS = 4000;
 const IMPULSE_LATCH_MS = 900;
 const STRAFE_SEEN = 0.35;
@@ -53,7 +59,8 @@ const SCREEN_ANNOUNCE = {
 };
 
 const DEBUG_KEYS_TEXT =
-  'Клавиши отладки: WASD — ходьба, пробел — рывок по ходу, Q и E — рывок вбок, J — огонь, U — искра, I — рассечение, ' +
+  'Клавиши отладки: W — вперёд, A и D — поворот (в «Джойстике» — шаг вбок), S — стоп (в «Джойстике» — назад), ' +
+  'пробел — рывок по ходу, Q и E — рывок вбок, J — огонь, U — искра, I — рассечение, ' +
   'K — щит, F — парирование, L — выброс, O или P — сфера или призма; Esc — пауза. Это клавиатура, а не трекинг.';
 
 const PART_NAMES = {
@@ -243,14 +250,27 @@ function stickMark() {
 function burstRays() {
   return '<path class="f-arrow" d="M60 5v6M47 9l3 4.5M73 9l-3 4.5M40 18l4.5 2M80 18l-4.5 2"/>';
 }
+/* [V5] «Руль»: пунктир — уровень груди (выше — идём), дуга со стрелками над ладонью — поворот. */
+function steerMark() {
+  return '<path class="f-trail" d="M12 56 H52" stroke-dasharray="2 3"/>' +
+    '<path class="f-arrow" d="M25 15 Q37 5 49 15"/>' +
+    '<path class="f-arrow" d="M25 15 l0.5 -5.5 M25 15 l5.2 -1.2 M49 15 l-0.5 -5.5 M49 15 l-5.2 -1.2"/>';
+}
 
 const TUTORIAL = [
   {
+    // [V5] по умолчанию — «Руль»; поле stick — текст для схемы «Джойстик» (Настройки → Управление движением)
     key: 'strafe',
-    title: 'Левая рука — джойстик',
-    gesture: 'Поднимите левую руку и на миг замрите — это центр. Вверх — вперёд, вниз — назад, вбок — вбок.',
-    effect: 'Чуть от центра — шаг, дальше — бег. Руку на колени — герой встанет.',
-    svg: svgWrap(stickMark() + figureGroup({ left: 'up', hi: { armL: true } })),
+    title: 'Левая рука — руль',
+    gesture: 'Левая рука у груди — герой идёт, у плеча — бежит. Рука в сторону — поворот туда же.',
+    effect: 'Руку на колени — стоп. Замирать не нужно. У Регента рука вбок — обход по кругу.',
+    svg: svgWrap(steerMark() + figureGroup({ left: 'up', hi: { armL: true } })),
+    stick: {
+      title: 'Левая рука — джойстик',
+      gesture: 'Поднимите левую руку и на миг замрите — это центр. Вверх — вперёд, вниз — назад, вбок — вбок.',
+      effect: 'Чуть от центра — шаг, дальше — бег. Руку на колени — герой встанет.',
+      svg: svgWrap(stickMark() + figureGroup({ left: 'up', hi: { armL: true } })),
+    },
   },
   {
     key: 'dash',
@@ -320,6 +340,8 @@ function normSettings(s) {
     volume: isNum(o.volume) ? clamp(o.volume, 0, 1) : DEFAULT_SETTINGS.volume,
     reducedMotion: typeof o.reducedMotion === 'boolean' ? o.reducedMotion : DEFAULT_SETTINGS.reducedMotion,
     sensitivity: isNum(o.sensitivity) ? clamp(o.sensitivity, 0.5, 2) : DEFAULT_SETTINGS.sensitivity,
+    moveMode: o.moveMode === 'stick' ? 'stick' : 'steer', // [V5] по умолчанию «Руль»
+    hero: HERO_OPTIONS.some(([v]) => v === o.hero) ? o.hero : DEFAULT_SETTINGS.hero,
   };
 }
 
@@ -901,6 +923,29 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     return fs;
   }
 
+  // [ASHEN_V3] выбор героя: три карточки-радиокнопки; камера меню показывает выбранного
+  function buildHeroPick(prefix) {
+    const name = `${uid}-${prefix}-hero`;
+    const list = el('div', { class: 'ao-heroes' });
+    const fs = el('fieldset', { class: 'ao-field ao-fieldset ao-heropick' }, el('legend', { class: 'ao-field__legend', text: 'Герой' }), list);
+    const inputs = [];
+    for (const [value, label, sub] of HERO_OPTIONS) {
+      const input = el('input', { type: 'radio', name, value, class: 'ao-herocard__input' });
+      inputs.push(input);
+      list.append(el('label', { class: 'ao-herocard' }, input, el('span', { class: 'ao-herocard__name', text: label }), el('span', { class: 'ao-herocard__sub', text: sub })));
+      listen(input, 'change', () => { if (input.checked) invoke('onSettings', { hero: value }); });
+    }
+    const ctl = {
+      sync(settings, force) {
+        if (!force && fs.contains(doc.activeElement)) return;
+        for (const i of inputs) { const on = i.value === settings.hero; if (i.checked !== on) i.checked = on; }
+      },
+    };
+    listen(fs, 'focusout', (e) => { if (!fs.contains(e.relatedTarget) && state.settings) ctl.sync(state.settings, true); });
+    controls.push(ctl);
+    return fs;
+  }
+
   function buildMotion(prefix) {
     const id = `${uid}-${prefix}-motion`;
     const input = el('input', { type: 'checkbox', id, class: 'ao-check__input' });
@@ -919,10 +964,44 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     return node;
   }
 
+  // [V5] «Управление движением»: Руль (по умолчанию) / Джойстик — тот же сегментный переключатель, что у качества
+  const MOVE_OPTIONS = [['steer', 'Руль'], ['stick', 'Джойстик']];
+  function buildMoveMode(prefix) {
+    const name = `${uid}-${prefix}-movemode`;
+    const seg = el('div', { class: 'ao-seg' });
+    const hintId = `${name}-hint`;
+    // в меню места мало (там же выбор героя) — пояснение только в паузе; в меню — подсказка у кнопок
+    const hint = el('div', { class: 'ao-field__hint', id: hintId, hidden: prefix === 'menu' });
+    const fs = el('fieldset', { class: 'ao-field ao-fieldset', 'aria-describedby': hintId }, el('legend', { class: 'ao-field__legend', text: 'Управление движением' }), seg, hint);
+    const inputs = [];
+    const TIPS = {
+      steer: 'Руль: рука у груди — идти, у плеча — бег, вбок — поворот, вниз — стоп',
+      stick: 'Джойстик: поднять руку и замереть — центр, дальше вести в нужную сторону',
+    };
+    for (const [value, label] of MOVE_OPTIONS) {
+      const input = el('input', { type: 'radio', name, value, class: 'ao-seg__input' });
+      inputs.push(input);
+      seg.append(el('label', { class: 'ao-seg__opt', title: TIPS[value] }, input, el('span', { class: 'ao-seg__label', text: label })));
+      listen(input, 'change', () => { if (input.checked) invoke('onSettings', { moveMode: value }); });
+    }
+    const paintHint = (m) => setText(hint, `${TIPS[m === 'stick' ? 'stick' : 'steer']}.`);
+    const ctl = {
+      sync(settings, force) {
+        paintHint(settings.moveMode);
+        if (!force && fs.contains(doc.activeElement)) return;
+        for (const i of inputs) { const on = i.value === settings.moveMode; if (i.checked !== on) i.checked = on; }
+      },
+    };
+    listen(fs, 'focusout', (e) => { if (!fs.contains(e.relatedTarget) && state.settings) ctl.sync(state.settings, true); });
+    controls.push(ctl);
+    return fs;
+  }
+
   function buildSettings(keys, prefix) {
     const wrap = el('div', { class: 'ao-settings' });
     for (const key of keys) {
       if (key === 'quality') wrap.append(buildQuality(prefix));
+      else if (key === 'moveMode') wrap.append(buildMoveMode(prefix));
       else if (key === 'volume' && !cfg.showVolume) continue;
       else if (key === 'volume') {
         wrap.append(
@@ -986,7 +1065,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el('p', { class: 'ao-subtitle', text: 'Бой с Регентом Нимба' }),
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
       el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts), el('p', { class: 'ao-note', text: 'Играется сидя. Нужны веб-камера, Chrome или Edge и устойчивый стул.' })),
-      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['quality', 'volume', 'reducedMotion'], 'menu')),
+      buildHeroPick('menu'),
+      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'quality', 'volume', 'reducedMotion'], 'menu')),
       el('div', { class: 'ao-menu__foot' }, dbg, dbgKeys),
     );
     return {
@@ -1294,17 +1374,22 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           ),
         };
       }
+      // [V5] у карточки движения два текста: «Руль» (item) и «Джойстик» (item.stick) — по настройке
+      const figEl = el('div', { class: 'ao-tut-fig', html: item.svg });
+      const titleEl = el('h3', { class: 'ao-h3', text: item.title });
+      const gestEl = el('p', { class: 'ao-tut-gesture', text: item.gesture });
+      const effEl = el('p', { class: 'ao-tut-effect', text: item.effect });
       const card = el(
         'article',
         { class: 'ao-tut-card', 'data-key': item.key },
-        el('div', { class: 'ao-tut-fig', html: item.svg }),
-        el('h3', { class: 'ao-h3', text: item.title }),
-        el('p', { class: 'ao-tut-gesture', text: item.gesture }),
-        el('p', { class: 'ao-tut-effect', text: item.effect }),
+        figEl,
+        titleEl,
+        gestEl,
+        effEl,
         lean && lean.node,
         chip,
       );
-      cards[item.key] = { card, chip, chipText, lean };
+      cards[item.key] = { card, chip, chipText, lean, item, figEl, titleEl, gestEl, effEl, mode: 'steer' };
       grid.append(card);
     }
     const host = el('div', { class: 'ao-slothost' });
@@ -1364,6 +1449,15 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         else if (st === 'calibrating') text = 'Идёт калибровка.';
         else text = 'Камера ещё не готова.';
         setText(ready, text);
+        // [V5] тексты карточки движения — под выбранную схему («Руль» / «Джойстик»)
+        const moveMode = ctx.settings && ctx.settings.moveMode === 'stick' ? 'stick' : 'steer';
+        for (const c of Object.values(cards)) {
+          if (!c.item.stick || c.mode === moveMode) continue;
+          c.mode = moveMode;
+          const v = moveMode === 'stick' ? { ...c.item, ...c.item.stick } : c.item;
+          setText(c.titleEl, v.title); setText(c.gestEl, v.gesture); setText(c.effEl, v.effect);
+          c.figEl.innerHTML = v.svg; // только статические строки этого модуля
+        }
 
         const inp = ctx.input;
         const liveCv = !!inp && inp.source === 'cv' && !ctx.debug;
@@ -1463,7 +1557,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         'div',
         { class: 'ao-cols' },
         el('div', { class: 'ao-col ao-col--media' }, host, status.node, hint),
-        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
+        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
       ),
       dbgKeys,
       el('div', { class: 'ao-actions' }, resume.node, recal.node, restart.node, oathP.node, el('span', { class: 'ao-spacer' }), exit.node),
@@ -2068,7 +2162,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   function syncSettings(s) {
-    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}`;
+    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}`;
     state.settings = s;
     if (key === state.settingsKey) return;
     state.settingsKey = key;

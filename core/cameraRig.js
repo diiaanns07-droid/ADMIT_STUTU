@@ -13,7 +13,9 @@
 // колонна между героем и камерой подтягивает камеру к герою.
 //
 // update(dt, state) → { position, target, right, forward, yaw }
-//   state = { player:{x,y,z}, playerYaw, velocity:{x,z}, boss:{x,y,z}, engaged, impulse:{x,y,z}, colliders, groundY? }
+//   state = { player:{x,y,z}, playerYaw, velocity:{x,z}, boss:{x,y,z}, engaged, impulse:{x,y,z}, colliders, groundY?, steer? }
+//   steer — [V5] схема «Руль»: вне арены камера держится за спиной героя (курс = playerYaw, без задержки
+//   на «устойчивый бег»), поэтому «вперёд» всегда «в экран».
 //   colliders — круги и отрезки раскладки; groundY(x,z) — высота земли (камера держится над ней).
 // Совместимость V1: update(dt, player, boss, impulse) — это engaged.
 
@@ -33,6 +35,7 @@ export function createCameraRig(cfg) {
   const E = {
     followDistance: 4.6, followHeight: 2.35, followShoulder: 0.55, lookAhead: 2.2, lookHeight: 1.45,
     alignDelay: 0.6, alignSharpness: 1.6, alignMinSpeed: 1.2, alignMaxDiffDeg: 125,
+    steerSharpness: 6,  // [V5] «Руль»: камера догоняет курс героя (1/с; на повороте отстаёт на ~20°)
     blendTime: 0.6, collisionMargin: 0.35, groundClearance: 0.9,
     ...(cfg && cfg.explore ? cfg.explore : {}),
   };
@@ -109,9 +112,13 @@ export function createCameraRig(cfg) {
     return { pos, target, yaw: wrapAngle(s.angle + Math.PI) };
   }
 
-  function follow(dt, player, vel) {
+  function follow(dt, player, vel, steerYaw) {
     const sp = vel ? Math.hypot(vel.x || 0, vel.z || 0) : 0;
-    if (sp >= E.alignMinSpeed) {
+    if (fin(steerYaw)) {
+      // [V5] «Руль»: курс задаёт рука — камера сразу идёт за спиной героя
+      s.heading = wrapAngle(s.heading + wrapAngle(steerYaw - s.heading) * (1 - Math.exp(-E.steerSharpness * dt)));
+      s.steady = 0; s.lastMoveDir = null;
+    } else if (sp >= E.alignMinSpeed) {
       const md = Math.atan2(vel.x, vel.z);
       const diff = Math.abs(wrapAngle(md - s.heading)) * 180 / Math.PI;
       const turnDelta = s.lastMoveDir === null ? 0 : Math.abs(wrapAngle(md - s.lastMoveDir)) * 180 / Math.PI;
@@ -189,7 +196,7 @@ export function createCameraRig(cfg) {
     const L = lockOn(dt, player, boss);
     // в бою heading тянется за lock-on, чтобы выход в explore начинался с того же ракурса
     if (w > 0.999) { s.heading = L.yaw; s.steady = 0; }
-    const F = w < 0.999 ? follow(dt, player, st.velocity) : null;
+    const F = w < 0.999 ? follow(dt, player, st.velocity, st.steer && fin(st.playerYaw) ? st.playerYaw : null) : null;
     // [V3] курс управления — не направление взгляда смещённой вбок камеры (≈5° косо), а луч
     // «Регент → герой» в lock-on и курс камеры за спиной в explore; при переходе — смесь
     s.inputYaw = F ? wrapAngle(s.heading + wrapAngle(L.yaw - s.heading) * w) : L.yaw;

@@ -430,6 +430,17 @@ export function createTrackingHud(opts) {
     const anc = isObj(stick.anchor) ? stick.anchor : null;
     const hxS = hand ? rx + num(hand.x, 0.5) * rw : 0, hyS = hand ? ry + num(hand.y, 0.5) * rh : 0;
     const k = mini ? 0.8 : 1;
+    if (stick.mode === 'steer' && anc) {
+      // [V5] «Руль»: линия «шаг» на уровне груди — ладонь выше неё ведёт героя (колечко — нейтраль руля)
+      const ly = ry + num(anc.y, 0.5) * rh, lx = rx + num(anc.x, 0.5) * rw;
+      const half = clamp(num(stick.full, 0.16) * rh * 1.6, 16, rw * 0.3);
+      ctx.lineWidth = lw;
+      ctx.globalAlpha = stick.engaged ? 0.35 : 0.75;
+      ctx.strokeStyle = stick.engaged ? STEEL : GOLD_HI;
+      ctx.setLineDash(mini ? DASH_FINE : DASH_LINE);
+      ctx.beginPath(); ctx.moveTo(lx - half, ly); ctx.lineTo(lx + half, ly); ctx.stroke();
+      ctx.setLineDash(NO_DASH);
+    }
     if (stick.engaged && anc) {
       const cx = rx + num(anc.x, 0.5) * rw, cy = ry + num(anc.y, 0.5) * rh;
       const full = clamp(num(stick.full, 0.16) * rh, 10, rh * 0.45);
@@ -491,7 +502,7 @@ export function createTrackingHud(opts) {
       // до хватки: пульс у кисти; «замри» — дуга заполняется, пока рука неподвижна
       const r = (mini ? 7 : 11);
       ctx.lineWidth = lw;
-      if (stick.rest) {
+      if (stick.rest || stick.mode === 'steer') {
         ctx.globalAlpha = 0.35;
         ctx.strokeStyle = DIM;
         ctx.setLineDash(DASH_FINE);

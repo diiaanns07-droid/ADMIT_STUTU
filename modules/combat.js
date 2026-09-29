@@ -113,6 +113,13 @@ export const DEFAULT_COMBAT_CONFIG = deepFreeze({
     orbitStrafe: true,      // в арене боковой ход — по окружности вокруг Регента (дистанция не «уплывает»)
     cruiseHold: 0.5,        // автобег: спринт держался столько на полной скорости…
     cruiseMaxTime: 20,      // …и рука опущена — герой бежит сам (до стольких секунд), пока руку не поднимут
+    // [ASHEN_V5] схема «Руль» (input.moveMode / input.stick.mode === 'steer'): вне арены moveX — поворот
+    // героя, moveZ (0..1) — ход вперёд по его курсу, камера держится за спиной; в арене — обход Регента
+    // по кругу (moveX) и сближение (moveZ), хода назад нет (только рывок). Автобега нет: рука вниз — стоп.
+    steerTurnRate: 2.4,     // рад/с при полном повороте (≈140°/с; разворот на месте ≈1,3 с)
+    steerTurnSlow: 0.5,     // на крутом повороте ход вперёд × (1 − steerTurnSlow·поворот²) — радиус меньше
+    steerStrafeWalk: 0.6,   // в арене: обход при шаге (при беге — полный)
+    steerApproachCut: 1.4,  // в арене: сближение × (1 − cut·|поворот|) — рука вбок = чистый обход
     energyRegen: 20,        // ед./с
     energyRegenDelay: 0.5,  // пауза регена после траты энергии
     hitGrace: 0.35,         // неуязвимость после полученного удара
@@ -555,7 +562,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       seenIds: new Set(),
       seenOrder: [],
       stats: { damageDealt: 0, damageTaken: 0, dodges: 0, blocks: 0 },
-      input: { moveX: 0, moveZ: 0, attack: false, shield: false, valid: false, conjure: null, viewYaw: NaN },
+      input: { moveX: 0, moveZ: 0, attack: false, shield: false, valid: false, conjure: null, viewYaw: NaN, steer: false },
       engaged: engaged0,
       frame: { yaw: null, stickA: 0, idle: 0, target: null },
       move: { sprintT: 0, sprint: 0, dir: null, fullT: 0, cruise: null, blockedT: 0 },   // [V4] спринт и автобег
@@ -611,6 +618,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     return Math.atan2(f.x, f.z);
   }
   function viewYaw() {
+    if (st.input.steer && !st.engaged) return st.p.yaw;     // [V5] «Руль»: оси ввода — курс героя (камера за спиной)
     const F = st.frame;
     return !st.engaged && C.player.frameLock && F && F.yaw !== null ? F.yaw : rawViewYaw();
   }
@@ -619,7 +627,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     const F = st.frame;
     if (!F) return;
     const m = Math.hypot(ix, iz);
-    if (st.engaged || !C.player.frameLock) { F.yaw = null; F.idle = 0; return; }
+    if (st.engaged || !C.player.frameLock || st.input.steer) { F.yaw = null; F.idle = 0; return; }
     if (m <= C.player.moveDeadzone) {
       F.idle += h;
       if (F.idle >= C.player.frameLockIdle) F.yaw = null;
@@ -731,6 +739,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         locomotion: locomotion(),
         sprint: Math.round(st.move.sprint * 1000) / 1000,
         cruise: !!st.move.cruise,
+        moveMode: st.input.steer ? 'steer' : 'stick',   // [V5] схема движения (камера за спиной в «Руле»)
         lockedOn: st.engaged,
         encounter: st.engaged ? 'engaged' : 'explore',
         parryWindow: C.parry.window > 0 ? clamp(P.parryWin / C.parry.window, 0, 1) : 0,
@@ -807,6 +816,10 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     }
     const vy = Number(input.viewYaw);
     st.input.viewYaw = Number.isFinite(vy) ? vy : NaN;
+    // [V5] схема движения: явная (main.js — из настроек) или по форме стика; нет данных — прежняя
+    const mm = input.moveMode === 'steer' || input.moveMode === 'stick' ? input.moveMode
+      : isPlainObject(input.stick) && (input.stick.mode === 'steer' || input.stick.mode === 'stick') ? input.stick.mode : null;
+    if (mm) st.input.steer = mm === 'steer';
     let mx = Number(input.moveX);
     if (!Number.isFinite(mx)) mx = 0;
     let mz = Number(input.moveZ);
@@ -1214,6 +1227,18 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       }
     } else {
       let ix = st.input.moveX, iz = st.input.moveZ;
+      // [V5] «Руль»: вне арены moveX поворачивает героя, moveZ ведёт его вперёд по курсу (оси ввода =
+      // курс героя, см. viewYaw); в арене — обход Регента по кругу и сближение, без хода назад
+      if (st.input.steer) {
+        const turn = clamp(ix, -1, 1), fwd = Math.max(0, iz);
+        if (!st.engaged) {
+          P.yaw = wrapAngle(P.yaw - turn * cfg.moveSign * cfg.steerTurnRate * h);
+          ix = 0; iz = fwd * (1 - cfg.steerTurnSlow * turn * turn);
+        } else {
+          ix = turn * (fwd >= 0.99 ? 1 : cfg.steerStrafeWalk);
+          iz = fwd * clamp(1 - cfg.steerApproachCut * Math.abs(turn), 0, 1);
+        }
+      }
       updateFrame(h, ix, iz);
       const m = Math.min(1, Math.hypot(ix, iz));
       let tvx = 0, tvz = 0;
@@ -1222,7 +1247,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       // [V4] автобег: после спринта рука опущена — герой бежит сам; поднять руку (хватка) — стоп
       if (M.cruise) {
         M.cruise.t += h;
-        const why = st.engaged ? 'engaged' : st.input.handUp || m > dz ? 'hand' : M.cruise.t > cfg.cruiseMaxTime ? 'timeout' : M.blockedT > 0.35 ? 'blocked' : P.shielding ? 'shield' : null;
+        const why = st.engaged ? 'engaged' : st.input.steer ? 'mode' : st.input.handUp || m > dz ? 'hand' : M.cruise.t > cfg.cruiseMaxTime ? 'timeout' : M.blockedT > 0.35 ? 'blocked' : P.shielding ? 'shield' : null;
         if (why) { emit('cruise_end', playerPos(), { reason: why }); M.cruise = null; M.sprint = why === 'hand' ? M.sprint : 0; M.blockedT = 0; }
       }
       if (M.cruise && m <= dz) {
@@ -1265,7 +1290,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         const spdS = spd + (cfg.sprintSpeed - cfg.runSpeed) * st.move.sprint * clamp((mm - 0.9) / 0.1, 0, 1);
         tvx = ux * spdS * k; tvz = uz * spdS * k;
         M.fullT = M.sprint >= 0.999 ? M.fullT + h : 0;
-      } else if (!st.engaged && M.sprint >= 0.999 && M.fullT >= cfg.cruiseHold && st.input.handDown && M.dir !== null && !P.shielding) {
+      } else if (!st.engaged && !st.input.steer && M.sprint >= 0.999 && M.fullT >= cfg.cruiseHold && st.input.handDown && M.dir !== null && !P.shielding) {
         M.cruise = { dir: M.dir, t: 0 }; M.blockedT = 0;
         emit('cruise_start', playerPos(), { direction: M.dir });
         tvx = Math.sin(M.dir) * cfg.sprintSpeed; tvz = Math.cos(M.dir) * cfg.sprintSpeed;
@@ -1375,6 +1400,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     const P = st.p;
     let target = null;
     if (st.engaged) { const f = toBossUnit(); target = Math.atan2(f.x, f.z); }
+    else if (st.input.steer) return;                          // [V5] «Руль»: курс задаёт рука, не скорость
     else if (P.vx * P.vx + P.vz * P.vz > 0.16) target = Math.atan2(P.vx, P.vz);
     if (target === null) return;
     const diff = wrapAngle(target - P.yaw);

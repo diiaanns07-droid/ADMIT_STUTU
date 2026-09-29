@@ -88,6 +88,7 @@ export const DEFAULT_STICK_CONFIG = Object.freeze({
   wristBlend: 0.35,        // скорость выучивания смещения «запястье → ладонь» (1/с·10)
   wristMinSamples: 5,      // запястьем ведём, только если смещение выучено хотя бы по стольким кадрам
   wristMaxGapMs: 800,      // запястьем ведём не дольше столько после потери кисти
+  freeDash: 0,             // 1 — рывок ловится и без хватки (схема «Руль», core/steerStick.js: там свой гейт)
 });
 
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -319,7 +320,7 @@ export function createLeftStick(configPatch = {}) {
     s.anchorDisp = s.anchor ? toDisplay({ x: s.anchor.x + ref.x, y: s.anchor.y + ref.y }, aspect) : null;
 
     // рывок — только когда джойстик взят, руки не заняты и кисть не у нижнего края
-    detectDash(t, S, !!(s.engaged && !obs.busy && h.y < cfg.restMaxY));
+    detectDash(t, S, !!((s.engaged || cfg.freeDash > 0) && !obs.busy && h.y < cfg.restMaxY));
 
     s.outHist.push({ t, x: out.x, z: out.z });
     while (s.outHist.length > 40 || (s.outHist.length && t - s.outHist[0].t > 700)) s.outHist.shift();
@@ -338,7 +339,7 @@ export function createLeftStick(configPatch = {}) {
   }
 
   function fireDash(t, ux, uy, speed, t0, tier) {
-    s.pendingDash = { t, x: s.mirror ? -ux : ux, z: -uy, speed, tier };
+    s.pendingDash = { t, t0, x: s.mirror ? -ux : ux, z: -uy, speed, tier };
     s.dashArmed = false; s.slowSince = null; s.flick = null;
     s.dashBlockedUntil = t + cfg.dashRefractoryMs;
     s.counters.dashes++;
@@ -361,7 +362,7 @@ export function createLeftStick(configPatch = {}) {
       } else s.slowSince = null;
       return;
     }
-    if (!allowed || t < s.dashBlockedUntil || n < 3 || !s.anchor) { if (!allowed) s.flick = null; return; }
+    if (!allowed || t < s.dashBlockedUntil || n < 3 || (!s.anchor && !(cfg.freeDash > 0))) { if (!allowed) s.flick = null; return; }
     const now = s.hist[n - 1];
     // рука перед началом дёрга стояла спокойно: пронос через центр при развороте — не дёрг.
     // Прошлое неизвестно (история только что сброшена сбоем или сменой источника) — тоже не дёрг.

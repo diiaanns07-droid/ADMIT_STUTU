@@ -919,6 +919,21 @@
 .ao-menu__cta .ao-note {
   margin-top: 0.55rem;
 }
+.ao-heropick { margin: 0.2rem 0 0.9rem; }
+.ao-heroes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.45rem; }
+.ao-herocard {
+  position: relative; display: flex; flex-direction: column; gap: 0.15rem; cursor: pointer;
+  padding: 0.55rem 0.6rem; border: 1px solid rgba(201, 164, 92, 0.28); border-radius: 3px;
+  background: rgba(10, 12, 18, 0.55); transition: border-color 0.15s, background 0.15s;
+}
+.ao-herocard:hover { border-color: rgba(227, 199, 146, 0.6); }
+.ao-herocard__input { position: absolute; opacity: 0; pointer-events: none; }
+.ao-herocard__name { font-weight: 600; color: var(--ao-text); font-size: 0.92rem; }
+.ao-herocard__sub { font-size: 0.74rem; line-height: 1.3; color: var(--ao-muted, #8d97a6); }
+.ao-herocard:has(.ao-herocard__input:checked) { border-color: var(--ao-gold-hi, #e3c792); background: rgba(201, 164, 92, 0.14); box-shadow: inset 0 0 0 1px rgba(227, 199, 146, 0.35); }
+.ao-herocard:has(.ao-herocard__input:checked) .ao-herocard__name { color: var(--ao-gold-hi, #e3c792); }
+.ao-herocard:has(.ao-herocard__input:focus-visible) { outline: 2px solid var(--ao-gold-hi, #e3c792); outline-offset: 2px; }
+@media (max-width: 520px) { .ao-heroes { grid-template-columns: 1fr; } }
 .ao-menu__settings {
   margin-top: 1.15rem;
 }

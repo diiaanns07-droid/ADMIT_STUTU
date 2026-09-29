@@ -2,6 +2,8 @@
 // Включается только явно.
 //   WASD — джойстик (как левая рука: 8 направлений, вектор нормирован), пробел — рывок по направлению
 //   джойстика (из нейтрали — вперёд), Q/E — рывок влево/вправо;
+//   [V5] в схеме «Руль» (setMoveMode('steer'), по умолчанию): W — вперёд (бег; ~1 с ровно — спринт),
+//   A/D — поворот героя влево/вправо (в арене — обход Регента), S — стоп (перекрывает W);
 //   J — огонь (удержание), U — «Искра», I — «Рассечение» (направление по зажатой A/D, иначе вправо),
 //   K — щит (удержание), F — парирование, L — выброс (обе руки),
 //   O / P (удерживать) — слепить сферу / призму, отпустить — бросить;
@@ -11,7 +13,7 @@
 // В режиме CV main.js этот адаптер не опрашивает.
 
 const SIGIL_KEYS = { KeyZ: 'clap', KeyX: 'gate', KeyC: 'frame', KeyV: 'delta', KeyB: 'cor' };
-const DEMO_HINTS = ['ok_ring_open', 'shield_palm', 'burst_short', 'rune_open', 'orb_facing', 'slash_slow', 'parry_slow', 'hand_far'];
+const DEMO_HINTS = ['ok_ring_open', 'steer_low', 'shield_palm', 'burst_short', 'rune_open', 'orb_facing', 'slash_slow', 'parry_slow', 'steer_lean', 'hand_far'];
 // руны правой руки по цифрам (порядок совпадает с RUNE_IDS боя; лишние цифры ничего не делают)
 export const RUNE_KEYS = ['ignis', 'fulgur', 'orbis', 'stella', 'spira', 'lemnis', 'caret', 'vee', 'clepsydra', 'alpha'];
 const DIGITS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0'];
@@ -29,6 +31,7 @@ export function createDebugInput(target = window) {
   let pendingHint = null;
   let hintIdx = 0;
   let enabled = false;
+  let moveMode = 'steer';   // [V5] 'steer' — «Руль», 'stick' — джойстик
   let conj = null;          // { kind, t0 } — удерживается O (сфера) или P (призма)
   let pendingThrow = null;
   const CONJ_KEYS = { KeyO: 'orb', KeyP: 'prism' };
@@ -38,6 +41,11 @@ export function createDebugInput(target = window) {
   };
 
   function stickVec() {
+    if (moveMode === 'steer') {
+      // «Руль»: x — поворот (A/D), z — ход вперёд (W; S — стоп). Не нормируется: поворот и ход независимы.
+      const turn = (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0);
+      return { x: turn, z: held.has('KeyW') && !held.has('KeyS') ? 1 : 0 };
+    }
     let x = (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0);
     let z = (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0);
     const l = Math.hypot(x, z);
@@ -115,7 +123,10 @@ export function createDebugInput(target = window) {
       const v = stickVec();
       frame.moveX = v.x;
       frame.moveZ = v.z;
-      frame.stick = { engaged: true, x: v.x, z: v.z, hand: null, anchor: null, deadzone: 0, full: 0 };
+      frame.moveMode = moveMode;
+      frame.stick = moveMode === 'steer'
+        ? { mode: 'steer', engaged: v.z > 0 || v.x !== 0, x: v.x, z: v.z, turn: v.x, fwd: v.z, rest: !(v.z > 0 || v.x !== 0), gait: v.z > 0 ? 'run' : 'idle', hand: null, anchor: null, deadzone: 0, full: 0 }
+        : { engaged: true, x: v.x, z: v.z, hand: null, anchor: null, deadzone: 0, full: 0 };
       if (pendingDashDir) {
         frame.dashDir = pendingDashDir;
         frame.dash = Math.abs(pendingDashDir.x) >= 0.25 ? Math.sign(pendingDashDir.x) : 0;
@@ -168,6 +179,7 @@ export function createDebugInput(target = window) {
     clear,
     getStatus,
     setEnabled(v) { enabled = !!v; clear(); },
+    setMoveMode(m) { moveMode = m === 'stick' ? 'stick' : 'steer'; },
     get enabled() { return enabled; },
     dispose() {
       target.removeEventListener('keydown', onKeyDown);

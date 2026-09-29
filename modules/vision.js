@@ -49,6 +49,8 @@ export const DEFAULT_VISION_CONFIG = Object.freeze({
   // [ASHEN_V2] Корпус больше не двигает героя: движение — левая рука-джойстик (core/leftStick.js),
   // рывок — дёрг левой рукой. true возвращает прежний стрейф/сближение/рывок корпусом (для тестов и отката).
   torsoMove: false,
+  // [V5] схема движения левой рукой: 'steer' — «Руль» (core/steerStick.js), 'stick' — джойстик (core/leftStick.js)
+  moveMode: 'steer',
   // Маппинг
   mirror: true,            // true: наклон игрока к СВОЕЙ правой стороне → moveX>0 (как в зеркальном превью)
   swapHands: false,        // для камер/драйверов, которые сами зеркалят поток
@@ -943,10 +945,20 @@ export async function createVision(options = {}) {
     if (!handsInterp || typeof handsInterp.configure !== 'function') return;
     const k = clamp(finite(cfg.sensitivity) ? cfg.sensitivity : 1, 0.5, 2);
     try {
-      handsInterp.configure({ stick: { deadzone: 0.4 / Math.sqrt(k), walkFull: 1.05 / k, runOn: 1.2 / k, runOff: 0.95 / k, full: 1.6 / k } });
+      handsInterp.configure({
+        stick: { deadzone: 0.4 / Math.sqrt(k), walkFull: 1.05 / k, runOn: 1.2 / k, runOff: 0.95 / k, full: 1.6 / k },
+        // [V5] «Руль»: выше чувствительность — уже мёртвая зона и короче ход руки до полного поворота
+        steer: { dzOn: 0.2 / Math.sqrt(k), dzOff: 0.13 / Math.sqrt(k), turnFull: Math.max(0.62 / k, 0.2 / Math.sqrt(k) + 0.12) },
+      });
     } catch { /* ignore */ }
   }
   applyStickSensitivity();
+  // [V5] схема движения (настройка «Управление движением: Руль / Джойстик»)
+  function applyMoveMode() {
+    if (!handsInterp || typeof handsInterp.configure !== 'function') return;
+    try { handsInterp.configure({ moveMode: cfg.moveMode === 'stick' ? 'stick' : 'steer' }); } catch { /* ignore */ }
+  }
+  applyMoveMode();
   let handsStatus = { enabled: !!cfg.hands, ready: false, error: null, delegate: null };
 
   const st = { status: 'idle', message: 'Камера не включена', progress: 0, emittedProgress: 0, code: null };
@@ -1870,6 +1882,7 @@ export async function createVision(options = {}) {
     interp.configure(patch);
     if (patch.handGestures) handsInterp.configure(patch.handGestures);
     if ('sensitivity' in patch) applyStickSensitivity();
+    if ('moveMode' in patch) applyMoveMode();
     if ('overlay' in patch && !cfg.overlay) clearOverlay();
     if ('mediaPipe' in patch && engine) console.warn('[vision] новые URL MediaPipe применятся после dispose/createVision');
     updateMinInterval();

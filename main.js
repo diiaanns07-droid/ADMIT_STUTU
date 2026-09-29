@@ -18,7 +18,7 @@ import { createDebugInput, emptyInput } from './core/debugInput.js';
 import { createBossBrain } from './modules/boss.js';
 import { createCombat } from './modules/combat.js';
 import { createWorld } from './modules/world.js';
-import { createHeroModel } from './modules/heroModel.js';
+import { createHeroModel, HEROES } from './modules/heroModel.js';
 import { createEffects } from './modules/effects.js';
 import { createUI } from './modules/ui.js';
 import { createVision } from './modules/vision.js';
@@ -57,6 +57,8 @@ function sanitizeSettings(patch, base) {
   if (Number.isFinite(+patch.volume) && patch.volume !== null && patch.volume !== '') out.volume = Math.max(0, Math.min(1, +patch.volume));
   if (Number.isFinite(+patch.sensitivity) && patch.sensitivity !== null && patch.sensitivity !== '') out.sensitivity = Math.max(0.5, Math.min(2, +patch.sensitivity));
   if ('reducedMotion' in patch) out.reducedMotion = !!patch.reducedMotion;
+  if (patch.moveMode === 'steer' || patch.moveMode === 'stick') out.moveMode = patch.moveMode; // [V5] «Руль» / «Джойстик»
+  if (typeof patch.hero === 'string' && HEROES[patch.hero]) out.hero = patch.hero;
   return out;
 }
 function loadSettings() {
@@ -118,10 +120,10 @@ const app = {
 // [ASHEN_V2] мир создаётся первым: его раскладка (коллайдеры, земля, арена, старт) нужна бою и камере.
 const world = make('world.js', () => createWorld({ THREE, scene, renderer, camera, config }));
 const worldLayout = world && world.layout ? world.layout : null;
-// [ASHEN_V3] герой на модели KayKit «Mage» (CC0) с анимациями; не загрузилась — процедурный герой
+// [ASHEN_V3] выбор героя: процедурный Пепельный страж или VRoid-героини (CC0, VRM) с анимациями Quaternius
 let heroModel = null;
 try {
-  if (world && world.hero) heroModel = createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, url: new URL('./assets/kaykit/Mage.glb', import.meta.url).href });
+  if (world && world.hero) heroModel = createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, hero: settings.hero, baseUrl: new URL('./assets/quaternius/', import.meta.url).href });
 } catch (e) { console.warn('[ASHEN] heroModel', e); }
 const bossBrain = make('boss.js', () => createBossBrain(config));
 const combat = make('combat.js', () => createCombat({ config, bossBrain, layout: worldLayout }));
@@ -282,6 +284,7 @@ function rigState(snap, impulse) {
     player: P.position, playerYaw: P.yaw, velocity: P.velocity, boss: snap.boss.position,
     engaged: P.encounter !== 'explore', impulse, colliders: worldLayout ? worldLayout.colliders : null,
     groundY: worldLayout ? worldLayout.groundY : null,   // [ASHEN_V3] камера над рельефом большой карты
+    steer: P.moveMode === 'steer',                        // [V5] «Руль»: камера держится за спиной героя
   };
 }
 
@@ -317,7 +320,7 @@ async function ensureVision() {
   if (vision) return vision;
   if (!visionPromise) {
     visionPromise = createVision({
-      video, overlayCanvas: overlay, config: { ...config.vision, sensitivity: settings.sensitivity },
+      video, overlayCanvas: overlay, config: { ...config.vision, sensitivity: settings.sensitivity, moveMode: settings.moveMode },
       onStatus: (s) => { lastVisionStatus = s; },
     }).then((v) => { vision = v; return v; }, (e) => { visionPromise = null; throw e; });
   }
@@ -391,6 +394,7 @@ const callbacks = {
 
   onSettings(patch) {
     const next = sanitizeSettings(patch, settings);
+    if (heroModel && next.hero !== settings.hero) heroModel.setHero(next.hero);
     const motionChanged = next.reducedMotion !== settings.reducedMotion;
     Object.assign(settings, next); // мутация на месте: config.settings === settings
     applySettings();
@@ -484,7 +488,8 @@ function applySettings() {
     if (postfx) { try { postfx.setQuality(settings.quality); } catch (e) { /* ignore */ } }
   }
   effects.setVolume(app.screen === 'paused' ? 0 : gameVolume());
-  if (vision) vision.configure({ sensitivity: settings.sensitivity });
+  if (vision) vision.configure({ sensitivity: settings.sensitivity, moveMode: settings.moveMode });
+  if (typeof debugInput.setMoveMode === 'function') debugInput.setMoveMode(settings.moveMode); // [V5] WASD как «Руль»
 }
 
 // ---------------------------------------------------------------- зеркало рук героя
@@ -711,6 +716,7 @@ function frame(now) {
       // [ASHEN_V2] стик — в осях камеры: «вперёд на стике» = «вперёд на экране»
       if (Number.isFinite(rig.inputYaw)) input.viewYaw = rig.inputYaw;   // [V3] курс управления без плечевого сдвига
       else if (Number.isFinite(rig.yaw)) input.viewYaw = rig.yaw;
+      input.moveMode = settings.moveMode;   // [V5] «Руль»: moveX — поворот героя, moveZ — вперёд по его курсу
       try { combat.update(dt, input); } catch (e) { console.error('[ASHEN] combat.update', e); }
     }
     events = adaptEvents(combat.drainEvents());
@@ -775,6 +781,13 @@ function frame(now) {
     camera.position.set(Math.sin(a) * r, y, Math.cos(a) * r);
     const ly = 3.6 - (3.6 - start.target.y) * e;
     camera.lookAt(start.target.x * e, ly, start.target.z * e);
+  } else if (app.screen === 'menu' && world && world.hero) {
+    // [ASHEN_V3] меню: камера у выбранного героя (панель меню слева — герой в правой части кадра)
+    menuAngle += dt * (settings.reducedMotion ? 0.02 : 0.08);
+    const hp = world.hero.root.position, hy = world.hero.root.rotation.y + 0.45 * Math.sin(menuAngle);
+    camera.position.set(hp.x + Math.sin(hy) * 3.0, hp.y + 1.45, hp.z + Math.cos(hy) * 3.0);
+    const rx = Math.cos(hy), rz = -Math.sin(hy);     // «вправо» для камеры, смотрящей на героя
+    camera.lookAt(hp.x - rx * 0.95, hp.y + 1.1, hp.z - rz * 0.95); // смотрим левее героя — он справа от панели
   } else if (app.screen === 'menu' || !lastSnapshot) {
     menuAngle += dt * (settings.reducedMotion ? 0.02 : 0.06);
     camera.position.set(Math.sin(menuAngle) * 12.5, 4.0, Math.cos(menuAngle) * 12.5);

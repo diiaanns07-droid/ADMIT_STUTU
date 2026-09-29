@@ -265,6 +265,7 @@ export function createBattleHud({ canvas } = {}) {
     const dd = input && isObj(input.dashDir) ? input.dashDir : null;
     if (dd && (num(dd.x, 0) || num(dd.z, 0))) { stickFx.dashT = 0; stickFx.dashX = num(dd.x, 0); stickFx.dashY = -num(dd.z, 0); }
     stickFx.dashT += dtR;
+    if (st && st.mode === 'steer') { drawSteerHud(st, snap, rm); return; }
     const R = clamp(Math.min(W, H) * 0.075, 40, 66);
     const cx = W / 2, cy = H - R - 26;
     const A = stickFx.alpha;
@@ -335,6 +336,115 @@ export function createBattleHud({ canvas } = {}) {
     }
     ctx.globalAlpha = base * A;
     tag(label, cx, cy + R + 10, col, `600 11px ${MONO}`, 'center');
+    ctx.globalAlpha = base;
+  }
+
+  // [V5] Схема «Руль» (core/steerStick.js): дуга-руль сверху — сколько герой поворачивает (серая
+  // полоса в середине — мёртвая зона, точка — где сейчас рука), столбик в центре — высота левой руки
+  // и ступени «ШАГ» / «БЕГ»; ниже — что делает герой и что сделать, чтобы пойти. Занимает то же место,
+  // что индикатор джойстика: низ экрана по центру, ниже карточки «ОШИБКА».
+  function drawSteerHud(st, snap, rm) {
+    const base = ctx.globalAlpha, A = stickFx.alpha;
+    const R = clamp(Math.min(W, H) * 0.075, 40, 66);
+    const cx = W / 2, cy = H - 58 - R * 0.3;
+    const engaged = !!st.engaged;
+    const turn = engaged ? clamp(num(st.turn, num(st.x, 0)), -1, 1) : 0;
+    const fwd = engaged ? clamp(num(st.fwd, num(st.z, 0)), 0, 1) : 0;
+    const P = snap && snap.player;
+    const sprint = engaged && P && num(P.sprint, 0) > 0.5;
+    const arena = !!(P && P.encounter === 'engaged');
+    const running = engaged && st.gait === 'run';
+    const col = sprint ? EMBER : running ? GOLD_HI : BLUE;
+    const lv = isObj(st.levels) ? st.levels : { walkOn: -0.55, walkOff: -0.72, runOn: 0.05, runOff: -0.12 };
+    const tz = isObj(st.turnZone) ? st.turnZone : { dzOn: 0.2, dzOff: 0.13, full: 0.62 };
+    const SPAN = 1.15, TOP = -Math.PI / 2;           // полный поворот — ±66° по дуге
+    const pulse = rm ? 0.75 : 0.55 + 0.45 * Math.abs(Math.sin(t * 3.2));
+    // подложка: полукруг над столбиком
+    ctx.globalAlpha = base * A * 0.55; ctx.fillStyle = PLATE;
+    ctx.beginPath(); ctx.arc(cx, cy, R + 12, Math.PI, 0); ctx.lineTo(cx + R + 12, cy + R * 0.3 + 4); ctx.lineTo(cx - R - 12, cy + R * 0.3 + 4); ctx.closePath(); ctx.fill();
+    // дуга-руль: дорожка, мёртвая зона, заливка поворота, ручка
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = base * A * 0.35; ctx.strokeStyle = STEEL; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.arc(cx, cy, R, TOP - SPAN, TOP + SPAN); ctx.stroke();
+    const dzA = SPAN * clamp(num(tz.dzOn, 0.2) / Math.max(0.05, num(tz.full, 0.62)), 0, 0.8);
+    ctx.globalAlpha = base * A * 0.55; ctx.strokeStyle = 'rgba(201,164,92,0.55)'; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.arc(cx, cy, R, TOP - dzA, TOP + dzA); ctx.stroke();
+    if (Math.abs(turn) > 0.01) {
+      ctx.globalAlpha = base * A * 0.95; ctx.strokeStyle = col; ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.arc(cx, cy, R, Math.min(TOP, TOP + turn * SPAN), Math.max(TOP, TOP + turn * SPAN)); ctx.stroke();
+    }
+    ctx.lineCap = 'butt';
+    const ka = TOP + turn * SPAN;
+    ctx.globalAlpha = base * A; ctx.fillStyle = engaged ? col : DIM;
+    ctx.beginPath(); ctx.arc(cx + Math.cos(ka) * R, cy + Math.sin(ka) * R, engaged ? 6.5 : 5, 0, Math.PI * 2); ctx.fill();
+    if (Number.isFinite(st.lateral) && st.hand) {
+      // где сейчас рука по горизонтали (сырая, до мёртвой зоны и сглаживания)
+      const ha = TOP + clamp(st.lateral / Math.max(0.05, num(tz.full, 0.62)), -1.25, 1.25) * SPAN;
+      ctx.globalAlpha = base * A * 0.8; ctx.fillStyle = STEEL;
+      ctx.beginPath(); ctx.arc(cx + Math.cos(ha) * (R - 11), cy + Math.sin(ha) * (R - 11), 2.6, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = base * A * 0.8; ctx.fillStyle = DIM; ctx.font = `600 12px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const ea = SPAN + 0.2;
+    ctx.fillText('←', cx + Math.cos(TOP - ea) * (R + 2), cy + Math.sin(TOP - ea) * (R + 2));
+    ctx.fillText('→', cx + Math.cos(TOP + ea) * (R + 2), cy + Math.sin(TOP + ea) * (R + 2));
+    // столбик высоты руки: ниже «ШАГ» — стоп, выше «БЕГ» — бег
+    const bw = 10, x0 = cx - bw / 2, yb = cy + R * 0.3 - 4, yt = cy - R * 0.66;
+    const vMin = num(lv.walkOff, -0.72) - 0.6, vMax = num(lv.runOn, 0.05) + 0.45;
+    const yOf = (v) => yb - (clamp(v, vMin, vMax) - vMin) / (vMax - vMin) * (yb - yt);
+    const yWalk = yOf(num(lv.walkOn, -0.55)), yRun = yOf(num(lv.runOn, 0.05));
+    ctx.globalAlpha = base * A * 0.8; ctx.fillStyle = 'rgba(5,7,11,0.85)'; ctx.fillRect(x0, yt, bw, yb - yt);
+    ctx.globalAlpha = base * A * 0.3; ctx.fillStyle = BLUE; ctx.fillRect(x0, yRun, bw, yWalk - yRun);
+    ctx.fillStyle = GOLD; ctx.fillRect(x0, yt, bw, yRun - yt);
+    const level = Number.isFinite(st.level) ? st.level : null;
+    if (engaged) {
+      const yl = level !== null ? yOf(level) : running ? yOf(num(lv.runOn, 0.05) + 0.2) : yOf(num(lv.walkOn, -0.55) + (num(lv.runOn, 0.05) - num(lv.walkOn, -0.55)) * clamp((fwd - 0.3) / 0.3, 0, 1));
+      ctx.globalAlpha = base * A * 0.9; ctx.fillStyle = fwd > 0 ? col : STEEL;
+      ctx.fillRect(x0 + 2, yl, bw - 4, yb - yl);
+    }
+    ctx.globalAlpha = base * A * 0.5; ctx.strokeStyle = STEEL; ctx.lineWidth = 1; ctx.strokeRect(x0 + 0.5, yt + 0.5, bw - 1, yb - yt - 1);
+    // пороги: «ШАГ» пульсирует, пока рука ниже него
+    const wantUp = !engaged && !!st.hand && !st.busy;
+    ctx.globalAlpha = base * A * (wantUp ? pulse : 0.8); ctx.strokeStyle = wantUp ? GOLD_HI : STEEL; ctx.lineWidth = wantUp ? 2 : 1.2;
+    ctx.beginPath(); ctx.moveTo(x0 - 5, yWalk); ctx.lineTo(x0 + bw + 5, yWalk); ctx.stroke();
+    ctx.globalAlpha = base * A * 0.8; ctx.strokeStyle = GOLD; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(x0 - 5, yRun); ctx.lineTo(x0 + bw + 5, yRun); ctx.stroke();
+    ctx.font = `600 9px ${MONO}`; ctx.textAlign = 'left';
+    ctx.globalAlpha = base * A * 0.85; ctx.fillStyle = wantUp ? GOLD_HI : STEEL; ctx.fillText('ШАГ', x0 + bw + 8, yWalk);
+    ctx.fillStyle = GOLD; ctx.fillText('БЕГ', x0 + bw + 8, yRun);
+    // метка руки на столбике (треугольник слева)
+    if (level !== null && st.hand) {
+      const yh = yOf(level);
+      ctx.globalAlpha = base * A; ctx.fillStyle = engaged ? STEEL : GOLD_HI;
+      ctx.beginPath(); ctx.moveTo(x0 - 2, yh); ctx.lineTo(x0 - 10, yh - 5); ctx.lineTo(x0 - 10, yh + 5); ctx.closePath(); ctx.fill();
+      if (wantUp && yh > yWalk + 8) {
+        // стрелка «выше» от метки руки к порогу «ШАГ»
+        const ya = rm ? 0 : (t * 14) % 6;
+        ctx.globalAlpha = base * A * pulse; ctx.strokeStyle = GOLD_HI; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(x0 - 14, yh - 8 - ya + 4); ctx.lineTo(x0 - 10, yh - 12 - ya); ctx.lineTo(x0 - 6, yh - 8 - ya + 4); ctx.stroke();
+      }
+    }
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    // подписи: что делает герой / что сделать
+    let l1 = '', c1 = STEEL, l2 = '', c2 = GOLD;
+    const pace = sprint ? 'СПРИНТ' : running ? 'БЕГ' : 'ШАГ';
+    if (!st.hand) { l1 = 'СТОП'; c1 = DIM; l2 = 'ПОДНИМИТЕ ЛЕВУЮ РУКУ, ЧТОБЫ ИДТИ'; }
+    else if (st.busy || st.hold === 'cast') { l1 = 'ЧАРЫ · ГЕРОЙ СТОИТ'; c1 = STEEL; }
+    else if (!engaged) { l1 = 'СТОП — РУКА ОПУЩЕНА'; c1 = STEEL; l2 = 'ПОДНИМИТЕ ЛЕВУЮ РУКУ, ЧТОБЫ ИДТИ'; }
+    else if (st.hold === 'shield') { l1 = Math.abs(turn) > 0.05 ? `ЩИТ · ПОВОРОТ ${turn < 0 ? '←' : '→'}` : 'ЩИТ · ГЕРОЙ СТОИТ'; c1 = BLUE; }
+    else if (Math.abs(turn) > 0.05) { l1 = `${arena ? 'ОБХОД' : 'ПОВОРОТ'} ${turn < 0 ? '←' : '→'} · ${pace}`; c1 = col; }
+    else { l1 = `${arena ? 'К РЕГЕНТУ' : 'ВПЕРЁД'} · ${pace}`; c1 = col; }
+    if (engaged && st.source === 'wrist') l1 += ' · ПО ЗАПЯСТЬЮ';
+    // вспышка рывка — дуга в сторону дёрга
+    if (stickFx.dashT < 0.45) {
+      const k = 1 - stickFx.dashT / 0.45, a0 = Math.atan2(stickFx.dashY, stickFx.dashX);
+      ctx.globalAlpha = base * A * k; ctx.strokeStyle = EMBER; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(cx, cy, R + 8 + (1 - k) * 14, a0 - 0.55, a0 + 0.55); ctx.stroke();
+      l1 = 'РЫВОК'; c1 = EMBER;
+    }
+    const ly = cy + R * 0.3 + 10;
+    ctx.globalAlpha = base * A;
+    tag(l1, cx, ly, c1, `600 12px ${MONO}`, 'center');
+    if (l2) { ctx.globalAlpha = base * A * (rm ? 0.9 : 0.65 + 0.35 * pulse); tag(l2, cx, ly + 19, c2, `600 11px ${MONO}`, 'center'); }
     ctx.globalAlpha = base;
   }
 

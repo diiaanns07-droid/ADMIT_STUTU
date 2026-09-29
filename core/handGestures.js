@@ -25,6 +25,7 @@
 //    считается относительно роста плеч (наклон вперёд всем корпусом не бросает чары).
 
 import { createLeftStick } from './leftStick.js';
+import { createSteerStick } from './steerStick.js';
 
 export const HAND_GESTURES_VERSION = 'ASHEN_V3-hands-6';
 
@@ -205,6 +206,12 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   hintTwoHandMs: 900,      // почти-сфера/призма держится столько
   hintThrowHoldMs: 3500,   // чары держатся без броска столько — напомнить, как бросить
   hintWeakPush: 1.1,       // кисти выросли хотя бы так, но не до pushRatio — «резче»
+  // [V5] «Руль» (движение левой рукой): подсказки реже обычных — движение не должно спамить
+  hintSteerMs: 900,        // руку подняли, но она держится ниже груди столько — «подними до груди»
+  hintSteerLowBand: 0.65,  //   «ниже груди» — не глубже стольких sw под порогом шага (ниже — рука просто лежит)
+  hintSteerCooldownMs: 20000,
+  hintLeanSw: 0.3,         // корпус ушёл вбок на столько sw, а рука не рулит…
+  hintLeanMs: 700,         //   …столько — «поворачивай рукой, а не корпусом»
 });
 
 export const RUNES = Object.freeze({
@@ -614,6 +621,15 @@ function classify(f, prev, cfg) {
 export function createHandGestures(configPatch = {}) {
   let cfg = mergeConfig(DEFAULT_HAND_CONFIG, configPatch);
   const stick = createLeftStick(configPatch && configPatch.stick);
+  // [V5] схема движения левой рукой: 'stick' — джойстик (хватка «замри»), 'steer' — «Руль»
+  // (высота ладони — шаг/бег/стоп, смещение вбок — поворот; core/steerStick.js). Игра по умолчанию
+  // включает «Руль» через vision (config.defaultSettings.moveMode); сам модуль по умолчанию — джойстик.
+  const steer = createSteerStick(configPatch && configPatch.steer);
+  let moveMode = configPatch && configPatch.moveMode === 'steer' ? 'steer' : 'stick';
+  const mover = () => (moveMode === 'steer' ? steer : stick);
+  // «насколько левая рука сейчас рулит» — для гейтов щита, парирования, чар: у джойстика — длина
+  // выхода; у руля — только поворот (подъём руки для шага сам по себе щит и чары не запрещает)
+  const steering = (so) => (!so || !so.engaged ? 0 : so.mode === 'steer' ? Math.abs(so.turn || 0) : Math.hypot(so.x, so.z));
 
   function newHand(side) {
     return {
@@ -649,6 +665,7 @@ export function createHandGestures(configPatch = {}) {
       conj: newConj(),
     };
     stick.reset();
+    steer.reset();
   }
   reset();
 
@@ -791,7 +808,7 @@ export function createHandGestures(configPatch = {}) {
       R.releasedAt = null;
     }
     if (oR) {
-      const lSteering = (() => { const so = stick.read(t); return so.engaged && Math.hypot(so.x, so.z) > 0.2; })();
+      const lSteering = steering(mover().read(t)) > 0.2;
       if (stillCharging(L) && !lSteering && t - R.releasedAt < cfg.pairWindowMs) return; // ждём левую — выброс двумя
       if (t >= st.burstBlockedUntil) firePulse('burst', t, { power: R.releaseCharge, both: false, hand: 'right' });
       R.releasedAt = null;
@@ -801,8 +818,7 @@ export function createHandGestures(configPatch = {}) {
       // подсказки парирования — только если левая явно толкнула к камере (а не просто расслабила кулак)
       const meant = t - L.pushAt <= 500;
       if (L.palmFacing === 'camera') {
-        const so = stick.read(t);
-        const calm = Math.hypot(so.x, so.z) < cfg.parryStickMax;
+        const calm = steering(mover().read(t)) < cfg.parryStickMax;
         if (t - L.releasedAt <= cfg.parryWindowMs && t >= st.parryBlockedUntil && !st.conj.on && (L.releaseHeldMs || 0) >= cfg.parryFistMs && calm) {
           firePulse('parry', t, { fromCharge: L.releaseCharge });
           st.parryBlockedUntil = t + cfg.parryRefractoryMs;
@@ -858,8 +874,7 @@ export function createHandGestures(configPatch = {}) {
     S.badSince = null;
     if (S.on) return;
     if (S.openSince === null) S.openSince = t;
-    const out = stick.read(t);
-    const mag = Math.hypot(out.x, out.z);
+    const mag = steering(mover().read(t));
     const still = mag < cfg.shieldStickMax;
     const pushed = t - L.pushAt <= cfg.shieldPushKeepMs && mag < cfg.shieldStickStart;
     if (pushed || (cfg.shieldHoldMs > 0 && still && t - S.openSince >= cfg.shieldHoldMs)) S.on = true;
@@ -879,10 +894,10 @@ export function createHandGestures(configPatch = {}) {
   }
 
   // ───────── [ТВИСТ «ОШИБКА»] подсказки ─────────
-  function hint(code, t, data) {
+  function hint(code, t, data, cooldownMs) {
     const C = st.coach;
     if (t < C.gapUntil || t < (C.until[code] ?? -Infinity)) return;
-    C.until[code] = t + cfg.hintCooldownMs;
+    C.until[code] = t + (fin(cooldownMs) ? cooldownMs : cfg.hintCooldownMs);
     C.gapUntil = t + cfg.hintGapMs;
     C.counts[code] = (C.counts[code] || 0) + 1;
     st.counters.hints++;
@@ -924,9 +939,18 @@ export function createHandGestures(configPatch = {}) {
     if (sustained('ok_fingers', ringBent, t, cfg.hintNearMs + 150)) hint('ok_fingers', t, { side: 'right' });
     // щит левой: открытая ладонь стоит к камере, но толчка не было
     const lSeen = L.present && L.lastSeen === t && ready(L, t) && !busy;
-    const stk = stick.read(t);
-    const calmPalm = lSeen && L.rawShape === 'open' && L.palmFacing === 'camera' && !st.shield.on && !(stk && stk.engaged && Math.hypot(stk.x, stk.z) > cfg.shieldStickMax);
+    const stk = mover().read(t);
+    // в «Руле» поднятая ладонь — это ход вперёд, а не почти-щит: подсказку про толчок не даём
+    const calmPalm = moveMode !== 'steer' && lSeen && L.rawShape === 'open' && L.palmFacing === 'camera' && !st.shield.on && !(stk && stk.engaged && steering(stk) > cfg.shieldStickMax);
     if (sustained('shield_push', calmPalm, t, 1600)) hint('shield_push', t, { side: 'left' });
+    // [V5] «Руль»: руку подняли, но не до груди — «подними выше»; поворот наклоном корпуса — «рукой вбок»
+    if (moveMode === 'steer') {
+      const lv = stk && stk.levels, lvl = stk && fin(stk.level) ? stk.level : null;
+      const low = !busy && lSeen && lv && lvl !== null && !stk.engaged && lvl < lv.walkOn && lvl > lv.walkOn - cfg.hintSteerLowBand && !!stk.rising;
+      if (sustained('steer_low', low, t, cfg.hintSteerMs)) hint('steer_low', t, { side: 'left' }, cfg.hintSteerCooldownMs);
+      const leanTurn = !busy && stk && stk.engaged && Math.abs(stk.lean || 0) > cfg.hintLeanSw && Math.abs(stk.turn || 0) < 0.15;
+      if (sustained('steer_lean', leanTurn, t, cfg.hintLeanMs)) hint('steer_lean', t, { side: 'left' }, cfg.hintSteerCooldownMs);
+    }
     // двумя руками: почти-сфера / почти-призма / чары держатся без броска
     const ev = C.lastEval;
     if (!C.on && ev) {
@@ -1190,7 +1214,7 @@ export function createHandGestures(configPatch = {}) {
       return;
     }
     if (!e) { C.pending = null; return; }
-    if (!C.pending) { const so = stick.read(t); if (so.engaged && Math.hypot(so.x, so.z) > cfg.conjureStickMax) return; }
+    if (!C.pending && steering(mover().read(t)) > cfg.conjureStickMax) return;
     if (!C.pending || C.pending.kind !== e.kind) { C.pending = { kind: e.kind, since: t }; return; }
     if (t - C.pending.since >= cfg.conjureOnMs) {
       Object.assign(C, { on: true, kind: e.kind, onAt: t, lastGood: t, lastT: t, size: e.size, charge: 0, centerRaw: e.center, pending: null });
@@ -1432,8 +1456,8 @@ export function createHandGestures(configPatch = {}) {
       const pw = isObj(obs.poseWrists) && isObj(obs.poseWrists.left) ? obs.poseWrists.left : null;
       const inFrame = pw && fin(pw.x) && fin(pw.y) && pw.x > 0.03 && pw.x < 0.97 && pw.y > 0.03 && pw.y < 0.95; // поза «додумывает» точки за краем
       const wrist = inFrame && (!fin(pw.visibility) || pw.visibility >= 0.5) ? { x: pw.x * st.aspect, y: pw.y } : null;
-      stick.push({ t, hand: pc ? { x: pc.x, y: pc.y, scale: L.scale } : null, wrist, body: bc, mirror: st.mirror, aspect: st.aspect, busy: st.conj.on || !!st.conj.pending || t < st.conj.quietUntil || !!(st.twin && st.twin.phase === 'drawing') });
-      const dsh = stick.takeDash();
+      mover().push({ t, hand: pc ? { x: pc.x, y: pc.y, scale: L.scale } : null, wrist, body: bc, mirror: st.mirror, aspect: st.aspect, busy: st.conj.on || !!st.conj.pending || t < st.conj.quietUntil || !!(st.twin && st.twin.phase === 'drawing') });
+      const dsh = mover().takeDash();
       if (dsh) firePulse('dashDir', t, { x: dsh.x, z: dsh.z, speed: dsh.speed });
       updateShield(t);
       checkSlowSwipe(t);
@@ -1471,8 +1495,10 @@ export function createHandGestures(configPatch = {}) {
     const busy = C.on || !!C.pending || t < C.quietUntil;
     const thr = live('throw', t);
     const dd = live('dashDir', t), sp = live('slash', t), sg = live('sigil', t), hintP = live('hint', t);
-    const stk = stick.read(t);
-    const stickOut = busy ? { ...stk, engaged: false, x: 0, z: 0, moveX: 0, moveZ: 0 } : stk;
+    const stk = mover().read(t);
+    let stickOut = busy ? { ...stk, engaged: false, x: 0, z: 0, moveX: 0, moveZ: 0, turn: 0, fwd: 0, hold: 'cast' } : stk;
+    // [V5] «Руль»: поднят щит — герой стоит и держит блок (поворот остаётся)
+    if (stickOut.mode === 'steer' && stickOut.engaged && hold(L) && st.shield.on) stickOut = { ...stickOut, z: 0, moveZ: 0, fwd: 0, hold: 'shield' };
     return {
       available: fresh && (L.present || R.present),
       left: handState(L, t), right: handState(R, t),
@@ -1514,7 +1540,15 @@ export function createHandGestures(configPatch = {}) {
     return f;
   }
 
-  function configure(patch) { cfg = mergeConfig(cfg, patch); if (patch && patch.stick) stick.configure(patch.stick); }
+  function configure(patch) {
+    cfg = mergeConfig(cfg, patch);
+    if (patch && patch.stick) stick.configure(patch.stick);
+    if (patch && patch.steer) steer.configure(patch.steer);
+    if (patch && (patch.moveMode === 'steer' || patch.moveMode === 'stick') && patch.moveMode !== moveMode) {
+      moveMode = patch.moveMode;
+      mover().reset();   // новая схема начинает с чистого листа (без старой хватки/подъёма)
+    }
+  }
 
   function getDebug() {
     const h = (H) => ({
@@ -1531,7 +1565,8 @@ export function createHandGestures(configPatch = {}) {
       left: h(st.hands.left), right: h(st.hands.right),
       stroke: st.stroke ? { points: st.stroke.pts.length, ms: st.lastObsT - st.stroke.t0 } : null,
       lastRecognition: st.lastRecognition,
-      stick: stick.getDebug(),
+      moveMode,
+      stick: mover().getDebug(),
       conjure: { on: st.conj.on, kind: st.conj.kind, pending: st.conj.pending ? st.conj.pending.kind : null, size: Math.round(st.conj.size * 100) / 100, charge: Math.round(st.conj.charge * 100) / 100, eval: st.conj.lastEval },
       counters: { ...st.counters },
       hints: { ...st.coach.counts },

@@ -110,6 +110,10 @@ export const config = {
     volume: 0.6,
     reducedMotion: false,
     sensitivity: 1.0,
+    // [V5] схема движения левой рукой: 'steer' — «Руль» (высота руки — ход, в сторону — поворот),
+    // 'stick' — прежний джойстик (поднять руку и замереть — центр)
+    moveMode: 'steer',
+    hero: 'ashen',          // выбранный герой: ashen | warrior | elf (modules/heroModel.js)
   },
 
   settings: null,            // заполняет main.js (живой объект)
