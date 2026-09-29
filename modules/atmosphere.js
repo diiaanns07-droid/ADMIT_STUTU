@@ -46,6 +46,27 @@ export const FOG = {
   glow: 1.0,
 };
 
+// [BDO] Настроение зоны (контракт с №5 [FOREST]): atmosphere.setZoneMood({ weight, sky, fog, sun, exposure }).
+// weight 0..1 — насколько герой внутри зоны; смена плавная (атмосфера сама сглаживает ~1 с).
+// Поля необязательны: чего нет — берётся из пресета ZONE_MOODS.brightForest.
+//   sky:  { top, horizon, corona, coronaIntensity, sunDisc 0..1 (0 — чёрный диск затмения, 1 — светлое солнце) }
+//   fog:  { color, glow, density (абсолютная, по умолчанию 0.02 у затмения) }
+//   sun:  { color, intensity (множитель ключа), env (множитель IBL) }
+//   exposure: множитель экспозиции (1 — как везде)
+//   grade: { shadow:[r,g,b], high:[r,g,b], sat, contrast } — цветокоррекция postfx (тёплые света, бирюзовые тени)
+// Цвета — число 0xRRGGBB, строка '#rrggbb' или THREE.Color.
+export const ZONE_MOODS = {
+  brightForest: {
+    sky: { top: 0x3f86b8, horizon: 0xcfe3d2, corona: 0xfff1cf, coronaIntensity: 0.55, sunDisc: 1 },
+    fog: { color: 0x9fbfae, glow: 0xffe7b8, density: 0.0065 },
+    sun: { color: 0xffe2b0, intensity: 1.55, env: 3.2 },
+    exposure: 1.22,
+    grade: { shadow: [-0.012, 0.018, 0.022], high: [0.03, 0.018, -0.012], sat: 1.12, contrast: 0.22 },
+  },
+};
+// Общее состояние настроения (читает core/postfx.js для грейда); пишет только atmosphere.update.
+export const ZONE_MOOD_STATE = { w: 0, grade: { shadow: [0, 0, 0], high: [0, 0, 0], sat: 1, contrast: 0 } };
+
 const NOISE_GLSL = /* glsl */`
 float ashH12( vec2 p ) {
   vec3 p3 = fract( vec3( p.xyx ) * 0.1031 );
@@ -145,6 +166,7 @@ uniform float uFlash;
 uniform vec3 uFlashDir;
 uniform float uBake;
 uniform vec3 uGround;
+uniform float uSunDisc;
 varying vec3 vDir;
 ${NOISE_GLSL}
 void main() {
@@ -191,7 +213,7 @@ void main() {
 
   // Диск и раскалённая кромка; «бусина» — точка, где из-за диска выглядывает свет.
   float disc = 1.0 - smoothstep( uDiscR - 0.0016, uDiscR, ang );
-  col = mix( col, vec3( 0.0035, 0.0045, 0.0065 ), disc );
+  col = mix( col, mix( vec3( 0.0035, 0.0045, 0.0065 ), uCorona * uCoronaI * 6.0 + vec3( 2.2, 2.0, 1.7 ), uSunDisc ), disc );
   col += uCorona * uCoronaI * exp( - abs( rimD ) / 0.0024 ) * 3.2;
   float beadA = pa - 2.35;
   beadA = atan( sin( beadA ), cos( beadA ) );
@@ -299,8 +321,16 @@ export function createAtmosphere({ THREE, scene, renderer, camera, parent, G, M,
     orbit: 0, orbitPrev: null, follow: 0, followTarget: 0,
     red: 0, dawn: 0, dark: 0, flash: 0, flashT: 0, nextFlash: 14 + rnd() * 16, strike: 0, time: 0,
     clear: 0,          // [ASHEN_V3] 0..1 — местное прояснение (эльфийская деревня): туман реже и теплее
-    mood: null,        // [FOREST] настроение зоны (Сияющий лес): { weight, fog, fogGlow, fogDensity, sun:{color,intensity} }
   };
+  // [BDO] настроение зоны (setZoneMood): target — куда идём, w — сглаженный вес
+  const mood = {
+    target: 0, w: 0,
+    top: col(0x000000), horizon: col(0x000000), corona: col(0x000000), coronaI: 1, sunDisc: 0,
+    fogColor: col(0x000000), fogGlow: col(0x000000), fogDensity: FOG.density,
+    sunColor: col(0x000000), sunI: 1, env: 1, exposure: 1,
+    grade: { shadow: [0, 0, 0], high: [0, 0, 0], sat: 1, contrast: 0 },
+  };
+  const baseExposure = renderer && Number.isFinite(renderer.toneMappingExposure) ? renderer.toneMappingExposure : 1;
 
   const dirFrom = (azDeg, elDeg) => new THREE.Vector3(
     Math.sin(deg(azDeg)) * Math.cos(deg(elDeg)), Math.sin(deg(elDeg)), Math.cos(deg(azDeg)) * Math.cos(deg(elDeg))).normalize();
@@ -353,7 +383,7 @@ export function createAtmosphere({ THREE, scene, renderer, camera, parent, G, M,
     uDomeLow: { value: P.domeLow.clone() }, uDomeHigh: { value: P.domeHigh.clone() }, uDomeCorona: { value: P.domeCorona.clone() },
     uCorona: { value: P.corona.clone() }, uCoronaI: { value: 1 }, uDiscR: { value: deg(ECLIPSE.discRadius) }, uBead: { value: 0 },
     uTime: { value: 0 }, uFlash: { value: 0 }, uFlashDir: { value: new THREE.Vector3(0, 0.2, -1).normalize() },
-    uBake: { value: 0 }, uGround: { value: P.ground.clone() },
+    uBake: { value: 0 }, uGround: { value: P.ground.clone() }, uSunDisc: { value: 0 },
   };
   const skyMat = Mx(new THREE.ShaderMaterial({
     uniforms: skyUniforms, vertexShader: SKY_VERT, fragmentShader: SKY_FRAG,
@@ -586,19 +616,39 @@ varying vec3 vAshWorldPos;`;
     fog.color.copy(fb);
     scene.background && scene.background.isColor && scene.background.copy(fb);
     fogA.w = FOG.density * (1 - state.dawn * 0.5) * (1 - 0.45 * state.clear);
-    // [FOREST] настроение зоны: туман бирюзово-золотой и реже, сияние к солнцу тёплое (вес — близость к зоне)
-    const zm = state.mood, zw = zm && Number.isFinite(zm.weight) ? clamp(zm.weight, 0, 1) : 0;
-    if (zm) {
-      if (zw > 0 && zm.fog) { fb.lerp(zm.fog, zw); fog.color.copy(fb); if (scene.background && scene.background.isColor) scene.background.copy(fb); }
-      if (zw > 0) fogA.w *= lerp(1, Number.isFinite(zm.fogDensity) ? zm.fogDensity : 1, zw);
-      const gc = zm.fogGlow || P.fogGlow;
-      fogGlow.x = lerp(P.fogGlow.r, gc.r, zw); fogGlow.y = lerp(P.fogGlow.g, gc.g, zw); fogGlow.z = lerp(P.fogGlow.b, gc.b, zw);
-    }
     fogLow.w = state.red * 0.8 * (1 - state.dawn);
     skyUniforms.uFogLow.value.w = fogLow.w;
     rayUniforms.uColor.value.copy(cor).multiplyScalar(0.8).lerp(P.key, 0.4);
     rayUniforms.uIntensity.value = 0.085 * (1 + state.dawn * 1.5) * (1 - state.dark * 0.5);
     rimGroups.boss.p.w = lerp(0.08, 0.35, state.red);
+
+    // [BDO] настроение зоны поверх фаз: небо, туман, ключ, IBL и экспозиция
+    mood.w += (mood.target - mood.w) * dampK(state.reduced ? 2.4 : 1.35, dt);
+    if (Math.abs(mood.w - mood.target) < 1e-3) mood.w = mood.target;
+    const mw = mood.w;
+    skyUniforms.uDomeLow.value.copy(P.domeLow).lerp(mood.horizon, mw);
+    skyUniforms.uDomeHigh.value.copy(P.domeHigh).lerp(mood.top, mw);
+    skyUniforms.uDomeCorona.value.copy(P.domeCorona).lerp(mood.corona, mw * 0.6);
+    skyUniforms.uSunDisc.value = mood.sunDisc * mw;
+    if (mw > 0) {
+      fb.lerp(mood.fogColor, mw);
+      fog.color.copy(fb);
+      scene.background && scene.background.isColor && scene.background.copy(fb);
+      fogA.w = lerp(fogA.w, mood.fogDensity, mw);
+      cor.lerp(mood.corona, mw);
+      skyUniforms.uCoronaI.value = lerp(skyUniforms.uCoronaI.value, mood.coronaI, mw);
+      fogLow.w *= 1 - mw;
+      skyUniforms.uFogLow.value.w = fogLow.w;
+      rayUniforms.uIntensity.value *= 1 + mw * 1.2;
+    }
+    const fg = skyUniforms.uFogGlow.value.copy(P.fogGlow).lerp(mood.fogGlow, mw);
+    fogGlow.x = fg.r; fogGlow.y = fg.g; fogGlow.z = fg.b;
+    if (envTexture && 'environmentIntensity' in scene && scene.environment === envTexture) scene.environmentIntensity = 0.25 * lerp(1, mood.env, mw);
+    if (renderer) renderer.toneMappingExposure = baseExposure * lerp(1, mood.exposure, mw);
+    const MG = ZONE_MOOD_STATE.grade, gg = mood.grade;
+    ZONE_MOOD_STATE.w = mw;
+    for (let i = 0; i < 3; i++) { MG.shadow[i] = gg.shadow[i] * mw; MG.high[i] = gg.high[i] * mw; }
+    MG.sat = lerp(1, gg.sat, mw); MG.contrast = gg.contrast * mw;
 
     // Молния раз в 20–40 с (не в reducedMotion: вспышки — риск для светочувствительных).
     if (!state.reduced) {
@@ -619,17 +669,11 @@ varying vec3 vAshWorldPos;`;
     }
     skyUniforms.uFlash.value = fl * 1.4;
     state.strike *= Math.exp(-dt / 0.06);
-    const keyCol = _keyCol.copy(P.key).lerp(P.coronaRed, state.red * 0.3).lerp(P.keyDawn, state.dawn);
-    let keyI = 3.0 * (1 + state.dawn) * (1 - state.dark * 0.4), skyFl = fl * 0.25 + state.strike * 0.4;
-    if (zw > 0) {   // [FOREST] в лесу ключ — тёплое солнце, дальние молнии не видны
-      if (zm.sun && zm.sun.color) keyCol.lerp(zm.sun.color, zw);
-      if (zm.sun && Number.isFinite(zm.sun.intensity)) keyI = lerp(keyI, zm.sun.intensity, zw);
-      skyFl *= 1 - zw;
-    }
+    const keyCol = _keyCol.copy(P.key).lerp(P.coronaRed, state.red * 0.3).lerp(P.keyDawn, state.dawn).lerp(mood.sunColor, mw);
     return {
       keyColor: keyCol,
-      keyIntensity: keyI,
-      skyFlash: skyFl,
+      keyIntensity: 3.0 * (1 + state.dawn) * (1 - state.dark * 0.4) * lerp(1, mood.sunI, mw),
+      skyFlash: fl * 0.25 + state.strike * 0.4,
     };
   }
   const _keyCol = new THREE.Color();
@@ -643,8 +687,43 @@ varying vec3 vAshWorldPos;`;
   }
   // [ASHEN_V3] местное прояснение воздуха (0 — как везде, 1 — центр эльфийской деревни)
   function setLocalClear(k) { state.clear = clamp(Number(k) || 0, 0, 1); }
-  // [FOREST] настроение зоны: объект живой (зона меняет weight каждый кадр); null — выключить
-  function setZoneMood(m) { state.mood = m && typeof m === 'object' ? m : null; }
+
+  // [BDO] настроение зоны для №5 [FOREST] (см. ZONE_MOODS выше). Можно звать каждый кадр:
+  // цвета перечитываются только если объект настроения сменился (или передан новый).
+  let moodSrc = null;
+  const setCol = (dst, v, fallback) => {
+    try {
+      if (v && v.isColor) dst.copy(v);
+      else if (typeof v === 'number' || typeof v === 'string') dst.set(v);
+      else dst.set(fallback);
+    } catch (e) { dst.set(fallback); }
+  };
+  const numOr = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const vec3Or = (v, d) => (Array.isArray(v) && v.length >= 3 && v.every((x) => Number.isFinite(x)) ? v : d);
+  function setZoneMood(m) {
+    if (!m || typeof m !== 'object') { mood.target = 0; return; }
+    mood.target = clamp(numOr(m.weight, 1), 0, 1);
+    if (m === moodSrc && !m.dirty) return;
+    moodSrc = m;
+    const D = ZONE_MOODS.brightForest;
+    const sky = m.sky || {}, fg = m.fog || {}, sun = m.sun || {}, gr = m.grade || {};
+    setCol(mood.top, sky.top, D.sky.top);
+    setCol(mood.horizon, sky.horizon, D.sky.horizon);
+    setCol(mood.corona, sky.corona, D.sky.corona);
+    mood.coronaI = numOr(sky.coronaIntensity, D.sky.coronaIntensity);
+    mood.sunDisc = clamp(numOr(sky.sunDisc, D.sky.sunDisc), 0, 1);
+    setCol(mood.fogColor, fg.color, D.fog.color);
+    setCol(mood.fogGlow, fg.glow, D.fog.glow);
+    mood.fogDensity = Math.max(0, numOr(fg.density, D.fog.density));
+    setCol(mood.sunColor, sun.color, D.sun.color);
+    mood.sunI = Math.max(0, numOr(sun.intensity, D.sun.intensity));
+    mood.env = Math.max(0, numOr(sun.env, D.sun.env));
+    mood.exposure = clamp(numOr(m.exposure, D.exposure), 0.2, 4);
+    mood.grade.shadow = vec3Or(gr.shadow, D.grade.shadow).slice(0, 3);
+    mood.grade.high = vec3Or(gr.high, D.grade.high).slice(0, 3);
+    mood.grade.sat = numOr(gr.sat, D.grade.sat);
+    mood.grade.contrast = numOr(gr.contrast, D.grade.contrast);
+  }
 
   function dispose() {
     if (state.disposed) return;
@@ -657,6 +736,8 @@ varying vec3 vAshWorldPos;`;
       if ('environmentIntensity' in scene && prevEnvI !== undefined) scene.environmentIntensity = prevEnvI;
       if (scene.environmentRotation) scene.environmentRotation.y = prevEnvRotY;
     }
+    if (renderer) renderer.toneMappingExposure = baseExposure;
+    ZONE_MOOD_STATE.w = 0;
     if (envRT) envRT.dispose();
     for (const o of [sky, sea, rays]) if (o.parent) o.parent.remove(o);
     if (!G) { sky.geometry.dispose(); sea.geometry.dispose(); rayMeshes.forEach((m) => m.geometry.dispose()); }
@@ -667,7 +748,7 @@ varying vec3 vAshWorldPos;`;
   return {
     sunDir, keyDir, sunBase, keyBase, skyRadius, get envTexture() { return envTexture; },
     fogColor: fog.color, useEnv, patchLit, patchUnlit, flash, update, setQuality, configure, dispose, setLocalClear,
-    setZoneMood,   // [FOREST]
+    setZoneMood, get zoneMood() { return mood.w; },  // [BDO]
     get yaw() { return state.follow; },
   };
 }

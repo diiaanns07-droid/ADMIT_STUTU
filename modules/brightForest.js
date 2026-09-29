@@ -387,15 +387,14 @@ export function createBrightForest({
 
   /* ------------------------------ Настроение зоны ------------------------------ */
   // Отдаётся наружу: world.js передаёт в atmosphere.setZoneMood (если есть) и прореживает пепел.
+  // Формат — контракт №8 (atmosphere.setZoneMood, ZONE_MOODS): sky/fog/sun/exposure/grade; weight — каждый кадр.
   const mood = {
     weight: 0,
-    sky: { top: new THREE.Color(0x3f8fd6), horizon: new THREE.Color(0xffe0a8) },
-    fog: new THREE.Color(0x86c9b4),          // бирюза с золотом
-    fogGlow: new THREE.Color(0xffd88a),
-    fogDensity: 0.24,                         // множитель плотности тумана в лесу
-    sun: { color: new THREE.Color(0xffe6b0), intensity: 4.2 },
-    exposure: 1.12,
-    ash: 0,                                   // доля пепла в лесу
+    sky: { top: new THREE.Color(0x2f7fd0), horizon: new THREE.Color(0xffe3b0), corona: new THREE.Color(0xfff1cf), coronaIntensity: 0.5, sunDisc: 1 },
+    fog: { color: new THREE.Color(0x86c9b4), glow: new THREE.Color(0xffd88a), density: 0.0055 },   // бирюза с золотом; плотность абсолютная
+    sun: { color: new THREE.Color(0xffe6b0), intensity: 1.5, env: 3.0 },                         // intensity — множитель ключа
+    exposure: 1.18,
+    grade: { shadow: [-0.012, 0.018, 0.024], high: [0.032, 0.018, -0.014], sat: 1.12, contrast: 0.2 },
   };
   for (const p of parts) if (p.setMood) { try { p.setMood(mood); } catch (e) { /* ignore */ } }
 
@@ -567,7 +566,7 @@ function buildSky(ctx) {
   parent.add(sky);
   return {
     always: true, extraRoots: [sky],
-    setMood(m) { u.uFog.value.copy(m.fog); u.uHorizon.value.copy(m.sky.horizon); u.uTop.value.copy(m.sky.top); },
+    setMood(m) { u.uFog.value.copy(m.fog.color); u.uHorizon.value.copy(m.sky.horizon); u.uTop.value.copy(m.sky.top); },
     update(dt, t, hero, cam, w) {
       sky.visible = w > 0.002;
       if (!sky.visible) return;
