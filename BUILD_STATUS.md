@@ -166,21 +166,51 @@
 - «Камера занята» в настоящем браузере; реальное сворачивание вкладки (событие симулировано).
 - Звук на слух, Firefox и Safari.
 
-## V6 · [HERO] герои — API для других команд (черновик, дополняется)
-- **C5 готов** (`modules/heroModel.js`): `createHeroModel({ THREE, scene, hero, remote:true })` без `heroRoot` —
-  свой root (ставится по `snapLike.player.position/yaw`), свой миксер и материалы (проверено: 2 героя, 0 общих
-  материалов — `dev/hero_stand.html`). `update(dt, snapLike, events)`; для `remote:true` берутся только события
-  с `data.remote`, для своего — только без него. `getAnchors()` → `{ handL, handR, chest, head, bowSocket, staffTip }`
-  — постоянные `THREE.Object3D` (при смене героя переезжают на новые кости; у процедурного героя — маркеры рига).
-  `setPose({ bowActive, bowDraw 0..1, aim:{x,y}, handSpell 0..1 })` — поза лука/чар поверх анимаций; main.js уже
-  зовёт её из `input.bow`/`input.handSpell` (C2), №6 может звать сам. `setMirror(m)` — руки героя за руками игрока.
-  `setStance(clip)` — стойка витрины. Общие настройки для экземпляров NET — `configureHeroes({ atmosphere, shading, quality })`.
-- **Герои:** `HEROES` + `HERO_ORDER` — ashen (Пепельный страж, латы Knight), elf, dark (VRoid), **ranger** (Лучница),
-  **archmage** (Архимаг) — Quaternius CC0 (`assets/heroes/`). У каждого `name, cls, element, desc[3]`.
-- **Для №8 (BDO):** в `HERO_OPTIONS` (ui.js) добавлены 2 героя и 4-е поле `{ cls, element, desc }` с тегом [HERO] —
-  карточек теперь 5 (3+2); описание (3 строки) можно показывать под выбранной карточкой. Витрина меню —
-  `modules/heroShowcase.js` (свой свет, облёт, `postfx.setFocus(dist)` если есть).
-- **Настройка** `heroShading: 'realistic'|'anime'` (C1). 'realistic' — MeshPhysicalMaterial (`modules/heroShading.js`).
+## V6 · [HERO] герои (2026-09-29)
+**Сделано.**
+- **Новые герои вместо «убогих»** (жалоба владельца): все пять — скиннинговые модели Quaternius (CC0, реалистичные
+  пропорции, PBR с картами ORM) — `assets/heroes/{knight,wizard,ranger}.glb`. Пепельный страж — воин-маг в латах
+  с закрытым шлемом (вместо процедурного тела мира), Эльфийка и Тёмная чародейка пересобраны на теле Ranger
+  с процедурной перекраской костюма (`heroShading.recolorTexture`), новые **Лучница** и **Архимаг**. Прежние
+  аниме-VRoid — `EXTRA_HEROES` (elfVroid/darkVroid, в меню и лобби не показываются).
+- **Картинка** (`heroShading: 'realistic'`, по умолчанию; `'anime'` — исходные материалы): MeshPhysicalMaterial —
+  кожа с «обёрнутым» светом и тёплым терминатором (фейковый SSS), sheen; ткань — sheen + шум нормалей; волосы —
+  anisotropy; глаза — clearcoat; rim/fill и IBL из атмосферы мира; контур MToon выключен.
+- **Снаряжение** (`modules/heroGear.js`, процедурное): наплечники из ламелей с рунами, наручи, пояс с подсумками,
+  кинжал, кольца, печать клятвы, плащ (ветер и инерция в вершинном шейдере), посох с кристаллом (якорь `staffTip`),
+  лук и колчан за спиной — при позе лука лук переходит в левую руку. **Длинные волосы девушек** (просьба
+  владельца): шапка по черепу + копна до пояса + пряди у лица, покачивание и инерция. Уши эльфийки.
+- **Анимации: 30 клипов** KayKit Adventurers (CC0, `assets/heroes/anims_kaykit.glb`, меши убраны
+  `tools/strip_anims.py`), перенос на любой гуманоид (`vrmKit.retargetClip` режим 'full' со скруткой;
+  `vrmKit.loadHumanoidGLB` — VRMHumanoid поверх скелета UAL). Бленд вперёд/назад/вбок с фазой шага по пути,
+  поворот на месте, действие перекрывает передвижение (ноги — отдельные «нижние» клипы), смерть/победа,
+  доворот груди к цели (`snap.lockTarget` или босс), дыхание и оглядывание.
+- **C5** (см. TEST_REPORT): несколько экземпляров, `getAnchors()`, `setPose()`, `setMirror()`, `setStance()`,
+  `setLod()` (+ авто-LOD по камере из `configureHeroes({ camera })`), события `data.remote` — только модели соперника.
+- **Витрина меню** (`modules/heroShowcase.js`): шейдерный ключевой/контровой/заполняющий свет только на героях
+  (`heroShading.HERO_LIGHT` — источники сцены не добавляются), пятно света, облёт, стойка класса (посох наискось,
+  лучницы — лук в руке); DOF — postfx №8 (`setFocus`, если есть).
+- **Исправлено:** головы «крутились» (микшер не пишет неизменные значения — добавки копились); после ревью —
+  последний кадр клипов, утечка материалов в `atmosphere.envMats` (хук `releaseEnv` [HERO] в atmosphere.js),
+  события на LOD 2, смерть в PvP.
+
+**Как проверить:** меню → карточки 5 героев (витрина), бой DEBUG (WASD — стрейфы/назад, Пробел — рывок в сторону
+хода, U/I/F — касты/рассечение/парирование). Стенд: `dev/hero_stand.html?a=elf&b=ashen&pose=bow|spell|shield&clip=Walk|Run&cam=face|upper|back&stance=Stance`.
+Снимки: `node tools/hero_shots.mjs --vendor DIR …` (в облаке CDN закрыт — `npm pack three@0.185.1 @pixiv/three-vrm@3.5.5`).
+
+**API для других команд.** `createHeroModel({ THREE, scene | heroRoot, hero, remote })` → `{ root, update(dt, snapLike, events),
+getAnchors(), setPose({ bowActive, bowDraw, aim:{x,y}, handSpell }), setMirror(m), setStance(clip), setLod(0..2),
+setShading(mode), setQuality(q), setHero(id), state(), dispose() }`. `HEROES` (+ `HERO_ORDER`) — `name, cls, element, desc[3]`.
+main.js сам зовёт `setPose` из `input.bow`/`input.handSpell` (кроме меню) и `setMirror` из позы камеры.
+
+**Для владельцев:** №8 — карточек в `HERO_OPTIONS` 5 (3+2), 4-е поле `{ cls, element, desc }` можно показать под
+выбранной; №6 — процедурный герой теперь скрыт (у стража модель), поза лука/чар — через `setPose` (уже из main);
+№1 — `world.js` всё ещё считает позу скрытого процедурного героя каждый кадр (можно пропускать, когда
+`heroBody.visible === false`).
+
+**Не успел / не проверено:** замер fps на настоящем ноутбуке (в облаке SwiftShader), живая камера для зеркала рук,
+отдельные клипы натяжения лука (сейчас — поза поверх `setPose`), гравировка-свечение прямо на латах (только печать
+и снаряжение), LOD-модели с меньшим числом треугольников (LOD — тени, пружины и частота обновления).
 
 ## V6 · [BDO] стиль Black Desert — API для других команд (черновик, дополняется)
 - **Настроение зоны (для №5 [FOREST])** — уже в main: `world.atmosphere.setZoneMood({ weight, sky, fog, sun, exposure, grade })`.
