@@ -47,6 +47,7 @@ export function createFxV6(deps) {
   const kit = createFxKit(deps);
   const handlers = new Map(); // type → [{fn, filter, src}]
   const everies = [];
+  const clearers = [];
   const suppressedKeys = new Set();
   const warned = new Set();
   const loaded = { subsystems: [], choreo: [], failed: [] };
@@ -73,6 +74,8 @@ export function createFxV6(deps) {
       handlers.get(type).push({ fn, filter: typeof filter === 'function' ? filter : null, src: fx._src || '?' });
     },
     every(fn) { if (typeof fn === 'function') everies.push({ fn, src: fx._src || '?' }); },
+    // сброс боя (effects.reset / перезапуск combat): хореография обнуляет свои долгие состояния
+    onClear(fn) { if (typeof fn === 'function') clearers.push({ fn, src: fx._src || '?' }); },
     suppress(key) { suppressedKeys.add(key); },
     // PvP: событие соперника (data.remote) рисуется теми же эффектами в его цвете
     rival: (d) => (d && d.remote ? 1 : 0),
@@ -196,7 +199,10 @@ export function createFxV6(deps) {
     setQuality(q) { quality = q; kit.setQuality(q); each('setQuality', q); },
     setReducedMotion(v) { each('setReducedMotion', !!v); },
     takeHitStop: () => kit.takeHitStop(),
-    clear() { kit.clear(); each('clear'); },
+    clear() {
+      for (let i = 0; i < clearers.length; i++) { try { clearers[i].fn(fx); } catch (e) { warn('clear:' + clearers[i].src, e); } }
+      kit.clear(); each('clear');
+    },
     dispose() { each('dispose'); kit.dispose(); },
     stats() {
       const sub = {};

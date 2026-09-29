@@ -296,6 +296,10 @@ export function register(fx) {
   const bubL = makeBubble(false), bubR = makeBubble(true);
   bubL.follow = () => bubL.center; bubL.followG = () => bubL.ground;
   bubR.follow = () => bubR.center; bubR.followG = () => bubR.ground;
+  // [VFX] сброс боя: пузыри времени гаснут сразу (иначе заново появятся в новом бою)
+  if (typeof fx.onClear === 'function') fx.onClear(() => {
+    for (const b of [bubL, bubR]) { b.on = false; b.seen = false; b.t = 0; b.pendingUntil = kit.clock + 0.5; b.clock = null; b.gclock = null; }
+  });
 
   /** Центр пузыря по снимку: ядро Регента / грудь соперника / грудь нашего героя. false — цели нет. */
   function bubTarget(b, snap) {

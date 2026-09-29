@@ -547,7 +547,7 @@ export function createHeroModel({
         anchors.handL.getWorldPosition(_aimV);
         _aimV.sub(_v2).normalize();
         cur.model.getWorldQuaternion(_qm); _upV.set(0, 1, 0);
-        cur.gear.setBowHeld(true, anchors.handL, _aimV, _upV);
+        cur.gear.setBowHeld(true, anchors.handL, _aimV, _upV, anchors.handR, pose.draw);
       } else cur.gear.setBowHeld(false);
     }
     // чары рукой: обе ладони перед грудью, сфера между ними; с силой руки расходятся
