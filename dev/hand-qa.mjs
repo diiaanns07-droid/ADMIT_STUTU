@@ -45,7 +45,8 @@ try {
   }
   const errors = [];
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+  const netErrors = [];
+  page.on('console', (m) => { if (m.type() !== 'error') return; const t = m.text(); if (/^Failed to load resource/.test(t)) netErrors.push(t); else errors.push('console: ' + t); });
   await page.addInitScript(() => { try { localStorage.setItem('ashen-oath.settings.v1', JSON.stringify({ quality: 'low', reducedMotion: true })); } catch (e) { /* ignore */ } });
   await page.goto(`http://127.0.0.1:${PORT}/index.html`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__ASHEN__ && window.__ASHEN__.screen === 'menu', null, { timeout: 60000 });
@@ -131,7 +132,8 @@ try {
   check('сгусток попал в Регента', !!hit2);
   const dbg = await page.evaluate(() => window.__ASHEN__.hand());
   console.log('  hand debug:', JSON.stringify(dbg.counters), JSON.stringify(dbg.debugKeys));
-  check('консоль без ошибок', errors.length === 0, errors.slice(0, 5).join(' | '));
+  check('консоль без ошибок (JS)', errors.length === 0, errors.slice(0, 5).join(' | '));
+  if (netErrors.length) console.log('  сеть (внешние ресурсы песочницы, не JS):', netErrors.length, netErrors[0]);
 } catch (e) {
   check('сценарий', false, e.message);
 } finally {

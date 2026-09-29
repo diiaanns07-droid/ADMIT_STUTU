@@ -85,6 +85,7 @@ test('DEBUG: M — сгусток (form → hold, power растёт), отпу�
   inp = z.apply(dbgInput(), fakeNow, { debug: true, playing: true });
   ok(inp.handSpell.phase === 'hold' && inp.handSpell.power > 0.5, `hold ${JSON.stringify(inp.handSpell)}`);
   T.key('keyup', 'KeyM');
+  fakeNow += 700;   // редкие кадры (программный рендер): импульс DEBUG-броска не должен сгореть
   inp = z.apply(dbgInput(), fakeNow, { debug: true, playing: true });
   ok(inp.handSpell.phase === 'throw' && inp.handSpell.power > 0.5, `throw ${inp.handSpell.phase}`);
   inp = z.apply(dbgInput(), fakeNow + 20, { debug: true, playing: true });
