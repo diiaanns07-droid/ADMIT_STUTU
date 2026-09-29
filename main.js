@@ -846,6 +846,7 @@ function frame(now) {
 
 applySettings();
 resize();
+if (settings.startZone === 'forest') { try { resetFight(); } catch (e) { console.warn('[ASHEN] startZone', e); } }   // [FOREST] в меню герой у врат леса
 renderUI();
 requestAnimationFrame(frame);
 boot.done();

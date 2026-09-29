@@ -1009,7 +1009,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     for (const [value, label] of ZONE_OPTIONS) {
       const input = el('input', { type: 'radio', name, value, class: 'ao-seg__input' });
       inputs.push(input);
-      seg.append(el('label', { class: 'ao-seg__opt', title: TIPS[value] }, input, el('span', { class: 'ao-seg__label', text: label })));
+      const short = prefix === 'menu' && value === 'arena' ? 'Плато' : label;   // в меню — коротко, чтобы встать в ряд
+      seg.append(el('label', { class: 'ao-seg__opt', title: `${label}: ${TIPS[value]}` }, input, el('span', { class: 'ao-seg__label', text: short })));
       listen(input, 'change', () => { if (input.checked) invoke('onSettings', { startZone: value }); });
     }
     const ctl = {
@@ -1028,7 +1029,11 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     for (const key of keys) {
       if (key === 'quality') wrap.append(buildQuality(prefix));
       else if (key === 'moveMode') wrap.append(buildMoveMode(prefix));
-      else if (key === 'startZone') wrap.append(buildStartZone(prefix)); // [FOREST]
+      else if (key === 'startZone') { // [FOREST] в одном ряду с «Управлением движением» (меню 1366×650 не растёт)
+        const zs = buildStartZone(prefix), prev = wrap.lastElementChild;
+        if (prev && keys[keys.indexOf(key) - 1] === 'moveMode') { const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 16px;align-items:flex-end' }); wrap.replaceChild(row, prev); row.append(prev, zs); }
+        else wrap.append(zs);
+      }
       else if (key === 'volume' && !cfg.showVolume) continue;
       else if (key === 'volume') {
         wrap.append(

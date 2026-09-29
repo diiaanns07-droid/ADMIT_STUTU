@@ -11,7 +11,7 @@
 // Рельеф зоны задаёт чистая функция brightForestHeight(x, z, y0) — её вызывает world.terrainH,
 // поэтому видимая земля, раскладка боя и эта зона видят одну и ту же землю.
 // Всё мелкое — InstancedMesh / Points / слитые меши; уровни качества QF (low/medium/high).
-// Вне зоны (камера дальше ~240 м) root скрыт; дальнее сияние над кронами видно с дороги.
+// Вне зоны (камера дальше ~120 м от центра; арена — 169 м) root скрыт; дальнее сияние над кронами видно с дороги.
 //
 // export: BRIGHT_FOREST (C7), brightForestHeight(x, z, y0), brightForestTint(x, z), FOREST_PLAN,
 //   createBrightForest({ THREE, parent|scene, groundY, quality, reducedMotion, camera, atmosphere, lightUnit, seed })
@@ -243,9 +243,9 @@ export const FOREST_PLAN = Object.freeze({
 
 /* =============================== КАЧЕСТВО =============================== */
 const QF = {
-  low:    { grass: 0.35, flowers: 0.45, leaves: 0.5, trees: 0.55, flies: 120, pollen: 200, butterflies: 10, falling: 60, shafts: 5, shadow: false, visR: 170 },
-  medium: { grass: 0.7,  flowers: 0.75, leaves: 0.78, trees: 0.8, flies: 260, pollen: 480, butterflies: 22, falling: 140, shafts: 9, shadow: true, visR: 230 },
-  high:   { grass: 1.0,  flowers: 1.0,  leaves: 1.0, trees: 1.0,  flies: 420, pollen: 900, butterflies: 36, falling: 260, shafts: 12, shadow: true, visR: 280 },
+  low:    { grass: 0.35, flowers: 0.45, leaves: 0.5, trees: 0.55, flies: 120, pollen: 200, butterflies: 10, falling: 60, shafts: 5, shadow: false, visR: 100 },
+  medium: { grass: 0.7,  flowers: 0.75, leaves: 0.78, trees: 0.8, flies: 260, pollen: 480, butterflies: 22, falling: 140, shafts: 9, shadow: true, visR: 118 },
+  high:   { grass: 1.0,  flowers: 1.0,  leaves: 1.0, trees: 1.0,  flies: 420, pollen: 900, butterflies: 36, falling: 260, shafts: 12, shadow: true, visR: 135 },
 };
 const normQ = (q) => (q === 'low' || q === 'high' ? q : 'medium');
 
