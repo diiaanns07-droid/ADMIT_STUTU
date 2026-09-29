@@ -1,0 +1,213 @@
+/* ASHEN OATH — core/bdoMirror.css. Владелец: №8 [BDO].
+ * «Гадательное зеркало» (CANON M1, spellmirror): превью камеры в овальной бронзово-золотой раме.
+ * Подключается из core/trackingHud.js (ensureStyle) и действует только при html.ao-bdo
+ * (настройка bdoUi !== false). Без класса — прежний прямоугольный слот из modules/ui.css.
+ *
+ * Устройство (ничего не меняет размеры/координаты canvas-оверлея — №6 [HAND] рисует поверх):
+ *  - хост слота (.ao-slothost / .ao-cvdock__slot) = металлический овал: conic-gradient + радиальный
+ *    фаска-градиент; ::before — SVG-орнамент (гравировка, завитки, камни, навершие), ::after — нижний
+ *    камень цвета статуса (--ao-tone, как прежняя полоска);
+ *  - .ao-camera-slot внутри — овальное «стекло» с отступом 5% (пропорции 4:3 сохраняются, video и
+ *    overlay по-прежнему inset:0 + object-fit:contain); ::before — виньетка и блик поверх видео;
+ *  - <video> обесцвечен и затемнён фильтром; overlay без фильтра, чтобы жилы светились цветом.
+ * Всё статично (без анимаций и backdrop-filter): в бою зеркало маленькое, тень — только у него.
+ */
+
+:root {
+  /* Орнамент рамы (генерируется из читаемого SVG: viewBox -20 -24 440 348, овал 400×300 в центре). */
+  --bdo-mirror-orn: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-20 -24 440 348'%3E%3Cdefs%3E%3ClinearGradient id='m' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23f6e2ac'/%3E%3Cstop offset='.45' stop-color='%23c49a5a'/%3E%3Cstop offset='1' stop-color='%235a4124'/%3E%3C/linearGradient%3E%3CradialGradient id='r' cx='.4' cy='.34' r='.7'%3E%3Cstop offset='0' stop-color='%23ffc4b0'/%3E%3Cstop offset='.35' stop-color='%23c42a2c'/%3E%3Cstop offset='1' stop-color='%233c0707'/%3E%3C/radialGradient%3E%3CradialGradient id='t' cx='.4' cy='.34' r='.7'%3E%3Cstop offset='0' stop-color='%23d8fff6'/%3E%3Cstop offset='.4' stop-color='%233fa6b4'/%3E%3Cstop offset='1' stop-color='%230c2e36'/%3E%3C/radialGradient%3E%3CradialGradient id='a' cx='.4' cy='.34' r='.7'%3E%3Cstop offset='0' stop-color='%23fff0c4'/%3E%3Cstop offset='.4' stop-color='%23e08a2c'/%3E%3Cstop offset='1' stop-color='%234a2208'/%3E%3C/radialGradient%3E%3Cg id='gh'%3E%3Cpath d='M0-15 11 0 0 15-11 0z' fill='url(%23m)' stroke='%231a1209' stroke-width='1.2'/%3E%3Cpath d='M0-15 11 0 0 15-11 0z' fill='none' stroke='%23fff3cf' stroke-opacity='.5' vector-effect='non-scaling-stroke' stroke-width='.7' transform='scale(.8)'/%3E%3C/g%3E%3Cg id='gv'%3E%3Cpath d='M0-12 15 0 0 12-15 0z' fill='url(%23m)' stroke='%231a1209' stroke-width='1.2'/%3E%3C/g%3E%3Cpath id='sc' d='M16 3c10-5 22-6 34-3 5 1.2 9 4 8.5 7.2-.5 3-4.6 3.6-6.2 1.1-1.2-1.9.2-4 2-3.6' fill='none' stroke='url(%23m)' stroke-width='2.6' stroke-linecap='round'/%3E%3Cpath id='sv' d='M3 18c4 10 5 22 2 34-1.2 5-4 9-7.2 8.5-3-.5-3.6-4.6-1.1-6.2 1.9-1.2 4 .2 3.6 2' fill='none' stroke='url(%23m)' stroke-width='3' stroke-linecap='round'/%3E%3C/defs%3E%3Cellipse cx='200' cy='150' rx='199.3' ry='149.4' fill='none' stroke='%23fff0c8' stroke-opacity='.55' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3Cellipse cx='200' cy='150' rx='190' ry='142.5' fill='none' stroke='%231b1208' stroke-opacity='.75' stroke-width='2.4' stroke-dasharray='.1 5.2' stroke-linecap='round'/%3E%3Cellipse cx='200' cy='150' rx='194.6' ry='146' fill='none' stroke='%232a1c0c' stroke-opacity='.55' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3Cellipse cx='200' cy='150' rx='185.2' ry='139' fill='none' stroke='%232a1c0c' stroke-opacity='.55' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3Cellipse cx='200' cy='150' rx='180.6' ry='135.5' fill='none' stroke='%23f3dca0' stroke-opacity='.42' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3Cuse href='%23sc' x='200' y='4'/%3E%3Cuse href='%23sc' transform='translate(400 0) scale(-1 1)' x='200' y='4'/%3E%3Cuse href='%23sc' transform='translate(0 300) scale(1 -1)' x='200' y='4'/%3E%3Cuse href='%23sc' transform='translate(400 300) scale(-1 -1)' x='200' y='4'/%3E%3Cuse href='%23sv' x='10' y='150'/%3E%3Cuse href='%23sv' transform='translate(0 300) scale(1 -1)' x='10' y='150'/%3E%3Cuse href='%23sv' transform='translate(400 0) scale(-1 1)' x='10' y='150'/%3E%3Cuse href='%23sv' transform='translate(400 300) scale(-1 -1)' x='10' y='150'/%3E%3Cpath d='M200-22c4 7 9 11 16 12-6 2-10 6-12 12h-8c-2-6-6-10-12-12 7-1 12-5 16-12z' fill='url(%23m)' stroke='%231a1209' stroke-width='1.1'/%3E%3Ccircle cx='176' cy='-3' r='2.6' fill='url(%23m)'/%3E%3Ccircle cx='224' cy='-3' r='2.6' fill='url(%23m)'/%3E%3Cpath d='M188 306h24l-12 14z' fill='url(%23m)' stroke='%231a1209' stroke-width='1.1'/%3E%3Cuse href='%23gh' x='200' y='5'/%3E%3Ccircle cx='200' cy='5' r='6.2' fill='url(%23r)'/%3E%3Ccircle cx='198' cy='3' r='1.6' fill='%23fff' fill-opacity='.75'/%3E%3Cuse href='%23gv' x='10' y='150'/%3E%3Ccircle cx='10' cy='150' r='5.6' fill='url(%23t)'/%3E%3Ccircle cx='8.4' cy='148.2' r='1.4' fill='%23fff' fill-opacity='.7'/%3E%3Cuse href='%23gv' x='390' y='150'/%3E%3Ccircle cx='390' cy='150' r='5.6' fill='url(%23a)'/%3E%3Ccircle cx='388.4' cy='148.2' r='1.4' fill='%23fff' fill-opacity='.7'/%3E%3Cuse href='%23gh' x='200' y='295'/%3E%3C/svg%3E");
+  /* Металл обода: «кольцевой» отлив бронзы и золота. */
+  --bdo-mirror-metal: conic-gradient(from 205deg, #f3dca0, #9a7442 9%, #4a3519 18%, #b58d52 29%, #f0d596 37%, #7a5a30 48%, #3a2912 57%, #a07a3c 68%, #e8c888 78%, #8a6a3e 88%, #f3dca0);
+  /* Фаска обода: тёмный край стекла → светлая грань → тёмный внешний край. */
+  --bdo-mirror-bevel: radial-gradient(ellipse closest-side, rgba(0, 0, 0, 0) 89%, rgba(18, 11, 4, 0.75) 90.4%, rgba(255, 238, 196, 0.34) 92.6%, rgba(0, 0, 0, 0) 95.4%, rgba(18, 11, 4, 0.5) 98.6%, rgba(12, 7, 2, 0.92) 100%);
+}
+
+/* ------------------------------------------------------------------ рама (хост слота) */
+html.ao-bdo .ao-slothost,
+html.ao-bdo .ao-cvdock__slot {
+  overflow: visible;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bdo-mirror-bevel), var(--bdo-mirror-metal);
+  box-shadow:
+    0 0 0 1px #140d06,
+    0 0 0 2px rgba(216, 179, 106, 0.32),
+    0 10px 26px rgba(0, 0, 0, 0.55);
+  isolation: isolate;
+}
+/* Орнамент: гравировка, завитки, три камня, навершие и подножие (выходят за овал на 5% / 8%). */
+html.ao-bdo .ao-slothost::before,
+html.ao-bdo .ao-cvdock__slot::before {
+  content: '';
+  position: absolute;
+  top: -8%;
+  bottom: -8%;
+  left: -5%;
+  right: -5%;
+  background: var(--bdo-mirror-orn) center / 100% 100% no-repeat;
+  pointer-events: none;
+  z-index: 3;
+}
+/* Нижний камень — цвет статуса (вместо полоски --ao-tone). */
+html.ao-bdo .ao-slothost::after,
+html.ao-bdo .ao-cvdock__slot::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  left: 50%;
+  right: auto;
+  bottom: 1.7%;
+  width: 3.4%;
+  min-width: 6px;
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  transform: translate(-50%, 50%);
+  background:
+    radial-gradient(circle at 36% 32%, rgba(255, 255, 255, 0.85) 0 14%, rgba(255, 255, 255, 0) 34%),
+    radial-gradient(circle at 50% 60%, var(--ao-tone, #8a6a3e) 40%, #0a0704 130%);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55);
+  opacity: 1;
+  z-index: 4;
+}
+html.ao-bdo .ao-slothost:not([data-tone])::after,
+html.ao-bdo .ao-cvdock__slot:not([data-tone])::after {
+  --ao-tone: #4a6a78;
+}
+
+/* ------------------------------------------------------------------ стекло */
+html.ao-bdo .ao-slothost > .ao-camera-slot,
+html.ao-bdo .ao-cvdock__slot > .ao-camera-slot {
+  inset: 5%;
+  border-radius: 50%;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 42%, #1d1914 0%, #0e0c0a 58%, #050403 100%);
+  box-shadow: 0 0 0 1px #0d0804, 0 0 0 2px rgba(243, 220, 160, 0.26);
+  isolation: isolate;
+}
+/* Обесцвеченное, затемнённое отражение (только видео; overlay-жилы — в цвете). */
+html.ao-bdo .ao-slothost video,
+html.ao-bdo .ao-cvdock__slot video,
+html.ao-bdo .ao-camera-slot > [data-bdo-video] {
+  filter: grayscale(0.9) sepia(0.25) contrast(1.1) brightness(0.75);
+}
+/* Виньетка по краю и холодный стеклянный блик — поверх видео и overlay. */
+html.ao-bdo .ao-slothost > .ao-camera-slot::before,
+html.ao-bdo .ao-cvdock__slot > .ao-camera-slot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 56% 34% at 34% 17%, rgba(255, 247, 226, 0.13), rgba(255, 247, 226, 0) 72%),
+    radial-gradient(ellipse 90% 70% at 50% 118%, rgba(255, 238, 200, 0) 62%, rgba(255, 238, 200, 0.07) 66%, rgba(255, 238, 200, 0) 71%),
+    radial-gradient(ellipse closest-side, rgba(0, 0, 0, 0) 55%, rgba(12, 7, 2, 0.42) 80%, rgba(6, 3, 1, 0.9) 100%);
+}
+/* Пустое зеркало (превью ещё не перенесено сюда). */
+html.ao-bdo .ao-slothost > .ao-camera-slot:empty::after,
+html.ao-bdo .ao-cvdock__slot > .ao-camera-slot:empty::after {
+  z-index: 3;
+  font-family: var(--bdo-font-italic, 'Cormorant Garamond', 'Palatino Linotype', Georgia, serif);
+  font-style: italic;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  color: var(--bdo-ivory-faint, #857c6a);
+}
+html.ao-bdo .ao-cvdock .ao-camera-slot:empty::after {
+  font-size: 0.8rem;
+}
+
+/* ------------------------------------------------------------------ большие зеркала (экраны) */
+/* Камера, калибровка, пауза, тренировка: овал по центру колонки, поля под навершие и подножие. */
+html.ao-bdo .ao-col--media > .ao-slothost {
+  width: min(90%, calc(33vh * 4 / 3));
+  margin: 1.35rem auto 1.2rem;
+}
+html.ao-bdo .ao-panel--pause .ao-col--media > .ao-slothost {
+  width: min(90%, 22rem, calc(33vh * 4 / 3));
+}
+html.ao-bdo .ao-tut-cam {
+  padding: 0.95rem 0.6rem 0.8rem;
+}
+
+/* ------------------------------------------------------------------ боевой док (справа снизу) */
+html.ao-bdo .ao-cvdock {
+  width: clamp(176px, 14.2vw, 206px);
+  padding: 13px 10px 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+html.ao-bdo .ao-cvdock .ao-status {
+  position: relative;
+  justify-content: center;
+  margin-top: 14px;
+  padding: 3px 10px 4px;
+  text-align: center;
+  background: linear-gradient(90deg, rgba(12, 10, 8, 0), rgba(12, 10, 8, 0.8) 16%, rgba(12, 10, 8, 0.8) 84%, rgba(12, 10, 8, 0));
+}
+/* Волосяные бронзовые линии над и под строкой статуса, гаснущие к краям. */
+html.ao-bdo .ao-cvdock .ao-status::before,
+html.ao-bdo .ao-cvdock .ao-status::after {
+  content: '';
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(138, 106, 62, 0), var(--bdo-bronze, #8a6a3e) 30%, var(--bdo-gold, #d8b36a) 50%, var(--bdo-bronze, #8a6a3e) 70%, rgba(138, 106, 62, 0));
+  pointer-events: none;
+}
+html.ao-bdo .ao-cvdock .ao-status::before { top: 0; }
+html.ao-bdo .ao-cvdock .ao-status::after { bottom: 0; opacity: 0.55; }
+html.ao-bdo .ao-cvdock .ao-status__text {
+  align-items: center;
+  min-width: 0;
+}
+html.ao-bdo .ao-cvdock .ao-status__label {
+  font-family: var(--bdo-font-display, 'Forum', 'Palatino Linotype', Georgia, serif);
+  font-weight: 400;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  letter-spacing: 0.05em;
+  color: var(--bdo-ivory, #ece2cc);
+  text-shadow: 0 1px 2px #000;
+}
+html.ao-bdo .ao-cvdock .ao-status__detail {
+  font-family: var(--bdo-font-body, 'Alegreya Sans', 'Segoe UI', system-ui, sans-serif);
+  font-size: 0.7rem;
+  color: var(--bdo-ivory-dim, #b9ae96);
+}
+/* Точка статуса → маленький ограненный камень. */
+html.ao-bdo .ao-cvdock .ao-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  transform: rotate(45deg);
+  box-shadow: 0 0 0 1px #140d06, 0 0 0 2px rgba(216, 179, 106, 0.55);
+}
+
+/* Низкие окна (1366×650): зеркало компактнее, рама тоньше не становится (проценты). */
+@media (max-height: 680px) {
+  html.ao-bdo .ao-cvdock {
+    width: clamp(136px, 11vw, 152px);
+    padding: 10px 8px 0;
+  }
+  html.ao-bdo .ao-cvdock .ao-status {
+    margin-top: 11px;
+    padding: 2px 8px 3px;
+  }
+  html.ao-bdo .ao-cvdock .ao-status__label {
+    font-size: 0.74rem;
+  }
+  html.ao-bdo .ao-col--media > .ao-slothost {
+    width: min(90%, calc(28vh * 4 / 3));
+    margin: 1.1rem auto 1rem;
+  }
+}
+@media (max-width: 620px) {
+  html.ao-bdo .ao-cvdock {
+    width: 124px;
+  }
+}

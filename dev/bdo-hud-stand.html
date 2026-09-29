@@ -137,7 +137,13 @@ const sched = [
   [2.6, () => ev('boss_hit', { amount: 61, source: 'burst', combo: 9 })],
   [3.0, () => ev('ember_lit', { id: 'ember-0', points: 3, lit: 2, total: 11 })],
   [3.4, () => ev('sigil_cast', { sigil: 'frame', bonus: 0.3, duration: 8 })],
+  // [BDO] мета-события для уведомлений справа (DOM-HUD core/bdoHud.js)
+  [0.5, () => S === 'engaged' ? ev('encounter_start', { reason: 'arena' }) : null],
+  [0.5, () => S === 'lowhp' ? ev('boss_phase', { stage: 2, from: 1 }) : null],
+  [0.4, () => pvp ? ev('pvp_round', { phase: 'round_end', round: 1, score: [1, 0], winner: 'me' }) : null],
+  [0.9, () => pvp ? ev('pvp_round', { phase: 'fight', round: 2, score: [1, 0] }) : null],
 ];
+sched.sort((a, b) => a[0] - b[0]);
 
 // ---------------------------------------------------------------- модули
 const uiRoot = document.getElementById('ao-ui-root');

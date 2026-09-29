@@ -1,0 +1,915 @@
+/*
+ * ASHEN OATH — core/bdoHud.css. Владелец: №8 [BDO].
+ * DOM-слой боевого HUD в стиле Black Desert (core/bdoHud.js): панель умений, HP/MP, выносливость,
+ * руны и печати, рамка цели, мини-карта, титр зоны, уведомления. Подключается из bdoHud.js
+ * через ensureStyle(). Масштаб — переменная --k на слое (1 = эталон 1366×768), её ставит JS.
+ * Старые части HUD ui.js прячутся только при html.ao-bdo.bdoh-on (класс ставит bdoHud.js, пока
+ * слой жив и видим) — если слой упал, прежний HUD возвращается сам.
+ * В бою: без backdrop-filter, без анимаций крупных областей; анимируются только transform/opacity.
+ */
+
+/* ------------------------------------------------------------ старый HUD ui.js под BDO-слоем */
+
+html.ao-bdo.bdoh-on .ao-hud .ao-hero,
+html.ao-bdo.bdoh-on .ao-hud .ao-boss__head,
+html.ao-bdo.bdoh-on .ao-hud .ao-boss > .ao-bar--boss {
+  display: none !important;
+}
+/* Предупреждение атаки босса (.ao-tele) остаётся — это «каст-бар» BDO под рамкой цели. */
+html.ao-bdo.bdoh-on .ao-hud .ao-boss {
+  top: var(--bdoh-tele-top, 92px);
+  width: var(--bdoh-tele-w, 380px);
+  text-shadow: none;
+}
+html.ao-bdo.bdoh-on .ao-hud .ao-boss.is-dead {
+  opacity: 0;
+}
+html.ao-bdo.bdoh-on .ao-hud .ao-tele {
+  --bdoh-kind-a: #f0c070;
+  --bdoh-kind-b: #b0562a;
+  position: relative;
+  width: 100%;
+  margin: 0 auto;
+  padding: calc(4px * var(--bdoh-tk, 1)) calc(18px * var(--bdoh-tk, 1)) calc(7px * var(--bdoh-tk, 1));
+  gap: calc(4px * var(--bdoh-tk, 1));
+  background: linear-gradient(90deg, rgba(10, 8, 6, 0) 0%, rgba(10, 8, 6, 0.8) 16%, rgba(10, 8, 6, 0.8) 84%, rgba(10, 8, 6, 0) 100%);
+  border: 0;
+  text-align: center;
+  font-family: var(--bdo-font-display);
+  font-size: calc(15px * var(--bdoh-tk, 1));
+  letter-spacing: 0.03em;
+  line-height: 1.25;
+  color: var(--bdo-ivory);
+  text-shadow: 0 1px 2px #000;
+}
+html.ao-bdo.bdoh-on .ao-hud .ao-tele::before,
+html.ao-bdo.bdoh-on .ao-hud .ao-tele::after {
+  content: '';
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(216, 179, 106, 0), rgba(216, 179, 106, 0.55), rgba(216, 179, 106, 0));
+}
+html.ao-bdo.bdoh-on .ao-hud .ao-tele::before { top: 0; }
+html.ao-bdo.bdoh-on .ao-hud .ao-tele::after { bottom: 0; }
+html.ao-bdo.bdoh-on .ao-hud .ao-tele[data-kind='orb'] {
+  --bdoh-kind-a: #b9a0ff;
+  --bdoh-kind-b: #4a3a9a;
+}
+html.ao-bdo.bdoh-on .ao-hud .ao-tele[data-kind='nova'] {
+  --bdoh-kind-a: #ff8a70;
+  --bdoh-kind-b: #8e1a1c;
+}
+html.ao-bdo.bdoh-on .ao-hud .ao-tele__text {
+  display: block;
+}
+html.ao-bdo.bdoh-on .ao-hud .ao-tele__time {
+  height: calc(5px * var(--bdoh-tk, 1));
+  margin: 0 calc(8px * var(--bdoh-tk, 1));
+  background: rgba(4, 3, 2, 0.85);
+  outline: 1px solid var(--bdo-bronze-dim);
+}
+html.ao-bdo.bdoh-on .ao-hud .ao-tele__fill {
+  background: linear-gradient(180deg, var(--bdoh-kind-a) 0%, var(--bdoh-kind-b) 100%);
+}
+
+/* ------------------------------------------------------------------------------------ слой */
+
+.bdo-hud {
+  --k: 1;
+  --cell: calc(46px * var(--k));
+  --rcell: calc(32px * var(--k));
+  --gap: calc(5px * var(--k));
+  --mid: calc(170px * var(--k));
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  font-family: var(--bdo-font-body);
+  color: var(--bdo-ivory);
+  opacity: 1;
+  transition: opacity 0.35s;
+  contain: layout style;
+}
+.bdo-hud[hidden] {
+  display: none !important;
+}
+.bdo-hud.is-paused {
+  opacity: 0.55;
+}
+.bdo-hud *,
+.bdo-hud *::before,
+.bdo-hud *::after {
+  box-sizing: border-box;
+}
+.bdoh-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.bdo-hud [hidden] {
+  display: none !important;
+}
+
+/* ----------------------------------------------------------------- ячейка (умение, руна, печать) */
+
+.bdoh-cell {
+  --c: calc(7px * var(--k));
+  --cd: 0;
+  position: relative;
+  width: var(--cell);
+  height: var(--cell);
+  flex: none;
+  clip-path: polygon(var(--c) 0, calc(100% - var(--c)) 0, 100% var(--c), 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, var(--c) 100%, 0 calc(100% - var(--c)), 0 var(--c));
+  background: linear-gradient(155deg, var(--bdo-bronze-hi) 0%, var(--bdo-bronze-dim) 42%, var(--bdo-bronze) 100%);
+}
+.bdoh-cell__in,
+.bdoh-cell__shade,
+.bdoh-cell__tint,
+.bdoh-cell__flash {
+  position: absolute;
+  inset: 1px;
+  clip-path: polygon(var(--c) 0, calc(100% - var(--c)) 0, 100% var(--c), 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, var(--c) 100%, 0 calc(100% - var(--c)), 0 var(--c));
+}
+.bdoh-cell__in {
+  background: radial-gradient(circle at 50% 38%, #2a2219 0%, #120f0c 70%, #0a0907 100%);
+}
+.bdoh-cell__icon {
+  position: absolute;
+  inset: calc(3px * var(--k));
+  transition: opacity 0.2s;
+}
+/* Тёмная «шторка» отката: открывается по часовой от 12 часов. */
+.bdoh-cell__shade {
+  opacity: 0;
+  background: conic-gradient(rgba(0, 0, 0, 0) 0deg calc((1 - var(--cd)) * 360deg), rgba(4, 3, 2, 0.74) 0deg 360deg);
+}
+.bdoh-cell__tint {
+  opacity: 0;
+  background: linear-gradient(180deg, rgba(20, 40, 90, 0.25), rgba(10, 22, 60, 0.6));
+}
+.bdoh-cell__flash {
+  opacity: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 236, 190, 0.85) 0%, rgba(216, 179, 106, 0.5) 45%, rgba(216, 179, 106, 0) 80%);
+  transition: opacity 0.6s ease-out;
+}
+.bdoh-cell.is-flash .bdoh-cell__flash {
+  opacity: 1;
+  transition: none;
+}
+.bdoh-cell__time {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--bdo-font-num);
+  font-weight: 600;
+  font-size: calc(15px * var(--k));
+  color: var(--bdo-gold-hi);
+  text-shadow: 0 0 3px #000, 0 1px 2px #000;
+  font-variant-numeric: tabular-nums;
+}
+.bdoh-cell__glyph {
+  position: absolute;
+  left: calc(3px * var(--k));
+  top: calc(1px * var(--k));
+  font-family: 'Segoe UI Symbol', 'DejaVu Sans', 'Noto Sans Symbols 2', 'Cambria Math', var(--bdo-font-body);
+  font-size: calc(9px * var(--k));
+  line-height: 1;
+  color: var(--bdo-gold);
+  text-shadow: 0 0 2px #000, 0 0 2px #000;
+}
+
+.bdoh-cell[data-state='ready'] .bdoh-cell__icon { opacity: 1; }
+.bdoh-cell[data-state='cooldown'] .bdoh-cell__shade { opacity: 1; }
+.bdoh-cell[data-state='cooldown'] .bdoh-cell__icon { opacity: 0.8; }
+.bdoh-cell[data-state='low'] .bdoh-cell__tint { opacity: 1; }
+.bdoh-cell[data-state='low'] .bdoh-cell__icon { opacity: 0.55; }
+.bdoh-cell[data-state='off'] { background: #3a3024; }
+.bdoh-cell[data-state='off'] .bdoh-cell__icon { opacity: 0.22; }
+.bdoh-cell[data-state='active'] {
+  background: linear-gradient(155deg, var(--bdo-gold-hi) 0%, var(--bdo-gold) 50%, var(--bdo-gold-deep) 100%);
+}
+.bdoh-cell[data-state='active'] .bdoh-cell__in {
+  background: radial-gradient(circle at 50% 45%, #4a3a20 0%, #1c150c 70%, #0d0a07 100%);
+}
+
+/* ------------------------------------------------------------------ панель умений внизу по центру */
+
+.bdoh-bar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(7px * var(--k));
+  display: flex;
+  align-items: flex-end;
+  transform: translateX(-50%);
+}
+.bdoh-bar::before {
+  /* мягкая тёмная «полка» под крыльями — читаемость на светлом фоне сцены */
+  content: '';
+  position: absolute;
+  left: calc(-40px * var(--k));
+  right: calc(-40px * var(--k));
+  bottom: calc(-7px * var(--k));
+  height: calc(96px * var(--k));
+  background: linear-gradient(0deg, rgba(6, 5, 4, 0.62) 0%, rgba(6, 5, 4, 0.34) 55%, rgba(6, 5, 4, 0) 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 18%, #000 82%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 18%, #000 82%, transparent 100%);
+  z-index: -1;
+}
+.bdoh-wing {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6px * var(--k));
+}
+.bdoh-mid {
+  width: var(--mid);
+  flex: none;
+}
+.bdoh-cells {
+  display: flex;
+  gap: var(--gap);
+}
+.bdoh-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(2px * var(--k));
+}
+.bdoh-slot__hint {
+  font-family: var(--bdo-font-body);
+  font-size: calc(10px * var(--k));
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: var(--bdo-ivory-dim);
+  text-shadow: 0 1px 2px #000, 0 0 3px #000;
+}
+
+/* Полосы HP / MP */
+.bdoh-res {
+  position: relative;
+  height: calc(13px * var(--k));
+  background: rgba(4, 3, 2, 0.84);
+  outline: 1px solid var(--bdo-bronze-dim);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
+}
+.bdoh-res__lag,
+.bdoh-res__fill,
+.bdoh-res__gloss {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+}
+.bdoh-res--mp .bdoh-res__lag,
+.bdoh-res--mp .bdoh-res__fill {
+  transform-origin: right center;
+}
+.bdoh-res__lag {
+  background: rgba(255, 222, 176, 0.62);
+}
+.bdoh-res--mp .bdoh-res__lag {
+  background: rgba(170, 206, 255, 0.55);
+}
+.bdoh-res--hp .bdoh-res__fill {
+  background: linear-gradient(180deg, var(--bdo-blood-hi) 0%, var(--bdo-blood) 48%, var(--bdo-blood-deep) 100%);
+}
+.bdoh-res--mp .bdoh-res__fill {
+  background: linear-gradient(180deg, var(--bdo-mana-hi) 0%, var(--bdo-mana) 48%, var(--bdo-mana-deep) 100%);
+}
+.bdoh-res__gloss {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.04) 40%, rgba(0, 0, 0, 0) 60%, rgba(0, 0, 0, 0.25) 100%),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0) 0 calc(10% - 1px), rgba(0, 0, 0, 0.32) calc(10% - 1px) 10%);
+}
+.bdoh-res__num {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--bdo-font-num);
+  font-weight: 600;
+  font-size: calc(10.5px * var(--k));
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--bdo-ivory);
+  text-shadow: 0 0 2px #000, 0 1px 2px #000, 0 0 4px #000;
+  font-variant-numeric: tabular-nums;
+}
+/* ромб-«наконечник» у внутреннего края полосы (к медальону) */
+.bdoh-res::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: calc(7px * var(--k));
+  height: calc(7px * var(--k));
+  background: var(--bdo-gold);
+  outline: 1px solid rgba(0, 0, 0, 0.7);
+  transform: translateY(-50%) rotate(45deg);
+}
+.bdoh-res--hp::after { right: calc(-4px * var(--k)); }
+.bdoh-res--mp::after { left: calc(-4px * var(--k)); }
+.bdoh-res__glow {
+  position: absolute;
+  inset: -3px;
+  opacity: 0;
+  box-shadow: 0 0 8px 1px rgba(224, 72, 74, 0.85);
+  pointer-events: none;
+}
+.bdoh-res--hp.is-low {
+  outline-color: var(--bdo-blood-hi);
+}
+.bdoh-res--hp.is-low .bdoh-res__glow {
+  opacity: 0.75;
+  animation: bdoh-pulse 0.9s ease-in-out infinite alternate;
+}
+@keyframes bdoh-pulse {
+  from { opacity: 0.25; }
+  to { opacity: 1; }
+}
+
+/* Выносливость: тонкая жёлтая дуга под медальоном (геометрию ставит JS). */
+.bdoh-stam {
+  position: absolute;
+  overflow: visible;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.bdoh-stam.is-on {
+  opacity: 1;
+}
+.bdoh-stam__bg {
+  fill: none;
+  stroke: rgba(4, 3, 2, 0.8);
+  stroke-linecap: round;
+}
+.bdoh-stam__fg {
+  fill: none;
+  stroke: var(--bdo-stamina);
+  stroke-linecap: round;
+}
+.bdoh-stam.is-sprint .bdoh-stam__fg {
+  stroke: #f0d27a;
+}
+
+/* ------------------------------------------------------------------- руны и печати у левого края */
+
+.bdoh-runes {
+  position: absolute;
+  left: calc(12px * var(--k));
+  top: 52%;
+  display: flex;
+  align-items: center;
+  gap: calc(5px * var(--k));
+  transform: translateY(-50%);
+}
+.bdoh-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: calc(4px * var(--k));
+  padding: calc(8px * var(--k)) calc(4px * var(--k));
+  background: linear-gradient(90deg, rgba(10, 8, 6, 0.58) 0%, rgba(10, 8, 6, 0.3) 100%);
+  border-left: 1px solid var(--bdo-bronze-dim);
+}
+.bdoh-col::before,
+.bdoh-col::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  width: calc(5px * var(--k));
+  height: calc(5px * var(--k));
+  background: var(--bdo-gold-deep);
+  transform: translateX(-50%) rotate(45deg);
+}
+.bdoh-col::before { top: calc(1px * var(--k)); }
+.bdoh-col::after { bottom: calc(1px * var(--k)); }
+.bdoh-col .bdoh-cell {
+  --c: calc(5px * var(--k));
+  width: var(--rcell);
+  height: var(--rcell);
+}
+.bdoh-col .bdoh-cell__icon {
+  inset: calc(2px * var(--k));
+}
+.bdoh-col .bdoh-cell__time {
+  font-size: calc(11px * var(--k));
+}
+.bdoh-cell.is-cast {
+  animation: bdoh-cast 0.6s var(--bdo-ease) both;
+}
+@keyframes bdoh-cast {
+  0% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+/* ----------------------------------------------------------------------- рамка цели сверху */
+
+.bdoh-target {
+  position: absolute;
+  left: 50%;
+  top: calc(10px * var(--k));
+  width: calc(480px * var(--k));
+  height: calc(76px * var(--k));
+  padding: calc(5px * var(--k)) calc(34px * var(--k)) 0;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, rgba(10, 8, 6, 0) 0%, rgba(10, 8, 6, 0.74) 13%, rgba(10, 8, 6, 0.74) 87%, rgba(10, 8, 6, 0) 100%);
+  transition: opacity 0.35s;
+}
+.bdoh-target::before,
+.bdoh-target::after {
+  content: '';
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(216, 179, 106, 0) 0%, rgba(216, 179, 106, 0.7) 50%, rgba(216, 179, 106, 0) 100%);
+}
+.bdoh-target::before { top: 0; }
+.bdoh-target::after { bottom: 0; }
+.bdoh-target__name {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(10px * var(--k));
+  height: calc(23px * var(--k));
+  font-family: var(--bdo-font-display);
+  font-size: calc(20px * var(--k));
+  line-height: 1;
+  letter-spacing: 0.1em;
+  font-variant-caps: small-caps;
+  white-space: nowrap;
+  color: #f1e3c4;
+  text-shadow: 0 1px 3px #000, 0 0 8px rgba(0, 0, 0, 0.8);
+}
+.bdoh-target__name::before,
+.bdoh-target__name::after {
+  content: '';
+  width: calc(6px * var(--k));
+  height: calc(6px * var(--k));
+  flex: none;
+  background: var(--bdo-gold);
+  transform: rotate(45deg);
+}
+.bdoh-target__sleep {
+  font-family: var(--bdo-font-italic);
+  font-style: italic;
+  font-size: calc(15px * var(--k));
+  letter-spacing: 0.04em;
+  font-variant-caps: normal;
+  color: var(--bdo-ivory-dim);
+}
+.bdoh-target__row {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--k));
+  height: calc(26px * var(--k));
+}
+.bdoh-target__icon {
+  position: relative;
+  width: calc(26px * var(--k));
+  height: calc(26px * var(--k));
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #120e0a;
+  box-shadow: 0 0 0 1px var(--bdo-bronze), 0 0 0 2px rgba(0, 0, 0, 0.8);
+}
+.bdoh-target__count {
+  min-width: calc(30px * var(--k));
+  font-family: var(--bdo-font-num);
+  font-weight: 700;
+  font-size: calc(16px * var(--k));
+  line-height: 1;
+  color: var(--bdo-gold-hi);
+  text-shadow: 0 1px 2px #000, 0 0 5px rgba(0, 0, 0, 0.9);
+  font-variant-numeric: tabular-nums;
+}
+.bdoh-thp {
+  position: relative;
+  flex: 1;
+  height: calc(14px * var(--k));
+  background: #070605;
+  outline: 1px solid var(--bdo-bronze);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6);
+}
+.bdoh-thp__under,
+.bdoh-thp__lag,
+.bdoh-thp__fill,
+.bdoh-thp__gloss {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+}
+.bdoh-thp__under {
+  opacity: 0.85;
+}
+.bdoh-thp__lag {
+  background: rgba(255, 232, 196, 0.78);
+}
+.bdoh-thp__gloss {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.05) 42%, rgba(0, 0, 0, 0) 58%, rgba(0, 0, 0, 0.36) 100%),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0) 0 calc(10% - 1px), rgba(0, 0, 0, 0.28) calc(10% - 1px) 10%);
+}
+.bdoh-ten {
+  position: relative;
+  height: calc(3px * var(--k));
+  margin: calc(3px * var(--k)) calc(38px * var(--k)) 0 calc(34px * var(--k));
+  background: rgba(4, 3, 2, 0.85);
+}
+.bdoh-ten__fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  background: linear-gradient(180deg, var(--bdo-mana-hi), var(--bdo-mana));
+}
+.bdoh-target__sub {
+  display: flex;
+  align-items: center;
+  gap: calc(10px * var(--k));
+  height: calc(18px * var(--k));
+  padding: 0 calc(38px * var(--k)) 0 calc(34px * var(--k));
+  font-size: calc(12px * var(--k));
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px #000;
+}
+.bdoh-target__danger {
+  font-family: var(--bdo-font-display);
+  font-size: calc(13px * var(--k));
+  letter-spacing: 0.06em;
+  color: var(--bdo-ivory-dim);
+}
+.bdoh-target__danger b {
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: var(--bdo-gold);
+}
+.bdoh-target__stage {
+  font-family: var(--bdo-font-display);
+  font-size: calc(13px * var(--k));
+  letter-spacing: 0.06em;
+  color: var(--bdo-blood-hi);
+}
+.bdoh-target__hero {
+  font-family: var(--bdo-font-italic);
+  font-style: italic;
+  font-size: calc(14px * var(--k));
+  color: var(--bdo-ivory-dim);
+}
+.bdoh-target__chips {
+  display: flex;
+  gap: calc(6px * var(--k));
+  margin-left: auto;
+}
+.bdoh-chip {
+  display: flex;
+  align-items: center;
+  gap: calc(3px * var(--k));
+  font-family: var(--bdo-font-body);
+  font-size: calc(11px * var(--k));
+  color: var(--bdo-ivory);
+}
+.bdoh-chip__i {
+  width: calc(15px * var(--k));
+  height: calc(15px * var(--k));
+  flex: none;
+  outline: 1px solid var(--bdo-bronze);
+}
+.bdoh-target__pct {
+  min-width: calc(34px * var(--k));
+  text-align: right;
+  font-family: var(--bdo-font-num);
+  font-size: calc(11px * var(--k));
+  color: var(--bdo-ivory-dim);
+  font-variant-numeric: tabular-nums;
+}
+.bdoh-target__chips + .bdoh-target__pct {
+  margin-left: 0;
+}
+.bdoh-target__danger + .bdoh-target__pct {
+  margin-left: auto;
+}
+/* Режимы рамки */
+.bdoh-target.is-sleep {
+  height: auto;
+  padding-bottom: calc(4px * var(--k));
+  opacity: 0.62;
+}
+.bdoh-target.is-sleep .bdoh-target__row,
+.bdoh-target.is-sleep .bdoh-target__sub,
+.bdoh-target.is-sleep .bdoh-ten {
+  display: none;
+}
+.bdoh-target.is-dead {
+  opacity: 0.55;
+}
+.bdoh-target.is-stage2 .bdoh-thp {
+  outline-color: var(--bdo-blood-hi);
+}
+.bdoh-score {
+  position: absolute;
+  left: 50%;
+  top: calc(90px * var(--k));
+  padding: calc(3px * var(--k)) calc(22px * var(--k));
+  transform: translateX(-50%);
+  font-family: var(--bdo-font-display);
+  font-size: calc(15px * var(--k));
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: var(--bdo-ivory);
+  text-shadow: 0 1px 2px #000;
+  background: linear-gradient(90deg, rgba(10, 8, 6, 0), rgba(10, 8, 6, 0.74) 20%, rgba(10, 8, 6, 0.74) 80%, rgba(10, 8, 6, 0));
+}
+.bdoh-score b {
+  font-family: var(--bdo-font-num);
+  font-weight: 600;
+  color: var(--bdo-gold-hi);
+}
+
+/* --------------------------------------------------------------------- мини-карта справа сверху */
+
+.bdoh-map {
+  --S: calc(170px * var(--k));
+  position: absolute;
+  top: calc(14px * var(--k));
+  right: calc(18px * var(--k));
+  width: var(--S);
+}
+.bdoh-map__ring {
+  position: relative;
+  width: var(--S);
+  height: var(--S);
+  border-radius: 50%;
+  background: #0d0b09;
+}
+.bdoh-map__ring::before {
+  /* внешний тонкий кант */
+  content: '';
+  position: absolute;
+  inset: calc(-5px * var(--k));
+  border-radius: 50%;
+  border: 1px solid rgba(138, 106, 62, 0.65);
+}
+.bdoh-map__cv {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: calc(100% - 6px);
+  height: calc(100% - 6px);
+  border-radius: 50%;
+}
+.bdoh-map__frame {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid var(--bdo-bronze);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(0, 0, 0, 0.8);
+  background: radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0) 62%, rgba(0, 0, 0, 0.45) 100%);
+}
+.bdoh-map__tick {
+  position: absolute;
+  width: calc(7px * var(--k));
+  height: calc(7px * var(--k));
+  background: var(--bdo-gold-deep);
+  outline: 1px solid rgba(0, 0, 0, 0.8);
+}
+.bdoh-map__tick--e { right: calc(-4px * var(--k)); top: 50%; transform: translateY(-50%) rotate(45deg); }
+.bdoh-map__tick--s { bottom: calc(-4px * var(--k)); left: 50%; transform: translateX(-50%) rotate(45deg); }
+.bdoh-map__tick--w { left: calc(-4px * var(--k)); top: 50%; transform: translateY(-50%) rotate(45deg); }
+.bdoh-map__n {
+  position: absolute;
+  left: 50%;
+  top: calc(-9px * var(--k));
+  width: calc(18px * var(--k));
+  height: calc(18px * var(--k));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateX(-50%);
+  font-family: var(--bdo-font-display);
+  font-size: calc(12px * var(--k));
+  line-height: 1;
+  color: var(--bdo-gold-hi);
+  background: #15110c;
+  border: 1px solid var(--bdo-gold);
+  border-radius: 50%;
+}
+.bdoh-map__zone {
+  margin-top: calc(9px * var(--k));
+  text-align: center;
+  font-family: var(--bdo-font-display);
+  font-size: calc(15px * var(--k));
+  line-height: 1.1;
+  letter-spacing: 0.06em;
+  font-variant-caps: small-caps;
+  white-space: nowrap;
+  color: #f1e3c4;
+  text-shadow: 0 1px 2px #000, 0 0 6px rgba(0, 0, 0, 0.9);
+}
+.bdoh-map__xy {
+  margin-top: calc(2px * var(--k));
+  text-align: center;
+  font-family: var(--bdo-font-num);
+  font-size: calc(10px * var(--k));
+  letter-spacing: 0.08em;
+  color: var(--bdo-ivory-dim);
+  text-shadow: 0 1px 2px #000;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------------- уведомления справа */
+
+.bdoh-notes {
+  position: absolute;
+  right: calc(18px * var(--k));
+  top: calc(236px * var(--k));
+  width: calc(270px * var(--k));
+  height: 0;
+}
+.bdoh-note {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 100%;
+  height: calc(42px * var(--k));
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--k));
+  padding: 0 calc(10px * var(--k)) 0 calc(24px * var(--k));
+  opacity: 0;
+  background: linear-gradient(270deg, rgba(10, 8, 6, 0.82) 0%, rgba(10, 8, 6, 0.66) 62%, rgba(10, 8, 6, 0) 100%);
+  border-right: 2px solid var(--bdo-gold);
+  transition: opacity 0.5s, transform 0.45s var(--bdo-ease);
+}
+.bdoh-note.is-reset {
+  transition: none;
+}
+.bdoh-note.is-in {
+  opacity: 1;
+}
+.bdoh-note__txt {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+}
+.bdoh-note__t {
+  font-family: var(--bdo-font-display);
+  font-size: calc(15px * var(--k));
+  line-height: 1.15;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--bdo-gold-hi);
+  text-shadow: 0 1px 2px #000;
+}
+.bdoh-note__s {
+  font-family: var(--bdo-font-body);
+  font-size: calc(11.5px * var(--k));
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--bdo-ivory-dim);
+  text-shadow: 0 1px 2px #000;
+}
+.bdoh-note__i {
+  width: calc(28px * var(--k));
+  height: calc(28px * var(--k));
+  flex: none;
+  outline: 1px solid var(--bdo-bronze);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6);
+}
+.bdoh-note[data-tone='blood'] { border-right-color: var(--bdo-blood-hi); }
+.bdoh-note[data-tone='blood'] .bdoh-note__t { color: #f0a08a; }
+.bdoh-note[data-tone='ember'] { border-right-color: var(--bdo-ember); }
+.bdoh-note[data-tone='dim'] { border-right-color: var(--bdo-bronze); }
+.bdoh-note[data-tone='dim'] .bdoh-note__t { color: var(--bdo-ivory); }
+
+/* ----------------------------------------------------------------------------- титр зоны */
+
+.bdoh-zone {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 26%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(6px * var(--k));
+  padding: calc(14px * var(--k)) 0 calc(16px * var(--k));
+  opacity: 0;
+  transform: translateY(-50%);
+  background: radial-gradient(ellipse 34% 50% at 50% 50%, rgba(6, 5, 4, 0.5) 0%, rgba(6, 5, 4, 0.24) 60%, rgba(6, 5, 4, 0) 100%);
+  transition: opacity 1.2s ease-in, transform 1.6s var(--bdo-ease);
+}
+.bdoh-zone.is-on {
+  opacity: 1;
+  transform: translateY(-50%) translateY(calc(-6px * var(--k)));
+  transition: opacity 0.8s ease-out, transform 1.6s var(--bdo-ease);
+}
+.bdoh-zone.is-reset {
+  transition: none;
+  transform: translateY(-50%) translateY(calc(6px * var(--k)));
+}
+.bdoh-zone__row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(20px * var(--k));
+  width: 100%;
+}
+.bdoh-zone__line {
+  position: relative;
+  width: min(20vw, calc(260px * var(--k)));
+  height: 1px;
+  background: linear-gradient(90deg, rgba(216, 179, 106, 0) 0%, rgba(216, 179, 106, 0.9) 100%);
+}
+.bdoh-zone__line--r {
+  background: linear-gradient(270deg, rgba(216, 179, 106, 0) 0%, rgba(216, 179, 106, 0.9) 100%);
+}
+.bdoh-zone__line::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: calc(6px * var(--k));
+  height: calc(6px * var(--k));
+  background: var(--bdo-gold-hi);
+  transform: translateY(-50%) rotate(45deg);
+}
+.bdoh-zone__line--l::after { right: calc(-3px * var(--k)); }
+.bdoh-zone__line--r::after { left: calc(-3px * var(--k)); }
+.bdoh-zone__name {
+  position: relative;
+  font-family: var(--bdo-font-display);
+  font-size: calc(42px * var(--k));
+  line-height: 1.05;
+  letter-spacing: 0.24em;
+  margin-right: -0.24em;
+  font-variant-caps: small-caps;
+  white-space: nowrap;
+  color: var(--bdo-gold-hi);
+  background: linear-gradient(180deg, #fff1cc 0%, var(--bdo-gold-hi) 30%, var(--bdo-gold) 62%, var(--bdo-gold-deep) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+/* тень под золотым градиентом — отдельным слоем (text-shadow поверх background-clip:text не работает) */
+.bdoh-zone__name::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95), 0 0 16px rgba(0, 0, 0, 0.7);
+  background: none;
+}
+.bdoh-zone__sub {
+  font-family: var(--bdo-font-italic);
+  font-style: italic;
+  font-weight: 500;
+  font-size: calc(18px * var(--k));
+  letter-spacing: 0.05em;
+  color: var(--bdo-ivory-dim);
+  text-shadow: 0 1px 3px #000, 0 0 8px rgba(0, 0, 0, 0.8);
+}
+
+/* ------------------------------------------------------------ reduced motion и низкое качество */
+
+.bdo-hud.is-rm .bdoh-note,
+.bdo-hud.is-rm .bdoh-zone,
+.bdo-hud.is-rm .bdoh-zone.is-on {
+  transition-property: opacity;
+}
+.bdo-hud.is-rm .bdoh-zone,
+.bdo-hud.is-rm .bdoh-zone.is-on,
+.bdo-hud.is-rm .bdoh-zone.is-reset {
+  transform: translateY(-50%);
+}
+.bdo-hud.is-rm .bdoh-res--hp.is-low .bdoh-res__glow {
+  animation: none;
+  opacity: 0.7;
+}
+.bdo-hud.is-rm .bdoh-cell.is-cast {
+  animation: none;
+}
+.bdo-hud.is-lowq .bdoh-zone__name::before {
+  display: none;
+}
+.bdo-hud.is-lowq .bdoh-zone {
+  background: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bdo-hud .bdoh-res--hp.is-low .bdoh-res__glow,
+  .bdo-hud .bdoh-cell.is-cast {
+    animation: none;
+  }
+}

@@ -32,12 +32,22 @@ const CAMERA_STARTING = ['permission', 'loading'];
 const BOSS_NAME = 'Регент Нимба';
 const QUALITY_OPTIONS = [['low', 'Низкое'], ['medium', 'Среднее'], ['high', 'Высокое']];
 const QUALITY_VALUES = QUALITY_OPTIONS.map((q) => q[0]);
-const DEFAULT_SETTINGS = Object.freeze({ quality: 'medium', volume: 0.8, reducedMotion: false, sensitivity: 1, hero: 'ashen' });
+const DEFAULT_SETTINGS = Object.freeze({ quality: 'medium', volume: 0.8, reducedMotion: false, sensitivity: 1, hero: 'ashen', bdoUi: true });
 // [ASHEN_V3] выбор героя (модели — modules/heroModel.js)
+// [BDO] 4-е поле — карточка героя в стиле Black Desert: класс (role), стихия (element), описание (lore).
 const HERO_OPTIONS = [
-  ['ashen', 'Пепельный страж', 'Плащ с руной, в стиле мира'],
-  ['elf', 'Эльфийка', 'Лесная стража в бирюзовом доспехе'],
-  ['dark', 'Тёмная чародейка', 'Магия затмения, фиолетовый наряд'],
+  ['ashen', 'Пепельный страж', 'Плащ с руной, в стиле мира', {
+    role: 'Страж пепла · ближний бой и руны', element: 'Пепел и пламя',
+    lore: 'Дал обет у погасшего костра Нимба. Руна на плаще хранит жар клятвы: огонь, щит и выброс силы.',
+  }],
+  ['elf', 'Эльфийка', 'Лесная стража в бирюзовом доспехе', {
+    role: 'Лесная стражница · лук и чары', element: 'Лес и ветер',
+    lore: 'Хранит тропы эльфийской деревни. Бирюзовый доспех, меткий выстрел и чары, что лечат и связывают врага.',
+  }],
+  ['dark', 'Тёмная чародейка', 'Магия затмения, фиолетовый наряд', {
+    role: 'Чародейка затмения · дальний бой', element: 'Тьма и затмение',
+    lore: 'Черпает силу в тени Нимба. Сферы, призмы и лучи бьют издалека — и не прощают промаха.',
+  }],
 ];
 const PENDING_MS = 4000;
 const IMPULSE_LATCH_MS = 900;
@@ -342,6 +352,7 @@ function normSettings(s) {
     sensitivity: isNum(o.sensitivity) ? clamp(o.sensitivity, 0.5, 2) : DEFAULT_SETTINGS.sensitivity,
     moveMode: o.moveMode === 'stick' ? 'stick' : 'steer', // [V5] по умолчанию «Руль»
     hero: HERO_OPTIONS.some(([v]) => v === o.hero) ? o.hero : DEFAULT_SETTINGS.hero,
+    bdoUi: o.bdoUi !== false, // [BDO] интерфейс Black Desert (по умолчанию включён)
   };
 }
 
@@ -929,10 +940,17 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const list = el('div', { class: 'ao-heroes' });
     const fs = el('fieldset', { class: 'ao-field ao-fieldset ao-heropick' }, el('legend', { class: 'ao-field__legend', text: 'Герой' }), list);
     const inputs = [];
-    for (const [value, label, sub] of HERO_OPTIONS) {
+    for (const [value, label, sub, info] of HERO_OPTIONS) {
       const input = el('input', { type: 'radio', name, value, class: 'ao-herocard__input' });
       inputs.push(input);
-      list.append(el('label', { class: 'ao-herocard' }, input, el('span', { class: 'ao-herocard__name', text: label }), el('span', { class: 'ao-herocard__sub', text: sub })));
+      // [BDO] класс, стихия и описание — видны только в стиле Black Desert (без него — прежняя карточка)
+      const x = info || {};
+      list.append(el('label', { class: 'ao-herocard', 'data-hero': value }, input,
+        el('span', { class: 'ao-herocard__crest', 'aria-hidden': 'true' }),
+        el('span', { class: 'ao-herocard__name', text: label }), el('span', { class: 'ao-herocard__sub', text: sub }),
+        x.role ? el('span', { class: 'ao-herocard__role', text: x.role }) : null,
+        x.element ? el('span', { class: 'ao-herocard__elem' }, el('span', { class: 'ao-herocard__elemk', text: 'Стихия' }), el('span', { text: x.element })) : null,
+        x.lore ? el('span', { class: 'ao-herocard__lore', text: x.lore }) : null));
       listen(input, 'change', () => { if (input.checked) invoke('onSettings', { hero: value }); });
     }
     const ctl = {
@@ -955,6 +973,26 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       sync(settings, force) {
         if (!force && doc.activeElement === input) return;
         if (input.checked !== settings.reducedMotion) input.checked = settings.reducedMotion;
+      },
+    };
+    listen(input, 'blur', () => {
+      if (state.settings) ctl.sync(state.settings, true);
+    });
+    controls.push(ctl);
+    return node;
+  }
+
+  // [BDO] «Интерфейс Black Desert» — как «Уменьшенное движение»; inline — строка рядом с переключателем отладки
+  function buildBdoUi(prefix, inline = false) {
+    const id = `${uid}-${prefix}-bdoui`;
+    const input = el('input', { type: 'checkbox', id, class: 'ao-check__input' });
+    const node = el(inline ? 'span' : 'div', { class: 'ao-field ao-field--bdoui' }, el('label', { class: 'ao-check', for: id }, input, el('span', { text: 'Интерфейс Black Desert' })));
+    listen(input, 'change', () => invoke('onSettings', { bdoUi: input.checked }));
+    const ctl = {
+      sync(settings, force) {
+        if (!force && doc.activeElement === input) return;
+        const on = settings.bdoUi !== false;
+        if (input.checked !== on) input.checked = on;
       },
     };
     listen(input, 'blur', () => {
@@ -1019,6 +1057,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           }),
         );
       } else if (key === 'reducedMotion') wrap.append(buildMotion(prefix));
+      else if (key === 'bdoUi') wrap.append(buildBdoUi(prefix)); // [BDO]
     }
     return wrap;
   }
@@ -1067,10 +1106,17 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts), el('p', { class: 'ao-note', text: 'Играется сидя. Нужны веб-камера, Chrome или Edge и устойчивый стул.' })),
       buildHeroPick('menu'),
       el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'quality', 'volume', 'reducedMotion'], 'menu')),
-      el('div', { class: 'ao-menu__foot' }, dbg, dbgKeys),
+      el('div', { class: 'ao-menu__foot' }, dbg, buildBdoUi('menu', true), dbgKeys), // [BDO] переключатель стиля — в строке отладки, высоту меню не меняет
     );
+    const section = screenSection('menu', panel, hid);
+    // [BDO] декор экрана входа: виньетка и пыльца (видны только в стиле Black Desert, без указателя)
+    try {
+      const motes = el('div', { class: 'ao-motes', 'aria-hidden': 'true' });
+      for (let i = 0; i < 16; i += 1) motes.append(el('span', { class: 'ao-mote' }));
+      section.prepend(el('div', { class: 'ao-vignette', 'aria-hidden': 'true' }), motes);
+    } catch (e) { /* без декора — не фатально */ }
     return {
-      section: screenSection('menu', panel, hid),
+      section,
       heading: title,
       focus: () => start.node,
       update(ctx) {
@@ -1548,6 +1594,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const restart = btn('Начать бой заново', () => invoke('onRestart'));
     const oathP = btn('Клятва героя', () => invoke('onOath', { from: 'paused' }));
     const exit = btn('Выйти в меню', () => invoke('onExit'), { variant: 'quiet' });
+    exit.node.classList.add('ao-btn--danger'); // [BDO] выход из боя — «кровавая» кнопка (без стиля BDO правила нет, вид прежний)
     const dbgKeys = el('p', { class: 'ao-debugkeys', hidden: true, text: DEBUG_KEYS_TEXT });
     const panel = el(
       'div',
@@ -1557,7 +1604,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         'div',
         { class: 'ao-cols' },
         el('div', { class: 'ao-col ao-col--media' }, host, status.node, hint),
-        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
+        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion', 'bdoUi'], 'pause')), // [BDO] + переключатель стиля
       ),
       dbgKeys,
       el('div', { class: 'ao-actions' }, resume.node, recal.node, restart.node, oathP.node, el('span', { class: 'ao-spacer' }), exit.node),
@@ -2162,7 +2209,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   function syncSettings(s) {
-    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}`;
+    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.bdoUi}`;
     state.settings = s;
     if (key === state.settingsKey) return;
     state.settingsKey = key;
@@ -2239,6 +2286,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     setHidden(debugBadge, !debug);
     setClass(ui, 'ao-reduced-motion', ctx.settings.reducedMotion);
     setClass(doc.documentElement, 'ao-bdo', !(vm.settings && vm.settings.bdoUi === false)); // [BDO] стиль Black Desert (настройка bdoUi)
+    setAttr(ui, 'data-quality', ctx.settings.quality); // [BDO] декор меню (пыльца) выключается на низком качестве
     syncSettings(ctx.settings);
     UPDATERS[screen](ctx);
     if (state.focusPending) {

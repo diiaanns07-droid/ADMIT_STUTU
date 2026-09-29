@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Стенд tracking HUD — DEBUG / НЕ CV</title>
+<!-- [BDO] шрифты подписей зеркала (без сети — системная антиква) -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;700&family=Cormorant+Garamond:ital,wght@1,500&family=Forum&display=swap">
 <style>
   :root { --gold: #c9a45c; --ember: #ff6a3c; --ink: #dfe8f5; --dim: #8d97a6; }
   * { box-sizing: border-box; }
@@ -16,15 +18,32 @@
   .row { display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap; }
   figure { margin: 0; }
   figcaption { font: 11px "Consolas", monospace; color: var(--dim); margin-top: 5px; }
-  /* Слот как .ao-camera-slot в игре: video/overlay абсолютно, inset 0, object-fit: contain. */
-  .slot { position: relative; overflow: hidden; background: #07080b; border: 1px solid #2a2419; }
-  .slot > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: contain; }
-  .slot > canvas.video { transform: scaleX(-1); }   /* как #ao-video: зеркалится только «видео» */
-  .slot::after { content: 'DEBUG / НЕ CV'; position: absolute; right: 4px; bottom: 3px; font: 700 8px "Consolas", monospace; color: var(--ember); opacity: 0.8; pointer-events: none; }
-  #full { width: 460px; height: 345px; }
-  #mini { width: 150px; height: 112px; }
-  #wide { width: 300px; height: 225px; }
+  /* Слот как в игре: хост .ao-slothost/.ao-cvdock__slot (4:3) > .ao-camera-slot > video + overlay
+     (абсолютно, inset 0, object-fit: contain). [BDO] рама-зеркало — core/bdoMirror.css (html.ao-bdo). */
+  .slot { position: relative; overflow: hidden; aspect-ratio: 4 / 3; }
+  .slot > .ao-camera-slot { position: absolute; inset: 0; overflow: hidden; }
+  .slot canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: contain; }
+  .slot canvas.video { transform: scaleX(-1); }   /* как #ao-video: зеркалится только «видео» */
+  html:not(.ao-bdo) .slot { background: #07080b; border: 1px solid #2a2419; }
+  html:not(.ao-bdo) .slot::after { content: 'DEBUG / НЕ CV'; position: absolute; right: 4px; bottom: 3px; font: 700 8px "Consolas", monospace; color: var(--ember); opacity: 0.8; pointer-events: none; }
+  #full { width: 460px; }
+  #mini { width: 150px; }
+  #wide { width: 300px; }
   #fuzz { width: 120px; height: 90px; }
+  /* док боя: в BDO ширину и строку статуса задаёт bdoMirror.css */
+  .ao-cvdock { width: 150px; }
+  .ao-cvdock #mini { width: 100%; }
+  .ao-status { display: flex; align-items: center; gap: 0.45rem; margin-top: 0.35rem; font-size: 12px; }
+  .ao-status__text { display: flex; flex-direction: column; }
+  .ao-dot { flex: none; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--ao-tone, #8d97a6); }
+  .ao-status[data-tone='good'] { --ao-tone: #8fc98a; }
+  .ao-status[data-tone='bad'] { --ao-tone: #e0484a; }
+  .ao-status[data-tone='busy'] { --ao-tone: #5aa0ff; }
+  .ao-slothost[data-tone='good'], .ao-cvdock__slot[data-tone='good'] { --ao-tone: #8fc98a; }
+  .ao-slothost[data-tone='bad'], .ao-cvdock__slot[data-tone='bad'] { --ao-tone: #e0484a; }
+  .ao-slothost[data-tone='busy'], .ao-cvdock__slot[data-tone='busy'] { --ao-tone: #5aa0ff; }
+  html.ao-bdo body { background: radial-gradient(ellipse at 40% 30%, #1b1712 0%, #0b0a09 70%); min-height: 100vh; }
+  html.ao-bdo figure { padding: 16px 12px 6px; }
   #panel { font: 11px/1.5 "Consolas", monospace; color: var(--dim); white-space: pre; min-width: 260px; }
   #panel b { color: var(--ink); font-weight: 600; }
 </style>
@@ -33,13 +52,13 @@
 <header>
   <h1>TRACKING HUD</h1>
   <span class="badge">DEBUG / НЕ CV</span>
-  <span class="note">синтетические landmarks по сценарию, камера и MediaPipe не используются · ?rm=1 — reducedMotion · ?t=сек — заморозить сценарий</span>
+  <span class="note">синтетические landmarks по сценарию, камера и MediaPipe не используются · ?rm=1 — reducedMotion · ?t=сек — заморозить сценарий · &amp;bdo=0 — прежний «Трекинг» · &amp;hands=0 — без кистей · &amp;q=low</span>
 </header>
 <div class="row">
-  <figure><div class="slot" id="full"><canvas class="video" width="640" height="480"></canvas><canvas class="ov"></canvas></div><figcaption>full · 460×345 · кадр 640×480</figcaption></figure>
+  <figure><div class="slot ao-slothost" id="full" data-tone="good"><div class="ao-camera-slot"><canvas class="video" data-bdo-video width="640" height="480"></canvas><canvas class="ov"></canvas></div></div><figcaption>full · 460×345 · кадр 640×480</figcaption></figure>
   <div class="col">
-    <figure><div class="slot" id="mini"><canvas class="video" width="640" height="480"></canvas><canvas class="ov"></canvas></div><figcaption>mini · 150×112 (док боя)</figcaption></figure>
-    <figure style="margin-top:12px"><div class="slot" id="wide"><canvas class="video" width="640" height="360"></canvas><canvas class="ov"></canvas></div><figcaption>contain · кадр 16:9 в слоте 4:3</figcaption></figure>
+    <figure><div class="ao-cvdock"><div class="slot ao-cvdock__slot" id="mini" data-tone="good"><div class="ao-camera-slot"><canvas class="video" data-bdo-video width="640" height="480"></canvas><canvas class="ov"></canvas></div></div><div class="ao-status ao-status--compact" id="dock-status" data-tone="good"><span class="ao-dot" aria-hidden="true"></span><span class="ao-status__text"><span class="ao-status__label">Трекинг устойчивый</span></span></div></div><figcaption>mini · док боя (.ao-cvdock)</figcaption></figure>
+    <figure style="margin-top:12px"><div class="slot ao-slothost" id="wide" data-tone="good"><div class="ao-camera-slot"><canvas class="video" data-bdo-video width="640" height="360"></canvas><canvas class="ov"></canvas></div></div><figcaption>contain · кадр 16:9 в слоте 4:3</figcaption></figure>
   </div>
   <div>
     <div id="panel">…</div>
@@ -54,7 +73,10 @@ const RM = Q.get('rm') === '1';
 const FREEZE = Q.has('t') ? Math.max(0, parseFloat(Q.get('t')) || 0) : null;
 const LOOP = 15.5;
 const POSE_HZ = 20;
-const settings = { reducedMotion: RM, quality: 'medium' };
+const BDO_ON = Q.get('bdo') !== '0';            // [BDO] &bdo=0 — прежний «Трекинг» HUD
+const HANDS_ON = Q.get('hands') !== '0';        // [BDO] синтетические кисти (21 точка)
+const settings = { reducedMotion: RM, quality: Q.get('q') || 'medium', bdoUi: BDO_ON };
+document.documentElement.classList.toggle('ao-bdo', BDO_ON);
 
 // ---------------------------------------------------------------- перехват предупреждений HUD
 const hudWarnings = [];
@@ -223,6 +245,57 @@ function stickFor(t) {
   };
 }
 
+// [BDO] синтетические кисти (21 точка, координаты ПОКАЗА — уже зеркальные, как vision.getHands()).
+// Канон правой кисти ладонью к камере, пальцы вверх; единица — длина ладони (запястье → MCP среднего).
+const H_OPEN = [[0, 0], [-0.3, -0.2], [-0.5, -0.42], [-0.64, -0.6], [-0.76, -0.76], [-0.24, -0.95], [-0.28, -1.3], [-0.3, -1.52], [-0.32, -1.72],
+  [0, -1.0], [0, -1.4], [0, -1.66], [0, -1.9], [0.21, -0.95], [0.24, -1.3], [0.26, -1.52], [0.27, -1.7], [0.4, -0.84], [0.47, -1.1], [0.52, -1.27], [0.56, -1.42]];
+const H_FIST = [[0, 0], [-0.3, -0.2], [-0.42, -0.45], [-0.36, -0.66], [-0.2, -0.72], [-0.24, -0.95], [-0.3, -1.2], [-0.24, -1.05], [-0.2, -0.85],
+  [0, -1.0], [-0.02, -1.25], [0, -1.08], [0, -0.88], [0.21, -0.95], [0.22, -1.18], [0.2, -1.03], [0.19, -0.85], [0.4, -0.84], [0.42, -1.02], [0.38, -0.92], [0.36, -0.78]];
+const H_PINCH = H_OPEN.map((p, i) => ({ 2: [-0.48, -0.42], 3: [-0.56, -0.72], 4: [-0.5, -1.0], 6: [-0.34, -1.25], 7: [-0.46, -1.2], 8: [-0.5, -1.04] }[i] || p));
+const H_POINT = H_FIST.map((p, i) => (i >= 5 && i <= 8 ? H_OPEN[i] : p));
+const PALM = 0.085;                              // длина ладони в долях высоты кадра
+function handAt(side, shape, wx, wy, tilt, charge, palmFacing) {
+  const base = shape === 'fist' ? H_FIST : shape === 'pinch' ? H_PINCH : shape === 'point' ? H_POINT : H_OPEN;
+  const sx = side === 'left' ? -1 : 1, c = Math.cos(tilt), s = Math.sin(tilt);
+  const landmarks = base.map(([x, y]) => ({ x: wx + (x * sx * c - y * s) * PALM * 0.75, y: wy + (x * sx * s + y * c) * PALM }));
+  return { side, shape, palmFacing: palmFacing || 'toward', charge: charge || 0, stableMs: 400, confidence: 0.95, landmarks, center: landmarks[9], tip: landmarks[8], palmSize: PALM, ready: true };
+}
+// след «Игнис ▲»: треугольник над правой рукой, рисуется 4.7–5.3 с
+function triPoint(u, cx, cy, r) {
+  const V = [[0, -r], [r * 0.9, r * 0.62], [-r * 0.9, r * 0.62], [0, -r]];
+  const k = Math.min(2.999, Math.max(0, u * 3)), i = Math.floor(k), f = k - i;
+  return { x: cx + (V[i][0] + (V[i + 1][0] - V[i][0]) * f) * 0.75, y: cy + V[i][1] + (V[i + 1][1] - V[i][1]) * f };
+}
+function handsFor(t, lms) {
+  if (!HANDS_ON || !lms) return null;
+  const p = sim.p;
+  const r = p.rArm, l = p.lArm;
+  const loopBase = Math.floor(performance.now() / (LOOP * 1000));
+  let right = null, left = null, trail = [], drawing = false, lastRune = null;
+  const rw = lms[16], lw = lms[15];
+  if (r > 0.6 && rw) {
+    const wx = 1 - rw.x, wy = rw.y - 0.02;
+    if (t >= 7.0) right = handAt('right', 'fist', wx, wy, 0.12, Math.min(1, Math.max(0, (t - 7.25) / 1.2)));
+    else if (t < 4.7) right = handAt('right', 'pinch', wx, wy, 0.1);
+    else {
+      const u = Math.min(1, Math.max(0, (t - 4.7) / 0.6));
+      const cx = 1 - rw.x - 0.02, cy = 0.2;
+      const n = Math.max(2, Math.round(u * 36));
+      for (let i = 0; i <= n; i++) trail.push(triPoint((i / n) * u, cx, cy, 0.1));
+      drawing = t < 5.3;
+      const head = trail[trail.length - 1];
+      const h0 = handAt('right', 'point', 0, 0, 0.08);
+      const off = h0.landmarks[8];
+      right = handAt('right', 'point', head.x - off.x, head.y - off.y, 0.08);
+      if (t > 5.6) trail = [];
+    }
+  }
+  if (t >= 5.3 && t < 7.0) lastRune = { rune: 'ignis', tMs: 5300 + loopBase };   // распознанная руна держится до следующей
+  if (l > 0.6 && lw) left = handAt('left', 'open', 1 - lw.x, lw.y - 0.02, -0.12, 0, 'toward');
+  if (!right && !left && !lastRune) return null;
+  return { available: !!(right || left), left, right, trail, drawing, lastRune, twin: null };
+}
+
 function readInput(t, status) {
   const p = sim.p;
   const valid = status.status === 'ready' && !!sim.lms && !p.calibrating;
@@ -292,14 +365,30 @@ function poseFor(slot, hudNowPose) {
 function drawAll(t, hudNow, poseT, measure) {
   const status = statusFor(t, hudNow);
   const input = readInput(t, status);
+  const hands = handsFor(t, sim.lms);
+  paintDock(status);
   for (const s of slots) {
-    const frame = { pose: poseFor(s, poseT), status, input, settings, mode: s.mode };
+    const frame = { pose: poseFor(s, poseT), status, input, settings, mode: s.mode, hands };
     const t0 = performance.now();
     s.hud.draw(hudNow, frame);
     const dt = performance.now() - t0;
     if (measure) { s.times.push(dt); if (s.times.length > 300) s.times.shift(); }
   }
   return { status, input };
+}
+
+// [BDO] строка статуса дока и камень рамы — как ui.js (DOM пишется только при смене)
+const dockStatus = document.getElementById('dock-status');
+const dockLabel = dockStatus.querySelector('.ao-status__label');
+let dockKey = '';
+function paintDock(status) {
+  const st = status ? status.status : 'idle';
+  const [tone, label] = st === 'ready' ? ['good', 'Трекинг устойчивый'] : st === 'lost' ? ['bad', 'Поза потеряна'] : st === 'calibrating' ? ['busy', 'Калибровка…'] : ['neutral', 'Камера'];
+  if (tone + label === dockKey) return;
+  dockKey = tone + label;
+  dockStatus.setAttribute('data-tone', tone);
+  dockLabel.textContent = label;
+  for (const id of ['full', 'mini', 'wide']) document.getElementById(id).setAttribute('data-tone', tone);
 }
 
 function stats(arr) {
@@ -411,13 +500,19 @@ runFuzz();
 if (FREEZE !== null) {
   // Детерминированный кадр: прогон сценария с t-3 до t шагом 1/60 с «часами HUD» = время сценария.
   const t = Math.min(FREEZE, LOOP - 0.001);
-  const base = 100000;
-  const t0 = Math.max(0, t - 3);
-  sim = makeSim(); lastPoseFrame = -1;
-  for (let x = t0; x < t; x += 1 / 60) stepScript(x, base + x * 1000, base, true);
-  stepScript(t, base + t * 1000, base, true);
-  updatePanel(t);
+  const renderFrozen = () => {
+    const base = 100000;
+    const t0 = Math.max(0, t - 3);
+    sim = makeSim(); lastPoseFrame = -1;
+    for (const s of slots) s.hud.clear();
+    for (let x = t0; x < t; x += 1 / 60) stepScript(x, base + x * 1000, base, true);
+    stepScript(t, base + t * 1000, base, true);
+    updatePanel(t);
+  };
+  renderFrozen();
   window.__standReady = true;
+  // [BDO] подписи Forum: перерисовать, когда веб-шрифты догрузятся
+  try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => setTimeout(renderFrozen, 50)); } catch (e) { /* ignore */ }
 } else {
   const start = performance.now();
   let lastPanel = 0;

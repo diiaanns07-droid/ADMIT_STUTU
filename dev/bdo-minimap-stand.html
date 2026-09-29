@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHEN OATH — стенд мини-карты [BDO]</title>
+<link rel="stylesheet" href="../modules/ui.css">
+<style>
+  /* [BDO] Стенд мини-карты core/bdoMinimap.js без WebGL: фальшивая раскладка мира (как в
+     dev/bdo-hud-stand.html) + фальшивые коллайдеры и неровная кромка. Параметры:
+     &rm=1 — reducedMotion, &t=сек — заморозить время, &q=low|medium|high, &rot=1 — карта вращается, &raw=1 — без jag/коллайдеров */
+  html, body { margin: 0; background: #07090c; color: #b9ae96; font-family: 'Alegreya Sans', system-ui, sans-serif; }
+  body { padding: 14px 18px; background: radial-gradient(ellipse at 50% 0%, #1a1712 0%, #0a0a0b 60%, #060708 100%); min-height: 100vh; box-sizing: border-box; }
+  h1 { font: 400 20px 'Forum', Georgia, serif; letter-spacing: 0.12em; color: #d8b36a; margin: 0 0 10px; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-start; }
+  .card { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .cap { font: 400 13px 'Forum', Georgia, serif; letter-spacing: 0.08em; color: #ece2cc; text-align: center; }
+  .sub { font: 400 11px 'Alegreya Sans', sans-serif; color: #857c6a; text-align: center; }
+  /* кольцо-рамка «как в HUD» — только для наглядности стенда (в игре рисует bdoHud) */
+  .ring { position: relative; border-radius: 50%; padding: 4px; background: conic-gradient(from 0deg, #5a4528, #b08a52, #5a4528, #8a6a3e, #5a4528);
+          box-shadow: 0 0 0 1px #0b0a09, 0 6px 18px rgba(0,0,0,0.7); }
+  .ring::after { content: ''; position: absolute; inset: 2px; border-radius: 50%; border: 1px solid rgba(243,220,160,0.28); pointer-events: none; }
+  .ring canvas { display: block; border-radius: 50%; }
+  .zone { font: 400 12px 'Forum', Georgia, serif; color: #ece2cc; letter-spacing: 0.06em; }
+  .coord { font: 500 10px 'Cinzel', Georgia, serif; color: #857c6a; letter-spacing: 0.08em; }
+  .small .row { gap: 10px 16px; }
+</style>
+</head>
+<body>
+<h1>Мини-карта — стенд</h1>
+<div class="row" id="big"></div>
+<div class="row small" id="small" style="margin-top:14px"></div>
+<script type="module">
+import { createMinimap, zoneAt } from '../core/bdoMinimap.js';
+
+const q = new URLSearchParams(location.search);
+const rm = q.get('rm') === '1';
+const freezeT = q.has('t') ? +q.get('t') : null;
+const quality = q.get('q') || 'medium';
+const rotate = q.get('rot') === '1';
+const raw = q.get('raw') === '1';
+window.__STAND__ = { ready: false };
+
+// ---------------------------------------------------------------- фальшивая раскладка мира (из dev/bdo-hud-stand.html)
+const LAYOUT = {
+  version: 1, bounds: { minX: -262, maxX: 262, minZ: -262, maxZ: 262 }, worldEdge: 238,
+  arena: { x: 0, z: 0, r: 13, leash: 6 }, bossHome: { x: 0, z: 0 }, playerSpawn: { x: 0, z: 26, yaw: Math.PI },
+  landmarks: [
+    { id: 'arena', kind: 'landmark', name: 'Арена Регента', x: 0, y: 0, z: 0, r: 13 },
+    { id: 'shrine', kind: 'landmark', name: 'Врата святилища', x: -20, y: -1, z: -52, r: 17 },
+    { id: 'city', kind: 'landmark', name: 'Нижний город', x: 96, y: 0, z: 96, r: 50 },
+    { id: 'forest', kind: 'landmark', name: 'Пепельный лес', x: -142, y: 0, z: 4, r: 72 },
+    { id: 'lake', kind: 'landmark', name: 'Зеркальное озеро', x: -80, y: 0, z: 110, r: 30 },
+    { id: 'graves', kind: 'landmark', name: 'Кладбище колоссов', x: 140, y: 0, z: -95, r: 46 },
+    { id: 'hill', kind: 'landmark', name: 'Холм клятвы', x: -95, y: 22, z: -140, r: 14 },
+    { id: 'gate', kind: 'landmark', name: 'Павшие врата', x: 0, y: 0, z: 214, r: 16 },
+    { id: 'elves', kind: 'landmark', name: 'Эльфийская деревня', x: 170, y: 0, z: 20, r: 40 },
+    { id: 'bright-forest', kind: 'landmark', name: 'Сияющий лес', x: 150, y: 0, z: 160, r: 45 },
+  ],
+  roads: [
+    [[20, 22], [50, 52], [72, 74], [96, 96]], [[-24, 6], [-44, 4], [-80, -6], [-112, 4], [-142, 4]],
+    [[-22, 26], [-44, 56], [-58, 78], [-61.8, 84.9]], [[18, -14], [52, -22], [80, -55], [110, -80], [140, -95]],
+    [[-14, -40], [-50, -70], [-72, -102], [-88, -126], [-95, -140]], [[0, 36], [4, 90], [-4, 150], [0, 230]],
+    [[96, 96], [138, 46], [152, -20], [140, -95]], [[-142, 4], [-122, 50], [-100, 85]], [[22, 4], [70, 6], [118, 10], [150, 18]],
+  ].map((pl) => pl.map(([x, z]) => ({ x, z }))),
+  pois: [
+    { id: 'ember-0', kind: 'ember', x: 30, y: 0, z: 40, r: 2.2 }, { id: 'ember-1', kind: 'ember', x: -60, y: 0, z: 10, r: 2.2 },
+    { id: 'ember-2', kind: 'ember', x: 90, y: 0, z: -40, r: 2.2 }, { id: 'ember-3', kind: 'ember', x: -120, y: 0, z: 60, r: 2.2 },
+    { id: 'ember-4', kind: 'ember', x: 110, y: 0, z: 118, r: 2.2 }, { id: 'ember-5', kind: 'ember', x: 22, y: 0, z: 196, r: 2.2 },
+    { id: 'ember-6', kind: 'ember', x: 8, y: 0, z: -22, r: 2.2 },
+  ],
+  colliders: [],
+};
+// как в игре: неровная кромка (edgeDistance) и коллайдеры построек/деревьев/камней
+if (!raw) {
+  const jag = (a) => Math.sin(a * 32) * 2.4 + Math.sin(a * 13 + 1.7) * 3.1 + Math.sin(a * 71 + 0.3) * 1.1;
+  LAYOUT.edgeDistance = (x, z) => { const x2 = x * x, z2 = z * z; return 238 + jag(Math.atan2(x, z)) - Math.sqrt(Math.sqrt(x2 * x2 + z2 * z2)); };
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const C = LAYOUT.colliders;
+  // Нижний город: кварталы по сетке под 45°
+  const th = Math.PI / 4, ex = { x: Math.cos(th), z: -Math.sin(th) }, ez = { x: Math.sin(th), z: Math.cos(th) };
+  for (let u = -36; u <= 36; u += 12) for (let v = -36; v <= 36; v += 12) {
+    if (Math.hypot(u, v) > 42 || Math.abs(u) < 5 || rnd() < 0.25) continue;
+    const w = 3 + rnd() * 3, d = 3 + rnd() * 3, cxw = 96 + ex.x * u + ez.x * v, czw = 96 + ex.z * u + ez.z * v;
+    const c4 = [[-w, -d], [w, -d], [w, d], [-w, d]].map(([a, b]) => ({ x: cxw + ex.x * a + ez.x * b, z: czw + ex.z * a + ez.z * b }));
+    for (let i = 0; i < 4; i++) C.push({ type: 'segment', ax: c4[i].x, az: c4[i].z, bx: c4[(i + 1) % 4].x, bz: c4[(i + 1) % 4].z, r: 0.3 });
+  }
+  // деревья в лесах, надгробия на кладбище, колонны святилища
+  for (const [x0, z0, r, n, tr] of [[-142, 4, 70, 380, 0.9], [150, 160, 44, 170, 0.8], [170, 20, 38, 60, 0.7]]) for (let i = 0; i < n; i++) {
+    const a = rnd() * 6.283, rr = Math.sqrt(rnd()) * r; C.push({ type: 'circle', x: x0 + Math.sin(a) * rr, z: z0 + Math.cos(a) * rr, r: tr * (0.7 + rnd() * 0.8) });
+  }
+  for (let i = 0; i < 70; i++) { const a = rnd() * 6.283, rr = Math.sqrt(rnd()) * 40; C.push({ type: 'circle', x: 140 + Math.sin(a) * rr, z: -95 + Math.cos(a) * rr, r: 0.6 + rnd() * 0.6 }); }
+  for (let i = 0; i < 3; i++) C.push({ type: 'circle', x: 140 + (i - 1) * 14, z: -95 + (i % 2) * 10, r: 3.5 });
+  for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283; C.push({ type: 'circle', x: -20 + Math.sin(a) * 9, z: -52 + Math.cos(a) * 9, r: 0.9 }); }
+  for (let i = 0; i < 12; i++) { const a = i / 12 * 6.283; C.push({ type: 'circle', x: Math.sin(a) * 14.5, z: Math.cos(a) * 14.5, r: 0.8 }); }
+}
+
+// ---------------------------------------------------------------- сценарии
+const unlitAll = LAYOUT.pois.filter((p) => p.id !== 'ember-2' && p.id !== 'ember-0');   // два угля уже зажжены
+const snapBase = (o) => ({
+  mode: 'boss',
+  player: { position: { x: 0, y: 0, z: 0 }, yaw: Math.PI, hp: 80, maxHp: 100, encounter: 'explore', ...o.player },
+  boss: { position: { x: 0, y: 0, z: 0 }, hp: 610, maxHp: 1000, action: 'idle', ...(o.boss || {}) },
+  opponent: o.opponent || null, ...(o.extra || {}),
+});
+const SC = [
+  { name: 'У арены', sub: 'бой, 40 м', snap: snapBase({ player: { position: { x: 0, y: 0, z: 7 }, yaw: Math.PI, encounter: 'engaged' } }) },
+  { name: 'Дорога к городу', sub: 'yaw = atan2(1,1) — по дороге ↘', snap: snapBase({ player: { position: { x: 44, y: 0, z: 46 }, yaw: Math.atan2(1, 1) } }) },
+  { name: 'Нижний город', sub: '(96, 96), 90 м', snap: snapBase({ player: { position: { x: 96, y: 0, z: 96 }, yaw: Math.PI * 0.5 } }) },
+  { name: 'Край мира', sub: '(0, 230), взгляд +Z ↓', snap: snapBase({ player: { position: { x: 0, y: 0, z: 230 }, yaw: 0 } }) },
+  { name: 'PvP', sub: 'соперник смотрит на героя', snap: snapBase({ player: { position: { x: 3, y: 0, z: 9 }, yaw: Math.atan2(-9, -15), encounter: 'engaged' }, opponent: { id: 'peer-2', name: 'Кайрен', position: { x: -6, y: 0, z: -6 }, yaw: Math.atan2(9, 15), hp: 132, maxHp: 200 }, extra: { mode: 'pvp' } }) },
+  { name: 'Пепельный лес', sub: 'угли, стрелка к ближайшему', snap: snapBase({ player: { position: { x: -150, y: 0, z: -40 }, yaw: Math.PI * 1.25 } }) },
+  { name: 'Озеро', sub: '(-80, 110)', snap: snapBase({ player: { position: { x: -70, y: 0, z: 88 }, yaw: Math.PI * 0.8 } }) },
+  { name: 'Движение', sub: 'бег по кругу: стрелка = скорость', live: true, snap: snapBase({ player: { position: { x: 60, y: 0, z: 0 }, yaw: 0 } }) },
+];
+function card(host, sc, size) {
+  const c = document.createElement('div'); c.className = 'card';
+  const ring = document.createElement('div'); ring.className = 'ring';
+  const cv = document.createElement('canvas'); ring.append(cv);
+  const cap = document.createElement('div'); cap.className = size >= 250 ? 'cap' : 'zone';
+  const sub = document.createElement('div'); sub.className = size >= 250 ? 'sub' : 'coord';
+  c.append(ring, cap, sub); host.append(c);
+  const mm = createMinimap({ canvas: cv, rotate });
+  return { sc, size, mm, cap, sub };
+}
+const big = document.getElementById('big'), small = document.getElementById('small');
+const cards = [];
+for (const sc of SC.slice(0, 5)) cards.push(card(big, sc, 300));
+for (const sc of SC.slice(5)) cards.push(card(big, sc, 300));
+for (const sc of [SC[0], SC[2], SC[3], SC[4]]) { cards.push(card(small, sc, 170)); cards.push(card(small, sc, 140)); }
+const zoneOut = {};
+
+let t = 0, last = performance.now(), frames = 0, drawAcc = 0;
+// ?perf=1 — замер: одна карта 170 px, N кадров подряд с принудительной растеризацией (getImageData)
+window.__PERF__ = (n = 120, size = 170, dpr = 1) => {
+  const cv = document.createElement('canvas'), mm = createMinimap({ canvas: cv });
+  const s = SC[1].snap, f = { dtReal: 1 / 30, snapshot: s, settings: { quality, reducedMotion: rm, bdoUi: true }, pois: unlitAll, layout: LAYOUT };
+  mm.draw(f, { size, dpr }); cv.getContext('2d').getImageData(0, 0, 1, 1);
+  const g = cv.getContext('2d');
+  let t0 = performance.now();
+  for (let i = 0; i < n; i++) { g.clearRect(0, 0, 4, 4); }
+  g.getImageData(0, 0, 1, 1);
+  const base = performance.now() - t0;
+  t0 = performance.now();
+  for (let i = 0; i < n; i++) { s.player.position.x += 0.1; mm.draw(f, { size, dpr }); }
+  g.getImageData(0, 0, 1, 1);
+  const ms = (performance.now() - t0 - base) / n;
+  mm.dispose();
+  return { msPerDraw: +ms.toFixed(3) };
+};
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (window.__PAUSE__) return;
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  t = freezeT === null ? t + dt : freezeT;
+  const now0 = performance.now();
+  for (const k of cards) {
+    const s = k.sc.snap;
+    if (k.sc.live && k === cards.find((c) => c.sc === k.sc)) {
+      const a = t * 0.35, R = 60;
+      s.player.position.x = Math.cos(a) * R; s.player.position.z = Math.sin(a) * R;
+      const vx = -Math.sin(a), vz = Math.cos(a);
+      s.player.yaw = Math.atan2(vx, vz);
+    }
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    k.mm.draw({ dtReal: freezeT === null ? dt : 0.016, snapshot: s, settings: { quality, reducedMotion: rm, bdoUi: true }, pois: unlitAll, layout: LAYOUT }, { size: k.size, dpr });
+    const z = zoneAt(LAYOUT, s.player.position.x, s.player.position.z, zoneOut);
+    const cap = k.size >= 250 ? k.sc.name : (z ? z.name : '—');
+    const sub = k.size >= 250 ? `${k.sc.sub} · ${z ? (z.inside ? 'в зоне «' + z.name + '»' : 'рядом «' + z.name + '» ' + Math.round(z.edge) + ' м') : ''}` : `${Math.round(s.player.position.x)} · ${Math.round(s.player.position.z)}`;
+    if (k.cap.textContent !== cap) k.cap.textContent = cap;
+    if (k.sub.textContent !== sub) k.sub.textContent = sub;
+  }
+  frames++;
+  const drawMs = performance.now() - now0;
+  drawAcc += frames > 3 ? drawMs : 0;
+  window.__STAND__ = { ready: frames > 5, t, frames, stats: cards[0].mm.stats(), drawMsPerMap: frames > 3 ? +(drawAcc / (frames - 3) / cards.length).toFixed(3) : 0 };
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

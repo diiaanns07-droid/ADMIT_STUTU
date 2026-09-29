@@ -31,9 +31,12 @@
 // URL: q=low|medium|high (постобработка и world)  wq=<world quality отдельно>  pr=<pixel ratio>
 //      scene=idle|strafe|stage2  shot=1 (прогнать ~1.5 с сцены, отрисовать, title=READY)  rm=1 (reducedMotion)
 //      clean=1 (без HUD/кнопок)  bench=1 (замер всех уровней, результат в window.__pfxBench, title=BENCHED)
+// [BDO] tm=aces|agx (тонмаппинг, читает сам postfx)  mode=playing|menu|intro|paused|victory|defeat (грейд экрана;
+//      menu — камера у героя в 3 м, как в меню игры, на q=high — DOF)  zone=0..1 (настроение «Сияющего леса»)
+//      fx=wave|punch (ударная волна / удар с всплеском аберрации в кадре снимка)  focus=<м> (фокус DOF)
 import * as THREE from 'three';
 import { createWorld } from '../modules/world.js';
-import { createPostFX } from '../core/postfx.js';
+import { createPostFX, queueShockwave, setFocus } from '../core/postfx.js';
 import { createCameraRig } from '../core/cameraRig.js';
 import { config } from '../config.js';
 
@@ -71,6 +74,12 @@ const post = createPostFX({ THREE, renderer, scene, camera, quality: Q });
 post.setReducedMotion(P.get('rm') === '1');
 post.setSize(innerWidth, innerHeight, renderer.getPixelRatio());
 const rig = createCameraRig(config.camera);
+// [BDO] экран (грейд и DOF), настроение зоны, фокус
+const MODE = P.get('mode') || 'playing';
+const ZONE = P.has('zone') ? Math.max(0, Math.min(1, +P.get('zone') || 0)) : 0;
+if (ZONE > 0 && world.atmosphere && world.atmosphere.setZoneMood) world.atmosphere.setZoneMood({ weight: ZONE });
+if (P.get('focus')) setFocus(+P.get('focus'));
+post.setMode(MODE, { quality: Q });
 
 // простейший «combat»-снимок: орбита вокруг стража
 const sim = {
@@ -88,6 +97,15 @@ function step(dt, moveX) {
   sim.player.action = Math.abs(moveX) > 0.01 ? 'move' : 'idle';
   const evs = pending; pending = [];
   world.update(dt, sim, evs);
+  post.setMode(MODE, { quality: Q });
+  if (MODE === 'menu' && world.hero && world.hero.root) {
+    // [BDO] как меню в main.js: камера у героя в 3.0 м, смотрит левее (герой справа от панели)
+    const hp = world.hero.root.position, hy = world.hero.root.rotation.y + 0.2;
+    camera.position.set(hp.x + Math.sin(hy) * 3.0, hp.y + 1.45, hp.z + Math.cos(hy) * 3.0);
+    const rx = Math.cos(hy), rz = -Math.sin(hy);
+    camera.lookAt(hp.x - rx * 0.95, hp.y + 1.1, hp.z - rz * 0.95);
+    return;
+  }
   const c = rig.update(dt, sim.player.position, sim.boss.position, { x: 0, y: 0, z: 0 });
   camera.position.set(c.position.x, c.position.y, c.position.z);
   camera.lookAt(c.target.x, c.target.y, c.target.z);
@@ -139,7 +157,7 @@ async function benchAll(frames = 300) {
   running = !SHOT;
   return out;
 }
-window.__pfx = { THREE, renderer, scene, camera, world, post, sim, benchTier, benchAll, setTier, step, info: () => ({ post: post.info(), calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, programs: renderer.info.programs ? renderer.info.programs.length : -1, textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries, worldCreateMs }) };
+window.__pfx = { THREE, renderer, scene, camera, world, post, sim, benchTier, benchAll, setTier, step, queueShockwave, setFocus, info: () => ({ post: post.info(), calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, programs: renderer.info.programs ? renderer.info.programs.length : -1, textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries, worldCreateMs }) };
 
 // UI
 const hud = document.getElementById('hud'), bar = document.getElementById('bar');
@@ -149,6 +167,9 @@ for (const t of ['low', 'medium', 'high']) tb[t] = btn('post:' + t, () => { setT
 tb[Q].classList.add('on');
 let rm = P.get('rm') === '1';
 btn('reducedMotion', (b) => { rm = !rm; post.setReducedMotion(rm); world.configure({ reducedMotion: rm }); b.classList.toggle('on', rm); });
+btn('волна', () => queueShockwave(0.5, 0.45, 1));
+btn('удар', () => post.punch(1, 0.5, 0.45));
+btn('ACES/AgX', (b) => { const on = !b.classList.contains('on'); post.setToneMapping(on ? 'aces' : 'agx'); b.classList.toggle('on', on); });
 btn('bench', async () => { hud.textContent = 'замер…'; const r = await benchAll(300); window.__pfxBench = r; console.log(r); hud.textContent = JSON.stringify(r, null, 1); });
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); post.setSize(innerWidth, innerHeight, renderer.getPixelRatio()); });
 
@@ -161,6 +182,13 @@ if (P.get('bench') === '1') {
   document.title = 'BENCHED';
 }
 if (SHOT) {
+  // [BDO] fx: волна на середине расширения / удар с всплеском аберрации
+  const FX = P.get('fx');
+  if (Q === 'high' && MODE === 'menu') { // DOF: BokehPass грузится лениво и плавно включается
+    for (let i = 0; i < 30 && post.info().dof < 0.9; i++) { post.render(0.1); await new Promise((r) => setTimeout(r, 30)); }
+  }
+  if (FX === 'wave') { queueShockwave(0.5, 0.42, 1); post.render(0.1); post.render(0.08); }
+  else if (FX === 'punch') { post.punch(1, 0.5, 0.45); post.render(0.05); }
   post.render(1 / 60);
   document.title = 'READY';
 } else {
@@ -175,7 +203,8 @@ if (SHOT) {
     if (acc > 0.5) {
       const i = post.info();
       hud.textContent = `postfx stand · three r${THREE.REVISION} · ${gpuName()}\nfps ${(n / acc).toFixed(0)} · calls ${renderer.info.render.calls} · tris ${renderer.info.render.triangles}\n` +
-        `post: tier ${i.tier} · enabled ${i.enabled} · high ${i.highReady} · ${i.passes.join(' → ')}${i.error ? '\nerror: ' + i.error : ''}\nworld ${world.quality} · createWorld ${worldCreateMs.toFixed(0)} ms`;
+        `post: tier ${i.tier} · enabled ${i.enabled} · high ${i.highReady} · ${i.passes.join(' → ')}${i.error ? '\nerror: ' + i.error : ''}\nworld ${world.quality} · createWorld ${worldCreateMs.toFixed(0)} ms` +
+        `\ntm ${i.toneMapping} · mode ${i.mode} · zone ${i.zoneW} · dof ${i.dof} @ ${i.focus} м · waves ${i.waves} · ${JSON.stringify(i.grade)}`;
       acc = 0; n = 0;
     }
   };

@@ -7,12 +7,21 @@
 //  - состояния жестов: FIRE / SHIELD / BURST (кольцо заряда) / DASH (шлейф);
 //  - колонку данных CV (full), «NO TARGET» при потере, полосу калибровки.
 //
-// Правила модуля: без импортов, без собственного rAF, никогда не бросает исключений.
+// Правила модуля: без собственного rAF, никогда не бросает исключений.
 // Горячий путь без аллокаций: цвета — константы (прозрачность через globalAlpha),
 // ширины текста кешируются, строки координат пересобираются не чаще 15 Гц.
 // Landmarks приходят в нормализованных НЕзеркальных координатах (0..1); при
 // pose.mirror !== false рисуем x' = 1 - x (превью <video> зеркалится CSS).
 // Правая рука игрока — огонь, левая — щит.
+//
+// [BDO] «Гадательное зеркало» (CANON M1, spellmirror): при settings.bdoUi !== false
+// рамки, координаты, моноширинные метки и scramble скрыты; кисти — светящиеся «жилы»
+// (правая — янтарь, левая — бирюза), суставы — угли, кончики — искры; поза — тусклая бронза;
+// стик, заряд, след руны, калибровка и поиск — в палитре BDO с подписями Forum.
+// Овальную раму, обесцвечивание видео и виньетку даёт core/bdoMirror.css (html.ao-bdo).
+// Единственный импорт — core/bdoTheme.js. При bdoUi:false — прежний «Трекинг» HUD.
+
+import { BDO, isBdo, font as bdoFont, ensureStyle, preloadFonts } from './bdoTheme.js';
 
 const MONO = '"Consolas","Cascadia Mono",monospace';
 
@@ -47,6 +56,27 @@ const DASH_LINE = [3, 4];
 const DASH_FINE = [2, 3];
 const NO_DASH = [];
 const EMPTY = Object.freeze({});
+
+// [BDO] палитра зеркала: левая кисть — бирюза/лазурь (щит), правая — янтарь (огонь)
+const M_CORE_L = '#d4f4ee';          // сердцевина жилы (бледная бирюза)
+const M_GLOW_L = '#5cc4d0';          // свечение (лазурная бирюза)
+const M_CORE_R = '#f7e2b0';          // сердцевина (слоновая кость с янтарём)
+const M_GLOW_R = '#ff9a42';          // свечение (янтарь)
+const M_BONE = BDO.bronze;           // скелет позы — тусклая бронза
+const M_SHADOW = 'rgba(0,0,0,0.9)';
+const M_OUTLINE = 'rgba(8,6,4,0.82)';
+const NO_SHADOW = 'rgba(0,0,0,0)';
+const F_M_CAP = bdoFont('display', 14);       // подписи Forum (кириллица есть)
+const F_M_CAP_MINI = bdoFont('display', 10);
+const F_M_HEAD = bdoFont('display', 17);
+const F_M_RUNE = bdoFont('display', 18);
+const F_M_RUNE_MINI = bdoFont('display', 12);
+const F_M_BODY = bdoFont('body', 12);
+// кости кисти: ладонь и основные фаланги (толще) / средние и концевые (тоньше), плоско — без аллокаций
+const BONES_THICK = [0, 1, 0, 5, 5, 9, 9, 13, 13, 17, 0, 17, 1, 2, 5, 6, 9, 10, 13, 14, 17, 18];
+const BONES_THIN = [2, 3, 3, 4, 6, 7, 7, 8, 10, 11, 11, 12, 14, 15, 15, 16, 18, 19, 19, 20];
+const TIP_IDX = [4, 8, 12, 16, 20];
+const SHAPE_BDO = { pinch: 'Огонь', point: 'Руна', fist: 'Кулак', open: 'Ладонь', victory: 'Знак V', unknown: '' };
 
 function isObj(v) { return v !== null && typeof v === 'object'; }
 function num(v, d) { return typeof v === 'number' && Number.isFinite(v) ? v : d; }
@@ -96,9 +126,18 @@ export function createTrackingHud(opts) {
   let ctx = null;
   try { ctx = canvas && typeof canvas.getContext === 'function' ? canvas.getContext('2d') : null; } catch (e) { ctx = null; }
   if (!ctx) return NOOP_HUD;
+  // [BDO] стиль рамы-зеркала и веб-шрифты подписей (ошибки не фатальны)
+  try { ensureStyle(new URL('./bdoMirror.css', import.meta.url).href, 'bdoMirror'); preloadFonts(); } catch (e) { /* ignore */ }
 
   let disposed = false;
   let warnings = 0;
+
+  // ---- [BDO] режим кадра и перекрашиваемая палитра общих слоёв (стик, нейтраль, выброс, рывок)
+  let bdo = false, lowQ = false;
+  let boxW = 0, boxH = 0;                       // CSS-бокс canvas = овал зеркала
+  let K_GOLD = GOLD, K_GOLD_HI = GOLD_HI, K_STEEL = STEEL, K_BLUE = BLUE, K_EMBER = EMBER, K_DIM = DIM;
+  let hasLetterSpacing = false;
+  try { hasLetterSpacing = 'letterSpacing' in ctx; } catch (e) { hasLetterSpacing = false; }
 
   // ---- геометрия (CSS px; контекст масштабирован на dpr)
   let dpr = 1;
@@ -217,6 +256,41 @@ export function createTrackingHud(opts) {
 
   function hline(x0, x1, y, wDev) { const yy = snap(y, wDev); ctx.moveTo(x0, yy); ctx.lineTo(x1, yy); }
   function vline(x, y0, y1, wDev) { const xx = snap(x, wDev); ctx.moveTo(xx, y0); ctx.lineTo(xx, y1); }
+
+  // [BDO] Подпись Forum по центру (x — центр, y — верх строки), без плашки: тень (full) или
+  // тёмный контур (mini). Прижимается внутрь овала зеркала, чтобы рама её не срезала.
+  function cap(str, x, y, color, a, f, mini) {
+    if (!str || a <= 0.01) return;
+    const w = measure(f, str) + (mini ? 0 : str.length);
+    const lh = mini ? 10 : 15;
+    const cxB = boxW / 2, cyB = boxH / 2;
+    const ay = boxH * 0.44;
+    y = clamp(y, Math.max(cyB - ay * 0.9, ry + 2), Math.min(cyB + ay * 0.86 - lh, ry + rh - lh - 2));   // и внутри кадра видео (клип)
+    const dy = Math.max(Math.abs(y - cyB), Math.abs(y + lh - cyB)) / ay;
+    const half = boxW * 0.46 * Math.sqrt(dy < 1 ? 1 - dy * dy : 0);
+    const room = half - w / 2 - 2;
+    x = room > 0 ? clamp(x, cxB - room, cxB + room) : cxB;
+    setFont(f);
+    ctx.textAlign = 'center';
+    if (hasLetterSpacing && !mini) ctx.letterSpacing = '1px';
+    ctx.globalAlpha = a;
+    if (mini) {
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 2.6;
+      ctx.strokeStyle = M_OUTLINE;
+      ctx.strokeText(str, x, y);
+      ctx.lineJoin = 'miter';
+    } else {
+      ctx.shadowColor = M_SHADOW;
+      ctx.shadowBlur = 5;
+      ctx.shadowOffsetY = 1;
+    }
+    ctx.fillStyle = color;
+    ctx.fillText(str, x, y);
+    if (!mini) { ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; ctx.shadowColor = NO_SHADOW; }
+    if (hasLetterSpacing && !mini) ctx.letterSpacing = '0px';
+    ctx.textAlign = 'left';
+  }
 
   // ------------------------------------------------------------ данные
   function readPoints(lms) {
@@ -361,11 +435,11 @@ export function createTrackingHud(opts) {
 
     // мёртвая зона — едва заметная полоса
     ctx.globalAlpha = 0.07;
-    ctx.fillStyle = GOLD;
+    ctx.fillStyle = K_GOLD;
     ctx.fillRect(snapT(x0 - dz), ry, snapT(2 * dz), rh);
 
     ctx.globalAlpha = 0.5;
-    ctx.strokeStyle = GOLD;
+    ctx.strokeStyle = K_GOLD;
     ctx.lineWidth = lw;
     ctx.setLineDash(mini ? DASH_FINE : DASH_LINE);
     ctx.beginPath();
@@ -377,19 +451,19 @@ export function createTrackingHud(opts) {
     const yR = ry + rh - (mini ? 6 : 13);
     const span = dashA * 1.25;
     ctx.globalAlpha = 0.45;
-    ctx.strokeStyle = STEEL;
+    ctx.strokeStyle = K_STEEL;
     ctx.beginPath();
     hline(x0 - span, x0 + span, yR, lwDev);
     const t1 = mini ? 2 : 3, t2 = mini ? 3 : 5;
     vline(x0 - full, yR - t1, yR + t1, lwDev); vline(x0 + full, yR - t1, yR + t1, lwDev);
     ctx.stroke();
     ctx.globalAlpha = 0.8;
-    ctx.strokeStyle = GOLD;
+    ctx.strokeStyle = K_GOLD;
     ctx.beginPath();
     vline(x0 - dz, yR - t1, yR + t1, lwDev); vline(x0 + dz, yR - t1, yR + t1, lwDev);
     ctx.stroke();
     ctx.globalAlpha = 0.75;
-    ctx.strokeStyle = EMBER;
+    ctx.strokeStyle = K_EMBER;
     ctx.beginPath();
     vline(x0 - dashA, yR - t2, yR + t2, lwDev); vline(x0 + dashA, yR - t2, yR + t2, lwDev);
     ctx.stroke();
@@ -398,7 +472,7 @@ export function createTrackingHud(opts) {
     if (trackAlpha <= 0.01 || torso.alpha <= 0.01) return;
     const xm = rx + torso.x * rw;
     const off = Math.abs(xm - x0);
-    const col = off >= dashA ? EMBER : off > dz ? BLUE : GOLD_HI;
+    const col = off >= dashA ? K_EMBER : off > dz ? K_BLUE : K_GOLD_HI;
     const xc = clamp(xm, x0 - span, x0 + span);
     const s = mini ? 3 : 4;
     ctx.globalAlpha = trackAlpha;
@@ -407,7 +481,7 @@ export function createTrackingHud(opts) {
     ctx.moveTo(xc - s, yR - s - 2); ctx.lineTo(xc + s, yR - s - 2); ctx.lineTo(xc, yR - 1);
     ctx.closePath();
     ctx.fill();
-    if (mini) return;
+    if (mini || bdo) return;                       // [BDO] без моноширинного «LEAN»
     let mv = input && input.valid !== false ? num(input.moveX, NaN) : NaN;
     if (!(mv === mv)) mv = num(dbg.lateral && dbg.lateral.moveX, 0);
     const r = Math.round(mv * 100);
@@ -436,8 +510,8 @@ export function createTrackingHud(opts) {
       const half = clamp(num(stick.full, 0.16) * rh * 1.6, 16, rw * 0.3);
       ctx.lineWidth = lw;
       ctx.globalAlpha = stick.engaged ? 0.35 : 0.75;
-      ctx.strokeStyle = stick.engaged ? STEEL : GOLD_HI;
-      ctx.setLineDash(mini ? DASH_FINE : DASH_LINE);
+      ctx.strokeStyle = stick.engaged ? K_STEEL : K_GOLD_HI;
+      ctx.setLineDash(bdo ? NO_DASH : mini ? DASH_FINE : DASH_LINE);   // [BDO] сплошная тонкая линия
       ctx.beginPath(); ctx.moveTo(lx - half, ly); ctx.lineTo(lx + half, ly); ctx.stroke();
       ctx.setLineDash(NO_DASH);
     }
@@ -448,18 +522,30 @@ export function createTrackingHud(opts) {
       const sx = num(stick.x, 0), sz = num(stick.z, 0);
       const mag = Math.min(1, Math.hypot(sx, sz));
       const run = stick.gait ? stick.gait === 'run' : mag > 0.55;   // [V3.1] ступень хода из джойстика (с гистерезисом)
-      const col = mag <= 0.01 ? GOLD : run ? GOLD_HI : BLUE;
+      const col = mag <= 0.01 ? K_GOLD : run ? K_GOLD_HI : K_BLUE;
       ctx.globalAlpha = 0.07;
-      ctx.fillStyle = GOLD;
+      ctx.fillStyle = K_GOLD;
       ctx.beginPath(); ctx.arc(cx, cy, dz, 0, Math.PI * 2); ctx.fill();
       ctx.lineWidth = lw;
-      ctx.globalAlpha = 0.4;
-      ctx.strokeStyle = STEEL;
-      ctx.setLineDash(mini ? DASH_FINE : DASH_LINE);
+      ctx.globalAlpha = bdo ? 0.32 : 0.4;
+      ctx.strokeStyle = K_STEEL;
+      ctx.setLineDash(bdo ? NO_DASH : mini ? DASH_FINE : DASH_LINE);
       ctx.beginPath(); ctx.arc(cx, cy, full, 0, Math.PI * 2); ctx.stroke();
       ctx.setLineDash(NO_DASH);
+      if (bdo) {
+        // [BDO] кольцо хода — как лимб компаса: четыре золотых ромба по сторонам света
+        const q = mini ? 1.8 : 2.6;
+        ctx.globalAlpha = 0.75;
+        ctx.fillStyle = K_GOLD;
+        ctx.beginPath();
+        for (let i = 0; i < 4; i++) {
+          const X = cx + (i === 1 ? full : i === 3 ? -full : 0), Y = cy + (i === 0 ? -full : i === 2 ? full : 0);
+          ctx.moveTo(X, Y - q); ctx.lineTo(X + q, Y); ctx.lineTo(X, Y + q); ctx.lineTo(X - q, Y); ctx.closePath();
+        }
+        ctx.fill();
+      }
       ctx.globalAlpha = 0.75;
-      ctx.strokeStyle = GOLD;
+      ctx.strokeStyle = K_GOLD;
       ctx.beginPath(); ctx.arc(cx, cy, dz, 0, Math.PI * 2); ctx.stroke();
       if (hand) {
         ctx.globalAlpha = 0.55;
@@ -488,9 +574,12 @@ export function createTrackingHud(opts) {
         ctx.lineWidth = lw;
       }
       ctx.globalAlpha = 0.9;
-      ctx.fillStyle = GOLD_HI;
+      ctx.fillStyle = K_GOLD_HI;
       ctx.beginPath(); ctx.arc(cx, cy, 1.6 * k, 0, Math.PI * 2); ctx.fill();
-      if (!mini) {
+      if (bdo) {
+        // [BDO] подпись Forum под кольцом хода
+        if (!mini) cap(mag <= 0.01 ? 'Стойка' : run ? 'Бег' : 'Шаг', cx, cy + full + 5, col, 0.9, F_M_CAP, false);
+      } else if (!mini) {
         const tag = (mag <= 0.01 ? 'STICK' : run ? 'RUN' : 'WALK') + (stick.source === 'wrist' ? ' · WRIST' : '');
         setFont(F_DATA);
         const tw = measure(F_DATA, tag);
@@ -504,22 +593,24 @@ export function createTrackingHud(opts) {
       ctx.lineWidth = lw;
       if (stick.rest || stick.mode === 'steer') {
         ctx.globalAlpha = 0.35;
-        ctx.strokeStyle = DIM;
+        ctx.strokeStyle = K_DIM;
         ctx.setLineDash(DASH_FINE);
         ctx.beginPath(); ctx.arc(hxS, hyS, r, 0, Math.PI * 2); ctx.stroke();
         ctx.setLineDash(NO_DASH);
       } else {
         const ph = rm ? 0.6 : 0.5 + 0.5 * Math.sin(now * 0.012);
         ctx.globalAlpha = stick.grabbing ? 0.9 : 0.35 + 0.35 * ph;
-        ctx.strokeStyle = stick.grabbing ? GOLD_HI : GOLD;
+        ctx.strokeStyle = stick.grabbing ? K_GOLD_HI : K_GOLD;
         ctx.beginPath(); ctx.arc(hxS, hyS, r + (stick.grabbing ? 0 : 2 * ph), 0, Math.PI * 2); ctx.stroke();
-        if (!mini) {
+        if (bdo) {
+          if (!mini) cap(stick.grabbing ? 'Хват…' : 'Замри', hxS, hyS + r + 5, stick.grabbing ? K_GOLD_HI : K_GOLD, 0.9, F_M_CAP, false);
+        } else if (!mini) {
           const tag = stick.grabbing ? 'GRAB…' : 'HOLD ◎';
           setFont(F_DATA);
           const tw = measure(F_DATA, tag);
           const tx = clamp(hxS - tw / 2, rx + 2, rx + rw - tw - 2), ty = clamp(hyS + r + 4, ry + 2, ry + rh - 14);
           plate(tx - 3, ty - 1, tw + 6, 12, 0.75);
-          text(tag, tx, ty, stick.grabbing ? GOLD_HI : GOLD, 0.9);
+          text(tag, tx, ty, stick.grabbing ? K_GOLD_HI : K_GOLD, 0.9);
         }
       }
     }
@@ -530,7 +621,7 @@ export function createTrackingHud(opts) {
       const a0 = Math.atan2(-stickDashZ, stickDashX);
       const R = (mini ? 14 : 24) + (1 - dk) * (mini ? 10 : 22);
       ctx.globalAlpha = dk;
-      ctx.strokeStyle = EMBER;
+      ctx.strokeStyle = K_EMBER;
       ctx.lineWidth = lwEm * 1.5;
       ctx.beginPath(); ctx.arc(cx, cy, R, a0 - 0.6, a0 + 0.6); ctx.stroke();
       ctx.lineWidth = lw;
@@ -675,6 +766,7 @@ export function createTrackingHud(opts) {
 
   function drawChip(label, color, x, y, a, now, rm, mini) {
     if (!label.text || a <= 0.01) return;
+    if (bdo) { cap(label.text, x, y, color, a, mini ? F_M_CAP_MINI : F_M_CAP, mini); return; }   // [BDO]
     const cf = mini ? F_MINI_CHIP : F_CHIP;
     const ch = mini ? 10 : 14;
     const w = label.w + (mini ? 6 : 12);
@@ -704,7 +796,7 @@ export function createTrackingHud(opts) {
         const ux = dx / d, uy = dy / d;
         ctx.lineWidth = flashK > 0 && !rm ? lwEm : lw;
         ctx.globalAlpha = a * (flashK > 0 && !rm ? 0.5 + 0.5 * flashK : 0.55);
-        ctx.strokeStyle = flashK > 0 || full ? EMBER : GOLD_HI;
+        ctx.strokeStyle = flashK > 0 || full ? K_EMBER : K_GOLD_HI;
         ctx.setLineDash(flashK > 0 ? NO_DASH : DASH_FINE);
         ctx.beginPath();
         ctx.moveTo(lx + ux * lr, ly + uy * lr);
@@ -716,7 +808,7 @@ export function createTrackingHud(opts) {
       const start = -Math.PI / 2;
       ctx.lineWidth = lw;
       ctx.globalAlpha = 0.25 * a;
-      ctx.strokeStyle = STEEL;
+      ctx.strokeStyle = K_STEEL;
       ctx.beginPath();
       ctx.moveTo(lx + lr, ly); ctx.arc(lx, ly, lr, 0, 6.2832);
       ctx.moveTo(rxh + rr, ryh); ctx.arc(rxh, ryh, rr, 0, 6.2832);
@@ -725,7 +817,7 @@ export function createTrackingHud(opts) {
       if (c > 0.001) {
         ctx.lineWidth = lwEm;
         ctx.globalAlpha = a;
-        ctx.strokeStyle = full || flashK > 0 ? EMBER : GOLD_HI;
+        ctx.strokeStyle = full || flashK > 0 ? K_EMBER : K_GOLD_HI;
         ctx.beginPath();
         ctx.moveTo(lx + Math.cos(start) * lr, ly + Math.sin(start) * lr);
         ctx.arc(lx, ly, lr, start, start + c * 6.2832);
@@ -740,7 +832,7 @@ export function createTrackingHud(opts) {
       const grow = (mini ? 10 : 22) * e;
       ctx.lineWidth = lw;
       ctx.globalAlpha = a * flashK * 0.9;
-      ctx.strokeStyle = EMBER;
+      ctx.strokeStyle = K_EMBER;
       ctx.beginPath();
       ctx.moveTo(lx + lr + grow, ly); ctx.arc(lx, ly, lr + grow, 0, 6.2832);
       ctx.moveTo(rxh + rr + grow, ryh); ctx.arc(rxh, ryh, rr + grow, 0, 6.2832);
@@ -749,15 +841,17 @@ export function createTrackingHud(opts) {
     // ярлык по центру над руками
     const mx = (lx + rxh) / 2;
     const my = Math.min(ly - lr, ryh - rr) - (mini ? 12 : 20);
-    drawChip(burstLabel, flashK > 0 || full ? EMBER : GOLD_HI, mx, my, a, now, rm, mini);
-    if (!mini && both && !full && flashK <= 0) {
+    drawChip(burstLabel, flashK > 0 || full ? K_EMBER : K_GOLD_HI, mx, my, a, now, rm, mini);
+    if (bdo && !mini && both && !full && flashK <= 0) {
+      cap(Math.round(charge * 100) + '%', mx, my + 17, K_GOLD_HI, 0.85 * a, F_M_CAP, false);   // [BDO]
+    } else if (!mini && both && !full && flashK <= 0) {
       // процент заряда под ярлыком
       const pct = Math.round(charge * 100);
       const s = pct < 10 ? '  ' + pct + '%' : pct < 100 ? ' ' + pct + '%' : pct + '%';
       setFont(F_DATA);
       const cwD = charWidth(F_DATA);
       const w = s.length * cwD;
-      text(s, clamp(mx - w / 2, rx + 2, rx + rw - 2 - w), clamp(my + 16, ry + 2, ry + rh - 12), GOLD_HI, 0.85 * a);
+      text(s, clamp(mx - w / 2, rx + 2, rx + rw - 2 - w), clamp(my + 16, ry + 2, ry + rh - 12), K_GOLD_HI, 0.85 * a);
     }
   }
 
@@ -770,8 +864,8 @@ export function createTrackingHud(opts) {
       // шлейф: призрачные скобки позади и линии скорости
       const len = mini ? 4 : clamp(Math.min(BW, BH) * 0.28, 4, 13);
       ctx.lineWidth = lw;
-      ctx.strokeStyle = BLUE;
-      for (let i = 1; i <= 3; i++) {
+      ctx.strokeStyle = K_BLUE;
+      for (let i = 1; i <= (bdo ? 0 : 3); i++) {     // [BDO] без призрачных скобок — только линии скорости
         const off = -dashDir * i * (mini ? 4 : 9) * (0.4 + 0.6 * k);
         ctx.globalAlpha = a * k * (0.42 - i * 0.11);
         ctx.beginPath();
@@ -792,7 +886,7 @@ export function createTrackingHud(opts) {
     }
     const cy = t - (mini ? 12 : 18);
     const cx = dashDir > 0 ? r - dashLabel.w / 2 : l + dashLabel.w / 2;
-    drawChip(dashLabel, BLUE, cx, cy, a * (rm ? 1 : Math.min(1, k * 2.5)), now, rm, mini);
+    drawChip(dashLabel, K_BLUE, cx, cy, a * (rm ? 1 : Math.min(1, k * 2.5)), now, rm, mini);
   }
 
   function drawCalib(status, now, rm, mini) {
@@ -1176,6 +1270,339 @@ export function createTrackingHud(opts) {
     }
   }
 
+  // ───────── [BDO] «Гадательное зеркало»: слои вместо технических рамок ─────────
+  const bdoHandCache = { left: { pct: -1, txt: '' }, right: { pct: -1, txt: '' } };
+  let bdoCalibPct = -1, bdoCalibText = '';
+  let bdoLoadPct = -1, bdoLoadText = '';
+
+  // Скелет позы: тонкая тусклая бронза; поднятая рука чуть светится цветом своей кисти.
+  function drawConstellationBdo(rState, lState, mini) {
+    if (trackAlpha <= 0.01) return;
+    const a = trackAlpha;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = mini ? lw : lwEm;
+    ctx.globalAlpha = 0.42 * a;
+    ctx.strokeStyle = M_BONE;
+    ctx.beginPath();
+    seg(S_LS, S_RS);
+    ctx.stroke();
+    armPath(S_LS, S_LE, S_LW, lState ? M_GLOW_L : M_BONE, lState ? 0.6 : 0.42, a);
+    armPath(S_RS, S_RE, S_RW, rState ? M_GLOW_R : M_BONE, rState ? 0.6 : 0.42, a);
+    // узлы — маленькие бронзовые ромбы
+    const r = mini ? 1.4 : 2.2;
+    ctx.globalAlpha = 0.7 * a;
+    ctx.fillStyle = BDO.bronzeHi;
+    ctx.beginPath();
+    for (let s = 1; s < 7; s++) {
+      if (nodeA[s] < 0.3) continue;
+      const x = rx + nodeU[s] * rw, y = ry + nodeV[s] * rh;
+      ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath();
+    }
+    ctx.fill();
+    ctx.lineCap = 'butt';
+  }
+
+  // Состояние руки без кистей (поднятая рука = огонь/щит): подпись над запястьем.
+  function drawArmStateBdo(b, str, color, mini) {
+    if (!str || b.alpha <= 0.01) return;
+    boxRect(b);
+    const above = BY - BH / 2 - (mini ? 12 : 18);
+    const y = above < boxH * 0.13 ? BY + BH / 2 + (mini ? 3 : 5) : above;
+    cap(str, BX, y, color, b.alpha, mini ? F_M_CAP_MINI : F_M_CAP, mini);
+  }
+
+  function bonesPath(L, idx) {
+    for (let i = 0; i < idx.length; i += 2) {
+      const p = L[idx[i]], q = L[idx[i + 1]];
+      ctx.moveTo(rx + p.x * rw, ry + p.y * rh);
+      ctx.lineTo(rx + q.x * rw, ry + q.y * rh);
+    }
+  }
+
+  // Кисть «жилами»: ореол (широко, прозрачно), тёплая сердцевина (толщина — по размеру ладони,
+  // т.е. по близости к камере), угли в суставах и искры на кончиках.
+  function drawHandBdo(H, side, now, rm, mini) {
+    const L = H.landmarks;
+    if (!Array.isArray(L) || L.length < 21) return;
+    for (let i = 0; i < 21; i++) if (!L[i] || !(L[i].x === L[i].x) || !(L[i].y === L[i].y)) return;
+    const left = side === 'left';
+    const ch = num(H.charge, 0);
+    let core = left ? M_CORE_L : M_CORE_R, glow = left ? M_GLOW_L : M_GLOW_R;
+    let hot = 0;
+    if (H.shape === 'fist' && ch >= 0.3) { core = BDO.emberHi; glow = BDO.ember; hot = 1; }
+    else if (left ? (H.shape === 'open' && H.palmFacing !== 'away') : (H.shape === 'pinch' || H.shape === 'point')) hot = 1;
+    const palm = Math.hypot((L[9].x - L[0].x) * rw, (L[9].y - L[0].y) * rh);
+    const wT = clamp(palm * 0.07, mini ? 0.9 : 1.1, mini ? 2.2 : 3.4);
+    const wt = wT * 0.62;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // 1) ореол
+    ctx.strokeStyle = glow;
+    ctx.globalAlpha = 0.14 + 0.1 * hot;
+    ctx.lineWidth = wT * 3.4;
+    ctx.beginPath(); bonesPath(L, BONES_THICK); bonesPath(L, BONES_THIN); ctx.stroke();
+    // 2) сердцевина; мягкое свечение shadowBlur — только на тонких линиях и не в бою/низком качестве
+    const blur = !mini && !lowQ;
+    if (blur) { ctx.shadowColor = glow; ctx.shadowBlur = 5 + 4 * hot; }
+    ctx.strokeStyle = core;
+    ctx.globalAlpha = 0.82 + 0.18 * hot;
+    ctx.lineWidth = wT;
+    ctx.beginPath(); bonesPath(L, BONES_THICK); ctx.stroke();
+    ctx.lineWidth = wt;
+    ctx.beginPath(); bonesPath(L, BONES_THIN); ctx.stroke();
+    if (blur) { ctx.shadowBlur = 0; ctx.shadowColor = NO_SHADOW; }
+    // 3) суставы-угли
+    const rj = wT * 0.95;
+    ctx.fillStyle = glow;
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    for (let i = 1; i < 21; i++) {
+      if (i === 4 || i === 8 || i === 12 || i === 16 || i === 20) continue;
+      const X = hx(L[i]), Y = hy(L[i]);
+      ctx.moveTo(X + rj, Y); ctx.arc(X, Y, rj, 0, 6.2832);
+    }
+    const X0 = hx(L[0]), Y0 = hy(L[0]);
+    ctx.moveTo(X0 + rj * 1.5, Y0); ctx.arc(X0, Y0, rj * 1.5, 0, 6.2832);
+    ctx.fill();
+    ctx.fillStyle = BDO.emberHi;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    const rc = rj * 0.45;
+    for (let i = 0; i < 21; i++) {
+      if (i === 4 || i === 8 || i === 12 || i === 16 || i === 20) continue;
+      const X = hx(L[i]), Y = hy(L[i]);
+      ctx.moveTo(X + rc, Y); ctx.arc(X, Y, rc, 0, 6.2832);
+    }
+    ctx.fill();
+    // 4) кончики — искры (четырёхлучевые звёздочки; мерцание — не при reducedMotion)
+    ctx.fillStyle = core;
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    const s0 = mini ? 2.4 : 3.6 + wT * 0.6;
+    for (let k = 0; k < 5; k++) {
+      const t = TIP_IDX[k];
+      const X = hx(L[t]), Y = hy(L[t]);
+      const s = rm ? s0 : s0 * (0.78 + 0.3 * Math.sin(now * 0.011 + k * 1.9 + (left ? 0.7 : 0)));
+      const q = s * 0.26;
+      ctx.moveTo(X, Y - s); ctx.lineTo(X + q, Y - q); ctx.lineTo(X + s, Y); ctx.lineTo(X + q, Y + q);
+      ctx.lineTo(X, Y + s); ctx.lineTo(X - q, Y + q); ctx.lineTo(X - s, Y); ctx.lineTo(X - q, Y - q); ctx.closePath();
+    }
+    ctx.fill();
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    for (let k = 0; k < 5; k++) {
+      const t = TIP_IDX[k];
+      const X = hx(L[t]), Y = hy(L[t]), r = s0 * 0.9;
+      ctx.moveTo(X + r, Y); ctx.arc(X, Y, r, 0, 6.2832);
+    }
+    ctx.fill();
+    // рамка кисти (для колец и подписи; не рисуется)
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < 21; i++) { const X = hx(L[i]), Y = hy(L[i]); if (X < x0) x0 = X; if (X > x1) x1 = X; if (Y < y0) y0 = Y; if (Y > y1) y1 = Y; }
+    // щипок «OK»: золотое колечко между большим и указательным
+    if (H.shape === 'pinch') {
+      const mx = (hx(L[4]) + hx(L[8])) / 2, my = (hy(L[4]) + hy(L[8])) / 2;
+      ctx.strokeStyle = BDO.goldHi; ctx.globalAlpha = 0.95; ctx.lineWidth = lwEm;
+      ctx.beginPath(); ctx.arc(mx, my, mini ? 3.5 : 7 + (rm ? 0 : 1.5 * Math.sin(now * 0.02)), 0, 6.2832); ctx.stroke();
+    }
+    // заряд кулака: бронзовое кольцо и дуга золото → жар
+    if (H.shape === 'fist' || ch > 0.02) {
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, R = Math.max(x1 - x0, y1 - y0) * 0.66 + 3;
+      ctx.lineWidth = mini ? lwEm : lwEm * 1.4;
+      ctx.globalAlpha = 0.45; ctx.strokeStyle = BDO.bronzeDim;
+      ctx.beginPath(); ctx.arc(cx, cy, R, 0, 6.2832); ctx.stroke();
+      ctx.globalAlpha = 0.95; ctx.strokeStyle = ch >= 0.3 ? BDO.ember : BDO.gold;
+      ctx.beginPath(); ctx.arc(cx, cy, R, -Math.PI / 2, -Math.PI / 2 + 6.2832 * clamp(ch, 0, 1)); ctx.stroke();
+    }
+    ctx.lineCap = 'butt';
+    ctx.lineJoin = 'miter';
+    if (mini) { ctx.globalAlpha = 1; return; }
+    // подпись формы (Forum): только на больших зеркалах
+    let txt = SHAPE_BDO[H.shape] || '';
+    if (left && H.shape === 'open') txt = H.palmFacing === 'away' ? 'Ладонь · тыл' : 'Щит';
+    if (H.shape === 'fist') {
+      const c = bdoHandCache[side];
+      const pct = Math.round(clamp(ch, 0, 1) * 100);
+      if (pct !== c.pct) { c.pct = pct; c.txt = (ch >= 0.3 ? 'Раскрой · ' : 'Заряд ') + pct + '%'; }
+      txt = c.txt;
+    }
+    // над кистью; у верхнего края овала — под запястьем, чтобы подписи двух рук не слипались
+    const above = y0 - 22;
+    const ty = above < boxH * 0.13 ? y1 + 8 : above;
+    cap(txt, (x0 + x1) / 2, ty, hot ? (left ? BDO.tealHi : BDO.goldHi) : BDO.ivoryDim, 0.95, F_M_CAP, false);
+    ctx.globalAlpha = 1;
+  }
+
+  // След руны — «жидкое золото»: широкая тёмная позолота, золото и светлая нить с мягким свечением.
+  function trailStroke(path, deep, mid, hiCol, glowK, mini) {
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (let pass = 0; pass < 3; pass++) {
+      ctx.strokeStyle = pass === 0 ? deep : pass === 1 ? mid : hiCol;
+      ctx.globalAlpha = (pass === 0 ? 0.2 : pass === 1 ? 0.6 : 0.95) * glowK;
+      ctx.lineWidth = pass === 0 ? (mini ? 4 : 8) : pass === 1 ? (mini ? 2 : 3.6) : (mini ? 0.9 : 1.4);
+      const blur = pass === 2 && !mini && !lowQ;
+      if (blur) { ctx.shadowColor = hiCol; ctx.shadowBlur = 8; }
+      ctx.beginPath();
+      ctx.moveTo(hx(path[0]), hy(path[0]));
+      for (let i = 1; i < path.length; i++) ctx.lineTo(hx(path[i]), hy(path[i]));
+      ctx.stroke();
+      if (blur) { ctx.shadowBlur = 0; ctx.shadowColor = NO_SHADOW; }
+    }
+    ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
+  }
+
+  function drawRuneTrailBdo(HI, now, rm, mini) {
+    const tr = Array.isArray(HI.trail) ? HI.trail : null;
+    const lr = isObj(HI.lastRune) ? HI.lastRune : null;
+    const key = lr ? `${lr.rune}:${lr.tMs}` : '';
+    if (key && key !== lastRuneKey) {
+      lastRuneKey = key; runeFlashT = now; runeFlashName = RUNE_TXT[lr.rune] || lr.rune;
+      runeFlashAt = tr && tr.length ? tr[Math.floor(tr.length / 2)] : null;
+      setLabel(handLabels.rune, runeFlashName, F_CHIP, now);
+    }
+    if (tr && tr.length > 1 && isObj(tr[0])) {
+      trailStroke(tr, BDO.goldDeep, BDO.gold, BDO.goldHi, HI.drawing ? 1 : 0.55, mini);
+      if (HI.drawing) {
+        // голова следа — капля жара
+        const e = tr[tr.length - 1];
+        const X = hx(e), Y = hy(e), r = mini ? 2.2 : 3.4;
+        ctx.globalAlpha = 0.35; ctx.fillStyle = BDO.ember;
+        ctx.beginPath(); ctx.arc(X, Y, r * 2.2, 0, 6.2832); ctx.fill();
+        ctx.globalAlpha = 1; ctx.fillStyle = BDO.goldHi;
+        ctx.beginPath(); ctx.arc(X, Y, r, 0, 6.2832); ctx.fill();
+      }
+    }
+    const tw = isObj(HI.twin) ? HI.twin : null;
+    if (tw) {
+      if (Array.isArray(tw.left) && tw.left.length > 1) trailStroke(tw.left, '#1d5d66', M_GLOW_L, M_CORE_L, 1, mini);
+      if (Array.isArray(tw.right) && tw.right.length > 1) trailStroke(tw.right, BDO.goldDeep, BDO.gold, BDO.goldHi, 1, mini);
+    }
+    const k = (now - runeFlashT) / 1400;
+    if (k >= 0 && k < 1 && runeFlashName) {
+      const p = isObj(runeFlashAt) ? runeFlashAt : null;
+      const X = p ? hx(p) : rx + rw / 2, Y = (p ? hy(p) : ry + rh * 0.35) - 10 - (rm ? 0 : 10 * k);
+      const a = k < 0.12 ? k / 0.12 : 1 - (k - 0.12) / 0.88;
+      cap(runeFlashName, X, Y, BDO.goldHi, a, mini ? F_M_RUNE_MINI : F_M_RUNE, mini);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Калибровка: подпись Forum, тонкая золотая полоса с бронзовой каймой, совет — Alegreya Sans.
+  function drawCalibBdo(status, now, rm, mini) {
+    const p = clamp(num(status.progress, 0), 0, 1);
+    const pct = Math.round(p * 100);
+    if (pct !== bdoCalibPct) { bdoCalibPct = pct; bdoCalibText = (mini ? '' : 'Калибровка ') + pct + '%'; }
+    // сканирующая линия по торсу (мягкое золото)
+    if (!rm && torso.alpha > 0.05) {
+      boxRect(torso);
+      const ph = (now % 1600) / 1600;
+      ctx.globalAlpha = 0.4 * torso.alpha;
+      ctx.strokeStyle = BDO.gold;
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      hline(BX - BW / 2 + 2, BX + BW / 2 - 2, BY - BH / 2 + BH * ph, lwDev);
+      ctx.stroke();
+    }
+    const cx = boxW / 2;
+    const w = Math.min(boxW * (mini ? 0.46 : 0.42), 240);
+    const bh = mini ? 3 : 5;
+    const y = boxH * (mini ? 0.76 : 0.74);
+    const x = cx - w / 2;
+    cap(bdoCalibText, cx, y - (mini ? 12 : 19), BDO.goldHi, 1, mini ? F_M_CAP_MINI : F_M_CAP, mini);
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = 'rgba(4,3,2,0.82)';
+    ctx.fillRect(x, y, w, bh);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = BDO.gold;
+    ctx.fillRect(x, y, w * p, bh);
+    ctx.fillStyle = BDO.goldHi;
+    ctx.globalAlpha = 0.7;
+    ctx.fillRect(x, y, w * p, Math.max(1, bh * 0.3));
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = BDO.bronze;
+    ctx.lineWidth = lw;
+    ctx.strokeRect(snap(x - 1, lwDev), snap(y - 1, lwDev), Math.round(w + 1), bh + 1);
+    // ромбы на концах
+    const d = mini ? 2.5 : 3.5;
+    ctx.fillStyle = BDO.gold;
+    ctx.beginPath();
+    for (let i = 0; i < 2; i++) {
+      const X = i ? x + w + d + 1 : x - d - 1, Y = y + bh / 2;
+      ctx.moveTo(X, Y - d); ctx.lineTo(X + d, Y); ctx.lineTo(X, Y + d); ctx.lineTo(X - d, Y); ctx.closePath();
+    }
+    ctx.fill();
+    if (!mini && typeof status.message === 'string' && status.message) {
+      wrapMessage(status.message, F_M_BODY, boxW * 0.62);
+      cap(msgL1, cx, y + bh + 8, BDO.ivoryDim, 0.9, F_M_BODY, false);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Поиск позы / нет сигнала: «астролябия» — два бронзовых кольца с рисками, золотая дуга, подпись Forum.
+  function drawSearchBdo(st, status, a, now, rm, mini) {
+    if (a <= 0.01) return;
+    const cx = boxW / 2, cy = boxH * (mini ? 0.44 : 0.42);
+    const R = Math.min(rw, rh) * (mini ? 0.2 : 0.16);
+    const lost = st === 'lost' || st === 'error';
+    const accent = lost ? BDO.ember : st === 'loading' || st === 'permission' || st === 'calibrating' ? BDO.tealHi : BDO.gold;
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = BDO.bronze;
+    ctx.globalAlpha = 0.6 * a;
+    ctx.beginPath();
+    ctx.moveTo(cx + R, cy); ctx.arc(cx, cy, R, 0, 6.2832);
+    ctx.moveTo(cx + R * 0.7, cy); ctx.arc(cx, cy, R * 0.7, 0, 6.2832);
+    ctx.stroke();
+    // вращающиеся риски между кольцами
+    const rot = rm ? 0 : now * 0.00035;
+    const n = mini ? 16 : 24;
+    ctx.strokeStyle = BDO.bronzeHi;
+    ctx.globalAlpha = 0.55 * a;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const ang = rot + (i * 6.2832) / n;
+      const long = i % 4 === 0;
+      const r0 = R * (long ? 0.74 : 0.86), r1 = R * 0.96;
+      const c = Math.cos(ang), s = Math.sin(ang);
+      ctx.moveTo(cx + c * r0, cy + s * r0); ctx.lineTo(cx + c * r1, cy + s * r1);
+    }
+    ctx.stroke();
+    // золотая дуга поиска
+    const sw = rm ? -Math.PI / 2 : -now * 0.0018;
+    ctx.globalAlpha = 0.9 * a;
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = lwEm * 1.3;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(cx, cy, R + (mini ? 2.5 : 4), sw, sw + 1.1); ctx.stroke();
+    ctx.lineCap = 'butt';
+    // сердцевина — ромб
+    const d = R * 0.16 * (rm ? 1 : 0.9 + 0.1 * Math.sin(now * 0.004));
+    ctx.fillStyle = accent;
+    ctx.globalAlpha = 0.8 * a;
+    ctx.beginPath(); ctx.moveTo(cx, cy - d); ctx.lineTo(cx + d * 0.7, cy); ctx.lineTo(cx, cy + d); ctx.lineTo(cx - d * 0.7, cy); ctx.closePath(); ctx.fill();
+    // заголовок
+    let head;
+    if (st === 'loading') {
+      const pct = Math.round(clamp(num(status && status.progress, 0), 0, 1) * 100);
+      if (pct !== bdoLoadPct) { bdoLoadPct = pct; bdoLoadText = 'Пробуждение ' + pct + '%'; }
+      head = bdoLoadText;
+    } else if (st === 'permission') head = 'Ждём камеру';
+    else if (st === 'error') head = 'Нет сигнала';
+    else if (st === 'idle') head = 'Камера спит';
+    else if (lost) head = 'Не вижу вас';
+    else head = 'Поиск';
+    const breathe = rm || !lost ? 1 : 0.75 + 0.25 * Math.sin(now * 0.005);
+    const hy0 = cy + R + (mini ? 6 : 10);
+    cap(head, cx, hy0, accent, a * breathe, mini ? F_M_CAP_MINI : F_M_HEAD, mini);
+    if (mini) return;
+    const msg = status && typeof status.message === 'string' ? status.message : '';
+    if (msg) {
+      wrapMessage(msg, F_M_BODY, boxW * 0.6);
+      cap(msgL1, cx, hy0 + 22, BDO.ivoryDim, 0.9 * a, F_M_BODY, false);
+      if (msgL2) cap(msgL2, cx, hy0 + 37, BDO.ivoryDim, 0.9 * a, F_M_BODY, false);
+    }
+  }
+
   function frameInner(now, frame) {
     const f = isObj(frame) ? frame : EMPTY;
     const pose = isObj(f.pose) ? f.pose : null;
@@ -1185,6 +1612,11 @@ export function createTrackingHud(opts) {
     const rm = settings.reducedMotion === true;
     const mini = f.mode === 'mini';
     const dbg = status && isObj(status.debug) ? status.debug : null;
+    // [BDO] режим «зеркала» и палитра общих слоёв; при bdoUi:false — прежние цвета «Трекинга»
+    bdo = isBdo(settings);
+    lowQ = settings.quality === 'low';
+    if (bdo) { K_GOLD = BDO.gold; K_GOLD_HI = BDO.goldHi; K_STEEL = BDO.ivoryDim; K_BLUE = BDO.tealHi; K_EMBER = BDO.ember; K_DIM = BDO.ivoryFaint; }
+    else { K_GOLD = GOLD; K_GOLD_HI = GOLD_HI; K_STEEL = STEEL; K_BLUE = BLUE; K_EMBER = EMBER; K_DIM = DIM; }
 
     if (!(typeof now === 'number' && Number.isFinite(now))) now = lastNow >= 0 ? lastNow + 16.7 : 0;
     let dt = lastNow >= 0 ? (now - lastNow) / 1000 : 0;
@@ -1195,6 +1627,7 @@ export function createTrackingHud(opts) {
     // ---- размер backing store = CSS-бокс × dpr (object-fit на него не влияет)
     const cw = canvas.clientWidth | 0, chh = canvas.clientHeight | 0;
     if (cw < 8 || chh < 8) { if (drawnSomething) wipe(); return; }
+    boxW = cw; boxH = chh;
     let d = typeof window !== 'undefined' ? num(window.devicePixelRatio, 1) : 1;
     d = clamp(d, 0.5, 2);
     const bw = Math.max(1, Math.round(cw * d)), bh = Math.max(1, Math.round(chh * d));
@@ -1284,8 +1717,14 @@ export function createTrackingHud(opts) {
     const lTxt = handsOn || both ? '' : lUp ? (blocked && !shield ? (mini ? 'REARM' : '◆ REARM') : (mini ? 'SHIELD' : '◆ SHIELD')) : '';
     setLabel(rHand.state, rTxt, chipF, now);
     setLabel(lHand.state, lTxt, chipF, now);
-    setLabel(burstLabel, burstK > 0 ? 'BURST ✦' : both && !handsOn ? 'BURST' : '', chipF, now);
-    setLabel(dashLabel, dashK > 0 ? (dashDir > 0 ? '» DASH' : 'DASH «') : '', chipF, now);
+    if (bdo) {
+      // [BDO] подписи Forum по-русски
+      setLabel(burstLabel, burstK > 0 || (both && !handsOn) ? 'Выброс' : '', chipF, now);
+      setLabel(dashLabel, dashK > 0 ? (dashDir > 0 ? 'Рывок »' : '« Рывок') : '', chipF, now);
+    } else {
+      setLabel(burstLabel, burstK > 0 ? 'BURST ✦' : both && !handsOn ? 'BURST' : '', chipF, now);
+      setLabel(dashLabel, dashK > 0 ? (dashDir > 0 ? '» DASH' : 'DASH «') : '', chipF, now);
+    }
     setLabel(head.state, '', chipF, now);
     setLabel(torso.state, '', chipF, now);
 
@@ -1296,10 +1735,11 @@ export function createTrackingHud(opts) {
       ctx.rect(rx, ry, rw, rh);
       ctx.clip();
 
-      if (!mini) drawViewfinder(1);
+      if (!mini && !bdo) drawViewfinder(1);
       if (!stickMode) drawNeutral(dbg, input, mini);
       if (stick && stickMode) drawStick(stick, now, rm, mini);
-      drawConstellation(rUp, lUp, mini);
+      if (bdo) drawConstellationBdo(rUp, lUp, mini);
+      else drawConstellation(rUp, lUp, mini);
 
       const pulseOn = both && !rm;
       const pulse = pulseOn ? (mini ? 0.8 : 1.6) * (0.5 + 0.5 * Math.sin(now * 0.02)) : 0;
@@ -1307,37 +1747,51 @@ export function createTrackingHud(opts) {
       const rCol = rUp ? (blocked && !attack && !both ? STEEL : GOLD_HI) : STEEL;
       const lCol = lUp ? (blocked && !shield && !both ? STEEL : BLUE) : STEEL;
       const tCol = calib || dashK > 0 ? BLUE : STEEL;
-      drawBox(torso, tCol, calib || dashK > 0, 0, now, rm, mini);
-      drawBox(head, STEEL, false, 0, now, rm, mini);
-      if (!hL) drawBox(lHand, lCol, lUp, lUp && both ? pulse : 0, now, rm, mini);
-      if (!hR) drawBox(rHand, rCol, rUp, rUp && both ? pulse : 0, now, rm, mini);
+      if (!bdo) {                                  // [BDO] технические рамки скрыты
+        drawBox(torso, tCol, calib || dashK > 0, 0, now, rm, mini);
+        drawBox(head, STEEL, false, 0, now, rm, mini);
+        if (!hL) drawBox(lHand, lCol, lUp, lUp && both ? pulse : 0, now, rm, mini);
+        if (!hR) drawBox(rHand, rCol, rUp, rUp && both ? pulse : 0, now, rm, mini);
+      }
 
       // прицелы в центре головы и торса
-      if (!mini && head.alpha > 0.05) {
+      if (!mini && !bdo && head.alpha > 0.05) {
         boxRect(head);
         crosshair(BX, BY + BH * 0.08, 2, Math.max(2, BW * 0.12), STEEL, 0.55 * head.alpha);
       }
-      if (!mini && torso.alpha > 0.05) {
+      if (!mini && !bdo && torso.alpha > 0.05) {
         boxRect(torso);
         crosshair(BX, BY, 2, 4, STEEL, 0.5 * torso.alpha);
       }
 
       if ((both && !handsOn) || burstK > 0) drawBurst(charge, both && !handsOn, burstK, now, rm, mini);
       if (HI) {
-        if (hL) drawHand(hL, 'left', now, rm, mini);
-        if (hR) drawHand(hR, 'right', now, rm, mini);
-        drawRuneTrail(HI, now, rm, mini);
+        if (bdo) {
+          if (hL) drawHandBdo(hL, 'left', now, rm, mini);
+          if (hR) drawHandBdo(hR, 'right', now, rm, mini);
+          drawRuneTrailBdo(HI, now, rm, mini);
+        } else {
+          if (hL) drawHand(hL, 'left', now, rm, mini);
+          if (hR) drawHand(hR, 'right', now, rm, mini);
+          drawRuneTrail(HI, now, rm, mini);
+        }
       }
       if (dashK > 0) drawDash(dashK, now, rm, mini);
 
-      drawTag(torso, tCol, BLUE, now, rm, mini);
-      drawTag(head, STEEL, STEEL, now, rm, mini);
-      if (!hL) drawTag(lHand, lCol, lCol === STEEL ? STEEL : BLUE, now, rm, mini);
-      if (!hR) drawTag(rHand, rCol, rCol === STEEL ? STEEL : GOLD_HI, now, rm, mini);
+      if (bdo) {
+        // [BDO] вместо ярлыков с координатами — короткие подписи состояний рук
+        if (!hL && lTxt) drawArmStateBdo(lHand, lTxt === 'SHIELD' || lTxt === '◆ SHIELD' ? 'Щит' : 'Опустите руки', lCol === STEEL ? BDO.ivoryDim : BDO.tealHi, mini);
+        if (!hR && rTxt) drawArmStateBdo(rHand, rTxt === 'FIRE' || rTxt === '▲ FIRE' ? 'Огонь' : 'Опустите руки', rCol === STEEL ? BDO.ivoryDim : BDO.goldHi, mini);
+      } else {
+        drawTag(torso, tCol, BLUE, now, rm, mini);
+        drawTag(head, STEEL, STEEL, now, rm, mini);
+        if (!hL) drawTag(lHand, lCol, lCol === STEEL ? STEEL : BLUE, now, rm, mini);
+        if (!hR) drawTag(rHand, rCol, rCol === STEEL ? STEEL : GOLD_HI, now, rm, mini);
+      }
 
-      if (calib && status) drawCalib(status, now, rm, mini);
-      if (lostAlpha > 0.01) drawSearch(st, status, lostAlpha, now, rm, mini);
-      if (!mini) drawData(st, status, dbg, present, now, rm);
+      if (calib && status) { if (bdo) drawCalibBdo(status, now, rm, mini); else drawCalib(status, now, rm, mini); }
+      if (lostAlpha > 0.01) { if (bdo) drawSearchBdo(st, status, lostAlpha, now, rm, mini); else drawSearch(st, status, lostAlpha, now, rm, mini); }
+      if (!mini && !bdo) drawData(st, status, dbg, present, now, rm);
     } finally {
       ctx.restore();
       ctx.globalAlpha = 1;
