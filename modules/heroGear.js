@@ -577,16 +577,53 @@ export function dressHero(THREE, vrm, opts = {}) {
     stick(grp, 'head', bp.head.clone().addScaledVector(UP, eyeY).addScaledVector(FWD, front + 0.004), modelQ);
   }
 
-  // ---------------- острые уши эльфа (сквозь капюшон — узнаваемый силуэт)
+  // ---------------- острые уши эльфа (сквозь капюшон — узнаваемый силуэт): лист с загнутым кончиком из
+  // выдавленного контура, от настоящего уха модели (крайние вершины лица у висков); материал — кожа лица
+  // (тон и свет как у лица), UV — ровный участок кожи лба на атласе
+  let elfEars = null;
   if (opts.ears && bp.head) {
-    const skin = Mt(new Std({ name: 'gear-ear', color: 0xc08463, roughness: 0.55, ...(physical ? { sheen: 0.2, sheenColor: new THREE.Color(1, 0.7, 0.6) } : {}) }));
-    const earG = G(new THREE.ConeGeometry(0.013, 0.07, 6));
-    earG.translate(0, 0.033, 0);
-    for (const s of [1, -1]) {
-      const ear = new THREE.Mesh(earG, skin); ear.name = `elf-ear-${s > 0 ? 'l' : 'r'}`;
-      ear.scale.set(1, 1, 0.45);
-      const dir = LEFT.clone().multiplyScalar(s).addScaledVector(UP, 0.85).addScaledVector(FWD, -0.55).normalize();
-      stick(ear, 'head', bp.head.clone().addScaledVector(UP, 0.068).addScaledVector(LEFT, s * 0.066).addScaledVector(FWD, -0.012), qFromTo(new THREE.Vector3(0, 1, 0), dir));
+    let faceM = null;
+    vrm.scene.traverse((o) => { if (o.isMesh && !Array.isArray(o.material) && o.material && /^MI_Regular_(Female|Male)/.test(o.material.name)) faceM = o; });
+    if (faceM) {
+      const v = new THREE.Vector3(), pa = faceM.geometry.attributes.position, earP = {};
+      let yMin = 1e9, yMax = -1e9;
+      for (let i = 0; i < pa.count; i++) { faceM.getVertexPosition(i, v); v.applyMatrix4(faceM.matrixWorld).sub(bp.head); const y = v.dot(UP); yMin = Math.min(yMin, y); yMax = Math.max(yMax, y); }
+      const yEar = yMin + (yMax - yMin) * 0.6;
+      for (let i = 0; i < pa.count; i++) {
+        faceM.getVertexPosition(i, v); v.applyMatrix4(faceM.matrixWorld).sub(bp.head);
+        const x = v.dot(LEFT), y = v.dot(UP), z = v.dot(FWD);
+        if (Math.abs(y - yEar) > 0.035 || z < -0.06 || z > 0.04) continue;
+        const k = x > 0 ? 1 : -1;
+        if (!earP[k] || Math.abs(x) > Math.abs(earP[k].x)) earP[k] = { x, y, z };
+      }
+      const sh = new THREE.Shape();
+      sh.moveTo(0, 0);
+      sh.bezierCurveTo(0.017, 0.008, 0.02, 0.034, 0.011, 0.056);
+      sh.quadraticCurveTo(0.004, 0.071, -0.006, 0.084);
+      sh.quadraticCurveTo(-0.007, 0.056, -0.013, 0.03);
+      sh.bezierCurveTo(-0.016, 0.012, -0.009, 0.001, 0, 0);
+      const eg = new THREE.ExtrudeGeometry(sh, { depth: 0.004, bevelEnabled: true, bevelThickness: 0.0016, bevelSize: 0.0016, bevelSegments: 2, curveSegments: 10 });
+      eg.translate(0, 0, -0.002);
+      const ua = eg.attributes.uv;
+      for (let i = 0; i < ua.count; i++) ua.setXY(i, (92 + ua.getX(i) * 180) / 512, (58 + ua.getY(i) * 120) / 512);
+      eg.computeVertexNormals();
+      G(eg);
+      elfEars = { meshes: [], face: faceM };
+      for (const k of [1, -1]) {
+        const e = earP[k];
+        if (!e) continue;
+        const root = bp.head.clone().addScaledVector(LEFT, e.x - k * 0.006).addScaledVector(UP, e.y + 0.012).addScaledVector(FWD, e.z - 0.004);
+        const yA = UP.clone().multiplyScalar(0.78).addScaledVector(LEFT, k * 0.5).addScaledVector(FWD, -0.38).normalize();
+        let zA = LEFT.clone().multiplyScalar(k).addScaledVector(FWD, 0.3);
+        zA.addScaledVector(yA, -zA.dot(yA)).normalize();
+        const xA = yA.clone().cross(zA);
+        const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xA, yA, zA));
+        const ear = new THREE.Mesh(eg, faceM.material); ear.name = `elf-ear-${k > 0 ? 'l' : 'r'}`;
+        if (k < 0) ear.scale.set(-1, 1, 1);   // зеркально: загиб кончика — назад у обоих ушей
+        const grp = new THREE.Group(); grp.name = ear.name + '-grp'; grp.add(ear);
+        stick(grp, 'head', root, q);
+        elfEars.meshes.push(ear);
+      }
     }
   }
 
@@ -1398,6 +1435,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   const _pv = new THREE.Vector3(), _pd = new THREE.Vector3(), _pInv = new THREE.Matrix4(), _pDown = new THREE.Vector3(0, -1, 0);
   function update(dt) {
     t += dt;
+    if (elfEars) for (const m of elfEars.meshes) if (m.material !== elfEars.face.material) m.material = elfEars.face.material;
     const now = typeof performance !== 'undefined' ? () => performance.now() : () => Date.now();
     let t0 = now();
     if (cloth) { try { cloth.update(dt, lodL); } catch (e) { /* ткань не критична */ } }
