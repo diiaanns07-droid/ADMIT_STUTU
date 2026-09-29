@@ -552,7 +552,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   // Чёлка (прямая до бровей или набок), пряди у лица — ложатся на ключицы и грудь, копна из-под капюшона
   // по спине. Локон — трубка с эллиптическим сечением (плоской стороной к телу), сужается к кончику;
   // корни темнее, кончики светлее; пряди не проходят сквозь голову, плечи и корпус (капсулы).
-  let hair = null;
+  let hair = null, hairSheet = null;
   if (opts.hair && bp.head) {
     const HO = opts.hair;
     const hairC = new THREE.Color(HO.color || 0x3a2418);
@@ -694,6 +694,44 @@ export function dressHero(THREE, vrm, opts = {}) {
     hair = createStrands(THREE, { locks, anchor: headBone, parent: headBone, colliders, material: hm, spine: [raw('neck') || raw(chestB), raw('hips')], fwd: (out) => out.set(0, 0, 1).applyQuaternion(holderH.getWorldQuaternion(_hq)) });
     parts.push({ obj: hair.mesh, bone: headBone }, { obj: skullC, bone: headBone });
     names.push('hair');
+    // слой волос под прядями по спине: полотно ткани с текстурой прядей — без просветов между локонами;
+    // чуть ближе к телу, чем локоны (коллайдеры тоньше), кончики рассыпаются (альфа по uv1)
+    if (HO.sheet !== false) {
+      const cols = 7, rows = 12, rest = new Float32Array(cols * rows * 3), Ls = len * 0.82;
+      for (let j = 0; j < rows; j++) {
+        const t = j / (rows - 1);
+        for (let i = 0; i < cols; i++) {
+          const a = (i / (cols - 1) - 0.5) * 1.9;   // азимут по затылку: 0 — центр, + — к левому уху
+          const root = sk3(a, 2.0 + 0.1 * Math.abs(a), 0.95);
+          const p = root.clone();
+          if (j) {
+            p.addScaledVector(DOWN, t * Ls).addScaledVector(LEFT, Math.sin(a) * 0.05 * t);
+            const zBack = p.clone().sub(chestP).dot(FWD);
+            p.addScaledVector(FWD, -Math.max(0, zBack + torsoR + 0.008));
+          }
+          p.toArray(rest, (j * cols + i) * 3);
+        }
+      }
+      const sm = Mt(new Std({
+        name: 'gear-hair-sheet', color: hairC.clone().multiplyScalar(0.82), map: strandTex, bumpMap: strandTex, bumpScale: 2.2,
+        alphaMap: hairTipTex(THREE), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.45, metalness: 0, envMapIntensity: 0.5,
+        ...(physical ? { sheen: 0.35, sheenRoughness: 0.4, sheenColor: hairC.clone().multiplyScalar(1.4), specularIntensity: 0.45 } : {}),
+      }));
+      const _hq2 = new THREE.Quaternion();
+      hairSheet = createCloth(THREE, {
+        cols, rows, rest, anchor: headBone, parent: holderH, material: sm, name: 'hair-sheet',
+        colliders: bodyCaps.filter((c) => !/Leg/.test(c.name)).map((c) => ({ ...c, r: c.r - 0.012 })),
+        pleats: 5, pleatDepth: 0.006, plane: 'back', carry: 0.75,
+        hips: raw('hips'), back: { lim: 0.02, h: Math.max(0.2, chestP.y - bp.hips.y) },
+        fwd: (out) => out.set(0, 0, 1).applyQuaternion(holderH.getWorldQuaternion(_hq2)),
+        floor: () => holderH.getWorldPosition(new THREE.Vector3()).y,
+      });
+      // uv1: поперёк — 3 повтора пучков, вдоль — доля длины от корня (для альфы кончиков)
+      const ug = hairSheet.mesh.geometry, uva = ug.attributes.uv, u1 = new Float32Array(uva.count * 2);
+      for (let k = 0; k < uva.count; k++) { u1[k * 2] = uva.getX(k) * 3; u1[k * 2 + 1] = 1 - uva.getY(k); }
+      ug.setAttribute('uv1', new THREE.BufferAttribute(u1, 2));
+      names.push('hair-sheet');
+    }
   }
 
   // ---------------- ресницы и моргание (лица Quaternius Regular: глаза — сферы, век-морфов нет)
@@ -1271,6 +1309,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     for (const tb of tabards) { try { tb.update(dt, lodL); } catch (e) { /* полы не критичны */ } }
     let t1 = now(); perf.cloth += (t1 - t0 - perf.cloth) * 0.1; t0 = t1;
     if (hair) { try { hair.update(dt, lodL); } catch (e) { /* пряди не критичны */ } }
+    if (hairSheet) { try { hairSheet.update(dt, lodL); } catch (e) { /* слой волос не критичен */ } }
     if (plume) { try { plume.update(dt, lodL); } catch (e) { /* плюмаж не критичен */ } }
     if (ribbons) {
       try {
@@ -1320,6 +1359,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     if (cloth) { cloth.mesh.castShadow = l === 0; cloth.setWind(l >= 2 ? 0 : 1); }
     for (const tb of tabards) { tb.mesh.castShadow = l === 0; tb.setWind(l >= 2 ? 0 : 1); }
     if (hair) hair.setWind(l >= 2 ? 0 : 1);
+    if (hairSheet) { hairSheet.setWind(l >= 2 ? 0 : 1); hairSheet.mesh.castShadow = l === 0; }
     if (plume) plume.setWind(l >= 2 ? 0 : 1);
     if (ribbons) { ribbons.setWind(l >= 2 ? 0 : 1); ribbons.mesh.castShadow = l === 0; }
   }
@@ -1408,6 +1448,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     if (cloth) cloth.dispose();
     for (const tb of tabards) tb.dispose();
     if (hair) hair.dispose();
+    if (hairSheet) hairSheet.dispose();
     if (plume) plume.dispose();
     if (ribbons) { ribbons.dispose(); for (const g of ribbons.pendants || []) if (g.parent) g.parent.remove(g); }
     for (const p of parts) if (p.obj.parent) p.obj.parent.remove(p.obj);
