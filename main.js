@@ -59,6 +59,9 @@ function sanitizeSettings(patch, base) {
   if ('reducedMotion' in patch) out.reducedMotion = !!patch.reducedMotion;
   if (patch.moveMode === 'steer' || patch.moveMode === 'stick') out.moveMode = patch.moveMode; // [V5] «Руль» / «Джойстик»
   if (typeof patch.hero === 'string' && HEROES[patch.hero]) out.hero = patch.hero;
+  // [NET] имя в онлайн-дуэли и IP ретранслятора LAN
+  if (typeof patch.netName === 'string') out.netName = patch.netName.replace(/[<>\u0000-\u001f]/g, '').trim().slice(0, 16);
+  if (typeof patch.netLanHost === 'string') out.netLanHost = patch.netLanHost.replace(/[^0-9A-Za-z.:\-]/g, '').slice(0, 64);
   return out;
 }
 function loadSettings() {
@@ -433,6 +436,8 @@ const callbacks = {
     setScreen(to);
   },
 
+  onNet() { openNet().catch((e) => { app.error = `Онлайн-модуль не загрузился: ${(e && e.message) || e}`; setScreen('error'); }); }, // [NET]
+
   onExit() {
     app.nav = [];
     app.resumableFight = false;
@@ -444,6 +449,38 @@ const callbacks = {
     setScreen('menu');
   },
 };
+
+// [NET] онлайн-дуэль: сеть, второй герой и лобби создаются только по кнопке «Онлайн-дуэль»
+// (ленивый import net/session.js). В одиночной игре netSession === null — ноль накладных расходов.
+// №3 [PVP]: app.onNetReady = (info) => {...} — старт дуэли, когда оба нажали «Готов»
+// (info: { net, remote, isHost, code, opponent, mode, seed }); remote.getState() → snap.opponent.
+let netSession = null;
+let netSessionP = null;
+function openNet() {
+  if (!netSessionP) {
+    netSessionP = import('./net/session.js').then((m) => {
+      netSession = m.createNetSession({
+        THREE, scene, world, camera, heroes: HEROES, settings,
+        heroFactory: (o) => createHeroModel({ THREE, ...o, baseUrl: new URL('./assets/quaternius/', import.meta.url).href }),
+        hooks: {
+          saveSettings: (patch) => callbacks.onSettings(patch),
+          isDebug: () => app.debug,
+          setDebug: (on) => callbacks.onDebug(on),
+          onReady: (info) => {
+            app.netInfo = info;
+            if (typeof app.onNetReady === 'function') { app.onNetReady(info); return; }
+            app.introShown = true;                        // без облёта Регента
+            if (app.debug) startFight(); else setScreen('camera');
+          },
+          onLeave: () => { app.netInfo = null; },
+        },
+      });
+      return netSession;
+    }).catch((e) => { netSessionP = null; console.error('[NET] онлайн-модуль не загрузился', e); throw e; });
+  }
+  return netSessionP.then((ns) => { if (!ns.lobbyOpen) ns.openLobby(); return ns; });
+}
+if (/[?&]netAuto=/.test(location.search)) { if (/[?&]debug=1/.test(location.search)) { app.debug = true; debugInput.setEnabled(true); } openNet().catch(() => {}); } // [NET] тесты
 
 const ui = make('ui.js', () => createUI({
   root: uiRoot,
@@ -763,9 +800,13 @@ function frame(now) {
   if (typeof world.setMirror === 'function') {
     try { world.setMirror(app.debug ? null : mirrorFromPose(input, now)); } catch (e) { /* ignore */ }
   }
+  // [NET] соперник: отправка st/ev/pr, его модель; его события (data.remote=true) и снаряды — в эффекты.
+  // world и heroModel получают только свои события: иначе свой герой повторял бы чужие удары.
+  let fxEvents = events, fxSnap = lastSnapshot;
+  if (netSession) { try { const r = netSession.frame(dtReal, now, lastSnapshot, input, events); fxEvents = r.events; fxSnap = r.snapshot; } catch (e) { console.warn('[NET] frame', e); } }
   try { world.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] world.update', e); }
   if (heroModel) { try { heroModel.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] heroModel.update', e); } }
-  try { effects.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] effects.update', e); }
+  try { effects.update(dt, fxSnap, fxEvents); } catch (e) { console.error('[ASHEN] effects.update', e); } // [NET] fxSnap/fxEvents
 
   // камера
   if (app.screen === 'intro' && lastSnapshot) {
@@ -845,6 +886,8 @@ window.__ASHEN__ = Object.freeze({
   pushups: () => pushups.getDebug(),
   coach: () => coachStats.summary(),
   hero: () => (heroModel ? heroModel.state() : null),
+  net: () => (netSession ? netSession.debug() : null),             // [NET]
+  netSession: () => netSession,                                    // [NET] для тестов и №3
   heroStep: (dt, snap, events) => { if (heroModel) heroModel.update(dt, snap, events || []); return heroModel ? heroModel.state() : null; }, // QA: шаг анимации без rAF
   squats: () => squats.getDebug(),
   heroMax: () => { const c = typeof combat.getEffectiveConfig === 'function' ? combat.getEffectiveConfig() : null; return c ? { hp: c.player.maxHp, energy: c.player.maxEnergy } : null; },
