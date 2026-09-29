@@ -672,6 +672,40 @@ export function createHeroModel({
     bone.quaternion.slerp(_q, clamp(w, 0, 1));
     bone.updateWorldMatrix(false, false);
   }
+  // IK двух костей (плечо → локоть → кисть): кисть в точку targetW, локоть — в сторону poleW (мир)
+  const _ikS = new THREE.Vector3(), _ikE = new THREE.Vector3(), _ikH = new THREE.Vector3(), _ikD = new THREE.Vector3(), _ikM = new THREE.Vector3(), _ikT = new THREE.Vector3(), _ikV = new THREE.Vector3();
+  const _bw1 = new THREE.Vector3(), _bw2 = new THREE.Vector3(), _bw3 = new THREE.Vector3(), _bw4 = new THREE.Vector3(), _bw5 = new THREE.Vector3(), _bw6 = new THREE.Vector3();
+  function aimBoneW(bone, restDir, dirW, w) {
+    if (!bone || w <= 0.001) return;
+    cur.vrm.scene.getWorldQuaternion(_qm);
+    _rest.copy(restDir).applyQuaternion(_qm);
+    _ikV.copy(dirW).normalize();
+    _q.setFromUnitVectors(_rest, _ikV).multiply(_qm);
+    bone.parent.updateWorldMatrix(true, false);
+    bone.parent.getWorldQuaternion(_q2);
+    _q.premultiply(_q2.invert());
+    bone.quaternion.slerp(_q, clamp(w, 0, 1));
+    bone.updateWorldMatrix(false, false);
+  }
+  function ikArm(upper, lower, hand, rest, targetW, poleW, w, maxReach = 1) {
+    if (!upper || !lower || !hand || w <= 0.001) return;
+    upper.updateWorldMatrix(true, true);
+    upper.getWorldPosition(_ikS); lower.getWorldPosition(_ikE); hand.getWorldPosition(_ikH);
+    const L1 = _ikS.distanceTo(_ikE), L2 = _ikE.distanceTo(_ikH);
+    _ikD.copy(targetW).sub(_ikS);
+    let dist = _ikD.length();
+    if (dist < 1e-4) return;
+    _ikD.divideScalar(dist);
+    dist = clamp(dist, Math.abs(L1 - L2) + 1e-3, (L1 + L2) * maxReach - 1e-4);
+    const ca = clamp((L1 * L1 + dist * dist - L2 * L2) / (2 * L1 * dist), -1, 1), sa = Math.sqrt(1 - ca * ca);
+    _ikM.copy(poleW).addScaledVector(_ikD, -poleW.dot(_ikD));
+    if (_ikM.lengthSq() < 1e-8) _ikM.set(0, -1, 0).addScaledVector(_ikD, _ikD.y);
+    _ikM.normalize();
+    _ikE.copy(_ikS).addScaledVector(_ikD, L1 * ca).addScaledVector(_ikM, L1 * sa);
+    _ikT.copy(_ikS).addScaledVector(_ikD, dist);
+    aimBoneW(upper, rest, _ikH.copy(_ikE).sub(_ikS), w);
+    aimBoneW(lower, rest, _ikH.copy(_ikT).sub(_ikE), w);
+  }
   const RL = new THREE.Vector3(1, 0, 0), RR = new THREE.Vector3(-1, 0, 0);
   const _upV = new THREE.Vector3();
   const dA = new THREE.Vector3(), dB = new THREE.Vector3();
@@ -683,20 +717,30 @@ export function createHeroModel({
     pose.wSpell += (clamp(pose.handSpell, 0, 1) - pose.wSpell) * kf(8);
     pose.draw += (clamp(pose.bowDraw, 0, 1) - pose.draw) * kf(18);
     const ax = clamp(pose.aimX, -1, 1), ay = clamp(pose.aimY, -1, 1);
-    // лук: корпус боком к цели, левая рука держит лук на линии прицела, правая тянет тетиву к щеке
+    // лук: корпус боком к цели (левым плечом вперёд), голова — к цели; левая рука прямая по линии прицела,
+    // правая (IK) тянет тетиву от лука к челюсти, локоть уходит назад-вбок и поднимается с натяжением
     if (pose.wBow > 0.01) {
-      const w = pose.wBow;
-      if (B.chest) { B.chest.rotateY(0.45 * w); B.chest.updateWorldMatrix(false, false); }
-      dA.set(-ax * 0.55 - 0.25, 0.1 + ay * 0.5, 1);          // линия прицела (в осях героя; +x — влево)
-      aimBone(B.leftUpperArm, RL, dA, w);
-      aimBone(B.leftLowerArm, RL, dA, w);
-      const d = pose.draw;
-      dB.set(-0.35 - 0.75 * d, 0.1 + ay * 0.4, 1 - 1.25 * d); // плечо правой: к луку → назад-вбок
-      aimBone(B.rightUpperArm, RR, dB, w);
-      dB.set(0.2 + 0.9 * d, 0.1 + 0.1 * d + ay * 0.3, 1 - 0.6 * d); // предплечье: к тетиве → к щеке
-      aimBone(B.rightLowerArm, RR, dB, w);
+      const w = pose.wBow, d = pose.draw, de = d * d * (3 - 2 * d);
+      if (B.spine) { B.spine.rotateY(-0.22 * w); B.spine.updateWorldMatrix(false, false); }
+      if (B.chest) { B.chest.rotateY(-0.5 * w); B.chest.updateWorldMatrix(false, false); }
+      if (B.neck) B.neck.rotateY(0.32 * w);
+      if (B.head) { B.head.rotateY(0.36 * w); B.head.rotateX(0.05 * w); }
+      cur.vrm.scene.getWorldQuaternion(_qm);
+      dA.set(-ax * 0.55, 0.06 + ay * 0.5, 1).normalize();          // линия прицела (оси героя; +x — влево)
+      _bw1.copy(dA).applyQuaternion(_qm);
+      B.leftUpperArm.updateWorldMatrix(true, false); B.leftUpperArm.getWorldPosition(_bw2);
+      ikArm(B.leftUpperArm, B.leftLowerArm, B.leftHand, RL, _bw3.copy(_bw2).addScaledVector(_bw1, 2), _bw4.set(0.15, -1, 0).applyQuaternion(_qm), w, 0.97);
       // кисть левой: костяшки по линии прицела, большой палец вверх — лук стоит вертикально с лёгким кантом
       if (cur.hands) orientHand(cur.hands.left, dA, _upV.set(-0.22, 1, 0), w);
+      // точка тетивы: у лука (покой) → у правой скулы (полное натяжение)
+      B.leftHand.updateWorldMatrix(true, false); B.leftHand.getWorldPosition(_bw2);
+      B.head.updateWorldMatrix(true, false); B.head.getWorldPosition(_bw3);
+      _bw3.addScaledVector(_bw4.set(-0.055, -0.07, 0.06).applyQuaternion(_qm), 1);   // скула
+      _bw4.copy(_bw3).sub(_bw2).normalize();
+      _bw5.copy(_bw2).addScaledVector(_bw4, 0.2).lerp(_bw3, de);
+      _bw5.addScaledVector(_bw1, -0.075);                                             // кисть — позади пальцев
+      ikArm(B.rightUpperArm, B.rightLowerArm, B.rightHand, RR, _bw5, _bw6.set(-1, -0.45 + 0.95 * de, -0.55).applyQuaternion(_qm), w, 1);
+      if (cur.hands) orientHand(cur.hands.right, dA, _upV.set(0, 1, 0), w * (0.4 + 0.6 * de));
     }
     // лук из-за спины — в кулак левой (узел хвата: рукоять в кулаке, тетивой к лучнику)
     if (cur.gear && cur.gear.setBowHeld && cur.gear.bow) {
