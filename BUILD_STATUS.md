@@ -530,6 +530,8 @@ DEBUG-клавиши, поза процедурного героя), `modules/co
   `fxMagic` в `sanitizeSettings`, `__ASHEN__.fx()`; `config.js` — `fxMagic: true`.
 
 **Как проверить.**
+- Снимки всех заклинаний (с постобработкой игры): `dev/shots/vfx_runes.jpg` (10 рун), `dev/shots/vfx_spells.jpg`
+  (печати, приёмы, щит, лук, ладонь, руна в воздухе, появление/смерть, PvP).
 - Стенд: `dev/effects_testbench.html` (через `python serve_game.py`) — кнопка на каждое заклинание, руна пальцем в воздухе,
   лук/ладонь, PvP (соперник вместо Регента, `r_*`), стресс; справа — мс `effects.update`, частицы V6/старые, draw calls;
   `?post=1` — с настоящей постобработкой игры, `?quality=low`, `?rm=1`.
