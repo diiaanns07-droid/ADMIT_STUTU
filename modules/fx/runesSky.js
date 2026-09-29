@@ -204,17 +204,17 @@ export function register(fx) {
     t1.normalize();
     const t2 = new V3().crossVectors(t1, n).normalize();
     const RR = 2.7;
-    spawnGlyph({ pos: rift, normal: n, radius: RR, symbol: 'stella', symbolScale: 0.42, style: 'hex', color: P.deep, hot: P.hot, intensity: 3.4, dur: 1.5, unfold: 0.22, fade: 0.4, spin: 0.9, rings: 3, rival });
-    const g2 = spawnGlyph({ pos: rift, normal: n, radius: RR * 0.58, style: 'rune', color: P.mid, hot: P.core, intensity: 2.8, dur: 1.35, unfold: 0.18, fade: 0.35, spin: -2.4, rings: 2, ticks: 20, rival });
+    spawnGlyph({ pos: rift, normal: n, radius: RR, symbol: 'stella', symbolScale: 0.42, style: 'hex', color: P.deep, hot: P.hot, intensity: 2.3, dur: 1.5, unfold: 0.22, fade: 0.4, spin: 0.9, rings: 3, rival });
+    const g2 = spawnGlyph({ pos: rift, normal: n, radius: RR * 0.58, style: 'rune', color: P.mid, hot: P.core, intensity: 1.9, dur: 1.35, unfold: 0.18, fade: 0.35, spin: -2.4, rings: 2, ticks: 20, rival });
     if (g2 && g2.flare) kit.after(0.05, () => g2.flare(1));
     kit.flash(rift, { color: P.deep, size: [3, 9.5], dur: 0.7, intensity: 1.7, sprite: 'glow', pull: 0, rival: R });
-    kit.flash(rift, { color: P.hot, size: [1.2, 5.5], dur: 0.28, intensity: 3.6, sprite: 'star', pull: 0, rival: R });
+    kit.flash(rift, { color: P.hot, size: [1.0, 3.6], dur: 0.26, intensity: 3.0, sprite: 'star', pull: 0, rival: R });
     kit.flash(rift, { color: P.deep, size: [6.2, 7.4], dur: 1.45, intensity: 1.0, sprite: 'glow', pull: 0, fadeIn: 0.12, rival: R });
     kit.flash(rift, { color: P.hot, size: [2.0, 2.6], dur: 1.35, intensity: 2.0, sprite: 'glow', pull: 0, fadeIn: 0.1, rival: R });
     // светящаяся «трещина» поперёк разлома
     const ta = new V3().copy(rift).addScaledVector(t1, -RR * 0.78).addScaledVector(t2, 0.45);
     const tb = new V3().copy(rift).addScaledVector(t1, RR * 0.78).addScaledVector(t2, -0.45);
-    kit.emit({ at: ta, shape: 'line', to: tb, count: 20, speed: [0, 0.12], life: [1.05, 1.35], size: [0.5, 0.3], ramp: 'whiteHold', intensity: 3.2, sprite: 'glow', fadeIn: 0.12, essential: true, rival: R });
+    kit.emit({ at: ta, shape: 'line', to: tb, count: 20, speed: [0, 0.12], life: [1.05, 1.35], size: [0.32, 0.18], ramp: 'whiteHold', intensity: 2.0, sprite: 'glow', fadeIn: 0.12, essential: true, rival: R });
     ta.lerp(rift, 0.5); tb.lerp(rift, 0.5);
     kit.emit({ at: ta, shape: 'line', to: tb, count: 8, speed: [0, 0.1], life: [1.0, 1.3], size: [1.3, 0.9], color: P.deep, intensity: 2.2, sprite: 'glow', fadeIn: 0.15, essential: true, rival: R });
     // водоворот искр, втягивающийся в разлом

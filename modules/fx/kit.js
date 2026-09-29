@@ -496,8 +496,9 @@ export function createFxKit(deps) {
     const row = isNum(o.color) ? rampFor(o.color, o.deep) : rampRow(o.ramp || 'white');
     const sprName = o.sprite === 'flare' ? 'star' : (o.sprite || 'glow');
     const spr = SPRITES[sprName] ?? 1;
-    let inten = num(o.intensity, 3);
-    if (reduced()) inten = Math.min(inten, 2.2);
+    // калибровка по bloom игры: ядра ≤ 3.4, ореолы мягче
+    let inten = Math.min(num(o.intensity, 3) * 0.75, 3.4);
+    if (reduced()) inten = Math.min(inten, 2.0);
     spawnRaw(pos.x + _d.x, pos.y + _d.y, pos.z + _d.z, 0, 0, 0, clock + num(o.delay, 0), Math.max(0.03, num(o.dur, 0.2)),
       s0, s1, isNum(o.rot) ? o.rot : (sprName === 'star' ? Math.random() * 0.4 - 0.2 : Math.random() * TAU), num(o.spin, 0),
       0, 0, 0, 0, row, inten, num(o.alpha, 1), spr + (o.rival ? 32 : 0), 0, 0, 0, 0, -1e4, num(o.fadeIn, 0.04), num(o.curve, 0.45), 0);
@@ -522,7 +523,8 @@ export function createFxKit(deps) {
   function light(pos, o) {
     if (!Q.lights || !pos) return null;
     o = o || {};
-    const peak = num(o.intensity, 1) * LIGHT_UNIT * (reduced() ? 0.6 : 1);
+    // калибровка по игре: мокрый пол арены отражает точечный свет, bloom его раздувает — держим свет скромным
+    const peak = Math.min(num(o.intensity, 1), 1.4) * LIGHT_UNIT * 0.5 * (reduced() ? 0.6 : 1);
     let best = null, bestV = Infinity;
     for (let i = 0; i < Q.lights; i++) {
       const s = lights[i];
@@ -564,7 +566,7 @@ export function createFxKit(deps) {
   const _lin = [0, 0, 0];
   /** Вспышка всего экрана: strength 0..1 (≈ доля белого), dur — затухание. reducedMotion — втрое слабее и мягче. */
   function screenFlash(hex, strength, dur) {
-    let s = clamp(num(strength, 0.3), 0, 1) * Q.screen;
+    let s = clamp(num(strength, 0.3), 0, 1) * Q.screen * 0.6; // экранная вспышка идёт через bloom — втрое мягче «сырой»
     let d = Math.max(0.03, num(dur, 0.12));
     if (reduced()) { s *= 0.3; d = Math.max(d, 0.35); }
     if (scr.t < scr.dur && scrMat.uniforms.uAmount.value > s) return;
