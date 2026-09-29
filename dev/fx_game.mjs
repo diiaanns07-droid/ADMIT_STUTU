@@ -89,9 +89,10 @@ try {
   const waitEnergy = async (n) => { for (let i = 0; i < 80; i++) { const e = await page.evaluate(() => window.__ASHEN__.snapshot().player.energy); if (e >= n) return; await sleep(200); } };
   for (const k of KEYS) {
     await waitEnergy(50);
-    await page.keyboard.down(k); await sleep(70); await page.keyboard.up(k);
-    await sleep(260); await shot('k_' + k + '_a');
-    await sleep(350); await shot('k_' + k + '_b');
+    const [key, hold] = k.split(':');   // «KeyO:1200» — удержать 1,2 с (сфера/призма)
+    await page.keyboard.down(key); await sleep(hold ? +hold : 70); await page.keyboard.up(key);
+    await sleep(260); await shot('k_' + k.replace(':', '_') + '_a');
+    await sleep(350); await shot('k_' + k.replace(':', '_') + '_b');
     const fxi = await page.evaluate(() => window.__ASHEN__.fx());
     out.steps.push([k, fxi && fxi.v6 ? fxi.v6.kit.particles : null, fxi && fxi.particles]);
     await sleep(900);

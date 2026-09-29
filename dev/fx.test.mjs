@@ -79,6 +79,7 @@ function eventsFor(remote) {
   list.push([ev('hero_death', from, { ...r })]);
   list.push([ev('pvp_round', null, { phase: 'fight', round: 1, score: [0, 0] })]);
   if (remote) for (const rune of ['ignis', 'fulgur', 'vee']) list.push([ev('pvp_opponent_cast', from, { sourceType: 'rune_cast', rune, from, to, remote: true })]);
+  if (remote) for (const t of ['player_dash', 'ward_start', 'ward_end', 'bastion_start', 'bastion_end', 'shield_start']) list.push([ev(t, from, { remote: true, direction: 1 })]);
   list.push([ev('boss_impact', v3(0, 0, 6), { attackKind: 'slam', radius: 2.2 })]);
   list.push([ev('boss_phase', core, { stage: 2 })]);
   return list;
@@ -117,6 +118,7 @@ for (const pvp of [false, true]) {
 // PvP: касты соперника (modules/pvp.js шлёт pvp_opponent_cast) рисует V6
 ok(fx.v6.handle('pvp_opponent_cast', ev('pvp_opponent_cast', core, {}), { sourceType: 'rune_cast', rune: 'ignis', from: core, to: chest, remote: true }) === true, 'pvp_opponent_cast → руна соперника');
 fx.update(1 / 60, snap({ pvp: true, projectiles: [{ id: 'opp:p1', owner: 'opponent', kind: 'bolt', remote: true, position: v3(0, 1.5, 2), velocity: v3(0, 0, 30), radius: 0.2 }] }), []);
+ok(fx.supportsRemote === true, 'effects.supportsRemote для net/session.js');
 // дожить все отложенные акторы
 const s0 = snap({});
 for (let i = 0; i < 240; i++) fx.update(1 / 30, s0, []);

@@ -1308,6 +1308,13 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
   // ---------------------------------------------------------------- [VFX] слой V6 (modules/fx)
   // Якоря героя: C5 heroModel.getAnchors() (Object3D) → world.getAnchors() (точки) → расчёт по снимку.
   let anchorSrc = null, anchorFrame = -1, anchorNow = null, frameNo = 0, groundFn = null, lastInput = null;
+  let remoteAnchorSrc = null, remoteFrame = -1, remoteNow = null;
+  function remoteAnchorsNow() {
+    if (remoteFrame === frameNo) return remoteNow;
+    remoteFrame = frameNo; remoteNow = null;
+    if (typeof remoteAnchorSrc === 'function') { try { remoteNow = remoteAnchorSrc() || null; } catch (e) { remoteNow = null; } }
+    return remoteNow;
+  }
   const C5_NAMES = { handR: 'handR', handL: 'handL', chest: 'chest', head: 'head', staffTip: 'staffTip', bowSocket: 'bowSocket' };
   const WORLD_NAMES = { handR: 'heroHandR', handL: 'heroHandL', chest: 'heroChest', head: 'heroHead', feet: 'heroFeet', staffTip: 'heroHandR', bowSocket: 'heroHandL' };
   const _an = new V3(), _af = new V3();
@@ -1322,6 +1329,13 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     if (remote) {
       if (!opp || !hasVec(opp.position)) return null;
       const o = opp.position;
+      // модель соперника (C5-якоря remotePlayer): настоящие руки, если модель прикреплена к сцене
+      const ra = name !== 'feet' ? remoteAnchorsNow() : null;
+      const ro = ra && C5_NAMES[name] && ra[C5_NAMES[name]];
+      if (ro && ro.parent && typeof ro.getWorldPosition === 'function') {
+        ro.getWorldPosition(out);
+        if (isNum(out.x) && Math.hypot(out.x - o.x, out.z - o.z) < 2.5) return out;
+      }
       _af.set(fi.player.x - o.x, 0, fi.player.z - o.z);
       if (_af.lengthSq() < 1e-6) _af.set(0, 0, 1);
       _af.normalize();
@@ -3173,8 +3187,12 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     sparks(c, { count: 20, speed: [2, 4], rgb: RAW.heroGold, life: 0.5, size: 0.05, essential: true, drag: 2 });
   }
 
+  // [VFX] старые обработчики рисуют почти всё у СВОЕГО героя — событие соперника (data.remote) им отдаём, только если
+  // оно целиком задано позицией события
+  const REMOTE_LEGACY_OK = new Set(['projectile_impact', 'player_hit', 'boss_hit', 'rune_hit', 'sigil_hit']);
   function handleEvent(type, ev, d) {
     if (v6 && v6.handle(type, ev, d)) return; // [VFX] V6 нарисовал событие целиком
+    if (d && d.remote === true && !REMOTE_LEGACY_OK.has(type)) return;
     switch (type) {
       case 'player_cast': onPlayerCast(ev, d); break;
       case 'projectile_impact': onProjectileImpact(ev, d); break;
@@ -3427,6 +3445,9 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     getDebugInfo,
     // [VFX] V6: якоря героя (C5/world), ввод (след руны), земля, хит-стоп для main.js
     setAnchors: (fn) => { anchorSrc = typeof fn === 'function' ? fn : null; anchorFrame = -1; },
+    setRemoteAnchors: (fn) => { remoteAnchorSrc = typeof fn === 'function' ? fn : null; remoteFrame = -1; },
+    // [VFX] для net/session.js (№2): события соперника с data.remote рисуются от соперника в его цвете
+    get supportsRemote() { return !!(v6 && v6.enabled); },
     setGround: (fn) => { groundFn = typeof fn === 'function' ? fn : null; },
     setInput: (input) => { lastInput = input || null; if (v6) v6.setInput(lastInput); },
     takeHitStop: () => (v6 && v6.enabled ? v6.takeHitStop() : 0),

@@ -419,7 +419,7 @@ export function createDecals(deps) {
     s.birth = tNow;
     hexLin(isNum(o.color) ? o.color : df.color, s.col);
     hexLin(isNum(o.hot) ? o.hot : df.hot, s.hot);
-    s.I = clamp(num(o.intensity, 1.6), 0, 50);
+    s.I = Math.min(2, clamp(num(o.intensity, 1.6), 0, 50) * 0.8); // [VFX] калибровка под bloom игры (мокрый пол)
     s.rival = clamp(num(o.rival, 0), 0, 1);
     s.seed = (rnd * 7919.37) % 1;
     s.killT = -1;
