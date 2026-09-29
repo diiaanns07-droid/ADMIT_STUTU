@@ -22,34 +22,15 @@
 ## Завтра: как подраться по сети
 - **Интернет:** оба открывают https://diiaanns07-droid.github.io/ADMIT_STUTU/ → «Онлайн-дуэль» → один создаёт комнату, второй вводит код.
 - **Если прямое соединение не проходит** (гостевой Wi-Fi часто режет P2P): раздайте интернет с телефона обоим, или LAN-режим — хост запускает START_ONLINE_HOST.cmd, оба открывают игру локально (`python serve_game.py`, иначе браузер не даст камеру), гость вводит IP хоста.
-- **Запасной план**, если жесты подводят: режим движения «Клавиатура + мышь»; руки при этом колдуют как обычно.
 
 ---
 
-## Промпт №1 · [CTRL] Управление: движение и камера
+## Промпт №1 · [CTRL] Движение через камеру во все стороны
 
 ````text
-# ТВОЯ РОЛЬ: №1 [CTRL] — управление движением и камерой
+# ПРОМПТ №1 ОБНОВЛЯЕТСЯ
 
-Жалоба владельца: «сложно управлять движением, именно джойстиком; хочу управлять камерой». Как сейчас: левая рука работает «Рулём» (core/steerStick.js, по умолчанию) или «Джойстиком» (core/leftStick.js). Камера — core/cameraRig.js: вне арены держится за спиной, в арене переходит в lock-on. Мыши и ручного управления камерой нет. Движение в бою считает modules/combat.js (функции перемещения игрока). Индикатор движения внизу экрана рисует core/battleHud.js; его стиль делает №8. Если нужен новый индикатор (для головы или клавиатуры с мышью), вынеси его в core/ctrlIndicator.js и вызови одной строкой из battleHud с тегом [CTRL].
-
-Задачи по приоритету:
-1. **Найди, почему сложно, и измерь.** Прогони dev/steer.test.mjs и dev/leftStick.test.mjs. Сделай симуляцию живой руки: дрожание 1–2 см, задержка MediaPipe 60–120 мс, пропуски кадров, 10–15 fps трекинга на слабом ноутбуке. Замерь задержку от руки до героя, число ложных рывков и остановок, «уплывание» курса, насколько трудно идти прямо и точно повернуть на 90°. Цифры «до» запиши в TEST_REPORT.md.
-2. **Сделай управление в разы проще.**
-   - «Руль»: шире мёртвые зоны, сильнее гистерезис; «круиз» — поднял руку, и герой идёт, пока не опустишь (держать не нужно); ассист курса — мягкое примагничивание к дорогам, к цели и к направлению камеры; скольжение вдоль препятствий вместо остановки, автообход колонн, плавный разгон и торможение без рывков.
-   - Новый режим `moveMode:'head'` — «Голова + рука». Поворот головы по Pose (нос относительно ушей и плеч, нейтраль — медиана первых 1,5 с) поворачивает героя и камеру. Левая рука отвечает только за «иду / бегу / стою» по высоте. Нужны мёртвая зона, кривая отклика и сглаживание; на наклон корпуса режим не реагирует. Файлы — core/headLook.js и dev/headLook.test.mjs.
-   - Новый режим `moveMode:'kbm'`: полноценное управление без DEBUG. WASD и стрелки — ходьба в осях камеры, Shift — бег, Пробел — рывок. Мышь с зажатой ПКМ (или pointer lock по кнопке) вращает камеру, колесо — зум. Gamepad API: левый стик — ход, правый — камера, A — рывок. Руки при этом колдуют как обычно (гибрид). Это страховка для завтрашнего PvP.
-   - Соблюдай C2: пока `input.bow.active`, рука движения не двигает героя.
-3. **Камера** (core/cameraRig.js):
-   - ручное вращение через `input.camera {yawRate, pitchRate, zoom}` от мыши, геймпада или головы; после ручного поворота авто-доворот выжидает ~1,5 с;
-   - зум 3–9 м, смена плеча (клавиша V), наклон вверх и вниз в пределах;
-   - lock-on по `snap.lockTarget` (C4), а не только по боссу, — это нужно для PvP-соперника. Переход мягкий, цель всегда в кадре, при близкой цели камера отходит;
-   - коллизия с деревьями и стенами (коллайдеры раскладки плюс деревья леса №5 через layout); камера не проваливается в холмы и не дёргается на ступенях;
-   - ощущение как в BDO: низкая плавная камера за плечом, FOV +6° на спринте, лёгкое инерционное отставание при следовании.
-4. **Настройки:** выбор режима движения и чувствительности камеры (`camSens`) в меню настроек. ui.js принадлежит №8: сделай минимальный хук с тегом [CTRL]. Значения — в config.defaultSettings и в sanitizeSettings в main.js.
-5. **Обучение:** короткие карточки для новых режимов и подсказки «ОШИБКА» для головы (например, «Поверни голову, а не корпус»).
-
-Готово, когда: новичок без объяснений доходит от старта до арены и до эльфийской деревни по дороге не дольше чем за 1,5 времени клавиатуры (проверь на симуляции); ложных рывков 0; камерой можно управлять мышью, геймпадом и головой; старые тесты проходят, новые тоже.
+Этот промпт переделывается под движение только через камеру: вперёд, назад, влево и вправо. Пока не вставляй его в сессию: новая версия появится на этой странице через несколько минут.
 
 ---
 
@@ -100,12 +81,12 @@
 ## КОНТРАКТЫ (общие для всех)
 
 **C1. Настройки** (config.defaultSettings; main.js sanitizeSettings должен их пропускать):
-`moveMode: 'steer'|'stick'|'head'|'kbm'` (CTRL; 'kbm' — движение клавиатурой, мышью или геймпадом, а руки только колдуют) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
+`moveMode` — режим движения, ТОЛЬКО через камеру (набор значений задаёт №1 [CTRL]; клавиатура и мышь в бою не используются) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
 
 **C2. Ввод** (объект input из vision/debugInput; main.js дополняет его до combat.update):
 - `input.bow = { active, draw 0..1, aimX −1..1, aimY −1..1, charged, release (true один кадр), element|null }` — HAND
 - `input.handSpell = { phase:'idle'|'form'|'hold'|'throw', element:'fire'|'storm'|'frost'|'earth', power 0..1, dir:{x,y} }` — HAND
-- `input.camera = { yawRate, pitchRate, zoom }` — ручное управление камерой (CTRL: мышь, геймпад, голова)
+- `input.camera = { yawRate, pitchRate, zoom }` — управление камерой телом или головой (CTRL)
 - Пока `input.bow.active`, левая рука НЕ двигает героя (CTRL это уважает).
 
 **C3. События боя** (форма `{id, type, position, data}`), новые типы:
@@ -211,12 +192,12 @@
 ## КОНТРАКТЫ (общие для всех)
 
 **C1. Настройки** (config.defaultSettings; main.js sanitizeSettings должен их пропускать):
-`moveMode: 'steer'|'stick'|'head'|'kbm'` (CTRL; 'kbm' — движение клавиатурой, мышью или геймпадом, а руки только колдуют) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
+`moveMode` — режим движения, ТОЛЬКО через камеру (набор значений задаёт №1 [CTRL]; клавиатура и мышь в бою не используются) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
 
 **C2. Ввод** (объект input из vision/debugInput; main.js дополняет его до combat.update):
 - `input.bow = { active, draw 0..1, aimX −1..1, aimY −1..1, charged, release (true один кадр), element|null }` — HAND
 - `input.handSpell = { phase:'idle'|'form'|'hold'|'throw', element:'fire'|'storm'|'frost'|'earth', power 0..1, dir:{x,y} }` — HAND
-- `input.camera = { yawRate, pitchRate, zoom }` — ручное управление камерой (CTRL: мышь, геймпад, голова)
+- `input.camera = { yawRate, pitchRate, zoom }` — управление камерой телом или головой (CTRL)
 - Пока `input.bow.active`, левая рука НЕ двигает героя (CTRL это уважает).
 
 **C3. События боя** (форма `{id, type, position, data}`), новые типы:
@@ -323,12 +304,12 @@
 ## КОНТРАКТЫ (общие для всех)
 
 **C1. Настройки** (config.defaultSettings; main.js sanitizeSettings должен их пропускать):
-`moveMode: 'steer'|'stick'|'head'|'kbm'` (CTRL; 'kbm' — движение клавиатурой, мышью или геймпадом, а руки только колдуют) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
+`moveMode` — режим движения, ТОЛЬКО через камеру (набор значений задаёт №1 [CTRL]; клавиатура и мышь в бою не используются) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
 
 **C2. Ввод** (объект input из vision/debugInput; main.js дополняет его до combat.update):
 - `input.bow = { active, draw 0..1, aimX −1..1, aimY −1..1, charged, release (true один кадр), element|null }` — HAND
 - `input.handSpell = { phase:'idle'|'form'|'hold'|'throw', element:'fire'|'storm'|'frost'|'earth', power 0..1, dir:{x,y} }` — HAND
-- `input.camera = { yawRate, pitchRate, zoom }` — ручное управление камерой (CTRL: мышь, геймпад, голова)
+- `input.camera = { yawRate, pitchRate, zoom }` — управление камерой телом или головой (CTRL)
 - Пока `input.bow.active`, левая рука НЕ двигает героя (CTRL это уважает).
 
 **C3. События боя** (форма `{id, type, position, data}`), новые типы:
@@ -432,12 +413,12 @@
 ## КОНТРАКТЫ (общие для всех)
 
 **C1. Настройки** (config.defaultSettings; main.js sanitizeSettings должен их пропускать):
-`moveMode: 'steer'|'stick'|'head'|'kbm'` (CTRL; 'kbm' — движение клавиатурой, мышью или геймпадом, а руки только колдуют) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
+`moveMode` — режим движения, ТОЛЬКО через камеру (набор значений задаёт №1 [CTRL]; клавиатура и мышь в бою не используются) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
 
 **C2. Ввод** (объект input из vision/debugInput; main.js дополняет его до combat.update):
 - `input.bow = { active, draw 0..1, aimX −1..1, aimY −1..1, charged, release (true один кадр), element|null }` — HAND
 - `input.handSpell = { phase:'idle'|'form'|'hold'|'throw', element:'fire'|'storm'|'frost'|'earth', power 0..1, dir:{x,y} }` — HAND
-- `input.camera = { yawRate, pitchRate, zoom }` — ручное управление камерой (CTRL: мышь, геймпад, голова)
+- `input.camera = { yawRate, pitchRate, zoom }` — управление камерой телом или головой (CTRL)
 - Пока `input.bow.active`, левая рука НЕ двигает героя (CTRL это уважает).
 
 **C3. События боя** (форма `{id, type, position, data}`), новые типы:
@@ -542,12 +523,12 @@
 ## КОНТРАКТЫ (общие для всех)
 
 **C1. Настройки** (config.defaultSettings; main.js sanitizeSettings должен их пропускать):
-`moveMode: 'steer'|'stick'|'head'|'kbm'` (CTRL; 'kbm' — движение клавиатурой, мышью или геймпадом, а руки только колдуют) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
+`moveMode` — режим движения, ТОЛЬКО через камеру (набор значений задаёт №1 [CTRL]; клавиатура и мышь в бою не используются) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
 
 **C2. Ввод** (объект input из vision/debugInput; main.js дополняет его до combat.update):
 - `input.bow = { active, draw 0..1, aimX −1..1, aimY −1..1, charged, release (true один кадр), element|null }` — HAND
 - `input.handSpell = { phase:'idle'|'form'|'hold'|'throw', element:'fire'|'storm'|'frost'|'earth', power 0..1, dir:{x,y} }` — HAND
-- `input.camera = { yawRate, pitchRate, zoom }` — ручное управление камерой (CTRL: мышь, геймпад, голова)
+- `input.camera = { yawRate, pitchRate, zoom }` — управление камерой телом или головой (CTRL)
 - Пока `input.bow.active`, левая рука НЕ двигает героя (CTRL это уважает).
 
 **C3. События боя** (форма `{id, type, position, data}`), новые типы:
@@ -658,12 +639,12 @@
 ## КОНТРАКТЫ (общие для всех)
 
 **C1. Настройки** (config.defaultSettings; main.js sanitizeSettings должен их пропускать):
-`moveMode: 'steer'|'stick'|'head'|'kbm'` (CTRL; 'kbm' — движение клавиатурой, мышью или геймпадом, а руки только колдуют) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
+`moveMode` — режим движения, ТОЛЬКО через камеру (набор значений задаёт №1 [CTRL]; клавиатура и мышь в бою не используются) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
 
 **C2. Ввод** (объект input из vision/debugInput; main.js дополняет его до combat.update):
 - `input.bow = { active, draw 0..1, aimX −1..1, aimY −1..1, charged, release (true один кадр), element|null }` — HAND
 - `input.handSpell = { phase:'idle'|'form'|'hold'|'throw', element:'fire'|'storm'|'frost'|'earth', power 0..1, dir:{x,y} }` — HAND
-- `input.camera = { yawRate, pitchRate, zoom }` — ручное управление камерой (CTRL: мышь, геймпад, голова)
+- `input.camera = { yawRate, pitchRate, zoom }` — управление камерой телом или головой (CTRL)
 - Пока `input.bow.active`, левая рука НЕ двигает героя (CTRL это уважает).
 
 **C3. События боя** (форма `{id, type, position, data}`), новые типы:
@@ -773,12 +754,12 @@
 ## КОНТРАКТЫ (общие для всех)
 
 **C1. Настройки** (config.defaultSettings; main.js sanitizeSettings должен их пропускать):
-`moveMode: 'steer'|'stick'|'head'|'kbm'` (CTRL; 'kbm' — движение клавиатурой, мышью или геймпадом, а руки только колдуют) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
+`moveMode` — режим движения, ТОЛЬКО через камеру (набор значений задаёт №1 [CTRL]; клавиатура и мышь в бою не используются) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
 
 **C2. Ввод** (объект input из vision/debugInput; main.js дополняет его до combat.update):
 - `input.bow = { active, draw 0..1, aimX −1..1, aimY −1..1, charged, release (true один кадр), element|null }` — HAND
 - `input.handSpell = { phase:'idle'|'form'|'hold'|'throw', element:'fire'|'storm'|'frost'|'earth', power 0..1, dir:{x,y} }` — HAND
-- `input.camera = { yawRate, pitchRate, zoom }` — ручное управление камерой (CTRL: мышь, геймпад, голова)
+- `input.camera = { yawRate, pitchRate, zoom }` — управление камерой телом или головой (CTRL)
 - Пока `input.bow.active`, левая рука НЕ двигает героя (CTRL это уважает).
 
 **C3. События боя** (форма `{id, type, position, data}`), новые типы:
@@ -890,12 +871,12 @@
 ## КОНТРАКТЫ (общие для всех)
 
 **C1. Настройки** (config.defaultSettings; main.js sanitizeSettings должен их пропускать):
-`moveMode: 'steer'|'stick'|'head'|'kbm'` (CTRL; 'kbm' — движение клавиатурой, мышью или геймпадом, а руки только колдуют) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
+`moveMode` — режим движения, ТОЛЬКО через камеру (набор значений задаёт №1 [CTRL]; клавиатура и мышь в бою не используются) · `camSens: 1` (CTRL) · `startZone: 'arena'|'forest'` (FOREST) · `bdoUi: true` (BDO) · `heroShading: 'realistic'|'anime'` (HERO) · `netName: ''` (NET).
 
 **C2. Ввод** (объект input из vision/debugInput; main.js дополняет его до combat.update):
 - `input.bow = { active, draw 0..1, aimX −1..1, aimY −1..1, charged, release (true один кадр), element|null }` — HAND
 - `input.handSpell = { phase:'idle'|'form'|'hold'|'throw', element:'fire'|'storm'|'frost'|'earth', power 0..1, dir:{x,y} }` — HAND
-- `input.camera = { yawRate, pitchRate, zoom }` — ручное управление камерой (CTRL: мышь, геймпад, голова)
+- `input.camera = { yawRate, pitchRate, zoom }` — управление камерой телом или головой (CTRL)
 - Пока `input.bow.active`, левая рука НЕ двигает героя (CTRL это уважает).
 
 **C3. События боя** (форма `{id, type, position, data}`), новые типы:
