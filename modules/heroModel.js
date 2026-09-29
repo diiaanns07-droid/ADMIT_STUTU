@@ -41,7 +41,7 @@ export const HEROES = Object.freeze({
   dark: {
     id: 'dark', name: 'Тёмная чародейка', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Чародейка', element: 'Тьма и лёд',
     desc: ['Изгнанница из башни Затмения.', 'Посох с кристаллом ночи, плащ с живыми рунами.', 'Сковывает льдом и рвёт тьмой.'],
-    gear: 'witchQ', stance: 'staff', adduct: 0.3, menuStance: 'CastHold', hide: ['Female_Ranger_Acc_Pauldrons'], hair: { color: 0x1c1426, len: 1.05 },
+    gear: 'witchQ', stance: 'staff', adduct: 0.3, menuStance: 'Stance', hide: ['Female_Ranger_Acc_Pauldrons'], hair: { color: 0x1c1426, len: 1.05 },
     // зелёная ткань → глубокий фиолетовый, кожа → почти чёрная
     recolor: { MI_Ranger: [{ h: [65, 175], toH: 272, s: 1.1, v: 0.62 }, { h: [8, 48], toH: 255, s: 0.35, v: 0.42 }] },
   },
@@ -65,7 +65,7 @@ export const HEROES = Object.freeze({
   archmage: {
     id: 'archmage', name: 'Архимаг', vrm: null, glb: 'wizard.glb', height: 1.8, cls: 'Архимаг', element: 'Буря',
     desc: ['Последний магистр Грозовой коллегии.', 'Посох-громоотвод и плащ, прошитый рунами.', 'Лепит сферы молний двумя руками.'],
-    gear: 'magus', stance: 'staff', adduct: 0.3, menuStance: 'CastHold',
+    gear: 'magus', stance: 'staff', adduct: 0.3, menuStance: 'Stance',
   },
 });
 // порядок карточек в меню (№8 может брать отсюда)
@@ -809,7 +809,7 @@ export function createHeroModel({
       for (const n of LOCO) if (S.wLoco[n] > wMax) { wMax = S.wLoco[n]; loco = n; }
       return {
         hero: S.hero, ready: S.ready, loco, locoW: Object.fromEntries(LOCO.map((n) => [n, +S.wLoco[n].toFixed(2)])), phase: +S.phase.toFixed(3),
-        act: actName, upper: actUpper, hold: holdName, clips: cur ? Object.keys(cur.full).length : 0,
+        act: actName, actW: act ? +act.getEffectiveWeight().toFixed(2) : 0, actRun: act ? act.isRunning() : false, upper: actUpper, hold: holdName, clips: cur ? Object.keys(cur.full).length : 0,
         shading: opts.shading, lod: S.lod, pose: { bow: +pose.wBow.toFixed(2), spell: +pose.wSpell.toFixed(2), mirror: +mirror.w.toFixed(2) },
         gear: cur && cur.gear ? cur.gear.names || [] : [],
       };

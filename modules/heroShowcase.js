@@ -69,11 +69,11 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     if (!group.visible) return false;
     place();
     const q = settings.quality === 'low' ? 0.7 : 1;
-    key.intensity = 140 * w * q;
-    rim.intensity = 220 * w;
-    rim2.intensity = 60 * w;
-    fill.intensity = 10 * w;
-    pool.material.uniforms.uK.value = 0.9 * w;
+    key.intensity = 48 * w * q;
+    rim.intensity = 66 * w;
+    rim2.intensity = 18 * w;
+    fill.intensity = 4 * w;
+    pool.material.uniforms.uK.value = 0.55 * w;
     if (!active || !camera) return false;
     // облёт: дуга ±32° перед героем, дистанция «по пояс», герой справа от панели меню
     const reduced = !!settings.reducedMotion;
