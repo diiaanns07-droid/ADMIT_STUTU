@@ -709,6 +709,35 @@ export function dressHero(THREE, vrm, opts = {}) {
       ...(physical ? { sheen: 0.4, sheenRoughness: 0.35, sheenColor: hairC.clone().multiplyScalar(1.5).lerp(new THREE.Color(1, 1, 1), 0.15), anisotropy: 0.65, anisotropyRotation: Math.PI / 2, specularIntensity: 0.5 } : {}),
     });
     Mt(hm);
+    // «кольцо блеска» (Каджия-Кей): два блика вдоль пряди от ключевого света витрины — узкий светлый и
+    // широкий в цвет волос, сдвинутые по шуму пучков; нужна касательная (USE_TANGENT — анизотропия на medium+)
+    {
+      const prevH = hm.onBeforeCompile;
+      hm.onBeforeCompile = (sh, r) => {
+        if (prevH) prevH.call(hm, sh, r);
+        sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  #if defined( USE_TANGENT ) && defined( USE_MAP )
+  {
+    vec3 kkT = vBitangent;
+    float kkL = length( kkT );
+    if ( kkL > 1e-4 ) {
+      kkT /= kkL;
+      vec3 kkV = normalize( vViewPosition );
+      vec3 kkH = normalize( heroKeyDir + kkV );
+      float kkS = ( texture2D( map, vMapUv ).g - 0.55 ) * 0.5;
+      vec3 t1 = normalize( kkT + normal * ( -0.1 + kkS ) ), t2 = normalize( kkT + normal * ( 0.14 + kkS ) );
+      float d1 = dot( t1, kkH ), d2 = dot( t2, kkH );
+      float s1 = pow( sqrt( max( 0.0, 1.0 - d1 * d1 ) ), 320.0 ), s2 = pow( sqrt( max( 0.0, 1.0 - d2 * d2 ) ), 90.0 );
+      float kkNL = saturate( dot( normal, heroKeyDir ) ) * 0.85 + 0.15;
+      float kkM = 0.4 + 0.6 * texture2D( map, vMapUv ).g;   // пучки: блик рвётся по прядям
+      totalEmissiveRadiance += heroKeyColor * kkNL * kkM * ( s1 * 0.14 + s2 * 0.16 * diffuseColor.rgb );
+    }
+  }
+  #endif`);
+      };
+      const pkH = hm.customProgramCacheKey;
+      hm.customProgramCacheKey = () => 'hairKK:' + (pkH ? pkH.call(hm) : '');
+    }
     // коллайдеры: голова (шар в центре черепа), шея и корпус, плечи
     const skullC = new THREE.Object3D(); skullC.name = 'hair-skull';
     headBone.add(skullC); skullC.position.copy(headBone.worldToLocal(toW(cx, cy, cz)));
@@ -773,6 +802,30 @@ export function dressHero(THREE, vrm, opts = {}) {
       for (let k = 0; k < uva.count; k++) { u1[k * 2] = uva.getX(k) * 3; u1[k * 2 + 1] = 1 - uva.getY(k); }
       ug.setAttribute('uv1', new THREE.BufferAttribute(u1, 2));
       names.push('hair-sheet');
+      // «шапочка» волос на передней части черепа (под чёлкой и капюшоном): закрывает просветы у пробора и между
+      // прядями чёлки; пряди от макушки к линии роста, у линии роста кончики рассыпаются (альфа по uv1)
+      {
+        const polarHair = Math.acos(Math.max(-0.95, Math.min(0.95, (browY + 0.055 - cy) / ry)));
+        const NA = 18, NP = 8, a0 = Math.PI - 1.55, a1 = Math.PI + 1.55, pos = [], uv = [], uv1 = [], idx = [];
+        const c0 = bp.head.clone();
+        for (let i = 0; i <= NA; i++) {
+          const az = a0 + (a1 - a0) * (i / NA);
+          for (let j = 0; j <= NP; j++) {
+            const f = j / NP, pol = 0.06 + (polarHair - 0.06) * f * (1 - 0.18 * Math.pow(Math.abs(az - Math.PI) / 1.55, 2));
+            const p = sk3(az, pol, 1.012).sub(c0);
+            pos.push(p.x, p.y, p.z); uv.push(i / NA * 2.5, f * 0.8); uv1.push(i / NA * 4, 0.3 + 0.7 * f);
+          }
+        }
+        for (let i = 0; i < NA; i++) for (let j = 0; j < NP; j++) { const q = i * (NP + 1) + j, w = q + NP + 1; idx.push(q, q + 1, w, w, q + 1, w + 1); }
+        const cg = new THREE.BufferGeometry();
+        cg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); cg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); cg.setAttribute('uv1', new THREE.Float32BufferAttribute(uv1, 2));
+        cg.setIndex(idx); cg.computeVertexNormals();
+        const capG = new THREE.Group(); capG.name = 'hair-cap';
+        const cm = new THREE.Mesh(G(cg), sm); cm.name = 'hair-cap-mesh';
+        capG.add(cm);
+        stick(capG, 'head', c0, new THREE.Quaternion());
+        cm.castShadow = false; cm.userData.noShadow = true;
+      }
     }
   }
 
