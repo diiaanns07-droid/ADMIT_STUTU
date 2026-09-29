@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHEN OATH — стенд сети (NET)</title>
+<!-- Лёгкий стенд №2 [NET]: настоящие net.js + sync.js + interp.js + remotePlayer.js в простой сцене
+     (без мира и боя — чтобы мерить плавность даже на слабом/софтверном GPU).
+     Хост (?role=host) бежит по кругу 6 м/с с рывками (или WASD), гость (?role=guest) рисует его
+     через буфер интерполяции и пишет трек в window.__track. Открывать парой через dev/net-two-tabs.html?harness=1
+     или напрямую: net-harness.html?role=host&room=ABCD&netPing=150&netLoss=0.05 -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/",
+  "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #0c0c10; color: #e8dfc8; font: 13px/1.4 system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #hud { position: fixed; left: 8px; top: 8px; padding: 6px 10px; background: rgba(0,0,0,.6); border: 1px solid #c4a265; white-space: pre; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<div id="hud">…</div>
+<script type="module">
+import * as THREE from 'three';
+import { createNet } from '../net/net.js';
+import { encodeState, decodeState, encodeEvent, decodeEvent } from '../net/sync.js';
+import { createRemotePlayer } from '../modules/remotePlayer.js';
+
+const q = new URLSearchParams(location.search);
+const role = q.get('role') === 'guest' ? 'guest' : 'host';
+const room = (q.get('room') || 'H4RN').toUpperCase();
+const auto = q.get('auto') !== '0';
+const hud = document.getElementById('hud');
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(1.5, devicePixelRatio || 1));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14131a);
+scene.fog = new THREE.Fog(0x14131a, 20, 60);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200);
+scene.add(new THREE.HemisphereLight(0xb8c4e0, 0x2a2018, 1.4));
+const sun = new THREE.DirectionalLight(0xffe2b0, 2.2); sun.position.set(6, 10, 4); scene.add(sun);
+const ground = new THREE.Mesh(new THREE.CircleGeometry(30, 48), new THREE.MeshStandardMaterial({ color: 0x2b2a2e, roughness: 0.95 }));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+const grid = new THREE.PolarGridHelper(12, 12, 6, 48, 0x6f5d3e, 0x3a3226); grid.position.y = 0.01; scene.add(grid);
+// свой «герой» — простой маркер
+const me = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.7, 12), new THREE.MeshStandardMaterial({ color: 0x4f7fa8 }));
+me.position.y = 0.85; scene.add(me);
+function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / Math.max(1, innerHeight); camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+
+const remote = createRemotePlayer({ THREE, scene, world: null, heroFactory: null, camera });
+const net = createNet({ transport: q.get('net') || 'local', name: role === 'host' ? 'Хост' : 'Гость', hero: 'ashen', lanHost: q.get('lanHost') || '' });
+net.on('open', (r) => remote.setInfo(r));
+net.on('state', (s) => remote.setConnected(s !== 'lost'));
+net.on('st', (m) => { const st = decodeState(m); if (st) remote.push(st); });
+const inEv = [];
+net.on('ev', (m) => { const e = decodeEvent(m); if (e) inEv.push(e); });
+window.__net = net;
+window.__track = [];
+
+const keys = new Set();
+addEventListener('keydown', (e) => keys.add(e.code));
+addEventListener('keyup', (e) => keys.delete(e.code));
+
+// своё состояние (как combat.getSnapshot().player)
+const P = { position: { x: 0, y: 0, z: 8 }, yaw: 0, velocity: { x: 0, z: 0 }, hp: 100, maxHp: 100, energy: 80, maxEnergy: 100, action: 'idle', locomotion: 'idle', shielding: false, dashing: false };
+let t = 0, seq = 0, lastSt = -1e9, nextDash = 2, dashT = 0;
+const events = [];
+
+async function start() {
+  try {
+    if (role === 'host') await net.host({ code: room });
+    else { for (let i = 0; i < 30; i++) { try { await net.join(room); break; } catch (e) { await new Promise((r) => setTimeout(r, 400)); } } }
+  } catch (e) { hud.textContent = String(e.message || e); }
+}
+start();
+
+let last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.1, (now - last) / 1000); last = now; t += dt;
+  // движение своего маркера: авто-круг 6 м/с с рывком раз в 2 с, или WASD
+  let vx = 0, vz = 0;
+  if (auto && role === 'host') {
+    const w = 6 / 8, a = t * w;
+    const boost = dashT > 0 ? 2.6 : 1;
+    vx = Math.cos(a) * 6 * boost; vz = -Math.sin(a) * 6 * boost;
+    P.position.x += vx * dt; P.position.z += vz * dt;
+    if (t > nextDash) { nextDash = t + 2; dashT = 0.22; events.push({ id: `d${seq}`, type: 'player_dash', position: { ...P.position }, data: { dir: { x: vx, z: vz } } }); }
+  } else {
+    const f = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0), r = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
+    vx = r * 5; vz = -f * 5;
+    P.position.x += vx * dt; P.position.z += vz * dt;
+  }
+  dashT = Math.max(0, dashT - dt);
+  P.velocity = { x: vx, z: vz };
+  P.dashing = dashT > 0;
+  const sp = Math.hypot(vx, vz);
+  if (sp > 0.1) P.yaw = Math.atan2(vx, vz);
+  P.locomotion = P.dashing ? 'dash' : sp > 4.2 ? 'run' : sp > 0.3 ? 'walk' : 'idle';
+  P.action = P.dashing ? 'dash' : sp > 0.3 ? 'move' : 'idle';
+  me.position.set(P.position.x, 0.85, P.position.z);
+  // сеть: st 20 Гц, события надёжно
+  if (net.state === 'connected' || net.state === 'lost') {
+    if (now - lastSt >= 50) { lastSt += 50; if (now - lastSt > 50) lastSt = now; net.send('st', encodeState(P, null, seq++, now)); }
+    while (events.length) { const x = encodeEvent(events.shift()); if (x) net.send('ev', { e: x }); }
+  } else events.length = 0;
+  if (inEv.length) remote.pushEvents(inEv.splice(0));
+  remote.update(dt);
+  const s = remote.getState();
+  if (s) window.__track.push({ t: now, x: s.position.x, z: s.position.z, connected: s.connected });
+  if (window.__track.length > 4000) window.__track.splice(0, 1000);
+  // камера смотрит на соперника (гость) или на себя (хост)
+  const focus = role === 'guest' && s ? s.position : P.position;
+  camera.position.set(focus.x + 0, 7, focus.z + 11);
+  camera.lookAt(focus.x, 1, focus.z);
+  renderer.render(scene, camera);
+  hud.textContent = `${role} · ${net.transport} · код ${room}\n${net.state} · пинг ${net.ping} мс\nбуфер ${remote.debug().size} · fps ${Math.round(1 / Math.max(dt, 1e-3))}`;
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

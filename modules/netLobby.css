@@ -2,16 +2,17 @@
    тонкая золотая кайма, антиква в заголовках. Все классы с префиксом nl-. */
 
 .nl-overlay {
-  --nl-gold: #c4a265;
-  --nl-gold-hi: #e3c792;
-  --nl-gold-deep: #7d6437;
-  --nl-text: #ece6d9;
-  --nl-muted: #b3aa98;
-  --nl-bad: #e07458;
+  /* токены №8 [BDO] (modules/ui.css :root), запасные значения — если их нет */
+  --nl-gold: var(--bdo-gold, #c4a265);
+  --nl-gold-hi: var(--bdo-gold-hi, #e3c792);
+  --nl-gold-deep: var(--bdo-gold-deep, #7d6437);
+  --nl-text: var(--bdo-ivory, #ece6d9);
+  --nl-muted: var(--bdo-ivory-dim, #b3aa98);
+  --nl-bad: var(--bdo-blood-hi, #e07458);
   --nl-good: #9cc48f;
   --nl-warn: #deae55;
-  --nl-display: 'Cinzel', 'Cormorant Garamond', 'Cormorant', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, 'Times New Roman', serif;
-  --nl-ui: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif;
+  --nl-display: var(--bdo-font-display, 'Cinzel', 'Cormorant Garamond', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, 'Times New Roman', serif);
+  --nl-ui: var(--bdo-font-body, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif);
   position: fixed;
   inset: 0;
   z-index: 40;

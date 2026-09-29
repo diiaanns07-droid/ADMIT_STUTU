@@ -125,6 +125,7 @@ export function createLocalTransport(opts = {}) {
   };
 
   tr.drop = (ms) => { dropUntil = Date.now() + Math.max(0, ms); };
+  tr.kill = () => { post('leave'); other = null; if (tr.onPeerClose) tr.onPeerClose(); };
   tr.setSim = (s) => Object.assign(sim, s || {});
   tr.close = () => {
     if (closed) return;

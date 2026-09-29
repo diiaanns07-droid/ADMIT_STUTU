@@ -492,7 +492,7 @@ function openNet() {
     netSessionP = import('./net/session.js').then((m) => {
       netSession = m.createNetSession({
         THREE, scene, world, camera, heroes: HEROES, settings,
-        heroFactory: (o) => createHeroModel({ THREE, ...o, baseUrl: new URL('./assets/quaternius/', import.meta.url).href }),
+        heroFactory: (o) => createHeroModel({ THREE, atmosphere: world.atmosphere, shading: settings.heroShading, quality: settings.quality, ...o, baseUrl: new URL('./assets/quaternius/', import.meta.url).href }),
         hooks: {
           saveSettings: (patch) => callbacks.onSettings(patch),
           isDebug: () => app.debug,

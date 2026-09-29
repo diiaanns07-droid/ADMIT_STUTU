@@ -52,11 +52,15 @@ function startProc(cmd, args, readyText) {
   });
 }
 
-const PORT = 8799;
-const RELAY_PORT = 8791;
+const PORT = 8700 + Math.floor(Math.random() * 60);   // случайный: параллельные прогоны не мешают
+const RELAY_PORT = 18000 + Math.floor(Math.random() * 900);
 const server = await startProc('python3', [join(ROOT, 'serve_game.py'), '--no-browser', '--port', String(PORT)], 'ASHEN OATH is running');
 let relay = null;
 if (MODE === 'lan') relay = await startProc('python3', [join(ROOT, 'tools', 'relay.py'), '--port', String(RELAY_PORT)], 'ASHEN relay');
+// peer: свой PeerServer (npm-пакет peer) — --peer-server путь/к/node_modules/.bin/peerjs; без него — облако 0.peerjs.com
+const PEER_BIN = arg('--peer-server', '');
+const PEER_PORT = 9017;
+if (MODE === 'peer' && PEER_BIN) relay = await startProc(PEER_BIN, ['--port', String(PEER_PORT), '--host', '127.0.0.1', '--path', '/'], 'Started PeerServer');
 
 const CDN_MAP = [
   [/^https:\/\/cdn\.jsdelivr\.net\/npm\/three@0\.185\.1\/(.*)$/, 'three-0.185.1/package/'],
@@ -79,14 +83,48 @@ async function routeCdn(ctx) {
   });
 }
 
-const browser = await chromium.launch({ executablePath: BROWSER, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] });
+const browser = await chromium.launch({ executablePath: BROWSER, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required', '--disable-features=WebRtcHideLocalIpsWithMdns'] });
 const ctxA = await browser.newContext({ viewport: { width: 640, height: 380 } });
-const ctxB = MODE === 'lan' ? await browser.newContext({ viewport: { width: 640, height: 380 } }) : ctxA;
+const ctxB = MODE !== 'local' ? await browser.newContext({ viewport: { width: 640, height: 380 } }) : ctxA;
 await routeCdn(ctxA); if (ctxB !== ctxA) await routeCdn(ctxB);
 // софтверный GPU медленный: качество low (одиночная игра игрока этим не затрагивается — отдельный профиль)
 for (const c of new Set([ctxA, ctxB])) await c.addInitScript(() => { try { localStorage.setItem('ashen-oath.settings.v1', JSON.stringify({ quality: 'low' })); } catch (e) { /* ignore */ } });
 
 const errors = { A: [], B: [] };
+// --harness: лёгкий стенд dev/net-harness.html — плавность соперника при пинге/потерях на любом GPU
+if (argv.includes('--harness')) {
+  const pg = await ctxA.newPage();
+  await pg.setViewportSize({ width: 1100, height: 380 });
+  pg.on('pageerror', (e) => errors.A.push(String(e)));
+  pg.on('console', (m) => { if (m.type() === 'error') errors.A.push(m.text()); });
+  const extra = MODE === 'peer' ? `&net=peer${PEER_BIN ? `&peerHost=127.0.0.1&peerPort=${PEER_PORT}&peerSecure=0` : ''}` : MODE === 'lan' ? `&net=lan&lanHost=127.0.0.1:${RELAY_PORT}` : '';
+  await pg.goto(`http://127.0.0.1:${PORT}/dev/net-two-tabs.html?harness=1&ping=${PING}&loss=${LOSS}${extra}`, { waitUntil: 'domcontentloaded' });
+  const G = () => pg.frames().find((f) => /role=guest/.test(f.url()));
+  let conn = false;
+  for (let i = 0; i < 50 && !conn; i++) { await sleep(500); try { conn = await G().evaluate(() => window.__net && window.__net.state === 'connected'); } catch (e) { /* ещё грузится */ } }
+  check(`стенд (${MODE}): гость подключился`, conn, conn ? '' : await G().evaluate(() => document.getElementById('hud').textContent).catch(() => ''));
+  await sleep(1500);
+  await G().evaluate(() => { window.__track.length = 0; });
+  await sleep(8000);
+  const tr = await G().evaluate(() => window.__track.slice());
+  const fps = tr.length / 8;
+  let maxV = 0, bad = 0, maxStep = 0;
+  for (let i = 1; i < tr.length; i++) {
+    const dt = (tr[i].t - tr[i - 1].t) / 1000;
+    const d = Math.hypot(tr[i].x - tr[i - 1].x, tr[i].z - tr[i - 1].z);
+    maxStep = Math.max(maxStep, d);
+    if (dt > 0) { const v = d / dt; maxV = Math.max(maxV, v); if (v > 31) bad++; }   // телепорт — быстрее двух скоростей рывка
+  }
+  const ping = await G().evaluate(() => window.__net.ping);
+  writeFileSync(join(OUT, 'harness-track.json'), JSON.stringify(tr));
+  check(`стенд: плавно при пинге ${PING} мс и ${Math.round(LOSS * 100)}% потерь (бег 6 м/с, рывки 15,6 м/с; телепорт — > 31 м/с)`, tr.length > 30 && bad === 0, `${tr.length} кадров (${fps.toFixed(0)} fps), max ${maxV.toFixed(1)} м/с, max шаг ${maxStep.toFixed(2)} м, пинг ${ping} мс`);
+  await pg.screenshot({ path: join(OUT, 'harness.png') });
+  const errs = errors.A.filter((e) => !/Failed to load resource|net::ERR/i.test(e));
+  check('стенд: нет ошибок в консоли', errs.length === 0, errs.slice(0, 3).join(' | '));
+  writeFileSync(join(OUT, 'harness-report.txt'), results.join('\n') + '\n');
+  await browser.close(); server.kill(); if (relay) relay.kill();
+  process.exit(failures ? 1 : 0);
+}
 // A, B — окна игры хоста и гостя: { evaluate, keyDown, keyUp, press, shot }
 let A, B, page0 = null;
 if (MODE === 'local') {
@@ -107,7 +145,9 @@ if (MODE === 'local') {
   A = mk(/netAuto=host/, '#host'); B = mk(/netAuto=join/, '#guest');
 } else {
   const room = 'Q7KM';
-  const base = `http://127.0.0.1:${PORT}/?debug=1&net=lan&room=${room}&netReady&lanHost=127.0.0.1:${RELAY_PORT}`;
+  const base = MODE === 'lan'
+    ? `http://127.0.0.1:${PORT}/?debug=1&net=lan&room=${room}&netReady&lanHost=127.0.0.1:${RELAY_PORT}`
+    : `http://127.0.0.1:${PORT}/?debug=1&net=peer&room=${room}&netReady` + (PEER_BIN ? `&peerHost=127.0.0.1&peerPort=${PEER_PORT}&peerSecure=0` : '');
   const open = async (ctx, tag, extra) => {
     const page = await ctx.newPage();
     page.on('pageerror', (e) => errors[tag].push(String(e)));
@@ -195,7 +235,7 @@ if (lostAt) await B.shot(join(OUT, `${MODE}-ghost.png`)).catch(() => {});
 check('обрыв замечен за ≤ 3,5 с', lostAt > 0 && lostAt - tDrop <= 3600, lostAt ? `${lostAt - tDrop} мс` : 'нет');
 check('связь восстановилась сама', backAt > 0, backAt ? `через ${backAt - tDrop} мс после обрыва` : 'нет');
 const pingB = (await net(B)).ping;
-check(`пинг похож на заданный (${MODE === 'local' ? PING : 'LAN'})`, MODE !== 'local' || (pingB > PING * 0.6 && pingB < PING * 1.8), `${pingB} мс`);
+check(`пинг похож на заданный (${MODE === 'local' ? PING : MODE})`, MODE !== 'local' || (pingB > PING * 0.6 && pingB < PING * 1.8), `${pingB} мс`);
 
 const errs = [...errors.A.map((e) => `A: ${e}`), ...errors.B.map((e) => `B: ${e}`)].filter((e) => !/Failed to load resource|net::ERR|mediapipe|favicon/i.test(e));
 check('нет ошибок в консоли', errs.length === 0, errs.slice(0, 5).join(' | '));

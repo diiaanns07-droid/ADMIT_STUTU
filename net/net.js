@@ -171,8 +171,14 @@ export function createNet(opts = {}) {
   function startTimers() {
     stopTimers();
     S.pingTimer = setInterval(() => { if (S.state === 'connected' || S.state === 'lost') sendPing(); }, PING_EVERY_MS);
+    let lastWatch = nowMs();
     S.watchTimer = setInterval(() => {
-      if (S.state === 'connected' && nowMs() - S.lastRecv > LOST_AFTER_MS) markLost('timeout');
+      const t = nowMs(), gap = t - lastWatch;
+      lastWatch = t;
+      // своя вкладка «спала» (фриз на компиляции шейдеров, загрузка модели): пакеты соперника ещё
+      // в очереди — это не обрыв, отсчёт 3 с начинаем заново
+      if (gap > 1500) { S.lastRecv = Math.max(S.lastRecv, t - 1000); return; }
+      if (S.state === 'connected' && t - S.lastRecv > LOST_AFTER_MS) markLost('timeout');
     }, 250);
   }
   function stopTimers() {
@@ -291,9 +297,11 @@ export function createNet(opts = {}) {
 
   // для отладки и тестов: обрыв «как у провода» (транспорт перестаёт доставлять)
   function simulateDrop(ms = 4000) { if (S.tr && typeof S.tr.drop === 'function') S.tr.drop(ms); }
+  // «потерял Wi-Fi»: транспорт рвёт сокет/канал сам (net об этом не просил) — проверка переподключения
+  function simulateSocketLoss() { if (S.tr && typeof S.tr.kill === 'function') S.tr.kill(); }
 
   return {
-    host, join, send, on, off, close, setProfile, simulateDrop,
+    host, join, send, on, off, close, setProfile, simulateDrop, simulateSocketLoss,
     get state() { return S.state; },
     get ping() { return Math.round(S.rtt); },
     get isHost() { return S.isHost; },
