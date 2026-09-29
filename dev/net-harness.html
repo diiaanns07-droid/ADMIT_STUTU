@@ -55,8 +55,14 @@ me.position.y = 0.85; scene.add(me);
 function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / Math.max(1, innerHeight); camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
 
-const remote = createRemotePlayer({ THREE, scene, world: null, heroFactory: null, camera });
-const net = createNet({ transport: q.get('net') || 'local', name: role === 'host' ? 'Хост' : 'Гость', hero: 'ashen', lanHost: q.get('lanHost') || '' });
+// ?hero=elf|dark|ashen — соперник на настоящей модели героя (modules/heroModel.js, C5), иначе процедурное тело
+let heroFactory = null;
+if (q.get('hero')) {
+  const { createHeroModel } = await import('../modules/heroModel.js');
+  heroFactory = (o) => createHeroModel({ THREE, ...o, baseUrl: new URL('../assets/quaternius/', import.meta.url).href, vrmUrl: new URL('../assets/vroid/', import.meta.url).href });
+}
+const remote = createRemotePlayer({ THREE, scene, world: null, heroFactory, camera });
+const net = createNet({ transport: q.get('net') || 'local', name: role === 'host' ? 'Хост' : 'Гость', hero: q.get('hero') || 'ashen', lanHost: q.get('lanHost') || '' });
 net.on('open', (r) => remote.setInfo(r));
 net.on('state', (s) => remote.setConnected(s !== 'lost'));
 net.on('st', (m) => { const st = decodeState(m); if (st) remote.push(st); });
@@ -119,8 +125,9 @@ function frame(now) {
   if (window.__track.length > 4000) window.__track.splice(0, 1000);
   // камера смотрит на соперника (гость) или на себя (хост)
   const focus = role === 'guest' && s ? s.position : P.position;
-  camera.position.set(focus.x + 0, 7, focus.z + 11);
-  camera.lookAt(focus.x, 1, focus.z);
+  const near = q.get('near') ? 1 : 0;
+  camera.position.set(focus.x + 0, near ? 2.4 : 7, focus.z + (near ? 4.2 : 11));
+  camera.lookAt(focus.x, near ? 1.3 : 1, focus.z);
   renderer.render(scene, camera);
   hud.textContent = `${role} · ${net.transport} · код ${room}\n${net.state} · пинг ${net.ping} мс\nбуфер ${remote.debug().size} · fps ${Math.round(1 / Math.max(dt, 1e-3))}`;
 }
