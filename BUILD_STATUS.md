@@ -446,6 +446,8 @@ DEBUG-клавиши, поза процедурного героя), `modules/co
   в дуэли стрелы не бьют Регента. Либо можно брать снаряды из `snap.projectiles` (поле `damage` есть) в свой hit-тест — но тогда не
   регистрировать цель, чтобы урон не прошёл дважды.
 - **Герой (C5):** VRM-героям позу даёт `[HERO] heroPoseFromInput` в main.js; процедурному стражу — `createHeroBowPose()` (core/handZone.js).
+  У лучниц HERO (снаряжение `'bow'` в `heroModel.state().gear`) лук из-за спины переходит в руку — тогда 3D-лук `handVisuals` не рисуется
+  (`anchors.heroBow`, `[HAND] heroOwnBow()` в main.js), остаются дуга прицела, вспышка выпуска и тетива на превью камеры.
 - **VFX (№7):** `modules/handVisuals.js` — `setDelegated({ arrows, orbs, bow })` прячет мои заглушки, когда эффекты рисуют своё.
 - **CTRL (№1), просьба:** в DEBUG-бою клавишу **B** забирает лук (перехват в capture-фазе в `core/handZone.js`, только в бою);
   печать «Кор» у `core/debugInput.js` осталась на **Shift+B** (на экране тренировки B по-прежнему у симулятора приседаний).

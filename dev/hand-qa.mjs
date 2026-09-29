@@ -47,7 +47,8 @@ try {
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   const netErrors = [];
   page.on('console', (m) => { if (m.type() !== 'error') return; const t = m.text(); if (/^Failed to load resource/.test(t)) netErrors.push(t); else errors.push('console: ' + t); });
-  await page.addInitScript(() => { try { localStorage.setItem('ashen-oath.settings.v1', JSON.stringify({ quality: 'low', reducedMotion: true })); } catch (e) { /* ignore */ } });
+  const HERO = argOf('--hero', null);   // --hero ranger|elf|… — проверка с героем-лучником (свой лук HERO в руке)
+  await page.addInitScript((hero) => { try { localStorage.setItem('ashen-oath.settings.v1', JSON.stringify({ quality: 'low', reducedMotion: true, ...(hero ? { hero } : {}) })); } catch (e) { /* ignore */ } }, HERO);
   await page.goto(`http://127.0.0.1:${PORT}/index.html`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__ASHEN__ && window.__ASHEN__.screen === 'menu', null, { timeout: 60000 });
   const click = (label) => page.evaluate((l) => { const b = [...document.querySelectorAll('button')].find((x) => x.offsetParent !== null && x.textContent.trim() === l); if (!b) return 'missing'; b.click(); return 'ok'; }, label);
