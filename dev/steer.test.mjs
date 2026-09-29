@@ -381,6 +381,26 @@ test('[V6] быстрый перехват руля (поворот влево �
   ok(st.read(t).gait === 'run', 'бежим');
 });
 
+test('[V6] выброс трекинга: кисть на один кадр «прыгнула» вбок/вверх и вернулась — ни рывка, ни поворота', () => {
+  for (const [gx, gv] of [[0.45, 0], [-0.45, 0], [0, 0.5], [0.35, 0.35]]) {
+    let { st, t } = raised();
+    t = run(st, t, 400, () => P(0, CHEST));
+    let maxTurn = 0;
+    st.push({ t, hand: { ...P(gx, CHEST + gv), scale: SCALE }, body: BODY, mirror: true, aspect: ASPECT });
+    t += 33;
+    for (let k = 0; k < 20; k++, t += 33) { st.push({ t, hand: { ...P(0, CHEST), scale: SCALE }, body: BODY, mirror: true, aspect: ASPECT }); maxTurn = Math.max(maxTurn, Math.abs(st.read(t).x)); }
+    ok(!st.takeDash() && st.getDebug().counters.dashes === 0, `сбой (${gx}, ${gv}) — не рывок: ` + JSON.stringify(st.getDebug().counters));
+    ok(maxTurn < 0.05 && st.getDebug().counters.glitches === 1, `и не поворот: ${maxTurn.toFixed(3)}`);
+  }
+});
+
+test('[V6] настоящий быстрый увод руки (0.45 sw за кадр и держит) принимается, с задержкой в кадр', () => {
+  let { st, t } = raised();
+  t = run(st, t, 400, () => P(0, CHEST));
+  t = run(st, t, 500, () => P(0.45, CHEST));
+  ok(st.read(t).x < -0.4 && st.getDebug().counters.glitches === 0, 'поворот: ' + st.read(t).x);
+});
+
 test('мусор на входе не ломает модуль', () => {
   const st = createSteerStick();
   st.push(null); st.push({}); st.push({ t: NaN }); st.push({ t: 5, hand: { x: NaN, y: 1 } });

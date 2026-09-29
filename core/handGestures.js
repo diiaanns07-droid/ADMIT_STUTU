@@ -795,7 +795,12 @@ export function createHandGestures(configPatch = {}) {
       const nz = f.n3 ? Math.abs(f.n3.z) : null;
       H.nzF = nz === null ? null : H.nzF == null || a === 1 ? nz : H.nzF + (nz - H.nzF) * a;
       H.scaleN = sw && H.spanF > 1e-6 ? H.spanF / sw : null;
-      H.spanNow = span; H.spanNowN = sw ? span / sw : null;   // этот кадр без сглаживания: после пропуска кадров фильтр ещё «помнит» старое
+      // без сглаживания (после пропуска кадров фильтр ещё «помнит» старое), но медиана трёх последних
+      // кадров — один выброс трекинга (кисть на кадр «выросла»/«сжалась») её не сдвигает
+      if (a === 1 || !H.spanRaw) H.spanRaw = [];
+      H.spanRaw.push(span); if (H.spanRaw.length > 3) H.spanRaw.shift();
+      const med = H.spanRaw.length < 3 ? span : [...H.spanRaw].sort((p, q) => p - q)[1];
+      H.spanNow = med; H.spanNowN = sw ? med / sw : null;
       H.lastScaleT = t;
     }
     if (!ready(H, t)) { H.scaleHist.length = 0; H.pushRun = 0; }

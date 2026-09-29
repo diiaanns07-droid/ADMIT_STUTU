@@ -73,6 +73,7 @@ export const DEFAULT_STICK_CONFIG = Object.freeze({
   flickWindowMs: 220,      // выход набран не дольше чем за столько
   flickReturnMs: 450,      // возврат не позже стольких мс от начала выхода
   flickReturnFrac: 0.5,    // вернуть не меньше этой доли выхода
+  flickMinOutFrames: 1,    // рука «снаружи» хотя бы столько кадров (схема «Руль» — 2: выброс трекинга не щелчок)
   dashRefractoryMs: 600,
   dashRearmSpeed: 2.5,     // S/с: медленнее столько мс — рывок снова взведён
   dashRearmMs: 110,
@@ -382,7 +383,10 @@ export function createLeftStick(configPatch = {}, hooks = {}) {
       const F = s.flick;
       const proj = ((now.x - F.x0) * F.ux + (now.y - F.y0) * F.uy) / S;
       if (proj > F.peak) F.peak = proj;
-      if (F.peak - proj >= cfg.flickReturnFrac * F.d && F.peak >= F.d * 0.9) { fireDash(t, F.ux, F.uy, F.v, F.t0, 'B'); return; }
+      if (proj >= 0.6 * F.d) F.outN++;
+      // рука пробыла «снаружи» хотя бы flickMinOutFrames кадров: выброс трекинга (кисть на один кадр
+      // прыгнула и вернулась) щелчком не считается
+      if (F.peak - proj >= cfg.flickReturnFrac * F.d && F.peak >= F.d * 0.9 && F.outN >= cfg.flickMinOutFrames) { fireDash(t, F.ux, F.uy, F.v, F.t0, 'B'); return; }
       if (t - F.t0 > cfg.flickReturnMs) s.flick = null;          // возврата нет — это было ведение
     }
 
@@ -407,7 +411,7 @@ export function createLeftStick(configPatch = {}, hooks = {}) {
         fireDash(t, ux, uy, v, p.t, 'A');
         return;
       }
-      if (v >= cfg.flickSpeed && (!cand || d > cand.d)) cand = { t0: p.t, x0: p.x, y0: p.y, ux, uy, d, v, peak: d };
+      if (v >= cfg.flickSpeed && (!cand || d > cand.d)) cand = { t0: p.t, x0: p.x, y0: p.y, ux, uy, d, v, peak: d, outN: 1 };
     }
     if (cand && !s.flick) s.flick = cand;
   }

@@ -65,6 +65,11 @@ export const DEFAULT_STEER_CONFIG = Object.freeze({
   exitDownSpeed: 2.5,      // или пропала, уходя вниз быстрее (sw/с)
   wristMaxGapMs: 800,      // запястье позы ведёт вместо кисти (кулак, смаз) не дольше столько
   wristMinSamples: 5,
+  // [V6] выбросы трекинга (кисть на один кадр «прыгнула»)
+  glitchJump: 0.2,         // скачок дальше стольких sw…
+  glitchSpeed: 6,          //   …и быстрее стольких sw/с — кадр откладывается до следующего
+  glitchMaxGapMs: 250,     //   сравниваем только с недавним кадром; отложенный кадр ждёт кисть не дольше
+  glitchDtCapMs: 66,       //   скорость скачка — по времени не больше двух кадров (после пропуска трекера)
   // фильтры
   posTauMs: 60,            // (прежний фильтр центра ладони; с V6 — One Euro ниже)
   // [V6] One Euro для центра ладони: рука стоит — сильное сглаживание (руль не дрожит),
@@ -105,11 +110,11 @@ function merge(base, patch) {
 export function createSteerStick(configPatch = {}) {
   let cfg = merge(DEFAULT_STEER_CONFIG, configPatch);
   // детектор рывка — тот же, что у джойстика; хватка ему не нужна (гейт — здесь)
-  const dash = createLeftStick({ freeDash: 1 }, { acceptA: (d) => acceptSharp(d) });
+  const dash = createLeftStick({ freeDash: 1, flickMinOutFrames: 2 }, { acceptA: (d) => acceptSharp(d) });
   let s;
   function reset() {
     s = {
-      lastT: null, lastSeen: null, lastHandT: null, mirror: true, aspect: 4 / 3,
+      lastT: null, procT: null, lastSeen: null, lastHandT: null, mirror: true, aspect: 4 / 3,
       bodyF: null, swF: null, bodySlowX: null,
       pos: null, posV: 0, level: null, outward: null, vy: 0, lastLevelRaw: null, lastHandY: null,
       source: 'none', raised: false, raisedSince: null, running: false,
@@ -120,8 +125,8 @@ export function createSteerStick(configPatch = {}) {
       zone: 'none', zoneHist: [{ t: -Infinity, zone: 'none' }],
       levelHist: [], outHist: [], latHist: [], riseT: -Infinity,
       freezeUntil: -Infinity, freezeOut: null, pendingDash: null,
-      handDisp: null,
-      counters: { pushes: 0, raises: 0, stops: 0, exits: 0, dashes: 0, dashRejected: 0, dashSteer: 0, wristFrames: 0, learned: 0 },
+      handDisp: null, gateRef: null, suspect: null,
+      counters: { pushes: 0, raises: 0, stops: 0, exits: 0, dashes: 0, dashRejected: 0, dashSteer: 0, wristFrames: 0, learned: 0, glitches: 0 },
     };
     dash.reset();
   }
@@ -154,12 +159,49 @@ export function createSteerStick(configPatch = {}) {
     return e;
   }
 
+  // [V6] выброс трекинга: кисть на один кадр «прыгнула» и вернулась — MediaPipe так ошибается
+  // (раньше это давало ложный рывок «дёрг и вернуть» и поворот не туда). Резкий скачок откладывается
+  // на кадр: следующий кадр вернулся назад — выброс выбрасывается; рука правда ушла — отложенный кадр
+  // обрабатывается (на кадр позже), затем текущий. Рука ушла вниз ниже «шага» — без задержки (стоп сразу).
   function push(obs) {
     if (!obs || !fin(obs.t)) return;
     const t = obs.t;
     if (s.lastT !== null && t <= s.lastT) return;
-    const dtS = s.lastT === null ? 0 : Math.min(0.25, (t - s.lastT) / 1000);
     s.lastT = t;
+    const h = obs.hand && fin(obs.hand.x) && fin(obs.hand.y) ? obs.hand : null;
+    const S0 = s.suspect;
+    if (S0 && t - S0.obs.t > cfg.glitchMaxGapMs) {
+      s.suspect = null;                                  // кисть так и не вернулась — судить не по чему: кадр выбрасываем
+      s.counters.glitches++;
+    } else if (S0 && !h) {
+      return;                                            // ждём следующий кадр с кистью (пропуск трекера не решает)
+    } else if (S0) {
+      s.suspect = null;
+      const W = sw(), ref0 = S0.ref;
+      const back = Math.hypot(h.x - ref0.x, h.y - ref0.y) / W;
+      if (back < S0.jump * 0.5) s.counters.glitches++;    // вернулась: тот кадр был сбоем — выбрасываем
+      else process(S0.obs);                              // рука правда ушла: сначала отложенный кадр
+      process(obs);
+      return;
+    }
+    if (h && s.gateRef && t - s.gateRef.t <= cfg.glitchMaxGapMs) {
+      const W = sw(), R = ref();
+      const d = Math.hypot(h.x - s.gateRef.x, h.y - s.gateRef.y) / W;
+      const lowered = (R.y - h.y) / W < cfg.walkOff;
+      // скорость — по времени не больше двух кадров: после пропуска трекера скачок судим по расстоянию
+      const dtG = Math.min(cfg.glitchDtCapMs, Math.max(10, t - s.gateRef.t)) / 1000;
+      if (!lowered && d > cfg.glitchJump && d / dtG > cfg.glitchSpeed) {
+        s.suspect = { obs, jump: d, ref: { x: s.gateRef.x, y: s.gateRef.y } };
+        return;
+      }
+    }
+    process(obs);
+  }
+
+  function process(obs) {
+    const t = obs.t;
+    const dtS = s.procT === null ? 0 : Math.min(0.25, Math.max(0, (t - s.procT) / 1000));
+    s.procT = t;
     s.counters.pushes++;
     s.mirror = obs.mirror !== false;
     s.aspect = fin(obs.aspect) && obs.aspect > 0 ? obs.aspect : 4 / 3;
@@ -179,9 +221,11 @@ export function createSteerStick(configPatch = {}) {
     }
     const W = sw(), R = ref();
 
+    let h = obs.hand && fin(obs.hand.x) && fin(obs.hand.y) ? obs.hand : null;
+    if (h) s.gateRef = { x: h.x, y: h.y, t };
+
     // источник: кисть; кулак/смаз посреди кадра — запястье позы со смещением к ладони
     const wr = obs.wrist && fin(obs.wrist.x) && fin(obs.wrist.y) ? obs.wrist : null;
-    let h = obs.hand && fin(obs.hand.x) && fin(obs.hand.y) ? obs.hand : null;
     if (h) {
       s.lastHandT = t; s.source = 'hand';
       if (wr) {

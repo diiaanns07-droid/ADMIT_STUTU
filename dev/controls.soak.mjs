@@ -11,8 +11,10 @@
 //   • дрожь руля: |поворот| на прямых участках, разброс поворота на дуге;
 //   • задержки: подъём руки → ход, опускание → стоп, толчок → щит;
 //   • осознанный щит: поднялся ли, опустился ли после «убрал ладонь»;
-//   • игрок держит ладонь на ~10 см левее/правее нейтрали игры: герой всё равно идёт прямо.
+//   • игрок держит ладонь на ~10 см левее/правее нейтрали игры: герой всё равно идёт прямо;
+//   • правая рука всё время колдует; 1 % кадров — выбросы трекинга (кисть на кадр «прыгает»).
 // Ключи: --seeds N, --seed S (один прогон), --push K (сила толчка), --offset/--level (привычка игрока),
+//   --right (правая колдует), --glitch P (доля кадров-выбросов), --fast MS (резкость руления), --save файл,
 //   --cfg '{...}' (подмена настроек handGestures), --debug (по фазам), --json.
 // Итог — таблица и жёсткие пороги (код выхода 1, если хуже порогов).
 
@@ -31,7 +33,8 @@ const JSON_OUT = argv.includes('--json');
 const DEBUG = argv.includes('--debug');
 const PUSH = +argOf('--push', 1.35);
 const FAST_MS = +argOf('--fast', 150);
-let RIGHT = argv.includes('--right');        // правая рука всё время колдует: «OK», руны, выброс, «Искра»          // длительность «резкого» движения руля, мс
+let RIGHT = argv.includes('--right');
+let GLITCH = +argOf('--glitch', 0);           // доля кадров-выбросов: кисть на один кадр «прыгает» (сбой MediaPipe)        // правая рука всё время колдует: «OK», руны, выброс, «Искра»          // длительность «резкого» движения руля, мс
 const OFFSET = +argOf('--offset', 0);          // привычная ладонь игрока смещена от нейтрали игры (sw, + к середине груди)
 const LEVEL = +argOf('--level', 0);            // и выше (+) / ниже (−) «уровня груди» (sw)          // сила осознанного толчка щита: во столько раз кисть растёт в кадре
 const G_OPTS = JSON.parse(argOf('--cfg', '{}')); // подмена настроек handGestures (подбор порогов)
@@ -124,9 +127,12 @@ function simulate(seed, gOpts = {}) {
       if (q && dropLeft === 0) {
         const edge = P.tag.includes('ребром');
         const wobSize = 1 + 0.1 * osc(0.4, ph[2]) + 0.03 * gauss();
-        const at = S.at(q.x + 0.05 * osc(0.6, ph[3]) + 0.015 * gauss(), q.y + 0.05 * osc(0.5, ph[4]) + 0.015 * gauss());
+        // выброс: кисть на один кадр сместилась на 0.2–0.4 ширины плеч и/или «выросла» на ±20 %
+        const gl = GLITCH > 0 && rnd() < GLITCH;
+        const gx = gl ? (rnd() - 0.5) * 0.8 : 0, gy = gl ? (rnd() - 0.5) * 0.8 : 0, gs = gl ? 1 + (rnd() - 0.5) * 0.4 : 1;
+        const at = S.at(q.x + gx + 0.05 * osc(0.6, ph[3]) + 0.015 * gauss(), q.y + gy + 0.05 * osc(0.5, ph[4]) + 0.015 * gauss());
         hand = makeHand({
-          side: 'left', aspect: S.aspect, ...SHAPES[q.shape], size: q.size * wobSize,
+          side: 'left', aspect: S.aspect, ...SHAPES[q.shape], size: q.size * wobSize * gs,
           yaw: (edge ? 1.1 : 0.25) * osc(0.3, ph[5]) + (edge ? 0.3 : 0), pitch: 0.2 * osc(0.35, ph[6]), roll: 0.15 * osc(0.2, ph[7]),
           noise: 0.035, cx: at.cx, cy: at.cy,
         });
@@ -259,6 +265,15 @@ if (ONLY === null && !RIGHT) {
   const Q = summarize(rr);
   R.rightFalseShieldOn = Q.falseShieldOn; R.rightWalkStopPct = Q.walkStopPct; R.rightCastStopPct = Q.castStopPct;
 }
+// сбои трекинга: 1 % кадров кисть на один кадр «прыгает» на 0.2–0.4 ширины плеч и/или меняет размер
+if (ONLY === null && !GLITCH) {
+  GLITCH = 0.01;
+  const gg = [];
+  for (let s = 0; s < Math.max(4, SEEDS / 2); s++) gg.push(simulate(13000 + s * 7919, G_OPTS));
+  GLITCH = 0;
+  const Z = summarize(gg);
+  R.glitchFalseDash = Z.falseDash; R.glitchWrongTurn = Z.wrongTurn; R.glitchFalseShieldOn = Z.falseShieldOn; R.glitchWalkStopPct = Z.walkStopPct;
+}
 if (DEBUG) console.table(byTag);
 if (recorder) { writeFileSync(SAVE, JSON.stringify(recorder.snapshot())); console.log(`записано: ${SAVE} (${recorder.size()} кадров)`); }
 if (JSON_OUT) console.log(JSON.stringify(R));
@@ -283,6 +298,9 @@ const LIMITS = [
   ['offsetWrongTurn', (v) => v === undefined || v === 0, 'рука «не там» на 10 см: поворот не в ту сторону'],
   ['rightFalseShieldOn', (v) => v === undefined || v === 0, 'правая колдует: щит не поднимается сам'],
   ['rightWalkStopPct', (v) => v === undefined || v <= 3, 'правая колдует: герой идёт, % кадров «стоим»'],
+  ['glitchFalseDash', (v) => v === undefined || v <= 2, 'сбои трекинга 1 %: ложные рывки'],
+  ['glitchWrongTurn', (v) => v === undefined || v === 0, 'сбои трекинга 1 %: поворот не в ту сторону'],
+  ['glitchWalkStopPct', (v) => v === undefined || v <= 3, 'сбои трекинга 1 %: герой идёт, % кадров «стоим»'],
 ];
 let bad = 0;
 if (!JSON_OUT) console.log('');
