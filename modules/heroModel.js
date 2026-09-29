@@ -198,7 +198,7 @@ export function createHeroModel({
   const S = {
     ready: false, disposed: false, hero: 'ashen', token: 0, lean: 0, recoil: 0, prevYaw: null, yawRate: 0,
     blinkT: 2, blink: 0, phase: 0, idleT: 0, lookT: 3, look: 0, lookWant: 0, chestTwist: 0, lod: 0, lodAcc: 0,
-    wLoco: { Idle: 1, Walk: 0, Run: 0, WalkBack: 0, StrafeL: 0, StrafeR: 0 }, stun: 0,
+    wLoco: { Idle: 1, Walk: 0, Run: 0, WalkBack: 0, StrafeL: 0, StrafeR: 0 }, stun: 0, autoLod: true,
   };
   let cur = null;   // { model, vrm, mixer, full, upper, stride, gear, shade, bones }
   let act = null, actName = '', actUntil = 0, actUpper = false, holdName = '';
@@ -406,7 +406,9 @@ export function createHeroModel({
     if (cur && cur.gear && cur.gear.setQuality) cur.gear.setQuality(q);
   }
   // LOD: 0 — полный, 1 — пружины и ткань через кадр, без теней, 2 — без пружин, 10 Гц анимации
-  function setLod(level) {
+  const _lodV = new THREE.Vector3();
+  function setLod(level) { S.autoLod = false; applyLod(level); }
+  function applyLod(level) {
     const l = clamp(Math.round(num(level, 0)), 0, 2);
     if (l === S.lod) return;
     S.lod = l;
@@ -505,6 +507,7 @@ export function createHeroModel({
     bone.updateWorldMatrix(false, false);
   }
   const RL = new THREE.Vector3(1, 0, 0), RR = new THREE.Vector3(-1, 0, 0);
+  const _aimV = new THREE.Vector3(), _upV = new THREE.Vector3();
   const dA = new THREE.Vector3(), dB = new THREE.Vector3();
   function applyPose(dt) {
     const B = cur.bones;
@@ -526,6 +529,19 @@ export function createHeroModel({
       aimBone(B.rightUpperArm, RR, dB, w);
       dB.set(0.2 + 0.9 * d, 0.1 + 0.1 * d + ay * 0.3, 1 - 0.6 * d); // предплечье: к тетиве → к щеке
       aimBone(B.rightLowerArm, RR, dB, w);
+    }
+    // лук из-за спины — в левую руку (рукоять в кулаке, тетивой к лучнику)
+    if (cur.gear && cur.gear.setBowHeld && cur.gear.bow) {
+      const held = pose.wBow > 0.35 || (pose.bowHeld && pose.wBow > 0.2);
+      pose.bowHeld = held;
+      if (held) {
+        cur.vrm.scene.updateMatrixWorld(true);
+        B.leftUpperArm.getWorldPosition(_v2);
+        anchors.handL.getWorldPosition(_aimV);
+        _aimV.sub(_v2).normalize();
+        cur.model.getWorldQuaternion(_qm); _upV.set(0, 1, 0);
+        cur.gear.setBowHeld(true, anchors.handL, _aimV, _upV);
+      } else cur.gear.setBowHeld(false);
     }
     // чары рукой: обе ладони перед грудью, сфера между ними; с силой руки расходятся
     if (pose.wSpell > 0.01 && pose.wBow < 0.9) {
@@ -616,6 +632,13 @@ export function createHeroModel({
     if (ownRoot && P && P.position) {
       root.position.set(num(P.position.x), num(P.position.y), num(P.position.z));
       root.rotation.y = num(P.yaw, root.rotation.y);
+    }
+    // LOD по расстоянию до камеры (configureHeroes({ camera })); setLod() вручную выключает авто
+    if (S.autoLod && defaults.camera && (S.lodTick = (S.lodTick || 0) + 1) % 15 === 0) {
+      root.getWorldPosition(_lodV);
+      const d = _lodV.distanceTo(defaults.camera.position);
+      const want = d > 55 ? 2 : d > 28 ? 1 : 0;
+      if (want !== S.lod) applyLod(want);
     }
     // LOD: реже обновляем удалённого/дальнего героя
     if (S.lod >= 2) { S.lodAcc += dt; if (S.lodAcc < 0.1) return; dt = S.lodAcc; S.lodAcc = 0; }

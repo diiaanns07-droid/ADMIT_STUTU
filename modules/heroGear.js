@@ -211,10 +211,51 @@ export function dressHero(THREE, vrm, opts = {}) {
   // оси героя в мире
   const FWD = new THREE.Vector3(0, 0, 1).applyQuaternion(modelQ), LEFT = new THREE.Vector3(1, 0, 0).applyQuaternion(modelQ), UP = new THREE.Vector3(0, 1, 0);
   const tmpM = new THREE.Matrix4();
+  // склейка неподвижных деталей группы по материалу: меньше вызовов отрисовки (подсумки, кольца, пряжки…)
+  const KEEP = /^(staff-halo|staff-crystal|hair-mesh|cape)$/;
+  function compact(grp) {
+    grp.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(grp.matrixWorld).invert();
+    const byMat = new Map();
+    grp.traverse((o) => {
+      if (!o.isMesh || !o.visible || KEEP.test(o.name) || o.children.some((c) => KEEP.test(c.name) || c.name === 'staff-tip')) return;
+      const g = o.geometry;
+      if (!g.attributes.position || !g.attributes.normal || !g.attributes.uv) return;
+      if (!byMat.has(o.material)) byMat.set(o.material, []);
+      byMat.get(o.material).push(o);
+    });
+    for (const [mat, list] of byMat) {
+      if (list.length < 2) continue;
+      let nv = 0, ni = 0;
+      for (const o of list) { nv += o.geometry.attributes.position.count; ni += o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count; }
+      const P = new Float32Array(nv * 3), N = new Float32Array(nv * 3), U = new Float32Array(nv * 2), I = new Uint32Array(ni);
+      let v0 = 0, i0 = 0;
+      const m = new THREE.Matrix4(), nm = new THREE.Matrix3(), v = new THREE.Vector3();
+      for (const o of list) {
+        const g = o.geometry, pa = g.attributes.position, na = g.attributes.normal, ua = g.attributes.uv;
+        m.multiplyMatrices(inv, o.matrixWorld); nm.getNormalMatrix(m);
+        for (let k = 0; k < pa.count; k++) {
+          v.fromBufferAttribute(pa, k).applyMatrix4(m); P.set([v.x, v.y, v.z], (v0 + k) * 3);
+          v.fromBufferAttribute(na, k).applyMatrix3(nm).normalize(); N.set([v.x, v.y, v.z], (v0 + k) * 3);
+          U[(v0 + k) * 2] = ua.getX(k); U[(v0 + k) * 2 + 1] = ua.getY(k);
+        }
+        if (g.index) for (let k = 0; k < g.index.count; k++) I[i0 + k] = g.index.getX(k) + v0;
+        else for (let k = 0; k < pa.count; k++) I[i0 + k] = k + v0;
+        v0 += pa.count; i0 += g.index ? g.index.count : pa.count;
+        o.parent.remove(o);
+      }
+      const mg = new THREE.BufferGeometry();
+      mg.setAttribute('position', new THREE.BufferAttribute(P, 3)); mg.setAttribute('normal', new THREE.BufferAttribute(N, 3)); mg.setAttribute('uv', new THREE.BufferAttribute(U, 2));
+      mg.setIndex(new THREE.BufferAttribute(I, 1));
+      const mm = new THREE.Mesh(G(mg), mat); mm.name = `${grp.name}-merged`;
+      grp.add(mm);
+    }
+  }
   // объект, поставленный в мире (pos, quat), приклеить к кости
   function stick(obj, boneName, pos, quat) {
     const b = raw(boneName);
     if (!b) return null;
+    try { compact(obj); } catch (e) { /* без склейки */ }
     obj.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     b.updateWorldMatrix(true, false);
     tmpM.compose(pos, quat || modelQ, new THREE.Vector3(1, 1, 1)).premultiply(new THREE.Matrix4().copy(b.matrixWorld).invert());
@@ -559,9 +600,6 @@ varying float vCapeT;`)
     cape.frustumCulled = false;
     const grp = new THREE.Group(); grp.name = 'cape-root';
     grp.add(cape);
-    // кант по низу
-    const hem = new THREE.Mesh(G(new THREE.BoxGeometry(w * 1.25, 0.018, 0.004)), mats.trim);
-    hem.visible = false; grp.add(hem);
     // застёжки на плечах
     for (const s of [1, -1]) {
       const clasp = new THREE.Mesh(G(new THREE.CylinderGeometry(0.02, 0.02, 0.012, 12)), mats.trim);
@@ -699,7 +737,27 @@ varying float vCapeT;`)
     if (capeU) capeU.uWind.value = l >= 2 ? 0 : 1;
     if (hairU) hairU.uWind.value = l >= 2 ? 0 : 1;
   }
-  function setBowHeld(w) { void w; } // TODO: перенос лука в левую руку (C5 bowDraw) — №6 берёт через setPose
+  // лук в левой руке (поза лука C5): отцепить от спины и держать рукоять в кулаке, тетивой к лучнику
+  const bowHome = bow ? { parent: bow.parent, pos: bow.position.clone(), quat: bow.quaternion.clone() } : null;
+  let bowHeld = false;
+  const _bm = new THREE.Matrix4(), _bx = new THREE.Vector3(), _by = new THREE.Vector3(), _bz = new THREE.Vector3(), _bp = new THREE.Vector3(), _pi = new THREE.Matrix4();
+  function setBowHeld(on, hand, aimDir, up) {
+    if (!bow || !bowHome) return;
+    if (on && !bowHeld) { bowHeld = true; (model || vrm.scene).attach(bow); }
+    if (!on && bowHeld) { bowHeld = false; bowHome.parent.add(bow); bow.position.copy(bowHome.pos); bow.quaternion.copy(bowHome.quat); return; }
+    if (!bowHeld || !hand || !aimDir) return;
+    // базис лука: y — плечи лука (вверх, чуть наклонены), z — к лучнику (против прицела)
+    _bz.copy(aimDir).negate().normalize();
+    _by.copy(up || UP).addScaledVector(_bz, -_bz.dot(up || UP)).normalize();
+    _by.applyAxisAngle(_bz, 0.18);                                   // лёгкий «кант» лука
+    _bx.crossVectors(_by, _bz).normalize();
+    hand.getWorldPosition(_bp);
+    _bp.addScaledVector(_bz, 0.165);                                 // рукоять (z = −0.165) — в кулаке
+    _bm.makeBasis(_bx, _by, _bz).setPosition(_bp);
+    const par = bow.parent; par.updateWorldMatrix(true, false);
+    _bm.premultiply(_pi.copy(par.matrixWorld).invert());
+    _bm.decompose(bow.position, bow.quaternion, bow.scale);
+  }
   function dispose() {
     for (const p of parts) if (p.obj.parent) p.obj.parent.remove(p.obj);
     for (const g of owned.geo) g.dispose();
