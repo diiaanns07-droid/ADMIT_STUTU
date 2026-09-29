@@ -39,6 +39,12 @@ await t('HTTP GET / → «ASHEN relay OK» (проверка брандмауэ�
   const r = await fetch(`http://${lanHost}/`);
   assert.equal((await r.text()).trim(), 'ASHEN relay OK');
 });
+await t('GET /info → IP ноутбука для лобби хоста', async () => {
+  const j = await (await fetch(`http://${lanHost}/info`)).json();
+  assert.equal(j.relay, 'ASHEN');
+  assert.ok(Array.isArray(j.ips) && j.ips.length > 0, JSON.stringify(j));
+  assert.equal(j.port, PORT);
+});
 await t('parseLanHost', () => {
   assert.deepEqual(parseLanHost(''), { host: '127.0.0.1', port: 8790 });
   assert.deepEqual(parseLanHost(' 192.168.1.23 '), { host: '192.168.1.23', port: 8790 });

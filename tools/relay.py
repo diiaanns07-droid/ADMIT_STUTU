@@ -152,8 +152,13 @@ async def handshake(reader, writer):
             headers[k.strip().lower()] = v.strip()
     url = urllib.parse.urlsplit(target)
     if headers.get("upgrade", "").lower() != "websocket":
-        body = b"ASHEN relay OK\n"
-        writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\n"
+        if url.path == "/info":   # лобби хоста показывает IP для соперника
+            body = json.dumps({"relay": "ASHEN", "ips": local_ips(), "port": writer.get_extra_info("sockname")[1], "rooms": len(rooms)}).encode()
+            ctype = b"application/json"
+        else:
+            body = b"ASHEN relay OK\n"
+            ctype = b"text/plain; charset=utf-8"
+        writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: " + ctype + b"\r\n"
                      b"Access-Control-Allow-Origin: *\r\nContent-Length: " + str(len(body)).encode() +
                      b"\r\nConnection: close\r\n\r\n" + body)
         await writer.drain()

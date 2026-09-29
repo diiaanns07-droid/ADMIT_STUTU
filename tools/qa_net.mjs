@@ -169,9 +169,17 @@ const screen = (p) => p.evaluate(() => (window.__ASHEN__ ? window.__ASHEN__.scre
 
 // оба в комнате, оба «Готов» → бой
 let ok = false;
-for (let i = 0; i < 60 && !ok; i++) { await sleep(500); ok = (await screen(A)) === 'playing' && (await screen(B)) === 'playing'; }
+for (let i = 0; i < 180 && !ok; i++) { await sleep(500); ok = (await screen(A)) === "playing" && (await screen(B)) === "playing"; }   // до 90 с: на софтверном GPU загрузка долгая
 const nA = await net(A), nB = await net(B);
 check('лобби: оба подключились и стартовали по «Готов»', ok, `A=${await screen(A)} ${nA && nA.status} B=${await screen(B)} ${nB && nB.status}`);
+// дуэль №3 поверх сети (если modules/pvp.js есть): фаза и режим боя
+const pvpA = await A.evaluate(() => (window.__ASHEN__.pvp ? window.__ASHEN__.pvp() : null)).catch(() => null);
+const pvpB = await B.evaluate(() => (window.__ASHEN__.pvp ? window.__ASHEN__.pvp() : null)).catch(() => null);
+if (pvpA || pvpB) {
+  const brief = (d) => (d ? JSON.stringify({ active: d.active, phase: d.phase, round: d.round, score: d.score, mode: d.mode }) : 'нет');
+  const mode = await B.evaluate(() => { const s = window.__ASHEN__.snapshot(); return s ? s.mode : null; });
+  check('дуэль №3 запущена поверх сети', !!(pvpA && pvpB && (pvpA.active || pvpA.phase) && (pvpB.active || pvpB.phase)), `A ${brief(pvpA)} · B ${brief(pvpB)} · snap.mode=${mode}`);
+}
 check('hello: имена соперников', nA && nB && nA.opponent && nB.opponent && nA.opponent.name === 'Гость' && nB.opponent.name === 'Хост', JSON.stringify([nA && nA.opponent, nB && nB.opponent]));
 
 // хост идёт вперёд, пока сам не пройдёт ≥ 4 м (на медленном софтверном GPU это дольше 3 с);
@@ -223,12 +231,13 @@ if (hostFps < 8) {
   const why = `fps хоста ${hostFps}: кадр > 0,25 с, бой стоит (софтверный GPU). Плавность — node tools/qa_net.mjs --harness`;
   skip('гость видит, как хост идёт', why);
   skip('снаряд хоста виден у гостя', why);
+  skip('анимация: locomotion соперника = бег/шаг', why);
 } else {
   check('гость видит, как хост идёт', dist > 3, `прошёл ${dist.toFixed(1)} м, ${track.length} замеров`);
   check('снаряд хоста виден у гостя', sawProj);
+  check('анимация: locomotion соперника = бег/шаг', track.some((s) => s.loco === 'run' || s.loco === 'walk' || s.loco === 'sprint'), [...new Set(track.map((s) => s.loco))].join(','));
 }
 check('движение без телепортов (скорость на экране ≤ 14 м/с)', jumps === 0, `max ${maxSpeed.toFixed(1)} м/с, рывков ${jumps}`);
-check('анимация: locomotion соперника = бег/шаг', track.some((s) => s.loco === 'run' || s.loco === 'walk' || s.loco === 'sprint'), [...new Set(track.map((s) => s.loco))].join(','));
 
 // обрыв и восстановление
 const tDrop = Date.now();

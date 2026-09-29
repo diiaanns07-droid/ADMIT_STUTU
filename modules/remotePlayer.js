@@ -344,8 +344,7 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
       if (camera) {
         camera.getWorldPosition(_cam);
         const d = _cam.distanceTo(root.position);
-        // LOD модели соперника (C5): вдали пружины волос/ткани реже, без теней — бережём слабые ноутбуки
-        if (hm && typeof hm.setLod === 'function') { try { hm.setLod(d > 28 ? 2 : d > 12 ? 1 : 0); } catch (e) { /* ignore */ } }
+        // LOD модели соперника ведёт сам heroModel (авто-LOD по камере, №4) — здесь не трогаем
         const k = Math.min(2.4, Math.max(1, d / 9));
         plate.sprite.scale.set(1.7 * k, 0.425 * k, 1);
       }
