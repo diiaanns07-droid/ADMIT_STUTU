@@ -257,7 +257,7 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
     S.t += dt;
     S.slashT += dt; S.castT += dt; S.burstT += dt; S.dashT += dt; S.parryT += dt;
     root.visible = S.visible && S.got;
-    if (!S.got) { events.length = 0; return; }
+    if (!S.got || !S.visible) { events.length = 0; return; }   // в меню соперник не считается вовсе
     const s = buf.sample(now);
     if (!s.ok) { events.length = 0; return; }
     S.st = s.st;
@@ -303,6 +303,8 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, d
       if (camera) {
         camera.getWorldPosition(_cam);
         const d = _cam.distanceTo(root.position);
+        // LOD модели соперника (C5): вдали пружины волос/ткани реже, без теней — бережём слабые ноутбуки
+        if (hm && typeof hm.setLod === 'function') { try { hm.setLod(d > 28 ? 2 : d > 12 ? 1 : 0); } catch (e) { /* ignore */ } }
         const k = Math.min(2.4, Math.max(1, d / 9));
         plate.sprite.scale.set(1.7 * k, 0.425 * k, 1);
       }
