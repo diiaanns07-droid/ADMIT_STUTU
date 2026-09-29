@@ -115,6 +115,7 @@ export const config = {
     moveMode: 'steer',
     hero: 'ashen',          // выбранный герой: ashen | warrior | elf (modules/heroModel.js)
     fxMagic: true,          // [VFX] эффекты V6 (modules/fx): false — прежние эффекты effects.js
+    bdoUi: true,            // [BDO] интерфейс в стиле Black Desert (false — прежний вид)
   },
 
   settings: null,            // заполняет main.js (живой объект)
