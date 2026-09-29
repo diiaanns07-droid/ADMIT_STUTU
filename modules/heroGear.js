@@ -568,13 +568,51 @@ export function dressHero(THREE, vrm, opts = {}) {
       }
     });
     if (front < -1) front = 0.11;
-    visorMat = Mt(new THREE.MeshBasicMaterial({ color: new THREE.Color(opts.fx.visorEyes).lerp(new THREE.Color(0xff3a08), 0.45).multiplyScalar(1.9), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
-    const eyeG = G(new THREE.PlaneGeometry(0.028, 0.0075));
+    visorMat = Mt(new THREE.MeshBasicMaterial({ color: new THREE.Color(opts.fx.visorEyes).lerp(new THREE.Color(0xff2a04), 0.6).multiplyScalar(2.6), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    const eyeG = G(new THREE.PlaneGeometry(0.026, 0.009));
     const grp = new THREE.Group(); grp.name = 'visor-eyes';
     for (const sx of [1, -1]) {
       const e = new THREE.Mesh(eyeG, visorMat); e.position.set(sx * 0.03, 0, 0); e.rotation.z = sx * 0.12; grp.add(e);
     }
-    stick(grp, 'head', bp.head.clone().addScaledVector(UP, eyeY).addScaledVector(FWD, front + 0.004), modelQ);
+    // смотровая щель: лучи спереди по высоте около глаз — щель там, где попадание глубже всего; угли — внутри
+    let slitY = eyeY, slitZ = front + 0.004;
+    try {
+      const meshes = [];
+      vrm.scene.traverse((o) => { if (o.isSkinnedMesh && o.visible) meshes.push(o); });
+      const rc = new THREE.Raycaster();
+      let best = -1, rows = [];
+      for (let dy = -0.05; dy <= 0.05001; dy += 0.004) {
+        let depth = 0, n = 0, zs = 0;
+        for (const sx of [0.028, -0.028]) {
+          const from = bp.head.clone().addScaledVector(UP, eyeY + dy).addScaledVector(LEFT, sx).addScaledVector(FWD, 0.5);
+          rc.set(from, FWD.clone().negate()); rc.far = 0.6;
+          const hit = rc.intersectObjects(meshes, false)[0];
+          if (hit) { const z = hit.point.clone().sub(bp.head).dot(FWD); zs += z; n++; }
+        }
+        if (n) rows.push({ dy, z: zs / n });
+      }
+      if (rows.length > 4) {
+        // глубина относительно соседей (±12 мм): щель — провал в профиле
+        for (const r of rows) {
+          const nb = rows.filter((q) => Math.abs(q.dy - r.dy) > 0.008 && Math.abs(q.dy - r.dy) < 0.02);
+          if (!nb.length) continue;
+          const nz = nb.reduce((m, q) => m + q.z, 0) / nb.length, dip = nz - r.z;
+          // канавка — угли на её дне; сквозная прорезь (луч ушёл внутрь шлема) — сразу за передними кромками
+          if (dip > best) { best = dip; slitY = eyeY + r.dy; slitZ = dip > 0.03 ? Math.min(...nb.map((q) => q.z)) - 0.012 : r.z + 0.0025; }
+        }
+        if (best < 0.004) { slitY = eyeY; slitZ = front + 0.004; }
+        // сквозная прорезь: середина провала по высоте, глубина — за кромкой над прорезью
+        const deep = rows.filter((r) => { const nb = rows.filter((q) => Math.abs(q.dy - r.dy) > 0.008 && Math.abs(q.dy - r.dy) < 0.02); return nb.length && nb.reduce((m, q) => m + q.z, 0) / nb.length - r.z > 0.03; });
+        if (deep.length) {
+          const y0 = Math.min(...deep.map((r) => r.dy)), y1 = Math.max(...deep.map((r) => r.dy));
+          const above = rows.filter((r) => r.dy > y1 && r.dy < y1 + 0.012), below = rows.filter((r) => r.dy < y0 && r.dy > y0 - 0.012);
+          // в плоскости верхней кромки: спереди её не закрывает ни козырёк сверху, ни выступ забрала снизу
+          const lip = above.length ? Math.max(...above.map((r) => r.z)) : Math.min(...below.map((r) => r.z));
+          if (Number.isFinite(lip)) { slitY = eyeY + (y0 + y1) / 2; slitZ = lip + 0.002; }
+        }
+      }
+    } catch (e) { /* по краю шлема */ }
+    stick(grp, 'head', bp.head.clone().addScaledVector(UP, slitY).addScaledVector(FWD, slitZ), modelQ);
   }
 
   // ---------------- острые уши эльфа (сквозь капюшон — узнаваемый силуэт): лист с загнутым кончиком из
