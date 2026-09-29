@@ -918,9 +918,11 @@ export function createHeroModel({
       applyLife(dt, true, 0, true);
       applyPose(dt);
       applyFingers(dt, handWants());
+      S.inMenu = true;
       vrmTick(dt);
       return;
     }
+    S.inMenu = false;
     const status = snap.status || 'playing';
     const yaw = root.rotation.y;
     const W = cur.model;
@@ -1058,6 +1060,10 @@ export function createHeroModel({
     if (cur.gear && cur.gear.update) cur.gear.update(dt, root, S.lod);
     if (cur.aura) cur.aura.update(heroTimeU ? heroTimeU.value : time);
     if (cur.shade && cur.shade.update) cur.shade.update(dt);
+    // взгляд: на витрине глаза следят за камерой, когда герой смотрит на игрока (или при приближении)
+    if (cur.shade && cur.shade.updateGaze && S.lod < 2) {
+      try { cur.shade.updateGaze(S.inMenu && defaults.camera && (S.lookCam || S.gaze) ? defaults.camera.position : null, dt); } catch (e) { /* без взгляда */ }
+    }
   }
 
   // ---------------------------------------------------------------- C5
@@ -1101,6 +1107,7 @@ export function createHeroModel({
     get hero() { return S.hero; },
     get vrm() { return cur ? cur.vrm : null; },
     get gear() { return cur ? cur.gear : null; },   // QA
+    get shade() { return cur ? cur.shade : null; },   // QA
     get mixer() { return cur ? cur.mixer : null; },
     state: () => {
       let loco = 'Idle', wMax = -1;

@@ -548,6 +548,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
       };
       const pkC = m.customProgramCacheKey;
       m.customProgramCacheKey = () => 'heroCatch:' + (pkC ? pkC.call(m) : '');
+      patchGaze(m);
     }
     if (physical) {
       m.specularIntensity = P.specularIntensity;
@@ -571,6 +572,97 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     if (Array.isArray(o.material)) o.material.forEach((mt, i) => entries.push({ mesh: o, index: i, orig: mt, real: null, q: null }));
     else entries.push({ mesh: o, index: -1, orig: o.material, real: null, q: null });
   });
+
+  // [HERO] взгляд: глазные яблоки (MI_Eyes — две сферы в одном меше) поворачиваются вокруг своих центров
+  // в вершинном шейдере (оси позы привязки). Направление — по трём вершинам глаз (кадр «привязка → мир»)
+  // каждый кадр; «вперёд»/«вверх» головы в осях привязки — один раз (от затылка к глазам, мировой верх).
+  const gazeU = { heroGazeRot: { value: new THREE.Matrix3() }, heroEyeCL: { value: new THREE.Vector3() }, heroEyeCR: { value: new THREE.Vector3() }, heroEyeLR: { value: new THREE.Vector3(1, 0, 0) }, heroEyeMid: { value: new THREE.Vector3() } };
+  const G = { mesh: null, idx: null, b: null, fwd: null, up: null, left: null, yaw: 0, pitch: 0, ok: false };
+  {
+    const e = entries.find((x) => /^MI_Eye/.test(x.orig && x.orig.name) && x.mesh.isSkinnedMesh && x.index < 0);
+    if (e) {
+      const pa = e.mesh.geometry.attributes.position, lo = new THREE.Vector3(1e9, 1e9, 1e9), hi = new THREE.Vector3(-1e9, -1e9, -1e9), v = new THREE.Vector3();
+      for (let i = 0; i < pa.count; i++) { v.fromBufferAttribute(pa, i); lo.min(v); hi.max(v); }
+      const ext = hi.clone().sub(lo), ax = ext.x >= ext.y && ext.x >= ext.z ? 0 : ext.y >= ext.z ? 1 : 2;
+      const lr = new THREE.Vector3().setComponent(ax, 1), mid = lo.clone().add(hi).multiplyScalar(0.5);
+      const box = [[new THREE.Vector3(1e9, 1e9, 1e9), new THREE.Vector3(-1e9, -1e9, -1e9)], [new THREE.Vector3(1e9, 1e9, 1e9), new THREE.Vector3(-1e9, -1e9, -1e9)]];
+      let iA = 0, iB = 0, iC = 0, bestA = -1e9, bestB = 1e9, bestC = -1e9;
+      const ax2 = (ax + 1) % 3;
+      for (let i = 0; i < pa.count; i++) {
+        v.fromBufferAttribute(pa, i);
+        const sd = v.getComponent(ax) - mid.getComponent(ax), k = sd > 0 ? 0 : 1;
+        box[k][0].min(v); box[k][1].max(v);
+        if (sd > bestA) { bestA = sd; iA = i; }
+        if (sd < bestB) { bestB = sd; iB = i; }
+        if (v.getComponent(ax2) > bestC) { bestC = v.getComponent(ax2); iC = i; }
+      }
+      gazeU.heroEyeCL.value.copy(box[0][0]).add(box[0][1]).multiplyScalar(0.5);
+      gazeU.heroEyeCR.value.copy(box[1][0]).add(box[1][1]).multiplyScalar(0.5);
+      gazeU.heroEyeLR.value.copy(lr); gazeU.heroEyeMid.value.copy(mid);
+      G.mesh = e.mesh; G.idx = [iA, iB, iC];
+      G.b = G.idx.map((i) => new THREE.Vector3().fromBufferAttribute(pa, i));
+      G.eyeMid = mid;
+    }
+  }
+  function patchGaze(m) {
+    const prevG = m.onBeforeCompile;
+    m.onBeforeCompile = (sh, r) => {
+      if (prevG) prevG.call(m, sh, r);
+      Object.assign(sh.uniforms, gazeU);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform mat3 heroGazeRot;\nuniform vec3 heroEyeCL;\nuniform vec3 heroEyeCR;\nuniform vec3 heroEyeLR;\nuniform vec3 heroEyeMid;')
+        .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n  objectNormal = heroGazeRot * objectNormal;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+  {
+    vec3 hgC = dot( position - heroEyeMid, heroEyeLR ) > 0.0 ? heroEyeCL : heroEyeCR;
+    transformed = heroGazeRot * ( transformed - hgC ) + hgC;
+  }`);
+    };
+    const pk = m.customProgramCacheKey;
+    m.customProgramCacheKey = () => 'heroGaze:' + (pk ? pk.call(m) : '');
+  }
+  // кадр привязка → мир по трём вершинам (жёстко на кости головы)
+  const _w = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()], _Fb = new THREE.Matrix3(), _Fw = new THREE.Matrix3(), _Rbw = new THREE.Matrix3();
+  const frame = (a, b, c, out) => {
+    const e1 = b.clone().sub(a).normalize(), e2 = e1.clone().cross(c.clone().sub(a)).normalize(), e3 = e2.clone().cross(e1);
+    return out.set(e1.x, e2.x, e3.x, e1.y, e2.y, e3.y, e1.z, e2.z, e3.z);
+  };
+  const _q = new THREE.Quaternion(), _m4 = new THREE.Matrix4(), _d = new THREE.Vector3(), _cw = new THREE.Vector3();
+  function updateGaze(target, dt) {
+    if (!G.mesh) return;
+    if (G.hold) { target = G.hold; dt = 1; }   // QA: зафиксированная точка взгляда (holdGaze)
+    G.mesh.updateWorldMatrix(true, false);
+    for (let i = 0; i < 3; i++) { G.mesh.getVertexPosition(G.idx[i], _w[i]); _w[i].applyMatrix4(G.mesh.matrixWorld); }
+    frame(G.b[0], G.b[1], G.b[2], _Fb); frame(_w[0], _w[1], _w[2], _Fw);
+    _Rbw.copy(_Fw).multiply(_Fb.clone().transpose());   // направление: привязка → мир
+    const Rwb = _Rbw.clone().transpose();
+    // центр глаз в мире: _w0 + Rbw·(mid − b0)
+    _cw.copy(G.eyeMid).sub(G.b[0]).applyMatrix3(_Rbw).add(_w[0]);
+    if (!G.ok) {
+      const head = vrm.humanoid && (vrm.humanoid.getRawBoneNode ? vrm.humanoid.getRawBoneNode('head') : null);
+      if (!head) return;
+      const hp = head.getWorldPosition(new THREE.Vector3());
+      const lrW = gazeU.heroEyeLR.value.clone().applyMatrix3(_Rbw).normalize();
+      const upW = new THREE.Vector3(0, 1, 0).addScaledVector(lrW, -lrW.y).normalize();
+      const fwdW = lrW.clone().cross(upW).normalize();
+      const toEyes = _cw.clone().sub(hp);
+      if (fwdW.dot(toEyes) < 0) fwdW.negate();
+      G.fwd = fwdW.applyMatrix3(Rwb).normalize(); G.up = upW.applyMatrix3(Rwb).normalize();
+      G.left = G.up.clone().cross(G.fwd).normalize();
+      G.ok = true;
+    }
+    let wy = 0, wp = 0;
+    if (target) {
+      _d.copy(target).sub(_cw).normalize().applyMatrix3(Rwb);
+      const x = _d.dot(G.left), y = _d.dot(G.up), z = _d.dot(G.fwd);
+      if (z > 0.2) { wy = Math.max(-0.38, Math.min(0.38, Math.atan2(x, z))); wp = Math.max(-0.22, Math.min(0.22, Math.atan2(y, Math.hypot(x, z)))); }
+    }
+    const k = 1 - Math.exp(-9 * Math.max(0, dt || 0));
+    G.yaw += (wy - G.yaw) * k; G.pitch += (wp - G.pitch) * k;
+    const dir = G.fwd.clone().multiplyScalar(Math.cos(G.pitch) * Math.cos(G.yaw)).addScaledVector(G.left, Math.cos(G.pitch) * Math.sin(G.yaw)).addScaledVector(G.up, Math.sin(G.pitch));
+    _q.setFromUnitVectors(G.fwd, dir.normalize());
+    gazeU.heroGazeRot.value.setFromMatrix4(_m4.makeRotationFromQuaternion(_q));
+  }
 
   function apply(modeWanted) {
     for (const e of entries) {
@@ -613,7 +705,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
 
   apply(mode === 'anime' ? 'anime' : 'realistic');
   return {
-    setMode, setQuality, dispose, update() {},
+    setMode, setQuality, dispose, update() {}, updateGaze, holdGaze(p) { G.hold = p || null; },
     // яркость жил лат: 1 — обычно, >1 — вспышка магии, <1 — ослаб
     setGlow(k) { for (const a of armorUs) a.U.heroArmorK.value = a.base * Math.max(0, k); },
     get mode() { return curMode; },
