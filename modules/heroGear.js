@@ -57,6 +57,8 @@ const PRESETS = {
     metal: 0x6a6f7c, metal2: 0xd8b070, leather: 0x2a2230, cloth: 0x1c2438, glow: 0x8fd8ff,
     pauldrons: 'plate', bracers: true, belt: 'pouches', pouches: 2, dagger: null, rings: true, sigil: false,
     cape: { w: 0.66, len: 1.35, color: 0x16203a, trim: 0xd8b070, emblem: 'bolt', lining: 0x7a5a22 }, staff: { crystal: 0xbfe8ff, glow: 0x6fb8ff, style: 'hoop', wood: 0x4a3526 },
+    // стола магистра: две расшитые полосы с шеи по груди до колен
+    tabard: { at: 'neck', y: 0.05, panels: [{ az: 0.65, w: 0.085, len: 0.95, pleats: 0.6 }, { az: -0.65, w: 0.085, len: 0.95, pleats: 0.6 }] },
   },
 };
 
@@ -1175,16 +1177,20 @@ export function dressHero(THREE, vrm, opts = {}) {
       const pa = o.geometry.attributes.position;
       for (let i = 0; i < pa.count; i++) { o.getVertexPosition(i, v); v.applyMatrix4(o.matrixWorld); if (v.clone().sub(bp.hips).dot(FWD) > 0) beltLo = Math.min(beltLo, v.y); }
     });
-    const yBelt = Number.isFinite(beltLo) ? beltLo + 0.025 : bp.hips.y + (P.tabard.y ?? 0.06);
+    // stole — стола с шеи (архимаг): прибита к груди у основания шеи, ремень не нужен
+    const stole = P.tabard.at === 'neck' && bp.neck;
+    if (stole) beltLo = -Infinity;
+    const ctr = (stole ? bp[chestB] : bp.hips).clone();   // ось обхвата
+    const yBelt = stole ? bp.neck.y - (P.tabard.y ?? 0.05) : Number.isFinite(beltLo) ? beltLo + 0.025 : bp.hips.y + (P.tabard.y ?? 0.06);
     // обхват тела на этой высоте по секторам азимута (без ремней, капюшона, волос): ткань прилегает
     const SEC = 24, secR = new Float32Array(SEC);
     vrm.scene.traverse((o) => {
-      if (!o.isSkinnedMesh || !o.visible || /Belt|Hood|Hair|Eye|Face|Brow/i.test(o.name)) return;
+      if (!o.isSkinnedMesh || !o.visible || /Belt|Hood|Hair|Eye|Face|Brow/i.test(o.name) || /Hair|Eye/.test([].concat(o.material).map((m) => m && m.name).join())) return;
       const pa = o.geometry.attributes.position;
       for (let i = 0; i < pa.count; i++) {
         o.getVertexPosition(i, v); v.applyMatrix4(o.matrixWorld);
         if (Math.abs(v.y - yBelt) > 0.035) continue;
-        v.sub(bp.hips);
+        v.sub(ctr);
         const f = v.dot(FWD), l = v.dot(LEFT), r = Math.hypot(f, l);
         if (r > 0.3) continue;
         const k = Math.floor(((Math.atan2(l, f) + Math.PI) / (Math.PI * 2)) * SEC) % SEC;
@@ -1199,7 +1205,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       return g(k0) * (1 - t3) + g(k0 + 1) * t3;
     };
     // без ремня костюма (латы стража) — свой ремень по замеренному обхвату: под ним край полотнищ
-    if (!Number.isFinite(beltLo)) {
+    if (beltLo === Infinity) {
       const ring = [];
       for (let k = 0; k < 32; k++) {
         const ph = (k / 32) * Math.PI * 2 - Math.PI, r = Rat(ph) + 0.014;
@@ -1222,7 +1228,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     }
     const holder = model || vrm.scene;
     const _mq2 = new THREE.Quaternion();
-    const legCaps = bodyCaps.filter((c) => /Leg/.test(c.name)).map((c) => ({ ...c, r: c.r - 0.008 }));   // запас капсул (+0.018) велик для прилегающей ткани
+    const legCaps = bodyCaps.filter((c) => (stole ? /Leg|hips|hest/ : /Leg/).test(c.name)).map((c) => ({ ...c, r: c.r - 0.008 }));   // запас капсул (+0.018) велик для прилегающей ткани
     for (const pn of P.tabard.panels) {
       const cols = 7, rows = 12;
       const R0 = Rat(pn.az) + 0.008;
@@ -1235,12 +1241,12 @@ export function dressHero(THREE, vrm, opts = {}) {
           const ph = pn.az + ah - (2 * ah * i) / (cols - 1);
           // расширение книзу небольшое: изгибные связи держат исходную форму (иначе полотнище стоит «доской»)
           const r = Rat(ph) + 0.008 + (0.012 + 0.02 * t2) * (j ? 1 : 0);
-          const p = new THREE.Vector3(bp.hips.x, yBelt - t2 * pn.len, bp.hips.z).addScaledVector(FWD, Math.cos(ph) * r).addScaledVector(LEFT, Math.sin(ph) * r);
+          const p = new THREE.Vector3(ctr.x, yBelt - t2 * pn.len, ctr.z).addScaledVector(FWD, Math.cos(ph) * r).addScaledVector(LEFT, Math.sin(ph) * r);
           p.toArray(rest, (j * cols + i) * 3);
         }
       }
       const cl = createCloth(THREE, {
-        cols, rows, rest, anchor: raw('hips'), parent: holder, colliders: legCaps, material: capeMat,
+        cols, rows, rest, anchor: raw(stole ? chestB : 'hips'), parent: holder, colliders: legCaps, material: capeMat,
         pleats: pn.pleats ?? 1.5, pleatDepth: 0.008, name: 'tabard', plane: Math.abs(pn.az) < 0.5 ? 'front' : 'none',
         uv: pn.emblem ? { u0: 0, u1: 1, v0: 0, v1: 1 } : { u0: 0, u1: 1, v0: 0, v1: 0.62 },
         hips: raw('hips'), back: { lim: 0.03, h: 0.3 },
