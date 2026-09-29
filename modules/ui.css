@@ -3,8 +3,10 @@
  * Роль №7. API_VERSION = ASHEN_V1
  * Все классы с префиксом ao-. Слой .ao-ui не перехватывает указатель:
  * pointer-events включены только у активных панелей и кнопки паузы.
- * Внешние шрифты не загружаются; используются системные антиква и гротеск.
+ * [BDO] Шрифты Google Fonts (Forum — капители с кириллицей, Cinzel — латиница и цифры,
+ * Alegreya Sans — текст, Cormorant Garamond — курсив). Без сети — системная антиква и гротеск.
  */
+@import url('https://fonts.googleapis.com/css2?family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Forum&display=swap');
 
 .ao-ui {
   --ao-coal: #15161a;
@@ -2192,4 +2194,45 @@
   .ao-oath__bank {
     justify-items: start;
   }
+}
+
+/* =====================================================================================
+ * [BDO] Дизайн-система «Black Desert» (настройка bdoUi, класс html.ao-bdo).
+ * Токены --bdo-* общие для всех CSS игры (HUD, зеркало, лобби) и совпадают с core/bdoTheme.js.
+ * Без класса ao-bdo всё выше работает как раньше.
+ * ===================================================================================== */
+:root {
+  --bdo-coal: #0b0a09;
+  --bdo-coal-2: #15120f;
+  --bdo-coal-3: #1f1a14;
+  --bdo-panel: rgba(12, 10, 8, 0.78);
+  --bdo-panel-soft: rgba(12, 10, 8, 0.55);
+  --bdo-panel-solid: rgba(14, 12, 10, 0.94);
+  --bdo-bronze: #8a6a3e;
+  --bdo-bronze-dim: #5a4528;
+  --bdo-bronze-hi: #b08a52;
+  --bdo-gold: #d8b36a;
+  --bdo-gold-hi: #f3dca0;
+  --bdo-gold-deep: #a07a3c;
+  --bdo-ivory: #ece2cc;
+  --bdo-ivory-dim: #b9ae96;
+  --bdo-ivory-faint: #857c6a;
+  --bdo-blood: #b0262a;
+  --bdo-blood-hi: #e0484a;
+  --bdo-blood-deep: #5e1114;
+  --bdo-mana: #2f6fd0;
+  --bdo-mana-hi: #5aa0ff;
+  --bdo-mana-deep: #12305e;
+  --bdo-stamina: #c9a34a;
+  --bdo-teal: #4fb3a6;
+  --bdo-teal-hi: #8fe0d2;
+  --bdo-ember: #ff8a3c;
+  --bdo-font-display: 'Forum', 'Cinzel', 'Cormorant SC', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+  --bdo-font-logo: 'Cinzel', 'Forum', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  --bdo-font-num: 'Cinzel', 'Forum', 'Palatino Linotype', Georgia, serif;
+  --bdo-font-body: 'Alegreya Sans', 'Segoe UI', system-ui, 'Noto Sans', 'Liberation Sans', Arial, sans-serif;
+  --bdo-font-italic: 'Cormorant Garamond', 'Palatino Linotype', Georgia, serif;
+  --bdo-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  /* Уголок-орнамент (золотая двойная линия с ромбом), рисуется фоном в 4 углах. */
+  --bdo-corner: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M1 16V1h15' fill='none' stroke='%23d8b36a' stroke-width='1'/%3E%3Cpath d='M4.5 10V4.5H10' fill='none' stroke='%23d8b36a' stroke-opacity='.7' stroke-width='1'/%3E%3Cpath d='M4.5 2.3 6.7 4.5 4.5 6.7 2.3 4.5z' fill='%23f3dca0'/%3E%3C/svg%3E");
 }

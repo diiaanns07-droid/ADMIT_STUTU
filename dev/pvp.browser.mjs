@@ -50,11 +50,15 @@ if (CDN) {
   await ctx.route((u) => !/^(127\.0\.0\.1|localhost|cdn\.jsdelivr\.net|fonts\.)/.test(u.hostname), (route) => route.abort());
 }
 const errors = [];
+// --stub: своя заглушка сети (?pvp=local); по умолчанию — сеть №2 (net/net.js, транспорт local, лобби с автоготовностью)
+const STUB = argv.includes('--stub');
+const ROOM = Array.from({ length: 5 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');   // код комнаты №2: без 0, O, 1, I
 async function open(name) {
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errors.push(`${name} ${m.type()}: ${m.text()}`); });
   page.on('pageerror', (e) => errors.push(`${name} pageerror: ${e.message}`));
-  await page.goto(`${URL0}?pvp=local`, { waitUntil: 'domcontentloaded' });
+  const q = STUB ? '?pvp=local' : `?debug=1&net=local&room=${ROOM}&netReady&netAuto=${name === 'A' ? 'host' : 'join'}&netName=${name === 'A' ? 'Хост' : 'Гость'}`;
+  await page.goto(`${URL0}${q}`, { waitUntil: 'domcontentloaded' });
   return page;
 }
 const A = await open('A');
@@ -66,7 +70,7 @@ const snap = (p) => p.evaluate(() => { const s = window.__ASHEN__.snapshot(); re
 async function waitPhase(p, ph, ms = 120000) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) { const d = await pv(p); if (d && d.phase === ph) return d; await sleep(200); }
-  throw new Error(`фаза ${ph} не наступила: ${JSON.stringify(await pv(p))}`);
+  throw new Error(`фаза ${ph} не наступила: ${JSON.stringify(await pv(p))} net=${JSON.stringify(await p.evaluate(() => { const n = window.__ASHEN__.net && window.__ASHEN__.net(); return n && { status: n.status, message: n.message, error: n.error, ready: [n.meReady, n.oppReady] }; }).catch(() => null))} screen=${await p.evaluate(() => window.__ASHEN__.screen).catch(() => '?')}`);
 }
 async function shot(p, file) {
   await p.evaluate(() => { window.__pvpNoDraw = false; });
@@ -74,13 +78,19 @@ async function shot(p, file) {
   await p.screenshot({ timeout: 180000, path: join(OUT, file) });
   await p.evaluate(() => { window.__pvpNoDraw = true; });
 }
-async function key(p, k, holdMs = 60) { await p.keyboard.down(k); await sleep(holdMs); await p.keyboard.up(k); }
+// headless-Chromium даёт полный rAF только вкладке на переднем плане: действующую вкладку выводим вперёд
+let front = null;
+async function focus(p) { if (front !== p) { await p.bringToFront(); front = p; await sleep(400); } }
+async function key(p, k, holdMs = 60) { await focus(p); await p.keyboard.down(k); await sleep(holdMs); await p.keyboard.up(k); }
 const report = {};
 // нажатие изнутри страницы, когда снаряд соперника ближе dist м (проверка рывка/парирования по-настоящему)
 const reactWhenNear = (p, code, dist, holdMs = 80) => p.evaluate(({ code, dist, holdMs }) => new Promise((res) => {
   const t0 = performance.now();
+  // с сетью №2 снаряды соперника есть только в снимке для эффектов (netSession.frame → snapshot): перехватываем
+  const ns = window.__ASHEN__.netSession && window.__ASHEN__.netSession();
+  if (ns && !ns.__pvpWrapped) { const f = ns.frame; ns.frame = (...a) => { const r = f(...a); window.__fxSnap = r && r.snapshot; return r; }; ns.__pvpWrapped = true; }
   const tick = () => {
-    const s = window.__ASHEN__.snapshot();
+    const s = window.__fxSnap || window.__ASHEN__.snapshot();
     const me = s && s.player.position;
     const g = s && s.projectiles.filter((q) => q.owner === 'opponent');
     const d = g && g.length ? Math.min(...g.map((q) => Math.hypot(q.position.x - me.x, q.position.z - me.z))) : Infinity;
@@ -99,26 +109,55 @@ try {
   await waitPhase(A, 'fight'); await waitPhase(B, 'fight');
   await sleep(1800);                                   // неуязвимость появления 1.5 с
   report.fps = [await A.evaluate(() => window.__ASHEN__.fps), await B.evaluate(() => window.__ASHEN__.fps)];
+  if (argv.includes('--focus')) {
+    await A.bringToFront(); await sleep(3000);
+    report.fpsFrontA = [await A.evaluate(() => window.__ASHEN__.fps), await B.evaluate(() => window.__ASHEN__.fps)];
+    await B.bringToFront(); await sleep(3000);
+    report.fpsFrontB = [await A.evaluate(() => window.__ASHEN__.fps), await B.evaluate(() => window.__ASHEN__.fps)];
+  }
+  if (argv.includes('--profile')) {
+    const cdp = await ctx.newCDPSession(A);
+    await cdp.send('Profiler.enable'); await cdp.send('Profiler.start');
+    await sleep(5000);
+    const { profile } = await cdp.send('Profiler.stop');
+    const self = new Map();
+    const byId = new Map(profile.nodes.map((n) => [n.id, n]));
+    const dt = profile.timeDeltas || [];
+    profile.samples.forEach((id, i) => { const n = byId.get(id); const k = `${n.callFrame.functionName || '(anon)'} ${String(n.callFrame.url).split('/').slice(-2).join('/')}:${n.callFrame.lineNumber}`; self.set(k, (self.get(k) || 0) + (dt[i] || 0)); });
+    report.profile = [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([k, v]) => `${Math.round(v / 1000)}ms ${k}`);
+  }
+  await focus(A);
+  if (argv.includes('--trace')) {
+    await A.keyboard.press('KeyU');
+    report.trace = await A.evaluate(() => new Promise((res) => { const out = []; const t0 = performance.now(); const f = () => { const s = window.__ASHEN__.snapshot(); out.push([Math.round(performance.now() - t0), +s.time.toFixed(2), s.projectiles.map((q) => `${q.owner}:${q.kind}@${q.position.x.toFixed(1)},${q.position.y.toFixed(1)}`).join(' '), `${s.boss.position.x.toFixed(1)},${s.boss.position.y.toFixed(1)}`, s.player.action, s.pvp && s.pvp.phase]); if (performance.now() - t0 < 2500) requestAnimationFrame(f); else res(out); }; f(); }));
+  }
   const hp0 = (await snap(B)).hp;
+  report.pre = { A: await A.evaluate(() => { const s = window.__ASHEN__.snapshot(); return { p: s.player.position, enc: s.player.encounter, opp: s.opponent && s.opponent.position, lock: s.lockTarget, boss: s.boss.position, n: window.__ASHEN__.net && window.__ASHEN__.net() && window.__ASHEN__.net().status }; }),
+    B: await B.evaluate(() => { const s = window.__ASHEN__.snapshot(); return { p: s.player.position, enc: s.player.encounter, opp: s.opponent && s.opponent.position }; }) };
+  await key(A, 'KeyU'); await sleep(150);
+  report.pre.proj = await A.evaluate(() => window.__ASHEN__.snapshot().projectiles.map((q) => [q.owner, q.kind, q.position, q.velocity]));
+  await sleep(1500);
   for (let i = 0; i < 3; i++) { await key(A, 'KeyU'); await sleep(800); }
   await sleep(600);
   report.spark = { hpBefore: hp0, hpAfter: (await snap(B)).hp, A: await stats(A) };
   // щит: B держит K
-  await B.keyboard.down('KeyK'); await sleep(250);
+  await focus(B); await B.keyboard.down('KeyK'); await sleep(250);
   for (let i = 0; i < 2; i++) { await key(A, 'KeyU'); await sleep(800); }
   await B.keyboard.up('KeyK'); await sleep(500);
   report.shield = { B: await stats(B), en: (await snap(B)).energy };
   // парирование: F, когда искра ближе 7 м → снаряд летит назад и бьёт A
   const aHp0 = (await snap(A)).hp;
+  await focus(B);
   const par = reactWhenNear(B, 'KeyF', 7);
-  await key(A, 'KeyU');
+  await A.keyboard.down('KeyU'); await sleep(60); await A.keyboard.up('KeyU');
   report.parry = { react: await par };
   await sleep(1600);
   report.parry.B = await stats(B); report.parry.aHpBefore = aHp0; report.parry.aHpAfter = (await snap(A)).hp;
   // рывок: пробел, когда искра ближе 6 м
   await sleep(700);
+  await focus(B);
   const dsh = reactWhenNear(B, 'Space', 6, 60);
-  await key(A, 'KeyU');
+  await A.keyboard.down('KeyU'); await sleep(60); await A.keyboard.up('KeyU');
   report.dash = { react: await dsh };
   await sleep(1200);
   report.dash.B = await stats(B);
@@ -135,7 +174,7 @@ try {
     report.endA = (await pv(A)).view; report.endB = (await pv(B)).view;
   }
   await shot(A, '2_fight_A.png'); await shot(B, '2_fight_B.png');
-} catch (e) { report.error = String(e && e.stack || e); }
+} catch (e) { report.error = String(e && e.stack || e); report.netB = await B.evaluate(() => { const n = window.__ASHEN__ && window.__ASHEN__.net && window.__ASHEN__.net(); return { screen: window.__ASHEN__ && window.__ASHEN__.screen, n: n && { status: n.status, message: n.message, error: n.error, errorCode: n.errorCode, code: n.code } , url: location.href }; }).catch((x) => String(x)); }
 report.errors = errors;
 console.log(JSON.stringify({ ...report, errors }, null, 1));
 await browser.close();

@@ -341,6 +341,7 @@ function normSettings(s) {
     reducedMotion: typeof o.reducedMotion === 'boolean' ? o.reducedMotion : DEFAULT_SETTINGS.reducedMotion,
     sensitivity: isNum(o.sensitivity) ? clamp(o.sensitivity, 0.5, 2) : DEFAULT_SETTINGS.sensitivity,
     moveMode: o.moveMode === 'stick' ? 'stick' : 'steer', // [V5] по умолчанию «Руль»
+    startZone: o.startZone === 'forest' ? 'forest' : 'arena', // [FOREST] место старта
     hero: HERO_OPTIONS.some(([v]) => v === o.hero) ? o.hero : DEFAULT_SETTINGS.hero,
   };
 }
@@ -997,11 +998,42 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     return fs;
   }
 
+  // [FOREST] «Место старта»: Пепельное плато (у арены) / Сияющий лес (у врат леса)
+  const ZONE_OPTIONS = [['arena', 'Пепельное плато'], ['forest', 'Сияющий лес']];
+  function buildStartZone(prefix) {
+    const name = `${uid}-${prefix}-startzone`;
+    const seg = el('div', { class: 'ao-seg' });
+    const fs = el('fieldset', { class: 'ao-field ao-fieldset' }, el('legend', { class: 'ao-field__legend', text: 'Место старта' }), seg);
+    const inputs = [];
+    const TIPS = { arena: 'У арены Регента, на пепельном плато', forest: 'У эльфийских врат Сияющего леса, к северу от арены' };
+    for (const [value, label] of ZONE_OPTIONS) {
+      const input = el('input', { type: 'radio', name, value, class: 'ao-seg__input' });
+      inputs.push(input);
+      const short = prefix === 'menu' && value === 'arena' ? 'Плато' : label;   // в меню — коротко, чтобы встать в ряд
+      seg.append(el('label', { class: 'ao-seg__opt', title: `${label}: ${TIPS[value]}` }, input, el('span', { class: 'ao-seg__label', text: short })));
+      listen(input, 'change', () => { if (input.checked) invoke('onSettings', { startZone: value }); });
+    }
+    const ctl = {
+      sync(settings, force) {
+        if (!force && fs.contains(doc.activeElement)) return;
+        for (const i of inputs) { const on = i.value === settings.startZone; if (i.checked !== on) i.checked = on; }
+      },
+    };
+    listen(fs, 'focusout', (e) => { if (!fs.contains(e.relatedTarget) && state.settings) ctl.sync(state.settings, true); });
+    controls.push(ctl);
+    return fs;
+  }
+
   function buildSettings(keys, prefix) {
     const wrap = el('div', { class: 'ao-settings' });
     for (const key of keys) {
       if (key === 'quality') wrap.append(buildQuality(prefix));
       else if (key === 'moveMode') wrap.append(buildMoveMode(prefix));
+      else if (key === 'startZone') { // [FOREST] в одном ряду с «Управлением движением» (меню 1366×650 не растёт)
+        const zs = buildStartZone(prefix), prev = wrap.lastElementChild;
+        if (prev && keys[keys.indexOf(key) - 1] === 'moveMode') { const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 16px;align-items:flex-end' }); wrap.replaceChild(row, prev); row.append(prev, zs); }
+        else wrap.append(zs);
+      }
       else if (key === 'volume' && !cfg.showVolume) continue;
       else if (key === 'volume') {
         wrap.append(
@@ -1047,6 +1079,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const hid = `${uid}-menu-h`;
     const start = btn('Начать', () => invoke('onStart', { from: 'menu' }), { variant: 'primary', size: 'lg' });
     const oathBtn = btn('Клятва героя', () => invoke('onOath', { from: 'menu' }), { variant: 'secondary' });
+    const netBtn = btn('Онлайн-дуэль', () => invoke('onNet', { from: 'menu' }), { variant: 'secondary' }); // [NET] экран лобби — modules/netLobby.js
     const oathPts = el('span', { class: 'ao-oathpts', hidden: true });
     const dbg = el('button', { type: 'button', class: 'ao-toggle', 'aria-pressed': 'false' }, el('span', { class: 'ao-toggle__track', 'aria-hidden': 'true' }), el('span', { class: 'ao-toggle__label', text: 'Отладка с клавиатуры' }));
     listen(dbg, 'click', () => invoke('onDebug', !state.debug));
@@ -1064,9 +1097,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       title,
       el('p', { class: 'ao-subtitle', text: 'Бой с Регентом Нимба' }),
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
-      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts), el('p', { class: 'ao-note', text: 'Играется сидя. Нужны веб-камера, Chrome или Edge и устойчивый стул.' })),
+      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts, netBtn.node /* [NET] */), el('p', { class: 'ao-note', text: 'Играется сидя. Нужны веб-камера, Chrome или Edge и устойчивый стул.' })),
       buildHeroPick('menu'),
-      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'quality', 'volume', 'reducedMotion'], 'menu')),
+      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'reducedMotion'], 'menu')),
       el('div', { class: 'ao-menu__foot' }, dbg, dbgKeys),
     );
     return {
@@ -2162,7 +2195,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   function syncSettings(s) {
-    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}`;
+    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}`; // [FOREST] + startZone
     state.settings = s;
     if (key === state.settingsKey) return;
     state.settingsKey = key;
@@ -2238,6 +2271,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     if (screen !== state.screen) enterScreen(screen);
     setHidden(debugBadge, !debug);
     setClass(ui, 'ao-reduced-motion', ctx.settings.reducedMotion);
+    setClass(doc.documentElement, 'ao-bdo', !(vm.settings && vm.settings.bdoUi === false)); // [BDO] стиль Black Desert (настройка bdoUi)
     syncSettings(ctx.settings);
     UPDATERS[screen](ctx);
     if (state.focusPending) {

@@ -1997,8 +1997,9 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         continue;
       }
       // [ASHEN_V2] открытая карта: дальность — по времени жизни (стреляют и из-за арены)
-      const expired = pr.age >= pr.lifetime || distXZ(pr.position, BOSS) > 80 || pr.position.y < -1 ||
-        (pr.path && pr.path.u >= 1) || (pr.path && pr.position.y < 0);
+      const fy = PV && PV.on ? PV.floorY : 0;   // [PVP] поляна дуэли может лежать ниже нуля (лес −2.2): пол — от земли бойцов
+      const expired = pr.age >= pr.lifetime || distXZ(pr.position, BOSS) > 80 || pr.position.y < fy - 1 ||
+        (pr.path && pr.path.u >= 1) || (pr.path && pr.position.y < fy);
       if (expired) {
         // Кривая броска кончается внутри стража, так что это страховка (например, другой
         // arena.bossPosition в конфиге); болты по-прежнему исчезают молча.
@@ -2327,7 +2328,17 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   function setOpponent(state) { if (PV) PV.setOpponent(state); }
   function applyRemoteHit(hit) { return PV && PV.on ? PV.applyRemoteHit(hit) : { applied: false, reason: 'mode' }; }
 
+  // [FOREST] место старта (settings.startZone, точки дуэли PvP): действует со следующего reset();
+  // null — старт раскладки по умолчанию (layout.playerSpawn).
+  const SPAWN0 = LAY.playerSpawn;
+  function setSpawn(sp) {
+    if (isPlainObject(sp) && Number.isFinite(sp.x) && Number.isFinite(sp.z)) LAY.playerSpawn = { x: sp.x, z: sp.z, yaw: Number.isFinite(sp.yaw) ? sp.yaw : NaN };
+    else LAY.playerSpawn = SPAWN0;
+    return !!LAY.custom;
+  }
+
+
   reset();
-  return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig,
+  return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig, setSpawn,
     attachPvp, setMode, getMode, setOpponent, applyRemoteHit };   // [PVP]
 }

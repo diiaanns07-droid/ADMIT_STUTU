@@ -672,6 +672,7 @@ export function buildHooks(K, PC, opts = {}) {
 
   return {
     get on() { return on; },
+    get floorY() { return Math.min(K.st.p.y, opp.has ? BOSS.y : K.st.p.y); },   // уровень земли дуэли (для «снаряд ушёл в пол»)
     enable, disable, aim, encounter, damage, projectileHit, burst, rune, sigil, preStep, decorate, setOpponent, applyRemoteHit,
     // для сессии
     onAck, myState, respawn, grantSpawnInvuln,
@@ -888,7 +889,9 @@ export function createLocalNet({ channel = 'ashen-net-local', name = '', clock }
 // -----------------------------------------------------------------------------
 // Сессия дуэли: раунды (ведёт хост), приём/отправка сообщений, статистика.
 // -----------------------------------------------------------------------------
-export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = null, arena = null, coach = null } = {}) {
+// remote — соперник от сети №2 (modules/remotePlayer.js: getState() уже интерполирован; st/ev/pr шлёт их сессия).
+// Без remote сессия сама шлёт st (20 Гц) и события и интерполирует соперника (заглушка, node-тесты).
+export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = null, arena = null, coach = null, remote = null } = {}) {
   const PC = mergePvpConfig(cfg);
   const now = typeof clock === 'function' ? clock : () => performance.now();
   const role = net && net.isHost ? 'host' : 'guest';
@@ -902,7 +905,9 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
     rematch: { me: false, opp: false }, oppHello: null, lastRecv: 0, pausedFrom: null, pausedAt: 0,
     stSent: 0, helloSent: 0, deadSent: 0, events: [], remote: [], fightBannerUntil: 0, slowUntil: 0, remoteSeq: 0,
     matchStart: 0, roundStart: 0, roundTimes: [],
+    meReady: true, oppReady: false, readySent: 0, statsSent: 0,
   };
+  const EXT = !!(remote && typeof remote.getState === 'function');
   const sp = resolveSpawns(spawns, arena, PC.spawnOffset);
   const handlers = {};
 
@@ -975,7 +980,6 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
     H.opponent.name = S.oppHello.name; H.opponent.hero = S.oppHello.hero;
     S.lastRecv = now();
     if (first) sendHello(true);
-    if (role === 'host' && S.active && S.phase === 'lobby') startMatch();
   };
   handlers.st = (m) => {
     m = payload(m);
@@ -1010,6 +1014,8 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
     S.lastRecv = now();
     const ph = m.phase;
     if (ph === 'rematch') { S.rematch.opp = true; if (role === 'host' && S.rematch.me && S.phase === 'match_end') startMatch(); return; }
+    if (ph === 'ready') { S.oppReady = true; return; }
+    if (ph === 'stats') { if (Number.isFinite(Number(m.taken))) H.stats.oppTaken = Math.max(0, Number(m.taken)); return; }
     if (ph === 'dead') {
       if (role === 'host' && S.phase === 'fight' && num(m.round, S.round) === S.round) endRound('host', 'ko');
       return;
@@ -1038,7 +1044,14 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
     }
   };
   handlers.bye = () => { S.lastRecv = -1e9; };
+  // соперник сам вышел (сеть №2: событие 'left'; заглушка: 'bye') — техническая победа сразу
+  handlers.left = () => {
+    if (S.phase === 'lobby' || S.phase === 'match_end') { S.oppReady = false; return; }
+    S.score[role] = Math.max(S.score[role], R.toWin);
+    matchEnd(role, 'left', true);
+  };
   function sendHello(force) {
+    if (EXT) return;                          // hello сети №2 шлёт её net.js
     if (!force && now() - S.helloSent < PC.net.helloEveryMs) return;
     S.helloSent = now();
     send('hello', { v: 'ASHEN_NET_1', name: me.name || 'Игрок', hero: me.hero || null, pvp: PVP_API_VERSION });
@@ -1049,7 +1062,12 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
     if (S.active) return;
     S.active = true;
     combat.setMode('pvp');
-    for (const [t, fn] of Object.entries(handlers)) net.on(t, fn);
+    for (const [t, fn] of Object.entries(handlers)) {
+      if (EXT && (t === 'st' || t === 'ev' || t === 'hello')) continue;   // эти каналы ведёт сеть №2
+      net.on(t, fn);
+    }
+    if (!EXT) net.on('bye', handlers.left);
+    if (EXT && net.remote && net.remote.name) { H.opponent.name = String(net.remote.name).slice(0, 24); H.opponent.hero = net.remote.hero || null; S.oppHello = { ...net.remote }; }
     S.lastRecv = now();
     setPhase('lobby');
     H.respawn(mySpawn());
@@ -1059,6 +1077,7 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
     if (!S.active) return;
     S.active = false;
     for (const [t, fn] of Object.entries(handlers)) { try { net.off(t, fn); } catch (e) { /* ignore */ } }
+    try { net.off('bye', handlers.left); } catch (e) { /* ignore */ }
     combat.setMode('boss');
   }
   function leave() {
@@ -1077,9 +1096,15 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
   function beforeUpdate(input) {
     if (!S.active) return input;
     H.setPing(num(net.ping, 0));
-    const st = buf.sample(now());
-    if (st) combat.setOpponent({ ...st, name: H.opponent.name, hero: H.opponent.hero });
-    H.setGhosts(buf.ghosts(now()));
+    if (EXT) {
+      let st = null;
+      try { st = remote.getState(); } catch (e) { st = null; }
+      if (st) combat.setOpponent({ ...st, name: st.name || H.opponent.name, hero: st.hero || H.opponent.hero });
+    } else {
+      const st = buf.sample(now());
+      if (st) combat.setOpponent({ ...st, name: H.opponent.name, hero: H.opponent.hero });
+      H.setGhosts(buf.ghosts(now()));
+    }
     if (S.phase !== 'fight' || H.isDead()) {
       return { ...NEUTRAL, viewYaw: input && input.viewYaw, moveMode: input && input.moveMode, tMs: input && input.tMs };
     }
@@ -1095,8 +1120,8 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
     if (!S.active) return events;
     let out = Array.isArray(events) ? events.slice() : [];
     for (const m of H.drainOutbox()) { const { t, ...p } = m; send(t, p); }
-    // свои события сопернику (для его эффектов)
-    for (const e of out) {
+    // свои события сопернику (для его эффектов); с сетью №2 их пересылает её сессия
+    if (!EXT) for (const e of out) {
       if (PC.forwardEventTypes.includes(e.type)) send('ev', { e: { id: e.id, type: e.type, position: e.position, data: e.data } });
     }
     // смерть в бою
@@ -1113,14 +1138,17 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
     const t = now();
     for (const m of H.drainOutbox()) { const { t: tt, ...p } = m; send(tt, p); }
     if (!S.oppHello) sendHello(false);
-    if (t - S.stSent >= 1000 / PC.net.stHz) {
+    if (!EXT && t - S.stSent >= 1000 / PC.net.stHz) {
       S.stSent = t;
       send('st', { ...H.myState(), name: me.name || 'Игрок', hero: me.hero || null });
     }
+    // готовность (экран боя открыт) и счёт урона для итогов
+    if (S.phase === 'lobby' && S.meReady && t - S.readySent >= 700) { S.readySent = t; send('duel', { phase: 'ready' }); }
+    if (S.phase !== 'lobby' && t - S.statsSent >= 500) { S.statsSent = t; send('duel', { phase: 'stats', taken: Math.round(H.stats.taken * 10) / 10 }); }
     const el = (t - S.phaseAt) / 1000;
     // обрыв: пауза «Соперник отключился…», через disconnectWait — техническая победа
     const live = S.phase === 'countdown' || S.phase === 'fight' || S.phase === 'round_end';
-    const lost = (net.state === 'lost' || t - S.lastRecv > PC.net.silentAfterMs);
+    const lost = net.state === 'lost' || (!EXT && t - S.lastRecv > PC.net.silentAfterMs);
     if (live && lost) {
       S.pausedFrom = S.phase; S.pausedAt = t;
       setPhase('paused', S.phaseAt);
@@ -1141,7 +1169,8 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
       return;
     }
     if (role !== 'host') return;
-    if (S.phase === 'countdown' && el >= R.countdown) beginFight();
+    if (S.phase === 'lobby' && S.meReady && S.oppReady) startMatch();
+    else if (S.phase === 'countdown' && el >= R.countdown) beginFight();
     else if (S.phase === 'fight' && el >= R.roundTime) {
       const mine = H.hpFrac(), theirs = num(H.opponent.hp, 0) / Math.max(1, num(H.opponent.maxHp, 1));
       endRound(Math.abs(mine - theirs) < 0.005 ? null : mine > theirs ? 'host' : 'guest', 'time');
@@ -1169,7 +1198,7 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
     const el = (t - S.phaseAt) / 1000;
     const v = {
       active: S.active, role, phase: S.phase, round: S.round, score: scoreMe(), toWin: R.toWin,
-      myName: me.name || 'Вы', oppName: H.opponent.name, oppConnected: !!S.oppHello,
+      myName: me.name || 'Вы', oppName: H.opponent.name, oppConnected: !!S.oppHello || EXT, oppReady: S.oppReady,
       countdown: S.phase === 'countdown' ? Math.max(0, R.countdown - el) : 0,
       fightBanner: S.phase === 'fight' && t < S.fightBannerUntil,
       roundTime: S.phase === 'fight' ? el : 0,
@@ -1192,6 +1221,7 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
   }
   return {
     start, stop, leave, requestRematch, beforeUpdate, afterUpdate, frame, timeScale, getView,
+    setReady(v) { S.meReady = !!v; }, get external() { return EXT; },
     get active() { return S.active; }, get phase() { return S.phase; }, get role() { return role; },
     get hooks() { return H; }, get state() { return S; }, buffer: buf, spawns: sp, config: PC,
   };
@@ -1295,7 +1325,7 @@ export function createPvpView({ THREE, scene, camera, root, onRematch, onMenu, e
     $('.pvp-mys').textContent = v.score[0]; $('.pvp-ops').textContent = v.score[1];
     $('.pvp-on').textContent = v.oppName || 'Соперник';
     $('.pvp-rd').textContent = v.phase === 'lobby' ? 'ДУЭЛЬ' : `РАУНД ${v.round}${v.phase === 'fight' ? ' · ' + Math.floor(v.roundTime) + ' с' : ''}${v.ping ? ' · ' + v.ping + ' мс' : ''}`;
-    lobby.textContent = v.phase === 'lobby' ? (v.oppConnected ? 'Соперник найден…' : 'Ожидание соперника… (откройте вторую вкладку с ?pvp=local)') : '';
+    lobby.textContent = v.phase === 'lobby' ? (v.oppReady ? 'Соперник готов…' : v.oppConnected ? 'Ждём, пока соперник войдёт в бой…' : 'Ожидание соперника…') : '';
     if (v.phase === 'countdown') {
       const n = Math.ceil(v.countdown);
       center1(n > 0 ? String(n) : 'БОЙ!', n > 0 ? '' : 'fight', n > 0 ? `раунд ${v.round}` : '');
@@ -1331,7 +1361,7 @@ export function createPvpView({ THREE, scene, camera, root, onRematch, onMenu, e
         stub.g.position.y += o.dead ? 0.4 : 0;
       }
     }
-    if (o && camera && _v) {
+    if (o && camera && _v && !externalModel) {
       _v.set(o.position.x, o.position.y + 2.15, o.position.z).project(camera);
       const vis = _v.z < 1 && Math.abs(_v.x) < 1.2 && Math.abs(_v.y) < 1.2;
       tag.style.display = vis ? '' : 'none';
@@ -1345,9 +1375,10 @@ export function createPvpView({ THREE, scene, camera, root, onRematch, onMenu, e
   }
   function dispose() {
     el.remove();
+    if (tag) tag.remove();
     if (stub) { scene.remove(stub.g); stub.g.traverse((m) => { if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); }); }
   }
-  return { update, dispose, el, get stub() { return stub; } };
+  return { update, dispose, el, external: !!externalModel, get stub() { return stub; } };
 }
 
 // -----------------------------------------------------------------------------
@@ -1365,9 +1396,11 @@ export function createPvpController({ THREE, scene, camera, combat, config, sett
     return d && Array.isArray(d.spawns) ? d.spawns : null;
   })).then((sp) => { if (Array.isArray(sp)) spawns = sp; return sp; }).catch(() => null));
 
+  let external = false;           // соперника рисует сеть №2 (remotePlayer): своя капсула и табличка не нужны
   function ensureView() {
-    if (view) return view;
-    view = createPvpView({ THREE, scene, camera, root: uiRoot, externalModel: !!host.remoteModel,
+    if (view && view.external === external) return view;
+    if (view) view.dispose();
+    view = createPvpView({ THREE, scene, camera, root: uiRoot, externalModel: external,
       onRematch: () => { if (session) session.requestRematch(); },
       onMenu: () => { stop(); if (host.exitToMenu) host.exitToMenu(); },
     });
@@ -1397,26 +1430,34 @@ export function createPvpController({ THREE, scene, camera, combat, config, sett
       begin(net, { name: (settings && settings.netName) || (net.isHost ? 'Хост' : 'Гость') });
     } finally { starting = false; }
   }
-  // для лобби №2: готовое соединение C6 (host()/join() уже выполнены)
+  // для лобби №2 (app.onNetReady): info = { net, remote, isHost, code, opponent, mode, seed } — соединение уже есть
   function startWithNet(n, opts = {}) {
-    if (session) stop();
+    if (session) stop(true);
     net = n;
+    external = !!(opts.remote && typeof opts.remote.getState === 'function');
     ensureView();
     return forestReady().then(() => begin(n, opts));
   }
   function begin(n, opts) {
     session = createPvpSession({
-      combat, net: n, cfg: PC, clock, spawns, arena,
+      combat, net: n, cfg: PC, clock, spawns, arena, remote: external ? opts.remote : null,
       me: { name: opts.name || (settings && settings.netName) || 'Игрок', hero: opts.hero || (settings && settings.hero) || null },
       coach: host.coach,
     });
     session.start();
-    if (host.startFight) host.startFight();
+    // DEBUG — сразу в бой; с камерой — обычный путь (камера → калибровка → «В бой»), матч начнётся,
+    // когда оба откроют экран боя (готовность шлёт сессия)
+    const dbg = typeof host.isDebug === 'function' ? host.isDebug() : true;
+    if (dbg || !host.toCamera) { if (host.startFight) host.startFight(); } else host.toCamera();
     return session;
   }
-  function stop() {
+  function stop(keepNet) {
     if (session) { try { session.leave(); } catch (e) { /* ignore */ } session = null; }
-    if (net) { try { net.close(); } catch (e) { /* ignore */ } net = null; }
+    if (net && !keepNet) {
+      if (external && host.leaveNet) { try { host.leaveNet(); } catch (e) { /* ignore */ } }
+      else { try { net.close(); } catch (e) { /* ignore */ } }
+    }
+    if (!keepNet) net = null;
     if (view) view.update(null, null);
   }
   return {
@@ -1432,8 +1473,9 @@ export function createPvpController({ THREE, scene, camera, combat, config, sett
     beforeUpdate(input) { return session ? session.beforeUpdate(input) : input; },
     afterUpdate(events) { return session ? session.afterUpdate(events) : events; },
     timeScale() { return session ? session.timeScale() : 1; },
-    frame(snap) {
+    frame(snap, screen) {
       if (!session) { if (view) view.update(null, null); return; }
+      if (screen) session.setReady(screen === 'playing' || screen === 'paused');
       session.frame();
       ensureView().update(session.getView(), snap);
     },

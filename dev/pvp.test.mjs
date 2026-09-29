@@ -101,6 +101,24 @@ test('искра попадает: hit → hitAck → boss_hit у атакующ
   near(D.A.getSnapshot().stats.damageDealt, ph[0].data.amount, 0.01, 'damageDealt');
 });
 
+test('поляна ниже нуля (лес, y = −2.2): искра и сфера долетают', () => {
+  const layout = { arena: { x: 0, z: 0, r: 13 }, colliders: [], groundY: () => -2.2, isWalkable: () => true, playerSpawn: { x: 0, z: 6 } };
+  let T = 0; const clock = () => T;
+  const pair = createMemoryNetPair({ latencyMs: 30, clock });
+  const A = createCombat({ config: {}, bossBrain: idleBrain(), layout }), B = createCombat({ config: {}, bossBrain: idleBrain(), layout });
+  const sA = createPvpSession({ combat: A, net: pair.a, clock }), sB = createPvpSession({ combat: B, net: pair.b, clock });
+  sA.start(); sB.start();
+  const ev = [];
+  const step = (ia) => { T += 1000 / 60; pair.pump(); for (const [s, c, i] of [[sA, A, ia], [sB, B, null]]) { c.update(1 / 60, s.beforeUpdate(i || inp())); for (const e of s.afterUpdate(c.drainEvents())) ev.push(e); s.frame(); } };
+  for (let i = 0; i < 60 * 6 && sA.phase !== 'fight'; i++) step();
+  for (let i = 0; i < 100; i++) step();
+  near(A.getSnapshot().player.position.y, -2.2, 1e-9, 'герой на поляне');
+  step(inp({ spark: true })); for (let i = 0; i < 90; i++) step();
+  step(inp({ throw: { kind: 'orb', size: 0.6, power: 0.8, aimX: 0 } })); for (let i = 0; i < 150; i++) step();
+  const hits = ev.filter((e) => e.type === 'player_hit').map((e) => e.data.attackKind);
+  assert(hits.includes('spark') && hits.includes('sphere'), `попадания: ${hits}`);
+});
+
 test('неуязвимость 1,5 с после появления', () => {
   const D = makeDuel();
   D.untilPhase('fight');
