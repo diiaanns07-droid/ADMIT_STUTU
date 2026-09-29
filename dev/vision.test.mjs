@@ -1522,6 +1522,29 @@ test('C15 read(): conjure/throw кистей очищаются и сливаю�
   });
 });
 
+test('C18 [CONTROLS] запись кистей: startRecording → кадры те же, что уходят в распознавание; takeRecording очищает; stop — выключает', async () => {
+  const fh = makeFakeHands();
+  await withShell({ handInterpreter: fh.api }, async (env, v) => {
+    await v.start();
+    eq(v.recordingSize(), 0, 'без startRecording не пишется');
+    await pump(env, 300, null);
+    eq(v.recordingSize(), 0, 'и после кадров');
+    v.startRecording({ test: 1 });
+    const p0 = fh.pushes;
+    await pump(env, 500, null);
+    const n = v.recordingSize();
+    ok(n > 5 && n === fh.pushes - p0, `записано ${n}, в распознавание ушло ${fh.pushes - p0}`);
+    const rec = JSON.parse(JSON.stringify(v.takeRecording()));
+    ok(rec.kind === 'ashen-hands' && rec.frames.length === n && rec.test === 1 && rec.moveMode, 'формат и метаданные');
+    ok(rec.frames.every((f, i) => i === 0 || f.t > rec.frames[i - 1].t), 'время растёт');
+    eq(v.recordingSize(), 0, 'takeRecording — с чистого листа');
+    await pump(env, 200, null);
+    ok(v.recordingSize() > 0, 'запись продолжается');
+    ok(v.stopRecording().frames.length > 0, 'stopRecording отдаёт остаток');
+    eq(v.takeRecording(), null, 'после stop записи нет');
+  });
+});
+
 // ───────────────────────────── запуск ─────────────────────────────
 const only = process.argv[2] ? new RegExp(process.argv[2]) : null;
 let passed = 0;
