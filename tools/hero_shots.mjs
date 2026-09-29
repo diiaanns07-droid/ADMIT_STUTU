@@ -98,7 +98,7 @@ try {
     await page.goto(`http://127.0.0.1:${PORT}/`);
     await page.waitForFunction(() => !!window.__ASHEN__, null, { timeout: 60000 });
     await page.waitForFunction(() => { const a = __ASHEN__.worldAssets(); return a && a.pending === 0; }, null, { timeout: 60000 }).catch(() => {});
-    if (hero !== 'ashen') await page.waitForFunction(() => { const h = __ASHEN__.hero(); return h && h.ready; }, null, { timeout: 90000 }).catch(() => log.push('hero not ready'));
+    await page.waitForFunction(() => { const h = __ASHEN__.hero(); return h && h.ready; }, null, { timeout: 90000 }).catch(() => log.push('hero not ready'));
     await sleep(Number(argOf('--menu-wait', '2500')));
     // SwiftShader даёт ~1 кадр/с: кадры > 0,25 с игра считает разрывом и время не идёт — прокручиваем героя вручную
     const steps = Number(argOf('--menu-step', '0'));

@@ -116,7 +116,7 @@ export function patchHeroLight(THREE, mat) {
     totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * hDiff * hMet;
     vec3 hH = normalize( heroKeyDir + hV );
     float hSpec = pow( saturate( dot( hN, hH ) ), mix( 90.0, 12.0, roughnessFactor ) ) * ( 1.0 - roughnessFactor );
-    totalEmissiveRadiance += heroKeyColor * hSpec * mix( vec3( 0.5 ), diffuseColor.rgb, metalnessFactor );
+    totalEmissiveRadiance += heroKeyColor * hSpec * mix( vec3( 0.5 ), diffuseColor.rgb * 2.2 + 0.08, metalnessFactor ) * ( 1.0 + 1.2 * metalnessFactor );
     float hF = pow( 1.0 - saturate( dot( hN, hV ) ), 2.6 );
     totalEmissiveRadiance += heroRimColor * hF * saturate( dot( hN, heroRimDir ) * 0.6 + 0.45 );
     totalEmissiveRadiance += diffuseColor.rgb * heroFillColor * ( 0.4 + 0.6 * saturate( dot( hN, hV ) ) ) * hMet;

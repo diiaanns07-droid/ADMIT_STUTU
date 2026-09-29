@@ -353,6 +353,44 @@ export function buildQuiver(THREE, M, { h = 0.52, arrows = 8 } = {}) {
   return grp;
 }
 
+// ---------------------------------------------------------------- брошь-эмблема
+// Контур эмблемы героя (в пределах радиуса R): 'flame' | 'moon' | 'bolt' | 'leaf'.
+export function emblemShape(THREE, kind, R = 0.03) {
+  const s = new THREE.Shape();
+  const k = R / 60;
+  const P = (x, y) => [x * k, -y * k];
+  if (kind === 'moon') {
+    s.absarc(0, 0, 52 * k, Math.PI * 0.28, Math.PI * 1.72, false);
+    s.absarc(18 * k, 0, 42 * k, Math.PI * 1.62, Math.PI * 0.38, true);
+  } else if (kind === 'bolt') {
+    const pts = [[10, -62], [-26, 4], [-2, 4], [-14, 60], [28, -12], [4, -12]];
+    s.moveTo(...P(...pts[0])); for (const p of pts.slice(1)) s.lineTo(...P(...p)); s.closePath();
+  } else if (kind === 'leaf') {
+    s.moveTo(...P(0, 60)); s.bezierCurveTo(...P(-50, 20), ...P(-40, -40), ...P(0, -62)); s.bezierCurveTo(...P(40, -40), ...P(50, 20), ...P(0, 60));
+  } else {
+    s.moveTo(...P(0, 58)); s.bezierCurveTo(...P(-46, 30), ...P(-30, -12), ...P(-8, -30)); s.bezierCurveTo(...P(-14, -2), ...P(4, 6), ...P(6, 18));
+    s.bezierCurveTo(...P(10, -10), ...P(22, -30), ...P(4, -64)); s.bezierCurveTo(...P(40, -36), ...P(48, 20), ...P(0, 58));
+  }
+  return s;
+}
+// Кованая брошь: купол с кантом и бусинами, объёмная эмблема, камень, светящаяся нить. Лицом к +z.
+export function buildBrooch(THREE, M, { emblem = 'flame', r = 0.05 } = {}) {
+  const grp = new THREE.Group(); grp.name = 'brooch';
+  const dome = latheFromPoints(THREE, [[0.0, 0.006], [r * 0.4, 0.0056], [r * 0.75, 0.0042], [r * 0.95, 0.002], [r, 0.0]], 32, 4);
+  dome.rotateX(Math.PI / 2);
+  grp.add(new THREE.Mesh(dome, M.metal));
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(r, 0.0045, 8, 48), M.trim); grp.add(rim);
+  const rim2 = new THREE.Mesh(new THREE.TorusGeometry(r * 0.8, 0.0016, 6, 48), M.inlay); rim2.position.z = 0.0045; grp.add(rim2);
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * TAU, b = new THREE.Mesh(new THREE.SphereGeometry(i % 3 ? 0.0028 : 0.0042, 8, 6), M.trim);
+    b.position.set(Math.cos(a) * r * 1.08, Math.sin(a) * r * 1.08, 0.002); grp.add(b);
+  }
+  const eg = new THREE.ExtrudeGeometry(emblemShape(THREE, emblem, r * 0.62), { depth: 0.003, bevelEnabled: true, bevelThickness: 0.0015, bevelSize: 0.0012, bevelSegments: 2, curveSegments: 16 });
+  const em = new THREE.Mesh(eg, M.trim); em.position.z = 0.0068; grp.add(em);
+  const g = new THREE.Mesh(gem(THREE, { r: r * 0.13, h: r * 0.26, n: 8 }), M.crystal); g.rotation.x = Math.PI / 2; g.position.set(0, -r * 0.05, 0.0135); grp.add(g);
+  return grp;
+}
+
 // ---------------------------------------------------------------- текстуры плаща
 // Ткань с плетением, вышитая кайма (побеги и ромбы) по краям и подолу, герб на спине.
 // → { map (sRGB), bump, emissive } — холсты 512×1024, u поперёк, v сверху вниз.

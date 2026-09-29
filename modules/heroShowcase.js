@@ -104,7 +104,7 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     const reduced = !!settings.reducedMotion;
     S.angle += dt * (reduced ? 0.03 : 0.11);
     const hp = heroRoot.position, yaw = heroRoot.rotation.y + 0.18 + 0.56 * Math.sin(S.angle);
-    const dist = 3.05 + 0.2 * Math.sin(S.angle * 0.7);
+    const dist = 2.8 + 0.18 * Math.sin(S.angle * 0.7);
     camera.position.set(hp.x + Math.sin(yaw) * dist, hp.y + 1.38 + 0.08 * Math.sin(S.angle * 0.5), hp.z + Math.cos(yaw) * dist);
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
     _tgt.set(hp.x - rx * 0.85, hp.y + 1.12, hp.z - rz * 0.85);
@@ -116,9 +116,9 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       const q = settings.quality === 'low' ? 0.8 : 1;
       HL.heroKeyDir.value.copy(key.position).sub(c).normalize().transformDirection(camera.matrixWorldInverse);
       HL.heroRimDir.value.copy(rim.position).sub(c).normalize().transformDirection(camera.matrixWorldInverse);
-      HL.heroKeyColor.value.setRGB(1.0, 0.8, 0.62).multiplyScalar(1.15 * w * q);
-      HL.heroRimColor.value.setRGB(0.6, 0.76, 1.0).multiplyScalar(1.5 * w);
-      HL.heroFillColor.value.setRGB(0.32, 0.38, 0.5).multiplyScalar(0.22 * w);
+      HL.heroKeyColor.value.setRGB(1.0, 0.82, 0.66).multiplyScalar(1.45 * w * q);
+      HL.heroRimColor.value.setRGB(0.62, 0.78, 1.0).multiplyScalar(2.0 * w);
+      HL.heroFillColor.value.setRGB(0.36, 0.4, 0.52).multiplyScalar(0.3 * w);
     }
     const pf = getPostfx && getPostfx();
     if (pf && typeof pf.setFocus === 'function') { try { _p.copy(hp).setY(hp.y + 1.2); pf.setFocus(camera.position.distanceTo(_p)); } catch (e) { /* ignore */ } }

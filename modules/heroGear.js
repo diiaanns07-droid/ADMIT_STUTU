@@ -33,7 +33,7 @@ const PRESETS = {
   sylvan: {
     metal: 0xd8c08a, metal2: 0xe8d6a0, leather: 0x8a6a4a, cloth: 0xe8e4d8, glow: 0x7fe8ff,
     pauldrons: null, bracers: false, belt: 'pouches', pouches: 1, dagger: 'left', rings: false, sigil: false,
-    cape: { w: 0.5, len: 0.98, color: 0xe6e2d6, trim: 0xc9a45c, emblem: 'leaf' }, bow: { wood: 0xe9dfc8 }, quiver: 'hip',
+    cape: { w: 0.5, len: 0.98, color: 0xd6cdb8, trim: 0xc9a45c, emblem: 'leaf' }, bow: { wood: 0xb9a888, rough: 0.62 }, quiver: 'hip',
   },
   // Тёмная чародейка на теле Quaternius: воронёные наплечники, длинный плащ, посох с кристаллом ночи
   witchQ: {
@@ -56,7 +56,7 @@ const PRESETS = {
 };
 
 import { patchHeroLight } from './heroShading.js';
-import { buildStaff, buildBow, buildArrow, buildQuiver, capeTextures, runeRingTexture, tube } from './heroForge.js';
+import { buildStaff, buildBow, buildArrow, buildQuiver, buildBrooch, capeTextures, runeRingTexture, tube } from './heroForge.js';
 import { createCloth, createStrands, fitCapsules } from './heroCloth.js';
 
 // ---------------------------------------------------------------- общие процедурные текстуры
@@ -165,7 +165,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     leather: Mt(new Std({ name: 'gear-leather', color: P.leather, metalness: 0, roughness: 0.72, roughnessMap: leath, bumpMap: leath, bumpScale: 0.6, ...(physical ? { sheen: 0.3, sheenRoughness: 0.6, sheenColor: new THREE.Color(0.35, 0.3, 0.25) } : {}) })),
     runeMetal: Mt(new Std({ name: 'gear-rune', color: P.metal, metalness: 1, roughness: 0.4, roughnessMap: rough, emissive: P.glow, emissiveMap: rune, emissiveIntensity: 2.4 })),
     glow: Mt(new THREE.MeshBasicMaterial({ name: 'gear-glow', color: new THREE.Color(P.glow).multiplyScalar(2.2), toneMapped: true })),
-    wood: Mt(new Std({ name: 'gear-wood', color: (P.staff && P.staff.wood) || (P.bow && P.bow.wood) || 0x3b2a1e, metalness: 0, roughness: 0.52, roughnessMap: leath, ...(physical ? { clearcoat: 0.35, clearcoatRoughness: 0.4 } : {}) })),
+    wood: Mt(new Std({ name: 'gear-wood', color: (P.staff && P.staff.wood) || (P.bow && P.bow.wood) || 0x3b2a1e, metalness: 0, roughness: (P.bow && P.bow.rough) || 0.52, roughnessMap: leath, ...(physical ? { clearcoat: 0.3, clearcoatRoughness: 0.45 } : {}) })),
   };
   // [HERO] оружие: огранённый кристалл (плоские грани, свет изнутри и по кромкам), ядро света, руны
   const glowHex = (P.staff && P.staff.glow) || P.glow;
@@ -323,14 +323,21 @@ export function dressHero(THREE, vrm, opts = {}) {
     stick(grp, chestB, bp[chestB].clone().addScaledVector(UP, -0.02).addScaledVector(FWD, 0.015), modelQ);
   }
 
-  // ---------------- печать клятвы на груди (светящийся знак поверх лат)
+  // ---------------- брошь-эмблема на груди (кованая, с камнем): ставится на поверхность груди лучом по коже
   if (P.sigil && bp[chestB]) {
-    const grp = new THREE.Group(); grp.name = 'sigil';
-    const disk = new THREE.Mesh(G(new THREE.CircleGeometry(0.055, 24)), Mt(new THREE.MeshBasicMaterial({ map: rune, color: new THREE.Color(P.glow).multiplyScalar(2.4), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })));
-    grp.add(disk);
-    const ring = new THREE.Mesh(G(new THREE.TorusGeometry(0.06, 0.006, 5, 28)), mats.trim); grp.add(ring);
-    const core = new THREE.Mesh(G(new THREE.OctahedronGeometry(0.016)), mats.glow); core.position.z = 0.008; grp.add(core);
-    stick(grp, chestB, bp[chestB].clone().addScaledVector(FWD, 0.17).addScaledVector(UP, 0.02), modelQ);
+    const grp = buildBrooch(THREE, mats, { emblem: (P.cape && P.cape.emblem) || 'flame', r: 0.048 });
+    grp.name = 'sigil';
+    const at = bp[chestB].clone().addScaledVector(UP, 0.03);
+    let surf = at.clone().addScaledVector(FWD, 0.17);
+    try {
+      vrm.scene.updateMatrixWorld(true);
+      const rc = new THREE.Raycaster(at.clone().addScaledVector(FWD, 0.6), FWD.clone().negate(), 0, 0.6);
+      const meshes = [];
+      vrm.scene.traverse((o) => { if (o.isSkinnedMesh && o.visible) meshes.push(o); });
+      const hit = rc.intersectObjects(meshes, false)[0];
+      if (hit) surf = hit.point.clone().addScaledVector(FWD, 0.004);
+    } catch (e) { /* без луча — прежнее смещение */ }
+    stick(grp, chestB, surf, modelQ);
   }
 
   // ---------------- наручи
@@ -430,7 +437,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       }
     });
     if (front < -1) front = 0.11;
-    visorMat = Mt(new THREE.MeshBasicMaterial({ color: new THREE.Color(opts.fx.visorEyes).multiplyScalar(3), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    visorMat = Mt(new THREE.MeshBasicMaterial({ color: new THREE.Color(opts.fx.visorEyes).lerp(new THREE.Color(0xff3a08), 0.45).multiplyScalar(1.9), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
     const eyeG = G(new THREE.PlaneGeometry(0.028, 0.0075));
     const grp = new THREE.Group(); grp.name = 'visor-eyes';
     for (const sx of [1, -1]) {
