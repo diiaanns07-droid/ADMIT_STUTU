@@ -774,6 +774,29 @@ test('[V3] ведение героя раскрытой ладонью к кам
   ok(!g.peek(t).shield, 'сжал кулак — щит опустился');
 });
 
+// [V6] щит в «Руле»: то, что раньше поднимало щит само
+test('[V6] «Руль»: ладонь разворачивается из ребра к камере (2D-кисть «растёт») — не щит; толчок — щит', () => {
+  // проверка world-размера здесь выключена: на живом шуме она поворот не отсекает, отсекает нормаль ладони
+  const g = createHandGestures({ moveMode: 'steer', shieldPushScaleCheck: 1 });
+  let t = run(g, 1000, 900, () => [L_AT({ ...SHAPES.open, cy: 0.45, size: 0.13, yaw: 1.45 })], 33, BODYX);
+  const t0 = t;
+  let shield = false;
+  t = run(g, t, 700, (tt) => { shield = shield || g.peek(tt).shield; return [L_AT({ ...SHAPES.open, cy: 0.45, size: 0.13, yaw: 1.45 * (1 - Math.min(1, (tt - t0) / 150)) })]; }, 33, BODYX);
+  ok(!shield, 'разворот ладони — не толчок: ' + JSON.stringify(g.getDebug().left.push));
+  const t1 = t;
+  t = run(g, t, 400, (tt) => [L_AT({ ...SHAPES.open, cy: 0.45, size: 0.13 + 0.05 * Math.min(1, (tt - t1) / 180) })], 33, BODYX);
+  ok(g.peek(t).shield, 'а толчок той же ладонью — щит: ' + JSON.stringify(g.getDebug().left.push));
+});
+
+test('[V6] «Руль»: рука медленно подъезжает к камере (+30 % за 1,5 с) — не щит', () => {
+  const g = createHandGestures({ moveMode: 'steer' });
+  let t = run(g, 1000, 900, () => [L_AT({ ...SHAPES.open, cy: 0.45, size: 0.12 })], 33, BODYX);
+  const t0 = t;
+  let shield = false;
+  t = run(g, t, 1800, (tt) => { shield = shield || g.peek(tt).shield; return [L_AT({ ...SHAPES.open, cy: 0.45, size: 0.12 * (1 + 0.3 * Math.min(1, (tt - t0) / 1500)) })]; }, 33, BODYX);
+  ok(!shield, 'медленный дрейф — не толчок: ' + JSON.stringify(g.getDebug().left.push));
+});
+
 test('джойстик через конвейер кистей: хватка, ведение вправо на экране → moveX > 0, опустить руку → стоп', () => {
   const g = createHandGestures();
   let t = run(g, 1000, 500, () => [L_AT({ ...SHAPES.fist })], 33, BODYX);

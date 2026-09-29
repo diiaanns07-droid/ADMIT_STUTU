@@ -81,22 +81,28 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   // (жест «стоп»); держится, пока ладонь смотрит в камеру. Ведение героя открытой ладонью и
   // хватка джойстика щит больше не включают. shieldHoldMs > 0 — старый путь «ладонь стоит».
   shieldPushRatio: 1.15,   // кисть выросла в кадре (относительно плеч) за shieldPushMs — толчок
-  shieldPushMs: 320,
+  shieldPushMs: 240,       // [V6] 320 → 240: толчок быстрый; в длинном окне медленный дрейф руки набегал до порога
   shieldPushKeepMs: 450,   // толчок годится столько, пока форма «ладонь» признаётся
   shieldHoldMs: 0,
   shieldStickMax: 0.2,     // |выход джойстика| меньше — ладонь «стоит»
   shieldDropMs: 160,       // ладонь отвернулась/сжалась дольше — щит опускается
+  shieldLostMs: 300,       // [V6] кисть пропала из трекинга (смаз, 3–8 кадров) — щит держится дольше: это не «опустил»
   shieldPushShift: 0.5,    // [V3.1] за время толчка центр ладони сдвинулся в плоскости кадра меньше (S): это толчок, а не ведение
   shieldStickStart: 0.25,  // [V3.1] щит поднимается, только если джойстик почти в центре (|выход| меньше)
   // [V6] щит без ложных срабатываний: шум размера кисти и лёгкий наклон руки вперёд при ходьбе в «Руле»
   // щит больше не поднимают, а поднятый случайно — опускается, стоит убрать ладонь назад.
   shieldPushFrames: 2,     // толчок признаётся, только если держится столько кадров подряд (не один выброс шума)
   shieldPushRatioSteer: 1.24, // в «Руле» ладонь и так поднята к камере — толчок нужен заметнее
+  shieldPushScaleCheck: 1.1,  // и размер по world-точкам тоже вырос хотя бы во столько (кисть приблизилась, а не развернулась)
+  shieldPushFast: 1.12,    // и был быстрый участок: размах вырос во столько…
+  shieldPushFastMs: 100,   //   …примерно за столько мс (толчок, а не медленный дрейф руки к камере)
+  shieldPushTurnMax: 0.15, // за время толчка ладонь почти не повернулась (|z| нормали изменился меньше): разворот ладони к камере — не толчок
   shieldConfirmMs: 90,     // ладонь к камере раскрыта хотя бы столько (не мигание формы)
   shieldAfterRaiseMs: 400, // в «Руле»: столько после подъёма руки щит не поднимается (подъём — не толчок)
   shieldRetract: 0.07,     // ладонь вернулась назад: размер < (размер до толчка)·(1 + столько)…
-  shieldRetractMs: 200,    //   …дольше столько — щит опускается
-  shieldScaleTauMs: 80,    // сглаживание размера кисти для проверки «убрал назад»
+  shieldRetractShare: 0.5, //   …или ушла назад больше чем на эту долю толчка (от пика) — что больше…
+  shieldRetractMs: 200,    //   …в сумме столько (шум кадров копилку не обнуляет) — щит опускается
+  shieldScaleTauMs: 50,    // сглаживание размера кисти (оценка по точкам шумит на ~3–5 % от кадра к кадру)
   // парирование (левая): стабильный кулак → раскрытая ладонь к камере
   parryWindowMs: 150,      // от выхода из кулака до ладони к камере (V3.1: 220 → 150)
   parryFistMs: 250,        // [V3.1] кулак держался хотя бы столько (не «перехват» руки при ведении)
@@ -581,6 +587,7 @@ function handFeatures(img, world, aspect, cfg) {
 // поэтому max(|2D| / |3D|) по жёстким отрезкам ладони ≈ масштаб кадра на метр.
 const SCALE_SEGS = [[0, 5], [0, 9], [0, 13], [0, 17], [5, 17]];
 const SCALE_SEGS_2D = [[0, 9, 1], [0, 5, 1], [0, 17, 1.12], [5, 17, 1.45]]; // без world: к длине ладони
+const SPAN_IDS = [0, 1, 5, 9, 13, 17]; // [V6] точки ладони для размаха (размер кисти в кадре для щита)
 function handScale(I, world) {
   const d2 = (a, b) => Math.hypot(I[a].x - I[b].x, I[a].y - I[b].y);
   if (world) {
@@ -667,7 +674,7 @@ export function createHandGestures(configPatch = {}) {
       burstBlockedUntil: -Infinity, pendingBurst: null,
       parryBlockedUntil: -Infinity, sparkBlockedUntil: -Infinity, strokeBlockedUntil: -Infinity,
       stickState: null,
-      shield: { on: false, openSince: null, badSince: null, base: null, backSince: null },
+      shield: { on: false, openSince: null, badSince: null, base: null, peak: null, back: 0, lastT: null },
       stroke: null, trail: [], trailUntil: -Infinity, lastRune: null, runeBlockedUntil: -Infinity, lastRecognition: null,
       tipF: null,
       swipe: { armed: true, until: -Infinity },
@@ -763,34 +770,80 @@ export function createHandGestures(configPatch = {}) {
     // центр ладони почти не сдвигается в плоскости кадра (иначе это ведение джойстика/подъём руки).
     // Пока кисть не «готова» (только что появилась, часто обрезана краем) — история не копится.
     const sw = fin(st.obsSw) && st.obsSw > 0 ? st.obsSw : null;
-    // [V6] размер кисти относительно плеч, сглаженный — для «убрал ладонь назад» (щит опускается)
-    if (sw && f.scale > 1e-6) {
-      const n = f.scale / sw, a = H.scaleN === null || H.lastScaleT === undefined ? 1 : clamp((t - H.lastScaleT) / cfg.shieldScaleTauMs, 0, 1);
-      H.scaleN = H.scaleN === null ? n : H.scaleN + (n - H.scaleN) * a;
+    // [V6] Размер кисти для толчка — два признака, оба сглажены (один шумный кадр толчком не станет):
+    //  • span — средний 2D-размах точек ладони (0, 1, 5, 9, 13, 17): шумит почти вдвое меньше
+    //    f.scale (≈3 % против ≈5 % на кадр), главный признак; он же (÷ ширину плеч) — для «убрал назад»;
+    //  • f.scale — по world-точкам, не зависит от поворота кисти: подтверждает, что кисть правда
+    //    приблизилась, а не развернулась ладонью к камере.
+    {
+      const ids = SPAN_IDS, I = ids.map((i) => ({ x: data.img[i].x * st.aspect, y: data.img[i].y }));
+      let span = 0;
+      for (let i = 0; i < I.length; i++) for (let j = i + 1; j < I.length; j++) span += Math.hypot(I[i].x - I[j].x, I[i].y - I[j].y);
+      span /= (I.length * (I.length - 1)) / 2;
+      const gap = H.lastScaleT === undefined ? Infinity : t - H.lastScaleT;
+      // после пропуска кадров — обычный шаг фильтра на один кадр (пропуск не несёт данных; иначе первый
+      // же шумный кадр после провала целиком попадал в «размер»); кисть потеряна насовсем — с нуля
+      const a = gap > cfg.lostGraceMs ? 1 : 1 - Math.exp(-Math.min(gap, 50) / cfg.shieldScaleTauMs);
+      H.scaleF = H.scaleF === undefined || a === 1 ? f.scale : H.scaleF + (f.scale - H.scaleF) * a;
+      H.spanF = H.spanF === undefined || a === 1 ? span : H.spanF + (span - H.spanF) * a;
+      // насколько ладонь смотрит в камеру (|z| нормали по world-точкам): поворот ладони к камере тоже
+      // «растит» кисть в 2D — это не толчок
+      const nz = f.n3 ? Math.abs(f.n3.z) : null;
+      H.nzF = nz === null ? null : H.nzF == null || a === 1 ? nz : H.nzF + (nz - H.nzF) * a;
+      H.scaleN = sw && H.spanF > 1e-6 ? H.spanF / sw : null;
       H.lastScaleT = t;
-    } else H.scaleN = null;
+    }
     if (!ready(H, t)) { H.scaleHist.length = 0; H.pushRun = 0; }
     else {
       const pcx = (data.img[0].x + data.img[9].x) / 2 * st.aspect, pcy = (data.img[0].y + data.img[9].y) / 2;
-      H.scaleHist.push({ t, s: f.scale, sw, x: pcx, y: pcy });
+      H.scaleHist.push({ t, s: H.scaleF, p: H.spanF, nz: H.nzF, sw, x: pcx, y: pcy });
       while (H.scaleHist.length > 30 || (H.scaleHist.length && t - H.scaleHist[0].t > cfg.shieldPushMs + 60)) H.scaleHist.shift();
       const hs = H.scaleHist, n = hs.length, b = hs[0];
-      let pushing = false, base = 0;
-      if (n >= 3 && t - b.t >= cfg.shieldPushMs * 0.5 && b.s > 1e-6) {
+      let pushing = false, base = 0, baseNz = null;
+      const ratio = moveMode === 'steer' ? cfg.shieldPushRatioSteer : cfg.shieldPushRatio;
+      if (n >= 3 && t - b.t >= cfg.shieldPushMs * 0.5 && b.s > 1e-6 && b.p > 1e-6) {
         // размер образца в масштабе текущих плеч (наклон всем корпусом не считается);
-        // до и после — по два кадра: один шумный кадр MediaPipe толчком не станет
-        const inNow = (q) => (sw && q.sw ? q.s * sw / q.sw : q.s);
-        base = (inNow(hs[0]) + inNow(hs[1])) / 2;
-        const cur = (f.scale + inNow(hs[n - 2])) / 2;
+        // база — минимум в окне (откуда толчок начался): рука перед толчком могла чуть отъехать назад
+        const k = (q) => (sw && q.sw ? sw / q.sw : 1);
+        let minP = Infinity, minS = Infinity, minI = 0;
+        for (let i = 0; i < n - 1; i++) {
+          const pi = hs[i].p * k(hs[i]);
+          if (pi < minP) { minP = pi; minI = i; }
+          minS = Math.min(minS, hs[i].s * k(hs[i]));
+        }
+        base = minP;
+        baseNz = hs[minI].nz;
+        const turned = H.nzF !== null && baseNz !== null ? Math.abs(H.nzF - baseNz) : 0;
+        const cur = (H.spanF + hs[n - 2].p * k(hs[n - 2])) / 2;
+        const scaleUp = (H.scaleF + hs[n - 2].s * k(hs[n - 2])) / 2 / minS;
         const shift = Math.hypot(pcx - b.x, pcy - b.y) / Math.max(1e-4, f.scale);
-        const ratio = moveMode === 'steer' ? cfg.shieldPushRatioSteer : cfg.shieldPushRatio;
-        pushing = base > 1e-6 && cur / base >= ratio && shift < cfg.shieldPushShift;
+        // толчок — быстрый: где-то в окне размах вырос на shieldPushFast за ~shieldPushFastMs.
+        // Медленный дрейф руки к камере (≈3 % за такое время) так не может, сколько бы ни набежало за окно
+        let fast = 0;
+        for (let j = 1, i = 0; j < n; j++) {
+          while (i + 1 < j && hs[j].t - hs[i + 1].t >= cfg.shieldPushFastMs) i++;
+          if (hs[j].t - hs[i].t >= cfg.shieldPushFastMs * 0.6) fast = Math.max(fast, (hs[j].p * k(hs[j])) / Math.max(1e-6, hs[i].p * k(hs[i])));
+        }
+        pushing = base > 1e-6 && cur / base >= ratio && fast >= cfg.shieldPushFast && scaleUp >= cfg.shieldPushScaleCheck
+          && shift < cfg.shieldPushShift && turned < cfg.shieldPushTurnMax;
+        H.pushDbg = { span: cur / Math.max(1e-6, base), fast, scale: scaleUp, shift, turned };
+      }
+      // толчок уже начался (кадр подтверждения ещё не набран), а кисть на миг пропала из трекинга:
+      // за пропуск окно «уезжает» внутрь толчка — досчитываем его от закреплённой точки старта
+      const P0 = H.pushPin;
+      if (!pushing && H.pushRun > 0 && P0 && t - P0.t <= cfg.shieldPushKeepMs) {
+        const cur = sw && P0.sw ? H.spanF / sw : H.spanF, ref = sw && P0.sw ? P0.pn : P0.p;
+        const turned = H.nzF !== null && P0.nz !== null ? Math.abs(H.nzF - P0.nz) : 0;
+        pushing = cur / Math.max(1e-6, ref) >= ratio && turned < cfg.shieldPushTurnMax;
       }
       if (pushing) {
         H.pushRun++;
-        if (H.pushRun === 1) H.pushBaseRun = sw ? base / sw : null;   // размер до толчка (в ширинах плеч)
+        if (H.pushRun === 1) {
+          H.pushBaseRun = sw ? base / sw : null;   // размах ладони до толчка (в ширинах плеч)
+          H.pushPin = { t, p: base, pn: sw ? base / sw : null, sw: !!sw, nz: baseNz };
+        }
         if (H.pushRun >= cfg.shieldPushFrames) { H.pushAt = t; H.pushBase = H.pushBaseRun; }
-      } else H.pushRun = 0;
+      } else { H.pushRun = 0; H.pushPin = null; }
     }
   }
 
@@ -895,7 +948,12 @@ export function createHandGestures(configPatch = {}) {
       // [ОШИБКА] толчок раскрытой левой был, но ладонь смотрит вбок или тыльной стороной
       if (!busy && L.present && L.lastSeen === t && L.rawShape === 'open' && L.palmFacing !== 'camera' && t - L.pushAt <= 250) hint('shield_palm', t, { side: 'left' });
       S.openSince = null;
-      if (S.on) { if (S.badSince === null) S.badSince = t; if (busy || t - S.badSince >= cfg.shieldDropMs) { S.on = false; S.badSince = null; S.base = null; S.backSince = null; } }
+      if (S.on) {
+        if (S.badSince === null) S.badSince = t;
+        // кисть видна, но не ладонь к камере — опускаем быстро; кисть просто пропала из трекинга — ждём дольше
+        const seenWrong = L.present && L.lastSeen === t;
+        if (busy || t - S.badSince >= (seenWrong ? cfg.shieldDropMs : cfg.shieldLostMs)) { S.on = false; S.badSince = null; S.base = null; S.back = 0; }
+      }
       return;
     }
     S.badSince = null;
@@ -903,10 +961,14 @@ export function createHandGestures(configPatch = {}) {
     if (S.on) {
       // [V6] ладонь убрали назад (к размеру до толчка) — щит опускается, даже если она к камере:
       // иначе в «Руле» случайный щит держался бы, пока рука ведёт героя (ладонь и так к камере)
-      const back = S.base !== null && L.scaleN !== null && L.scaleN < S.base * (1 + cfg.shieldRetract);
-      if (!back) S.backSince = null;
-      else if (S.backSince === null) S.backSince = t;
-      else if (t - S.backSince >= cfg.shieldRetractMs) { S.on = false; S.backSince = null; S.base = null; L.pushAt = -Infinity; }
+      if (S.base !== null && L.scaleN !== null) {
+        S.peak = Math.max(S.peak || 0, L.scaleN);
+        const thr = Math.max(S.base * (1 + cfg.shieldRetract), S.peak - (S.peak - S.base) * cfg.shieldRetractShare);
+        const dt = S.lastT === null ? 0 : Math.min(100, t - S.lastT);
+        S.back = L.scaleN < thr ? S.back + dt : Math.max(0, S.back - dt);
+        if (S.back >= cfg.shieldRetractMs) { S.on = false; S.back = 0; S.base = null; L.pushAt = -Infinity; }
+      }
+      S.lastT = t;
       return;
     }
     const so = mover().read(t);
@@ -917,8 +979,8 @@ export function createHandGestures(configPatch = {}) {
     const justRaised = so && so.mode === 'steer' && fin(so.raisedAt) && t - so.raisedAt < cfg.shieldAfterRaiseMs;
     const pushed = t - L.pushAt <= cfg.shieldPushKeepMs && mag < cfg.shieldStickStart && confirmed && !justRaised;
     if (pushed || (cfg.shieldHoldMs > 0 && still && t - S.openSince >= cfg.shieldHoldMs)) {
-      S.on = true; S.backSince = null;
-      S.base = pushed ? L.pushBase : null;
+      S.on = true; S.back = 0; S.lastT = t;
+      S.base = pushed ? L.pushBase : null; S.peak = L.scaleN;
     }
   }
 
@@ -1603,6 +1665,7 @@ export function createHandGestures(configPatch = {}) {
       thumbSpread: H.feat ? Math.round(H.feat.thumbSpread * 100) / 100 : null,
       pinch: H.feat ? Math.round(H.feat.pinch * 100) / 100 : null,
       charge: Math.round(H.charge * 100) / 100,
+      push: H.pushDbg ? { span: Math.round(H.pushDbg.span * 100) / 100, fast: Math.round(H.pushDbg.fast * 100) / 100, scale: Math.round(H.pushDbg.scale * 100) / 100, shift: Math.round(H.pushDbg.shift * 100) / 100, turned: Math.round(H.pushDbg.turned * 100) / 100 } : null,
     });
     return {
       version: HAND_GESTURES_VERSION,
