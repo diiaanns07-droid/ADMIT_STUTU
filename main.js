@@ -151,6 +151,8 @@ const effects = make('effects.js', () => createEffects({ THREE, scene, camera, r
 try {
   if (effects.setAnchors) effects.setAnchors(() => (heroModel && typeof heroModel.getAnchors === 'function' ? heroModel.getAnchors() : (world && typeof world.getAnchors === 'function' ? world.getAnchors() : null)));
   if (effects.setGround && worldLayout && typeof worldLayout.groundY === 'function') effects.setGround(worldLayout.groundY);
+  // [VFX] PvP: заклинания соперника — от рук его модели (net/session.js → modules/remotePlayer.js getAnchors)
+  if (effects.setRemoteAnchors) effects.setRemoteAnchors(() => (netSession && netSession.remote && typeof netSession.remote.getAnchors === 'function' ? netSession.remote.getAnchors() : null));
 } catch (e) { console.warn('[ASHEN] effects V6 hooks', e); }
 const debugInput = createDebugInput(window);
 // Постобработка (core/postfx.js) грузится динамически: до готовности и при любой ошибке — обычный render().

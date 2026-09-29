@@ -584,4 +584,32 @@ export function register(fx) {
     }
     for (const [id, r] of rTr) if (r.seen !== rTag) { if (r.tr) { try { r.tr.stop(); } catch (e) { /* ignore */ } } rTr.delete(id); }
   });
+
+  // ---------------------------------------------------------------- [VFX] рывок, оберег, бастион соперника (net/session.js)
+  const _ro = new V3(), _rf = new V3();
+  fx.on('player_dash', (ev, d) => {
+    const P = fx.E.rival;
+    fx.anchor('feet', _ro, true); fx.anchor('chest', _rf, true);
+    kit.emit({ at: _rf, radius: 0.35, count: 26, speed: [1, 3], life: [0.2, 0.4], size: [0.1, 0.03], ramp: 'rival', intensity: 2.4, sprite: 'streak', stretch: 0.03, drag: 3, rival: true, essential: true });
+    kit.emit({ at: { x: _ro.x, y: _ro.y + 0.05, z: _ro.z }, count: 10, radius: 0.3, speed: [0.5, 1.8], life: [0.5, 0.8], size: [0.2, 0.5], ramp: 'dust', alpha: 0.6, sprite: 'smoke', blend: 'alpha', drag: 2.5, gravity: -0.2 });
+    kit.flash(_rf, { color: P.hot, size: [0.3, 1.1], dur: 0.2, intensity: 1.8, sprite: 'glow', pull: 0.6, rival: true });
+    return true;
+  }, (d) => fx.isRemote(d));
+  fx.on('ward_start', (ev, d) => {
+    const P = fx.E.rival;
+    fx.anchor('chest', _rf, true);
+    kit.flash(_rf, { color: P.hot, size: [0.4, 1.4], dur: 0.45, intensity: 1.8, sprite: 'ring', pull: 0.6, rival: true });
+    kit.emit({ at: _rf, shape: 'shell', radius: 0.7, count: 24, speed: [0.1, 0.4], life: [0.6, 1], size: [0.06, 0.01], ramp: 'rival', intensity: 2.4, sprite: 'spark', rival: true });
+    return true;
+  }, (d) => fx.isRemote(d));
+  fx.on('bastion_start', (ev, d) => {
+    const P = fx.E.rival;
+    fx.anchor('feet', _ro, true);
+    if (fx.glyph) { try { fx.glyph.spawn({ pos: { x: _ro.x, y: _ro.y + 0.04, z: _ro.z }, radius: 1.6, symbol: 'gate', style: 'sigil', color: P.mid, hot: P.core, intensity: 1.6, dur: 1.4, rival: 1 }); } catch (e) { /* ignore */ } }
+    kit.emit({ at: _ro, shape: 'ring', radius: 1.4, count: 36, dir: { x: 0, y: 1, z: 0 }, cone: 0.1, speed: [1.5, 3], life: [0.6, 1], size: [0.07, 0.01], ramp: 'rival', intensity: 2.4, sprite: 'spark', stretch: 0.03, rival: true });
+    return true;
+  }, (d) => fx.isRemote(d));
+  for (const t of ['ward_end', 'bastion_end', 'shield_start', 'shield_end', 'mark_start', 'mark_end', 'slow_start', 'slow_end', 'vortex_end', 'regen_end', 'conjure_start', 'conjure_end', 'dodge', 'cruise_start', 'cruise_end']) {
+    fx.on(t, () => true, (d) => fx.isRemote(d)); // щит/метки соперника — по snap.opponent; у своего героя не рисуем
+  }
 }
