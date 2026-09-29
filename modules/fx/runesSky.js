@@ -110,13 +110,13 @@ export function register(fx) {
     // кратер: раскалённые края
     let decal = null;
     if (fx.decals) {
-      try { decal = fx.decals.spawn({ pos: { x: g.x, y: gy, z: g.z }, radius: 1.05 * s, kind: 'crater', life: 7, rot: Math.random() * TAU, color: P.mid, hot: P.hot, intensity: 1.8, rival }); } catch (e) { decal = null; }
+      try { decal = fx.decals.spawn({ pos: { x: g.x, y: gy, z: g.z }, radius: 1.05 * s, kind: 'crater', life: 7, rot: Math.random() * TAU, color: P.mid, hot: P.hot, intensity: 0.9, rival }); } catch (e) { decal = null; }
     }
     if (!decal) {
       _q2.set(g.x, gy + 0.08, g.z);
       kit.emit({ at: _q2, shape: 'ring', radius: 0.62 * s, count: 11, speed: [0, 0.06], life: [1.2, 2.2], size: [0.16, 0.06], color: P.hot, intensity: 2.3, sprite: 'ember', ground: gy + 0.04, fadeIn: 0.02, rival: R });
     }
-    kit.light(_q, { color: P.hot, intensity: 1.3, range: 10, dur: 0.35, attack: 0.03 });
+    if (!(i % 2)) kit.light(_q, { color: P.hot, intensity: 0.9, range: 8, dur: 0.3, attack: 0.03 }); // свет — через раз: 5 вспышек подряд на мокром полу = белое пятно
     kit.shake(Math.min(0.18, 0.12 + 0.015 * i) * (R ? 0.8 : 1));
     kit.hitstop(25);
     if (i === N_MET - 1) audio('burst', _q);
