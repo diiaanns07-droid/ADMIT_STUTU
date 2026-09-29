@@ -391,6 +391,10 @@ export function createStrands(THREE, o) {
   geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3).setUsage(THREE.DynamicDrawUsage));
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  // явные касательные (вдоль обхода сечения): анизотропный блик и рельеф не строят их из производных
+  // развёртки — на сужающихся кончиках те вырождаются, и NaN разносился bloom-ом по кадру
+  const tng = new Float32Array(RV * 4);
+  geo.setAttribute('tangent', new THREE.BufferAttribute(tng, 4).setUsage(THREE.DynamicDrawUsage));
   geo.setIndex(idx);
   const mesh = new THREE.Mesh(geo, material);
   mesh.name = 'hair-mesh'; mesh.frustumCulled = false; mesh.castShadow = true; mesh.receiveShadow = true;
@@ -559,12 +563,21 @@ export function createStrands(THREE, o) {
           let nx = (sx / ls) * ca * flat + (ox / lo) * (sa + nb), ny = (sy / ls) * ca * flat + (oy / lo) * (sa + nb), nz = (sz / ls) * ca * flat + (oz / lo) * (sa + nb);
           const ln = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
           nrm[q] = nx / ln; nrm[q + 1] = ny / ln; nrm[q + 2] = nz / ln;
+          // касательная — по обходу сечения, ортогональна нормали
+          let tx = -(sx / ls) * sa + (ox / lo) * ca * flat, ty = -(sy / ls) * sa + (oy / lo) * ca * flat, tz = -(sz / ls) * sa + (oz / lo) * ca * flat;
+          const tn = (tx * nrm[q] + ty * nrm[q + 1] + tz * nrm[q + 2]);
+          tx -= nrm[q] * tn; ty -= nrm[q + 1] * tn; tz -= nrm[q + 2] * tn;
+          let lt = Math.sqrt(tx * tx + ty * ty + tz * tz);
+          if (lt < 1e-6) { tx = sx / ls; ty = sy / ls; tz = sz / ls; lt = 1; }
+          const q4 = (q / 3) * 4;
+          tng[q4] = tx / lt; tng[q4 + 1] = ty / lt; tng[q4 + 2] = tz / lt; tng[q4 + 3] = 1;
         }
       }
     }
     void sc;
     geo.attributes.position.needsUpdate = true;
     geo.attributes.normal.needsUpdate = true;
+    geo.attributes.tangent.needsUpdate = true;
   }
   function refresh() {
     anchor.updateWorldMatrix(true, false);
