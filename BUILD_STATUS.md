@@ -191,3 +191,19 @@
   (netLobby.css): `var(--bdo-panel)`, `--bdo-gold`, `--bdo-bronze`, `--bdo-ivory`, `--bdo-blood`, `--bdo-mana`,
   `--bdo-font-display` (Forum, с кириллицей), `--bdo-font-body`; canvas — `core/bdoTheme.js`.
 - **Настройка:** `bdoUi: true` (config.defaultSettings); `false` — прежний интерфейс.
+
+## V6 · [FOREST] Сияющий лес — API для других команд (черновик, дополняется)
+- **Зона** `modules/brightForest.js`: `BRIGHT_FOREST` (C7) — `{ id:'bright-forest', name:'Сияющий лес', subtitle:'Земли Древа',
+  x:18, z:-168, r:62, level:-2.2, duel:{ x:18, z:-168, r:20, spawns:[{x:6,z:-168,yaw:π/2},{x:30,z:-168,yaw:-π/2}] },
+  start:{x:14,z:-97,yaw:π}, gate, embers, road }`. Лес — к северу от арены, дорога от плато к вратам.
+- **Для №3 (PvP):** точки дуэли — `BRIGHT_FOREST.duel.spawns` или `world.layout.spawns.duel`; поставить героя в точку —
+  `combat.setSpawn({x,z,yaw})` до `combat.reset()` (`null` — старт по умолчанию). Поляна r=20 ровная (высота = level),
+  без коллайдеров внутри, кроме 6 укрытий по краю (центрально-симметричны, `FOREST_PLAN.covers`). Второй игрок мнёт
+  траву: `world.setForestHero2({x,y,z})` (или `null`).
+- **Для №8 (BDO):** при входе в лес main.js шлёт событие `zone_enter { zoneId:'bright-forest', name:'Сияющий лес',
+  subtitle:'Земли Древа' }` (C3). Настроение — `atmosphere.setZoneMood(forest.mood)` каждый кадр (формат ZONE_MOODS №8);
+  лес ещё рисует свой купол неба (облака, солнце) поверх затмения по weight. Пункт меню «Место старта» — хук `[FOREST]`
+  в ui.js (buildStartZone, в меню в одном ряду с «Управлением движением»).
+- **Настройка** `startZone: 'arena'|'forest'` (config, sanitizeSettings, ui). При 'forest' старт у врат леса, облёт-интро
+  у арены пропускается; в меню герой стоит у врат.
+- `world.forest` — `{ weight 0..1, inside, mood, drainEvents(), stats(), plan, map }`; `world.layout.zones.brightForest`.
