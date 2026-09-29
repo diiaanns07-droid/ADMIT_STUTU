@@ -415,6 +415,8 @@ export function createBowGesture(configPatch = {}) {
     } else st.fistSince = null;
     const Lx = fistNow ? L : st.phase !== 'idle' ? st.lastFist : null;
 
+    // ── правая рука у кулака (для гашения «OK»-огня, пока накладывают стрелу)
+    st.near = !!(Lx && R && nockClose(Lx, { ...R, pinchPt: R.pinchLike ? R.pinchPt : R.center }, body, 1.3));
     // ── правая щепоть
     if (st.phase === 'ready' && Lx) {
       const pinchNear = R && isPinch(R, false) && nockClose(Lx, R, body);
@@ -498,6 +500,7 @@ export function createBowGesture(configPatch = {}) {
       out.charged = st.charged;
       out.element = st.element && (!fin(t) || t <= st.elementUntil) ? st.element : null;
       out.nocked = st.phase === 'nocked' || st.phase === 'drawing';
+      out.near = !!st.near;
     }
     const p = st.pulse;
     if (p && (!fin(t) || t - p.t <= cfg.pulseTtlMs)) {

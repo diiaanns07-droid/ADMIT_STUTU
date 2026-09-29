@@ -181,8 +181,8 @@ export function createHandZone({ target = typeof window !== 'undefined' ? window
       if (!runeTaken) { input.rune = null; input.runeScore = 0; }
       if (input.hint && (HG_RIGHT_HINTS.test(input.hint.code) || HG_LEFT_HINTS.test(input.hint.code) || HG_BOTH_HINTS.test(input.hint.code))) input.hint = null;
       st.counters.suppressed++;
-    } else if (bv.phase === 'ready') {
-      // лук поднят: щепоть у кулака — не «OK»-огонь и не искра
+    } else if (bv.phase === 'ready' && (bv.near || ctx.debug)) {
+      // лук поднят и правая у кулака (накладывают стрелу): щепоть — не «OK»-огонь и не искра
       input.attack = false; input.spark = false;
     }
     if (spellBusy) {
