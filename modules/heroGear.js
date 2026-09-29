@@ -394,6 +394,50 @@ export function dressHero(THREE, vrm, opts = {}) {
     stick(grp, 'hips', c, modelQ);
   }
 
+  // ---------------- глаза в прорези шлема (страж): два светящихся уголька
+  let visorMat = null;
+  if (opts.fx && opts.fx.visorEyes && bp.head) {
+    const headBone = raw('head');
+    let front = -1e9, minY = 1e9, maxY = -1e9;
+    const hv = new THREE.Vector3(), rel = new THREE.Vector3();
+    vrm.scene.traverse((o) => {
+      if (!o.isSkinnedMesh || !o.geometry.attributes.skinIndex) return;
+      const bi = o.skeleton.bones.indexOf(headBone);
+      if (bi < 0) return;
+      const SI = o.geometry.attributes.skinIndex, SW = o.geometry.attributes.skinWeight;
+      for (let i = 0; i < SI.count; i += 3) {
+        let w = 0;
+        for (let k = 0; k < 4; k++) if (SI.getComponent(i, k) === bi) w += SW.getComponent(i, k);
+        if (w < 0.6) continue;
+        o.getVertexPosition(i, hv); hv.applyMatrix4(o.matrixWorld); rel.copy(hv).sub(bp.head);
+        const y = rel.dot(UP); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      }
+    });
+    const eyeY = minY < maxY ? minY + (maxY - minY) * 0.56 : 0.1;
+    // передний край шлема на высоте глаз
+    vrm.scene.traverse((o) => {
+      if (!o.isSkinnedMesh || !o.geometry.attributes.skinIndex) return;
+      const bi = o.skeleton.bones.indexOf(headBone);
+      if (bi < 0) return;
+      const SI = o.geometry.attributes.skinIndex, SW = o.geometry.attributes.skinWeight;
+      for (let i = 0; i < SI.count; i += 2) {
+        let w = 0;
+        for (let k = 0; k < 4; k++) if (SI.getComponent(i, k) === bi) w += SW.getComponent(i, k);
+        if (w < 0.6) continue;
+        o.getVertexPosition(i, hv); hv.applyMatrix4(o.matrixWorld); rel.copy(hv).sub(bp.head);
+        if (Math.abs(rel.dot(UP) - eyeY) < 0.03 && Math.abs(rel.dot(LEFT)) < 0.03) front = Math.max(front, rel.dot(FWD));
+      }
+    });
+    if (front < -1) front = 0.11;
+    visorMat = Mt(new THREE.MeshBasicMaterial({ color: new THREE.Color(opts.fx.visorEyes).multiplyScalar(3), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    const eyeG = G(new THREE.PlaneGeometry(0.028, 0.0075));
+    const grp = new THREE.Group(); grp.name = 'visor-eyes';
+    for (const sx of [1, -1]) {
+      const e = new THREE.Mesh(eyeG, visorMat); e.position.set(sx * 0.03, 0, 0); e.rotation.z = sx * 0.12; grp.add(e);
+    }
+    stick(grp, 'head', bp.head.clone().addScaledVector(UP, eyeY).addScaledVector(FWD, front + 0.004), modelQ);
+  }
+
   // ---------------- острые уши эльфа (сквозь капюшон — узнаваемый силуэт)
   if (opts.ears && bp.head) {
     const skin = Mt(new Std({ name: 'gear-ear', color: 0xc08463, roughness: 0.55, ...(physical ? { sheen: 0.2, sheenColor: new THREE.Color(1, 0.7, 0.6) } : {}) }));
@@ -500,9 +544,11 @@ uniform float uTime; uniform vec3 uLag; uniform float uWind;`)
       for (let xI = 0; xI <= CN; xI++) {
         const az = (xI / CN) * Math.PI * 2;
         const back = -Math.cos(az) * 0.5 + 0.5;                   // 1 — лоб, 0 — затылок
-        const hl = browY + hH * (0.14 * back - 0.16 * (1 - back)); // высота линии роста
+        const hl = browY + hH * (0.06 * back - 0.16 * (1 - back)); // высота линии роста
         const pm = Math.acos(Math.max(-0.95, Math.min(0.95, (hl - cy) / ry)));
-        const { p, n } = onSkull(az, (yI / CM) * pm, 1.02);
+        const pol = (yI / CM) * pm;
+        const fwd = Math.max(0, -Math.cos(az) * Math.sin(pol));          // вперёд (ко лбу) — купол выпуклее
+        const { p, n } = onSkull(az, pol, 1.03 + 0.16 * fwd * fwd);
         pos.push(p.x, p.y, p.z); nrm.push(n.x, n.y, n.z); uv.push(0.2 + 0.6 * (xI / CN), 1 - (yI / CM) * 0.6); tA.push(0); sd.push(0);
         if (yI < CM && xI < CN) { const i0 = capBase + yI * (CN + 1) + xI, i1 = i0 + CN + 1; idx.push(i0, i1, i0 + 1, i0 + 1, i1, i1 + 1); }
       }
@@ -540,7 +586,7 @@ uniform float uTime; uniform vec3 uLag; uniform float uWind;`)
     hg.translate(-headC.x, -headC.y, -headC.z);
     hg.addGroup(0, capIdx, 0); hg.addGroup(capIdx, idx.length - capIdx, 1);
     // шапка — непрозрачная (без альфы), пряди — с альфой и покачиванием
-    const capM = Mt(new Std({ name: 'gear-hair-cap', color: hairC.clone().multiplyScalar(0.85), map: hairTex(THREE), roughness: 0.62, metalness: 0, envMapIntensity: 0.25, ...(physical ? { sheen: 0.25, sheenRoughness: 0.45, sheenColor: hairC.clone().multiplyScalar(1.5) } : {}) }));
+    const capM = Mt(new Std({ name: 'gear-hair-cap', color: hairC.clone().multiplyScalar(0.9), map: hairTex(THREE), bumpMap: hairTex(THREE), bumpScale: 2.2, side: THREE.DoubleSide, roughness: 0.85, metalness: 0, envMapIntensity: 0.08, ...(physical ? { sheen: 0.18, sheenRoughness: 0.6, sheenColor: hairC.clone().multiplyScalar(1.3), specularIntensity: 0.2 } : {}) }));
     const hair = new THREE.Mesh(G(hg), [capM, hm]);
     hair.name = 'hair-mesh'; hair.frustumCulled = false;
     const grp = new THREE.Group(); grp.name = 'hair';
@@ -737,7 +783,9 @@ varying float vCapeT;`)
       if (p.spin) p.spin.rotation.z = t * 0.9;
       if (p.crystal) p.crystal.rotation.y = t * 0.6;
     }
-    mats.runeMetal.emissiveIntensity = 2.0 + Math.sin(t * 2.1) * 0.6;
+    mats.runeMetal.emissiveIntensity = (2.0 + Math.sin(t * 2.1) * 0.6) * glowNow;
+    mats.glow.color.copy(glowBase).multiplyScalar(0.6 + 0.4 * glowNow);
+    if (visorMat) visorMat.opacity = Math.min(1, 0.55 + 0.25 * Math.sin(t * 3.3) + 0.3 * (glowNow - 1));
   }
   function setLod(l) {
     lodL = l;
@@ -827,5 +875,8 @@ varying float vCapeT;`)
     for (const { m, v } of physSaved) for (const k of Object.keys(v)) m[k] = t === 'high' || (t === 'medium' && k === 'sheen') ? v[k] : 0;
   }
   setQuality(quality);
-  return { names, staffTip, bow, followStaff: staffPart ? followStaff : null, update, setLod, setQuality, setShading() {}, setBowHeld, dispose, parts: () => parts.map((p) => p.obj.name) };
+  const glowBase = mats.glow.color.clone();
+  let glowNow = 1;
+  function setGlow(k) { glowNow = k; }
+  return { names, staffTip, bow, setGlow, get glow() { return glowNow; }, followStaff: staffPart ? followStaff : null, update, setLod, setQuality, setShading() {}, setBowHeld, dispose, parts: () => parts.map((p) => p.obj.name) };
 }

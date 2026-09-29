@@ -231,6 +231,7 @@ export function recolorTexture(THREE, tex, rules) {
 }
 
 export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, quality = 'medium', fx = null } = {}) {
+  const armorUs = []; // юниформы жил лат (вспышка на касте, мерцание при низком HP)
   // масштаб узора жил: единицы геометрии → метры (у Quaternius позиции в своих единицах)
   let armorUnit = 1;
   if (fx && fx.armor) {
@@ -309,7 +310,21 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     });
     if (orig.normalMap) m.normalScale.copy(orig.normalScale);
     if (kind === 'skin') { m.roughness = Math.max(0.45, orig.roughness * 0.85); }
-    if (kind === 'iris') { m.roughness = 0.2; }
+    if (kind === 'iris') {
+      m.roughness = 0.2;
+      // светящаяся радужка (стихия героя): светится тёмная часть текстуры глаза, белок — нет
+      if (fx && fx.eyes) {
+        m.emissive = new THREE.Color(fx.eyes); m.emissiveIntensity = fx.eyesK || 1.6;
+        const prevE = m.onBeforeCompile;
+        m.onBeforeCompile = (sh, r) => {
+          if (prevE) prevE.call(m, sh, r);
+          sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  totalEmissiveRadiance *= 1.0 - smoothstep( 0.3, 0.62, dot( diffuseColor.rgb, vec3( 0.333 ) ) );`);
+        };
+        const pk = m.customProgramCacheKey;
+        m.customProgramCacheKey = () => 'heroEyes:' + (pk ? pk.call(m) : '');
+      }
+    }
     if (physical) {
       m.specularIntensity = P.specularIntensity;
       if (P.sheen) { m.sheen = P.sheen; m.sheenRoughness = P.sheenRoughness; m.sheenColor = new THREE.Color(...P.sheenColor); }
@@ -317,7 +332,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
       if (P.clearcoat && q === 'high') { m.clearcoat = P.clearcoat; m.clearcoatRoughness = P.clearcoatRoughness; }
     }
     if (kind === 'skin') patchSkin(THREE, m, skinU);
-    if (kind === 'armor' && fx && fx.armor && q !== 'low') patchArmorGlow(THREE, m, { color: fx.armor, strength: fx.armorK || 2.4, unit: armorUnit });
+    if (kind === 'armor' && fx && fx.armor && q !== 'low') { patchArmorGlow(THREE, m, { color: fx.armor, strength: fx.armorK || 2.4, unit: armorUnit }); armorUs.push({ U: m.userData.heroArmorU, base: fx.armorK || 2.4 }); }
     if (atmosphere) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, P.env); } catch (e) { /* ignore */ } }
     m.userData.heroKind = kind;
     patchHeroLight(THREE, m);
@@ -373,6 +388,8 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
   apply(mode === 'anime' ? 'anime' : 'realistic');
   return {
     setMode, setQuality, dispose, update() {},
+    // яркость жил лат: 1 — обычно, >1 — вспышка магии, <1 — ослаб
+    setGlow(k) { for (const a of armorUs) a.U.heroArmorK.value = a.base * Math.max(0, k); },
     get mode() { return curMode; },
     materials: () => entries.map((e) => (e.index >= 0 ? e.mesh.material[e.index] : e.mesh.material)),
     stats: () => {
