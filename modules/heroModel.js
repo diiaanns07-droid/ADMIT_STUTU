@@ -42,7 +42,7 @@ export const HEROES = Object.freeze({
   elf: {
     id: 'elf', name: 'Эльфийка', vrm: null, glb: 'ranger.glb', height: 1.74, cls: 'Лучница-заклинательница', element: 'Гроза',
     desc: ['Следопыт Сияющего леса.', 'Лук из белого ясеня и перстни-руны на пальцах.', 'Бьёт издалека и уходит рывком.'],
-    gear: 'sylvan', stance: 'bow', adduct: 0.3, menuStance: null, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, ears: true, hair: { color: 0xe6dcc0, len: 0.95, fringe: 'swept' },
+    gear: 'sylvan', stance: 'bow', adduct: 0.3, menuStance: null, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, ears: true, hair: { color: 0xe6dcc0, len: 0.95, fringe: 'swept' }, circlet: { gem: 0x7fe8ff },
     // зелёная ткань → белый шёлк с бирюзой, кожа доспеха → светлая замша
     recolor: { MI_Ranger: [{ h: [65, 175], toH: 172, s: 0.35, v: 1.55 }, { h: [8, 48], toH: 38, s: 0.55, v: 1.45 }], MI_Regular_Female: [{ h: [0, 60], minS: 0.04, toH: 16, s: 0.52, v: 1.3 }] },
     fx: { style: 'wind', color: 0x9ff4ff, color2: 0xfff3c0, armor: 0x7fe8ff, armorK: 1.1, armorMode: 'seams', eyes: 0x7fe8ff, eyesK: 0.3 },
@@ -524,7 +524,7 @@ export function createHeroModel({
       const add = c.def.adduct ?? 0.22; // та же поза рук, что в игре (см. applyLife)
       adduct(c.bones.leftUpperArm, -add); adduct(c.bones.rightUpperArm, add);
       c.vrm.update(0);
-      c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null, fx: c.def.fx || null, grips: c.hands ? { R: c.hands.staffGrip, L: c.hands.bowGrip } : null });
+      c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null, circlet: c.def.circlet || null, fx: c.def.fx || null, grips: c.hands ? { R: c.hands.staffGrip, L: c.hands.bowGrip } : null });
       if (c.full.Idle) c.full.Idle.stop();
     } catch (e) { console.warn('[HERO] heroGear недоступен, без снаряжения:', e && e.message); }
     // аура класса (частицы стихии в шейдере) — modules/heroAura.js

@@ -57,7 +57,7 @@ const PRESETS = {
 };
 
 import { patchHeroLight } from './heroShading.js';
-import { buildStaff, buildBow, buildArrow, buildQuiver, buildBrooch, capeTextures, runeRingTexture, glintTexture, tube, gem as gemGeo } from './heroForge.js';
+import { buildStaff, buildBow, buildArrow, buildQuiver, buildBrooch, capeTextures, runeRingTexture, glintTexture, tube, gem, gem as gemGeo } from './heroForge.js';
 import { createCloth, createStrands, fitCapsules } from './heroCloth.js';
 
 // ---------------------------------------------------------------- общие процедурные текстуры
@@ -584,6 +584,24 @@ export function dressHero(THREE, vrm, opts = {}) {
     headBone.add(skullC); skullC.position.copy(headBone.worldToLocal(toW(cx, cy, cz)));
     const colliders = [{ a: skullC, b: skullC, r: Math.max(rx, rz) * 1.0 }];
     for (const c of bodyCaps) if (!/Leg/.test(c.name)) colliders.push({ a: c.a, b: c.b, r: c.r - 0.005 });
+    // обруч-диадема поверх чёлки (эльфийка): золотая дуга от виска к виску и капля-камень на лбу
+    if (opts.circlet) {
+      const cp = [];
+      for (let i = 0; i <= 24; i++) { const a = Math.PI + (i / 24 - 0.5) * 2.5; cp.push(sk3(a, polarBrow - 0.27 + 0.1 * Math.abs(i / 24 - 0.5), 1.09)); }
+      const grp = new THREE.Group(); grp.name = 'circlet';
+      grp.add(new THREE.Mesh(G(tube(THREE, new THREE.CatmullRomCurve3(cp), 60, 6, (v) => 0.0026 + 0.0012 * Math.sin(Math.PI * v), { flat: 0.6 })), mats.trim));
+      const mid = sk3(Math.PI, polarBrow - 0.27, 1.095);
+      const setting = new THREE.Mesh(G(new THREE.TorusGeometry(0.009, 0.0022, 6, 16)), mats.trim);
+      const gemM = Mt(new Std({ name: 'gear-circlet-gem', color: opts.circlet.gem || 0x7fe8ff, emissive: opts.circlet.gem || 0x7fe8ff, emissiveIntensity: 0.8, roughness: 0.05, flatShading: true }));
+      const drop = new THREE.Mesh(G(gem(THREE, { r: 0.007, h: 0.024, n: 6 })), gemM);
+      const q = qFromTo(new THREE.Vector3(0, 0, 1), FWD);
+      setting.position.copy(mid).addScaledVector(UP, -0.012); setting.quaternion.copy(q);
+      drop.position.copy(mid).addScaledVector(UP, -0.013).addScaledVector(FWD, 0.004);
+      grp.add(setting, drop);
+      const c0 = mid.clone();
+      for (const m of grp.children) { m.position.sub(c0); m.updateMatrix(); }
+      stick(grp, 'head', c0, new THREE.Quaternion());
+    }
     const _hq = new THREE.Quaternion(), holderH = model || vrm.scene;
     hair = createStrands(THREE, { locks, anchor: headBone, parent: headBone, colliders, material: hm, spine: [raw('neck') || raw(chestB), raw('hips')], fwd: (out) => out.set(0, 0, 1).applyQuaternion(holderH.getWorldQuaternion(_hq)) });
     parts.push({ obj: hair.mesh, bone: headBone }, { obj: skullC, bone: headBone });
