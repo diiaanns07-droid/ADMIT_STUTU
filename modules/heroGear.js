@@ -110,6 +110,28 @@ function runeTex(THREE) {
   }, false);
 }
 
+// волосы: вертикальные пряди разной яркости, альфа тает к краям и к кончику (яркость — R, альфа — A)
+function hairTex(THREE) {
+  return canvasTex(THREE, 'hair', 128, (g, N) => {
+    const W = N, H = N * 4;
+    g.canvas.width = W; g.canvas.height = H;
+    g.clearRect(0, 0, W, H);
+    for (let i = 0; i < 220; i++) {
+      const x = rnd() * W, w = 1.2 + rnd() * 2.6, v = 150 + rnd() * 105, a = 0.55 + rnd() * 0.45;
+      const tip = H * (0.72 + rnd() * 0.28);
+      const grd = g.createLinearGradient(0, 0, 0, tip);
+      grd.addColorStop(0, `rgba(${v},${v},${v},${a})`); grd.addColorStop(0.8, `rgba(${v},${v},${v},${a})`); grd.addColorStop(1, `rgba(${v},${v},${v},0)`);
+      g.fillStyle = grd;
+      g.beginPath(); g.moveTo(x, 0); g.bezierCurveTo(x + (rnd() - 0.5) * 6, tip * 0.4, x + (rnd() - 0.5) * 8, tip * 0.8, x + (rnd() - 0.5) * 5, tip);
+      g.lineTo(x + w, tip); g.bezierCurveTo(x + w, tip * 0.7, x + w, tip * 0.3, x + w, 0); g.closePath(); g.fill();
+    }
+    // края пряди мягче
+    const edge = g.createLinearGradient(0, 0, W, 0);
+    edge.addColorStop(0, 'rgba(0,0,0,1)'); edge.addColorStop(0.12, 'rgba(0,0,0,0)'); edge.addColorStop(0.88, 'rgba(0,0,0,0)'); edge.addColorStop(1, 'rgba(0,0,0,1)');
+    g.globalCompositeOperation = 'destination-out'; g.fillStyle = edge; g.fillRect(0, 0, W, H); g.globalCompositeOperation = 'source-over';
+  }, true);
+}
+
 // ---------------------------------------------------------------- геометрия
 function plateGeo(THREE, r, arc, lames, drop) {
   // наплечник: несколько выпуклых пластин-«ламелей» одна под другой
@@ -341,6 +363,148 @@ export function dressHero(THREE, vrm, opts = {}) {
     }
   }
 
+  // ---------------- длинные волосы (девушки): пряди у лица до груди и копна по спине из-под капюшона.
+  // Ленты-«карты» с текстурой прядей, одна геометрия на всю причёску; качание и инерция — в шейдере.
+  let hairU = null;
+  if (opts.hair && bp.head) {
+    const H = opts.hair;
+    const hairC = new THREE.Color(H.color || 0x3a2418);
+    hairU = { uTime: { value: 0 }, uLag: { value: new THREE.Vector3() }, uWind: { value: 1 } };
+    const hm = new Std({
+      name: 'gear-hair', color: hairC, map: hairTex(THREE), alphaTest: 0.38, side: THREE.DoubleSide, roughness: 0.55, envMapIntensity: 0.35, metalness: 0,
+      ...(physical ? { sheen: 0.3, sheenRoughness: 0.4, sheenColor: hairC.clone().multiplyScalar(1.6).lerp(new THREE.Color(1, 1, 1), 0.12), anisotropy: 0.45, anisotropyRotation: Math.PI / 2, specularIntensity: 0.35 } : {}),
+    });
+    hm.alphaToCoverage = true;
+    hm.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, hairU);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>
+attribute float aT; attribute float aSeed;
+uniform float uTime; uniform vec3 uLag; uniform float uWind;`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+  {
+    float t2 = aT * aT;
+    float w = sin( uTime * 2.1 + aSeed * 6.0 + aT * 4.0 ) * 0.018 + sin( uTime * 3.3 + aSeed * 11.0 ) * 0.008;
+    transformed.x += ( w * uWind - uLag.x * 0.35 ) * t2;
+    transformed.z += ( w * 0.6 * uWind - uLag.z * 0.4 ) * t2;
+    transformed.y += abs( uLag.z ) * 0.12 * t2;
+  }`);
+    };
+    hm.customProgramCacheKey = () => 'heroHair';
+    Mt(hm);
+    const pos = [], nrm = [], uv = [], tA = [], sd = [], idx = [];
+    // череп: вершины меша головы, привязанные к кости head (капюшоны и шлемы не считаются), в осях героя
+    const headBone = raw('head');
+    const sk = { minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9, minZ: 1e9, maxZ: -1e9, n: 0 };
+    const hv = new THREE.Vector3(), rel = new THREE.Vector3();
+    vrm.scene.traverse((o) => {
+      if (!o.isSkinnedMesh || /hood|hat|helm|armet|hair/i.test(o.name) || !o.geometry.attributes.skinIndex) return;
+      const bi = o.skeleton.bones.indexOf(headBone);
+      if (bi < 0) return;
+      const SI = o.geometry.attributes.skinIndex, SW = o.geometry.attributes.skinWeight;
+      for (let i = 0; i < SI.count; i += 2) {
+        let w = 0;
+        for (let k = 0; k < 4; k++) if (SI.getComponent(i, k) === bi) w += SW.getComponent(i, k);
+        if (w < 0.6) continue;
+        o.getVertexPosition(i, hv); hv.applyMatrix4(o.matrixWorld);
+        rel.copy(hv).sub(bp.head);
+        const x = rel.dot(LEFT), y = rel.dot(UP), z = rel.dot(FWD);
+        sk.minX = Math.min(sk.minX, x); sk.maxX = Math.max(sk.maxX, x); sk.minY = Math.min(sk.minY, y); sk.maxY = Math.max(sk.maxY, y);
+        sk.minZ = Math.min(sk.minZ, z); sk.maxZ = Math.max(sk.maxZ, z); sk.n++;
+      }
+    });
+    if (sk.n < 50) Object.assign(sk, { minX: -0.075, maxX: 0.075, minY: -0.02, maxY: 0.21, minZ: -0.1, maxZ: 0.1 });
+    const hH = sk.maxY - sk.minY;
+    // эллипсоид верха головы (от бровей вверх): центр и полуоси
+    const cy = sk.minY + hH * 0.62, ry = (sk.maxY - cy) * 1.05;
+    const cz = (sk.minZ + sk.maxZ) * 0.5 - 0.004, rz = (sk.maxZ - sk.minZ) * 0.5 * 1.06;
+    const cx = (sk.minX + sk.maxX) * 0.5, rx = (sk.maxX - sk.minX) * 0.5 * 1.08;
+    const toW = (x, y, z) => bp.head.clone().addScaledVector(LEFT, x).addScaledVector(UP, y).addScaledVector(FWD, z);
+    const headC = toW(cx, cy, cz);
+    // точка на эллипсоиде по направлению (az: 0 — назад, polar: 0 — макушка) и нормаль
+    const onSkull = (az, polar, k = 1) => {
+      const dx = Math.sin(az) * Math.sin(polar), dy = Math.cos(polar), dz = -Math.cos(az) * Math.sin(polar);
+      return { p: toW(cx + dx * rx * k, cy + dy * ry * k, cz + dz * rz * k), n: LEFT.clone().multiplyScalar(dx / rx).addScaledVector(UP, dy / ry).addScaledVector(FWD, dz / rz).normalize() };
+    };
+    const SEG = 12;
+    // прядь: корень root, изгиб наружу out, падение вниз на длину len, смещение вперёд/назад drift
+    const strand = (root, out, len, width, drift, seed) => {
+      const base = pos.length / 3;
+      const pts = [];
+      for (let j = 0; j <= SEG; j++) {
+        const t = j / SEG;
+        const p = root.clone().addScaledVector(out, 0.035 * Math.sin(Math.min(1, t * 3) * Math.PI * 0.5) + 0.01 * t).addScaledVector(UP, -len * t).add(drift.clone().multiplyScalar(t * t));
+        pts.push(p);
+      }
+      for (let j = 0; j <= SEG; j++) {
+        const t = j / SEG, p = pts[j];
+        const tan = (j < SEG ? pts[j + 1].clone().sub(p) : p.clone().sub(pts[j - 1])).normalize();
+        const side = tan.clone().cross(out).normalize();
+        const wv = width * (1 - 0.55 * t);
+        for (const k of [-1, 1]) {
+          const q = p.clone().addScaledVector(side, k * wv * 0.5);
+          pos.push(q.x, q.y, q.z); nrm.push(out.x, out.y, out.z); uv.push(k < 0 ? 0 : 1, 1 - t); tA.push(t); sd.push(seed);
+        }
+        if (j < SEG) { const a = base + j * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+      }
+    };
+    const len = H.len || 0.62;
+    // шапка волос: купол по эллипсоиду черепа; линия роста — у лба над бровями, сзади — у затылка
+    const capBase = pos.length / 3, CN = 20, CM = 9;
+    const browY = sk.minY + hH * 0.58;
+    for (let yI = 0; yI <= CM; yI++) {
+      for (let xI = 0; xI <= CN; xI++) {
+        const az = (xI / CN) * Math.PI * 2;
+        const back = -Math.cos(az) * 0.5 + 0.5;                   // 1 — лоб, 0 — затылок
+        const hl = browY + hH * (0.14 * back - 0.16 * (1 - back)); // высота линии роста
+        const pm = Math.acos(Math.max(-0.95, Math.min(0.95, (hl - cy) / ry)));
+        const { p, n } = onSkull(az, (yI / CM) * pm, 1.02);
+        pos.push(p.x, p.y, p.z); nrm.push(n.x, n.y, n.z); uv.push(0.2 + 0.6 * (xI / CN), 1 - (yI / CM) * 0.6); tA.push(0); sd.push(0);
+        if (yI < CM && xI < CN) { const i0 = capBase + yI * (CN + 1) + xI, i1 = i0 + CN + 1; idx.push(i0, i1, i0 + 1, i0 + 1, i1, i1 + 1); }
+      }
+    }
+    const capIdx = idx.length;
+    // копна по спине: веер корней по затылку, три слоя, до пояса
+    for (let layer = 0; layer < 3; layer++) {
+      const n = [11, 9, 7][layer];
+      for (let i = 0; i < n; i++) {
+        const a = (i / (n - 1) - 0.5) * [2.9, 2.4, 1.8][layer];      // угол от «прямо назад»
+        const out = FWD.clone().multiplyScalar(-Math.cos(a)).addScaledVector(LEFT, Math.sin(a)).normalize();
+        const root = onSkull(a, 1.2 + layer * 0.35, 1.02).p;
+        const drift = FWD.clone().multiplyScalar(-0.08 - 0.04 * Math.cos(a)).addScaledVector(out, 0.035);
+        strand(root, out, len * (0.92 + 0.16 * rnd()) * (1 - layer * 0.05), 0.11, drift, rnd());
+      }
+    }
+    // пряди у лица: по четыре с каждой стороны, падают на грудь перед плечами
+    for (const sgn of [1, -1]) {
+      for (let i = 0; i < 4; i++) {
+        const a = sgn * (1.62 + i * 0.2);
+        const out = FWD.clone().multiplyScalar(-Math.cos(a)).addScaledVector(LEFT, Math.sin(a)).normalize();
+        const root = onSkull(a, 1.35 + i * 0.12, 1.04).p;
+        const drift = FWD.clone().multiplyScalar(0.1 + i * 0.012).addScaledVector(LEFT, sgn * (0.035 + i * 0.01));
+        strand(root, out, len * (0.8 - i * 0.07), 0.085, drift, rnd());
+      }
+    }
+    const hg = new THREE.BufferGeometry();
+    hg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    hg.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+    hg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    hg.setAttribute('aT', new THREE.Float32BufferAttribute(tA, 1));
+    hg.setAttribute('aSeed', new THREE.Float32BufferAttribute(sd, 1));
+    hg.setIndex(idx);
+    // вершины — в мировых координатах позы Idle; переводим в систему группы (начало — центр черепа)
+    hg.translate(-headC.x, -headC.y, -headC.z);
+    hg.addGroup(0, capIdx, 0); hg.addGroup(capIdx, idx.length - capIdx, 1);
+    // шапка — непрозрачная (без альфы), пряди — с альфой и покачиванием
+    const capM = Mt(new Std({ name: 'gear-hair-cap', color: hairC.clone().multiplyScalar(0.85), map: hairTex(THREE), roughness: 0.62, metalness: 0, envMapIntensity: 0.25, ...(physical ? { sheen: 0.25, sheenRoughness: 0.45, sheenColor: hairC.clone().multiplyScalar(1.5) } : {}) }));
+    const hair = new THREE.Mesh(G(hg), [capM, hm]);
+    hair.name = 'hair-mesh'; hair.frustumCulled = false;
+    const grp = new THREE.Group(); grp.name = 'hair';
+    grp.add(hair);
+    stick(grp, 'head', headC, new THREE.Quaternion());
+    hair.castShadow = true;
+  }
+
   // ---------------- кольца-руны
   if (P.rings) {
     for (const bn of ['leftIndexProximal', 'rightMiddleProximal', 'leftRingProximal']) {
@@ -506,6 +670,23 @@ varying float vCapeT;`)
         } else { prevPos.copy(vel); havePrev = true; }
       }
     }
+    if (hairU) {
+      hairU.uTime.value = t;
+      if (capeU) hairU.uLag.value.copy(capeU.uLag.value);
+      else if (root && dt > 1e-4) {
+        root.getWorldPosition(vel);
+        if (havePrev) {
+          const v = vel.clone().sub(prevPos).divideScalar(dt); prevPos.copy(vel);
+          if (v.lengthSq() > 400) v.set(0, 0, 0);
+          const hairRoot = parts.find((p) => p.obj.name === 'hair');
+          if (hairRoot) { hairRoot.obj.getWorldQuaternion(_q); v.applyQuaternion(_q.invert()); }
+          const k = 1 - Math.exp(-5 * dt);
+          lag.x += (Math.max(-1.2, Math.min(1.2, v.x * 0.15)) - lag.x) * k;
+          lag.z += (Math.max(-1.2, Math.min(1.2, v.z * 0.15)) - lag.z) * k;
+          hairU.uLag.value.copy(lag);
+        } else { prevPos.copy(vel); havePrev = true; }
+      }
+    }
     for (const p of parts) {
       if (p.spin) p.spin.rotation.z = t * 0.9;
       if (p.crystal) p.crystal.rotation.y = t * 0.6;
@@ -516,6 +697,7 @@ varying float vCapeT;`)
     lodL = l;
     for (const p of parts) p.obj.traverse((o) => { if (o.isMesh) o.castShadow = l === 0; });
     if (capeU) capeU.uWind.value = l >= 2 ? 0 : 1;
+    if (hairU) hairU.uWind.value = l >= 2 ? 0 : 1;
   }
   function setBowHeld(w) { void w; } // TODO: перенос лука в левую руку (C5 bowDraw) — №6 берёт через setPose
   function dispose() {
