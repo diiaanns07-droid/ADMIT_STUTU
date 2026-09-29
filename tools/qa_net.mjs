@@ -52,11 +52,21 @@ function startProc(cmd, args, readyText) {
   });
 }
 
-const PORT = 8700 + Math.floor(Math.random() * 60);   // случайный: параллельные прогоны не мешают
-const RELAY_PORT = 18000 + Math.floor(Math.random() * 900);
-const server = await startProc('python3', [join(ROOT, 'serve_game.py'), '--no-browser', '--port', String(PORT)], 'ASHEN OATH is running');
-let relay = null;
-if (MODE === 'lan') relay = await startProc('python3', [join(ROOT, 'tools', 'relay.py'), '--port', String(RELAY_PORT)], 'ASHEN relay');
+// случайные порты с повтором: параллельные и оставшиеся от прошлых прогонов серверы не мешают
+async function startOnFreePort(make, base, span) {
+  for (let i = 0; ; i++) {
+    const port = base + Math.floor(Math.random() * span);
+    try { return { port, proc: await make(port) }; }
+    catch (e) { if (i >= 5 || !/in use|занят/i.test(String(e.message))) throw e; }
+  }
+}
+const srvP = await startOnFreePort((port) => startProc('python3', [join(ROOT, 'serve_game.py'), '--no-browser', '--port', String(port)], 'ASHEN OATH is running'), 8700, 60);
+const PORT = srvP.port, server = srvP.proc;
+let relay = null, RELAY_PORT = 0;
+if (MODE === 'lan') {
+  const r = await startOnFreePort((port) => startProc('python3', [join(ROOT, 'tools', 'relay.py'), '--port', String(port)], 'ASHEN relay'), 18000, 900);
+  relay = r.proc; RELAY_PORT = r.port;
+}
 // peer: свой PeerServer (npm-пакет peer) — --peer-server путь/к/node_modules/.bin/peerjs; без него — облако 0.peerjs.com
 const PEER_BIN = arg('--peer-server', '');
 const PEER_PORT = 9017;
@@ -119,6 +129,18 @@ if (argv.includes('--harness')) {
   writeFileSync(join(OUT, 'harness-track.json'), JSON.stringify(tr));
   check(`стенд: плавно при пинге ${PING} мс и ${Math.round(LOSS * 100)}% потерь (бег 6 м/с, рывки 15,6 м/с; телепорт — > 31 м/с)`, tr.length > 30 && bad === 0, `${tr.length} кадров (${fps.toFixed(0)} fps), max ${maxV.toFixed(1)} м/с, max шаг ${maxStep.toFixed(2)} м, пинг ${ping} мс`);
   await pg.screenshot({ path: join(OUT, 'harness.png') });
+  // «потерял Wi-Fi»: гость рвёт канал (DataChannel / сокет / BroadcastChannel) — оба видят lost, гость сам возвращается
+  const H = () => pg.frames().find((f) => /role=host/.test(f.url()));
+  await G().evaluate(() => window.__net.simulateSocketLoss());
+  const t0 = Date.now();
+  let sawLost = false, back = 0;
+  while (Date.now() - t0 < 20000) {
+    const [hs, gs] = [await H().evaluate(() => window.__net.state), await G().evaluate(() => window.__net.state)];
+    if (hs === 'lost' || gs === 'lost') sawLost = true;
+    if (sawLost && hs === 'connected' && gs === 'connected') { back = Date.now() - t0; break; }
+    await sleep(200);
+  }
+  check(`стенд (${MODE}): обрыв канала замечен и связь вернулась сама`, sawLost && back > 0, back ? `через ${back} мс` : `lost=${sawLost}`);
   const errs = errors.A.filter((e) => !/Failed to load resource|net::ERR/i.test(e));
   check('стенд: нет ошибок в консоли', errs.length === 0, errs.slice(0, 3).join(' | '));
   writeFileSync(join(OUT, 'harness-report.txt'), results.join('\n') + '\n');
