@@ -66,13 +66,17 @@ export function createLocalTransport(opts = {}) {
       case 'full':
         if (joinReject) { const r = joinReject; clearJoin(); r(netError('room_full')); }
         break;
-      case 'leave':
-        if (m.from === other) { other = null; if (tr.onPeerClose) tr.onPeerClose(); }
+      case 'leave': {
+        // «ушёл» — после всех надёжных пакетов, что ещё в полёте (иначе bye потерялся бы)
+        const gone = () => { if (m.from === other) { other = null; if (tr.onPeerClose) tr.onPeerClose(); } };
+        if (m.at && m.at > Date.now()) setTimeout(gone, m.at - Date.now() + 1); else gone();
         break;
+      }
       case 'd':
         if (m.from !== other) break;
         if (Date.now() < dropUntil) break;
-        if (m.at && m.at > Date.now()) setTimeout(() => deliver(m.data), m.at - Date.now());
+        // задержанный пакет «в полёте» после обрыва/ухода соперника не доставляем
+        if (m.at && m.at > Date.now()) setTimeout(() => { if (m.from === other) deliver(m.data); }, m.at - Date.now());
         else deliver(m.data);
         break;
       default: break;
@@ -129,7 +133,7 @@ export function createLocalTransport(opts = {}) {
   tr.setSim = (s) => Object.assign(sim, s || {});
   tr.close = () => {
     if (closed) return;
-    post('leave');
+    post('leave', { at: lastReliableAt > Date.now() ? lastReliableAt : 0 });
     closed = true;
     clearJoin();
     if (bc) bc.close();

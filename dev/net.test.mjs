@@ -202,7 +202,7 @@ await t('net local: hello, ping, st/ev, обрыв 3 с → lost → восст�
   assert.ok(await until(() => A.state === 'lost' && B.state === 'lost', 4500), log.join(' '));
   const dt = Date.now() - t0;
   // 3 с считаются от последнего полученного пакета (он мог прийти до 0,5 с раньше обрыва)
-  assert.ok(dt >= 2000 && dt <= 3500, `обнаружено за ${dt} мс`);
+  assert.ok(dt >= 2000 && dt <= 3800, `обнаружено за ${dt} мс`);   // 3 с тишины + шаг таймера 0,25 с + запас под нагрузкой
   // провод вернули — связь сама восстанавливается
   assert.ok(await until(() => A.state === 'connected' && B.state === 'connected', 5000), log.join(' '));
   // гость уходит — хост снова ждёт

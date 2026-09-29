@@ -191,7 +191,7 @@ export function createNet(opts = {}) {
     if (S.state !== 'connected') return;
     setState('lost');
     emit('lost', { reason: why });
-    if (!S.isHost) scheduleRejoin();
+    if (!S.isHost) scheduleRejoin(300);   // первая попытка — сразу, дальше каждые 2 с
   }
   function startTimers() {
     stopTimers();
@@ -213,7 +213,7 @@ export function createNet(opts = {}) {
   }
 
   // гость: тот же код, новые попытки каждые 2 с, пока не вернётся связь или не закроют
-  function scheduleRejoin() {
+  function scheduleRejoin(delayMs = 2000) {
     clearTimeout(S.rejoinTimer);
     S.rejoinTimer = setTimeout(async () => {
       if (S.closed || S.isHost || S.state !== 'lost') return;
@@ -222,7 +222,7 @@ export function createNet(opts = {}) {
         else if (S.tr) { try { S.tr.close(); } catch (e) { /* ignore */ } await openTransport(); await S.tr.join(S.code, S.joinOpts || {}); }
       } catch (e) { /* попробуем ещё */ }
       if (S.state === 'lost') scheduleRejoin();
-    }, 2000);
+    }, delayMs);
   }
 
   async function openTransport() {
