@@ -25,7 +25,7 @@ const num = (v, d) => (isNum(v) ? v : d);
 // Уровни качества V6. particles — ёмкость GPU-пула (вместе со старыми пулами effects.js ≤ 6000 на medium).
 export const KIT_QUALITY = Object.freeze({
   low: Object.freeze({ name: 'low', particles: 1400, decor: 0.45, lights: 0, distort: false, glyphDetail: 0, trails: 8, screen: 0.7 }),
-  medium: Object.freeze({ name: 'medium', particles: 4200, decor: 0.8, lights: 2, distort: true, glyphDetail: 1, trails: 16, screen: 1 }),
+  medium: Object.freeze({ name: 'medium', particles: 4200, decor: 0.8, lights: 1, distort: true, glyphDetail: 1, trails: 16, screen: 1 }),
   high: Object.freeze({ name: 'high', particles: 8000, decor: 1.0, lights: 3, distort: true, glyphDetail: 2, trails: 24, screen: 1 }),
 });
 const MAX_PARTICLES = KIT_QUALITY.high.particles;
@@ -341,11 +341,13 @@ export function createFxKit(deps) {
   }
   function flushParticles() {
     if (dirtyHi < 0) return;
-    const lo = wrapped ? 0 : dirtyLo, hi = wrapped ? cap - 1 : dirtyHi;
+    const lo = wrapped ? 0 : dirtyLo, hi = wrapped ? Math.max(cap, highWater) - 1 : dirtyHi;
     for (const k in A) {
       const at = A[k];
-      at.clearUpdateRanges();
-      at.addUpdateRange(lo * 4, (hi - lo + 1) * 4);
+      // Диапазоны копятся до рендера (three сам очищает их после выгрузки): если здесь их стереть,
+      // а рендера между двумя flush не было (clear() → update()), на GPU останутся старые частицы.
+      if (at.updateRanges && at.updateRanges.length > 24) { at.clearUpdateRanges(); at.addUpdateRange(0, Math.max(cap, highWater) * 4); }
+      else at.addUpdateRange(lo * 4, (hi - lo + 1) * 4);
       at.needsUpdate = true;
     }
     dirtyLo = Infinity; dirtyHi = -1; wrapped = false; lastIdx = -1;

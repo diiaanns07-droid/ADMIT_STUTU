@@ -234,8 +234,9 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
       m.specularIntensity = P.specularIntensity;
       if (P.sheen) { m.sheen = P.sheen; m.sheenRoughness = P.sheenRoughness; m.sheenColor = new THREE.Color(...P.sheenColor); }
       if (kind === 'cloth' && m.map) m.sheenColorMap = m.map;
-      if (P.anisotropy) { m.anisotropy = P.anisotropy; m.anisotropyRotation = Math.PI / 2; }
-      if (P.clearcoat) { m.clearcoat = P.clearcoat; m.clearcoatRoughness = P.clearcoatRoughness; }
+      // anisotropy и clearcoat — только на 'high' (на medium слабые ноутбуки: только sheen)
+      if (P.anisotropy && q === 'high') { m.anisotropy = P.anisotropy; m.anisotropyRotation = Math.PI / 2; }
+      if (P.clearcoat && q === 'high') { m.clearcoat = P.clearcoat; m.clearcoatRoughness = P.clearcoatRoughness; }
     }
     if (P.weave && !nm && q !== 'low') { const w = weaveNormal(THREE); if (w) { m.normalMap = w; m.normalScale.set(0.35, 0.35); } }
     if (kind === 'skin' || kind === 'mouth') patchSkin(THREE, m, skinU);
@@ -269,8 +270,8 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     if (physical) {
       m.specularIntensity = P.specularIntensity;
       if (P.sheen) { m.sheen = P.sheen; m.sheenRoughness = P.sheenRoughness; m.sheenColor = new THREE.Color(...P.sheenColor); }
-      if (P.anisotropy) { m.anisotropy = P.anisotropy * 0.7; m.anisotropyRotation = Math.PI / 2; }
-      if (P.clearcoat) { m.clearcoat = P.clearcoat; m.clearcoatRoughness = P.clearcoatRoughness; }
+      if (P.anisotropy && q === 'high') { m.anisotropy = P.anisotropy * 0.7; m.anisotropyRotation = Math.PI / 2; }
+      if (P.clearcoat && q === 'high') { m.clearcoat = P.clearcoat; m.clearcoatRoughness = P.clearcoatRoughness; }
     }
     if (kind === 'skin') patchSkin(THREE, m, skinU);
     if (atmosphere) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, P.env); } catch (e) { /* ignore */ } }
@@ -290,7 +291,16 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     for (const e of entries) {
       let mat = e.orig;
       if (modeWanted === 'realistic') {
-        if (!e.real || e.q !== curQ) { e.real = build(e.orig, curQ); e.q = curQ; }
+        if (!e.real || e.q !== curQ) {
+          // смена уровня качества: прежний реалистичный материал освобождаем
+          if (e.real && e.real !== hidden && e.real !== e.orig) {
+            const i = owned.indexOf(e.real);
+            if (i >= 0) owned.splice(i, 1);
+            if (atmosphere && atmosphere.releaseEnv) { try { atmosphere.releaseEnv(e.real); } catch (err) { /* ignore */ } }
+            e.real.dispose();
+          }
+          e.real = build(e.orig, curQ); e.q = curQ;
+        }
         mat = e.real;
       }
       if (e.index >= 0) { const arr = e.mesh.material.slice(); arr[e.index] = mat; e.mesh.material = arr; }
@@ -301,7 +311,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
 
   function setMode(m) { if (m !== 'realistic' && m !== 'anime') return; if (m !== curMode) apply(m); }
   function setQuality(q) {
-    const tier = (x) => (x === 'low' ? 'low' : 'hi');
+    const tier = (x) => (x === 'low' || x === 'high' ? x : 'medium');
     if (tier(q) === tier(curQ)) { curQ = q; return; }
     curQ = q;
     if (curMode === 'realistic') apply('realistic');

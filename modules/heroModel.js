@@ -336,12 +336,13 @@ export function createHeroModel({
       const nb = (n) => H.getNormalizedBoneNode(n);
       const bones = {};
       for (const n of ['hips', 'spine', 'chest', 'upperChest', 'neck', 'head', 'leftUpperArm', 'leftLowerArm', 'leftHand', 'rightUpperArm', 'rightLowerArm', 'rightHand', 'leftShoulder', 'rightShoulder']) bones[n] = nb(n);
+      const midR = nb('rightMiddleProximal');
       // кости без дорожек в клипах (у KayKit — шея, ключицы, верх груди): их сбрасываем в покой каждый
       // кадр, иначе дыхание и поза накапливались бы
       const tracked = new Set();
       for (const clip of Object.values(lib.clips)) for (const tr of clip.tracks) tracked.add(tr.name.split('.')[0]);
       const free = Object.values(bones).filter((b) => b && !tracked.has(b.name));
-      cur = { model: wrapG, vrm, mixer, full, upper, lower, stride: lib.stride, loops: lib.loops, bones, free, scale: k, def, gear: null, shade: null, url };
+      cur = { model: wrapG, vrm, mixer, full, upper, lower, midR, stride: lib.stride, loops: lib.loops, bones, free, scale: k, def, gear: null, shade: null, url };
       // оболочка: реалистичные материалы (modules/heroShading.js) и снаряжение (modules/heroGear.js)
       await dressUp(token);
       if (S.disposed || token !== S.token) return;
@@ -589,6 +590,21 @@ export function createHeroModel({
     // local' = P⁻¹ · R · P · local
     bone.quaternion.premultiply(_qp).premultiply(_qa).premultiply(_qp.invert());
   }
+  // посох за кулаком правой руки (по нормализованному скелету — поза этого кадра, без запаздывания)
+  const _g1 = new THREE.Vector3(), _g2 = new THREE.Vector3(), _g3 = new THREE.Vector3(), _gq = new THREE.Quaternion();
+  function staffFollow() {
+    const B = cur.bones;
+    if (!cur.gear || !cur.gear.followStaff || !B.rightHand || !B.rightLowerArm) return;
+    B.rightHand.updateWorldMatrix(true, false);
+    B.rightHand.getWorldPosition(_g1);
+    B.rightLowerArm.getWorldPosition(_g2);
+    if (cur.midR) { cur.midR.updateWorldMatrix(true, false); cur.midR.getWorldPosition(_g3); } else _g3.copy(_g1);
+    const fore = _g2.sub(_g1).negate().normalize();                   // локоть → кисть
+    const grip = _g3.sub(_g1).multiplyScalar(0.75).add(_g1);
+    cur.model.getWorldQuaternion(_gq);
+    cur.gear.followStaff(grip, fore, _g1.set(0, 0, 1).applyQuaternion(_gq));
+  }
+
   // дыхание, оглядывание в покое, доворот груди к цели
   function applyLife(dt, idle, twist) {
     const B = cur.bones;
@@ -658,6 +674,7 @@ export function createHeroModel({
       saveClean();
       applyLife(dt, true, 0);
       applyPose(dt);
+      staffFollow();
       vrmTick(dt);
       return;
     }
@@ -677,7 +694,7 @@ export function createHeroModel({
     if (dead || status === 'victory') {
       W.rotation.set(0, 0, 0);
       updateLoco(dt, 0, 0, 0, false);
-      cur.mixer.update(dt); saveClean(); vrmTick(dt); return;
+      cur.mixer.update(dt); saveClean(); staffFollow(); vrmTick(dt); return;
     }
 
     // скорость в осях героя (вперёд = +z, влево = +x)
@@ -760,6 +777,7 @@ export function createHeroModel({
     }
     applyLife(dt, !moving && !act, twist);
     applyPose(dt);
+    staffFollow();
     vrmTick(dt);
   }
 
