@@ -114,6 +114,7 @@ export const config = {
     // 'stick' — прежний джойстик (поднять руку и замереть — центр)
     moveMode: 'steer',
     hero: 'ashen',          // выбранный герой: ashen | warrior | elf (modules/heroModel.js)
+    bdoUi: true,            // [BDO] интерфейс в стиле Black Desert (false — прежний вид)
   },
 
   settings: null,            // заполняет main.js (живой объект)

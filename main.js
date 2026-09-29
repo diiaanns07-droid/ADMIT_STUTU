@@ -59,6 +59,8 @@ function sanitizeSettings(patch, base) {
   if ('reducedMotion' in patch) out.reducedMotion = !!patch.reducedMotion;
   if (patch.moveMode === 'steer' || patch.moveMode === 'stick') out.moveMode = patch.moveMode; // [V5] «Руль» / «Джойстик»
   if (typeof patch.hero === 'string' && HEROES[patch.hero]) out.hero = patch.hero;
+  // [BDO] интерфейс в стиле Black Desert
+  if ('bdoUi' in patch) out.bdoUi = patch.bdoUi !== false;
   return out;
 }
 function loadSettings() {
@@ -799,6 +801,7 @@ function frame(now) {
     camera.lookAt(c.target.x, c.target.y, c.target.z);
   }
 
+  if (postfx && typeof postfx.setMode === 'function') { try { postfx.setMode(app.screen, settings); } catch (e) { /* ignore */ } } // [BDO] DOF меню и грейд по экрану
   if (postfx && postfx.enabled) feedPostFx(events);
   let rendered = false;
   if (postfx && postfx.enabled) { try { postfx.render(dtReal); rendered = true; } catch (e) { console.warn('[ASHEN] postfx.render', e); postfx = null; } }
@@ -812,6 +815,7 @@ function frame(now) {
     settings, resumeLeftMs: app.screen === 'playing' ? Math.max(0, app.resumeAt - now) : 0,
     pois: unlitEmbers(),
     coach: coachView(input),
+    layout: worldLayout, // [BDO] мини-карта и названия зон
   });
 
   perf.frames++;
@@ -847,6 +851,7 @@ window.__ASHEN__ = Object.freeze({
   hero: () => (heroModel ? heroModel.state() : null),
   heroStep: (dt, snap, events) => { if (heroModel) heroModel.update(dt, snap, events || []); return heroModel ? heroModel.state() : null; }, // QA: шаг анимации без rAF
   squats: () => squats.getDebug(),
+  zoneMood: (m) => { try { world.atmosphere.setZoneMood(m); return true; } catch (e) { return false; } }, // [BDO] QA: настроение зоны
   heroMax: () => { const c = typeof combat.getEffectiveConfig === 'function' ? combat.getEffectiveConfig() : null; return c ? { hp: c.player.maxHp, energy: c.player.maxEnergy } : null; },
   embers: () => (worldLayout && Array.isArray(worldLayout.pois) ? worldLayout.pois.map((q) => ({ id: q.id, x: q.x, z: q.z, lit: progression.isEmberLit(q.id) })) : []),
   renderInfo: () => {
