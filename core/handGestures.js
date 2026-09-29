@@ -214,6 +214,8 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   //    Тексты — core/gestureCoach.js. Подсказка выдаётся, только когда жест явно начат,
   //    но одно конкретное условие не выполнено; частые повторы гасятся кулдаунами.
   hintCooldownMs: 6000,    // одна и та же подсказка не чаще
+  hintOrbFacing: 0.3,      // [V6] подсказки про сферу — только если ладони уже (хоть одна) повёрнуты друг к другу…
+  hintOrbCloseGap: 2.6,    //   …или руки сведены так близко (в размерах кисти), как для сферы
   hintGapMs: 2200,         // любые две подсказки не чаще
   hintEdge: 0.015,         // точка кисти ближе к краю кадра (доля) — «у края»
   hintEdgeMs: 700,
@@ -1095,7 +1097,16 @@ export function createHandGestures(configPatch = {}) {
     const ev = C.lastEval;
     if (!C.on && ev) {
       const why = ev.kind ? null : ev.why;
-      const orbCode = why === 'facing' ? 'orb_facing' : why === 'dy' ? 'orb_dy' : why === 'gap' && ev.gap > cfg.orbGapMax ? 'orb_far' : null;
+      // подсказка — только при попытке: «сведи руки» — ладони уже друг к другу; «поверни ладони» —
+      // хотя бы одна уже повёрнута ([V6]: иначе в «Руле» они сыпались при любой раскрытой правой)
+      const fL = fin(ev.faceL) ? ev.faceL : null, fR = fin(ev.faceR) ? ev.faceR : null;
+      const both = fL !== null && fR !== null && Math.min(fL, fR) >= cfg.hintOrbFacing;
+      const one = fL !== null && fR !== null && Math.max(fL, fR) >= cfg.hintOrbFacing;
+      const close = fin(ev.gap) && ev.gap <= cfg.hintOrbCloseGap;   // руки сведены, как для сферы
+      // в «Руле», пока левая ведёт героя, раскрытые ладони — это руль, а не попытка сферы
+      const skL = mover().read(t);
+      const walking = moveMode === 'steer' && skL && skL.engaged && skL.z > 0 && !one;
+      const orbCode = walking ? null : why === 'facing' ? (one || close ? 'orb_facing' : null) : why === 'dy' ? (both ? 'orb_dy' : null) : why === 'gap' && ev.gap > cfg.orbGapMax && both ? 'orb_far' : null;
       if (sustained('orb', !!orbCode, t, cfg.hintTwoHandMs)) hint(orbCode, t);
       if (sustained('prism', !ev.kind && !!ev.prismNear, t, cfg.hintTwoHandMs)) hint('prism_tips', t);
     } else { sustained('orb', false, t, 0); sustained('prism', false, t, 0); }
@@ -1274,6 +1285,10 @@ export function createHandGestures(configPatch = {}) {
       const openish = (H) => H.rawShape === 'open' || H.extended.slice(1).filter(Boolean).length >= 3;
       const no = (why) => ({ kind: null, info: { ...info, why } });
       if (!openish(L) || !openish(R)) return no('shape');
+      // [V6] повёрнуты ли ладони друг к другу — и для подсказок: две ладони к камере (поза «Руля»
+      // и раскрытая правая после выброса) — не попытка сферы, подсказки про сферу не нужны
+      const facing0 = palmsFacing(L, R, cL, cR);
+      if (facing0) { info.faceL = Math.round(facing0.l * 100) / 100; info.faceR = Math.round(facing0.r * 100) / 100; }
       const slack = on ? cfg.orbGapSlack : 0;
       if (gap < cfg.orbGapMin * (1 - slack) || gap > cfg.orbGapMax * (1 + slack)) return no('gap');
       const dy = Math.abs(cL.y - cR.y) / Math.max(1e-6, gapPx);
@@ -1283,8 +1298,7 @@ export function createHandGestures(configPatch = {}) {
       // руки опущены (пальцы вниз) — это не сфера
       const down = (H) => { const v = { x: H.pts[9].x - H.pts[0].x, y: H.pts[9].y - H.pts[0].y }; return v.y / Math.max(1e-6, Math.hypot(v.x, v.y)); };
       if (down(L) > cfg.orbFingersDown && down(R) > cfg.orbFingersDown) return no('down');
-      const facing = palmsFacing(L, R, cL, cR);
-      if (facing) { info.faceL = Math.round(facing.l * 100) / 100; info.faceR = Math.round(facing.r * 100) / 100; }
+      const facing = facing0;
       const fOn = on ? cfg.orbFacingOff : cfg.orbFacingOn;
       const sideOn = on ? cfg.orbSideOff : cfg.orbSideOn;
       const handOk = (H, f) => (f !== null && f >= fOn) || (Math.abs(H.cross) < sideOn && (f === null || f >= cfg.orbSideMinFacing));

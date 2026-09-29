@@ -926,6 +926,14 @@ test('[ОШИБКА] сфера: ладони к камере → orb_facing; р
   ok(h.codes.includes('orb_dy'), 'orb_dy: ' + h.codes + ' ' + JSON.stringify(g.getDebug().conjure));
 });
 
+test('[V6] «Руль»: левая ведёт (ладонь к камере), правая раскрыта сбоку — подсказок про сферу нет', () => {
+  for (const rx of [0.36, 0.3, 0.26]) {
+    const g = createHandGestures({ moveMode: 'steer' });
+    const h = hintsOf(g, 1000, 4000, () => [L_AT({ ...SHAPES.open, cy: 0.45 }), R_AT({ ...SHAPES.open, cx: rx, cy: 0.5 })], BODYX);
+    ok(!h.codes.some((c) => /^orb_/.test(c)), `правая на x=${rx}: ${h.codes} ${JSON.stringify(g.getDebug().conjure.eval)}`);
+  }
+});
+
 test('[ОШИБКА] кадр: кистей нет при видимых запястьях → hands_missing; кисть у края → hand_edge', () => {
   let g = createHandGestures();
   const pw = { poseWrists: { left: { x: 0.6, y: 0.6, visibility: 0.9 }, right: { x: 0.4, y: 0.6, visibility: 0.9 } } };

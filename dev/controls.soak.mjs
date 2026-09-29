@@ -108,7 +108,7 @@ function simulate(seed, gOpts = {}) {
     walkFrames: 0, walkStops: 0, flips: 0, straightTurnSum: 0, straightFrames: 0, straightTurnMax: 0,
     arcStdSum: 0, arcN: 0, wrongTurn: 0,
     riseLatency: [], stopLatency: [], shieldLatency: null, shieldHeld: 0, shieldFrames: 0, shieldDropped: false,
-    restMove: 0, castStops: 0,
+    restMove: 0, castStops: 0, hintsOut: {}, hintsPush: {},
   };
   let prevShield = false, prevMoving = null;
   const recent = [];   // --debug: были ли кадры кисти (x) или пропуск (.)
@@ -188,6 +188,12 @@ function simulate(seed, gOpts = {}) {
         arc.push(f.moveX);
         if (P.want === 'turnL' ? f.moveX > 0.05 : f.moveX < -0.05) M.wrongTurn++;
       }
+      if (f.hint) {
+        const inPush = P.tag === 'толчок щита' || P.tag === 'держит щит';
+        const bag = inPush ? M.hintsPush : M.hintsOut;
+        bag[f.hint.code] = (bag[f.hint.code] || 0) + 1;
+        if (DEBUG && !inPush && f.hint.code === process.env.HINT) console.log(`подсказка ${f.hint.code}: «${P.tag}» +${t - t0}`);
+      }
       if (P.want === 'rest' && (f.moveZ !== 0 || f.moveX !== 0)) { M.restMove++; if (DEBUG) console.log(`ход в покое: seed=${seed} «${P.tag}» +${t - t0} мс z=${f.moveZ.toFixed(2)} x=${f.moveX.toFixed(2)} рука=${!!hand}`, recent.join('')); }
       if (P.tag === 'подъём' || P.tag === 'подъём 2') { if (moving && !riseSeen) { riseSeen = true; M.riseLatency.push(t - t0); } }
       if (P.tag.startsWith('рука вниз')) { if (!moving && !stopSeen) { stopSeen = true; M.stopLatency.push(t - t0); } }
@@ -241,6 +247,8 @@ function summarize(runs) {
     shieldMs: Math.round(avg(runs.filter((r) => r.shieldLatency !== null).map((r) => r.shieldLatency))),
     shieldHeldPct: +(100 * sum('shieldHeld') / Math.max(1, sum('shieldFrames'))).toFixed(1),
     shieldDropped: runs.filter((r) => r.shieldDropped).length + '/' + runs.length,
+    hintsOut: runs.reduce((a, r) => { for (const [k, v] of Object.entries(r.hintsOut)) a[k] = (a[k] || 0) + v; return a; }, {}),
+    hintsPush: runs.reduce((a, r) => { for (const [k, v] of Object.entries(r.hintsPush)) a[k] = (a[k] || 0) + v; return a; }, {}),
   };
 }
 
@@ -267,6 +275,7 @@ if (ONLY === null && !RIGHT) {
   RIGHT = false;
   const Q = summarize(rr);
   R.rightFalseShieldOn = Q.falseShieldOn; R.rightWalkStopPct = Q.walkStopPct; R.rightCastStopPct = Q.castStopPct;
+  R.rightOrbHints = Object.entries(Q.hintsOut).filter(([k]) => /^orb_|^prism_/.test(k)).reduce((a, [, v]) => a + v, 0);
 }
 // слабый ноутбук: камера 15 кадров/с (пропуск трекером тех же 1–6 кадров длится вдвое дольше)
 if (ONLY === null && !argv.includes('--fps')) {
@@ -307,6 +316,7 @@ else {
 // пороги качества (см. BUILD_STATUS.md, раздел V6)
 const LIMITS = [
   ['falseShieldOn', (v) => v === 0, 'щит не должен подниматься сам'],
+  ['hintsOut', (v) => Object.keys(v).length === 0, 'при ходьбе без правой руки подсказок нет (кодов)'],
   ['falseDash', (v) => v === 0, 'ложные рывки (в т.ч. резкий перехват руля за 0,15 с)'],
   ['walkStopPct', (v) => v <= 3, 'спотыкания при ходьбе, % кадров'],
   ['straightTurnAvg', (v) => v <= 0.03, 'руль на прямой'],
@@ -320,6 +330,7 @@ const LIMITS = [
   ['offsetWrongTurn', (v) => v === undefined || v === 0, 'рука «не там» на 10 см: поворот не в ту сторону'],
   ['rightFalseShieldOn', (v) => v === undefined || v === 0, 'правая колдует: щит не поднимается сам'],
   ['rightWalkStopPct', (v) => v === undefined || v <= 3, 'правая колдует: герой идёт, % кадров «стоим»'],
+  ['rightOrbHints', (v) => v === undefined || v === 0, 'правая колдует, левая ведёт: подсказок про сферу/призму нет'],
   ['noSwFalseShieldOn', (v) => v === undefined || v === 0, 'плечо закрыто ладонью: щит не поднимается сам'],
   ['noSwShieldUpPct', (v) => v === undefined || v >= 80, 'плечо закрыто ладонью: толчок поднимает щит, %'],
   ['noSwShieldDropped', (v) => v === undefined || v === `${R.noSwRuns}/${R.noSwRuns}`, 'плечо закрыто ладонью: убрал ладонь — щит опустился'],
@@ -337,6 +348,6 @@ if (!JSON_OUT) console.log('');
 for (const [k, fn, what] of LIMITS) {
   const okk = fn(R[k]);
   if (!okk) bad++;
-  if (!JSON_OUT) console.log(`${okk ? 'PASS' : 'FAIL'} ${what}: ${k}=${R[k]}`);
+  if (!JSON_OUT) console.log(`${okk ? 'PASS' : 'FAIL'} ${what}: ${k}=${typeof R[k] === 'object' ? JSON.stringify(R[k]) : R[k]}`);
 }
 process.exitCode = bad ? 1 : 0;
