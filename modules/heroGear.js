@@ -604,13 +604,104 @@ export function dressHero(THREE, vrm, opts = {}) {
     }
   }
 
+  // ---------------- посох: в кулаке правой (узел хвата heroModel: древко поперёк пальцев, навершие у большого)
+  let staffTip = null, staffRig = null, ribbons = null;
+  if (P.staff && bp.rightHand) {
+    staffRig = buildStaff(THREE, mats, { style: P.staff.style || 'crown' });
+    const holder = new THREE.Group(); holder.name = 'staff-holder';
+    holder.add(staffRig.group);
+    const slot = opts.grips && opts.grips.R;
+    if (slot) {
+      slot.add(holder);
+      holder.scale.setScalar(1 / (slot.getWorldScale(new THREE.Vector3()).x || 1));
+      try { compact(holder); } catch (e) { /* без склейки */ }
+      holder.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      parts.push({ obj: holder, bone: slot, staff: true });
+      names.push('staff');
+    } else {
+      // без слота (запасные клипы): вертикально в кулаке
+      const hand = bp.rightHand.clone();
+      const fing = bp.rightMiddleProximal || hand.clone().addScaledVector(UP, -0.08);
+      stick(holder, 'rightHand', hand.clone().lerp(fing, 0.8), modelQ);
+      parts[parts.length - 1].staff = true;
+    }
+    staffTip = staffRig.tip;
+    // подвески под навершием: две золотые цепочки с огранёнными кристаллами — качаются от шага и каста
+    try {
+      const sg = staffRig.group, top = staffRig.top;
+      sg.updateWorldMatrix(true, true);
+      const c0 = new THREE.Object3D(), c1 = new THREE.Object3D();
+      c0.position.set(0, top - 0.04, 0); c1.position.set(0, top - 0.7, 0); sg.add(c0, c1);
+      const locks = [];
+      for (const [a, len] of [[0.7, 0.16], [2.6, 0.11]]) {
+        const pts = [];
+        for (let i = 0; i < 6; i++) pts.push(sg.localToWorld(new THREE.Vector3(Math.cos(a) * 0.038, top + 0.05 - (i / 5) * len, -Math.sin(a) * 0.038)));
+        locks.push({ pts, pin: 1, r0: 0.0028, r1: 0.0024, flat: 1, taper: 0, seed: a, tone: 1, stiff: 0.05, vScale: 3 });
+      }
+      const _rq = new THREE.Quaternion(), holderR = model || vrm.scene;
+      ribbons = createStrands(THREE, { locks, anchor: sg, parent: holderR, colliders: [{ a: c0, b: c1, r: 0.024 }], material: mats.trim, drag: 0.8, carry: 0.45,
+        fwd: (out) => out.set(0, 0, 1).applyQuaternion(holderR.getWorldQuaternion(_rq)) });
+      ribbons.mesh.name = 'staff-charms';
+      const pend = [];
+      for (let i = 0; i < 2; i++) {
+        const g = new THREE.Mesh(G(gemGeo(THREE, { r: i ? 0.0085 : 0.011, h: i ? 0.034 : 0.045, n: 6 })), mats.crystal);
+        g.name = 'staff-charm'; holderR.add(g); pend.push(g);
+      }
+      ribbons.pendants = pend;
+        } catch (e) { ribbons = null; }
+  }
+
+  // ---------------- лук за спиной (в бою — в кулаке левой) и колчан
+  let bow = null, bowRig = null, arrow = null;
+  const gearCaps = []; // снаряжение, которое плащ обтекает (колчан на бедре)
+  const rT0 = torsoR - 0.018;
+  if ((P.bow || P.quiver) && bp[chestB]) {
+    if (P.bow) {
+      bowRig = buildBow(THREE, mats, { len: 1.3 });
+      const grp = bowRig.group;
+      // тетива из двух половин (кончик → точка натяжения): при натяжении тянется к пальцам правой
+      const strG = G(new THREE.CylinderGeometry(0.0014, 0.0014, 1, 4)); strG.translate(0, 0.5, 0);
+      const strM = Mt(new THREE.MeshBasicMaterial({ name: 'gear-string', color: 0xf2e8d0 }));
+      const strTop = new THREE.Mesh(strG, strM), strBot = new THREE.Mesh(strG, strM);
+      strTop.name = 'bow-string-top'; strBot.name = 'bow-string-bot';
+      grp.add(strTop, strBot);
+      grp.userData.string = { top: strTop, bot: strBot, tipT: bowRig.tipT, tipB: bowRig.tipB };
+      // стрела на тетиве (видна при натяжении)
+      arrow = buildArrow(THREE, mats, { len: 0.78 }); arrow.name = 'arrow'; arrow.visible = false;
+      grp.add(arrow);
+      // за спиной по диагонали: верх — у левого плеча, тетива наружу (от спины)
+      const diag = UP.clone().multiplyScalar(0.93).addScaledVector(LEFT, 0.42).normalize();
+      const q = qFromTo(new THREE.Vector3(0, 1, 0), diag);
+      const zNow = new THREE.Vector3(0, 0, 1).applyQuaternion(q), want = FWD.clone().negate();
+      q.premultiply(new THREE.Quaternion().setFromAxisAngle(diag, Math.atan2(zNow.clone().cross(want).dot(diag), zNow.dot(want))));
+      stick(grp, chestB, bp[chestB].clone().addScaledVector(FWD, -(rT0 + (P.cape ? 0.09 : 0.035))).addScaledVector(UP, -0.04), q);
+      bow = grp;
+    }
+    if (P.quiver) {
+      const qv = buildQuiver(THREE, mats, { h: 0.5, arrows: 8 });
+      if (P.quiver === 'hip' && bp.hips) {
+        // на правом бедре, наклонён назад (плащ не мешает)
+        const dir = UP.clone().addScaledVector(FWD, -0.35).addScaledVector(LEFT, -0.12).normalize();
+        stick(qv, 'hips', bp.hips.clone().addScaledVector(LEFT, -0.17).addScaledVector(FWD, -0.05).addScaledVector(UP, -0.32), qFromTo(new THREE.Vector3(0, 1, 0), dir));
+        // колчан — препятствие для плаща (ткань обтекает его, а не проходит насквозь)
+        const q0 = new THREE.Object3D(), q1 = new THREE.Object3D();
+        q0.position.set(0, 0.06, 0); q1.position.set(0, 0.62, 0); qv.add(q0, q1);
+        gearCaps.push({ a: q0, b: q1, r: 0.07, name: 'quiver' });
+      } else {
+        // за спиной: оперение над правым плечом
+        const dir = UP.clone().multiplyScalar(0.95).addScaledVector(LEFT, -0.32).normalize();
+        stick(qv, chestB, bp[chestB].clone().addScaledVector(FWD, -(rT0 + 0.06)).addScaledVector(LEFT, 0.05).addScaledVector(UP, -0.3), qFromTo(new THREE.Vector3(0, 1, 0), dir));
+      }
+    }
+  }
+
   // ---------------- плащ: ткань (modules/heroCloth.js) — прибит к плечам, падает, развевается на бегу,
   // не проходит сквозь ноги и корпус (капсулы по коже модели); вышитая кайма и герб (heroForge.capeTextures)
   let cloth = null, capeMat = null;
   if (P.cape && bp[chestB] && bp.hips && bp.leftUpperArm) {
     const { w, len, color, trim, emblem } = P.cape;
     // поверх копны волос по спине — корпус для ткани толще
-    const colliders = bodyCaps.map((c) => ({ ...c, r: c.r + (hair && /hips|Chest|chest/.test(c.name) ? 0.03 : 0) }));
+    const colliders = bodyCaps.map((c) => ({ ...c, r: c.r + (hair && /hips|Chest|chest/.test(c.name) ? 0.03 : 0) })).concat(gearCaps);
     const rT = torsoR + (hair ? 0.03 : 0);
     // исходная форма: верх — дуга по плечам и загривку, ниже — полотно за спиной, книзу шире
     const cols = 13, rows = 18;
@@ -691,92 +782,6 @@ export function dressHero(THREE, vrm, opts = {}) {
     for (const m of grp.children) m.position.sub(c0);
     grp.children.forEach((m) => m.updateMatrix());
     stick(grp, chestB, c0, new THREE.Quaternion());
-  }
-
-  // ---------------- посох: в кулаке правой (узел хвата heroModel: древко поперёк пальцев, навершие у большого)
-  let staffTip = null, staffRig = null, ribbons = null;
-  if (P.staff && bp.rightHand) {
-    staffRig = buildStaff(THREE, mats, { style: P.staff.style || 'crown' });
-    const holder = new THREE.Group(); holder.name = 'staff-holder';
-    holder.add(staffRig.group);
-    const slot = opts.grips && opts.grips.R;
-    if (slot) {
-      slot.add(holder);
-      holder.scale.setScalar(1 / (slot.getWorldScale(new THREE.Vector3()).x || 1));
-      try { compact(holder); } catch (e) { /* без склейки */ }
-      holder.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-      parts.push({ obj: holder, bone: slot, staff: true });
-      names.push('staff');
-    } else {
-      // без слота (запасные клипы): вертикально в кулаке
-      const hand = bp.rightHand.clone();
-      const fing = bp.rightMiddleProximal || hand.clone().addScaledVector(UP, -0.08);
-      stick(holder, 'rightHand', hand.clone().lerp(fing, 0.8), modelQ);
-      parts[parts.length - 1].staff = true;
-    }
-    staffTip = staffRig.tip;
-    // подвески под навершием: две золотые цепочки с огранёнными кристаллами — качаются от шага и каста
-    try {
-      const sg = staffRig.group, top = staffRig.top;
-      sg.updateWorldMatrix(true, true);
-      const c0 = new THREE.Object3D(), c1 = new THREE.Object3D();
-      c0.position.set(0, top - 0.04, 0); c1.position.set(0, top - 0.7, 0); sg.add(c0, c1);
-      const locks = [];
-      for (const [a, len] of [[0.7, 0.16], [2.6, 0.11]]) {
-        const pts = [];
-        for (let i = 0; i < 6; i++) pts.push(sg.localToWorld(new THREE.Vector3(Math.cos(a) * 0.038, top + 0.05 - (i / 5) * len, -Math.sin(a) * 0.038)));
-        locks.push({ pts, pin: 1, r0: 0.0028, r1: 0.0024, flat: 1, taper: 0, seed: a, tone: 1, stiff: 0.05, vScale: 3 });
-      }
-      const _rq = new THREE.Quaternion(), holderR = model || vrm.scene;
-      ribbons = createStrands(THREE, { locks, anchor: sg, parent: holderR, colliders: [{ a: c0, b: c1, r: 0.024 }], material: mats.trim, drag: 0.8, carry: 0.45,
-        fwd: (out) => out.set(0, 0, 1).applyQuaternion(holderR.getWorldQuaternion(_rq)) });
-      ribbons.mesh.name = 'staff-charms';
-      const pend = [];
-      for (let i = 0; i < 2; i++) {
-        const g = new THREE.Mesh(G(gemGeo(THREE, { r: i ? 0.0085 : 0.011, h: i ? 0.034 : 0.045, n: 6 })), mats.crystal);
-        g.name = 'staff-charm'; holderR.add(g); pend.push(g);
-      }
-      ribbons.pendants = pend;
-        } catch (e) { ribbons = null; }
-  }
-
-  // ---------------- лук за спиной (в бою — в кулаке левой) и колчан
-  let bow = null, bowRig = null, arrow = null;
-  const rT0 = torsoR - 0.018;
-  if ((P.bow || P.quiver) && bp[chestB]) {
-    if (P.bow) {
-      bowRig = buildBow(THREE, mats, { len: 1.3 });
-      const grp = bowRig.group;
-      // тетива из двух половин (кончик → точка натяжения): при натяжении тянется к пальцам правой
-      const strG = G(new THREE.CylinderGeometry(0.0014, 0.0014, 1, 4)); strG.translate(0, 0.5, 0);
-      const strM = Mt(new THREE.MeshBasicMaterial({ name: 'gear-string', color: 0xf2e8d0 }));
-      const strTop = new THREE.Mesh(strG, strM), strBot = new THREE.Mesh(strG, strM);
-      strTop.name = 'bow-string-top'; strBot.name = 'bow-string-bot';
-      grp.add(strTop, strBot);
-      grp.userData.string = { top: strTop, bot: strBot, tipT: bowRig.tipT, tipB: bowRig.tipB };
-      // стрела на тетиве (видна при натяжении)
-      arrow = buildArrow(THREE, mats, { len: 0.78 }); arrow.name = 'arrow'; arrow.visible = false;
-      grp.add(arrow);
-      // за спиной по диагонали: верх — у левого плеча, тетива наружу (от спины)
-      const diag = UP.clone().multiplyScalar(0.93).addScaledVector(LEFT, 0.42).normalize();
-      const q = qFromTo(new THREE.Vector3(0, 1, 0), diag);
-      const zNow = new THREE.Vector3(0, 0, 1).applyQuaternion(q), want = FWD.clone().negate();
-      q.premultiply(new THREE.Quaternion().setFromAxisAngle(diag, Math.atan2(zNow.clone().cross(want).dot(diag), zNow.dot(want))));
-      stick(grp, chestB, bp[chestB].clone().addScaledVector(FWD, -(rT0 + 0.035)).addScaledVector(UP, -0.04), q);
-      bow = grp;
-    }
-    if (P.quiver) {
-      const qv = buildQuiver(THREE, mats, { h: 0.5, arrows: 8 });
-      if (P.quiver === 'hip' && bp.hips) {
-        // на правом бедре, наклонён назад (плащ не мешает)
-        const dir = UP.clone().addScaledVector(FWD, -0.35).addScaledVector(LEFT, -0.12).normalize();
-        stick(qv, 'hips', bp.hips.clone().addScaledVector(LEFT, -0.17).addScaledVector(FWD, -0.05).addScaledVector(UP, -0.32), qFromTo(new THREE.Vector3(0, 1, 0), dir));
-      } else {
-        // за спиной: оперение над правым плечом
-        const dir = UP.clone().multiplyScalar(0.95).addScaledVector(LEFT, -0.32).normalize();
-        stick(qv, chestB, bp[chestB].clone().addScaledVector(FWD, -(rT0 + 0.06)).addScaledVector(LEFT, 0.05).addScaledVector(UP, -0.3), qFromTo(new THREE.Vector3(0, 1, 0), dir));
-      }
-    }
   }
 
   // ---------------- кадр: ткань, свечение, LOD
