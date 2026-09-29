@@ -108,6 +108,15 @@ export const config = {
 
   effects: {},
 
+  // [PVP] баланс дуэли игрок против игрока (modules/pvp.js, PVP_DEFAULTS — полный список ключей).
+  // Отдельно от боя с Регентом: HP 400, одно попадание ≤ 18% HP, раунды до 2 побед из 3.
+  pvp: {
+    hp: 400,
+    maxHitShare: 0.18,
+    engageRange: 35,
+    rounds: { toWin: 2, countdown: 3, roundEnd: 2.8, slowmo: 0.5, roundTime: 100, disconnectWait: 20 },
+  },
+
   // [NET] онлайн-дуэль (net/net.js). peer: свой PeerServer — { host, port, path, secure, key }, null — облако PeerJS.
   // iceServers: STUN Google; бесплатный TURN (если найдётся) — добавить сюда { urls, username, credential }.
   net: {
