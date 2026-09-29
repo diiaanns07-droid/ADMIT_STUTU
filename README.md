@@ -245,7 +245,7 @@ core/handGestures.js             — жесты кистей + детектор�
 core/gestureCoach.js             — тексты подсказок и статистика точности
 core/bowGesture.js, handMagic.js — лук (кулак + щепоть, натяжение, выпуск) и сгусток в ладони; handZone.js — связка с вводом
 core/handFxOverlay.js            — огонь/молния в ладони, тетива и стрела поверх превью камеры
-modules/combatHand.js, handVisuals.js — стрелы и сгустки в бою (стихии, дождь стрел) и их 3D-заглушки
+modules/combatHand.js, handVisuals.js — стрелы и сгустки в бою (стихии, дождь стрел, PvP-дуэль), 3D-лук и дуга прицела
 core/steerStick.js               — левая рука-руль (схема по умолчанию): шаг/бег/стоп, поворот, рывок
 core/leftStick.js                — левая рука-джойстик и детектор рывка
 core/squatCounter.js             — приседания с контролем техники
