@@ -29,7 +29,7 @@ export const HEROES = Object.freeze({
     id: 'ashen', name: 'Пепельный страж', vrm: null, glb: 'knight.glb', height: 1.84, cls: 'Воин-маг', element: 'Пепел и пламя',
     desc: ['Клятвенный страж павшего святилища.', 'Латы из закалённой стали, посох с углём клятвы.', 'Держит удар и отвечает огнём.'],
     gear: 'warden', stance: 'staff', adduct: 0.3, menuStance: 'Stance',
-    fx: { style: 'ember', color: 0xff7a2a, color2: 0xffd08a, armor: 0xff5a18, armorK: 2.6 },
+    fx: { style: 'ember', color: 0xff7a2a, color2: 0xffd08a, armor: 0xff5a18, armorK: 2.6, visorEyes: 0xff8a30 },
   },
   // [HERO] V6: эльфийка и чародейка — реалистичные (тело и костюм Quaternius Ranger, перекраска, своё снаряжение)
   elf: {
@@ -38,7 +38,7 @@ export const HEROES = Object.freeze({
     gear: 'sylvan', stance: 'bow', adduct: 0.3, menuStance: null, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, ears: true, hair: { color: 0xe6dcc0, len: 0.95 },
     // зелёная ткань → белый шёлк с бирюзой, кожа доспеха → светлая замша
     recolor: { MI_Ranger: [{ h: [65, 175], toH: 172, s: 0.35, v: 1.55 }, { h: [8, 48], toH: 38, s: 0.55, v: 1.45 }] },
-    fx: { style: 'wind', color: 0x9ff4ff, color2: 0xfff3c0, armor: 0x7fe8ff, armorK: 1.4 },
+    fx: { style: 'wind', color: 0x9ff4ff, color2: 0xfff3c0, armor: 0x7fe8ff, armorK: 1.4, eyes: 0x7fe8ff, eyesK: 0.9 },
   },
   dark: {
     id: 'dark', name: 'Тёмная чародейка', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Чародейка', element: 'Тьма и лёд',
@@ -46,7 +46,7 @@ export const HEROES = Object.freeze({
     gear: 'witchQ', stance: 'staff', adduct: 0.3, menuStance: 'Stance', hide: ['Female_Ranger_Acc_Pauldrons'], hair: { color: 0x1c1426, len: 1.05 },
     // зелёная ткань → глубокий фиолетовый, кожа → почти чёрная
     recolor: { MI_Ranger: [{ h: [65, 175], toH: 272, s: 1.1, v: 0.62 }, { h: [8, 48], toH: 255, s: 0.35, v: 0.42 }] },
-    fx: { style: 'frost', color: 0xb58cff, color2: 0x9fe0ff, armor: 0xa77bff, armorK: 1.8 },
+    fx: { style: 'frost', color: 0xb58cff, color2: 0x9fe0ff, armor: 0xa77bff, armorK: 1.8, eyes: 0xa77bff, eyesK: 1.3 },
   },
   // [HERO] новые герои (Quaternius Modular Fantasy, CC0)
   ranger: {
@@ -59,7 +59,7 @@ export const HEROES = Object.freeze({
     id: 'archmage', name: 'Архимаг', vrm: null, glb: 'wizard.glb', height: 1.8, cls: 'Архимаг', element: 'Буря',
     desc: ['Последний магистр Грозовой коллегии.', 'Посох-громоотвод и плащ, прошитый рунами.', 'Лепит сферы молний двумя руками.'],
     gear: 'magus', stance: 'staff', adduct: 0.3, menuStance: 'Stance',
-    fx: { style: 'storm', color: 0x8fd0ff, color2: 0xe8f6ff, armor: 0x6fc0ff, armorK: 2.2 },
+    fx: { style: 'storm', color: 0x8fd0ff, color2: 0xe8f6ff, armor: 0x6fc0ff, armorK: 2.2, eyes: 0x9fdcff, eyesK: 1.2 },
   },
 });
 // прежние аниме-героини VRoid: не в меню и не в лобби (HEROES), но setHero их знает
@@ -403,7 +403,7 @@ export function createHeroModel({
       const add = c.def.adduct ?? 0.22; // та же поза рук, что в игре (см. applyLife)
       adduct(c.bones.leftUpperArm, -add); adduct(c.bones.rightUpperArm, add);
       c.vrm.update(0);
-      c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null });
+      c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null, fx: c.def.fx || null });
       if (c.full.Idle) c.full.Idle.stop();
     } catch (e) { console.warn('[HERO] heroGear недоступен, без снаряжения:', e && e.message); }
     // аура класса (частицы стихии в шейдере) — modules/heroAura.js
@@ -688,6 +688,9 @@ export function createHeroModel({
     if (!P) { // меню: покой (или стойка витрины)
       S.yawRate = 0; S.prevYaw = null;
       if (act && !holdName && time >= actUntil) { stopAct(0.3); if (stance) setStance(stance); }
+      if (cur.shade && cur.shade.setGlow) cur.shade.setGlow(1);
+      if (cur.aura && cur.aura.setIntensity) cur.aura.setIntensity(1);
+      if (cur.gear && cur.gear.setGlow) cur.gear.setGlow(1);
       updateLoco(dt, 0, 0, 0, false);
       cur.mixer.update(dt);
       saveClean();
@@ -748,7 +751,7 @@ export function createHeroModel({
           want = { name: n, speed: 1.5, full: true };
           break;
         }
-        case 'player_hit': S.recoil = 1; if (!want) want = { name: P.shielding ? 'BlockHit' : num(d.amount) >= 20 ? 'HitB' : 'Hit', speed: 1.4 }; break;
+        case 'player_hit': S.hurt = 1; S.recoil = 1; if (!want) want = { name: P.shielding ? 'BlockHit' : num(d.amount) >= 20 ? 'HitB' : 'Hit', speed: 1.4 }; break;
         case 'player_slash': want = { name: 'Slash', speed: 1.8 }; break;
         case 'burst': want = { name: 'Cast2', speed: 1.5 }; break;
         case 'rune_cast': want = { name: 'CastRaise', speed: 1.4 }; break;
@@ -759,6 +762,11 @@ export function createHeroModel({
         case 'player_cast': if (!want) want = { name: 'Cast1', speed: d.ability === 'spark' ? 2.2 : 1.6 }; break;
         default: break;
       }
+    }
+    // магия откликается: касты/выброс/руны/печати — вспышка ауры и жил лат
+    for (const e of evList) {
+      const ty = e && e.type;
+      if (ty === 'player_cast' || ty === 'burst' || ty === 'rune_cast' || ty === 'sigil_cast' || ty === 'hand_spell_throw' || ty === 'bow_release' || ty === 'parry' || ty === 'player_slash') S.flare = Math.min(1.6, (S.flare || 0) + (ty === 'burst' || ty === 'sigil_cast' || ty === 'rune_cast' ? 1.2 : 0.6));
     }
     if (want) {
       playAct(want.name, { speed: want.speed, upperOnly: !want.full && moving });
@@ -797,6 +805,15 @@ export function createHeroModel({
     applyLife(dt, !moving && !act, twist);
     applyPose(dt);
     staffFollow();
+    // жилы и аура: вспышка магии, при ранении — вздрог, при низком HP — мерцание и угасание
+    S.flare = Math.max(0, (S.flare || 0) - dt * 2.2);
+    S.hurt = Math.max(0, (S.hurt || 0) - dt * 3);
+    const hpR = P.maxHp ? clamp(num(P.hp, P.maxHp) / P.maxHp, 0, 1) : 1;
+    const low = hpR < 0.3 ? (0.45 + 0.55 * Math.abs(Math.sin(time * 9 + Math.sin(time * 23) * 2))) * (0.5 + hpR) : 1;
+    const glowK = (1 + 1.6 * S.flare - 0.5 * S.hurt) * low;
+    if (cur.shade && cur.shade.setGlow) cur.shade.setGlow(glowK);
+    if (cur.aura && cur.aura.setIntensity) cur.aura.setIntensity(clamp(0.8 + 1.5 * S.flare, 0, 3) * (hpR < 0.3 ? 0.6 : 1));
+    if (cur.gear && cur.gear.setGlow) cur.gear.setGlow(glowK);
     vrmTick(dt);
   }
 
