@@ -15,6 +15,7 @@
 //   • правая рука всё время колдует; 1 % кадров — выбросы трекинга (кисть на кадр «прыгает»).
 // Ключи: --seeds N, --seed S (один прогон), --push K (сила толчка), --offset/--level (привычка игрока),
 //   --right (правая колдует), --glitch P (доля кадров-выбросов), --fast MS (резкость руления), --save файл,
+//   --fps N (частота камеры), --no-sw (нет ширины плеч), --body-glitch P, --lean (наклоны корпуса), --swap (путаница кистей),
 //   --cfg '{...}' (подмена настроек handGestures), --debug (по фазам), --json.
 // Итог — таблица и жёсткие пороги (код выхода 1, если хуже порогов).
 
@@ -36,7 +37,9 @@ const FAST_MS = +argOf('--fast', 150);
 let RIGHT = argv.includes('--right');
 let GLITCH = +argOf('--glitch', 0);
 const BODY_GLITCH = +argOf('--body-glitch', 0);
-let NO_SW = argv.includes('--no-sw');          // ширины плеч нет (левая ладонь закрыла плечо — поза не уверена)  // доля кадров, где середина плеч позы «прыгает» на 0.1–0.3 sw           // доля кадров-выбросов: кисть на один кадр «прыгает» (сбой MediaPipe)        // правая рука всё время колдует: «OK», руны, выброс, «Искра»          // длительность «резкого» движения руля, мс
+let NO_SW = argv.includes('--no-sw');
+const LEAN = argv.includes('--lean');           // игрок время от времени резко наклоняется к камере всем корпусом (+15 % за 0,4 с)
+const SWAP = argv.includes('--swap');           // трекер путает кисти: 4–6 кадров «левая» — это правая рука          // ширины плеч нет (левая ладонь закрыла плечо — поза не уверена)  // доля кадров, где середина плеч позы «прыгает» на 0.1–0.3 sw           // доля кадров-выбросов: кисть на один кадр «прыгает» (сбой MediaPipe)        // правая рука всё время колдует: «OK», руны, выброс, «Искра»          // длительность «резкого» движения руля, мс
 const OFFSET = +argOf('--offset', 0);          // привычная ладонь игрока смещена от нейтрали игры (sw, + к середине груди)
 const LEVEL = +argOf('--level', 0);            // и выше (+) / ниже (−) «уровня груди» (sw)          // сила осознанного толчка щита: во столько раз кисть растёт в кадре
 const G_OPTS = JSON.parse(argOf('--cfg', '{}')); // подмена настроек handGestures (подбор порогов)
@@ -121,8 +124,11 @@ function simulate(seed, gOpts = {}) {
       const q = P.hand(u);
       // живость: корпус качается, ладонь гуляет к камере и вбок, кисть поворачивается
       const sway = 0.06 * osc(0.23, ph[0]);
+      // наклон корпуса к камере: раз в ~6 с на 1,5 с, всё тело (и кисть) крупнее на 15 %, плечи чуть ниже
+      const leanK = LEAN ? (() => { const c = ((t - 1000) % 6000) / 1000; const e = (u) => u * u * (3 - 2 * u); return c < 2 ? 0 : c < 2.4 ? e((c - 2) / 0.4) : c < 3.5 ? 1 : c < 3.9 ? 1 - e((c - 3.5) / 0.4) : 0; })() : 0;
+      S.sw = 0.3 * (1 + 0.15 * leanK);
       S.cx = 0.5 + sway * S.sw / S.aspect;
-      S.cy = 0.4 + 0.02 * osc(0.17, ph[1]) * S.sw;
+      S.cy = 0.4 + 0.02 * osc(0.17, ph[1]) * S.sw + 0.03 * leanK;
       let hand = null;
       if (dropLeft > 0) dropLeft--;
       else if (rnd() < 0.04) dropLeft = 1 + Math.floor(rnd() * 6);    // серии пропусков 1–6 кадров
@@ -134,13 +140,22 @@ function simulate(seed, gOpts = {}) {
         const gx = gl ? (rnd() - 0.5) * 0.8 : 0, gy = gl ? (rnd() - 0.5) * 0.8 : 0, gs = gl ? 1 + (rnd() - 0.5) * 0.4 : 1;
         const at = S.at(q.x + gx + 0.05 * osc(0.6, ph[3]) + 0.015 * gauss(), q.y + gy + 0.05 * osc(0.5, ph[4]) + 0.015 * gauss());
         hand = makeHand({
-          side: 'left', aspect: S.aspect, ...SHAPES[q.shape], size: q.size * wobSize * gs,
+          side: 'left', aspect: S.aspect, ...SHAPES[q.shape], size: q.size * wobSize * gs * (1 + 0.15 * leanK),
           yaw: (edge ? 1.1 : 0.25) * osc(0.3, ph[5]) + (edge ? 0.3 : 0), pitch: 0.2 * osc(0.35, ph[6]), roll: 0.15 * osc(0.2, ph[7]),
           noise: 0.035, cx: at.cx, cy: at.cy,
         });
         // сдвиг всей сцены (корпус качнулся) уже учтён в S.at
       }
-      const hands = hand ? [hand] : [];
+      let hands = hand ? [hand] : [];
+      // путаница кистей: несколько кадров трекер видит правую руку (у правого плеча) вместо левой
+      if (SWAP && hand) {
+        if (!S.swapLeft && rnd() < 0.006) S.swapLeft = 4 + Math.floor(rnd() * 3);
+        if (S.swapLeft > 0) {
+          S.swapLeft--;
+          const at2 = S.at(0.45 + 0.015 * gauss(), 0.3 + 0.015 * gauss());
+          hands = [makeHand({ side: 'left', aspect: S.aspect, ...SHAPES.open, size: SIZE, noise: 0.035, cx: at2.cx, cy: at2.cy })];
+        }
+      }
       // правая рука: цикл 4 с — «OK» у груди (огонь), указательным рисует ▲ у середины груди,
       // кулак → раскрыть (выброс), расслабленная ладонь; с шумом и пропусками, как левая
       if (RIGHT && P.want !== 'rest' && rnd() > 0.06) {
