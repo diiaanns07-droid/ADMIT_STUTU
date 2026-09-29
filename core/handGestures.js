@@ -96,8 +96,10 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   shieldPushScaleCheck: 1.1,  // и размер по world-точкам тоже вырос хотя бы во столько (кисть приблизилась, а не развернулась)
   shieldPushFast: 1.12,    // и был быстрый участок: размах вырос во столько…
   shieldPushFastMs: 100,   //   …примерно за столько мс (толчок, а не медленный дрейф руки к камере)
+  shieldPushPinMargin: 0.06, // толчок, прерванный пропуском кадров, досчитывается с таким запасом к порогу
   shieldPushTurnMax: 0.15, // за время толчка ладонь почти не повернулась (|z| нормали изменился меньше): разворот ладони к камере — не толчок
   shieldConfirmMs: 90,     // ладонь к камере раскрыта хотя бы столько (не мигание формы)
+  shieldStillShare: 0.6,   // в момент подъёма щита ладонь всё ещё впереди: не меньше этой доли толчка над размером до него
   shieldAfterRaiseMs: 400, // в «Руле»: столько после подъёма руки щит не поднимается (подъём — не толчок)
   shieldRetract: 0.07,     // ладонь вернулась назад: размер < (размер до толчка)·(1 + столько)…
   shieldRetractShare: 0.5, //   …или ушла назад больше чем на эту долю толчка (от пика) — что больше…
@@ -791,6 +793,7 @@ export function createHandGestures(configPatch = {}) {
       const nz = f.n3 ? Math.abs(f.n3.z) : null;
       H.nzF = nz === null ? null : H.nzF == null || a === 1 ? nz : H.nzF + (nz - H.nzF) * a;
       H.scaleN = sw && H.spanF > 1e-6 ? H.spanF / sw : null;
+      H.spanNow = span; H.spanNowN = sw ? span / sw : null;   // этот кадр без сглаживания: после пропуска кадров фильтр ещё «помнит» старое
       H.lastScaleT = t;
     }
     if (!ready(H, t)) { H.scaleHist.length = 0; H.pushRun = 0; }
@@ -832,9 +835,11 @@ export function createHandGestures(configPatch = {}) {
       // за пропуск окно «уезжает» внутрь толчка — досчитываем его от закреплённой точки старта
       const P0 = H.pushPin;
       if (!pushing && H.pushRun > 0 && P0 && t - P0.t <= cfg.shieldPushKeepMs) {
-        const cur = sw && P0.sw ? H.spanF / sw : H.spanF, ref = sw && P0.sw ? P0.pn : P0.p;
+        const k0 = sw && P0.sw;
+        const cur = k0 ? H.spanF / sw : H.spanF, now = k0 ? H.spanNowN : H.spanNow, ref = k0 ? P0.pn : P0.p;
         const turned = H.nzF !== null && P0.nz !== null ? Math.abs(H.nzF - P0.nz) : 0;
-        pushing = cur / Math.max(1e-6, ref) >= ratio && turned < cfg.shieldPushTurnMax;
+        // без проверки скорости (кадров в пропуске нет) — с запасом: медленный дрейф через пропуск не толчок
+        pushing = Math.min(cur, now) / Math.max(1e-6, ref) >= ratio + cfg.shieldPushPinMargin && turned < cfg.shieldPushTurnMax;
       }
       if (pushing) {
         H.pushRun++;
@@ -977,7 +982,11 @@ export function createHandGestures(configPatch = {}) {
     const confirmed = t - S.openSince >= cfg.shieldConfirmMs;
     // [V6] «Руль»: подъём руки к груди (кисть растёт в кадре) — не толчок
     const justRaised = so && so.mode === 'steer' && fin(so.raisedAt) && t - so.raisedAt < cfg.shieldAfterRaiseMs;
-    const pushed = t - L.pushAt <= cfg.shieldPushKeepMs && mag < cfg.shieldStickStart && confirmed && !justRaised;
+    // и ладонь всё ещё впереди: толчок, после которого кисть пропала и вернулась уже назад, щит не ставит
+    const ratio = moveMode === 'steer' ? cfg.shieldPushRatioSteer : cfg.shieldPushRatio;
+    const stillForward = L.pushBase === null || L.spanNowN === null || L.scaleN === null
+      || Math.min(L.spanNowN, L.scaleN) >= L.pushBase * (1 + (ratio - 1) * cfg.shieldStillShare);
+    const pushed = t - L.pushAt <= cfg.shieldPushKeepMs && mag < cfg.shieldStickStart && confirmed && !justRaised && stillForward;
     if (pushed || (cfg.shieldHoldMs > 0 && still && t - S.openSince >= cfg.shieldHoldMs)) {
       S.on = true; S.back = 0; S.lastT = t;
       S.base = pushed ? L.pushBase : null; S.peak = L.scaleN;

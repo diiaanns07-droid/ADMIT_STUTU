@@ -26,7 +26,8 @@ const ONLY = argOf('--seed', null);   // --seed N: один прогон с эт
 const JSON_OUT = argv.includes('--json');
 const DEBUG = argv.includes('--debug');
 const PUSH = +argOf('--push', 1.35);
-const FAST_MS = +argOf('--fast', 150);          // длительность «резкого» движения руля, мс
+const FAST_MS = +argOf('--fast', 150);
+let RIGHT = argv.includes('--right');        // правая рука всё время колдует: «OK», руны, выброс, «Искра»          // длительность «резкого» движения руля, мс
 const OFFSET = +argOf('--offset', 0);          // привычная ладонь игрока смещена от нейтрали игры (sw, + к середине груди)
 const LEVEL = +argOf('--level', 0);            // и выше (+) / ниже (−) «уровня груди» (sw)          // сила осознанного толчка щита: во столько раз кисть растёт в кадре
 const G_OPTS = JSON.parse(argOf('--cfg', '{}')); // подмена настроек handGestures (подбор порогов)
@@ -98,7 +99,7 @@ function simulate(seed, gOpts = {}) {
     walkFrames: 0, walkStops: 0, flips: 0, straightTurnSum: 0, straightFrames: 0, straightTurnMax: 0,
     arcStdSum: 0, arcN: 0, wrongTurn: 0,
     riseLatency: [], stopLatency: [], shieldLatency: null, shieldHeld: 0, shieldFrames: 0, shieldDropped: false,
-    restMove: 0,
+    restMove: 0, castStops: 0,
   };
   let prevShield = false, prevMoving = null;
   const recent = [];   // --debug: были ли кадры кисти (x) или пропуск (.)
@@ -128,11 +129,24 @@ function simulate(seed, gOpts = {}) {
         // сдвиг всей сцены (корпус качнулся) уже учтён в S.at
       }
       const hands = hand ? [hand] : [];
+      // правая рука: цикл 4 с — «OK» у груди (огонь), указательным рисует ▲ у середины груди,
+      // кулак → раскрыть (выброс), расслабленная ладонь; с шумом и пропусками, как левая
+      if (RIGHT && P.want !== 'rest' && rnd() > 0.06) {
+        const c = ((t - 1000) % 4000) / 1000;
+        let q2;
+        if (c < 1) q2 = { x: 0.45, y: 0.15, shape: 'ok' };
+        else if (c < 2.2) { const a = (c - 1) / 1.2 * 3, k = Math.floor(a), f = a - k; const V = [[0.1, -0.2], [0.35, 0.25], [-0.15, 0.25], [0.1, -0.2]]; q2 = { x: lerp(V[k][0], V[k + 1][0], f), y: lerp(V[k][1], V[k + 1][1], f), shape: 'point' }; }
+        else if (c < 3) q2 = { x: 0.5, y: 0.3, shape: 'fist' };
+        else if (c < 3.3) q2 = { x: 0.5, y: 0.3, shape: 'open' };
+        else q2 = { x: 0.55, y: 0.6, shape: 'open', yaw: 0.9 };
+        const at2 = S.at(q2.x + 0.015 * gauss(), q2.y + 0.015 * gauss());
+        hands.push(makeHand({ side: 'right', aspect: S.aspect, ...SHAPES[q2.shape], size: SIZE * (1 + 0.03 * gauss()), yaw: q2.yaw || 0.15 * osc(0.3, ph[5] + 1), noise: 0.035, cx: at2.cx, cy: at2.cy }));
+      }
       recent.push(hand ? 'x' : '.'); if (recent.length > 16) recent.shift();
       const wr = hand ? { x: hand.landmarks[0].x + 0.004 * gauss(), y: hand.landmarks[0].y + 0.004 * gauss(), visibility: 0.9 } : null;
       g.push({
         tMs: t, frameW: 640, frameH: 480, mirror: true, hands,
-        poseWrists: { left: wr, right: null },
+        poseWrists: { left: wr, right: hands[1] ? { x: hands[1].landmarks[0].x, y: hands[1].landmarks[0].y, visibility: 0.9 } : null },
         bodyCenter: { x: S.cx + 0.004 * gauss(), y: S.cy + 0.004 * gauss() }, shoulderWidth: S.sw * (1 + 0.02 * gauss()),
       });
       const f = g.read(t);
@@ -146,6 +160,7 @@ function simulate(seed, gOpts = {}) {
       if (P.want === 'walk' || P.want === 'run' || P.want === 'turnL' || P.want === 'turnR') {
         M.walkFrames++;
         if (!moving) M.walkStops++;
+        if (!moving && f.stick && f.stick.hold === 'cast') M.castStops++;
         if (prevMoving !== null && moving !== prevMoving) M.flips++;
         if (!riseSeen && moving) riseSeen = true;
       }
@@ -164,7 +179,9 @@ function simulate(seed, gOpts = {}) {
         if (f.shield && M.shieldLatency === null) M.shieldLatency = t - (P.tag === 'толчок щита' ? t0 : t0 - 220);
       }
       if (P.want === 'shield') { M.shieldFrames++; if (f.shield) M.shieldHeld++; }
-      if (DEBUG && (P.tag === 'толчок щита' || (P.tag === 'держит щит' && t - t0 < 500)) && process.env.SEED == seed) {
+      const trace = process.env.TRACE_TAG ? P.tag === process.env.TRACE_TAG && t - t0 >= +(process.env.TRACE_FROM || 0) && t - t0 <= +(process.env.TRACE_TO || 1e9)
+        : (P.tag === 'толчок щита' || (P.tag === 'держит щит' && t - t0 < 500));
+      if (DEBUG && trace && process.env.SEED == seed) {
         const d = g.getDebug();
         console.log(P.tag, t - t0, 'shield', f.shield, 'raw', d.left.raw, 'facing', d.left.palmFacing, 'turn', f.moveX.toFixed(2), 'hand', !!hand, JSON.stringify(d.left.push));
       }
@@ -194,6 +211,7 @@ function summarize(runs) {
     falseShieldPct: +(100 * sum('falseShieldFrames') / sum('frames')).toFixed(2),
     falseDash: sum('falseDash'),
     walkStopPct: +(100 * sum('walkStops') / sum('walkFrames')).toFixed(2),
+    castStopPct: +(100 * sum('castStops') / sum('walkFrames')).toFixed(2),
     flipsPerMin: +(sum('flips') / (sum('walkFrames') * DT / 60000)).toFixed(1),
     straightTurnAvg: +(sum('straightTurnSum') / sum('straightFrames')).toFixed(3),
     straightTurnMax: +Math.max(...runs.map((r) => r.straightTurnMax)).toFixed(3),
@@ -225,6 +243,15 @@ if (ONLY === null && !argv.includes('--offset')) {
   const O = summarize(off);
   R.offsetTurnAvg = O.straightTurnAvg; R.offsetShieldUpPct = O.shieldUpPct; R.offsetWrongTurn = O.wrongTurn;
 }
+// правая рука всё время колдует («OK», руна ▲ у середины груди, выброс) — левая ведёт как обычно
+if (ONLY === null && !RIGHT) {
+  RIGHT = true;
+  const rr = [];
+  for (let s = 0; s < Math.max(4, SEEDS / 2); s++) rr.push(simulate(9000 + s * 7919, G_OPTS));
+  RIGHT = false;
+  const Q = summarize(rr);
+  R.rightFalseShieldOn = Q.falseShieldOn; R.rightWalkStopPct = Q.walkStopPct; R.rightCastStopPct = Q.castStopPct;
+}
 if (DEBUG) console.table(byTag);
 if (JSON_OUT) console.log(JSON.stringify(R));
 else {
@@ -246,6 +273,8 @@ const LIMITS = [
   ['offsetTurnAvg', (v) => v === undefined || v <= 0.06, 'рука «не там» на 10 см: руль на прямой'],
   ['offsetShieldUpPct', (v) => v === undefined || v >= 90, 'рука «не там» на 10 см: толчок поднимает щит, %'],
   ['offsetWrongTurn', (v) => v === undefined || v === 0, 'рука «не там» на 10 см: поворот не в ту сторону'],
+  ['rightFalseShieldOn', (v) => v === undefined || v === 0, 'правая колдует: щит не поднимается сам'],
+  ['rightWalkStopPct', (v) => v === undefined || v <= 3, 'правая колдует: герой идёт, % кадров «стоим»'],
 ];
 let bad = 0;
 if (!JSON_OUT) console.log('');
