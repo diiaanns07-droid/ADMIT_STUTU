@@ -73,7 +73,7 @@ async function mirrorCdn(ctx) {
 const want = (name) => !ONLY.length || ONLY.some((o) => name.includes(o));
 
 async function gameShots(browser, W, H, tag, log) {
-  const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+  const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1, ignoreHTTPSErrors: true });
   await mirrorCdn(ctx);
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') log.push(`${tag} ${m.type()}: ${m.text()}`); });
@@ -126,7 +126,7 @@ async function gameShots(browser, W, H, tag, log) {
 }
 
 async function previewShots(browser, W, H, tag, log) {
-  const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+  const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1, ignoreHTTPSErrors: true });
   await mirrorCdn(ctx);
   const page = await ctx.newPage();
   page.on('pageerror', (e) => log.push(`${tag} preview EXC: ${e.message}`));
