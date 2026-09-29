@@ -770,12 +770,14 @@ varying float vCapeT;`)
   void lodL;
   // качество: на 'low' — без sheen/clearcoat/anisotropy/transmission (дешёвый шейдер), выше — как было
   const physSaved = owned.mat.filter((m) => m.isMeshPhysicalMaterial).map((m) => ({ m, v: { sheen: m.sheen, clearcoat: m.clearcoat, anisotropy: m.anisotropy, transmission: m.transmission } }));
-  let qTier = quality === 'low' ? 'low' : 'hi';
+  // low — без всех четырёх; medium — только sheen (clearcoat/anisotropy/transmission — на 'high')
+  let qTier = null;
   function setQuality(q) {
-    const t = q === 'low' ? 'low' : 'hi';
+    const t = q === 'low' || q === 'high' ? q : 'medium';
     if (t === qTier) return;
     qTier = t;
-    for (const { m, v } of physSaved) for (const k of Object.keys(v)) m[k] = t === 'low' ? 0 : v[k];
+    for (const { m, v } of physSaved) for (const k of Object.keys(v)) m[k] = t === 'high' || (t === 'medium' && k === 'sheen') ? v[k] : 0;
   }
+  setQuality(quality);
   return { names, staffTip, bow, update, setLod, setQuality, setShading() {}, setBowHeld, dispose, parts: () => parts.map((p) => p.obj.name) };
 }
