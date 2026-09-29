@@ -435,7 +435,7 @@ export function createBattleHud({ canvas } = {}) {
     if (!st.hand) { l1 = 'СТОП'; c1 = DIM; l2 = 'ПОДНИМИТЕ ЛЕВУЮ РУКУ, ЧТОБЫ ИДТИ'; }
     else if (st.busy || st.hold === 'cast') { l1 = 'ЧАРЫ · ГЕРОЙ СТОИТ'; c1 = STEEL; }
     else if (!engaged) { l1 = 'СТОП — РУКА ОПУЩЕНА'; c1 = STEEL; l2 = 'ПОДНИМИТЕ ЛЕВУЮ РУКУ, ЧТОБЫ ИДТИ'; }
-    else if (st.hold === 'shield') { l1 = Math.abs(turn) > 0.05 ? `ЩИТ · ПОВОРОТ ${turn < 0 ? '←' : '→'}` : 'ЩИТ · ГЕРОЙ СТОИТ'; c1 = BLUE; }
+    else if (st.hold === 'shield') { l1 = Math.abs(turn) > 0.05 ? `ЩИТ · ПОВОРОТ ${turn < 0 ? '←' : '→'}` : 'ЩИТ · ГЕРОЙ СТОИТ'; c1 = BLUE; l2 = 'УБЕРИТЕ ЛАДОНЬ НАЗАД, ЧТОБЫ ИДТИ'; }
     else if (Math.abs(turn) > 0.05) { l1 = `${arena ? 'ОБХОД' : 'ПОВОРОТ'} ${turn < 0 ? '←' : '→'} · ${pace}`; c1 = col; }
     else { l1 = `${arena ? 'К РЕГЕНТУ' : 'ВПЕРЁД'} · ${pace}`; c1 = col; }
     if (engaged && st.source === 'wrist') l1 += ' · ПО ЗАПЯСТЬЮ';

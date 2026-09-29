@@ -9,7 +9,7 @@
 <style>
   /* Стенд боевого HUD без WebGL: фальшивая 2D-сцена + настоящие ui.js (HUD), battleHud.js и bdoHud.js.
      Параметры: ?s=explore|engaged|pvp|coach|lowhp|intro|paused|zone|dead  &bdo=0  &rm=1  &t=секунды (заморозить время)
-     &steer=0 — индикатор джойстика вместо руля */
+     &steer=0 — индикатор джойстика вместо руля; &hold=shield — «Руль» со щитом (герой стоит) */
   #ao-canvas { background: #0d0f14; }
 </style>
 </head>
@@ -121,7 +121,7 @@ function inputAt(t) {
     valid: true, source: 'cv', moveX: 0.2 * Math.sin(t), moveZ: 0.6,
     hint: S === 'coach' ? { code: 'ok_ring_open', gesture: 'Снаряд «OK»', text: 'Сомкни кончики большого и указательного в кольцо', side: 'right' } : null,
     stick: steer
-      ? { mode: 'steer', hand: true, engaged: true, turn: 0.35 * Math.sin(t * 0.7), fwd: 0.7, gait: 'walk', x: 0.35 * Math.sin(t * 0.7), z: 0.7, level: -0.2, levels: { walkOn: -0.55, walkOff: -0.72, runOn: 0.05, runOff: -0.12 }, turnZone: { dzOn: 0.2, dzOff: 0.13, full: 0.62 } }
+      ? { mode: 'steer', hand: true, engaged: true, turn: 0.35 * Math.sin(t * 0.7), fwd: 0.7, gait: 'walk', x: 0.35 * Math.sin(t * 0.7), z: 0.7, level: -0.2, levels: { walkOn: -0.55, walkOff: -0.72, runOn: 0.05, runOff: -0.12 }, turnZone: { dzOn: 0.2, dzOff: 0.13, full: 0.62 }, ...(q.get('hold') === 'shield' ? { hold: 'shield', fwd: 0, z: 0 } : {}) }
       : { mode: 'stick', hand: true, engaged: true, x: 0.4 * Math.sin(t), y: 0.5, gait: 'walk', deadzone: 0.35, runOn: 1.1 },
   };
 }
