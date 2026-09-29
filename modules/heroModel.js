@@ -45,7 +45,7 @@ export const HEROES = Object.freeze({
     gear: 'sylvan', stance: 'bow', adduct: 0.3, menuStance: null, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, ears: true, hair: { color: 0xe6dcc0, len: 0.95, fringe: 'swept' }, circlet: { gem: 0x7fe8ff },
     makeup: { lips: 0xd97c86, lipsA: 0.7, shadow: 0xb08a6a, shadowA: 0.35, liner: 0x3a2a20, blush: 0xf09090, blushA: 0.16 },
     // зелёная ткань → белый шёлк с бирюзой, кожа доспеха → светлая замша
-    recolor: { MI_Ranger: [{ h: [65, 175], toH: 172, s: 0.35, v: 1.55 }, { h: [8, 48], toH: 38, s: 0.55, v: 1.45 }], MI_Regular_Female: [{ h: [0, 60], minS: 0.04, toH: 16, s: 0.52, v: 1.3 }] },
+    recolor: { MI_Ranger: [{ h: [0, 360], minS: 0, metal: 'only', toH: 195, s: 0.3, v: 1.12 }, { h: [65, 175], toH: 172, s: 0.35, v: 1.55, metal: false }, { h: [8, 48], toH: 38, s: 0.55, v: 1.45, metal: false }], MI_Regular_Female: [{ h: [0, 60], minS: 0.04, toH: 16, s: 0.52, v: 1.3 }] },
     fx: { style: 'wind', color: 0x9ff4ff, color2: 0xfff3c0, armor: 0x7fe8ff, armorK: 1.1, armorMode: 'seams', eyes: 0x7fe8ff, eyesK: 0.3 },
   },
   dark: {
@@ -54,7 +54,7 @@ export const HEROES = Object.freeze({
     // [HERO] на витрине — спокойная стойка (широкая «двуручная» не к лицу чародейке)
     gear: 'witchQ', stance: 'staff', adduct: 0.3, menuStance: null, hide: ['Female_Ranger_Acc_Pauldrons'], makeup: { lips: 0x7a2a52, lipsA: 0.85, shadow: 0x5a3a7a, shadowA: 0.6, liner: 0x0c0610, blush: 0xc08aa0, blushA: 0.1 }, hair: { color: 0x1c1426, len: 1.05, fringe: 'straight' },
     // зелёная ткань → глубокий фиолетовый, кожа → почти чёрная
-    recolor: { MI_Ranger: [{ h: [65, 175], toH: 272, s: 1.1, v: 0.62 }, { h: [8, 48], toH: 255, s: 0.35, v: 0.42 }], MI_Regular_Female: [{ h: [0, 60], minS: 0.04, toH: 12, s: 0.45, v: 1.26 }] },
+    recolor: { MI_Ranger: [{ h: [0, 360], minS: 0, metal: 'only', toH: 262, s: 0.45, v: 0.92 }, { h: [65, 175], toH: 272, s: 1.1, v: 0.62, metal: false }, { h: [8, 48], toH: 255, s: 0.35, v: 0.42, metal: false }], MI_Regular_Female: [{ h: [0, 60], minS: 0.04, toH: 12, s: 0.45, v: 1.26 }] },
     fx: { style: 'frost', color: 0xb58cff, color2: 0x9fe0ff, armor: 0xa77bff, armorK: 1.4, armorMode: 'seams', eyes: 0xa77bff, eyesK: 0.4 },
   },
   // [HERO] новые герои (Quaternius Modular Fantasy, CC0)
@@ -504,7 +504,7 @@ export function createHeroModel({
         for (const mt of [].concat(o.material)) {
           const R = mt && rules[mt.name];
           if (!R || !mt.map || mt.userData.recolored) continue;
-          const nt = m.recolorTexture(THREE, mt.map, R, /^MI_Regular_Female/.test(mt.name) ? paint : null);
+          const nt = m.recolorTexture(THREE, mt.map, R, /^MI_Regular_Female/.test(mt.name) ? paint : null, mt.metalnessMap ? mt.metalnessMap.image : null);
           if (nt !== mt.map) { mt.map = nt; mt.userData.recolored = true; mt.needsUpdate = true; }
         }
       });

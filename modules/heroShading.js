@@ -261,7 +261,10 @@ export function makeupPainter(spec) {
   };
 }
 
-export function recolorTexture(THREE, tex, rules, paint = null) {
+// Правила применяются мягко: у порогов тона/насыщенности/яркости — полосы перехода, а веса правил
+// сглаживаются 3×3 (иначе на атласе 512² металл с шумной слабой насыщенностью покрывается «камуфляжем»).
+// rule.metal === false — не трогать металл, 'only' — только металл (маска — канал B карты ORM: orm = изображение).
+export function recolorTexture(THREE, tex, rules, paint = null, orm = null) {
   const img = tex && tex.image;
   if (!img || typeof document === 'undefined' || !rules || !rules.length) return tex;
   const w = img.width, h = img.height;
@@ -271,27 +274,79 @@ export function recolorTexture(THREE, tex, rules, paint = null) {
   const g = cv.getContext('2d', { willReadFrequently: true });
   g.drawImage(img, 0, 0);
   const d = g.getImageData(0, 0, w, h), px = d.data;
-  for (let i = 0; i < px.length; i += 4) {
-    const r = px[i] / 255, gg = px[i + 1] / 255, b = px[i + 2] / 255;
+  let met = null;
+  if (orm && orm.width && rules.some((R) => R.metal === false || R.metal === 'only')) {
+    try {
+      const c2 = document.createElement('canvas'); c2.width = w; c2.height = h;
+      const g2 = c2.getContext('2d', { willReadFrequently: true });
+      g2.drawImage(orm, 0, 0, w, h);
+      met = g2.getImageData(0, 0, w, h).data;
+    } catch (e) { met = null; }
+  }
+  const N = w * h, nR = rules.length;
+  const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const HS = new Float32Array(N * 3); // тон°, насыщенность, яркость
+  const W = new Float32Array(N * nR); // веса правил («первое подходящее», мягко)
+  for (let i = 0, p = 0; i < N; i++, p += 4) {
+    const r = px[p] / 255, gg = px[p + 1] / 255, b = px[p + 2] / 255;
     const mx = Math.max(r, gg, b), mn = Math.min(r, gg, b), c = mx - mn;
     let hue = 0;
     if (c > 1e-5) hue = mx === r ? ((gg - b) / c) % 6 : mx === gg ? (b - r) / c + 2 : (r - gg) / c + 4;
     hue = (hue * 60 + 360) % 360;
-    let sat = mx > 0 ? c / mx : 0, val = mx;
-    for (const R of rules) {
-      if (sat < (R.minS ?? 0.12)) continue;
-      if (val < (R.minV ?? 0) || val > (R.maxV ?? 1)) continue;
+    const sat = mx > 0 ? c / mx : 0, val = mx;
+    HS[i * 3] = hue; HS[i * 3 + 1] = sat; HS[i * 3 + 2] = val;
+    let left = 1;
+    for (let k = 0; k < nR && left > 1e-4; k++) {
+      const R = rules[k];
+      const minS = R.minS ?? 0.12;
+      let wk = minS > 0 ? ss(minS - 0.05, minS + 0.05, sat) : 1;
+      if (R.minV !== undefined) wk *= ss(R.minV - 0.04, R.minV + 0.04, val);
+      if (R.maxV !== undefined) wk *= 1 - ss(R.maxV - 0.04, R.maxV + 0.04, val);
       const [a0, a1] = R.h;
-      if (!(a0 <= a1 ? hue >= a0 && hue <= a1 : hue >= a0 || hue <= a1)) continue;
-      if (R.toH !== undefined) hue = R.toH;
-      if (R.s !== undefined) sat = Math.min(1, sat * R.s);
-      if (R.v !== undefined) val = Math.min(1, val * R.v);
-      break;
+      if (!(a0 === 0 && a1 === 360)) {
+        // расстояние от тона до дуги [a0, a1] (по кругу), полоса перехода 8°
+        const span = (a1 - a0 + 360) % 360, off = (hue - a0 + 360) % 360;
+        const dist = off <= span ? 0 : Math.min(off - span, 360 - off);
+        wk *= 1 - ss(0, 8, dist);
+      }
+      if (met && R.metal === false) wk *= 1 - ss(0.3, 0.6, met[p + 2] / 255);
+      if (R.metal === 'only') wk *= met ? ss(0.3, 0.6, met[p + 2] / 255) : 0;
+      wk *= left;
+      W[i * nR + k] = wk; left -= wk;
     }
+  }
+  // сглаживание весов 3×3 (разделимо)
+  const tmp = new Float32Array(N);
+  for (let k = 0; k < nR; k++) {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      tmp[i] = (W[(x > 0 ? i - 1 : i) * nR + k] + 2 * W[i * nR + k] + W[(x < w - 1 ? i + 1 : i) * nR + k]) * 0.25;
+    }
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      W[i * nR + k] = (tmp[y > 0 ? i - w : i] + 2 * tmp[i] + tmp[y < h - 1 ? i + w : i]) * 0.25;
+    }
+  }
+  const hsv2rgb = (hue, sat, val, out) => {
     const C = val * sat, X = C * (1 - Math.abs(((hue / 60) % 2) - 1)), m = val - C;
     const k = Math.floor(hue / 60) % 6;
-    const [rr, g2, bb] = [[C, X, 0], [X, C, 0], [0, C, X], [0, X, C], [X, 0, C], [C, 0, X]][k];
-    px[i] = (rr + m) * 255; px[i + 1] = (g2 + m) * 255; px[i + 2] = (bb + m) * 255;
+    const t = [[C, X, 0], [X, C, 0], [0, C, X], [0, X, C], [X, 0, C], [C, 0, X]][k];
+    out[0] = t[0] + m; out[1] = t[1] + m; out[2] = t[2] + m;
+  };
+  const o = [0, 0, 0];
+  for (let i = 0, p = 0; i < N; i++, p += 4) {
+    const hue = HS[i * 3], sat = HS[i * 3 + 1], val = HS[i * 3 + 2];
+    let r = 0, gg = 0, b = 0, left = 1;
+    for (let k = 0; k < nR; k++) {
+      const wk = W[i * nR + k];
+      if (wk < 1e-4) continue;
+      const R = rules[k];
+      hsv2rgb(R.toH !== undefined ? R.toH : hue, R.s !== undefined ? Math.min(1, sat * R.s) : sat, R.v !== undefined ? Math.min(1, val * R.v) : val, o);
+      r += o[0] * wk; gg += o[1] * wk; b += o[2] * wk; left -= wk;
+    }
+    if (left >= 0.9999) continue;
+    left = Math.max(0, left);
+    px[p] = (r * 255 + px[p] * left); px[p + 1] = (gg * 255 + px[p + 1] * left); px[p + 2] = (b * 255 + px[p + 2] * left);
   }
   g.putImageData(d, 0, 0);
   if (paint) { try { paint(g, w, h); } catch (e) { /* без макияжа */ } }
