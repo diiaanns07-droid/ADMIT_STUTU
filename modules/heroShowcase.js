@@ -178,7 +178,9 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       return false;
     }
     place();
-    pool.material.uniforms.uK.value = 0.9 * w;
+    // появление героя: рунный круг вспыхивает вместе с аурой
+    const ap = heroModel && heroModel.appear ? heroModel.appear : 0;
+    pool.material.uniforms.uK.value = 0.9 * w * (1 + 1.4 * ap * ap);
     pool.material.uniforms.uTime.value = S.t;
     // цвет круга — стихия выбранного героя
     const fxc = heroModel && heroModel.heroFx ? heroModel.heroFx(heroModel.hero) : null;

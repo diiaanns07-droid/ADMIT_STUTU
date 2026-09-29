@@ -301,7 +301,8 @@ export function createHeroModel({
     S.hero = def.id;
     clear();
     // пока грузится новая модель — виден процедурный герой, якоря на его маркерах (или на root)
-    showProcedural(true); parentAnchors();
+    // на витрине меню процедурное тело не показываем (мелькал чужой силуэт): герой появляется, когда готов
+    showProcedural(!S.inMenu || (!def.vrm && !def.glb)); parentAnchors();
     if (!def.vrm && !def.glb) { S.ready = !!heroBody; return; }
     try {
       const url = def.glb ? new URL(def.glb, heroesBase).href : new URL(def.vrm, new URL(vrmUrl, base)).href;
@@ -371,6 +372,7 @@ export function createHeroModel({
       parentAnchors();
       if (S.lod) { const l = S.lod; S.lod = -1; applyLod(l); }   // LOD, заданный до загрузки
       S.ready = true;
+      S.appear = 1;   // появление: вспышка ауры (меню)
       if (stance) setStance(stance);
     } catch (e) {
       console.warn('[ASHEN] модель героя не загрузилась — процедурный герой:', e && e.message);
@@ -951,7 +953,9 @@ export function createHeroModel({
       S.yawRate = 0; S.prevYaw = null;
       if (act && !holdName && time >= actUntil) { stopAct(0.3); if (stance) setStance(stance); }
       if (cur.shade && cur.shade.setGlow) cur.shade.setGlow(1);
-      if (cur.aura && cur.aura.setIntensity) cur.aura.setIntensity(1);
+      // появление героя на витрине — вспышка ауры, гаснет за ~1.3 с
+      S.appear = Math.max(0, (S.appear || 0) - dt / 1.3);
+      if (cur.aura && cur.aura.setIntensity) cur.aura.setIntensity(1 + 2.5 * S.appear * S.appear);
       if (cur.gear && cur.gear.setGlow) cur.gear.setGlow(1);
       updateLoco(dt, 0, 0, 0, false);
       cur.mixer.update(dt);
@@ -1145,6 +1149,7 @@ export function createHeroModel({
     setGaze(k) { const g = k > 0.5 ? 1 : 0; if (g !== (S.gaze || 0)) { S.gaze = g; if (g) S.lookT = 0; } },
         flourish(name = 'CastRaise') { if (cur && cur.full[name]) playAct(name, { speed: 1.1, fade: 0.2 }); },
     get ready() { return S.ready; },
+    get appear() { return S.appear || 0; },
     get hero() { return S.hero; },
     get vrm() { return cur ? cur.vrm : null; },
     get gear() { return cur ? cur.gear : null; },   // QA
