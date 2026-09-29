@@ -17,6 +17,7 @@ export const API_VERSION = 'ASHEN_V2';
 
 // [№1, «Перстни»] жесты пальцев: чистая логика, тесты в dev/handGestures*.test.mjs
 import { createHandGestures } from '../core/handGestures.js';
+import { createInputRecorder } from '../core/inputRecorder.js'; // [CONTROLS] запись кистей для разбора (dev/replay.mjs)
 
 // Версия проверена по реестру npm 28.09.2026 (см. отчёт в 02_HANDOFF.txt).
 // Главный сборщик может передать свои URL через config.mediaPipe — тогда эти не используются.
@@ -940,6 +941,7 @@ export async function createVision(options = {}) {
   let lastPose = null;      // { tMs, frameW, frameH, mirror, landmarks[33] } — для трекинг-HUD
   let lastBody = null;      // [V3.1] последняя надёжная середина плеч {x, y, t}
   let handTap = null;       // [HAND] core/handZone.js: наблюдения кистей для лука и магии рукой
+  let recorder = null;      // [CONTROLS] core/inputRecorder.js: запись того же наблюдения (?rec=1 в main.js)
   // [V3.1] «Чувствительность движений» из паузы действует и на джойстик левой руки:
   // выше — короче ход до бега и уже мёртвая зона (рывок не трогаем — он в ладонях).
   function applyStickSensitivity() {
@@ -1617,7 +1619,9 @@ export async function createVision(options = {}) {
       else if (lastBody && tMs - lastBody.t <= 700) body = { x: lastBody.x, y: lastBody.y };
       // ширина плеч (в высотах кадра): толчок кистями к камере отличаем от наклона всем корпусом
       const sw = lms && shOk(lms[11]) && shOk(lms[12]) && h > 0 ? Math.hypot((lms[11].x - lms[12].x) * (w / h), lms[11].y - lms[12].y) : null;
-      handsInterp.push({ tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, hands: Array.isArray(hands) ? hands : [], poseWrists: { left: wr(15), right: wr(16) }, bodyCenter: body, shoulderWidth: sw });
+      const handObs = { tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, hands: Array.isArray(hands) ? hands : [], poseWrists: { left: wr(15), right: wr(16) }, bodyCenter: body, shoulderWidth: sw };
+      handsInterp.push(handObs);
+      if (recorder) { try { recorder.add(handObs); } catch (e) { /* [CONTROLS] запись не ломает трекинг */ } }
       // [HAND] лук и магия рукой (core/handZone.js): то же наблюдение + поза (плечи, уши)
       if (handTap) { try { handTap({ tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, hands: Array.isArray(hands) ? hands : [], poseWrists: { left: wr(15), right: wr(16) }, bodyCenter: body, shoulderWidth: sw, pose: lms }); } catch (e) { /* [HAND] */ } }
     }
@@ -1923,5 +1927,17 @@ export async function createVision(options = {}) {
 
   function setHandTap(fn) { handTap = typeof fn === 'function' ? fn : null; } // [HAND]
 
-  return { start, calibrate, read, getStatus, configure, stop, dispose, getPose, getHands, getStick, setHandTap /* [HAND] */ };
+  // [CONTROLS] запись наблюдений кистей: startRecording() — начать (если ещё не идёт),
+  // takeRecording() — забрать записанное (объект для JSON) и продолжить с чистого листа.
+  function startRecording(meta = {}) { if (!recorder) recorder = createInputRecorder({ meta }); return true; }
+  function takeRecording(extra = {}) {
+    if (!recorder) return null;
+    const snap = recorder.snapshot({ moveMode: cfg.moveMode, sensitivity: cfg.sensitivity, ...extra });
+    recorder.clear();
+    return snap;
+  }
+  function stopRecording() { const snap = takeRecording(); recorder = null; return snap; }
+  function recordingSize() { return recorder ? recorder.size() : 0; }
+
+  return { start, calibrate, read, getStatus, configure, stop, dispose, getPose, getHands, getStick, setHandTap /* [HAND] */, startRecording, takeRecording, stopRecording, recordingSize };
 }

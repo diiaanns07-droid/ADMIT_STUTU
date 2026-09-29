@@ -18,11 +18,15 @@
 
 import { createHandGestures } from '../core/handGestures.js';
 import { makeHand, makeScene, SHAPES, reseed, gauss, rnd } from './handSynth.mjs';
+import { createInputRecorder } from '../core/inputRecorder.js';
+import { writeFileSync } from 'node:fs';
 
 const argv = process.argv.slice(2);
 const argOf = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 const SEEDS = +argOf('--seeds', 8);
 const ONLY = argOf('--seed', null);   // --seed N: один прогон с этим зерном
+const SAVE = argOf('--save', null);   // --save файл.json: записать прогон (--seed) в формате игры (?rec=1) для dev/replay.mjs
+const recorder = SAVE ? createInputRecorder({ meta: { source: 'controls.soak', moveMode: 'steer' } }) : null;
 const JSON_OUT = argv.includes('--json');
 const DEBUG = argv.includes('--debug');
 const PUSH = +argOf('--push', 1.35);
@@ -144,11 +148,13 @@ function simulate(seed, gOpts = {}) {
       }
       recent.push(hand ? 'x' : '.'); if (recent.length > 16) recent.shift();
       const wr = hand ? { x: hand.landmarks[0].x + 0.004 * gauss(), y: hand.landmarks[0].y + 0.004 * gauss(), visibility: 0.9 } : null;
-      g.push({
+      const obs = {
         tMs: t, frameW: 640, frameH: 480, mirror: true, hands,
         poseWrists: { left: wr, right: hands[1] ? { x: hands[1].landmarks[0].x, y: hands[1].landmarks[0].y, visibility: 0.9 } : null },
         bodyCenter: { x: S.cx + 0.004 * gauss(), y: S.cy + 0.004 * gauss() }, shoulderWidth: S.sw * (1 + 0.02 * gauss()),
-      });
+      };
+      g.push(obs);
+      if (recorder) recorder.add(obs);
       const f = g.read(t);
       M.frames++;
       const moving = f.moveZ > 0;
@@ -254,6 +260,7 @@ if (ONLY === null && !RIGHT) {
   R.rightFalseShieldOn = Q.falseShieldOn; R.rightWalkStopPct = Q.walkStopPct; R.rightCastStopPct = Q.castStopPct;
 }
 if (DEBUG) console.table(byTag);
+if (recorder) { writeFileSync(SAVE, JSON.stringify(recorder.snapshot())); console.log(`записано: ${SAVE} (${recorder.size()} кадров)`); }
 if (JSON_OUT) console.log(JSON.stringify(R));
 else {
   console.log('Стресс-прогон «Руль» (синтетика с шумом и пропусками кадров, не реальная камера):');

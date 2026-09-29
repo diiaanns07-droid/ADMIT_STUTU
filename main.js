@@ -363,6 +363,8 @@ const AUDIO_ON = !(config.audio && config.audio.enabled === false);
 const gameVolume = () => (AUDIO_ON ? settings.volume : 0);
 function unlockAudio() { if (!AUDIO_ON) return; try { effects.unlockAudio().catch(() => {}); } catch (e) { /* ignore */ } }
 
+const REC_ON = /[?&]rec=1\b/.test(location.search); // [CONTROLS] запись кистей (см. saveRecording)
+
 async function ensureVision() {
   if (vision) return vision;
   if (!visionPromise) {
@@ -372,6 +374,7 @@ async function ensureVision() {
     }).then((v) => {
       vision = v;
       if (handZone && typeof v.setHandTap === 'function') v.setHandTap((o) => handZone.pushObs(o)); // [HAND]
+      if (REC_ON && typeof v.startRecording === 'function') { v.startRecording({ source: 'ashen-game', hero: settings.hero }); showRecBadge(); } // [CONTROLS]
       return v;
     }, (e) => { visionPromise = null; throw e; });
   }
@@ -742,6 +745,29 @@ document.addEventListener('visibilitychange', () => {
     pause('user');
   }
 });
+// [CONTROLS] запись кистей для разбора управления: адрес с ?rec=1, F8 — сохранить файл
+// (разбор: node dev/replay.mjs файл.json). Видео не пишется — только точки кистей и плеч.
+let recBadge = null;
+function showRecBadge() {
+  if (recBadge || typeof document === 'undefined') return;
+  recBadge = document.createElement('div');
+  recBadge.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:9999;font:12px/1.3 system-ui,sans-serif;color:#fff;background:rgba(160,20,20,.75);padding:3px 8px;border-radius:4px;pointer-events:none';
+  document.body.appendChild(recBadge);
+  const tick = () => { if (!recBadge) return; const n = vision && vision.recordingSize ? vision.recordingSize() : 0; recBadge.textContent = `● ЗАПИСЬ КИСТЕЙ · ${Math.round(n / 30)} с · F8 — сохранить`; };
+  tick(); setInterval(tick, 1000);
+}
+function saveRecording() {
+  if (!vision || typeof vision.takeRecording !== 'function') return;
+  const rec = vision.takeRecording({ note: 'F8' });
+  if (!rec || !rec.frames.length) return;
+  const blob = new Blob([JSON.stringify(rec)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ashen-hands-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+if (REC_ON) window.addEventListener('keydown', (e) => { if (e.code === 'F8' && !e.repeat) { e.preventDefault(); saveRecording(); } });
 window.addEventListener('keydown', (e) => {
   if (e.code !== 'Escape' || e.repeat) return;
   if (app.screen === 'playing') { e.preventDefault(); pause('user'); }

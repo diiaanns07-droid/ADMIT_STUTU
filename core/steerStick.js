@@ -33,8 +33,9 @@ export const DEFAULT_STEER_CONFIG = Object.freeze({
   // [V6] привычка игрока: после подъёма руки она спокойно встаёт «прямо» — там, где удобно этому
   // игроку. Среднее положение за окно после подъёма сдвигает нейтраль (на долю learnWeight за подъём),
   // если рука стояла спокойно (не рулила сразу же). За 2–3 подъёма нейтраль встаёт под игрока.
-  learnFromMs: 150,        // окно после подъёма руки…
-  learnToMs: 450,
+  learnFromMs: 150,        // окно после подъёма руки: с этого момента…
+  learnFrames: 8,          //   …столько кадров кисти (трекер теряет кадры — окно по кадрам, а не по времени)…
+  learnToMs: 1000,         //   …но не позже этого
   learnWeight: 0.5,        //   …сдвиг нейтрали к среднему за подъём
   learnMaxSd: 0.07,        //   рука стояла спокойно: разброс по горизонтали меньше (sw)…
   learnMaxMove: 0.15,      //   …и не ушла вбок от места подъёма дальше (sw): подняли и сразу рулят — не привычка
@@ -252,8 +253,8 @@ export function createSteerStick(configPatch = {}) {
     // [V6] привычное положение руки: окно после подъёма → нейтраль
     if (s.raised && s.learn && !s.learn.done && s.source === 'hand') {
       const since = t - s.raisedSince, L = s.learn;
-      if (since >= cfg.learnFromMs && since <= cfg.learnToMs) { L.n++; L.sum += outward; L.sum2 += outward * outward; }
-      else if (since > cfg.learnToMs) {
+      if (since >= cfg.learnFromMs && since <= cfg.learnToMs && L.n < cfg.learnFrames) { L.n++; L.sum += outward; L.sum2 += outward * outward; }
+      if (L.n >= cfg.learnFrames || since > cfg.learnToMs) {
         L.done = true;
         const m = L.n ? L.sum / L.n : 0, sd = L.n ? Math.sqrt(Math.max(0, L.sum2 / L.n - m * m)) : Infinity;
         // рука встала там же, где была при подъёме (подняли — и держат), а не ушла вбок рулить

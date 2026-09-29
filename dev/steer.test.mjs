@@ -346,6 +346,15 @@ test('[V6] привычка игрока: рука «прямо» на 0.3 sw н
   ok(st.read(t).x > 0.3, 'к груди — вправо: ' + st.read(t).x);
 });
 
+test('[V6] привычка учится и при пропусках кадров трекера (2 из 3 кадров после подъёма потеряны)', () => {
+  const st = createSteerStick();
+  const HAB = 0.3;
+  let t = run(st, 1000, 400, () => P(HAB, -1.5));
+  const n0 = st.getDebug().neutral;
+  t = run(st, t, 1200, (tt) => (Math.floor((tt - t) / 33) % 3 === 0 ? P(HAB, CHEST) : null));
+  ok(st.getDebug().counters.learned === 1 && st.getDebug().neutral > n0 + 0.1, `нейтраль ${n0} → ${st.getDebug().neutral}`);
+});
+
 test('[V6] привычка не «съедает» поворот: подняли руку и сразу увели вбок — нейтраль не сдвигается', () => {
   const st = createSteerStick();
   let t = run(st, 1000, 400, () => P(0, -1.5));
