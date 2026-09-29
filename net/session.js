@@ -56,7 +56,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
   };
   const remote = createRemotePlayer({ THREE, scene, world, heroFactory, camera });
   // значок связи в бою: соперник и пинг; при обрыве — «переподключение»
-  let badge = null, badgeKey = '', badgeAt = 0;
+  let badge = null, badgeKey = '', badgeAt = 0, lostSince = 0;
   function updateBadge(now, inFight) {
     if (now - badgeAt < 200) return;
     badgeAt = now;
@@ -73,14 +73,18 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     }
     const opp = net && net.remote ? net.remote.name : 'Соперник';
     const lost = net && net.state === 'lost';
-    const key = show ? `${lost ? 'L' : 'C'}|${opp}|${lost ? '' : Math.round(net.ping / 5) * 5}` : 'hidden';
+    if (!lost) lostSince = 0; else if (!lostSince) lostSince = now;
+    const lostSec = lost ? Math.floor((now - lostSince) / 1000) : 0;
+    const long = lostSec >= 15;
+    const key = show ? `${lost ? 'L' : 'C'}|${opp}|${lost ? (long ? lostSec : '') : Math.round(net.ping / 5) * 5}` : 'hidden';
     if (key === badgeKey) return;
     badgeKey = key;
     badge.hidden = !show;
     if (!show) return;
     badge.classList.toggle('is-lost', !!lost);
     badge.classList.toggle('is-slow', !lost && net.ping > 180);
-    badge.querySelector('.nl-badge__txt').textContent = lost ? `${opp} · связь потеряна — переподключение…` : `${opp} · пинг ${Math.round(net.ping)} мс`;
+    badge.querySelector('.nl-badge__txt').textContent = !lost ? `${opp} · пинг ${Math.round(net.ping)} мс`
+      : long ? `${opp} · нет связи ${lostSec} с — ждём; выйти: Esc → меню` : `${opp} · связь потеряна — переподключение…`;
   }
   remote.setVisible(true);
   let lobby = null;
