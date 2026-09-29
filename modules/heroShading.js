@@ -167,6 +167,79 @@ export function patchArmorGlow(THREE, mat, { color = 0xff7a2a, strength = 2.4, u
   return mat;
 }
 
+// [HERO] Микрорельеф атласа снаряжения (атлас Quaternius — 512² на всё тело, вблизи «мыло»).
+// Процедурно в осях позы привязки (узор прилипает к ткани при анимации), в метрах:
+//   ткань и кожа — плетение 2.4 мм, зерно 5 мм, мягкие неровности 2.5 см;
+//   металл — «кованые» вмятины 3 см и мелкое зерно; шероховатость металла пятнами (захватанность).
+// Нормаль — по Миккелсену (градиент высоты в экранных производных, без нормализации — в метрах);
+// каждая октава гаснет, когда пиксель крупнее половины её длины волны (без муара и мерцания),
+// наклон ограничен — у силуэта (вырожденный якобиан) нормаль не ломается и не даёт NaN.
+export const HERO_MICRO = { value: 1 };
+export function patchMicro(THREE, mat, { unit = 1 } = {}) {
+  if (!mat || mat.userData.heroMicro || !mat.isMeshStandardMaterial) return mat;
+  mat.userData.heroMicro = true;
+  const U = { heroMicroK: HERO_MICRO, heroMicroUnit: { value: unit } };
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader, r) => {
+    if (prev) prev.call(mat, shader, r);
+    Object.assign(shader.uniforms, U);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vHeroMicro;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vHeroMicro = position;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying vec3 vHeroMicro;
+uniform float heroMicroK;
+uniform float heroMicroUnit;
+float hmHash( vec3 p ) { p = fract( p * 0.1031 ); p += dot( p, p.zyx + 31.32 ); return fract( ( p.x + p.y ) * p.z ); }
+float hmNoise( vec3 x ) {
+  vec3 i = floor( x ), f = fract( x ); f = f * f * ( 3.0 - 2.0 * f );
+  return mix( mix( mix( hmHash( i ), hmHash( i + vec3( 1.0, 0.0, 0.0 ) ), f.x ), mix( hmHash( i + vec3( 0.0, 1.0, 0.0 ) ), hmHash( i + vec3( 1.0, 1.0, 0.0 ) ), f.x ), f.y ),
+              mix( mix( hmHash( i + vec3( 0.0, 0.0, 1.0 ) ), hmHash( i + vec3( 1.0, 0.0, 1.0 ) ), f.x ), mix( hmHash( i + vec3( 0.0, 1.0, 1.0 ) ), hmHash( i + vec3( 1.0, 1.0, 1.0 ) ), f.x ), f.y ), f.z );
+}
+float hmAA( float lambda, float fw ) { return 1.0 - smoothstep( 0.3 * lambda, 0.6 * lambda, fw ); }`)
+      .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
+  vec3 hmP = vHeroMicro * heroMicroUnit;
+  float hmFw = max( length( dFdx( hmP ) ), length( dFdy( hmP ) ) );
+  float hmMet = smoothstep( 0.35, 0.75, metalnessFactor );
+  {
+    // пятна «захватанности»: металл местами матовее, местами полирован; ткань — чуть неровная
+    float sm = hmNoise( hmP * 16.0 ) * 0.5 + hmNoise( hmP * 47.0 ) * 0.5 - 0.5;
+    roughnessFactor = clamp( roughnessFactor + sm * mix( 0.08, 0.16, hmMet ) * heroMicroK, 0.06, 1.0 );
+  }`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+  {
+    float hmH;
+    {
+      // ткань/кожа: плетение (три семейства плоскостей — клетка на любой ориентации поверхности)
+      vec3 w = sin( hmP * 2617.99 );   // 2π / 2.4 мм
+      float weave = ( w.x * w.y + w.y * w.z + w.z * w.x ) * 0.00006 * hmAA( 0.0024, hmFw );
+      float grain = ( hmNoise( hmP * 200.0 ) - 0.5 ) * 0.00035 * hmAA( 0.005, hmFw );
+      float soft = ( hmNoise( hmP * 40.0 ) - 0.5 ) * 0.0012 * hmAA( 0.025, hmFw );
+      // металл: кованые вмятины и мелкое зерно
+      float dent = ( hmNoise( hmP * 33.0 + 7.0 ) - 0.5 ) * 0.0012 * hmAA( 0.03, hmFw );
+      float mgr = ( hmNoise( hmP * 330.0 + 3.0 ) - 0.5 ) * 0.00012 * hmAA( 0.003, hmFw );
+      hmH = mix( weave + grain + soft, dent + mgr, hmMet ) * heroMicroK;
+    }
+    vec3 hmSp = - vViewPosition;
+    vec3 hmDx = dFdx( hmSp ), hmDy = dFdy( hmSp );
+    float hmBx = dFdx( hmH ), hmBy = dFdy( hmH );
+    vec3 hmR1 = cross( hmDy, normal ), hmR2 = cross( normal, hmDx );
+    float hmDet = dot( hmDx, hmR1 );
+    if ( abs( hmDet ) > 1e-16 ) {
+      vec3 hmG = sign( hmDet ) * ( hmBx * hmR1 + hmBy * hmR2 ) / abs( hmDet );
+      float hmL = length( hmG );
+      if ( hmL > 0.6 ) hmG *= 0.6 / hmL;
+      normal = normalize( normal - hmG );
+    }
+  }`);
+  };
+  const prevKey = mat.customProgramCacheKey;
+  mat.customProgramCacheKey = () => 'heroMicro:' + (prevKey ? prevKey.call(mat) : '');
+  mat.needsUpdate = true;
+  return mat;
+}
+
 // «Обёрнутый» свет кожи: лишний диффуз у терминатора, тёплый — как свет, прошедший под кожей.
 function patchSkin(THREE, mat, uniforms) {
   const prev = mat.onBeforeCompile;
@@ -360,7 +433,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
   const armorUs = []; // юниформы жил лат (вспышка на касте, мерцание при низком HP)
   // масштаб узора жил: единицы геометрии → метры (у Quaternius позиции в своих единицах)
   let armorUnit = 1;
-  if (fx && fx.armor) {
+  {
     let hMax = 0;
     vrm.scene.traverse((o) => { if (o.isMesh && o.geometry) { if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); const b = o.geometry.boundingBox; hMax = Math.max(hMax, b.max.y - b.min.y, b.max.z - b.min.z); } });
     if (hMax > 1e-6) armorUnit = 1.8 / hMax;
@@ -473,6 +546,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
       if (P.clearcoat && q === 'high') { m.clearcoat = P.clearcoat; m.clearcoatRoughness = P.clearcoatRoughness; }
     }
     if (kind === 'skin') patchSkin(THREE, m, skinU);
+    if (kind === 'armor' && q !== 'low') patchMicro(THREE, m, { unit: armorUnit });
     if (kind === 'armor' && fx && fx.armor && q !== 'low') { patchArmorGlow(THREE, m, { color: fx.armor, strength: fx.armorK || 2.4, unit: armorUnit, mode: fx.armorMode || 'veins' }); armorUs.push({ U: m.userData.heroArmorU, base: fx.armorK || 2.4 }); }
     if (atmosphere) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, P.env); } catch (e) { /* ignore */ } }
     m.userData.heroKind = kind;
