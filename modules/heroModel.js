@@ -29,7 +29,7 @@ export const HEROES = Object.freeze({
     id: 'ashen', name: 'Пепельный страж', vrm: null, glb: 'knight.glb', height: 1.84, cls: 'Воин-маг', element: 'Пепел и пламя',
     desc: ['Клятвенный страж павшего святилища.', 'Латы из закалённой стали, посох с углём клятвы.', 'Держит удар и отвечает огнём.'],
     gear: 'warden', stance: 'staff', adduct: 0.3, menuStance: 'Stance',
-    fx: { style: 'ember', color: 0xff7a2a, color2: 0xffd08a, armor: 0xff5a18, armorK: 2.2, armorMode: 'seams', visorEyes: 0xff8a30 },
+    fx: { style: 'ember', color: 0xff7a2a, color2: 0xffd08a, armor: 0xff5a18, armorK: 2.2, armorMode: 'seams', visorEyes: 0xff8a30, gild: 0xc99a48 },
     // воронёная сталь, тёмно-багровая ткань, золото кантов (атлас Quaternius Knight: серебро, красный, белый)
     recolor: { MI_Knight: [
       { h: [338, 14], minS: 0.35, toH: 354, s: 0.95, v: 0.5 },

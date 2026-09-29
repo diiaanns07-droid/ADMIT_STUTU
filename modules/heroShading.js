@@ -133,10 +133,10 @@ export function patchHeroLight(THREE, mat) {
 export const HERO_TIME = { value: 0 };
 // mode 'seams' — свет сочится только по кромкам пластин (где карта нормалей круто гнётся) и едва заметно
 // по жилам; 'veins' — прежние жилы по всему металлу.
-export function patchArmorGlow(THREE, mat, { color = 0xff7a2a, strength = 2.4, unit = 1, metalMask = true, mode = 'veins' } = {}) {
+export function patchArmorGlow(THREE, mat, { color = 0xff7a2a, strength = 2.4, unit = 1, metalMask = true, mode = 'veins', gild = null } = {}) {
   if (!mat || mat.userData.heroArmorGlow || !mat.isMeshStandardMaterial) return mat;
   mat.userData.heroArmorGlow = true;
-  const U = { heroTime: HERO_TIME, heroArmorColor: { value: new THREE.Color(color) }, heroArmorK: { value: strength }, heroArmorUnit: { value: unit } };
+  const U = { heroTime: HERO_TIME, heroArmorColor: { value: new THREE.Color(color) }, heroArmorK: { value: strength }, heroArmorUnit: { value: unit }, heroGild: { value: new THREE.Color(gild || 0) } };
   mat.userData.heroArmorU = U;
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (shader, r) => {
@@ -146,7 +146,7 @@ export function patchArmorGlow(THREE, mat, { color = 0xff7a2a, strength = 2.4, u
       .replace('#include <common>', '#include <common>\nvarying vec3 vHeroObj;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vHeroObj = position;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vHeroObj;\nuniform float heroTime;\nuniform vec3 heroArmorColor;\nuniform float heroArmorK;\nuniform float heroArmorUnit;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vHeroObj;\nuniform float heroTime;\nuniform vec3 heroArmorColor;\nuniform float heroArmorK;\nuniform float heroArmorUnit;\nuniform vec3 heroGild;')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
   {
     vec3 hp = vHeroObj * heroArmorUnit;
@@ -157,12 +157,20 @@ export function patchArmorGlow(THREE, mat, { color = 0xff7a2a, strength = 2.4, u
     float mask = ${metalMask ? 'smoothstep( 0.45, 0.85, metalnessFactor )' : '1.0'};
     float flow = 0.45 + 0.55 * pow( 0.5 + 0.5 * sin( heroTime * 2.1 - hp.y * 5.0 ), 2.0 );
     float pulse = 0.8 + 0.2 * sin( heroTime * 5.3 + hp.x * 7.0 );
+    ${gild && mat.normalMap ? `// позолота: полоса по фаске пластин (где карта нормалей гнётся), до лучей света — металл, гладкий
+    {
+      float gL = length( mapN.xy );
+      float gild = smoothstep( 0.16, 0.34, gL ) * ( 1.0 - smoothstep( 0.62, 0.9, gL ) ) * ${metalMask ? 'smoothstep( 0.45, 0.85, metalnessFactor )' : '1.0'};
+      diffuseColor.rgb = mix( diffuseColor.rgb, heroGild, gild * 0.9 );
+      metalnessFactor = mix( metalnessFactor, 1.0, gild );
+      roughnessFactor = mix( roughnessFactor, 0.28, gild );
+    }` : ''}
     ${mode === 'seams' && mat.normalMap ? `float seam = smoothstep( 0.32, 0.8, length( mapN.xy ) );
     totalEmissiveRadiance += heroArmorColor * seam * seam * 1.6 * mask * flow * pulse * heroArmorK;` : 'totalEmissiveRadiance += heroArmorColor * ( vein + fine * 0.18 ) * mask * flow * pulse * heroArmorK;'}
   }`);
   };
   const prevKey = mat.customProgramCacheKey;
-  mat.customProgramCacheKey = () => 'heroArmor:' + mode + (metalMask ? 1 : 0) + ':' + (prevKey ? prevKey.call(mat) : '');
+  mat.customProgramCacheKey = () => 'heroArmor:' + mode + (metalMask ? 1 : 0) + (gild ? 'G' : '') + ':' + (prevKey ? prevKey.call(mat) : '');
   mat.needsUpdate = true;
   return mat;
 }
@@ -559,7 +567,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     if (kind === 'skin') patchSkin(THREE, m, skinU);
     if (kind === 'armor' && q !== 'low') patchMicro(THREE, m, { unit: armorUnit });
     if (kind === 'skin' && q !== 'low' && m.map) patchMicro(THREE, m, { unit: armorUnit, mode: 'skin', lips: /^MI_Regular_Female/.test(orig.name) });
-    if (kind === 'armor' && fx && fx.armor && q !== 'low') { patchArmorGlow(THREE, m, { color: fx.armor, strength: fx.armorK || 2.4, unit: armorUnit, mode: fx.armorMode || 'veins' }); armorUs.push({ U: m.userData.heroArmorU, base: fx.armorK || 2.4 }); }
+    if (kind === 'armor' && fx && fx.armor && q !== 'low') { patchArmorGlow(THREE, m, { color: fx.armor, strength: fx.armorK || 2.4, unit: armorUnit, mode: fx.armorMode || 'veins', gild: fx.gild || null }); armorUs.push({ U: m.userData.heroArmorU, base: fx.armorK || 2.4 }); }
     if (atmosphere) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, P.env); } catch (e) { /* ignore */ } }
     m.userData.heroKind = kind;
     patchHeroLight(THREE, m);
