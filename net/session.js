@@ -84,7 +84,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     badge.classList.toggle('is-lost', !!lost);
     badge.classList.toggle('is-slow', !lost && net.ping > 180);
     badge.querySelector('.nl-badge__txt').textContent = !lost ? `${opp} · пинг ${Math.round(net.ping)} мс`
-      : long ? `${opp} · нет связи ${lostSec} с — ждём; выйти: Esc → меню` : `${opp} · связь потеряна — переподключение…`;
+      : long ? `${opp} · нет связи ${lostSec} с — переподключение…` : `${opp} · связь потеряна — переподключение…`;
   }
   remote.setVisible(true);
   let lobby = null;
