@@ -16,11 +16,18 @@ import { createRemotePlayer } from '../modules/remotePlayer.js';
 
 const ST_EVERY_MS = 50;    // 20 Гц
 const LAST_KEY = 'ashen-oath.net.last';
+const MODE_KEY = 'ashen-oath.net.mode';
 const LAST_TTL_MS = 15 * 60 * 1000;   // хост перезагрузил страницу — та же комната ещё 15 минут
 function readLast() {
   try { const v = JSON.parse(localStorage.getItem(LAST_KEY) || 'null'); return v && Date.now() - v.at < LAST_TTL_MS && isValidRoomCode(v.code) ? v : null; } catch (e) { return null; }
 }
-function saveLast(code, role, mode) { try { localStorage.setItem(LAST_KEY, JSON.stringify({ code, role, mode, at: Date.now() })); } catch (e) { /* ignore */ } }
+function saveLast(code, role, mode) {
+  try {
+    localStorage.setItem(LAST_KEY, JSON.stringify({ code, role, mode, at: Date.now() }));
+    if (mode === 'peer' || mode === 'lan') localStorage.setItem(MODE_KEY, mode);   // режим связи помним без срока
+  } catch (e) { /* ignore */ }
+}
+function readMode() { try { const m = localStorage.getItem(MODE_KEY); return m === 'lan' ? 'lan' : 'peer'; } catch (e) { return 'peer'; } }
 const PR_EVERY_MS = 100;   // 10 Гц
 const START_DELAY_MS = 3200;
 // эти события effects.js пока рисует у СВОЕГО героя (шлейф рывка, вспышка оберега на груди, толчок камеры) —
@@ -45,7 +52,9 @@ function urlOpts() {
 export function createNetSession({ THREE, scene, world, camera, heroFactory, heroes, settings, uiRoot, hooks = {} }) {
   const U = urlOpts();
   const S = {
-    net: null, mode: U.transport === 'lan' ? 'lan' : U.transport === 'local' ? 'local' : 'peer',
+    // режим: из адреса (тесты), иначе прошлый режим этого браузера (Интернет/LAN), иначе «Интернет»
+    net: null, mode: U.transport === 'lan' ? 'lan' : U.transport === 'local' ? 'local' : U.transport === 'peer' ? 'peer'
+      : readMode(),
     status: 'idle', message: '', error: null, errorCode: null,
     meReady: false, oppReady: false, startAt: 0, started: false, startTimer: null,
     seq: 0, lastSt: -1e9, lastPr: -1e9, prSentEmpty: true,
