@@ -939,6 +939,7 @@ export async function createVision(options = {}) {
     ? hi : createHandGestures(cfg.handGestures || {});
   let lastPose = null;      // { tMs, frameW, frameH, mirror, landmarks[33] } — для трекинг-HUD
   let lastBody = null;      // [V3.1] последняя надёжная середина плеч {x, y, t}
+  let handTap = null;       // [HAND] core/handZone.js: наблюдения кистей для лука и магии рукой
   // [V3.1] «Чувствительность движений» из паузы действует и на джойстик левой руки:
   // выше — короче ход до бега и уже мёртвая зона (рывок не трогаем — он в ладонях).
   function applyStickSensitivity() {
@@ -1617,6 +1618,8 @@ export async function createVision(options = {}) {
       // ширина плеч (в высотах кадра): толчок кистями к камере отличаем от наклона всем корпусом
       const sw = lms && shOk(lms[11]) && shOk(lms[12]) && h > 0 ? Math.hypot((lms[11].x - lms[12].x) * (w / h), lms[11].y - lms[12].y) : null;
       handsInterp.push({ tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, hands: Array.isArray(hands) ? hands : [], poseWrists: { left: wr(15), right: wr(16) }, bodyCenter: body, shoulderWidth: sw });
+      // [HAND] лук и магия рукой (core/handZone.js): то же наблюдение + поза (плечи, уши)
+      if (handTap) { try { handTap({ tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, hands: Array.isArray(hands) ? hands : [], poseWrists: { left: wr(15), right: wr(16) }, bodyCenter: body, shoulderWidth: sw, pose: lms }); } catch (e) { /* [HAND] */ } }
     }
     processCalibration(arrived);
     if (cfg.overlay) drawOverlay(lms);
@@ -1918,5 +1921,7 @@ export async function createVision(options = {}) {
     perf.arrivals.length = 0;
   }
 
-  return { start, calibrate, read, getStatus, configure, stop, dispose, getPose, getHands, getStick };
+  function setHandTap(fn) { handTap = typeof fn === 'function' ? fn : null; } // [HAND]
+
+  return { start, calibrate, read, getStatus, configure, stop, dispose, getPose, getHands, getStick, setHandTap /* [HAND] */ };
 }
