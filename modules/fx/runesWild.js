@@ -45,6 +45,7 @@ export function register(fx) {
     o.at.set(_f.x + Math.cos(a) * r, _f.y + 0.05 + h, _f.z + Math.sin(a) * r);
     o.center.copy(_f);
   }
+  if (typeof fx.onClear === 'function') fx.onClear(() => { tw.on = 0; tw.acc = tw.ash = tw.leaf = tw.deb = 0; });
   fx.every((dt, snap) => {
     const pl = snap && snap.player;
     const on = !!(pl && pl.vortex && snap.status !== 'defeat');
