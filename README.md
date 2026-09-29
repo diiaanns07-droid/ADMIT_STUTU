@@ -241,8 +241,8 @@ node dev/handGestures.test.mjs
 ```
 Остальные наборы: `dev/squat.test.mjs`, `dev/pushup.test.mjs`, `dev/progression.test.mjs`,
 `dev/leftStick.test.mjs`, `dev/handGestures.real.test.mjs` (на реальных кистях из датасета HaGRID),
-`dev/net.test.mjs` и `dev/net-lan.test.mjs` (онлайн-дуэль: интерполяция при пинге 150 мс и 5% потерь, обрыв,
-ретранслятор LAN).
+`dev/net.test.mjs`, `dev/net-lan.test.mjs`, `dev/net-session.test.mjs` (онлайн-дуэль: интерполяция при пинге
+150 мс и 5% потерь, обрыв и переподключение, ретранслятор LAN, старт по «Готов»); браузер — `node tools/qa_net.mjs --harness`.
 
 ## Приватность
 Видео обрабатывается только в вашем браузере. Оно не записывается и никуда не отправляется.
