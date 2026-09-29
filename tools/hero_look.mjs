@@ -1,7 +1,7 @@
 // [HERO] Быстрый осмотр героя на стенде: один запуск dev/hero_stand.html → лист ракурсов (PNG).
 // node tools/hero_look.mjs --vendor DIR --out DIR --url 'dev/hero_stand.html?a=ashen&solo=1&yaw=0' \
 //   [--steps 60] [--views front,back,side,left,face,handR,handL,q3] [--size 420x560] [--name sheet]
-//   [--run 'js'] — выполнить код в странице перед шагами (доступен window.__HS_API__)
+//   [--run 'js'] — выполнить код в странице перед шагами (доступен window.__HS_API__); по одному на каждый --url
 // Время стенда идёт вручную (step(1/30) × steps): SwiftShader даёт ~1 кадр/с, а так поза детерминирована.
 // Ракурсы считаются от героя A (позиция и поворот его root). Итог: DIR/<name>.png — ракурсы в ряд.
 
@@ -22,7 +22,7 @@ const URLS = argv.flatMap((a, i) => (a === '--url' ? [argv[i + 1]] : []));
 const NAMES = argv.flatMap((a, i) => (a === '--name' ? [argv[i + 1]] : []));
 const VIEWS = argOf('--views', 'front,back,side,handR').split(',');
 const STEPS = Number(argOf('--steps', '60'));
-const RUN = argOf('--run', '');
+const RUNS = argv.flatMap((a, i) => (a === '--run' ? [argv[i + 1]] : [])); // по одному на --url (или один на все)
 const PORT = 8000 + Math.floor(Math.random() * 700);
 mkdirSync(OUT, { recursive: true });
 
@@ -72,6 +72,8 @@ try {
       const hero = A.a.root;
       scene.updateMatrixWorld(true);
       const hp = hero.getWorldPosition(new THREE.Vector3());
+      // центр — корпус (анимации рывка и кувырка уводят тело от корня героя)
+      { const c = A.a.getAnchors().chest; if (c && c.parent) { const cp = c.getWorldPosition(new THREE.Vector3()); hp.x = cp.x; hp.z = cp.z; } }
       const yaw = hero.rotation.y;
       const f = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), r = new THREE.Vector3(-Math.cos(yaw), 0, Math.sin(yaw));
       const anc = A.a.getAnchors();
@@ -115,7 +117,7 @@ try {
       camera.aspect = asp; camera.fov = fov; camera.updateProjectionMatrix();
       renderer.setSize(size.x, size.y, false);
       return { png: cv.toDataURL('image/png'), state: A.a.state() };
-    }, { views: VIEWS, steps: STEPS, run: RUN, W: VW, H: VH });
+    }, { views: VIEWS, steps: STEPS, run: RUNS[u] ?? RUNS[0] ?? '', W: VW, H: VH });
     const name = NAMES[u] || `look_${u}`;
     writeFileSync(join(OUT, name + '.png'), Buffer.from(data.png.split(',')[1], 'base64'));
     console.log(name, JSON.stringify({ act: data.state.act, loco: data.state.loco, gear: data.state.gear, pose: data.state.pose }), log.slice(0, 12).join('\n'));

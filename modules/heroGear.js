@@ -559,7 +559,7 @@ export function dressHero(THREE, vrm, opts = {}) {
           p.addScaledVector(FWD, -Math.max(0, zBack + torsoR + 0.03 + 0.012 * (1 - layer)));
           pts.push(p);
         }
-        locks.push({ pts, pin: 2, r0: layer ? 0.024 : 0.028, r1: 0.017, flat: 0.42, seed: rr(), tone: (layer ? 0.9 : 1.0) + rr() * 0.12, stiff: 0.3 });
+        locks.push({ pts, pin: 2, r0: layer ? 0.024 : 0.028, r1: 0.017, flat: 0.42, seed: rr(), tone: (layer ? 0.9 : 1.0) + rr() * 0.12, stiff: 0.5, back: true });
       }
     }
     // материал: пряди-«пучки» с блеском вдоль волоса (анизотропия), лёгкий sheen, цвет по вершинам
@@ -575,7 +575,8 @@ export function dressHero(THREE, vrm, opts = {}) {
     headBone.add(skullC); skullC.position.copy(headBone.worldToLocal(toW(cx, cy, cz)));
     const colliders = [{ a: skullC, b: skullC, r: Math.max(rx, rz) * 1.0 }];
     for (const c of bodyCaps) if (!/Leg/.test(c.name)) colliders.push({ a: c.a, b: c.b, r: c.r - 0.005 });
-    hair = createStrands(THREE, { locks, anchor: headBone, parent: headBone, colliders, material: hm, spine: [raw('neck') || raw(chestB), raw('hips')] });
+    const _hq = new THREE.Quaternion(), holderH = model || vrm.scene;
+    hair = createStrands(THREE, { locks, anchor: headBone, parent: headBone, colliders, material: hm, spine: [raw('neck') || raw(chestB), raw('hips')], fwd: (out) => out.set(0, 0, 1).applyQuaternion(holderH.getWorldQuaternion(_hq)) });
     parts.push({ obj: hair.mesh, bone: headBone }, { obj: skullC, bone: headBone });
     names.push('hair');
   }

@@ -102,15 +102,60 @@ export function createCloth(THREE, o) {
       const s = r / d;
       x = A.x + abx * t + dx * s; y = A.y + aby * t + dy * s; z = A.z + abz * t + dz * s;
     }
-    // за спиной: ниже груди ткань не уходит вперёд за середину корпуса (иначе заворачивается между ног)
+    // за спиной: ткань не уходит вперёд за середину корпуса — ниже груди (не заворачивается между ног)
+    // и выше (при резкой остановке не перелетает через голову)
     const px = x - hipP.x, pz = z - hipP.z;
     const ahead = px * fw.x + pz * fw.z;
-    if (y < hipP.y + backH && ahead > backLim) { x -= fw.x * (ahead - backLim); z -= fw.z * (ahead - backLim); }
+    const lim = y < hipP.y + backH ? backLim : backLim + 0.03;
+    if (ahead > lim) { x -= fw.x * (ahead - lim); z -= fw.z * (ahead - lim); }
+    // потолок: не выше верха своего столбца (плащ не взлетает над плечами)
+    const top = P[(k % cols) * 3 + 1] + 0.06;
+    if (y > top) y = top;
     if (y < floorY) { y = floorY; Q[k * 3] += (x - Q[k * 3]) * 0.6; Q[k * 3 + 2] += (z - Q[k * 3 + 2]) * 0.6; }
     P[k * 3] = x; P[k * 3 + 1] = y; P[k * 3 + 2] = z;
   }
   let floorY = -1e9, backLim = 0.02, backH = 0.5;
-  const DRAG = 2.4, DAMP = 0.992, ITER = 5;
+  const DRAG = 2.2, DAMP = 0.992, ITER = 5, VCAP = 3.2, VMAX = 3.5, CARRY = o.carry ?? 0.6;
+  // перенос движения тела на ткань (без рывка): доля CARRY сдвига кости груди за кадр прикладывается к
+  // частицам и их прошлым положениям; встречный воздух видит эту долю как скорость (vA)
+  const Mprev = new THREE.Matrix4(), Md = new THREE.Matrix4();
+  let haveM = false, vAx = 0, vAy = 0, vAz = 0;
+  function carry(dt) {
+    const e0 = anchor.matrixWorld.elements;
+    if (haveM) {
+      Md.copy(Mprev).invert().premultiply(anchor.matrixWorld);
+      const e = Md.elements, c = CARRY;
+      for (const A of [P, Q]) {
+        for (let k = cols; k < N; k++) {
+          const x = A[k * 3], y = A[k * 3 + 1], z = A[k * 3 + 2];
+          A[k * 3] += (e[0] * x + e[4] * y + e[8] * z + e[12] - x) * c;
+          A[k * 3 + 1] += (e[1] * x + e[5] * y + e[9] * z + e[13] - y) * c;
+          A[k * 3 + 2] += (e[2] * x + e[6] * y + e[10] * z + e[14] - z) * c;
+        }
+      }
+      const me = Mprev.elements;
+      vAx = ((e0[12] - me[12]) / dt) * c; vAy = ((e0[13] - me[13]) / dt) * c; vAz = ((e0[14] - me[14]) / dt) * c;
+    }
+    Mprev.copy(anchor.matrixWorld); haveM = true;
+  }
+  // дальние связи: частица не дальше от своей точки крепления (верх столбца), чем длина ткани по столбцу
+  const LRA = new Float32Array(N);
+  for (let i = 0; i < cols; i++) {
+    let acc2 = 0;
+    for (let j = 1; j < rows; j++) {
+      const k = j * cols + i, u = (j - 1) * cols + i;
+      acc2 += Math.hypot(rest[k * 3] - rest[u * 3], rest[k * 3 + 1] - rest[u * 3 + 1], rest[k * 3 + 2] - rest[u * 3 + 2]);
+      LRA[k] = acc2 * 1.04;
+    }
+  }
+  function tether() {
+    for (let k = cols; k < N; k++) {
+      const a3 = (k % cols) * 3, i3 = k * 3;
+      const dx = P[i3] - P[a3], dy = P[i3 + 1] - P[a3 + 1], dz = P[i3 + 2] - P[a3 + 2];
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (d > LRA[k]) { const s2 = LRA[k] / d; P[i3] = P[a3] + dx * s2; P[i3 + 1] = P[a3 + 1] + dy * s2; P[i3 + 2] = P[a3 + 2] + dz * s2; }
+    }
+  }
   function step(h, iters) {
     time += h;
     // ветер: слабое дыхание и порывы (м/с), вдоль «назад» героя и чуть вбок
@@ -119,13 +164,20 @@ export function createCloth(THREE, o) {
     const h2 = h * h;
     for (let k = cols; k < N; k++) {
       const i3 = k * 3;
-      const vx = (P[i3] - Q[i3]) * DAMP, vy = (P[i3 + 1] - Q[i3 + 1]) * DAMP, vz = (P[i3 + 2] - Q[i3 + 2]) * DAMP;
+      let vx = (P[i3] - Q[i3]) * DAMP, vy = (P[i3 + 1] - Q[i3 + 1]) * DAMP, vz = (P[i3 + 2] - Q[i3 + 2]) * DAMP;
+      // скорость частицы относительно тела ≤ VMAX (резкие остановки после рывка не подбрасывают плащ)
+      const v2 = vx * vx + vy * vy + vz * vz, vm = VMAX * h;
+      if (v2 > vm * vm) { const k2 = vm / Math.sqrt(v2); vx *= k2; vy *= k2; vz *= k2; }
       Q[i3] = P[i3]; Q[i3 + 1] = P[i3 + 1]; Q[i3 + 2] = P[i3 + 2];
       const ph = (k % cols) * 0.7 + time * 3.1;
       const flut = Math.sin(ph + Math.floor(k / cols) * 0.45) * 0.6 * wind;
-      P[i3] = P[i3] + vx + DRAG * (wx + flut * fw.z * 0.4 - vx / h) * h2;
-      P[i3 + 1] = P[i3 + 1] + vy + (G + DRAG * (-vy / h)) * h2;
-      P[i3 + 2] = P[i3 + 2] + vz + DRAG * (wz - flut * fw.x * 0.4 - vz / h) * h2;
+      // встречный воздух (ветер − скорость частицы); сила ограничена — тяжёлая ткань не взлетает горизонтально
+      let ax = wx + flut * fw.z * 0.4 - vx / h - vAx, ay = -vy / h - vAy, az = wz - flut * fw.x * 0.4 - vz / h - vAz;
+      const va = Math.sqrt(ax * ax + ay * ay + az * az);
+      if (va > VCAP) { const k2 = VCAP / va; ax *= k2; ay *= k2; az *= k2; }
+      P[i3] = P[i3] + vx + DRAG * ax * h2;
+      P[i3 + 1] = P[i3 + 1] + vy + (G + DRAG * ay) * h2;
+      P[i3 + 2] = P[i3 + 2] + vz + DRAG * az * h2;
     }
     for (let it = 0; it < iters; it++) {
       for (let c = 0; c < NC; c++) {
@@ -140,6 +192,7 @@ export function createCloth(THREE, o) {
         P[i3] += dx * k * wi; P[i3 + 1] += dy * k * wi; P[i3 + 2] += dz * k * wi;
         P[j3] -= dx * k * wj; P[j3 + 1] -= dy * k * wj; P[j3 + 2] -= dz * k * wj;
       }
+      tether();
       for (let k = cols; k < N; k++) collide(k);
     }
   }
@@ -222,7 +275,8 @@ export function createCloth(THREE, o) {
     const ax = anchor.matrixWorld.elements[12], az = anchor.matrixWorld.elements[14];
     const jump = lastA ? Math.hypot(ax - lastA[0], az - lastA[1]) : 0;
     lastA = [ax, az];
-    if (lod >= 2 || jump > 3 || dt > 0.5) { rigid(); acc = 0; write(); return; }
+    if (lod >= 2 || jump > 3 || dt > 0.5) { rigid(); acc = 0; haveM = false; write(); return; }
+    carry(dt);
     acc = Math.min(acc + dt, H * 4);
     const iters = lod >= 1 ? 3 : ITER;
     let n = 0;
@@ -234,7 +288,7 @@ export function createCloth(THREE, o) {
     }
     write();
   }
-  function reset() { refresh(); rigid(); acc = 0; write(); }
+  function reset() { refresh(); rigid(); acc = 0; haveM = false; write(); }
   reset();
   // осадка: ткань ложится на спину до первого кадра
   for (let i = 0; i < 120; i++) { pinTop(); step(H, ITER); }
@@ -278,6 +332,16 @@ export function createStrands(THREE, o) {
     }
   }
   const CI = Int32Array.from(ci), CL = Float32Array.from(cl), CS = Float32Array.from(cs), NC = CL.length;
+  // дальние связи: частица не дальше от последней прибитой точки, чем длина пряди до неё
+  const TA = new Int32Array(N).fill(-1), TL = new Float32Array(N);
+  // сторона пряди: 1 — по спине (не выходит вперёд шеи), 0 — свободная
+  const SIDE = new Uint8Array(N);
+  for (const k of LK) if (k.lk.back) for (let i = 0; i < k.n; i++) SIDE[k.s + i] = 1;
+  for (const k of LK) {
+    const a0 = k.s + Math.max(0, k.pin - 1);
+    let acc2 = 0;
+    for (let i = Math.max(1, k.pin); i < k.n; i++) { acc2 += k.lk.pts[i].distanceTo(k.lk.pts[i - 1]); TA[k.s + i] = a0; TL[k.s + i] = acc2 * 1.03; }
+  }
   // меш: на каждую прядь SS точек оси × RU вершин сечения
   const SUB = 3, RU = 8;
   const rings = LK.map((k) => (k.n - 1) * SUB + 1);
@@ -313,6 +377,28 @@ export function createStrands(THREE, o) {
 
   const segA = colliders.map(() => new THREE.Vector3()), segB = colliders.map(() => new THREE.Vector3());
   const spA = new THREE.Vector3(), spB = new THREE.Vector3();
+  // перенос движения головы на пряди (как у плаща): рывки и развороты не вытягивают волосы в струну
+  const CARRY = o.carry ?? 0.8, Mprev = new THREE.Matrix4(), Md = new THREE.Matrix4();
+  let haveM = false, vAx = 0, vAy = 0, vAz = 0;
+  function carry(dt) {
+    const e0 = anchor.matrixWorld.elements;
+    if (haveM) {
+      Md.copy(Mprev).invert().premultiply(anchor.matrixWorld);
+      const e = Md.elements, c = CARRY;
+      for (const A of [P, Q]) {
+        for (let g = 0; g < N; g++) {
+          if (W[g] === 0) continue;
+          const x = A[g * 3], y = A[g * 3 + 1], z = A[g * 3 + 2];
+          A[g * 3] += (e[0] * x + e[4] * y + e[8] * z + e[12] - x) * c;
+          A[g * 3 + 1] += (e[1] * x + e[5] * y + e[9] * z + e[13] - y) * c;
+          A[g * 3 + 2] += (e[2] * x + e[6] * y + e[10] * z + e[14] - z) * c;
+        }
+      }
+      const me = Mprev.elements;
+      vAx = ((e0[12] - me[12]) / dt) * c; vAy = ((e0[13] - me[13]) / dt) * c; vAz = ((e0[14] - me[14]) / dt) * c;
+    }
+    Mprev.copy(anchor.matrixWorld); haveM = true;
+  }
   let acc = 0, time = 0, wind = 1, lastA = null;
   const HH = 1 / 60;
   function pin() {
@@ -338,12 +424,17 @@ export function createStrands(THREE, o) {
     for (let g = 0; g < N; g++) {
       if (W[g] === 0) continue;
       const i3 = g * 3;
-      const vx = (P[i3] - Q[i3]) * 0.985, vy = (P[i3 + 1] - Q[i3 + 1]) * 0.985, vz = (P[i3 + 2] - Q[i3 + 2]) * 0.985;
+      let vx = (P[i3] - Q[i3]) * 0.97, vy = (P[i3 + 1] - Q[i3 + 1]) * 0.97, vz = (P[i3 + 2] - Q[i3 + 2]) * 0.97;
+      const v2 = vx * vx + vy * vy + vz * vz, vm = 3 * h;
+      if (v2 > vm * vm) { const k2 = vm / Math.sqrt(v2); vx *= k2; vy *= k2; vz *= k2; }
       Q[i3] = P[i3]; Q[i3 + 1] = P[i3 + 1]; Q[i3 + 2] = P[i3 + 2];
       const wv = Math.sin(time * 1.7 + g * 0.9) * 0.25 * wind;
-      P[i3] += vx + drag * (wv - vx / h) * h2;
-      P[i3 + 1] += vy + (-9.8 - drag * vy / h) * h2;
-      P[i3 + 2] += vz + drag * (wv * 0.6 - vz / h) * h2;
+      let ax = wv - vx / h - vAx, ay = -vy / h - vAy, az = wv * 0.6 - vz / h - vAz;
+      const va = Math.sqrt(ax * ax + ay * ay + az * az);
+      if (va > 3) { const k2 = 3 / va; ax *= k2; ay *= k2; az *= k2; }
+      P[i3] += vx + drag * ax * h2;
+      P[i3 + 1] += vy + (-9.8 + drag * ay) * h2;
+      P[i3 + 2] += vz + drag * az * h2;
     }
     for (let it = 0; it < iters; it++) {
       for (let c = 0; c < NC; c++) {
@@ -356,6 +447,13 @@ export function createStrands(THREE, o) {
         const k = ((len - CL[c]) / len) * CS[c] / ws;
         P[i3] += dx * k * wi; P[i3 + 1] += dy * k * wi; P[i3 + 2] += dz * k * wi;
         P[j3] -= dx * k * wj; P[j3 + 1] -= dy * k * wj; P[j3 + 2] -= dz * k * wj;
+      }
+      for (let g = 0; g < N; g++) {
+        const a0 = TA[g];
+        if (a0 < 0) continue;
+        const dx = P[g * 3] - P[a0 * 3], dy = P[g * 3 + 1] - P[a0 * 3 + 1], dz = P[g * 3 + 2] - P[a0 * 3 + 2];
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d > TL[g]) { const s2 = TL[g] / d; P[g * 3] = P[a0 * 3] + dx * s2; P[g * 3 + 1] = P[a0 * 3 + 1] + dy * s2; P[g * 3 + 2] = P[a0 * 3 + 2] + dz * s2; }
       }
       for (let g = 0; g < N; g++) {
         if (W[g] === 0) continue;
@@ -371,10 +469,16 @@ export function createStrands(THREE, o) {
           const s = r / Math.sqrt(d2);
           x = cx + dx * s; y = cy + dy * s; z = cz + dz * s;
         }
+        if (TA[g] >= 0) { const top = P[TA[g] * 3 + 1] + 0.03; if (y > top) y = top; }
+        if (SIDE[g] && o.fwd) {
+          const ah = (x - neckP.x) * fwv.x + (z - neckP.z) * fwv.z + 0.03;
+          if (ah > 0) { x -= fwv.x * ah; z -= fwv.z * ah; }
+        }
         P[g * 3] = x; P[g * 3 + 1] = y; P[g * 3 + 2] = z;
       }
     }
   }
+  const neckP = new THREE.Vector3(), fwv = new THREE.Vector3();
   // отрисовка: ось — Catmull-Rom по частицам, сечение — эллипс (плоская сторона — к оси тела)
   const inv = new THREE.Matrix4(), c0 = new THREE.Vector3(), c1 = new THREE.Vector3(), T = new THREE.Vector3(), O = new THREE.Vector3(), S = new THREE.Vector3(), tmp = new THREE.Vector3();
   const axisPts = [];
@@ -436,6 +540,7 @@ export function createStrands(THREE, o) {
   function refresh() {
     anchor.updateWorldMatrix(true, false);
     for (let c = 0; c < colliders.length; c++) { colliders[c].a.getWorldPosition(segA[c]); colliders[c].b.getWorldPosition(segB[c]); }
+    if (o.fwd) { o.fwd(fwv); fwv.y = 0; fwv.normalize(); if (spine) spine[0].getWorldPosition(neckP); else anchor.getWorldPosition(neckP); }
   }
   function update(dt, lod = 0) {
     if (!(dt > 0)) return;
@@ -443,7 +548,8 @@ export function createStrands(THREE, o) {
     const ax = anchor.matrixWorld.elements[12], az = anchor.matrixWorld.elements[14];
     const jump = lastA ? Math.hypot(ax - lastA[0], az - lastA[1]) : 0;
     lastA = [ax, az];
-    if (lod >= 2 || jump > 3 || dt > 0.5) { rigid(); acc = 0; write(); return; }
+    if (lod >= 2 || jump > 3 || dt > 0.5) { rigid(); acc = 0; haveM = false; write(); return; }
+    carry(dt);
     acc = Math.min(acc + dt, HH * 4);
     let n = 0;
     while (acc >= HH && n < 4) { pin(); step(HH, lod >= 1 ? 2 : 4); acc -= HH; n++; }
