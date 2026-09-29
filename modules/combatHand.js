@@ -11,6 +11,8 @@
 // соперник PvP (№3 [PVP]): { id, kind:'player', getPosition()→{x,y,z} (ступни), radius, height, onHit(hit) }.
 // hit = { damage, element, kind, projectileId, point, dir{x,y,z}, charged, twoHand, knockback{x,z}|null,
 //         slowSec, burnSec, burnDps, chain } — урон сопернику применяет сама цель (по сети).
+// Дуэль №3 (modules/pvp.js, api.pvp): «Регент» — капсула соперника; попадание уходит в PV.projectileHit
+// с fx стихии (огонь — dot, лёд — slow, земля — knock, сгусток двумя руками — ещё stun; молния — цепь PV.damage).
 // События (контракт C3): bow_draw_start, bow_draw {draw}, bow_release {draw, charged, element}, arrow_hit {damage, element},
 // hand_spell_form {element, power}, hand_spell_throw {element, power, dir}, hand_spell_hit {element, damage},
 // hand_spell_cancel; дополнительно: bow_cancel, bow_element {element, rune}, arrow_rain {center, radius, delay, count},
@@ -45,7 +47,10 @@ export const HAND_COMBAT_DEFAULTS = Object.freeze({
   storm: Object.freeze({ chainMul: 0.45, chainDelay: 0.18 }),
   frost: Object.freeze({ slowSec: 2.5, orbSlowSec: 3.5 }),
   earth: Object.freeze({ knockback: 6, staggerSec: 0.45, orbStunSec: 0.6 }),
+  // дуэль (№3 [PVP]): попадание по сопернику уходит в PV.projectileHit с fx стихии; урон там же × PC.dmg.arrow/hand_orb
+  pvp: Object.freeze({ dotMul: 0.55, knock: 1.6, knockTwoHand: 2.8, stunTwoHand: 0.6 }),
   drawEventStep: 0.1, drawEventMs: 90,
+  lockConeDeg: 40,                   // цель стрелы/сгустка/дождя — только в этом конусе от линии прицела
 });
 
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -92,7 +97,7 @@ export function createCombatHand(api, patch = {}) {
   const K = { ...HAND_COMBAT_DEFAULTS };
   if (patch && typeof patch === 'object') for (const k of Object.keys(patch)) if (K[k] && typeof K[k] === 'object' && patch[k] && typeof patch[k] === 'object') K[k] = { ...K[k], ...patch[k] };
   const targets = new Map();
-  let seq = 0, rngS = 0x2468ace;
+  let seq = 0, rngS = 0x2468ace, bossTargetable = true;   // цели и «бить ли Регента» переживают reset (дуэль, реванш)
   const rnd = () => ((rngS = (rngS * 16807) % 2147483647) / 2147483647);
   let S;
   function fresh() {
@@ -106,7 +111,6 @@ export function createCombatHand(api, patch = {}) {
       chains: [],                  // {t, amount, targetKey, from}
       rains: [],                   // {t, center, left}
       stats: { arrows: 0, arrowHits: 0, orbs: 0, orbHits: 0, rains: 0, damage: 0 },
-      bossTargetable: true,
     };
   }
   S = fresh();
@@ -130,7 +134,7 @@ export function createCombatHand(api, patch = {}) {
   // ───────── цели ─────────
   function bossTarget() {
     const B = st().b;
-    if (!S.bossTargetable || !B || B.dead) return null;
+    if (!bossTargetable || !B || B.dead) return null;
     return { key: 'boss', kind: 'boss', base: api.BOSS, radius: api.C.boss.hitRadius, height: api.C.boss.height, aim: api.bossAim() };
   }
   function allTargets() {
@@ -146,13 +150,14 @@ export function createCombatHand(api, patch = {}) {
     }
     return out;
   }
-  function lockTarget(from, dir) {
-    // ближайшая к направлению взгляда цель в пределах 80 м (боссу отдаём приоритет в lock-on)
+  function lockTarget(from, dir, coneDeg = K.lockConeDeg) {
+    // ближайшая к направлению взгляда цель в пределах 80 м и конуса прицела (боссу приоритет в lock-on); позади — не цель
     let best = null, bestA = Infinity;
     for (const t of allTargets()) {
       const dx = t.aim.x - from.x, dz = t.aim.z - from.z, d = Math.hypot(dx, dz);
       if (d > 80 || d < 0.3) continue;
       const a = Math.acos(clamp((dx * dir.x + dz * dir.z) / d, -1, 1));
+      if (a > coneDeg * DEG + Math.atan2(t.radius, d)) continue;
       const score = a - (t.kind === 'boss' && st().engaged ? 0.2 : 0);
       if (score < bestA) { bestA = score; best = t; }
     }
@@ -171,16 +176,18 @@ export function createCombatHand(api, patch = {}) {
         draw: clamp01(num(b.draw)), aimX: clamp(num(b.aimX), -1, 1), aimY: clamp(num(b.aimY), -1, 1),
         charged: !!b.charged, element: elem(b.element),
       };
-      if (bow.active && !S.bowPrev) { S.pendingEv.push(['bow_draw_start', 'left', { element: bow.element, aimX: bow.aimX, aimY: bow.aimY }]); S.lastDrawEv = 0; }
-      if (bow.active && !b.release && (Math.abs(bow.draw - S.lastDrawEv) >= K.drawEventStep || bow.charged !== S.chargedPrev) && now - S.lastDrawT >= K.drawEventMs / 1000) {
+      // натяжение идёт, пока стрела наложена (phase nocked/drawing), а не пока держится стойка (active)
+      const drawing = !b.release && (typeof b.phase === 'string' ? !!b.nocked || b.phase === 'nocked' || b.phase === 'drawing' : bow.active);
+      if (drawing && !S.bowPrev) { S.pendingEv.push(['bow_draw_start', 'left', { element: bow.element, aimX: bow.aimX, aimY: bow.aimY }]); S.lastDrawEv = 0; }
+      if (drawing && (Math.abs(bow.draw - S.lastDrawEv) >= K.drawEventStep || bow.charged !== S.chargedPrev) && now - S.lastDrawT >= K.drawEventMs / 1000) {
         S.lastDrawEv = bow.draw; S.lastDrawT = now;
         S.pendingEv.push(['bow_draw', 'right', { draw: Math.round(bow.draw * 100) / 100, charged: bow.charged, element: bow.element }]);
       }
       S.chargedPrev = bow.charged;
       if (b.rune && bow.element) S.pendingEv.push(['bow_element', 'left', { element: bow.element, rune: String(b.rune) }]);
       if (b.release) S.pendingRelease = { draw: bow.draw, charged: bow.charged, element: bow.element, aimX: bow.aimX, aimY: bow.aimY, rain: !!b.rain, rapid: !!b.rapid };
-      else if (!bow.active && S.bowPrev && !S.pendingRelease) S.pendingEv.push(['bow_cancel', 'left', {}]);
-      S.bowPrev = bow.active || !!b.release;
+      else if (!drawing && S.bowPrev && !S.pendingRelease) S.pendingEv.push(['bow_cancel', 'left', {}]);
+      S.bowPrev = drawing;
       S.bow = bow.active || bow.phase === 'ready' ? bow : IDLE_BOW;
     } else { if (S.bowPrev) S.pendingEv.push(['bow_cancel', 'left', {}]); S.bowPrev = false; S.bow = IDLE_BOW; }
     if (m) {
@@ -332,21 +339,48 @@ export function createCombatHand(api, patch = {}) {
     const P = st().p;
     const c = P.combo, ct = P.comboTimer;
     const hp0 = st().b.hp;
+    const evs = st().events, n0 = Array.isArray(evs) ? evs.length : 0;
     api.damageBoss(amount, source, point, extra);
-    if (noCombo && st().p) { st().p.combo = c; st().p.comboTimer = ct; }
+    if (noCombo && st().p) {
+      st().p.combo = c; st().p.comboTimer = ct;
+      // событие boss_hit тика горения не должно «щёлкать» комбо в HUD
+      if (Array.isArray(evs)) for (let i = n0; i < evs.length; i++) if (evs[i] && evs[i].type === 'boss_hit' && evs[i].data) evs[i].data.combo = c;
+    }
     const dealt = Math.max(0, hp0 - (st().b ? st().b.hp : hp0));
     S.stats.damage += dealt;
     return dealt;
+  }
+  function pvpOf() { try { return api.pvp || null; } catch (e) { return null; } }
+  // fx стихии для соперника в дуэли (PV.applyRemoteHit у жертвы: dot — урон за PC.dotTime, slow/knock/stun — с потолками PC)
+  function pvpFx(pr) {
+    const el = pr.element, P = K.pvp, two = pr.kind === 'hand_orb' && !!pr.twoHand;
+    if (el === 'fire') return { dot: K.fire.burnDps * K.fire.burnSec * (pr.twoHand ? 1.6 : 1) * P.dotMul };
+    if (el === 'frost') return { slow: pr.kind === 'hand_orb' ? K.frost.orbSlowSec : K.frost.slowSec };
+    if (el === 'earth') return two ? { knock: P.knockTwoHand, stun: P.stunTwoHand } : { knock: P.knock };
+    return null;
+  }
+  function pvpHit(pv, pr, point, dir) {
+    const el = pr.element, fx = pvpFx(pr);
+    // PV.projectileHit сам шлёт hit сопернику (урон × PC.dmg[kind]) и даёт projectile_impact result 'opponent'
+    pv.projectileHit({ id: pr.id, kind: pr.kind, pvpKind: pr.kind, element: el, damage: pr.damage, velocity: vcopy(pr.velocity), radius: pr.radius, power: pr.power, fx }, point);
+    if (!playing()) return;
+    if (fx) emit('element_apply', point, { element: el, target: 'opponent', duration: el === 'fire' ? K.fire.burnSec : el === 'frost' ? fx.slow : (fx.stun || K.earth.staggerSec), knockback: fx.knock ? { x: dir.x * fx.knock, z: dir.z * fx.knock } : null, pvp: true });
+    if (el === 'storm') S.chains.push({ t: S.time + K.storm.chainDelay, amount: pr.damage * K.storm.chainMul, from: vcopy(point), exclude: 'boss', element: 'storm', kind: pr.kind });
   }
   function applyHit(pr, tgt, point) {
     const kind = pr.kind, el = pr.element;
     const dir = (() => { const v = pr.velocity, l = Math.hypot(v.x, v.y, v.z) || 1; return vec(v.x / l, v.y / l, v.z / l); })();
     const kb = el === 'earth' ? { x: dir.x * K.earth.knockback, z: dir.z * K.earth.knockback } : null;
     const source = kind === 'arrow' ? 'arrow' : 'hand_orb';
-    emit('projectile_impact', point, { owner: 'player', kind, projectileId: pr.id, result: tgt.kind === 'boss' ? 'boss' : 'player', element: el, radius: pr.radius, velocity: vcopy(pr.velocity) });
-    let damage = pr.damage;
+    const pv = tgt.kind === 'boss' ? pvpOf() : null;   // в дуэли «boss» — капсула соперника (pvp.js двигает BOSS)
+    if (!pv) emit('projectile_impact', point, { owner: 'player', kind, projectileId: pr.id, result: tgt.kind === 'boss' ? 'boss' : 'player', element: el, radius: pr.radius, velocity: vcopy(pr.velocity) });
+    // C3-событие попадания — до урона: смертельный удар тоже его даёт (после исхода emit молчит)
+    const tk = pv ? 'opponent' : tgt.kind, tid = pv ? 'opponent' : tgt.ref ? tgt.ref.id : 'boss';
+    if (kind === 'arrow') { S.stats.arrowHits++; emit('arrow_hit', point, { damage: pr.damage, element: el, charged: !!pr.charged, target: tk, targetId: tid, projectileId: pr.id, draw: pr.draw, rain: !!pr.rainDrop, pvp: !!pv }); }
+    else { S.stats.orbHits++; emit('hand_spell_hit', point, { element: el, damage: pr.damage, twoHand: !!pr.twoHand, target: tk, targetId: tid, projectileId: pr.id, power: pr.power, radius: pr.radius, pvp: !!pv }); }
+    if (pv) { pvpHit(pv, pr, point, dir); return; }
     if (tgt.kind === 'boss') {
-      damage = dealBoss(pr.damage, source, point, { kind, projectileId: pr.id, element: el, charged: !!pr.charged, twoHand: !!pr.twoHand });
+      dealBoss(pr.damage, source, point, { kind, projectileId: pr.id, element: el, charged: !!pr.charged, twoHand: !!pr.twoHand });
       if (!playing()) return;
       const B = st().b;
       if (el === 'fire') addBurn('boss', pr.twoHand ? 1.6 : 1);
@@ -375,8 +409,6 @@ export function createCombatHand(api, patch = {}) {
       } catch (e) { /* цель сама решает, как применить урон */ }
       if (el === 'storm') S.chains.push({ t: S.time + K.storm.chainDelay, amount: pr.damage * K.storm.chainMul, from: vcopy(point), exclude: tgt.key, element: 'storm' });
     }
-    if (kind === 'arrow') { S.stats.arrowHits++; emit('arrow_hit', point, { damage, element: el, charged: !!pr.charged, target: tgt.kind, targetId: tgt.ref ? tgt.ref.id : 'boss', projectileId: pr.id, draw: pr.draw, rain: !!pr.rainDrop }); }
-    else { S.stats.orbHits++; emit('hand_spell_hit', point, { element: el, damage, twoHand: !!pr.twoHand, target: tgt.kind, targetId: tgt.ref ? tgt.ref.id : 'boss', projectileId: pr.id, power: pr.power, radius: pr.radius }); }
   }
   function vcopy(p) { return vec(p.x, p.y, p.z); }
   function addBurn(key, mul) {
@@ -387,11 +419,12 @@ export function createCombatHand(api, patch = {}) {
   }
   function stepBurns() {
     for (const [key, b] of S.burns) {
-      if (S.time > b.until + 1e-6 || key !== 'boss' || !bossTarget()) { S.burns.delete(key); continue; }
-      while (S.time >= b.next && b.next <= b.until + 1e-6 && playing()) {
+      if (key !== 'boss' || !bossTarget()) { S.burns.delete(key); continue; }
+      while (S.time + 1e-6 >= b.next && b.next <= b.until + 1e-6 && playing()) {
         b.next += K.fire.tick;
         dealBoss(b.dps * K.fire.tick, 'burn', api.bossAim(), { element: 'fire', dot: true }, true);
       }
+      if (S.time > b.until + 1e-6) S.burns.delete(key);
     }
   }
   function stepChains() {
@@ -403,8 +436,10 @@ export function createCombatHand(api, patch = {}) {
       const all = allTargets();
       let tgt = all.find((t) => t.key !== c.exclude) || all.find((t) => t.key === c.exclude);
       if (!tgt || !playing()) continue;
-      emit('hand_chain', tgt.aim, { from: c.from, to: vcopy(tgt.aim), element: 'storm', target: tgt.kind });
-      if (tgt.kind === 'boss') dealBoss(c.amount, 'chain', tgt.aim, { element: 'storm', chain: true });
+      const pv = tgt.kind === 'boss' ? pvpOf() : null;
+      emit('hand_chain', tgt.aim, { from: c.from, to: vcopy(tgt.aim), element: 'storm', target: pv ? 'opponent' : tgt.kind, pvp: !!pv });
+      if (pv) pv.damage(c.amount, 'chain', tgt.aim, { kind: c.kind || 'arrow', element: 'storm', chain: true });   // дуэль: тот же множитель, что у стрелы/сгустка
+      else if (tgt.kind === 'boss') dealBoss(c.amount, 'chain', tgt.aim, { element: 'storm', chain: true });
       else if (tgt.ref && typeof tgt.ref.onHit === 'function') { try { tgt.ref.onHit({ damage: c.amount, element: 'storm', kind: 'chain', projectileId: null, point: vcopy(tgt.aim), dir: vec(0, 0, 0), chain: true }); } catch (e) { /* ignore */ } }
     }
     S.chains = keep;
@@ -443,7 +478,7 @@ export function createCombatHand(api, patch = {}) {
           pr.hits.add(t.key);
           applyHit(pr, t, point);
           if (!playing()) { S.list.length = 0; return; }
-          if (pr.kind === 'hand_orb' && pr.twoHand) splash(pr, point, t.key, tg);
+          if (pr.kind === 'hand_orb' && pr.twoHand) { splash(pr, point, t.key, tg); if (!playing()) { S.list.length = 0; return; } }
           if (pr.pierce > 0) { pr.pierce--; pr.damage *= 0.7; continue; }
           dead = true; break;
         }
@@ -452,7 +487,7 @@ export function createCombatHand(api, patch = {}) {
         const gy = api.groundY(pr.position.x, pr.position.z);
         if (pr.position.y <= gy && pr.age > 0.05) {
           if (!pr.volley) emit('projectile_impact', vec(pr.position.x, gy, pr.position.z), { owner: 'player', kind: pr.kind, projectileId: pr.id, result: 'floor', element: pr.element });
-          if (pr.kind === 'hand_orb' && pr.twoHand) splash(pr, vec(pr.position.x, gy, pr.position.z), null, tg);
+          if (pr.kind === 'hand_orb' && pr.twoHand) { splash(pr, vec(pr.position.x, gy, pr.position.z), null, tg); if (!playing()) { S.list.length = 0; return; } }
           dead = true;
         } else if (pr.age >= pr.lifetime) dead = true;
       }
@@ -489,11 +524,22 @@ export function createCombatHand(api, patch = {}) {
     stepChains();
   }
 
+  // Предпросмотр полёта стрелы (для дуги прицела у визуала): точка и скорость вылета с аим-ассистом, как у spawnArrow.
+  function launchPreview(bow) {
+    const A = K.arrow, P = st().p;
+    const from = handPoint('left');
+    from.y = P.y + A.spawnHeight;
+    const speed = A.speedMin + (A.speedMax - A.speedMin) * bow.draw;
+    const aim = aimedDir(facing(), bow.aimX, bow.aimY, A.aimYawDeg, A.aimPitchDeg, from, speed, A.gravity, A.assistDeg, A.assistK);
+    return { from, vel: vec(aim.dir.x * speed, aim.dir.y * speed, aim.dir.z * speed), g: A.gravity, assist: aim.assist || null };
+  }
+
   // ───────── снимок ─────────
   function decorateSnapshot(snap) {
     if (!snap || typeof snap !== 'object') return snap;
     if (snap.player) {
       snap.player.bow = { ...S.bow };            // свежие объекты: потребители снимка могут их менять
+      if (S.bow.active && S.bow.draw > 0.05 && playing()) { try { snap.player.bow.launch = launchPreview(S.bow); } catch (e) { /* без дуги */ } }
       snap.player.handSpell = { ...S.spell };
       if (S.bow.active && (snap.player.action === 'idle' || snap.player.action === 'move')) snap.player.action = 'cast';
     }
@@ -520,11 +566,11 @@ export function createCombatHand(api, patch = {}) {
   return {
     version: HAND_COMBAT_VERSION,
     readInput, clearInput, step, decorateSnapshot,
-    reset() { S = fresh(); },
+    reset() { S = fresh(); rngS = 0x2468ace; },
     clear() { S.list.length = 0; S.rains.length = 0; S.chains.length = 0; S.burns.clear(); S.pendingRelease = null; S.pendingThrow = null; },
     registerTarget(t) { if (t && t.id != null) targets.set(String(t.id), t); return () => targets.delete(String(t && t.id)); },
     unregisterTarget(id) { targets.delete(String(id)); },
-    setBossTargetable(on) { S.bossTargetable = on !== false; },
+    setBossTargetable(on) { bossTargetable = on !== false; },
     get config() { return K; },
     getDebug() { return { version: HAND_COMBAT_VERSION, live: S.list.length, arrowCd: S.arrowCd, orbCd: S.orbCd, rainCd: S.rainCd, burns: S.burns.size, rains: S.rains.length, stats: { ...S.stats }, bow: S.bow, spell: S.spell, targets: targets.size }; },
   };

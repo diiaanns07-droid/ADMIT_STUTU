@@ -85,6 +85,7 @@ test('DEBUG: M — сгусток (form → hold, power растёт), отпу�
   inp = z.apply(dbgInput(), fakeNow, { debug: true, playing: true });
   ok(inp.handSpell.phase === 'hold' && inp.handSpell.power > 0.5, `hold ${JSON.stringify(inp.handSpell)}`);
   T.key('keyup', 'KeyM');
+  fakeNow += 700;   // редкие кадры (программный рендер): импульс DEBUG-броска не должен сгореть
   inp = z.apply(dbgInput(), fakeNow, { debug: true, playing: true });
   ok(inp.handSpell.phase === 'throw' && inp.handSpell.power > 0.5, `throw ${inp.handSpell.phase}`);
   inp = z.apply(dbgInput(), fakeNow + 20, { debug: true, playing: true });
@@ -176,6 +177,24 @@ test('поза героя: setPose у heroModel вызывается; проце
   for (let i = 0; i < 30; i++) pose.update(1 / 60, { root, heroModel: hm, snap, setPose: true });
   ok(calls.length === 30 && calls[29].bowDraw > 0.8, `setPose ${JSON.stringify(calls[29])}`);
   ok(J.shL.rotation.x < -1.2 && J.elR.rotation.x < -1.5, `суставы ${JSON.stringify(J.shL.rotation)} ${JSON.stringify(J.elR.rotation)}`);
+});
+
+test('ревью: handCombat выключен — B не перехватывается; пауза во время натяжения не «залипает»', () => {
+  const T = fakeTarget();
+  const z = createHandZone({ target: T });
+  z.apply(dbgInput(), fakeNow, { debug: true, playing: true, enabled: false });
+  ok(!T.key('keydown', 'KeyB').stopped, 'B перехвачена при выключенном луке');
+  T.key('keyup', 'KeyB');
+  z.apply(dbgInput(), fakeNow, { debug: true, playing: true });
+  T.key('keydown', 'KeyB'); T.key('keyup', 'KeyB');
+  T.key('keydown', 'KeyN');
+  fakeNow += 500;
+  z.apply(dbgInput(), fakeNow, { debug: true, playing: true });
+  z.apply(dbgInput(), fakeNow, { debug: true, playing: false });   // пауза
+  T.key('keyup', 'KeyN');                                            // отпустили во время паузы
+  fakeNow += 2000;
+  const inp = z.apply(dbgInput({ moveZ: 1 }), fakeNow, { debug: true, playing: true });
+  ok(!inp.bow.active && inp.moveZ === 1, `после паузы лук залип: ${JSON.stringify(inp.bow)}`);
 });
 
 performance.now = realNow;

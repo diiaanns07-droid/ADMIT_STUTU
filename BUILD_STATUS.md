@@ -348,13 +348,26 @@ DEBUG-клавиши, поза процедурного героя), `modules/co
   `element_apply {element, target, duration, knockback}`, а также `projectile_impact` (kind arrow/hand_orb) и `boss_hit` (source arrow/hand_orb/burn/chain).
 - **Снимок (C3/C4):** в `snap.projectiles` — `{ id, owner:'player', kind:'arrow'|'hand_orb', element, position, velocity, radius, damage, charged,
   twoHand, pierce, from:'hand' }`; `snap.player.bow`, `snap.player.handSpell`; `snap.cooldowns.arrow*/handOrb*/rain*`.
-- **PvP (№3):** `combat.hand.registerTarget({ id, kind:'player', getPosition()→{x,y,z}, radius, height, onHit(hit) })` — мои стрелы и
+- **PvP-дуэль (№3, `modules/pvp.js`) — уже работает без действий №3:** в дуэли `BOSS` — капсула соперника, и попадание стрелы/сгустка
+  уходит в `PV.projectileHit({ kind:'arrow'|'hand_orb', pvpKind, damage, velocity, fx })` (урон × `PC.dmg.arrow/hand_orb` = 0,6):
+  огонь — `fx.dot` (≈10 за 3 с, ×1,6 у сгустка двумя руками), лёд — `fx.slow` 2,5 с, земля — `fx.knock` 1,6 м (двумя руками 2,8 м +
+  `fx.stun` 0,6 с), молния — цепь вторым ударом через 0,18 с (`PV.damage`, 45%). Горения тиками и эффектов Регента в дуэли нет;
+  `arrow_hit`/`hand_spell_hit` — `target:'opponent', pvp:true`. Тесты — «PvP-дуэль» в `dev/combatHand.test.mjs` (настоящие сессии).
+  Стрелы в полёте соперник видит через `snap.projectiles` → NET `pr` (`PV.myState()` берёт только `st.projectiles`).
+- **PvP (№3), запасной путь:** `combat.hand.registerTarget({ id, kind:'player', getPosition()→{x,y,z}, radius, height, onHit(hit) })` — мои стрелы и
   сгустки сами делают swept-тест по сопернику и зовут `onHit({ damage, element, kind, projectileId, point, dir, charged, twoHand,
   knockback{x,z}|null, slowSec, burnSec, burnDps, chain })`; урон и эффекты по сети применяет №3. `combat.hand.setBossTargetable(false)` —
   в дуэли стрелы не бьют Регента. Либо можно брать снаряды из `snap.projectiles` (поле `damage` есть) в свой hit-тест — но тогда не
   регистрировать цель, чтобы урон не прошёл дважды.
 - **Герой (C5):** VRM-героям позу даёт `[HERO] heroPoseFromInput` в main.js; процедурному стражу — `createHeroBowPose()` (core/handZone.js).
 - **VFX (№7):** `modules/handVisuals.js` — `setDelegated({ arrows, orbs, bow })` прячет мои заглушки, когда эффекты рисуют своё.
+- **CTRL (№1), просьба:** в DEBUG-бою клавишу **B** забирает лук (перехват в capture-фазе в `core/handZone.js`, только в бою);
+  печать «Кор» у `core/debugInput.js` осталась на **Shift+B** (на экране тренировки B по-прежнему у симулятора приседаний).
+  Стоит поправить шапку `core/debugInput.js`. Своё гашение движения при `input.bow.active` main уже делает — дублировать не обязательно.
+- **NET (№2), остаток по ревью:** события лука/магии уже пересылаются; `encodeProjectiles` пока теряет `charged`/`twoHand`
+  (соперник видит заряженную стрелу и сгусток двумя руками как обычные — можно `extra.ch`/`extra.th`), `element_apply` не пересылается.
+- **PVP (№3) / C4 lockTarget:** стрелы и сгустки выбирают цель сами (Регент/капсула соперника + цели `registerTarget`, ближайшая
+  к линии прицела в конусе 40°) — в дуэли это соперник, регистрировать его не нужно (иначе урон пройдёт дважды).
 
 ## V6 · [VFX] «больше магии» — эффекты рун и заклинаний (№7, в работе)
 - **База `modules/fx/`** поверх `modules/effects.js` (старые эффекты — откат; настройка `fxMagic: true`, `false` — как раньше):

@@ -90,6 +90,8 @@ const STR_TIP = [0.628, -0.112], STR_LIFT = [0.566, -0.17]; // тетива: к�
 const NOCK_Y = 0.03, REST_X = 0.02;                        // стрела ложится слева от рукояти, чуть выше центра
 const ARROW_LEN = 0.8;
 const AIM_YAW = 28 * Math.PI / 180, AIM_PITCH = 22 * Math.PI / 180, BOW_CANT = 0.2;
+const BOW_SHOW_YAW = -0.42;      // [HAND] лук чуть развёрнут к камере за спиной, чтобы читалась дуга плеч
+const BOW_GAME_SCALE = 1.2;      // [HAND] с камеры боя (≈5 м) лук в натуральную величину теряется
 
 // ---------------------------------------------------------------- шейдеры
 // Билборды: aPos(xyz, размер), aCol(rgb, поворот), aVel(вектор вытягивания в мире, кадр атласа 0..3 + 4·k —
@@ -676,6 +678,9 @@ export function createHandVisuals({ THREE, scene, config } = {}) {
     dir: new THREE.Vector3(0, 0, 1), relT: 9, el: 0, charged: 0, plaus: 0, arrowVis: 0, src: { acc: 0 }, runeU: null,
   };
   { const rc = bowCurvePoints(-1); bow.runeU = [0.2, 0.33, 0.67, 0.8].map((u) => rc.getPointAt((u - 0.1) / 0.8)); }
+  // [HAND] свечение вдоль плеч лука: билборды видны под любым углом (сзади лук виден ребром)
+  const limbGlowU = (() => { const cv = bowCurvePoints(false), out = []; for (let i = 0; i < 12; i++) { const u = 0.06 + (i / 11) * 0.88; if (Math.abs(u - 0.5) > 0.06) out.push(cv.getPointAt(u)); } return out; })();
+  const qShow = new THREE.Quaternion().setFromAxisAngle(AX_Y, BOW_SHOW_YAW);
 
   // ---------------------------------------------------------------- сгустки (ладонь + полёт)
   const coreGeo = G(new THREE.SphereGeometry(1, 20, 14));
@@ -913,6 +918,8 @@ export function createHandVisuals({ THREE, scene, config } = {}) {
     if (!ev || typeof ev !== 'object' || seenBefore(ev.id)) return;
     const d = ev.data && typeof ev.data === 'object' ? ev.data : EMPTY, p = hasVec(ev.position) ? ev.position : null;
     const sp = S.Q.sparks;
+    // события соперника (data.remote, NET) не трогают лук и ладонь своего героя — только вспышки в мире
+    if (d.remote && (ev.type === 'bow_release' || ev.type === 'hand_spell_form' || ev.type === 'hand_spell_cancel' || ev.type === 'hand_spell_throw' || ev.type === 'bow_draw_start' || ev.type === 'bow_cancel')) return;
     switch (ev.type) {
       case 'arrow_hit': {
         if (S.dlg.arrows || !p) return;
@@ -1022,7 +1029,7 @@ export function createHandVisuals({ THREE, scene, config } = {}) {
       bowGroup.visible = false; strLine.visible = false; nockArrow.visible = false; bow.aimInit = false; bow.arrowVis = 0;
       return;
     }
-    const vis = bow.vis, sIn = 0.82 + 0.18 * easeOut(vis);
+    const vis = bow.vis, sIn = (0.82 + 0.18 * easeOut(vis)) * BOW_GAME_SCALE;
     if (b) {
       const draw = clamp01(num(b.draw, 0));
       bow.draw += (draw - bow.draw) * (1 - Math.exp(-dt * 28));
@@ -1041,7 +1048,7 @@ export function createHandVisuals({ THREE, scene, config } = {}) {
     if (x.lengthSq() < 1e-6) x.copy(RIGHT).negate(); else x.normalize();
     const y = V[2].crossVectors(aim, x);
     _m.makeBasis(x, y, aim);
-    bow.q.setFromRotationMatrix(_m).multiply(qCant);
+    bow.q.setFromRotationMatrix(_m).multiply(qCant).multiply(qShow);
     // кисть без якорей: вытянутая левая рука перед плечом
     if (!haveAnchors) {
       HL.copy(FEET).addScaledVector(RIGHT, -0.16); HL.y += 1.42; HL.addScaledVector(aim, 0.55);
@@ -1087,12 +1094,33 @@ export function createHandVisuals({ THREE, scene, config } = {}) {
     for (let i = 0; i < 4; i++) {
       const u = bow.runeU[i];
       toW(u.x * sIn, u.y * sIn * flexY, u.z * sIn * flexZ, loc);
-      bbc(loc.x, loc.y, loc.z, 0.05 + 0.025 * draw, c, 0.55 * vis * (1 + 0.5 * ch), 3);
+      bbc(loc.x, loc.y, loc.z, 0.07 + 0.03 * draw, c, 0.7 * vis * (1 + 0.5 * ch), 3);
+    }
+    for (let i = 0; i < limbGlowU.length; i++) {
+      const u = limbGlowU[i];
+      toW(u.x * sIn, u.y * sIn * flexY, u.z * sIn * flexZ, loc);
+      bbc(loc.x, loc.y, loc.z, 0.1 + 0.04 * draw, c, 0.5 * vis * (1 + 0.6 * ch * pulse), 0);
+      bbc(loc.x, loc.y, loc.z, 0.035, ECORE[bow.el], 0.9 * vis, 3);
     }
     if (draw > 0.02 || ch > 0) {
       const sk = (0.1 + 0.28 * draw) * vis * (1 + 0.8 * ch * pulse);
       for (let i = 0; i < 5; i++) plAdd(strPos[i * 3], strPos[i * 3 + 1], strPos[i * 3 + 2]);
       for (let i = 0; i < 5; i++) plStyle(i, 0.005 + 0.003 * ch, i === 2 ? cr : c, sk * (i === 2 ? 1.3 : 0.8));
+      plFlush();
+    }
+    // [HAND] дуга прицела: баллистика стрелы из snap.player.bow.launch (combatHand, с аим-ассистом)
+    const L = b && b.launch;
+    if (nocked && draw > 0.1 && L && L.from && L.vel && Number.isFinite(L.vel.x) && Number.isFinite(L.from.x)) {
+      const g = num(L.g, 9), sp = Math.hypot(L.vel.x, L.vel.y, L.vel.z) || 1, T = Math.min(1.4, 40 / sp), n = 18;
+      const k0 = vis * (0.16 + 0.34 * draw) * (L.assist ? 1.35 : 1) * (1 + 0.5 * ch);
+      let m = 0;
+      for (let i = 0; i < n; i++) {
+        const t = (T * (i + 1)) / n;
+        const px = L.from.x + L.vel.x * t, py = L.from.y + L.vel.y * t - 0.5 * g * t * t, pz = L.from.z + L.vel.z * t;
+        if (py < L.from.y - 6 || !plAdd(px, py, pz)) break;
+        m++;
+      }
+      for (let i = 0; i < m; i++) plStyle(i, 0.006 + 0.004 * ch, i % 2 ? c : cr, k0 * (1 - i / Math.max(1, m)));
       plFlush();
     }
     // наложенная стрела: от точки натяжения вперёд сквозь полочку лука
