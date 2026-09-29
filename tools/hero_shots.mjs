@@ -1,6 +1,6 @@
 // [HERO] Снимки героев для сравнения «до/после» и замер цены героя.
 // node tools/hero_shots.mjs --out DIR [--browser PATH] [--vendor DIR] [--size 1600x900] [--heroes ashen,elf,dark]
-//   [--shading realistic|anime] [--no-battle]
+//   [--shading realistic|anime] [--no-battle] [--vt] (виртуальное время: бой идёт и в SwiftShader)
 // node tools/hero_shots.mjs --stand 'dev/hero_stand.html?a=elf&b=dark' [--stand '…'] --out DIR
 //   — стенд героев: снимок и результаты проверок C5 (window.__HS__) в stand.json
 // Playwright (глобальный пакет) + serve_game.py. Если CDN (cdn.jsdelivr.net) недоступен, --vendor DIR
@@ -25,6 +25,13 @@ const SHADING = argOf('--shading', '');
 const VENDOR = argOf('--vendor', process.env.ASHEN_VENDOR || '');
 const BROWSER = [argOf('--browser'), '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].filter(Boolean).find((p) => existsSync(p));
 const PORT = 8000 + Math.floor(Math.random() * 700);
+const VT = argv.includes('--vt');
+// ждать n кадров виртуального времени (или просто паузу без --vt)
+async function frames(page, n, msIfReal) {
+  if (!VT) return sleep(msIfReal);
+  const t0 = await page.evaluate(() => performance.now());
+  await page.waitForFunction((t) => performance.now() >= t, t0 + (n * 1000) / 30, { timeout: 600000, polling: 200 });
+}
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -91,6 +98,13 @@ try {
     if (argOf('--zone')) settings.startZone = argOf('--zone');
     if (SHADING) settings.heroShading = SHADING;
     await ctx.addInitScript((s) => { try { localStorage.setItem('ashen-oath.settings.v1', JSON.stringify(s)); } catch (e) { /* ignore */ } }, settings);
+    // --vt: виртуальное время — каждый кадр rAF продвигает часы ровно на 1/30 с (SwiftShader рисует ~1 кадр/с,
+    // а игра считает кадры длиннее 0,25 с разрывом и не двигает бой)
+    if (VT) await ctx.addInitScript(() => {
+      let t = 0; const raf = window.requestAnimationFrame.bind(window);
+      performance.now = () => t;
+      window.requestAnimationFrame = (cb) => raf(() => { t += 1000 / 30; cb(t); });
+    });
     const page = await ctx.newPage();
     const log = [];
     page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') log.push(`${m.type()}: ${m.text()}`); });
@@ -119,15 +133,15 @@ try {
       await click('Продолжить без камеры (DEBUG)'); await sleep(400);
       await click('В бой');
       await page.waitForFunction(() => __ASHEN__.screen === 'playing', null, { timeout: 20000 }).catch(() => {});
-      await sleep(1500);
+      await frames(page, Number(argOf('--intro-frames', '150')), 1500);
       await page.screenshot({ path: join(OUT, `${nn()}_${hero}_battle_start.png`), timeout: 120000 });
-      await page.keyboard.down('KeyW'); await sleep(1200);
+      await page.keyboard.down('KeyW'); await frames(page, 30, 1200);
       await page.screenshot({ path: join(OUT, `${nn()}_${hero}_battle_run.png`), timeout: 120000 });
-      await page.keyboard.up('KeyW'); await sleep(600);
-      await page.keyboard.down('KeyD'); await sleep(700);
+      await page.keyboard.up('KeyW'); await frames(page, 12, 600);
+      await page.keyboard.down('KeyD'); await frames(page, 18, 700);
       await page.screenshot({ path: join(OUT, `${nn()}_${hero}_battle_strafe.png`), timeout: 120000 });
-      await page.keyboard.up('KeyD'); await sleep(500);
-      await page.keyboard.press('KeyU'); await sleep(250);
+      await page.keyboard.up('KeyD'); await frames(page, 12, 500);
+      await page.keyboard.press('KeyU'); await frames(page, 8, 250);
       await page.screenshot({ path: join(OUT, `${nn()}_${hero}_battle_cast.png`), timeout: 120000 });
       await sleep(800);
       const t0 = Date.now(); const f0 = await page.evaluate(() => performance.now());
