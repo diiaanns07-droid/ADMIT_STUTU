@@ -1248,6 +1248,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       const cl = createCloth(THREE, {
         cols, rows, rest, anchor: raw(stole ? chestB : 'hips'), parent: holder, colliders: legCaps, material: capeMat,
         pleats: pn.pleats ?? 1.5, pleatDepth: 0.008, name: 'tabard', plane: Math.abs(pn.az) < 0.5 ? 'front' : 'none',
+        cling: P.tabard.cling ?? 3,
         uv: pn.emblem ? { u0: 0, u1: 1, v0: 0, v1: 1 } : { u0: 0, u1: 1, v0: 0, v1: 0.62 },
         hips: raw('hips'), back: { lim: 0.03, h: 0.3 },
         fwd: (out) => out.set(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(_mq2)),

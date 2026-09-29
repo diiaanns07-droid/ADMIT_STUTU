@@ -10,7 +10,8 @@
 //   rest — Float32Array мировых позиций частиц (строка 0 — верх), anchor — кость, к которой прибит верх,
 //   colliders — [{ a, b, r }] (кости-концы отрезка и радиус, м), fwd() → мировой вектор «вперёд» героя.
 //   plane — 'back' (плащ: не заходит вперёд корпуса), 'front' (полы спереди: не уходят назад, между ног),
-//   'none'; name — имя меша; uv — окно текстуры { u0, u1, v0, v1 } (полы без герба — нижняя часть холста).
+//   'none'; name — имя меша; uv — окно текстуры { u0, u1, v0, v1 } (полы без герба — нижняя часть холста);
+//   cling — прилегание, м/с²: тяга по горизонтали к оси таза (полы ложатся на бёдра, а не висят «вывеской»).
 //   → { mesh, update(dt, lod), reset(), setWind(k), dispose() }
 
 const H = 1 / 60;                 // шаг симуляции
@@ -121,7 +122,7 @@ export function createCloth(THREE, o) {
     P[k * 3] = x; P[k * 3 + 1] = y; P[k * 3 + 2] = z;
   }
   let floorY = -1e9, backLim = 0.02, backH = 0.5;
-  const DRAG = 2.2, DAMP = 0.992, ITER = 4, VCAP = 3.2, VMAX = 3.5, CARRY = o.carry ?? 0.6;
+  const DRAG = 2.2, DAMP = 0.992, ITER = 4, VCAP = 3.2, VMAX = 3.5, CARRY = o.carry ?? 0.6, cling = o.cling ?? 0;
   // перенос движения тела на ткань (без рывка): доля CARRY сдвига кости груди за кадр прикладывается к
   // частицам и их прошлым положениям; встречный воздух видит эту долю как скорость (vA)
   const Mprev = new THREE.Matrix4(), Md = new THREE.Matrix4();
@@ -184,6 +185,10 @@ export function createCloth(THREE, o) {
       P[i3] = P[i3] + vx + DRAG * ax * h2;
       P[i3 + 1] = P[i3 + 1] + vy + (G + DRAG * ay) * h2;
       P[i3 + 2] = P[i3 + 2] + vz + DRAG * az * h2;
+      if (cling > 0) {
+        const cx = P[i3] - hipP.x, cz = P[i3 + 2] - hipP.z, cl2 = Math.sqrt(cx * cx + cz * cz);
+        if (cl2 > 1e-4) { P[i3] -= (cx / cl2) * cling * h2; P[i3 + 2] -= (cz / cl2) * cling * h2; }
+      }
     }
     for (let it = 0; it < iters; it++) {
       for (let c = 0; c < NC; c++) {
