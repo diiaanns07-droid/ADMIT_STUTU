@@ -282,17 +282,22 @@ if (hostFps < 8) {
 check('движение без телепортов (скорость на экране ≤ 14 м/с)', jumps === 0, `max ${maxSpeed.toFixed(1)} м/с, рывков ${jumps}`);
 
 // обрыв и восстановление
+// при кадрах по секунде и дольше фризы вкладки в «тишину» идут не полностью (защита от ложных обрывов) —
+// обрыв держим дольше и проверяем сам факт обнаружения, время — только при нормальном fps
+const slowFps = hostFps < 8;
+const dropMs = slowFps ? 20000 : 4500;
 const tDrop = Date.now();
-await A.evaluate(() => window.__ASHEN__.netSession().net.simulateDrop(4500));
+await A.evaluate((ms) => window.__ASHEN__.netSession().net.simulateDrop(ms), dropMs);
 let lostAt = 0, backAt = 0;
-while (Date.now() - tDrop < 12000) {
+while (Date.now() - tDrop < dropMs + 12000) {
   const d = await net(B);
   if (!lostAt && d && d.status === 'lost') lostAt = Date.now();
   if (lostAt && d && d.status === 'connected') { backAt = Date.now(); break; }
   await sleep(100);
 }
 if (lostAt) await B.shot(join(OUT, `${MODE}-ghost.png`)).catch(() => {});
-check('обрыв замечен за ≤ 3,5 с', lostAt > 0 && lostAt - tDrop <= 3600, lostAt ? `${lostAt - tDrop} мс` : 'нет');
+if (slowFps) check('обрыв замечен (fps < 8: без проверки времени)', lostAt > 0, lostAt ? `${lostAt - tDrop} мс` : 'нет');
+else check('обрыв замечен за ≤ 3,5 с', lostAt > 0 && lostAt - tDrop <= 3600, lostAt ? `${lostAt - tDrop} мс` : 'нет');
 check('связь восстановилась сама', backAt > 0, backAt ? `через ${backAt - tDrop} мс после обрыва` : 'нет');
 const pingB = (await net(B)).ping;
 check(`пинг похож на заданный (${MODE === 'local' ? PING : MODE})`, MODE !== 'local' || (pingB > PING * 0.6 && pingB < PING * 1.8), `${pingB} мс`);

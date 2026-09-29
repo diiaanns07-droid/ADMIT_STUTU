@@ -220,6 +220,21 @@ await t('net local: hello, ping, st/ev, обрыв 3 с → lost → восст�
   B2.close();
   A.close();
 });
+await t('net local: фриз своей вкладки на 4 с (компиляция шейдеров) — не обрыв', async () => {
+  const A = createNet({ transport: 'local', name: 'A' });
+  const B = createNet({ transport: 'local', name: 'B' });
+  const code = await A.host();
+  await B.join(code);
+  assert.ok(await until(() => A.state === 'connected' && B.state === 'connected'));
+  const lost = [];
+  A.on('lost', () => lost.push('A')); B.on('lost', () => lost.push('B'));
+  const t0 = Date.now();
+  while (Date.now() - t0 < 4000) { /* главный поток занят, как при долгом кадре */ }
+  await sleep(1200);
+  assert.deepEqual(lost, [], 'ложный обрыв после фриза');
+  assert.equal(A.state, 'connected');
+  A.close(); B.close();
+});
 await t('net local: третий игрок в полную комнату не попадает', async () => {
   const A = createNet({ transport: 'local', name: 'A' });
   const B = createNet({ transport: 'local', name: 'B' });
