@@ -289,6 +289,45 @@ test('рука опущена, но в кадре: боковой дёрг — �
   ok(r.dashes.length === 0, 'вверх из покоя — не рывок');
 });
 
+// ───────── [V6] ровный ход: провалы трекинга, плавный разгон, руль без дрожи ─────────
+test('[V6] провал трекинга на ~¼ с при поднятой руке — герой не спотыкается (ход и поворот держатся)', () => {
+  let { st, t } = raised();
+  t = run(st, t, 400, () => P(0.45, CHEST));
+  const before = st.read(t);
+  let minZ = 1;
+  for (let k = 0; k < 8; k++, t += 33) { st.push({ t, hand: null, body: BODY, mirror: true, aspect: ASPECT }); minZ = Math.min(minZ, st.read(t).z); }
+  ok(minZ >= before.z - 1e-9 && st.read(t).x < -0.3, `ход не прервался: z≥${minZ} x=${st.read(t).x}`);
+  t = run(st, t, 100, () => P(0.45, CHEST));
+  ok(st.read(t).engaged, 'кисть вернулась — идём дальше');
+});
+
+test('[V6] шаг → бег разгоняется плавно (не рывком), бег → стоп — сразу', () => {
+  let { st, t } = raised(-0.3);
+  const walkZ = st.read(t).z;
+  // рука поднимается к плечу за ~0,3 с (живой темп, не дёрг-рывок)
+  const t0 = t;
+  let zs = [];
+  t = run(st, t, 330, (tt) => { zs.push(st.read(tt).z); return P(0, -0.3 + 0.6 * Math.min(1, (tt - t0) / 300)); });
+  zs.push(st.read(t).z);
+  let maxStep = 0;
+  for (let i = 1; i < zs.length; i++) maxStep = Math.max(maxStep, zs[i] - zs[i - 1]);
+  ok(st.getDebug().counters.dashes === 0, 'подъём руки — не рывок');
+  ok(maxStep < 0.25, `разгон без скачка: наибольший шаг за кадр ${maxStep.toFixed(2)} (было бы ${(1 - walkZ).toFixed(2)})`);
+  t = run(st, t, 700, () => P(0, 0.3));
+  ok(st.read(t).z === 1, 'через ~0,7 с — полный бег: ' + st.read(t).z);
+  st.push({ t, hand: { ...P(0, -1.6), scale: SCALE }, body: BODY, mirror: true, aspect: ASPECT });
+  ok(st.read(t).z === 0 && !st.read(t).engaged, 'рука вниз — стоп на том же кадре');
+});
+
+test('[V6] руль не дрожит: рука в зоне поворота с шумом ±0.06 sw — разброс поворота мал', () => {
+  let { st, t } = raised();
+  t = run(st, t, 600, () => P(0.4, CHEST));
+  let lo = Infinity, hi = -Infinity;
+  for (let k = 0; k < 90; k++) { t = run(st, t, 33, () => P(0.4, CHEST), { jitter: 0.12 }); const x = st.read(t).x; lo = Math.min(lo, x); hi = Math.max(hi, x); }
+  ok(hi < -0.2, 'поворачиваем влево: ' + hi);
+  ok(hi - lo < 0.12, `разброс поворота ${(hi - lo).toFixed(3)}`);
+});
+
 test('мусор на входе не ломает модуль', () => {
   const st = createSteerStick();
   st.push(null); st.push({}); st.push({ t: NaN }); st.push({ t: 5, hand: { x: NaN, y: 1 } });
@@ -300,9 +339,9 @@ test('мусор на входе не ломает модуль', () => {
 
 // ───────── через конвейер кистей (core/handGestures.js) ─────────
 // makeHand из dev/handGestures.test.mjs здесь не нужен: хватает «кисти»-заглушки с 21 точкой.
-function fakeHand(cx, cy, { side = 'left', fist = false } = {}) {
+function fakeHand(cx, cy, { side = 'left', fist = false, size = 0.12 } = {}) {
   // грубая раскрытая ладонь (или кулак) вокруг (cx, cy) в незеркальном кадре; размер ≈ 0.12 кадра
-  const s = 0.12, L = [];
+  const s = size, L = [];
   const at = (dx, dy) => ({ x: cx + dx * s / ASPECT, y: cy + dy * s, z: 0 });
   L[0] = at(0, 0.45);
   const base = [[-0.3, 0.1], [-0.1, 0], [0.1, 0], [0.28, 0.08]];
@@ -316,7 +355,7 @@ function fakeHand(cx, cy, { side = 'left', fist = false } = {}) {
 const BODYN = { x: 0.5, y: 0.4 }, SWN = 0.25; // нормализованный кадр
 const obs = (t, hands, extra = {}) => ({ tMs: t, frameW: 640, frameH: 480, mirror: true, hands, poseWrists: { left: { x: 0.64, y: 0.6, visibility: 0.9 }, right: { x: 0.36, y: 0.6, visibility: 0.9 } }, bodyCenter: extra.body || BODYN, shoulderWidth: SWN });
 // левая ладонь: out/v в sw (как P выше), в нормализованных координатах кадра
-const LH = (out, v, body = BODYN) => fakeHand(body.x + (C.neutralX + out) * SWN / ASPECT, body.y - v * SWN);
+const LH = (out, v, body = BODYN, size) => fakeHand(body.x + (C.neutralX + out) * SWN / ASPECT, body.y - v * SWN, { size });
 function g8(g, t0, ms, fn, extra) { let t = t0; for (; t < t0 + ms; t += 33) g.push(obs(t, fn(t), typeof extra === 'function' ? extra(t) : extra)); return t; }
 
 test('по умолчанию handGestures — джойстик (старые сценарии не меняются); moveMode:steer — руль', () => {
@@ -343,6 +382,47 @@ test('конвейер: наружу → moveX < 0 (влево), к груди �
   g.configure({ moveMode: 'stick' });
   t = g8(g, t, 400, () => [LH(0, CHEST)]);
   ok(g.peek(t).stick.mode !== 'steer', 'переключились на джойстик');
+});
+
+test('[V6] «Руль»: подъём руки с колен (кисть растёт в кадре) и ходьба с шумом размера — щит НЕ поднимается', () => {
+  const g = createHandGestures({ moveMode: 'steer' });
+  let t = g8(g, 1000, 600, () => [LH(0, -1.4, BODYN, 0.1)]);
+  const t0 = t;
+  let shield = false, stopped = 0, walking = 0;
+  // поднимаем руку к груди, кисть при этом приближается к камере (0.10 → 0.13)
+  t = g8(g, t, 400, (tt) => { const u = Math.min(1, (tt - t0) / 350); shield = shield || g.peek(tt).shield; return [LH(0, -1.4 + 1.15 * u, BODYN, 0.1 + 0.03 * u)]; });
+  // идём 6 с: рука чуть гуляет к камере и обратно (±9% размера) и вбок — шум живой руки
+  let k = 0;
+  t = g8(g, t, 6000, (tt) => {
+    const f = g.peek(tt); shield = shield || f.shield;
+    if (f.moveZ > 0) walking++; else stopped++;
+    k++;
+    const wob = 0.13 * (1 + 0.09 * Math.sin(k * 0.9) + 0.03 * rnd());
+    return [LH(0.04 * Math.sin(k * 0.3), CHEST + 0.05 * rnd(), BODYN, wob)];
+  });
+  ok(!shield, 'щит не поднялся сам: ' + JSON.stringify(g.getDebug().counters));
+  ok(stopped === 0 && walking > 150, `герой шёл без остановок: шёл ${walking}, стоял ${stopped}`);
+});
+
+test('[V6] «Руль»: осознанный толчок ладонью — щит (герой стоит); убрал ладонь назад — щит опустился, идём', () => {
+  const g = createHandGestures({ moveMode: 'steer' });
+  let t = g8(g, 1000, 900, () => [LH(0, CHEST, BODYN, 0.12)]);
+  ok(g.peek(t).moveZ > 0 && !g.peek(t).shield, 'идём, щита нет');
+  const t0 = t;
+  t = g8(g, t, 220, (tt) => [LH(0, CHEST, BODYN, 0.12 + 0.05 * Math.min(1, (tt - t0) / 180))]);
+  t = g8(g, t, 200, () => [LH(0, CHEST, BODYN, 0.17)]);
+  let f = g.peek(t);
+  ok(f.shield && f.moveZ === 0, 'толчок → щит, герой стоит: ' + JSON.stringify({ sh: f.shield, z: f.moveZ }));
+  // пропал один кадр кисти — щит не мигает
+  g.push(obs(t, []));
+  ok(g.peek(t).shield, 'один пустой кадр — щит держится');
+  t += 33;
+  t = g8(g, t, 600, () => [LH(0, CHEST, BODYN, 0.17)]);
+  ok(g.peek(t).shield, 'ладонь впереди — щит держится');
+  const t1 = t;
+  t = g8(g, t, 600, (tt) => [LH(0, CHEST, BODYN, 0.17 - 0.05 * Math.min(1, (tt - t1) / 200))]);
+  f = g.peek(t);
+  ok(!f.shield && f.moveZ > 0, 'убрал ладонь назад → щит опущен, идём: ' + JSON.stringify({ sh: f.shield, z: f.moveZ }));
 });
 
 test('[ОШИБКА] рука поднята, но ниже груди → подсказка steer_low (одна, не спам)', () => {

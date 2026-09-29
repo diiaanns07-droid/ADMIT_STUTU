@@ -88,6 +88,15 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   shieldDropMs: 160,       // ладонь отвернулась/сжалась дольше — щит опускается
   shieldPushShift: 0.5,    // [V3.1] за время толчка центр ладони сдвинулся в плоскости кадра меньше (S): это толчок, а не ведение
   shieldStickStart: 0.25,  // [V3.1] щит поднимается, только если джойстик почти в центре (|выход| меньше)
+  // [V6] щит без ложных срабатываний: шум размера кисти и лёгкий наклон руки вперёд при ходьбе в «Руле»
+  // щит больше не поднимают, а поднятый случайно — опускается, стоит убрать ладонь назад.
+  shieldPushFrames: 2,     // толчок признаётся, только если держится столько кадров подряд (не один выброс шума)
+  shieldPushRatioSteer: 1.24, // в «Руле» ладонь и так поднята к камере — толчок нужен заметнее
+  shieldConfirmMs: 90,     // ладонь к камере раскрыта хотя бы столько (не мигание формы)
+  shieldAfterRaiseMs: 400, // в «Руле»: столько после подъёма руки щит не поднимается (подъём — не толчок)
+  shieldRetract: 0.07,     // ладонь вернулась назад: размер < (размер до толчка)·(1 + столько)…
+  shieldRetractMs: 200,    //   …дольше столько — щит опускается
+  shieldScaleTauMs: 80,    // сглаживание размера кисти для проверки «убрал назад»
   // парирование (левая): стабильный кулак → раскрытая ладонь к камере
   parryWindowMs: 150,      // от выхода из кулака до ладони к камере (V3.1: 220 → 150)
   parryFistMs: 250,        // [V3.1] кулак держался хотя бы столько (не «перехват» руки при ведении)
@@ -640,6 +649,7 @@ export function createHandGestures(configPatch = {}) {
       fistStableAt: null, charge: 0, releasedAt: null, releaseCharge: 0,
       loadSince: null, loadLeft: null, // «Искра»: заряд и момент выхода из него
       scaleHist: [], pushAt: -Infinity, // [V3] толчок ладонью к камере (щит)
+      pushRun: 0, pushBase: null, pushBaseRun: null, scaleN: null, // [V6] кадров толчка подряд, размер до толчка, сглаженный размер/sw
       rel: [], // история {t, x} относительно корпуса (для взмаха)
       feat: null,
     };
@@ -657,7 +667,7 @@ export function createHandGestures(configPatch = {}) {
       burstBlockedUntil: -Infinity, pendingBurst: null,
       parryBlockedUntil: -Infinity, sparkBlockedUntil: -Infinity, strokeBlockedUntil: -Infinity,
       stickState: null,
-      shield: { on: false, openSince: null, badSince: null },
+      shield: { on: false, openSince: null, badSince: null, base: null, backSince: null },
       stroke: null, trail: [], trailUntil: -Infinity, lastRune: null, runeBlockedUntil: -Infinity, lastRecognition: null,
       tipF: null,
       swipe: { armed: true, until: -Infinity },
@@ -753,17 +763,34 @@ export function createHandGestures(configPatch = {}) {
     // центр ладони почти не сдвигается в плоскости кадра (иначе это ведение джойстика/подъём руки).
     // Пока кисть не «готова» (только что появилась, часто обрезана краем) — история не копится.
     const sw = fin(st.obsSw) && st.obsSw > 0 ? st.obsSw : null;
-    if (!ready(H, t)) H.scaleHist.length = 0;
+    // [V6] размер кисти относительно плеч, сглаженный — для «убрал ладонь назад» (щит опускается)
+    if (sw && f.scale > 1e-6) {
+      const n = f.scale / sw, a = H.scaleN === null || H.lastScaleT === undefined ? 1 : clamp((t - H.lastScaleT) / cfg.shieldScaleTauMs, 0, 1);
+      H.scaleN = H.scaleN === null ? n : H.scaleN + (n - H.scaleN) * a;
+      H.lastScaleT = t;
+    } else H.scaleN = null;
+    if (!ready(H, t)) { H.scaleHist.length = 0; H.pushRun = 0; }
     else {
       const pcx = (data.img[0].x + data.img[9].x) / 2 * st.aspect, pcy = (data.img[0].y + data.img[9].y) / 2;
       H.scaleHist.push({ t, s: f.scale, sw, x: pcx, y: pcy });
       while (H.scaleHist.length > 30 || (H.scaleHist.length && t - H.scaleHist[0].t > cfg.shieldPushMs + 60)) H.scaleHist.shift();
-      const b = H.scaleHist[0];
-      if (b && t - b.t >= cfg.shieldPushMs * 0.5 && b.s > 1e-6) {
-        const body = sw && b.sw ? sw / b.sw : 1;
+      const hs = H.scaleHist, n = hs.length, b = hs[0];
+      let pushing = false, base = 0;
+      if (n >= 3 && t - b.t >= cfg.shieldPushMs * 0.5 && b.s > 1e-6) {
+        // размер образца в масштабе текущих плеч (наклон всем корпусом не считается);
+        // до и после — по два кадра: один шумный кадр MediaPipe толчком не станет
+        const inNow = (q) => (sw && q.sw ? q.s * sw / q.sw : q.s);
+        base = (inNow(hs[0]) + inNow(hs[1])) / 2;
+        const cur = (f.scale + inNow(hs[n - 2])) / 2;
         const shift = Math.hypot(pcx - b.x, pcy - b.y) / Math.max(1e-4, f.scale);
-        if (f.scale / b.s / body >= cfg.shieldPushRatio && shift < cfg.shieldPushShift) H.pushAt = t;
+        const ratio = moveMode === 'steer' ? cfg.shieldPushRatioSteer : cfg.shieldPushRatio;
+        pushing = base > 1e-6 && cur / base >= ratio && shift < cfg.shieldPushShift;
       }
+      if (pushing) {
+        H.pushRun++;
+        if (H.pushRun === 1) H.pushBaseRun = sw ? base / sw : null;   // размер до толчка (в ширинах плеч)
+        if (H.pushRun >= cfg.shieldPushFrames) { H.pushAt = t; H.pushBase = H.pushBaseRun; }
+      } else H.pushRun = 0;
     }
   }
 
@@ -868,16 +895,31 @@ export function createHandGestures(configPatch = {}) {
       // [ОШИБКА] толчок раскрытой левой был, но ладонь смотрит вбок или тыльной стороной
       if (!busy && L.present && L.lastSeen === t && L.rawShape === 'open' && L.palmFacing !== 'camera' && t - L.pushAt <= 250) hint('shield_palm', t, { side: 'left' });
       S.openSince = null;
-      if (S.on) { if (S.badSince === null) S.badSince = t; if (busy || t - S.badSince >= cfg.shieldDropMs) { S.on = false; S.badSince = null; } }
+      if (S.on) { if (S.badSince === null) S.badSince = t; if (busy || t - S.badSince >= cfg.shieldDropMs) { S.on = false; S.badSince = null; S.base = null; S.backSince = null; } }
       return;
     }
     S.badSince = null;
-    if (S.on) return;
     if (S.openSince === null) S.openSince = t;
-    const mag = steering(mover().read(t));
+    if (S.on) {
+      // [V6] ладонь убрали назад (к размеру до толчка) — щит опускается, даже если она к камере:
+      // иначе в «Руле» случайный щит держался бы, пока рука ведёт героя (ладонь и так к камере)
+      const back = S.base !== null && L.scaleN !== null && L.scaleN < S.base * (1 + cfg.shieldRetract);
+      if (!back) S.backSince = null;
+      else if (S.backSince === null) S.backSince = t;
+      else if (t - S.backSince >= cfg.shieldRetractMs) { S.on = false; S.backSince = null; S.base = null; L.pushAt = -Infinity; }
+      return;
+    }
+    const so = mover().read(t);
+    const mag = steering(so);
     const still = mag < cfg.shieldStickMax;
-    const pushed = t - L.pushAt <= cfg.shieldPushKeepMs && mag < cfg.shieldStickStart;
-    if (pushed || (cfg.shieldHoldMs > 0 && still && t - S.openSince >= cfg.shieldHoldMs)) S.on = true;
+    const confirmed = t - S.openSince >= cfg.shieldConfirmMs;
+    // [V6] «Руль»: подъём руки к груди (кисть растёт в кадре) — не толчок
+    const justRaised = so && so.mode === 'steer' && fin(so.raisedAt) && t - so.raisedAt < cfg.shieldAfterRaiseMs;
+    const pushed = t - L.pushAt <= cfg.shieldPushKeepMs && mag < cfg.shieldStickStart && confirmed && !justRaised;
+    if (pushed || (cfg.shieldHoldMs > 0 && still && t - S.openSince >= cfg.shieldHoldMs)) {
+      S.on = true; S.backSince = null;
+      S.base = pushed ? L.pushBase : null;
+    }
   }
 
   function firePulse(kind, t, data) {
@@ -1498,12 +1540,14 @@ export function createHandGestures(configPatch = {}) {
     const stk = mover().read(t);
     let stickOut = busy ? { ...stk, engaged: false, x: 0, z: 0, moveX: 0, moveZ: 0, turn: 0, fwd: 0, hold: 'cast' } : stk;
     // [V5] «Руль»: поднят щит — герой стоит и держит блок (поворот остаётся)
-    if (stickOut.mode === 'steer' && stickOut.engaged && hold(L) && st.shield.on) stickOut = { ...stickOut, z: 0, moveZ: 0, fwd: 0, hold: 'shield' };
+    // [V6] щит не мигает от пропуска одного кадра кисти: опускает его только updateShield (через shieldDropMs)
+    const shieldUp = fresh && L.present && ready(L, t) && st.shield.on && !busy;
+    if (stickOut.mode === 'steer' && stickOut.engaged && shieldUp) stickOut = { ...stickOut, z: 0, moveZ: 0, fwd: 0, hold: 'shield' };
     return {
       available: fresh && (L.present || R.present),
       left: handState(L, t), right: handState(R, t),
       attack: hold(R) && R.shape === 'pinch' && !drawing && !burstP && !busy,
-      shield: hold(L) && st.shield.on && !busy,
+      shield: shieldUp,
       charge: fresh ? (R.shape === 'fist' ? Math.max(L.charge, R.charge) : R.charge) : 0,
       burst: !!burstP, burstPower: burstP ? Math.round(burstP.power * 1000) / 1000 : 0,
       rune: runeP ? runeP.rune : null, runeScore: runeP ? Math.round(runeP.score * 1000) / 1000 : 0,

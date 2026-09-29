@@ -33,7 +33,7 @@ export const DEFAULT_STEER_CONFIG = Object.freeze({
   dzOff: 0.13,             // …и кончается ближе стольких (гистерезис — не мигает)
   turnFull: 0.62,          // здесь поворот полный (1)
   turnCurve: 1.35,         // степень: у центра — тонкое подруливание
-  turnTauMs: 90,           // сглаживание выхода поворота
+  turnTauMs: 120,          // сглаживание выхода поворота ([V6] 90 → 120: курс не «рыскает» от дрожи руки)
   fastHoldSpeed: 4.0,      // sw/с: ладонь летит быстрее — это дёрг (рывок), а не руление: поворот не меняется
   fastWindowMs: 70,        //   скорость — по смещению за это окно
   // вперёд: уровень ладони v = (линия плеч − ладонь) / sw, вверх — плюс
@@ -43,15 +43,25 @@ export const DEFAULT_STEER_CONFIG = Object.freeze({
   runOff: -0.12,
   walkMin: 0.3,            // сила шага у порога…
   walkMag: 0.6,            // …и под порогом бега
+  fwdUpTauMs: 200,         // [V6] разгон шаг → бег плавный (не рывок 2 → 5 м/с за кадр); стоп — сразу
+  fwdDownTauMs: 110,       //   сбросить с бега на шаг — чуть быстрее
   // потеря кисти
-  staleMs: 250,            // выход read() без свежих кадров — ноль
-  lostStopMs: 120,         // кисть не видна дольше (и запястья нет) — стоп
+  // [V6] MediaPipe теряет кисть на 3–8 кадров (смаз, край кадра, свет) — раньше герой спотыкался:
+  // стоп через 120 мс и выход «протух» через 250. Теперь провал до ~⅓ с ход не прерывает; нарочно
+  // опущенная рука по-прежнему останавливает сразу (уход вниз / через нижний край — см. exit*).
+  staleMs: 400,            // выход read() без свежих кадров — ноль
+  lostStopMs: 330,         // кисть не видна дольше (и запястья нет) — стоп
   exitBottomY: 0.8,        // кисть пропала ниже этой доли кадра — это «опустил руку»: стоп сразу
   exitDownSpeed: 2.5,      // или пропала, уходя вниз быстрее (sw/с)
   wristMaxGapMs: 800,      // запястье позы ведёт вместо кисти (кулак, смаз) не дольше столько
   wristMinSamples: 5,
   // фильтры
-  posTauMs: 60,            // центр ладони
+  posTauMs: 60,            // (прежний фильтр центра ладони; с V6 — One Euro ниже)
+  // [V6] One Euro для центра ладони: рука стоит — сильное сглаживание (руль не дрожит),
+  // рука движется — частота среза растёт, задержки почти нет
+  minCutoffHz: 1.7,
+  beta: 1.1,               // Гц на sw/с
+  dCutoffHz: 1.2,
   bodyTauMs: 120,          // середина плеч по горизонтали: быстро — наклон корпуса вместе с рукой не рулит
   bodyTauYMs: 250,         //   и по вертикали (порог «шаг/стоп» не дрожит от шума плеч)
   swTauMs: 500,            // ширина плеч
@@ -87,9 +97,9 @@ export function createSteerStick(configPatch = {}) {
     s = {
       lastT: null, lastSeen: null, lastHandT: null, mirror: true, aspect: 4 / 3,
       bodyF: null, swF: null, bodySlowX: null,
-      pos: null, level: null, outward: null, vy: 0, lastLevelRaw: null, lastHandY: null,
+      pos: null, posV: 0, level: null, outward: null, vy: 0, lastLevelRaw: null, lastHandY: null,
       source: 'none', raised: false, raisedSince: null, running: false,
-      turning: false, turnF: 0, lastTgt: 0, neutral: cfg.neutralX, rawHist: [],
+      turning: false, turnF: 0, fwdF: null, lastTgt: 0, neutral: cfg.neutralX, rawHist: [],
       out: { x: 0, z: 0 }, gait: 'idle', busy: false,
       wOff: null, wOffN: 0,
       zone: 'none', zoneHist: [{ t: -Infinity, zone: 'none' }],
@@ -113,7 +123,7 @@ export function createSteerStick(configPatch = {}) {
   function stop(t, why) {
     if (s.raised) { s.counters.stops++; if (why === 'exit') s.counters.exits++; }
     s.raised = false; s.raisedSince = null; s.running = false; s.turning = false; s.turnF = 0; s.lastTgt = 0;
-    s.out = { x: 0, z: 0 }; s.gait = 'idle';
+    s.out = { x: 0, z: 0 }; s.gait = 'idle'; s.fwdF = null;
     s.freezeUntil = -Infinity; s.freezeOut = null;
   }
 
@@ -192,8 +202,14 @@ export function createSteerStick(configPatch = {}) {
     s.lastSeen = t;
 
     // фильтр центра ладони
-    if (!s.pos || dtS <= 0) s.pos = { x: h.x, y: h.y };
-    else { const a = 1 - Math.exp(-dtS * 1000 / cfg.posTauMs); s.pos.x += (h.x - s.pos.x) * a; s.pos.y += (h.y - s.pos.y) * a; }
+    if (!s.pos || dtS <= 0) { s.pos = { x: h.x, y: h.y }; s.posV = 0; }
+    else {
+      // [V6] One Euro: скорость (в sw/с) сглажена, частота среза растёт с ней
+      const vRaw = Math.hypot(h.x - s.pos.x, h.y - s.pos.y) / W / dtS;
+      s.posV += (vRaw - s.posV) * (1 - Math.exp(-dtS * 2 * Math.PI * cfg.dCutoffHz));
+      const a = 1 - Math.exp(-dtS * 2 * Math.PI * (cfg.minCutoffHz + cfg.beta * s.posV));
+      s.pos.x += (h.x - s.pos.x) * a; s.pos.y += (h.y - s.pos.y) * a;
+    }
     const lvRaw = (R.y - h.y) / W;
     const lv = (R.y - s.pos.y) / W;
     const outward = (s.pos.x - R.x) / W;       // + наружу: к левому боку игрока (в незеркальном кадре — вправо)
@@ -222,7 +238,7 @@ export function createSteerStick(configPatch = {}) {
     let out = { x: 0, z: 0 };
     if (s.raised) {
       if (s.running ? lv < cfg.runOff : lv >= cfg.runOn) s.running = !s.running;
-      const fwd = s.running ? 1 : cfg.walkMin + (cfg.walkMag - cfg.walkMin) * clamp((lv - cfg.walkOn) / Math.max(1e-3, cfg.runOn - cfg.walkOn), 0, 1);
+      const fwdT = s.running ? 1 : cfg.walkMin + (cfg.walkMag - cfg.walkMin) * clamp((lv - cfg.walkOn) / Math.max(1e-3, cfg.runOn - cfg.walkOn), 0, 1);
       // поворот: смещение от нейтрали, мёртвая зона с гистерезисом, кривая, сглаживание
       const d = outward - s.neutral, ad = Math.abs(d);
       if (s.turning ? ad < cfg.dzOff : ad > cfg.dzOn) s.turning = !s.turning;
@@ -242,6 +258,11 @@ export function createSteerStick(configPatch = {}) {
       s.lastTgt = tgt;
       s.turnF += (tgt - s.turnF) * (dtS > 0 ? 1 - Math.exp(-dtS * 1000 / cfg.turnTauMs) : 1);
       if (Math.abs(s.turnF) < 1e-3 && tgt === 0) s.turnF = 0;
+      // [V6] ход вперёд сглажен; только что подняли руку — сразу с целевого значения (отклик без задержки)
+      if (s.fwdF === null || dtS <= 0) s.fwdF = fwdT;
+      else s.fwdF += (fwdT - s.fwdF) * (1 - Math.exp(-dtS * 1000 / (fwdT > s.fwdF ? cfg.fwdUpTauMs : cfg.fwdDownTauMs)));
+      if (Math.abs(s.fwdF - fwdT) < 0.01) s.fwdF = fwdT;
+      const fwd = s.fwdF;
       out = { x: clamp(s.turnF, -1, 1), z: fwd };
       s.gait = s.running ? 'run' : 'walk';
     } else s.gait = 'idle';
@@ -298,6 +319,7 @@ export function createSteerStick(configPatch = {}) {
       turnZone: { dzOn: cfg.dzOn, dzOff: cfg.dzOff, full: cfg.turnFull },
       lean: s.bodyF && s.bodySlowX !== null ? mirrorSign * (s.bodyF.x - s.bodySlowX) / W : 0,
       rising,
+      raisedAt: fresh && s.raised ? s.raisedSince : null,   // [V6] когда подняли руку (щит не путает подъём с толчком)
     };
   }
 
