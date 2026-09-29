@@ -187,15 +187,20 @@ export function handFeatures(landmarks, world, aspect, mirror, side, cfg = DEFAU
   const pinchLike = (pinchD < cfg.pinchOn && reach[0] >= cfg.pinchIndexMinReach && reach[0] <= cfg.pinchIndexMaxReach)
     || (pinchD < cfg.pinchTight && reach[0] >= cfg.pinchIndexMinReach && reach[0] <= cfg.pinchTightMaxReach); // кончики сомкнуты при почти прямом указательном
   const pinchOpen = pinchD > cfg.pinchOff || (pinchD > cfg.pinchTight && reach[0] > cfg.pinchOpenReach) || (pinchD > cfg.pinchOffExt && reach[0] >= cfg.pinchExtReach);
+  // плотный кулак: у кулаков HaGRID вылет пальцев ≤ 0.85; полусогнутые «когти» — 0.9–1.15
+  const tight = bends.map((bd, i) => reach[i] < 0.9 || bd > 125);
+  const nTight = tight.filter(Boolean).length;
+  const looseFist = nCurled === 4 || (nCurled === 3 && !extended[0] && curled[1] && curled[2] && reach[0] < 1.1);
   let shape = 'other';
-  if (!pinchLike && (nCurled === 4 || (nCurled === 3 && !extended[0] && curled[1] && curled[2] && reach[0] < 1.1))) shape = 'fist';
+  if (!pinchLike && nTight >= 3 && tight[1] && tight[2] && !extended[0]) shape = 'fist';
   else if (pinchLike) shape = 'pinch';
   else if (extended[0] && extended[1] && extended[2] && (extended[3] || !curled[3])) shape = 'open';
-  else if (nSemi >= 3 && tipSpread >= 1.0 && thumbSpread >= 0.55 && nCurled <= 2) shape = 'claw';
+  else if (nSemi >= 3 && tipSpread >= 1.0 && thumbSpread >= 0.55) shape = 'claw';
+  else if (looseFist) shape = 'fist';
   else if (extended[0] && curled[1] && curled[2]) shape = 'point';
   return {
     side, D, center, pinchPt, scale, palm, width, bends, reach, extended, curled, semi,
-    nCurled, nExt, nSemi, pinchD, pinchLike, pinchOpen, thumbSpread, tipSpread, normal, shape,
+    nCurled, nExt, nSemi, nTight, pinchD, pinchLike, pinchOpen, thumbSpread, tipSpread, normal, shape,
     wrist: { x: D[0].x, y: D[0].y },
   };
 }
