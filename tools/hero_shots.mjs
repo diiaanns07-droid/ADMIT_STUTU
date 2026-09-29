@@ -122,7 +122,20 @@ try {
     // --clip x,y,w,h (доли кадра 0..1) — крупный план витрины
     const clipArg = argOf('--clip');
     const clip = clipArg ? (([x, y, w, h]) => ({ x: x * W, y: y * H, width: w * W, height: h * H }))(clipArg.split(',').map(Number)) : undefined;
-    console.error('fps', await page.evaluate(() => __ASHEN__.fps)); await page.screenshot({ path: join(OUT, `${nn()}_${hero}_menu.png`), timeout: 120000, clip });
+    console.error('fps', await page.evaluate(() => __ASHEN__.fps));
+    const shot = await page.screenshot({ path: join(OUT, `${nn()}_${hero}_menu.png`), timeout: 120000, clip });
+    // проверка кадра: NaN/Inf в шейдере героя bloom разносит на весь экран — кадр почти чёрный или белый
+    const frame = await page.evaluate(async (b64) => {
+      const im = new Image(); await new Promise((r) => { im.onload = r; im.src = 'data:image/png;base64,' + b64; });
+      const cv = document.createElement('canvas'); cv.width = 160; cv.height = Math.max(1, Math.round((160 * im.height) / im.width));
+      const g = cv.getContext('2d'); g.drawImage(im, 0, 0, cv.width, cv.height);
+      const px = g.getImageData(0, 0, cv.width, cv.height).data;
+      let dark = 0, white = 0, n = 0, sum = 0;
+      for (let i = 0; i < px.length; i += 4) { const l = (px[i] + px[i + 1] + px[i + 2]) / 3; sum += l; n++; if (l < 4) dark++; if (l > 215) white++; }
+      return { mean: +(sum / n).toFixed(1), dark: +(dark / n).toFixed(3), white: +(white / n).toFixed(3) };
+    }, shot.toString('base64'));
+    if (frame.dark > 0.6 || frame.white > 0.35) { log.push(`WARN кадр меню подозрительный (NaN в шейдере?): ${JSON.stringify(frame)}`); console.error('WARN frame', hero, frame); }
+    st.frame = frame;
     // цена героя: среднее время heroModel.update (без рендера)
     st.updateMs = await page.evaluate(() => {
       if (!__ASHEN__.heroStep) return null;
