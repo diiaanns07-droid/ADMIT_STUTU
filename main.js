@@ -854,6 +854,7 @@ window.__ASHEN__ = Object.freeze({
   pushups: () => pushups.getDebug(),
   coach: () => coachStats.summary(),
   hero: () => (heroModel ? heroModel.state() : null),
+  fx: () => { try { return JSON.parse(JSON.stringify(effects.getDebugInfo())); } catch (e) { return null; } }, // [VFX] QA: частицы и слой V6
   heroStep: (dt, snap, events) => { if (heroModel) heroModel.update(dt, snap, events || []); return heroModel ? heroModel.state() : null; }, // QA: шаг анимации без rAF
   squats: () => squats.getDebug(),
   heroMax: () => { const c = typeof combat.getEffectiveConfig === 'function' ? combat.getEffectiveConfig() : null; return c ? { hp: c.player.maxHp, energy: c.player.maxEnergy } : null; },

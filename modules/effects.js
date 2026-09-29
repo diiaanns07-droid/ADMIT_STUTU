@@ -2326,6 +2326,8 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       const pr = list[i];
       if (!pr || pr.id === undefined || pr.id === null || !hasVec(pr.position)) continue;
       const key = String(pr.id);
+      // [VFX] снаряды, которые рисует V6 (fx.suppress('proj:<kind>') / 'proj:caret' для игл «Акуса»)
+      if (v6 && (v6on('proj:' + pr.kind) || (key.startsWith('caret:') && v6on('proj:caret')))) continue;
       let v = projMap.get(key);
       if (!v) {
         v = acquireProj();
