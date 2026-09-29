@@ -56,7 +56,7 @@ const PRESETS = {
 };
 
 import { patchHeroLight } from './heroShading.js';
-import { buildStaff, buildBow, buildArrow, buildQuiver, buildBrooch, capeTextures, runeRingTexture, tube } from './heroForge.js';
+import { buildStaff, buildBow, buildArrow, buildQuiver, buildBrooch, capeTextures, runeRingTexture, tube, gem as gemGeo } from './heroForge.js';
 import { createCloth, createStrands, fitCapsules } from './heroCloth.js';
 
 // ---------------------------------------------------------------- общие процедурные текстуры
@@ -676,7 +676,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   }
 
   // ---------------- посох: в кулаке правой (узел хвата heroModel: древко поперёк пальцев, навершие у большого)
-  let staffTip = null, staffRig = null;
+  let staffTip = null, staffRig = null, ribbons = null;
   if (P.staff && bp.rightHand) {
     staffRig = buildStaff(THREE, mats, { style: P.staff.style || 'crown' });
     const holder = new THREE.Group(); holder.name = 'staff-holder';
@@ -697,6 +697,29 @@ export function dressHero(THREE, vrm, opts = {}) {
       parts[parts.length - 1].staff = true;
     }
     staffTip = staffRig.tip;
+    // подвески под навершием: две золотые цепочки с огранёнными кристаллами — качаются от шага и каста
+    try {
+      const sg = staffRig.group, top = staffRig.top;
+      sg.updateWorldMatrix(true, true);
+      const c0 = new THREE.Object3D(), c1 = new THREE.Object3D();
+      c0.position.set(0, top - 0.04, 0); c1.position.set(0, top - 0.7, 0); sg.add(c0, c1);
+      const locks = [];
+      for (const [a, len] of [[0.7, 0.16], [2.6, 0.11]]) {
+        const pts = [];
+        for (let i = 0; i < 6; i++) pts.push(sg.localToWorld(new THREE.Vector3(Math.cos(a) * 0.038, top + 0.05 - (i / 5) * len, -Math.sin(a) * 0.038)));
+        locks.push({ pts, pin: 1, r0: 0.0028, r1: 0.0024, flat: 1, taper: 0, seed: a, tone: 1, stiff: 0.05, vScale: 3 });
+      }
+      const _rq = new THREE.Quaternion(), holderR = model || vrm.scene;
+      ribbons = createStrands(THREE, { locks, anchor: sg, parent: holderR, colliders: [{ a: c0, b: c1, r: 0.024 }], material: mats.trim, drag: 0.8, carry: 0.45,
+        fwd: (out) => out.set(0, 0, 1).applyQuaternion(holderR.getWorldQuaternion(_rq)) });
+      ribbons.mesh.name = 'staff-charms';
+      const pend = [];
+      for (let i = 0; i < 2; i++) {
+        const g = new THREE.Mesh(G(gemGeo(THREE, { r: i ? 0.0085 : 0.011, h: i ? 0.034 : 0.045, n: 6 })), mats.crystal);
+        g.name = 'staff-charm'; holderR.add(g); pend.push(g);
+      }
+      ribbons.pendants = pend;
+        } catch (e) { ribbons = null; }
   }
 
   // ---------------- лук за спиной (в бою — в кулаке левой) и колчан
@@ -741,6 +764,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   // ---------------- кадр: ткань, свечение, LOD
   let t = 0, lodL = 0;
   const perf = { cloth: 0, hair: 0 }; // мс на кадр (скользящее среднее) — для QA
+  const _pv = new THREE.Vector3(), _pd = new THREE.Vector3(), _pInv = new THREE.Matrix4(), _pDown = new THREE.Vector3(0, -1, 0);
   function update(dt) {
     t += dt;
     const now = typeof performance !== 'undefined' ? () => performance.now() : () => Date.now();
@@ -748,6 +772,23 @@ export function dressHero(THREE, vrm, opts = {}) {
     if (cloth) { try { cloth.update(dt, lodL); } catch (e) { /* ткань не критична */ } }
     let t1 = now(); perf.cloth += (t1 - t0 - perf.cloth) * 0.1; t0 = t1;
     if (hair) { try { hair.update(dt, lodL); } catch (e) { /* пряди не критичны */ } }
+    if (ribbons) {
+      try {
+        ribbons.update(dt, lodL);
+        // кристаллы-подвески: на концах цепочек, остриём вниз по последнему звену
+        const holderR = model || vrm.scene;
+        holderR.updateWorldMatrix(true, false);
+        _pInv.copy(holderR.matrixWorld).invert();
+        ribbons.pendants.forEach((g, i) => {
+          ribbons.tipOf(i, _pv); ribbons.tipDir(i, _pd);
+          _pv.addScaledVector(_pd, 0.018);
+          g.position.copy(_pv).applyMatrix4(_pInv);
+          _pd.transformDirection(_pInv);
+          g.quaternion.setFromUnitVectors(_pDown, _pd);
+          g.rotateY(t * 1.3 + i);
+        });
+      } catch (e) { /* подвески не критичны */ }
+    }
     t1 = now(); perf.hair += (t1 - t0 - perf.hair) * 0.1;
     if (staffRig) {
       staffRig.halo.rotation.y = t * 0.9;
@@ -770,6 +811,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     for (const p of parts) p.obj.traverse((o) => { if (o.isMesh) o.castShadow = l === 0; });
     if (cloth) { cloth.mesh.castShadow = l === 0; cloth.setWind(l >= 2 ? 0 : 1); }
     if (hair) hair.setWind(l >= 2 ? 0 : 1);
+    if (ribbons) { ribbons.setWind(l >= 2 ? 0 : 1); ribbons.mesh.castShadow = l === 0; }
   }
 
   // лук в кулаке левой (поза лука C5): узел хвата heroModel (центр кулака, y — вдоль большого пальца,
@@ -829,6 +871,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   function dispose() {
     if (cloth) cloth.dispose();
     if (hair) hair.dispose();
+    if (ribbons) { ribbons.dispose(); for (const g of ribbons.pendants || []) if (g.parent) g.parent.remove(g); }
     for (const p of parts) if (p.obj.parent) p.obj.parent.remove(p.obj);
     if (bow && bow.parent) bow.parent.remove(bow);
     for (const g of owned.geo) g.dispose();

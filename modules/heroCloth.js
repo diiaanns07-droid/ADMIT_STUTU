@@ -536,7 +536,7 @@ export function createStrands(THREE, o) {
           let tt = ((c0.x - spA.x) * abx + (c0.y - spA.y) * aby + (c0.z - spA.z) * abz) / Math.max(1e-9, ab2);
           tt = Math.max(0, Math.min(1, tt));
           O.set(c0.x - (spA.x + abx * tt), 0, c0.z - (spA.z + abz * tt));
-        } else O.set(0, 0, 1);
+        } else if (o.fwd) { o.fwd(O); } else O.set(0, 0, 1);
         O.addScaledVector(T, -O.dot(T));
         if (O.lengthSq() < 1e-10) O.set(1, 0, 0).addScaledVector(T, -T.x);
         O.normalize();
@@ -588,6 +588,10 @@ export function createStrands(THREE, o) {
   write();
   return {
     mesh, update, setWind(k) { wind = k; },
+    // мировая позиция последней частицы пряди li (для подвесок)
+    tipOf(li, out) { const k = LK[li], g = k.s + k.n - 1; return out.set(P[g * 3], P[g * 3 + 1], P[g * 3 + 2]); },
+    // направление последнего звена пряди li
+    tipDir(li, out) { const k = LK[li], g = k.s + k.n - 1, f = g - 1; return out.set(P[g * 3] - P[f * 3], P[g * 3 + 1] - P[f * 3 + 1], P[g * 3 + 2] - P[f * 3 + 2]).normalize(); },
     reset() { refresh(); rigid(); write(); },
     dispose() { if (mesh.parent) mesh.parent.remove(mesh); geo.dispose(); },
   };

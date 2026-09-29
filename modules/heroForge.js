@@ -237,7 +237,7 @@ export function buildStaff(THREE, M, S = {}) {
     shards.add(s);
   }
   const tip = new THREE.Object3D(); tip.name = 'staff-tip'; tip.position.y = crystY; head.add(tip);
-  return { group: grp, tip, crystal, core, halo, shards, length: top - bottom + 0.3 };
+  return { group: grp, tip, crystal, core, halo, shards, top, length: top - bottom + 0.3 };
 }
 
 // ---------------------------------------------------------------- лук
