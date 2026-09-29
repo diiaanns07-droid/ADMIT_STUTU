@@ -18,7 +18,7 @@ import { createDebugInput, emptyInput } from './core/debugInput.js';
 import { createBossBrain } from './modules/boss.js';
 import { createCombat } from './modules/combat.js';
 import { createWorld } from './modules/world.js';
-import { createHeroModel, HEROES } from './modules/heroModel.js';
+import { createHeroModel, HEROES, configureHeroes } from './modules/heroModel.js';
 import { createEffects } from './modules/effects.js';
 import { createUI } from './modules/ui.js';
 import { createVision } from './modules/vision.js';
@@ -59,6 +59,8 @@ function sanitizeSettings(patch, base) {
   if ('reducedMotion' in patch) out.reducedMotion = !!patch.reducedMotion;
   if (patch.moveMode === 'steer' || patch.moveMode === 'stick') out.moveMode = patch.moveMode; // [V5] «Руль» / «Джойстик»
   if (typeof patch.hero === 'string' && HEROES[patch.hero]) out.hero = patch.hero;
+  // [HERO] C1: шейдинг героев
+  if (patch.heroShading === 'realistic' || patch.heroShading === 'anime') out.heroShading = patch.heroShading;
   return out;
 }
 function loadSettings() {
@@ -123,7 +125,9 @@ const worldLayout = world && world.layout ? world.layout : null;
 // [ASHEN_V3] выбор героя: процедурный Пепельный страж или VRoid-героини (CC0, VRM) с анимациями Quaternius
 let heroModel = null;
 try {
-  if (world && world.hero) heroModel = createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, hero: settings.hero, baseUrl: new URL('./assets/quaternius/', import.meta.url).href });
+  // [HERO] C5: общие настройки (атмосфера, шейдинг) — и для удалённого героя NET
+  configureHeroes({ atmosphere: world && world.atmosphere, shading: settings.heroShading, quality: settings.quality });
+  if (world && world.hero) heroModel = createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, markers: world.hero.markers, atmosphere: world.atmosphere, shading: settings.heroShading, quality: settings.quality, hero: settings.hero, baseUrl: new URL('./assets/quaternius/', import.meta.url).href }); // [HERO] markers/atmosphere/shading
 } catch (e) { console.warn('[ASHEN] heroModel', e); }
 const bossBrain = make('boss.js', () => createBossBrain(config));
 const combat = make('combat.js', () => createCombat({ config, bossBrain, layout: worldLayout }));
@@ -395,6 +399,7 @@ const callbacks = {
   onSettings(patch) {
     const next = sanitizeSettings(patch, settings);
     if (heroModel && next.hero !== settings.hero) heroModel.setHero(next.hero);
+    if (heroModel && next.heroShading !== settings.heroShading) { try { heroModel.setShading(next.heroShading); configureHeroes({ shading: next.heroShading }); } catch (e) { /* ignore */ } } // [HERO]
     const motionChanged = next.reducedMotion !== settings.reducedMotion;
     Object.assign(settings, next); // мутация на месте: config.settings === settings
     applySettings();
@@ -486,6 +491,7 @@ function applySettings() {
     world.setQuality(settings.quality);   // тени (castShadow), пепел, огни жаровен, декор
     effects.setQuality(settings.quality); // пулы частиц, вспышечный свет
     if (postfx) { try { postfx.setQuality(settings.quality); } catch (e) { /* ignore */ } }
+    if (heroModel && heroModel.setQuality) { try { heroModel.setQuality(settings.quality); configureHeroes({ quality: settings.quality }); } catch (e) { /* ignore */ } } // [HERO]
   }
   effects.setVolume(app.screen === 'paused' ? 0 : gameVolume());
   if (vision) vision.configure({ sensitivity: settings.sensitivity, moveMode: settings.moveMode });
@@ -522,6 +528,18 @@ function mirrorFromPose(input, now) {
     lean: input && input.valid ? input.moveX || 0 : 0,
     depth: input && input.valid ? input.moveZ || 0 : 0,
   };
+}
+
+// [HERO] C2 → C5: input.bow / input.handSpell → heroModel.setPose (№6 может звать setPose и сам)
+const _heroPose = { bowActive: false, bowDraw: 0, aim: { x: 0, y: 0 }, handSpell: 0 };
+function heroPoseFromInput(input) {
+  const b = input && input.bow, h = input && input.handSpell;
+  _heroPose.bowActive = !!(b && b.active);
+  _heroPose.bowDraw = b && b.active ? Math.max(0, Math.min(1, +b.draw || 0)) : 0;
+  _heroPose.aim.x = b && b.active ? +b.aimX || 0 : h && h.dir ? +h.dir.x || 0 : 0;
+  _heroPose.aim.y = b && b.active ? +b.aimY || 0 : h && h.dir ? -(+h.dir.y || 0) : 0;
+  _heroPose.handSpell = h && (h.phase === 'form' || h.phase === 'hold') ? Math.max(0.35, Math.min(1, +h.power || 0)) : 0;
+  return _heroPose;
 }
 
 // ---------------------------------------------------------------- трекинг-HUD
@@ -763,6 +781,8 @@ function frame(now) {
   if (typeof world.setMirror === 'function') {
     try { world.setMirror(app.debug ? null : mirrorFromPose(input, now)); } catch (e) { /* ignore */ }
   }
+  // [HERO] руки VRM-героя повторяют руки игрока; C5: поза лука и чар рукой из ввода C2
+  if (heroModel && heroModel.setMirror) { try { heroModel.setMirror(app.debug ? null : mirrorFromPose(input, now)); heroModel.setPose(heroPoseFromInput(input)); } catch (e) { /* ignore */ } }
   try { world.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] world.update', e); }
   if (heroModel) { try { heroModel.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] heroModel.update', e); } }
   try { effects.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] effects.update', e); }
@@ -845,6 +865,7 @@ window.__ASHEN__ = Object.freeze({
   pushups: () => pushups.getDebug(),
   coach: () => coachStats.summary(),
   hero: () => (heroModel ? heroModel.state() : null),
+  heroAnchors: () => { if (!heroModel || !heroModel.getAnchors) return null; const a = heroModel.getAnchors(), v = new THREE.Vector3(); return Object.fromEntries(Object.entries(a).map(([k, o]) => { o.getWorldPosition(v); return [k, { x: +v.x.toFixed(3), y: +v.y.toFixed(3), z: +v.z.toFixed(3), attached: !!o.parent }]; })); }, // [HERO] C5
   heroStep: (dt, snap, events) => { if (heroModel) heroModel.update(dt, snap, events || []); return heroModel ? heroModel.state() : null; }, // QA: шаг анимации без rAF
   squats: () => squats.getDebug(),
   heroMax: () => { const c = typeof combat.getEffectiveConfig === 'function' ? combat.getEffectiveConfig() : null; return c ? { hp: c.player.maxHp, energy: c.player.maxEnergy } : null; },

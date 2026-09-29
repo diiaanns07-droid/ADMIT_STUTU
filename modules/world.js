@@ -4183,6 +4183,6 @@ float ashPuddle( vec2 xz ) {
     get assets() { return { pending: pbrState.pending, loaded: pbrState.loaded, failed: pbrState.failed }; },
     atmosphere: atmo,
     village: elfVillage,   // [ASHEN_V3] эльфийская деревня (stats(), weight, center) — для стендов и QA
-    hero: { root: heroRoot, body: heroBody, extras: [cape] }, // [ASHEN_V3] для скиннинговой модели героя (modules/heroModel.js)
+    hero: { root: heroRoot, body: heroBody, extras: [cape], markers: hero.markers }, // [ASHEN_V3] для скиннинговой модели героя (modules/heroModel.js); [HERO] markers — якоря C5
   };
 }
