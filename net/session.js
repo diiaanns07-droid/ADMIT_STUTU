@@ -361,7 +361,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
       name: p.name, hero: p.hero, lanHost: S.lanHost, https: typeof location !== 'undefined' && location.protocol === 'https:',
       lanIps: S.mode === 'lan' ? S.lanIps : null, lanCheck: S.lanCheck,
       lastCode: (() => { const l = readLast(); return l && l.role === 'guest' ? l.code : ''; })(),
-      heroes: heroes ? Object.values(heroes).map((h) => ({ id: h.id, name: h.name })) : [],
+      heroes: heroes ? Object.values(heroes).filter((h) => h && !h.hidden).map((h) => ({ id: h.id, name: h.name })) : [],
       showLocal: S.mode === 'local' || U.transport === 'local' || !!(hooks.isDebug && hooks.isDebug()),
     };
   }
