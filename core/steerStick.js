@@ -61,8 +61,12 @@ export const DEFAULT_STEER_CONFIG = Object.freeze({
   // опущенная рука по-прежнему останавливает сразу (уход вниз / через нижний край — см. exit*).
   staleMs: 400,            // выход read() без свежих кадров — ноль
   lostStopMs: 330,         // кисть не видна дольше (и запястья нет) — стоп
+  lostStopFrames: 8,       // [V6] но не меньше стольких кадров камеры: трекер теряет кисть на кадры, а при 15 к/с
+                           //   8 кадров — это 0,53 с (герой спотыкался на слабых ноутбуках)
   exitBottomY: 0.8,        // кисть пропала ниже этой доли кадра — это «опустил руку»: стоп сразу
   exitDownSpeed: 2.5,      // или пропала, уходя вниз быстрее (sw/с)
+  lostDownSpeed: 0.8,      // [V6] пропала, уже уходя вниз (медленнее exitDownSpeed): стоп через lostDownMs,
+  lostDownMs: 150,         //   а не через «кисть потеряна» (провал трекинга при спокойной руке — терпим дольше)
   wristMaxGapMs: 800,      // запястье позы ведёт вместо кисти (кулак, смаз) не дольше столько
   wristMinSamples: 5,
   // [V6] выбросы трекинга (кисть на один кадр «прыгнула»)
@@ -114,7 +118,7 @@ export function createSteerStick(configPatch = {}) {
   let s;
   function reset() {
     s = {
-      lastT: null, procT: null, lastSeen: null, lastHandT: null, mirror: true, aspect: 4 / 3,
+      lastT: null, procT: null, frameDt: 33, lastSeen: null, lastHandT: null, mirror: true, aspect: 4 / 3,
       bodyF: null, swF: null, bodySlowX: null,
       pos: null, posV: 0, level: null, outward: null, vy: 0, lastLevelRaw: null, lastHandY: null,
       source: 'none', raised: false, raisedSince: null, running: false,
@@ -133,6 +137,7 @@ export function createSteerStick(configPatch = {}) {
   reset();
 
   const sw = () => s.swF || cfg.fallbackSw;
+  const lostStopMs = () => Math.max(cfg.lostStopMs, cfg.lostStopFrames * s.frameDt);
   const ref = () => s.bodyF || { x: s.aspect * 0.5, y: cfg.fallbackBodyY };
   function toDisplay(p) {
     if (!p) return null;
@@ -167,6 +172,8 @@ export function createSteerStick(configPatch = {}) {
     if (!obs || !fin(obs.t)) return;
     const t = obs.t;
     if (s.lastT !== null && t <= s.lastT) return;
+    // [V6] типичный интервал кадров камеры (для порогов «сколько кадров»): медленно, от выбросов — клампом
+    if (s.lastT !== null) s.frameDt += (clamp(t - s.lastT, 15, 120) - s.frameDt) * 0.1;
     s.lastT = t;
     const h = obs.hand && fin(obs.hand.x) && fin(obs.hand.y) ? obs.hand : null;
     const S0 = s.suspect;
@@ -174,7 +181,10 @@ export function createSteerStick(configPatch = {}) {
       s.suspect = null;                                  // кисть так и не вернулась — судить не по чему: кадр выбрасываем
       s.counters.glitches++;
     } else if (S0 && !h) {
-      return;                                            // ждём следующий кадр с кистью (пропуск трекера не решает)
+      // за скачком вниз кисть пропала: так бывает, когда руку быстро опускают (смаз) — скачок настоящий,
+      // и стоп не должен ждать; вбок/вверх — ждём следующий кадр с кистью
+      if (S0.down) { s.suspect = null; process(S0.obs); process(obs); }
+      return;
     } else if (S0) {
       s.suspect = null;
       const W = sw(), ref0 = S0.ref;
@@ -191,7 +201,7 @@ export function createSteerStick(configPatch = {}) {
       // скорость — по времени не больше двух кадров: после пропуска трекера скачок судим по расстоянию
       const dtG = Math.min(cfg.glitchDtCapMs, Math.max(10, t - s.gateRef.t)) / 1000;
       if (!lowered && d > cfg.glitchJump && d / dtG > cfg.glitchSpeed) {
-        s.suspect = { obs, jump: d, ref: { x: s.gateRef.x, y: s.gateRef.y } };
+        s.suspect = { obs, jump: d, ref: { x: s.gateRef.x, y: s.gateRef.y }, down: h.y - s.gateRef.y > 0.7 * Math.abs(h.x - s.gateRef.x) };
         return;
       }
     }
@@ -248,7 +258,8 @@ export function createSteerStick(configPatch = {}) {
     }
 
     if (!h) {
-      if (s.lastSeen === null || t - s.lastSeen > cfg.lostStopMs || s.source === 'exit') {
+      const goingDown = s.vy < -cfg.lostDownSpeed;
+      if (s.lastSeen === null || t - s.lastSeen > (goingDown ? cfg.lostDownMs : lostStopMs()) || s.source === 'exit') {
         if (s.raised) stop(t, 'lost');
         s.pos = null; s.rawHist.length = 0; s.lastLevelRaw = null; s.vy = 0;
       }
@@ -386,7 +397,7 @@ export function createSteerStick(configPatch = {}) {
 
   function read(tMs) {
     const t = fin(tMs) ? tMs : (s.lastT ?? 0);
-    const fresh = s.lastSeen !== null && t - s.lastSeen <= cfg.staleMs;
+    const fresh = s.lastSeen !== null && t - s.lastSeen <= Math.max(cfg.staleMs, lostStopMs() + 70);
     const engaged = fresh && s.raised && !s.busy;
     const x = engaged ? s.out.x : 0, z = engaged ? s.out.z : 0;
     const W = sw(), R = ref();

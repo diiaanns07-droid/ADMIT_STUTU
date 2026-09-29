@@ -401,6 +401,21 @@ test('[V6] настоящий быстрый увод руки (0.45 sw за к�
   ok(st.read(t).x < -0.4 && st.getDebug().counters.glitches === 0, 'поворот: ' + st.read(t).x);
 });
 
+test('[V6] камера 15 к/с: провал трекинга на 6 кадров (0,4 с) при поднятой руке — ход не прерывается', () => {
+  const st = createSteerStick();
+  let t = run(st, 1000, 900, () => P(0, CHEST), { dt: 67 });
+  const z0 = st.read(t).z;
+  let minZ = 1;
+  for (let k = 0; k < 6; k++, t += 67) { st.push({ t, hand: null, body: BODY, mirror: true, aspect: ASPECT }); minZ = Math.min(minZ, st.read(t).z); }
+  ok(z0 > 0 && minZ >= z0 - 1e-9, `ход держится: ${z0} → min ${minZ}`);
+  // а рука, ушедшая вниз и пропавшая, останавливает быстро и на 15 к/с
+  t = run(st, t, 300, () => P(0, CHEST), { dt: 67 });
+  t = run(st, t, 134, (tt) => P(0, CHEST - 1.2 * (tt - t) / 134), { dt: 67 });
+  const tLost = t;
+  while (st.read(t).z > 0 && t < tLost + 1000) { st.push({ t, hand: null, body: BODY, mirror: true, aspect: ASPECT }); if (st.read(t).z > 0) t += 67; }
+  ok(t - tLost <= 200, `рука ушла вниз и пропала — стоп через ${t - tLost} мс`);
+});
+
 test('мусор на входе не ломает модуль', () => {
   const st = createSteerStick();
   st.push(null); st.push({}); st.push({ t: NaN }); st.push({ t: 5, hand: { x: NaN, y: 1 } });

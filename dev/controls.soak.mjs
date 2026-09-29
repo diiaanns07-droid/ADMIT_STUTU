@@ -41,7 +41,7 @@ const OFFSET = +argOf('--offset', 0);          // привычная ладон�
 const LEVEL = +argOf('--level', 0);            // и выше (+) / ниже (−) «уровня груди» (sw)          // сила осознанного толчка щита: во столько раз кисть растёт в кадре
 const G_OPTS = JSON.parse(argOf('--cfg', '{}')); // подмена настроек handGestures (подбор порогов)
 const byTag = {};   // --debug: по фазам — кадры, стоим при ходьбе, ложный щит
-const DT = 33;
+let DT = Math.round(1000 / +argOf('--fps', 30));   // шаг кадров камеры, мс (--fps 15 — слабый ноутбук)
 
 // Сценарий: фазы { ms, want, hand(u, k) → { x, y, size, shape, palm, yaw } | null }.
 // x, y — координаты показа в ширинах плеч от середины плеч (x вправо на экране, y вниз).
@@ -188,7 +188,7 @@ function simulate(seed, gOpts = {}) {
         arc.push(f.moveX);
         if (P.want === 'turnL' ? f.moveX > 0.05 : f.moveX < -0.05) M.wrongTurn++;
       }
-      if (P.want === 'rest' && (f.moveZ !== 0 || f.moveX !== 0)) M.restMove++;
+      if (P.want === 'rest' && (f.moveZ !== 0 || f.moveX !== 0)) { M.restMove++; if (DEBUG) console.log(`ход в покое: seed=${seed} «${P.tag}» +${t - t0} мс z=${f.moveZ.toFixed(2)} x=${f.moveX.toFixed(2)} рука=${!!hand}`, recent.join('')); }
       if (P.tag === 'подъём' || P.tag === 'подъём 2') { if (moving && !riseSeen) { riseSeen = true; M.riseLatency.push(t - t0); } }
       if (P.tag.startsWith('рука вниз')) { if (!moving && !stopSeen) { stopSeen = true; M.stopLatency.push(t - t0); } }
       if (P.tag === 'толчок щита' || P.tag === 'держит щит') {
@@ -268,6 +268,16 @@ if (ONLY === null && !RIGHT) {
   const Q = summarize(rr);
   R.rightFalseShieldOn = Q.falseShieldOn; R.rightWalkStopPct = Q.walkStopPct; R.rightCastStopPct = Q.castStopPct;
 }
+// слабый ноутбук: камера 15 кадров/с (пропуск трекером тех же 1–6 кадров длится вдвое дольше)
+if (ONLY === null && !argv.includes('--fps')) {
+  DT = 67;
+  const ff = [];
+  for (let s = 0; s < Math.max(4, SEEDS / 2); s++) ff.push(simulate(21000 + s * 7919, G_OPTS));
+  DT = 33;
+  const F = summarize(ff);
+  R.fps15WalkStopPct = F.walkStopPct; R.fps15FlipsPerMin = F.flipsPerMin; R.fps15FalseShieldOn = F.falseShieldOn;
+  R.fps15FalseDash = F.falseDash; R.fps15RestMove = F.restMove; R.fps15ShieldUpPct = F.shieldUpPct;
+}
 // левая ладонь закрыла плечо: ширины плеч нет — щит и «убрал ладонь» сравнивают размер кисти в кадре
 if (ONLY === null && !NO_SW) {
   NO_SW = true;
@@ -313,6 +323,11 @@ const LIMITS = [
   ['noSwFalseShieldOn', (v) => v === undefined || v === 0, 'плечо закрыто ладонью: щит не поднимается сам'],
   ['noSwShieldUpPct', (v) => v === undefined || v >= 80, 'плечо закрыто ладонью: толчок поднимает щит, %'],
   ['noSwShieldDropped', (v) => v === undefined || v === `${R.noSwRuns}/${R.noSwRuns}`, 'плечо закрыто ладонью: убрал ладонь — щит опустился'],
+  ['fps15WalkStopPct', (v) => v === undefined || v <= 1, 'камера 15 к/с: герой идёт, % кадров «стоим»'],
+  ['fps15FlipsPerMin', (v) => v === undefined || v <= 3, 'камера 15 к/с: мигание ход/стоп в минуту'],
+  ['fps15FalseShieldOn', (v) => v === undefined || v === 0, 'камера 15 к/с: щит не поднимается сам'],
+  ['fps15FalseDash', (v) => v === undefined || v === 0, 'камера 15 к/с: ложные рывки'],
+  ['fps15RestMove', (v) => v === undefined || v <= 3, 'камера 15 к/с: рука на коленях — герой стоит (кадров)'],
   ['glitchFalseDash', (v) => v === undefined || v <= 2, 'сбои трекинга 1 %: ложные рывки'],
   ['glitchWrongTurn', (v) => v === undefined || v === 0, 'сбои трекинга 1 %: поворот не в ту сторону'],
   ['glitchWalkStopPct', (v) => v === undefined || v <= 3, 'сбои трекинга 1 %: герой идёт, % кадров «стоим»'],

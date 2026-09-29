@@ -33,6 +33,7 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   // надёжность
   staleMs: 350,            // наблюдение старше — удержания отпускаются
   lostGraceMs: 300,        // кисть не видна дольше — её состояние сбрасывается
+  lostGraceFrames: 8,      // [V6] но не меньше стольких кадров камеры (при 15 к/с 8 кадров ≈ 0,5 с)
   reacquireMs: 350,        // после появления кисти жесты этой кисти заблокированы
   pulseTtlMs: 350,         // непрочитанный импульс сгорает
   minHandScore: 0.5,
@@ -670,7 +671,7 @@ export function createHandGestures(configPatch = {}) {
   function reset() {
     st = {
       hands: { left: newHand('left'), right: newHand('right') },
-      lastObsT: null, mirror: true, aspect: 4 / 3,
+      lastObsT: null, frameDt: 33, mirror: true, aspect: 4 / 3,
       pulses: { burst: null, rune: null, runeFizzle: null, dash: null, throw: null, dashDir: null, parry: null, spark: null, slash: null, sigil: null, hint: null },
       coach: { until: {}, gapUntil: -Infinity, near: {}, counts: {}, noHandsSince: null },
       sig: { hist: [], togetherSince: null, primedUntil: -Infinity, frameSince: null, frameFired: false, blockedUntil: -Infinity },
@@ -729,7 +730,7 @@ export function createHandGestures(configPatch = {}) {
 
   function updateHand(H, data, t, bodyCenter) {
     if (!data) {
-      if (H.present && H.lastSeen !== null && t - H.lastSeen > cfg.lostGraceMs) {
+      if (H.present && H.lastSeen !== null && t - H.lastSeen > lostGrace()) {
         const side = H.side;
         Object.assign(H, newHand(side));
       }
@@ -787,7 +788,7 @@ export function createHandGestures(configPatch = {}) {
       const gap = H.lastScaleT === undefined ? Infinity : t - H.lastScaleT;
       // после пропуска кадров — обычный шаг фильтра на один кадр (пропуск не несёт данных; иначе первый
       // же шумный кадр после провала целиком попадал в «размер»); кисть потеряна насовсем — с нуля
-      const a = gap > cfg.lostGraceMs ? 1 : 1 - Math.exp(-Math.min(gap, 50) / cfg.shieldScaleTauMs);
+      const a = gap > lostGrace() ? 1 : 1 - Math.exp(-Math.min(gap, Math.max(50, 1.5 * st.frameDt)) / cfg.shieldScaleTauMs);
       H.scaleF = H.scaleF === undefined || a === 1 ? f.scale : H.scaleF + (f.scale - H.scaleF) * a;
       H.spanF = H.spanF === undefined || a === 1 ? span : H.spanF + (span - H.spanF) * a;
       // насколько ладонь смотрит в камеру (|z| нормали по world-точкам): поворот ладони к камере тоже
@@ -862,6 +863,7 @@ export function createHandGestures(configPatch = {}) {
     }
   }
 
+  const lostGrace = () => Math.max(cfg.lostGraceMs, cfg.lostGraceFrames * st.frameDt);
   function ready(H, t) { return H.present && H.firstSeen !== null && t - H.firstSeen >= cfg.reacquireMs; }
 
   function updateCharge(H, t) {
@@ -967,7 +969,7 @@ export function createHandGestures(configPatch = {}) {
         if (S.badSince === null) S.badSince = t;
         // кисть видна, но не ладонь к камере — опускаем быстро; кисть просто пропала из трекинга — ждём дольше
         const seenWrong = L.present && L.lastSeen === t;
-        if (busy || t - S.badSince >= (seenWrong ? cfg.shieldDropMs : cfg.shieldLostMs)) { S.on = false; S.badSince = null; S.base = null; S.baseRaw = null; S.back = 0; }
+        if (busy || t - S.badSince >= (seenWrong ? cfg.shieldDropMs : Math.max(cfg.shieldLostMs, lostGrace()))) { S.on = false; S.badSince = null; S.base = null; S.baseRaw = null; S.back = 0; }
       }
       return;
     }
@@ -1558,6 +1560,7 @@ export function createHandGestures(configPatch = {}) {
       if (!isObj(obs) || !fin(obs.tMs)) { st.counters.badObs++; return; }
       const t = obs.tMs;
       if (st.lastObsT !== null && t <= st.lastObsT) return; // старые/повторные метки не обрабатываются
+      if (st.lastObsT !== null) st.frameDt += (clamp(t - st.lastObsT, 15, 120) - st.frameDt) * 0.1; // [V6] интервал кадров камеры
       st.lastObsT = t;
       st.counters.obs++;
       st.mirror = obs.mirror !== false;
@@ -1606,7 +1609,7 @@ export function createHandGestures(configPatch = {}) {
   }
 
   function handState(H, t) {
-    if (!H.present || H.lastSeen === null || t - H.lastSeen > cfg.lostGraceMs) return null;
+    if (!H.present || H.lastSeen === null || t - H.lastSeen > lostGrace()) return null;
     return {
       side: H.side, shape: H.shape, stableMs: Math.max(0, t - H.shapeSince), confidence: Math.round(H.conf * 100) / 100,
       palmFacing: H.palmFacing, extended: H.extended.slice(), pinch: Math.round(H.pinchLevel * 100) / 100,
