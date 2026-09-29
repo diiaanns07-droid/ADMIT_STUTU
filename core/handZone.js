@@ -117,6 +117,7 @@ export function createHandZone({ target = typeof window !== 'undefined' ? window
   // ───────── кадр ввода ─────────
   const HG_RIGHT_HINTS = /^(ok_|spark_|burst_|slash_|rune_)/;
   const HG_LEFT_HINTS = /^(shield_|parry_|steer_)/;
+  const HG_BOTH_HINTS = /^(orb_|prism_|throw_|gate_|frame_)/;   // двуручные подсказки: во время лука руки заняты луком
   function apply(input, now, ctx = {}) {
     if (!input || typeof input !== 'object') return input;
     dbg.on = !!(ctx.debug && ctx.playing);
@@ -178,7 +179,7 @@ export function createHandZone({ target = typeof window !== 'undefined' ? window
       input.burst = false; input.burstPower = 0; input.burstHand = null;
       input.spark = false; input.slash = null; input.sigil = null;
       if (!runeTaken) { input.rune = null; input.runeScore = 0; }
-      if (input.hint && (HG_RIGHT_HINTS.test(input.hint.code) || HG_LEFT_HINTS.test(input.hint.code))) input.hint = null;
+      if (input.hint && (HG_RIGHT_HINTS.test(input.hint.code) || HG_LEFT_HINTS.test(input.hint.code) || HG_BOTH_HINTS.test(input.hint.code))) input.hint = null;
       st.counters.suppressed++;
     } else if (bv.phase === 'ready') {
       // лук поднят: щепоть у кулака — не «OK»-огонь и не искра
