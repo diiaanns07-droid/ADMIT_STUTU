@@ -576,7 +576,7 @@ export function register(fx) {
     kit.flash(p, { color: P.core, size: [0.5, last ? 2.6 : 1.9], dur: 0.13, intensity: 5, sprite: 'star', pull: 0.8, rival: R });
     kit.flash(p, { color: P.hot, size: [0.8, last ? 3 : 2.3], dur: 0.28, intensity: 2, sprite: 'glow', pull: 0.8, rival: R });
     kit.emit({ at: p, dir: back, cone: 1.1, count: last ? 30 : 20, speed: [3, 9], life: [0.2, 0.5], size: [0.07, 0.012], ramp, intensity: 3.4, sprite: 'spark', stretch: 0.035, gravity: 6, drag: 1.8, rival: R, essential: true });
-    ring(p, 0.2, last ? 2.2 : 1.5, 0.28, P, R, { normal: back, intensity: 1.8, thickness: 0.3 });
+    ring(p, 0.2, last ? 1.6 : 1.1, 0.26, P, R, { normal: back, intensity: 1.5, thickness: 0.14 });
     if (last) { distort(p, 0.5); kit.shake(0.14); }
     kit.shake(0.06); kit.hitstop(20);
     return true;
@@ -830,7 +830,7 @@ export function register(fx) {
     const gy = fx.groundY(p.x, p.z, 0);
     const near = p.y - gy < 3.4 || d.result === 'floor';
     const back = hasVec(d.direction) ? { x: -d.direction.x, y: -d.direction.y, z: -d.direction.z } : null;
-    if (back) ring(p, 0.3, prism ? 2.4 : 2.8, 0.4, P, R, { normal: back, intensity: 1.6, thickness: 0.4, distort: 0.8 });
+    if (back) ring(p, 0.3, prism ? 1.6 : 1.9, 0.36, P, R, { normal: back, intensity: 1.3, thickness: 0.14, distort: 0.8 });
     if (near) {
       const g = { x: p.x, y: gy + 0.05, z: p.z };
       ring(g, 0.4, prism ? 3.6 : 4.2, 0.55, P, R, { intensity: 2 });

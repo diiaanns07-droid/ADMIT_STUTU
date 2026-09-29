@@ -316,11 +316,10 @@ export function register(fx) {
     }
     kit.flash(p, { color: PC.core, size: [0.2, 1.1], dur: 0.1, intensity: 4.5, sprite: 'star', pull: 0.45, rival: remote });
     // «замедление времени»: кольца-рябь (второе — эхо), частицы по кольцу, искажение воздуха
-    kit.flash(p, { color: PT.hot, size: [0.25, 2.8], dur: 0.5, intensity: 2.2, sprite: 'ring', pull: 0.3, rival: remote, curve: 0.6 });
-    kit.flash(p, { color: PT.mid, size: [0.1, 1.9], dur: 0.55, intensity: 1.6, sprite: 'ring', pull: 0.3, rival: remote, curve: 0.7, delay: 0.1 });
+    kit.flash(p, { color: PT.hot, size: [0.2, 1.4], dur: 0.4, intensity: 1.8, sprite: 'ring', pull: 0.3, rival: remote, curve: 0.6 });
+    kit.flash(p, { color: PT.mid, size: [0.1, 1.0], dur: 0.45, intensity: 1.3, sprite: 'ring', pull: 0.3, rival: remote, curve: 0.7, delay: 0.1 });
     kit.emit({ at: p, shape: 'ring', normal: cd, radius: 0.25, radial: 4.2, drag: 3.5, count: 30, speed: [0, 0.2], life: [0.35, 0.55], size: [0.07, 0.015], ramp: remote ? 'rival' : 'time', intensity: 2.6, sprite: 'spark', stretch: 0.02, rival: remote, essential: true });
     kit.emit({ at: p, radius: 0.3, count: 10, speed: [0.1, 0.4], life: [0.6, 1.0], size: [0.09, 0.03], ramp: remote ? 'rival' : 'time', intensity: 2, sprite: 'flake', spin: [-1, 1], drag: 1, rival: remote });
-    shock('ring', { pos: p, normal: cd, r0: 0.2, r1: 2.4, dur: 0.45, color: PT.mid, hot: PT.core, intensity: 1.5, distort: 1, rival: rv });
     distort(p, 0.55);
     kit.light(p, { color: PT.hot, intensity: 0.8, range: 7, dur: 0.35, attack: 0.05 });
     kit.hitstop(38);
