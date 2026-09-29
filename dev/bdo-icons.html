@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHEN OATH — иконки BDO</title>
+<style>
+  /* [BDO] Галерея SVG-иконок modules/bdoIcons.js: каждая иконка в ячейке-рамке BDO в размерах 64/44/32 px.
+     Параметры: ?size=96 — крупный план одного размера; &plain=1 — только силуэты без фона;
+     &only=bolt,spark — выбранные id; &light=1 — светлая подложка (проверка краёв).
+     Внизу — макет боевой панели (крылья 46 px, колонка рун 32 px) и проверка data-URI через canvas. */
+  :root {
+    --bdo-coal: #0b0a09; --bdo-bronze: #8a6a3e; --bdo-bronze-dim: #5a4528; --bdo-gold: #d8b36a; --bdo-gold-hi: #f3dca0;
+    --bdo-ivory: #ece2cc; --bdo-ivory-dim: #b9ae96; --bdo-ivory-faint: #857c6a;
+    --bdo-font-display: 'Forum', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+    --bdo-font-body: 'Alegreya Sans', 'Segoe UI', system-ui, 'Noto Sans', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: radial-gradient(ellipse at 40% 20%, #1c1712 0%, #0b0a09 60%, #060504 100%); color: var(--bdo-ivory); font-family: var(--bdo-font-body); min-height: 100%; }
+  body.light { background: #8a8378; }
+  header { display: flex; align-items: baseline; gap: 18px; padding: 8px 16px 4px; }
+  h1 { font-family: var(--bdo-font-display); font-weight: 400; font-size: 22px; letter-spacing: .12em; margin: 0; color: var(--bdo-gold-hi); text-transform: uppercase; }
+  #stat { font-size: 13px; color: var(--bdo-ivory-dim); }
+  #stat.bad { color: #e0484a; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 5px 6px; padding: 4px 16px; }
+  .item { display: flex; flex-direction: column; gap: 2px; padding: 4px 4px 3px; border: 1px solid rgba(138,106,62,.28); background: rgba(12,10,8,.55); }
+  .row { display: flex; align-items: flex-end; gap: 6px; }
+  .lbl { font-size: 12px; letter-spacing: .04em; color: var(--bdo-ivory-dim); font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .grp { font-size: 10px; color: var(--bdo-ivory-faint); margin-left: 6px; text-transform: uppercase; letter-spacing: .08em; }
+  /* Тестовая ячейка BDO: тёмная подложка, бронзовая кайма в 1 px, внутренний тёмный кант и золотые уголки. */
+  .slot { position: relative; flex: none; padding: 2px; background: #070605; border: 1px solid var(--bdo-bronze); box-shadow: inset 0 0 0 1px #000; }
+  .slot::before, .slot::after { content: ''; position: absolute; width: 6px; height: 6px; border-color: var(--bdo-gold-hi); border-style: solid; pointer-events: none; }
+  .slot::before { left: -1px; top: -1px; border-width: 1px 0 0 1px; }
+  .slot::after { right: -1px; bottom: -1px; border-width: 0 1px 1px 0; }
+  .slot > svg { display: block; width: 100%; height: 100%; }
+  .big .grid { grid-template-columns: repeat(auto-fill, minmax(var(--big, 110px), 1fr)); }
+  .big .item { align-items: center; }
+  /* Макет боевой панели. */
+  .mock { display: flex; gap: 26px; align-items: flex-end; padding: 8px 16px 10px; flex-wrap: wrap; }
+  .mock h2 { font-family: var(--bdo-font-display); font-weight: 400; font-size: 13px; letter-spacing: .14em; color: var(--bdo-gold); margin: 0 0 6px; text-transform: uppercase; }
+  .wing { display: flex; gap: 4px; }
+  .medal { width: 120px; height: 46px; display: flex; align-items: center; justify-content: center; color: var(--bdo-ivory-faint); font-size: 11px; }
+  .runes { display: grid; grid-template-columns: repeat(10, 36px); gap: 3px; }
+  .cd { position: relative; }
+  .cd::marker { content: none; }
+  .cd .veil { position: absolute; inset: 2px; background: conic-gradient(rgba(0,0,0,0) 0 var(--a), rgba(0,0,0,.66) var(--a) 360deg); }
+  .cd .num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 600 15px 'Cinzel', Georgia, serif; color: #fff; text-shadow: 0 1px 2px #000, 0 0 4px #000; }
+  canvas { display: block; border: 1px solid var(--bdo-bronze-dim); background: #0b0a09; }
+</style>
+</head>
+<body>
+<header><h1>Иконки BDO</h1><span id="stat">загрузка…</span></header>
+<div id="grid" class="grid"></div>
+<div id="mock" class="mock"></div>
+<script type="module">
+import { BDO_ICONS, ICON_IDS, iconSvg, iconDataUri, iconImage } from '../modules/bdoIcons.js';
+
+const q = new URLSearchParams(location.search);
+const big = q.has('size') ? Math.max(24, Math.min(256, +q.get('size') || 96)) : 0;
+const plain = q.get('plain') === '1';
+const only = q.get('only') ? q.get('only').split(',') : null;
+if (q.get('light') === '1') document.body.classList.add('light');
+const GROUP = (id) => ['ignis', 'fulgur', 'orbis', 'stella', 'spira', 'lemnis', 'caret', 'vee', 'clepsydra', 'alpha'].includes(id) ? 'руна'
+  : ['clap', 'gate', 'frame', 'delta', 'cor'].includes(id) ? 'печать'
+  : ['bow', 'spell_fire', 'spell_storm', 'spell_frost', 'spell_earth'].includes(id) ? 'рука'
+  : ['hp', 'mp', 'stamina', 'ember', 'skull', 'boss', 'map_pin', 'pvp', 'zone'].includes(id) ? 'ui' : 'умение';
+
+const slot = (id, px) => `<div class="slot" style="width:${px + 6}px;height:${px + 6}px">${iconSvg(id, { plain })}</div>`;
+const ids = only || ICON_IDS;
+const grid = document.getElementById('grid');
+let html = '';
+for (const id of ids) {
+  if (big) html += `<div class="item">${slot(id, big)}<span class="lbl">${id}</span></div>`;
+  else html += `<div class="item"><div class="row">${slot(id, 64)}${slot(id, 44)}${slot(id, 32)}</div><span class="lbl">${id}<span class="grp">${GROUP(id)}</span></span></div>`;
+}
+if (big) { document.body.classList.add('big'); document.body.style.setProperty('--big', big + 22 + 'px'); }
+grid.innerHTML = html;
+
+// Самопроверка: каждая строка — корректный XML, есть viewBox, id градиентов с префиксом иконки, без внешних ссылок.
+const errs = [];
+let bytes = 0;
+const parser = new DOMParser();
+for (const id of ICON_IDS) {
+  const s = BDO_ICONS[id];
+  bytes += s.length;
+  const doc = parser.parseFromString(s, 'image/svg+xml');
+  if (doc.querySelector('parsererror')) errs.push(id + ': XML');
+  if (!/viewBox="0 0 64 64"/.test(s)) errs.push(id + ': viewBox');
+  for (const m of s.matchAll(/id="([^"]+)"/g)) if (!m[1].startsWith(`ao-i-${id}-`)) errs.push(id + ': id ' + m[1]);
+  for (const m of s.matchAll(/url\(#([^)]+)\)/g)) if (!s.includes(`id="${m[1]}"`)) errs.push(id + ': нет ' + m[1]);
+  if (/href=|https?:/.test(s.replace('http://www.w3.org/2000/svg', ''))) errs.push(id + ': внешний ресурс');
+  if (/<text/.test(s)) errs.push(id + ': текст');
+}
+if (!iconSvg('__нет__').includes('<svg')) errs.push('нейтральная иконка');
+const stat = document.getElementById('stat');
+stat.textContent = `${ICON_IDS.length} иконок · ${(bytes / 1024).toFixed(0)} КБ строк · ${errs.length ? 'ОШИБКИ: ' + errs.join('; ') : 'самопроверка пройдена'}${plain ? ' · plain' : ''}`;
+if (errs.length) { stat.classList.add('bad'); console.error('bdo-icons selftest:', errs.join('; ')); }
+
+// Макет: два крыла по 4 ячейки 46 px, колонка рун/печатей 32 px с откатами, canvas через iconDataUri/iconImage.
+if (!big) {
+  const cell = (id, px, frac, num) => `<div class="slot cd" style="width:${px + 6}px;height:${px + 6}px">${iconSvg(id)}${frac ? `<div class="veil" style="--a:${Math.round(frac * 360)}deg"></div><div class="num">${num}</div>` : ''}</div>`;
+  const L = ['bolt', 'spark', 'slash', 'shield'].map((id, i) => cell(id, 44, i === 2 ? 0.35 : 0, 3)).join('');
+  const R = ['parry', 'burst', 'dash', 'throw'].map((id, i) => cell(id, 44, i === 1 ? 0.7 : 0, 7)).join('');
+  const RU = ['ignis', 'fulgur', 'orbis', 'stella', 'spira', 'lemnis', 'caret', 'vee', 'clepsydra', 'alpha'].map((id, i) => cell(id, 30, i === 4 ? 0.5 : 0, 12)).join('');
+  const SI = ['clap', 'gate', 'frame', 'delta', 'cor'].map((id) => cell(id, 30)).join('');
+  document.getElementById('mock').innerHTML = `
+    <div><h2>Панель умений · 44 px</h2><div class="row"><div class="wing">${L}</div><div class="medal">медальон</div><div class="wing">${R}</div></div></div>
+    <div><h2>Руны и печати · 30 px</h2><div class="runes">${RU}${SI}</div></div>
+    <div><h2>Canvas · data-URI</h2><canvas id="cv" width="420" height="80"></canvas></div>`;
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const list = ['hp', 'mp', 'stamina', 'ember', 'skull', 'boss', 'map_pin', 'pvp', 'zone', 'bow', 'spell_fire'];
+  let pending = list.length;
+  list.forEach((id, i) => {
+    const img = iconImage(id) || new Image();
+    const draw = () => { try { ctx.drawImage(img, 6 + i * 37, 6, 32, 32); ctx.drawImage(img, 6 + i * 37, 44, 24, 24); } catch (e) { console.error('canvas', id, e.message); } if (--pending === 0) window.__ICONS_READY__ = true; };
+    if (img.complete && img.naturalWidth) draw(); else { img.onload = draw; img.onerror = () => { console.error('bdo-icons: data-URI не грузится: ' + id); }; }
+    if (!img.src) img.src = iconDataUri(id);
+  });
+}
+</script>
+</body>
+</html>
