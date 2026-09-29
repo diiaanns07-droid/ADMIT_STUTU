@@ -58,7 +58,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
   // значок связи в бою: соперник и пинг; при обрыве — «переподключение»
   let badge = null, badgeKey = '', badgeAt = 0, lostSince = 0;
   function updateBadge(now, inFight) {
-    if (now - badgeAt < 200) return;
+    if (typeof document === 'undefined' || now - badgeAt < 200) return;
     badgeAt = now;
     const net = S.net;
     const show = inFight && !S.lobbyOpen && net && (net.state === 'connected' || net.state === 'lost');
@@ -118,11 +118,21 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     net.on('pr', (m) => { S.remoteProj = decodeProjectiles(m); S.remoteProjAt = performance.now(); });
     net.on('lobby', (m) => {
       S.oppReady = !!m.ready;
+      if (!S.oppReady) cancelStart(net.isHost);        // соперник передумал во время отсчёта
       if (m.name || m.hero) remote.setInfo({ name: m.name, hero: m.hero });
       if (net.isHost) maybeGo();
       changed();
     });
-    net.on('go', (m) => { if (!net.isHost && Number.isFinite(m.at)) scheduleStart(net.sharedToLocal(m.at)); });
+    net.on('go', (m) => {
+      if (net.isHost) return;
+      if (m.cancel) { cancelStart(false); changed(); return; }
+      if (!Number.isFinite(m.at)) return;
+      // общее время хоста → мои часы; оценка смещения ещё не готова (странная задержка) — просто 3 с от сейчас
+      let at = net.sharedToLocal(m.at);
+      const d = at - performance.now();
+      if (!(d > -1000 && d < START_DELAY_MS + 3000)) at = performance.now() + START_DELAY_MS - net0.ping / 2;
+      scheduleStart(at);
+    });
   }
 
   function newNet(mode) {
@@ -236,8 +246,14 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     S.meReady = !!on;
     sendLobby();
     if (S.net && S.net.isHost) maybeGo();
-    if (!S.meReady && S.startTimer) { clearTimeout(S.startTimer); S.startTimer = null; S.startAt = 0; }
+    if (!S.meReady) cancelStart(S.net && S.net.isHost);
     changed();
+  }
+  // отсчёт отменён (кто-то снял «Готов»): хост сообщает гостю
+  function cancelStart(tellGuest) {
+    if (!S.startTimer && !S.startAt) return;
+    clearTimeout(S.startTimer); S.startTimer = null; S.startAt = 0;
+    if (tellGuest && S.net) S.net.send('go', { cancel: true });
   }
   function maybeGo() {
     const net = S.net;
