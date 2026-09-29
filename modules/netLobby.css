@@ -2,16 +2,17 @@
    тонкая золотая кайма, антиква в заголовках. Все классы с префиксом nl-. */
 
 .nl-overlay {
-  --nl-gold: #c4a265;
-  --nl-gold-hi: #e3c792;
-  --nl-gold-deep: #7d6437;
-  --nl-text: #ece6d9;
-  --nl-muted: #b3aa98;
-  --nl-bad: #e07458;
+  /* токены №8 [BDO] (modules/ui.css :root), запасные значения — если их нет */
+  --nl-gold: var(--bdo-gold, #c4a265);
+  --nl-gold-hi: var(--bdo-gold-hi, #e3c792);
+  --nl-gold-deep: var(--bdo-gold-deep, #7d6437);
+  --nl-text: var(--bdo-ivory, #ece6d9);
+  --nl-muted: var(--bdo-ivory-dim, #b3aa98);
+  --nl-bad: var(--bdo-blood-hi, #e07458);
   --nl-good: #9cc48f;
   --nl-warn: #deae55;
-  --nl-display: 'Cinzel', 'Cormorant Garamond', 'Cormorant', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, 'Times New Roman', serif;
-  --nl-ui: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif;
+  --nl-display: var(--bdo-font-display, 'Cinzel', 'Cormorant Garamond', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, 'Times New Roman', serif);
+  --nl-ui: var(--bdo-font-body, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif);
   position: fixed;
   inset: 0;
   z-index: 40;
@@ -233,3 +234,28 @@
 
 @keyframes nl-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .nl-dot { animation: none !important; } }
+
+/* значок связи в бою (net/session.js) */
+.nl-badge {
+  position: fixed;
+  top: 72px;            /* под значком DEBUG; справа — пауза и мини-карта, по центру — полоса босса */
+  left: 16px;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 5px 12px;
+  background: var(--bdo-panel, rgba(12, 10, 8, 0.78));
+  border: 1px solid rgba(216, 179, 106, 0.55);
+  color: var(--bdo-ivory, #ece2cc);
+  font: 14px/1.3 var(--bdo-font-body, 'Segoe UI', system-ui, sans-serif);
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+.nl-badge[hidden] { display: none; }
+.nl-badge__dot { width: 8px; height: 8px; border-radius: 50%; background: #9cc48f; box-shadow: 0 0 6px rgba(156, 196, 143, 0.7); flex: none; }
+.nl-badge__txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nl-badge.is-slow .nl-badge__dot { background: #deae55; box-shadow: 0 0 6px rgba(222, 174, 85, 0.7); }
+.nl-badge.is-lost { border-color: rgba(224, 72, 74, 0.8); }
+.nl-badge.is-lost .nl-badge__dot { background: #e0484a; animation: nl-pulse 0.6s ease-in-out infinite; }

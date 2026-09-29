@@ -9,10 +9,13 @@
 
 const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
-export function createInterpBuffer({ delayMs = 100, extrapMs = 220, maxSamples = 40, windowMs = 3000, snapDist = 6 } = {}) {
+export function createInterpBuffer({ delayMs = 100, extrapMs = 220, maxSamples = 40, windowMs = 3000, snapDist = 6, smoothMs = 90 } = {}) {
   const buf = [];          // по возрастанию ts: { ts, x, y, z, yaw, vx, vz, st }
   const delays = [];       // { at, d }
   let base = null;
+  // сглаживание коррекций: если экстраполяция ошиблась (пакет потерян во время рывка), скачок
+  // переносится в смещение, которое гаснет за ~smoothMs — картинка непрерывна
+  const vis = { has: false, rx: 0, rz: 0, ox: 0, oz: 0, t: 0 };
   const out = { x: 0, y: 0, z: 0, yaw: 0, vx: 0, vz: 0, st: null, ok: false, extrap: 0, behindMs: 0 };
 
   function push(st, recvMs) {
@@ -49,6 +52,7 @@ export function createInterpBuffer({ delayMs = 100, extrapMs = 220, maxSamples =
     if (!a) {   // рисуемое время раньше самого старого пакета — берём его
       const f = buf[0];
       set(f, f, 0); out.extrap = 0; out.st = f.st; out.ok = true;
+      smooth(nowMs);
       return out;
     }
     if (b) {
@@ -67,8 +71,25 @@ export function createInterpBuffer({ delayMs = 100, extrapMs = 220, maxSamples =
     }
     // старые пакеты, которые уже никогда не понадобятся
     while (buf.length > 2 && buf[1].ts < rt - 500) buf.shift();
+    smooth(nowMs);
     out.ok = true;
     return out;
+  }
+
+  function smooth(nowMs) {
+    const rx = out.x, rz = out.z;
+    if (!vis.has || smoothMs <= 0) { vis.has = true; vis.ox = vis.oz = 0; }
+    else {
+      const dtS = Math.max(0, (nowMs - vis.t) / 1000);
+      const jx = rx - (vis.rx + out.vx * dtS), jz = rz - (vis.rz + out.vz * dtS);
+      const j = Math.hypot(jx, jz);
+      if (j > snapDist) { vis.ox = vis.oz = 0; }             // телепорт (респаун) — сразу
+      else if (j > 0.04) { vis.ox -= jx; vis.oz -= jz; }     // коррекция — плавно
+      const k = Math.exp(-(dtS * 1000) / smoothMs);
+      vis.ox *= k; vis.oz *= k;
+    }
+    vis.rx = rx; vis.rz = rz; vis.t = nowMs;
+    out.x = rx + vis.ox; out.z = rz + vis.oz;
   }
 
   function set(a, b, k) {
@@ -80,7 +101,7 @@ export function createInterpBuffer({ delayMs = 100, extrapMs = 220, maxSamples =
     out.vz = a.vz + (b.vz - a.vz) * k;
   }
 
-  function reset() { buf.length = 0; delays.length = 0; base = null; }
+  function reset() { buf.length = 0; delays.length = 0; base = null; vis.has = false; }
 
   return {
     push, sample, reset,

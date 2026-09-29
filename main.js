@@ -139,6 +139,9 @@ try {
   configureHeroes({ atmosphere: world && world.atmosphere, shading: settings.heroShading, quality: settings.quality });
   if (world && world.hero) heroModel = createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, markers: world.hero.markers, atmosphere: world.atmosphere, shading: settings.heroShading, quality: settings.quality, hero: settings.hero, baseUrl: new URL('./assets/quaternius/', import.meta.url).href }); // [HERO] markers/atmosphere/shading
 } catch (e) { console.warn('[ASHEN] heroModel', e); }
+// [HERO] витрина героя в меню: кинематографичный свет и облёт (modules/heroShowcase.js); ошибка — прежняя камера меню
+let heroShowcase = null;
+if (heroModel && world && world.hero) import('./modules/heroShowcase.js').then((m) => { try { heroShowcase = m.createHeroShowcase({ THREE, scene, heroRoot: world.hero.root, heroModel, getPostfx: () => postfx, settings }); } catch (e) { console.warn('[HERO] витрина', e); } }).catch((e) => console.warn('[HERO] heroShowcase.js', e && e.message));
 const bossBrain = make('boss.js', () => createBossBrain(config));
 const combat = make('combat.js', () => createCombat({ config, bossBrain, layout: worldLayout }));
 const effects = make('effects.js', () => createEffects({ THREE, scene, camera, renderer, config }));
@@ -225,6 +228,7 @@ function forestZoneEvents(events, snap) {
 // [FOREST] место старта из настроек: combat.setSpawn до reset (точки — world.layout.spawns)
 function applyStartZone() {
   if (typeof combat.setSpawn !== 'function' || !worldLayout || !worldLayout.spawns) return;
+  if (app.netInfo && app.netInfo.spawn) { combat.setSpawn(app.netInfo.spawn); return; } // [NET] дуэль по сети: своя точка поляны
   combat.setSpawn(settings.startZone === 'forest' ? worldLayout.spawns.forest : null);
 }
 function unlitEmbers() {
@@ -498,13 +502,16 @@ function openNet() {
     netSessionP = import('./net/session.js').then((m) => {
       netSession = m.createNetSession({
         THREE, scene, world, camera, heroes: HEROES, settings,
-        heroFactory: (o) => createHeroModel({ THREE, ...o, baseUrl: new URL('./assets/quaternius/', import.meta.url).href }),
+        heroFactory: (o) => createHeroModel({ THREE, atmosphere: world.atmosphere, shading: settings.heroShading, quality: settings.quality, ...o, baseUrl: new URL('./assets/quaternius/', import.meta.url).href }),
         hooks: {
           saveSettings: (patch) => callbacks.onSettings(patch),
           isDebug: () => app.debug,
           setDebug: (on) => callbacks.onDebug(on),
           onReady: (info) => {
             app.netInfo = info;
+            // [NET] хост и гость — на разных точках Поляны дуэлей (C7), друг напротив друга
+            const duel = worldLayout && worldLayout.spawns && worldLayout.spawns.duel;
+            if (Array.isArray(duel) && duel.length >= 2 && !info.spawn) info.spawn = duel[info.isHost ? 0 : 1];
             if (typeof app.onNetReady === 'function') { app.onNetReady(info); return; }
             app.introShown = true;                        // без облёта Регента
             if (app.debug) startFight(); else setScreen('camera');
@@ -922,6 +929,7 @@ function frame(now) {
     camera.lookAt(c.target.x, c.target.y, c.target.z);
   }
 
+  if (heroShowcase) { try { heroShowcase.update(dtReal, app.screen === 'menu', camera); } catch (e) { console.warn('[HERO] витрина', e); heroShowcase = null; } } // [HERO] свет и облёт витрины
   if (postfx && typeof postfx.setMode === 'function') { try { postfx.setMode(app.screen, settings); } catch (e) { /* ignore */ } } // [BDO] DOF меню и грейд по экрану
   if (postfx && postfx.enabled) feedPostFx(events);
   let rendered = false;
