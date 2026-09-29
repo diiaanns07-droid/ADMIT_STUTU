@@ -546,9 +546,9 @@ export function createHeroModel({
     if (B.leftShoulder) B.leftShoulder.rotateZ(br * 0.6);
     if (B.rightShoulder) B.rightShoulder.rotateZ(-br * 0.6);
     S.lookT -= dt;
-    if (S.lookT <= 0) { S.lookT = 2.5 + Math.random() * 3.5; S.lookWant = S.idleT > 2.5 ? (Math.random() - 0.5) * 1.1 : 0; }
+    if (S.lookT <= 0) { S.lookT = 2.5 + Math.random() * 3.5; S.lookWant = S.idleT > 4 ? (Math.random() - 0.5) * 0.6 : 0; }
     if (!idle) S.lookWant = 0;
-    S.look += (S.lookWant - S.look) * (1 - Math.exp(-2.2 * dt));
+    S.look += (S.lookWant - S.look) * (1 - Math.exp(-1.6 * dt));
     if (B.neck) B.neck.rotateY(S.look * 0.45);
     if (B.head) B.head.rotateY(S.look * 0.55);
     S.chestTwist += (twist - S.chestTwist) * (1 - Math.exp(-8 * dt));
@@ -561,6 +561,19 @@ export function createHeroModel({
 
   // ---------------------------------------------------------------- кадр
   function resetFree() { for (const b of cur.free) b.quaternion.identity(); }
+  // Микшер three.js пишет в кость, только если значение клипа изменилось с прошлого кадра
+  // (PropertyMixer.apply). Поэтому наши добавки (дыхание, оглядывание, поза, сведение рук) нельзя
+  // оставлять на костях: после микшера запоминаем «чистую» позу и возвращаем её перед следующим кадром.
+  function saveClean() {
+    const L = cur.touched || (cur.touched = Object.values(cur.bones).filter(Boolean));
+    if (!cur.clean) cur.clean = L.map(() => new THREE.Quaternion());
+    for (let i = 0; i < L.length; i++) cur.clean[i].copy(L[i].quaternion);
+  }
+  function restoreClean() {
+    if (!cur.clean) return;
+    const L = cur.touched;
+    for (let i = 0; i < L.length; i++) L[i].quaternion.copy(cur.clean[i]);
+  }
 
   function update(dt, snap, events) {
     if (!S.ready || !cur) return;
@@ -572,11 +585,13 @@ export function createHeroModel({
     }
     // LOD: реже обновляем удалённого/дальнего героя
     if (S.lod >= 2) { S.lodAcc += dt; if (S.lodAcc < 0.1) return; dt = S.lodAcc; S.lodAcc = 0; }
+    restoreClean();
     resetFree();
     if (!P) { // меню: покой (или стойка витрины)
       S.yawRate = 0; S.prevYaw = null;
       updateLoco(dt, 0, 0, 0, false);
       cur.mixer.update(dt);
+      saveClean();
       applyLife(dt, true, 0);
       applyPose(dt);
       vrmTick(dt);
@@ -594,7 +609,7 @@ export function createHeroModel({
     if (status === 'defeat' || status === 'victory') {
       W.rotation.set(0, 0, 0);
       updateLoco(dt, 0, 0, 0, false);
-      cur.mixer.update(dt); vrmTick(dt); return;
+      cur.mixer.update(dt); saveClean(); vrmTick(dt); return;
     }
 
     // скорость в осях героя (вперёд = +z, влево = +x)
@@ -664,6 +679,7 @@ export function createHeroModel({
     S.recoil = Math.max(0, S.recoil - dt * 3.5);
     W.rotation.set(S.lean - 0.18 * Math.sin(Math.PI * S.recoil), 0, 0);
     cur.mixer.update(dt);
+    saveClean();
 
     // lock-on: грудь к цели (C4 snap.lockTarget, по умолчанию — босс в бою)
     let twist = 0;
