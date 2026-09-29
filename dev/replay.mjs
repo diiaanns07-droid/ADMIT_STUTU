@@ -10,10 +10,13 @@
 //   --quiet                 только сводка
 //   --json                  сводка в JSON
 //   --push-debug            в хронологии щита — признаки толчка (span/fast/scale/turned)
+//   --combat                ещё и прогнать героя в настоящем бою (modules/combat.js, 60 Гц, без босса):
+//                           сколько прошёл, сколько раз вставал посреди хода, сколько стоял со щитом
 
 import { readFileSync } from 'node:fs';
 import { createHandGestures } from '../core/handGestures.js';
 import { unpackFrame } from '../core/inputRecorder.js';
+import { createCombat, DEFAULT_LAYOUT } from '../modules/combat.js';
 
 const argv = process.argv.slice(2);
 const file = argv.find((a) => !a.startsWith('--') && !/^\{/.test(a) && argv[argv.indexOf(a) - 1] !== '--mode' && argv[argv.indexOf(a) - 1] !== '--cfg');
@@ -88,6 +91,24 @@ const R = {
   hints: S.hints,
   steer: g.getDebug().stick && g.getDebug().stick.counters,
 };
+// герой в настоящем бою: тот же поток кадров → handGestures → combat.update (60 Гц), босс спит
+if (argv.includes('--combat')) {
+  const g2 = createHandGestures({ ...cfg, moveMode: mode });
+  const idle = { reset() {}, update() { return { stage: 1, action: 'idle', attacks: [] }; } };
+  const c = createCombat({ config: {}, bossBrain: idle, layout: { ...DEFAULT_LAYOUT, playerSpawn: { x: 0, z: 30, yaw: Math.PI } } });
+  let fi = 0, dist = 0, prevP = null, stopsMid = 0, moving = false, shieldS = 0, prevYaw = null, prevRate = null, jerk = 0, n = 0;
+  for (let t = t0; t < lastT; t += 1000 / 60) {
+    while (fi < frames.length && frames[fi].tMs <= t) g2.push(frames[fi++]);
+    const f = g2.read(t);
+    c.update(1 / 60, { source: 'debug', valid: true, calibrated: true, tMs: t, moveX: f.moveX, moveZ: f.moveZ, dash: 0, attack: false, shield: f.shield, burst: false, moveMode: mode, stick: f.stick, dashDir: f.dashDir });
+    const sn = c.getSnapshot(), p = sn.player.position;
+    if (prevP) { const sp = Math.hypot(p.x - prevP.x, p.z - prevP.z) * 60; dist += sp / 60; if (moving && sp < 0.3) { stopsMid++; moving = false; } else if (sp > 0.8) moving = true; }
+    if (sn.player.shielding) shieldS += 1 / 60;
+    if (prevYaw !== null) { const rate = Math.atan2(Math.sin(sn.player.yaw - prevYaw), Math.cos(sn.player.yaw - prevYaw)) * 60; if (prevRate !== null) { jerk += Math.abs(rate - prevRate); n++; } prevRate = rate; }
+    prevYaw = sn.player.yaw; prevP = { ...p };
+  }
+  R.combat = { meters: +dist.toFixed(1), stopsMidWalk: stopsMid, shieldSeconds: +shieldS.toFixed(1), headingJerk: n ? +(jerk / n).toFixed(4) : 0 };
+}
 if (argv.includes('--json')) console.log(JSON.stringify(R));
 else {
   console.log('\nСводка (прогон записи через core/handGestures.js):');
@@ -98,4 +119,5 @@ else {
   console.log(`  левая кисть потеряна (> 0,3 с) ${R.leftHandMissingPct} % кадров; дрожь руля на прямой ${R.turnJitter}`);
   if (Object.keys(R.hints).length) console.log(`  подсказки: ${JSON.stringify(R.hints)}`);
   if (R.steer) console.log(`  руль: подъёмов ${R.steer.raises}, стопов ${R.steer.stops}, выучено привычек ${R.steer.learned}, отклонено рывков-руления ${R.steer.dashSteer}`);
+  if (R.combat) console.log(`  герой в бою: прошёл ${R.combat.meters} м, вставал посреди хода ${R.combat.stopsMidWalk} раз, со щитом ${R.combat.shieldSeconds} с, дёрганье курса ${R.combat.headingJerk}`);
 }
