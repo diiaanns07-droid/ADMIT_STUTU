@@ -34,8 +34,10 @@ function peerOptions(opts) {
   const custom = opts.peer || netCfg.peer;
   if (custom && typeof custom === 'object') Object.assign(o, custom);
   // для проверки со своим PeerServer: ?peerHost=127.0.0.1&peerPort=9000&peerPath=/&peerSecure=0
+  // свой TURN на день игры без правки кода: ?turn=turn:host:3478&turnUser=…&turnPass=…
   try {
     const q = new URLSearchParams(location.search);
+    if (q.get('turn')) o.config.iceServers = [...o.config.iceServers, { urls: q.get('turn'), username: q.get('turnUser') || '', credential: q.get('turnPass') || '' }];
     if (q.get('peerHost')) {
       o.host = q.get('peerHost');
       o.port = +(q.get('peerPort') || 443);

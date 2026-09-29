@@ -171,8 +171,14 @@ export function createNet(opts = {}) {
   function startTimers() {
     stopTimers();
     S.pingTimer = setInterval(() => { if (S.state === 'connected' || S.state === 'lost') sendPing(); }, PING_EVERY_MS);
+    let lastWatch = nowMs();
     S.watchTimer = setInterval(() => {
-      if (S.state === 'connected' && nowMs() - S.lastRecv > LOST_AFTER_MS) markLost('timeout');
+      const t = nowMs(), gap = t - lastWatch;
+      lastWatch = t;
+      // своя вкладка «спала» (фриз на компиляции шейдеров, загрузка модели): пакеты соперника ещё
+      // в очереди — это не обрыв, отсчёт 3 с начинаем заново
+      if (gap > 1500) { S.lastRecv = Math.max(S.lastRecv, t - 1000); return; }
+      if (S.state === 'connected' && t - S.lastRecv > LOST_AFTER_MS) markLost('timeout');
     }, 250);
   }
   function stopTimers() {

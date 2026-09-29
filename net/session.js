@@ -42,7 +42,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     seq: 0, lastSt: -1e9, lastPr: -1e9, prSentEmpty: true,
     inEvents: [], remoteProj: [], remoteProjAt: 0,
     lanHost: U.lanHost || (settings && settings.netLanHost) || '',
-    lobbyOpen: false, busy: false,
+    lobbyOpen: false, busy: false, oppGone: false,
   };
   const remote = createRemotePlayer({ THREE, scene, world, heroFactory, camera });
   remote.setVisible(true);
@@ -63,14 +63,14 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
       if (s === 'idle') { S.oppReady = false; }
       changed();
     });
-    net.on('open', (r) => { remote.setInfo(r); S.message = `Соперник: ${r.name}`; sendLobby(); changed(); });
+    net.on('open', (r) => { S.oppGone = false; remote.setInfo(r); S.message = `Соперник: ${r.name}`; sendLobby(); changed(); });
     net.on('hello', (m) => { remote.setInfo({ name: m.name, hero: m.hero }); changed(); });
     net.on('reconnected', () => { S.message = 'Связь восстановлена'; remote.setConnected(true); sendLobby(); changed(); });
     net.on('lost', () => { S.message = net.isHost ? 'Связь с соперником потеряна — ждём его…' : 'Связь потеряна — переподключаемся к той же комнате…'; changed(); });
-    net.on('left', () => { S.message = 'Соперник вышел из комнаты'; S.oppReady = false; remote.setVisible(false); changed(); });
+    net.on('left', () => { S.message = 'Соперник вышел из комнаты'; S.oppReady = false; S.oppGone = true; changed(); });
     net.on('error', (e) => { S.error = e && e.message; S.errorCode = e && e.code; changed(); });
     net.on('rtt', () => { if (lobby && S.lobbyOpen) changed(); });
-    net.on('st', (m) => { const st = decodeState(m); if (st) { remote.setVisible(true); remote.push(st); } });
+    net.on('st', (m) => { const st = decodeState(m); if (st) { S.oppGone = false; remote.push(st); } });
     net.on('ev', (m) => { const e = decodeEvent(m); if (e) S.inEvents.push(e); if (S.inEvents.length > 128) S.inEvents.splice(0, 64); });
     net.on('pr', (m) => { S.remoteProj = decodeProjectiles(m); S.remoteProjAt = performance.now(); });
     net.on('lobby', (m) => {
@@ -181,7 +181,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     if (S.net) { try { S.net.close(); } catch (e) { /* ignore */ } }
     S.net = null; S.status = 'idle'; S.meReady = false; S.oppReady = false; S.started = false; S.message = ''; S.error = null;
     S.remoteProj = []; S.inEvents.length = 0;
-    remote.setVisible(false);
+    S.oppGone = true;
     if (hooks.onLeave) { try { hooks.onLeave(); } catch (e) { /* ignore */ } }
     changed();
   }
@@ -211,6 +211,8 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
         S.prSentEmpty = pr.l.length === 0;
       }
     }
+    // соперник виден только в бою (в меню снимка нет) и пока он в комнате
+    remote.setVisible(!!snap && !!net && net.state !== 'idle' && !S.oppGone);
     // соперник: события → его модель и общий массив (data.remote = true)
     let inc = null;
     if (S.inEvents.length) { inc = S.inEvents.splice(0, S.inEvents.length); remote.pushEvents(inc); }
@@ -246,6 +248,8 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
 
   async function openLobby() {
     S.lobbyOpen = true;
+    // повторный матч: после боя лобби открывается снова — готовность заново
+    if (S.started) { S.started = false; S.meReady = false; S.startAt = 0; sendLobby(); }
     if (!lobby) {
       const m = await import('../modules/netLobby.js');
       lobby = m.createNetLobby({
