@@ -115,6 +115,7 @@ export const config = {
     moveMode: 'steer',
     hero: 'ashen',          // выбранный герой: ashen | warrior | elf (modules/heroModel.js)
     heroShading: 'realistic', // [HERO] C1: 'realistic' — PBR-материалы героев (modules/heroShading.js), 'anime' — MToon как было
+    bdoUi: true,            // [BDO] интерфейс в стиле Black Desert (false — прежний вид)
   },
 
   settings: null,            // заполняет main.js (живой объект)
