@@ -944,23 +944,44 @@ export function dressHero(THREE, vrm, opts = {}) {
     }
   }
   if (bow) layString(bowRig.nockRest);
+  // перенос лука со спины в кулак и обратно — плавно (~0,25 с), а не скачком: attach сохраняет мировое
+  // положение, затем локальное положение тянется к цели (0 в узле хвата или «дом» за спиной)
+  const bowTr = { on: false, t0: 0, dur: 0.25, fp: new THREE.Vector3(), fq: new THREE.Quaternion(), fs: new THREE.Vector3(), tp: new THREE.Vector3(), tq: new THREE.Quaternion(), ts: new THREE.Vector3() };
+  function startBowTr(tp, tq, ts, dur) {
+    bowTr.on = true; bowTr.t0 = t; bowTr.dur = dur;
+    bowTr.fp.copy(bow.position); bowTr.fq.copy(bow.quaternion); bowTr.fs.copy(bow.scale);
+    bowTr.tp.copy(tp); bowTr.tq.copy(tq); bowTr.ts.copy(ts);
+  }
+  function stepBowTr() {
+    if (!bowTr.on || !bow) return 1;
+    const k = Math.min(1, (t - bowTr.t0) / bowTr.dur), e = k * k * (3 - 2 * k);
+    bow.position.lerpVectors(bowTr.fp, bowTr.tp, e);
+    bow.quaternion.slerpQuaternions(bowTr.fq, bowTr.tq, e);
+    bow.scale.lerpVectors(bowTr.fs, bowTr.ts, e);
+    if (k >= 1) bowTr.on = false;
+    return k;
+  }
+  const _q0 = new THREE.Quaternion(), _v0 = new THREE.Vector3();
   function setBowHeld(on, grip, nockNode = null, draw = 0) {
     if (!bow || !bowHome) return;
     if (!on) {
       if (bowHeld) {
         bowHeld = false;
-        bowHome.parent.add(bow); bow.position.copy(bowHome.pos); bow.quaternion.copy(bowHome.quat); bow.scale.copy(bowHome.scale);
+        bowHome.parent.attach(bow);
+        startBowTr(bowHome.pos, bowHome.quat, bowHome.scale, 0.3);
         layString(bowRig.nockRest);
       }
+      stepBowTr();
       if (arrow) arrow.visible = false;
       return;
     }
     if (!grip) return;
     if (!bowHeld || bow.parent !== grip) {
       bowHeld = true;
-      grip.add(bow); bow.position.set(0, 0, 0); bow.quaternion.identity();
-      bow.scale.setScalar(1 / (grip.getWorldScale(_ws).x || 1));
+      grip.attach(bow);
+      startBowTr(_v0.set(0, 0, 0), _q0.identity(), _ws.setScalar(1 / (grip.getWorldScale(new THREE.Vector3()).x || 1)), 0.22);
     }
+    if (stepBowTr() < 1) { layString(bowRig.nockRest); if (arrow) arrow.visible = false; return; }
     if (nockNode && draw > 0.03) {
       bow.updateWorldMatrix(true, false);
       nockNode.getWorldPosition(_nk);
