@@ -525,6 +525,15 @@ export function createHeroModel({
     });
   }
 
+  // [HERO] тени без карт. Общий материал глубины теней three получает map каждого объекта
+  // (WebGLShadowMap: result.map = material.map), и его uniform продолжает ссылаться на последнюю карту;
+  // после смены героя проход теней заново загружал уже освобождённый холст (утечка GL-текстуры за каждую
+  // смену). Непрозрачным деталям героя карта в тени не нужна — обнуляем её перед их отрисовкой в тень.
+  function noShadowMap(renderer, object, camera, shadowCamera, geometry, depthMaterial) {
+    const m = object.material, a = Array.isArray(m) ? m[0] : m;
+    if (depthMaterial && !(a && (a.alphaTest > 0 || a.alphaToCoverage))) depthMaterial.map = null;
+  }
+
   // перекраска атласа костюма (heroShading.recolorTexture) — у каждого экземпляра своя текстура
   async function recolorHero(vrm, rules, makeup = null) {
     try {
@@ -563,6 +572,8 @@ export function createHeroModel({
       c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null, circlet: c.def.circlet || null, lashes: c.def.lashes || null, hoodTrim: c.def.hoodTrim || null, fx: c.def.fx || null, grips: c.hands ? { R: c.hands.staffGrip, L: c.hands.bowGrip } : null });
       if (c.full.Idle) c.full.Idle.stop();
     } catch (e) { console.warn('[HERO] heroGear недоступен, без снаряжения:', e && e.message); }
+    // тени героя без карт (см. noShadowMap): модель, ткань, пряди и снаряжение
+    c.model.traverse((o) => { if (o.isMesh) o.onBeforeShadow = noShadowMap; });
     // аура класса (частицы стихии в шейдере) — modules/heroAura.js
     if (c.def.fx) {
       try {
