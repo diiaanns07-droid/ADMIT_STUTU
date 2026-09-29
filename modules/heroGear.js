@@ -29,6 +29,8 @@ const PRESETS = {
     pauldrons: null, bracers: false, belt: 'pouches', pouches: 2, dagger: null, rings: false, sigil: true,
     cape: { w: 0.66, len: 1.32, color: 0x2a1512, trim: 0xd8a860, emblem: 'flame', lining: 0x6a140f }, staff: { crystal: 0xffb46a, glow: 0xff7a2a, style: 'crown', wood: 0x2a1b14 },
     plume: { color: 0x8c1a12, len: 0.46 },
+    // сюрко: багровое полотнище с гербом-пламенем поверх набедренных пластин
+    tabard: { y: 0.1, panels: [{ az: 0, w: 0.28, len: 0.6, emblem: true, pleats: 1 }] },
   },
   // Эльфийка на теле Quaternius: короткий белый плащ, лук и колчан, грозовые руны
   sylvan: {
@@ -1196,6 +1198,28 @@ export function dressHero(THREE, vrm, opts = {}) {
       const g = (k) => secR[((k % SEC) + SEC) % SEC] || Rdef;
       return g(k0) * (1 - t3) + g(k0 + 1) * t3;
     };
+    // без ремня костюма (латы стража) — свой ремень по замеренному обхвату: под ним край полотнищ
+    if (!Number.isFinite(beltLo)) {
+      const ring = [];
+      for (let k = 0; k < 32; k++) {
+        const ph = (k / 32) * Math.PI * 2 - Math.PI, r = Rat(ph) + 0.014;
+        ring.push(bp.hips.clone().setY(yBelt + 0.006).addScaledVector(FWD, Math.cos(ph) * r).addScaledVector(LEFT, Math.sin(ph) * r));
+      }
+      const curve = new THREE.CatmullRomCurve3(ring, true);
+      const bg = new THREE.Group(); bg.name = 'tabard-belt';
+      bg.add(new THREE.Mesh(G(tube(THREE, curve, 96, 6, () => 0.017, { flat: 0.45 })), mats.leather));
+      // заклёпки и пряжка спереди
+      const studG = G(new THREE.SphereGeometry(0.0055, 8, 6));
+      for (let k = 0; k < 14; k++) { const q2 = curve.getPointAt(k / 14), st = new THREE.Mesh(studG, mats.trim); st.position.copy(q2).add(q2.clone().sub(bp.hips).setY(0).normalize().multiplyScalar(0.012)); bg.add(st); }
+      const front = curve.getPointAt(0.5);
+      const buckle = new THREE.Mesh(G(new THREE.TorusGeometry(0.022, 0.006, 6, 18)), mats.trim);
+      buckle.position.copy(front).addScaledVector(FWD, 0.014); buckle.quaternion.copy(qFromTo(new THREE.Vector3(0, 0, 1), FWD)); buckle.scale.set(1.25, 1, 1);
+      const bgem = new THREE.Mesh(G(new THREE.OctahedronGeometry(0.009)), mats.glow); bgem.position.copy(front).addScaledVector(FWD, 0.02);
+      bg.add(buckle, bgem);
+      const c1 = bp.hips.clone();
+      for (const m of bg.children) m.position.sub(c1);
+      stick(bg, 'hips', c1, new THREE.Quaternion());
+    }
     const holder = model || vrm.scene;
     const _mq2 = new THREE.Quaternion();
     const legCaps = bodyCaps.filter((c) => /Leg/.test(c.name)).map((c) => ({ ...c, r: c.r - 0.008 }));   // запас капсул (+0.018) велик для прилегающей ткани
@@ -1209,7 +1233,8 @@ export function dressHero(THREE, vrm, opts = {}) {
         for (let i = 0; i < cols; i++) {
           // столбцы — по убыванию азимута (обход как у плаща: лицевая сторона треугольников — к телу)
           const ph = pn.az + ah - (2 * ah * i) / (cols - 1);
-          const r = Rat(ph) + 0.008 + (0.02 + 0.06 * t2) * (j ? 1 : 0);
+          // расширение книзу небольшое: изгибные связи держат исходную форму (иначе полотнище стоит «доской»)
+          const r = Rat(ph) + 0.008 + (0.012 + 0.02 * t2) * (j ? 1 : 0);
           const p = new THREE.Vector3(bp.hips.x, yBelt - t2 * pn.len, bp.hips.z).addScaledVector(FWD, Math.cos(ph) * r).addScaledVector(LEFT, Math.sin(ph) * r);
           p.toArray(rest, (j * cols + i) * 3);
         }
