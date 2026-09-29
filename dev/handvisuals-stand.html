@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHEN OATH — [HAND] handVisuals stand</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0d12; color: #cfd6e2; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; overflow: hidden; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 8px; top: 8px; padding: 8px 10px; background: rgba(8, 10, 14, 0.72); border: 1px solid #2c3444; border-radius: 6px; max-width: 560px; white-space: pre-wrap; pointer-events: none; }
+  #bar { position: fixed; right: 8px; top: 8px; display: flex; gap: 4px; flex-wrap: wrap; max-width: 520px; justify-content: flex-end; }
+  #bar a { background: #1b2130; color: #d8c49a; border: 1px solid #3a4458; border-radius: 4px; padding: 3px 7px; text-decoration: none; }
+  #bar a.on { background: #3a3222; }
+  #err { position: fixed; left: 8px; bottom: 8px; color: #ff8a7a; white-space: pre-wrap; }
+  body.clean #hud, body.clean #bar { display: none; }
+</style>
+<!-- как в index.html: Three.js один раз, аддоны через three/addons/ -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/",
+      "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+<div id="hud">загрузка…</div>
+<div id="bar"></div>
+<div id="err"></div>
+<script type="module">
+// Стенд modules/handVisuals.js ([HAND]): синтетический снимок боя — лук с натяжением и выстрелами, сгусток в ладони
+// каждой стихии, бросок, попадания, «Дождь стрел». Камера — настоящая боевая (core/cameraRig.js) или крупный план.
+// URL: scene=bow|fire|storm|frost|earth|none|rain   q=low|medium|high   post=0 (без постобработки)
+//      cam=game|close|left|side   t=<сек> (прогнать сцену до t фиксированным шагом, отрисовать, title=READY)
+//      el=<стихия стрел в bow>   two=1 (сгусток двумя руками)   cancel=1 (отмена сгустка)   rm=1 (reducedMotion)
+//      anchors=0 (без якорей — кисти из position+yaw)   clean=1 (без HUD)   bench=1 (замер update и draw calls)
+import * as THREE from 'three';
+import { createHandVisuals } from '../modules/handVisuals.js';
+import { createCameraRig } from '../core/cameraRig.js';
+import { createPostFX } from '../core/postfx.js';
+import { config } from '../config.js';
+
+const P = new URLSearchParams(location.search);
+const errEl = document.getElementById('err');
+window.addEventListener('error', (e) => { errEl.textContent += '\n' + e.message; });
+window.addEventListener('unhandledrejection', (e) => { errEl.textContent += '\n' + (e.reason && e.reason.stack || e.reason); });
+if (P.get('clean') === '1') document.body.classList.add('clean');
+
+const SCN = ['bow', 'fire', 'storm', 'frost', 'earth', 'none', 'rain'].includes(P.get('scene')) ? P.get('scene') : 'bow';
+const Q = ['low', 'medium', 'high'].includes(P.get('q')) ? P.get('q') : 'medium';
+const POST = P.get('post') !== '0' && Q !== 'low';
+const CAM = P.get('cam') || 'game';
+const T_SHOT = P.has('t') ? Math.max(0, +P.get('t') || 0) : null;
+const TWO = P.get('two') === '1', CANCEL = P.get('cancel') === '1', NOANCH = P.get('anchors') === '0';
+const settings = { quality: Q, reducedMotion: P.get('rm') === '1' };
+
+const bar = document.getElementById('bar');
+for (const s of ['bow', 'rain', 'fire', 'storm', 'frost', 'earth', 'none']) {
+  const a = document.createElement('a'); const u = new URLSearchParams(P); u.set('scene', s); u.delete('t');
+  a.href = '?' + u; a.textContent = s; if (s === SCN) a.className = 'on'; bar.appendChild(a);
+}
+
+// ---------------------------------------------------------------- renderer как в main.js
+const canvas = document.createElement('canvas');
+document.body.appendChild(canvas);
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.setPixelRatio(1);
+renderer.setSize(innerWidth, innerHeight, false);
+canvas.style.width = '100vw'; canvas.style.height = '100vh';
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0d12);
+scene.fog = new THREE.FogExp2(0x0e1118, 0.026);
+const camera = new THREE.PerspectiveCamera(config.camera.fov, innerWidth / innerHeight, 0.05, 240);
+scene.add(camera);
+
+// ---------------------------------------------------------------- простая арена
+scene.add(new THREE.HemisphereLight(0x7a88a8, 0x2a221c, 2.0));
+const moon = new THREE.DirectionalLight(0xaebfdc, 2.8); moon.position.set(-8, 12, -14); scene.add(moon);
+const fill = new THREE.DirectionalLight(0xffb070, 0.35); fill.position.set(6, 4, 8); scene.add(fill);
+for (const x of [-6, 6]) { const l = new THREE.PointLight(0xff8a3a, 7, 16, 1.6); l.position.set(x, 1.6, -7); scene.add(l); }
+function stoneTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  g.fillStyle = '#6e6862'; g.fillRect(0, 0, 256, 256);
+  for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+    const v = 90 + Math.random() * 40; g.fillStyle = `rgb(${v},${v * 0.95},${v * 0.9})`;
+    g.fillRect(x * 64 + 2 + (y % 2) * 16, y * 64 + 2, 60, 60);
+  }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(22, 22); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), new THREE.MeshStandardMaterial({ color: 0x4a4540, map: stoneTex(), roughness: 0.95 }));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+const stone = new THREE.MeshStandardMaterial({ color: 0x57524d, roughness: 0.9 });
+const BOSS = { x: 0, y: 0, z: 0, r: 1.7, h: 7 };
+const boss = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 2.1, 7, 32), stone); boss.position.y = 3.5; scene.add(boss);
+const bossEye = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x9cc5e3).multiplyScalar(2.2), toneMapped: false }));
+bossEye.position.set(0, 5.2, -1.62); scene.add(bossEye);
+for (let i = 0; i < 8; i++) {
+  const a = (i / 8) * Math.PI * 2 + 0.3, col = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 9, 12), stone);
+  col.position.set(Math.sin(a) * 17, 4.5, Math.cos(a) * 17); scene.add(col);
+}
+// герой-манекен: капсула, голова, плащ, две кисти
+const heroMat = new THREE.MeshStandardMaterial({ color: 0x2c2f38, roughness: 0.8 });
+const hero = new THREE.Group(); scene.add(hero);
+const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.24, 1.0, 6, 14), heroMat); body.position.y = 0.78; hero.add(body);
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12), new THREE.MeshStandardMaterial({ color: 0x8a6f5c, roughness: 0.7 })); head.position.y = 1.66; hero.add(head);
+const cape = new THREE.Mesh(new THREE.ConeGeometry(0.36, 1.25, 16, 1, true), new THREE.MeshStandardMaterial({ color: 0x3a1f22, roughness: 0.9, side: THREE.DoubleSide })); cape.position.set(0, 0.95, -0.05); hero.add(cape);
+const handMat = new THREE.MeshStandardMaterial({ color: 0x6d5446, roughness: 0.7 });
+const handL = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 8), handMat), handR = handL.clone();
+scene.add(handL, handR);
+
+// ---------------------------------------------------------------- handVisuals
+const hv = createHandVisuals({ THREE, scene, config: { settings } });
+window.__hvModule = hv;
+const post = POST ? createPostFX({ THREE, renderer, scene, camera, quality: Q }) : null;
+if (post) { post.setReducedMotion(settings.reducedMotion); post.setSize(innerWidth, innerHeight, 1); }
+const rig = createCameraRig({ ...config.camera, maxRadiusFromCenter: 60 }); // герой в 12 м от босса — за «кольцом» арены игры
+
+// ---------------------------------------------------------------- синтетический бой
+const ELS = [null, 'fire', 'storm', 'frost', 'earth'];
+const FEET = { x: 0, y: 0, z: -12 }, YAW = 0;
+const f = { x: Math.sin(YAW), y: 0, z: Math.cos(YAW) }, r = { x: -Math.cos(YAW), y: 0, z: Math.sin(YAW) };
+const v3 = (x, y, z) => ({ x, y, z });
+const add = (a, b, k = 1) => v3(a.x + b.x * k, a.y + b.y * k, a.z + b.z * k);
+const snap = { status: 'playing', player: { position: { ...FEET }, yaw: YAW, action: 'idle', bow: undefined, handSpell: undefined }, projectiles: [] };
+const sim = { t: 0, evId: 1, prId: 1, events: [], lastTau: -1, cycle: -1, rainSpawned: false, rainAt: -1, pending: [] };
+const anchors = { heroHandL: v3(0, 0, 0), heroHandR: v3(0, 0, 0), heroChest: v3(0, 1.35, -11.8), heroHead: v3(0, 1.75, -12), heroFeet: { ...FEET } };
+const smooth = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+const ev = (type, position, data) => sim.events.push({ id: sim.evId++, type, position, data });
+function aimDir(ax, ay) {
+  const yaw = YAW - ax * 28 * Math.PI / 180, p = ay * 22 * Math.PI / 180;
+  return v3(Math.sin(yaw) * Math.cos(p), Math.sin(p), Math.cos(yaw) * Math.cos(p));
+}
+function setHands(L, R) { Object.assign(anchors.heroHandL, L); Object.assign(anchors.heroHandR, R); handL.position.set(L.x, L.y, L.z); handR.position.set(R.x, R.y, R.z); }
+
+function stepBow(dt, rain) {
+  const C = 1.6, k = Math.floor(sim.t / C), tau = sim.t - k * C, prev = sim.lastTau;
+  const el = rain ? null : P.has('el') ? (P.get('el') === 'none' ? null : P.get('el')) : ELS[k % 5];
+  const aimX = rain ? 0 : 0.04 * Math.sin(sim.t * 0.9), aimY = rain ? 0.95 : 0.12;
+  const a = aimDir(aimX, aimY);
+  const b = { active: false, phase: 'ready', draw: 0, aimX, aimY, charged: false, element: el };
+  const canShoot = !rain || k === 0;
+  if (k !== sim.cycle) { sim.cycle = k; }
+  if (!canShoot) { b.phase = 'ready'; b.active = false; }
+  else if (tau < 0.12) { b.phase = 'ready'; }
+  else if (tau < 0.3) { b.phase = 'nocked'; b.active = true; if (prev < 0.12 || prev > tau) ev('bow_draw_start', null, { element: el }); }
+  else if (tau < 1.4) { b.phase = 'drawing'; b.active = true; b.draw = smooth((tau - 0.3) / 0.75); b.charged = tau > 1.2; }
+  else { b.phase = 'ready'; b.active = false; }
+  const L = add(add(add(FEET, v3(0, 1.42, 0)), r, -0.14), a, 0.55);
+  let R;
+  if (b.phase === 'nocked' || b.phase === 'drawing') {
+    const Rn = add(L, a, -0.17), Rf = add(add(add(L, a, -0.7), v3(0, 0.05, 0)), r, 0.04);
+    R = v3(Rn.x + (Rf.x - Rn.x) * b.draw, Rn.y + (Rf.y - Rn.y) * b.draw, Rn.z + (Rf.z - Rn.z) * b.draw);
+  } else R = add(add(add(FEET, r, 0.22), f, 0.2), v3(0, 1.12, 0));
+  setHands(L, R);
+  if (canShoot && prev < 1.4 && tau >= 1.4 && prev <= tau) {
+    const tip = add(L, a, 0.12);
+    ev('bow_release', { ...tip }, { element: el, charged: true, draw: 1 });
+    const sp = rain ? 30 : 34;
+    snap.projectiles.push({ id: 'a' + sim.prId++, owner: 'player', kind: 'arrow', position: { ...tip }, velocity: v3(a.x * sp, a.y * sp, a.z * sp), radius: 0.12, element: el, charged: true, g: rain ? 0 : 4.9 });
+    if (rain) { ev('arrow_rain', { x: 0, y: 0, z: 0 }, { center: v3(0, 0, -1.2), radius: 4.2, delay: 1.2 }); sim.rainAt = sim.t; }
+  }
+  if (rain && sim.rainAt >= 0 && !sim.rainSpawned && sim.t - sim.rainAt > 0.75) {
+    sim.rainSpawned = true;
+    for (let i = 0; i < 16; i++) {
+      const ang = Math.random() * Math.PI * 2, rr = 1.9 + Math.random() * 2.2;
+      const x = Math.sin(ang) * rr, z = -1.2 + Math.cos(ang) * rr, h = 12 + Math.random() * 7;
+      snap.projectiles.push({ id: 'r' + sim.prId++, owner: 'player', kind: 'arrow', position: v3(x + 1.5, h, z - 2.5), velocity: v3(-1.5 * 2.6, -h * 2.6 * (0.9 + Math.random() * 0.2), 2.5 * 2.6), radius: 0.1, element: null, charged: false, g: 0 });
+    }
+  }
+  snap.player.bow = b; snap.player.handSpell = undefined;
+  sim.lastTau = tau;
+}
+
+function stepOrb(dt, el) {
+  const C = 3.4, k = Math.floor(sim.t / C), tau = sim.t - k * C, prev = sim.lastTau;
+  const hs = { phase: 'idle', element: el, power: 0, size: 0.3, twoHand: TWO };
+  const bob = 0.012 * Math.sin(sim.t * 2.3);
+  let R = add(add(add(FEET, r, 0.26), f, 0.36), v3(0, 1.22 + bob, 0)), L = add(add(add(FEET, r, -0.3), f, 0.05), v3(0, 0.9, 0));
+  if (TWO) { R = add(add(add(FEET, r, 0.13), f, 0.42), v3(0, 1.25 + bob, 0)); L = add(add(add(FEET, r, -0.13), f, 0.42), v3(0, 1.25 + bob, 0)); }
+  const cancelled = CANCEL && tau >= 1.3;
+  if (tau >= 0.25 && tau < 2.0 && !cancelled) {
+    if (prev < 0.25 || prev > tau) ev('hand_spell_form', { ...R }, { element: el });
+    hs.phase = tau < 0.51 ? 'form' : 'hold';
+    hs.power = Math.min(1, (tau - 0.25) / 1.5); hs.size = 0.3 + 0.7 * hs.power;
+  }
+  if (CANCEL && prev < 1.3 && tau >= 1.3) ev('hand_spell_cancel', { ...R }, { element: el });
+  if (!CANCEL && prev < 2.0 && tau >= 2.0 && prev <= tau) {
+    hs.phase = 'throw'; hs.power = 1; hs.size = 1;
+    const o = add(R, v3(0, 0.2, 0)), tgt = v3(0, 2.4, -BOSS.r);
+    const dx = tgt.x - o.x, dy = tgt.y - o.y, dz = tgt.z - o.z, l = Math.hypot(dx, dy, dz), sp = 16;
+    ev('hand_spell_throw', { ...o }, { element: el, twoHand: TWO });
+    snap.projectiles.push({ id: 'o' + sim.prId++, owner: 'player', kind: 'hand_orb', position: o, velocity: v3(dx / l * sp, dy / l * sp, dz / l * sp), radius: 0.18 + 0.25 * hs.size, element: el, twoHand: TWO, g: 0 });
+  }
+  setHands(L, R);
+  snap.player.handSpell = hs; snap.player.bow = undefined;
+  sim.lastTau = tau;
+}
+
+function stepProjectiles(dt) {
+  const keep = [];
+  for (const p of snap.projectiles) {
+    p.velocity.y -= (p.g || 0) * dt;
+    p.position = v3(p.position.x + p.velocity.x * dt, p.position.y + p.velocity.y * dt, p.position.z + p.velocity.z * dt);
+    const dxz = Math.hypot(p.position.x - BOSS.x, p.position.z - BOSS.z);
+    const hitBoss = dxz < BOSS.r + p.radius && p.position.y < BOSS.h;
+    const hitGround = p.position.y <= 0.02;
+    if (hitBoss || hitGround) {
+      const pos = hitGround ? v3(p.position.x, 0.05, p.position.z) : p.position;
+      if (p.kind === 'arrow') ev('arrow_hit', pos, { damage: 12, element: p.element, charged: p.charged });
+      else ev('hand_spell_hit', pos, { element: p.element, damage: 40, twoHand: p.twoHand });
+      continue;
+    }
+    if (Math.hypot(p.position.x, p.position.z) > 40 || p.position.y > 60) continue;
+    keep.push(p);
+  }
+  snap.projectiles = keep;
+}
+
+function step(dt) {
+  sim.t += dt;
+  sim.events = [];
+  stepProjectiles(dt);
+  if (SCN === 'bow') stepBow(dt, false);
+  else if (SCN === 'rain') stepBow(dt, true);
+  else stepOrb(dt, SCN === 'none' ? null : SCN);
+  hero.position.set(FEET.x, FEET.y, FEET.z); hero.rotation.y = YAW;
+  const t0 = performance.now();
+  hv.update(dt, snap, sim.events, NOANCH ? null : anchors);
+  sim.updMs = performance.now() - t0;
+  // камера
+  if (CAM === 'close') {
+    camera.position.set(FEET.x - f.x * 1.3 + r.x * 1.15, 1.62, FEET.z - f.z * 1.3 + r.z * 1.15);
+    camera.lookAt(FEET.x + f.x * 1.0 - r.x * 0.15, 1.38, FEET.z + f.z * 1.0 - r.z * 0.15);
+  } else if (CAM === 'left') {
+    camera.position.set(FEET.x - f.x * 1.25 - r.x * 0.75, 1.72, FEET.z - f.z * 1.25 - r.z * 0.75);
+    camera.lookAt(FEET.x + f.x * 1.2 - r.x * 0.1, 1.42, FEET.z + f.z * 1.2 - r.z * 0.1);
+  } else if (CAM === 'side') {
+    camera.position.set(FEET.x - r.x * 1.9 + f.x * 0.3, 1.55, FEET.z - r.z * 1.9 + f.z * 0.3);
+    camera.lookAt(FEET.x + f.x * 0.2, 1.4, FEET.z + f.z * 0.2);
+  } else {
+    const c = rig.update(dt, FEET, BOSS, { x: 0, y: 0, z: 0 });
+    camera.position.set(c.position.x, c.position.y, c.position.z);
+    camera.lookAt(c.target.x, c.target.y, c.target.z);
+  }
+}
+rig.reset(FEET, BOSS);
+
+function render(dt) { if (post) post.render(dt); else renderer.render(scene, camera); }
+function drawCalls() {
+  const vis = hv.root.visible;
+  hv.root.visible = false; renderer.render(scene, camera); const c0 = renderer.info.render.calls;
+  hv.root.visible = true; renderer.render(scene, camera); const c1 = renderer.info.render.calls;
+  hv.root.visible = vis;
+  return { base: c0, withHv: c1, added: c1 - c0 };
+}
+const hud = document.getElementById('hud');
+function hudText(extra = '') {
+  const i = hv.info();
+  hud.textContent = `[HAND] handVisuals — scene=${SCN} q=${Q} post=${POST ? 'on' : 'off'} cam=${CAM}  t=${sim.t.toFixed(2)}\n` +
+    `bow=${i.bow} draw=${i.bowDraw.toFixed(2)} palm=${i.palm} arrows=${i.arrows} orbs=${i.orbs} flashes=${i.flashes} rains=${i.rains}\n` +
+    `particles=${i.particles} billboards=${i.billboards} ribbonVerts=${i.ribbonVerts} shards=${i.shards} errors=${i.errors}\n` +
+    `update ${(sim.updMs || 0).toFixed(3)} ms` + extra;
+}
+
+async function main() {
+  if (post) await post.whenReady;
+  const DT = 1 / 60;
+  if (T_SHOT !== null) {
+    const n = Math.round(T_SHOT / DT);
+    for (let i = 0; i < n; i++) { step(DT); if (i === 5) render(DT); }
+    render(DT);
+    const dc = drawCalls();
+    render(DT);
+    window.__hvStats = { t: sim.t, info: hv.info(), drawCalls: dc };
+    hudText(`\ndraw calls: base ${dc.base}, +handVisuals ${dc.added}`);
+    console.log('HVSTATS ' + JSON.stringify(window.__hvStats));
+    document.title = 'READY';
+    return;
+  }
+  if (P.get('bench') === '1') {
+    for (let i = 0; i < 30; i++) { step(DT); render(DT); }
+    let sum = 0, mx = 0; const N = 600;
+    for (let i = 0; i < N; i++) { step(DT); sum += sim.updMs; mx = Math.max(mx, sim.updMs); }
+    render(DT);
+    const dc = drawCalls();
+    window.__hvBench = { scene: SCN, q: Q, avgUpdateMs: sum / N, maxUpdateMs: mx, drawCalls: dc, info: hv.info() };
+    console.log('HVBENCH ' + JSON.stringify(window.__hvBench));
+    hudText(`\nbench: avg ${(sum / N).toFixed(3)} ms, max ${mx.toFixed(3)} ms; draw calls +${dc.added}`);
+    document.title = 'BENCHED';
+    return;
+  }
+  let last = performance.now(), dcT = 0, dcTxt = '';
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    step(dt); render(dt);
+    if ((dcT -= dt) <= 0) { dcT = 0.5; const dc = drawCalls(); dcTxt = `\ndraw calls: base ${dc.base}, +handVisuals ${dc.added}`; }
+    hudText(dcTxt);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+main();
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); if (post) post.setSize(innerWidth, innerHeight, 1); });
+</script>
+</body>
+</html>
