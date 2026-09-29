@@ -19,7 +19,7 @@
 </head>
 <body>
 <header>
-  <b>ДВЕ ВКЛАДКИ · NET local</b>
+  <b>ДВЕ ВКЛАДКИ · NET</b>
   <span>Кликните в левое окно и ходите WASD (U — «Искра», K — щит, Пробел — рывок) — правое окно видит героя-соперника.</span>
   <label>пинг, мс <input id="ping" type="number" value="150" min="0" max="1000"></label>
   <label>потери <input id="loss" type="number" value="0.05" step="0.01" min="0" max="0.9"></label>
@@ -43,7 +43,9 @@
     const loss = +document.getElementById('loss').value || 0;
     // ?harness=1 — лёгкий стенд сети (dev/net-harness.html) вместо полной игры
     const page = q.get('harness') ? 'net-harness.html' : '../index.html';
-    const base = `${page}?debug=1&net=local&room=${room}&netReady&netPing=${ping}&netJitter=15&netLoss=${loss}` + (q.get('harness') ? '' : '');
+    // ?net=lan|peer и параметры peerHost/peerPort/peerSecure/lanHost передаются в оба окна как есть
+    const pass = ['peerHost', 'peerPort', 'peerPath', 'peerSecure', 'lanHost'].filter((k) => q.has(k)).map((k) => `&${k}=${encodeURIComponent(q.get(k))}`).join('');
+    const base = `${page}?debug=1&net=${q.get('net') || 'local'}&room=${room}&netReady&netPing=${ping}&netJitter=15&netLoss=${loss}${pass}`;
     document.getElementById('host').src = `${base}&netAuto=host&role=host&netName=${encodeURIComponent('Хост')}&netHero=${q.get('heroA') || 'ashen'}`;
     setTimeout(() => { document.getElementById('guest').src = `${base}&netAuto=join&role=guest&netName=${encodeURIComponent('Гость')}&netHero=${q.get('heroB') || 'ashen'}`; }, 800);
     window.__room = room;

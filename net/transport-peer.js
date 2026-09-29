@@ -63,7 +63,7 @@ export function createPeerTransport(opts = {}) {
   function attach(c) {
     conn = c;
     lastRx = Date.now();
-    c.on('data', (d) => {
+    const onData = (d) => {
       if (c !== conn) return;
       lastRx = Date.now();
       if (Date.now() < dropUntil) return;
@@ -71,10 +71,15 @@ export function createPeerTransport(opts = {}) {
       if (typeof m === 'string') { try { m = JSON.parse(m); } catch (e) { return; } }
       if (m && m.t === '_peer') return;           // служебное (full) — обрабатывается при входе
       if (tr.onMessage) tr.onMessage(m);
-    });
+    };
+    c.on('data', onData);
+    const early = c.__early;
+    if (c.__stopEarly) c.__stopEarly();
+    c.__early = null; c.__stopEarly = null;
     c.on('close', () => { if (c === conn) { conn = null; if (tr.onPeerClose) tr.onPeerClose(); } });
     c.on('error', (e) => { if (tr.onError) tr.onError(netError('closed', e && e.type)); });
     watchIce(c);
+    return early ? () => { for (const d of early) onData(d); } : () => {};
   }
   // ICE провалился (NAT/брандмауэр не пускает) — не ждём таймаута
   function watchIce(c, onFail) {
@@ -142,10 +147,16 @@ export function createPeerTransport(opts = {}) {
       if (!c) { finish(netError('peer_server')); return; }
       watchIce(c, () => finish(netError('no_rtc')));
       c.on('open', () => {
-        // хост может ответить «комната полна» сразу после открытия
-        const full = (d) => { if (d && d.t === '_peer' && d.ev === 'full') finish(netError('room_full')); };
-        c.on('data', full);
-        setTimeout(() => { c.off('data', full); finish(); }, 350);
+        // хост может ответить «комната полна» сразу после открытия; всё, что пришло за эти 350 мс
+        // (hello хоста!), копится и отдаётся после attach()
+        c.__early = [];
+        const early = (d) => {
+          if (d && d.t === '_peer' && d.ev === 'full') { finish(netError('room_full')); return; }
+          if (c.__early) c.__early.push(d);
+        };
+        c.on('data', early);
+        c.__stopEarly = () => c.off('data', early);
+        setTimeout(() => finish(), 350);
       });
       c.on('error', () => finish(netError('no_rtc')));
     });
@@ -155,8 +166,9 @@ export function createPeerTransport(opts = {}) {
     code = c; role = 'guest';
     if (!peer || peer.destroyed) { peer = await makePeer(null); keepSignaling(peer); }
     const nc = await connect(jo.timeoutMs || timeoutMs);
-    attach(nc);
+    const replay = attach(nc);
     if (tr.onPeerOpen) tr.onPeerOpen();
+    replay();
   };
 
   let rejoining = false;
@@ -169,8 +181,9 @@ export function createPeerTransport(opts = {}) {
       else if (peer.disconnected) { try { peer.reconnect(); } catch (e) { /* ignore */ } await new Promise((r) => setTimeout(r, 800)); }
       const nc = await connect(10000);
       if (conn && conn !== nc) { const old = conn; conn = null; try { old.close(); } catch (e) { /* ignore */ } }
-      attach(nc);
+      const replay = attach(nc);
       if (tr.onPeerOpen) tr.onPeerOpen();
+      replay();
     } finally { rejoining = false; }
   };
 

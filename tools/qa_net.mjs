@@ -97,11 +97,12 @@ if (argv.includes('--harness')) {
   await pg.setViewportSize({ width: 1100, height: 380 });
   pg.on('pageerror', (e) => errors.A.push(String(e)));
   pg.on('console', (m) => { if (m.type() === 'error') errors.A.push(m.text()); });
-  await pg.goto(`http://127.0.0.1:${PORT}/dev/net-two-tabs.html?harness=1&ping=${PING}&loss=${LOSS}`, { waitUntil: 'domcontentloaded' });
+  const extra = MODE === 'peer' ? `&net=peer${PEER_BIN ? `&peerHost=127.0.0.1&peerPort=${PEER_PORT}&peerSecure=0` : ''}` : MODE === 'lan' ? `&net=lan&lanHost=127.0.0.1:${RELAY_PORT}` : '';
+  await pg.goto(`http://127.0.0.1:${PORT}/dev/net-two-tabs.html?harness=1&ping=${PING}&loss=${LOSS}${extra}`, { waitUntil: 'domcontentloaded' });
   const G = () => pg.frames().find((f) => /role=guest/.test(f.url()));
   let conn = false;
-  for (let i = 0; i < 40 && !conn; i++) { await sleep(500); try { conn = await G().evaluate(() => window.__net && window.__net.state === 'connected'); } catch (e) { /* ещё грузится */ } }
-  check('стенд: гость подключился', conn);
+  for (let i = 0; i < 50 && !conn; i++) { await sleep(500); try { conn = await G().evaluate(() => window.__net && window.__net.state === 'connected'); } catch (e) { /* ещё грузится */ } }
+  check(`стенд (${MODE}): гость подключился`, conn, conn ? '' : await G().evaluate(() => document.getElementById('hud').textContent).catch(() => ''));
   await sleep(1500);
   await G().evaluate(() => { window.__track.length = 0; });
   await sleep(8000);
