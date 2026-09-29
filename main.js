@@ -222,6 +222,7 @@ function forestZoneEvents(events, snap) {
 // [FOREST] место старта из настроек: combat.setSpawn до reset (точки — world.layout.spawns)
 function applyStartZone() {
   if (typeof combat.setSpawn !== 'function' || !worldLayout || !worldLayout.spawns) return;
+  if (app.netInfo && app.netInfo.spawn) { combat.setSpawn(app.netInfo.spawn); return; } // [NET] дуэль по сети: своя точка поляны
   combat.setSpawn(settings.startZone === 'forest' ? worldLayout.spawns.forest : null);
 }
 function unlitEmbers() {
@@ -496,6 +497,9 @@ function openNet() {
           setDebug: (on) => callbacks.onDebug(on),
           onReady: (info) => {
             app.netInfo = info;
+            // [NET] хост и гость — на разных точках Поляны дуэлей (C7), друг напротив друга
+            const duel = worldLayout && worldLayout.spawns && worldLayout.spawns.duel;
+            if (Array.isArray(duel) && duel.length >= 2 && !info.spawn) info.spawn = duel[info.isHost ? 0 : 1];
             if (typeof app.onNetReady === 'function') { app.onNetReady(info); return; }
             app.introShown = true;                        // без облёта Регента
             if (app.debug) startFight(); else setScreen('camera');

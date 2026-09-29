@@ -45,6 +45,33 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     lobbyOpen: false, busy: false, oppGone: false,
   };
   const remote = createRemotePlayer({ THREE, scene, world, heroFactory, camera });
+  // значок связи в бою: соперник и пинг; при обрыве — «переподключение»
+  let badge = null, badgeKey = '', badgeAt = 0;
+  function updateBadge(now, inFight) {
+    if (now - badgeAt < 200) return;
+    badgeAt = now;
+    const net = S.net;
+    const show = inFight && !S.lobbyOpen && net && (net.state === 'connected' || net.state === 'lost');
+    if (!badge) {
+      if (!show) return;
+      badge = document.createElement('div');
+      badge.className = 'nl-badge';
+      badge.setAttribute('role', 'status');
+      badge.innerHTML = '<span class="nl-badge__dot"></span><span class="nl-badge__txt"></span>';
+      document.body.appendChild(badge);
+      import('../modules/netLobby.js').then((m) => m.ensureLobbyCss && m.ensureLobbyCss()).catch(() => {});
+    }
+    const opp = net && net.remote ? net.remote.name : 'Соперник';
+    const lost = net && net.state === 'lost';
+    const key = show ? `${lost ? 'L' : 'C'}|${opp}|${lost ? '' : Math.round(net.ping / 5) * 5}` : 'hidden';
+    if (key === badgeKey) return;
+    badgeKey = key;
+    badge.hidden = !show;
+    if (!show) return;
+    badge.classList.toggle('is-lost', !!lost);
+    badge.classList.toggle('is-slow', !lost && net.ping > 180);
+    badge.querySelector('.nl-badge__txt').textContent = lost ? `${opp} · связь потеряна — переподключение…` : `${opp} · пинг ${Math.round(net.ping)} мс`;
+  }
   remote.setVisible(true);
   let lobby = null;
   const listeners = new Set();
@@ -56,7 +83,9 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
   });
 
   // ------------------------------------------------------------ сеть
-  function bind(net) {
+  function bind(net0) {
+    // события старой сети (после «Выйти из комнаты» или смены режима) больше ничего не меняют
+    const net = { on: (t, fn) => net0.on(t, (x) => { if (S.net === net0) fn(x); }), get isHost() { return net0.isHost; }, sharedToLocal: (t) => net0.sharedToLocal(t) };
     net.on('state', (s) => {
       S.status = s;
       remote.setConnected(s !== 'lost');
@@ -213,6 +242,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     }
     // соперник виден только в бою (в меню снимка нет) и пока он в комнате
     remote.setVisible(!!snap && !!net && net.state !== 'idle' && !S.oppGone);
+    updateBadge(now, !!snap);
     // соперник: события → его модель и общий массив (data.remote = true)
     let inc = null;
     if (S.inEvents.length) { inc = S.inEvents.splice(0, S.inEvents.length); remote.pushEvents(inc); }

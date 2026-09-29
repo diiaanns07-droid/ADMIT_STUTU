@@ -5,6 +5,8 @@
 
 const STATUS_TEXT = { idle: 'Не подключено', connecting: 'Подключение…', connected: 'Соперник на связи', lost: 'Связь потеряна' };
 
+export function ensureLobbyCss() { loadCss(); }
+
 function loadCss() {
   if (document.getElementById('nl-css')) return;
   const l = document.createElement('link');

@@ -14,7 +14,7 @@
   header button { background: #2a2218; color: #f0e2c0; border: 1px solid #c4a265; padding: 3px 10px; cursor: pointer; }
   main { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; height: calc(100% - 44px); }
   iframe { width: 100%; height: 100%; border: 0; background: #000; }
-  .tag { position: absolute; top: 50px; padding: 2px 8px; background: rgba(0,0,0,.6); border: 1px solid #c4a265; font-family: Georgia, serif; pointer-events: none; }
+  .tag { position: absolute; bottom: 8px; padding: 2px 8px; background: rgba(0,0,0,.6); border: 1px solid #c4a265; font-family: Georgia, serif; pointer-events: none; }
 </style>
 </head>
 <body>
@@ -44,7 +44,7 @@
     // ?harness=1 — лёгкий стенд сети (dev/net-harness.html) вместо полной игры
     const page = q.get('harness') ? 'net-harness.html' : '../index.html';
     // ?net=lan|peer и параметры peerHost/peerPort/peerSecure/lanHost передаются в оба окна как есть
-    const pass = ['peerHost', 'peerPort', 'peerPath', 'peerSecure', 'lanHost'].filter((k) => q.has(k)).map((k) => `&${k}=${encodeURIComponent(q.get(k))}`).join('');
+    const pass = ['peerHost', 'peerPort', 'peerPath', 'peerSecure', 'lanHost', 'hero', 'near', 'auto'].filter((k) => q.has(k)).map((k) => `&${k}=${encodeURIComponent(q.get(k))}`).join('');
     const base = `${page}?debug=1&net=${q.get('net') || 'local'}&room=${room}&netReady&netPing=${ping}&netJitter=15&netLoss=${loss}${pass}`;
     document.getElementById('host').src = `${base}&netAuto=host&role=host&netName=${encodeURIComponent('Хост')}&netHero=${q.get('heroA') || 'ashen'}`;
     setTimeout(() => { document.getElementById('guest').src = `${base}&netAuto=join&role=guest&netName=${encodeURIComponent('Гость')}&netHero=${q.get('heroB') || 'ashen'}`; }, 800);
