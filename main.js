@@ -932,7 +932,7 @@ function frame(now) {
   // [NET] соперник: отправка st/ev/pr, его модель; его события (data.remote=true) и снаряды — в эффекты.
   // world и heroModel получают только свои события: иначе свой герой повторял бы чужие удары.
   let fxEvents = events, fxSnap = lastSnapshot;
-  if (netSession) { try { const r = netSession.frame(dtReal, now, lastSnapshot, input, events); fxEvents = r.events; fxSnap = r.snapshot; } catch (e) { console.warn('[NET] frame', e); } }
+  if (netSession) { try { const r = netSession.frame(dtReal, now, lastSnapshot, input, events, app.screen); fxEvents = r.events; fxSnap = r.snapshot; } catch (e) { console.warn('[NET] frame', e); } }
   try { world.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] world.update', e); }
   if (heroModel) { try { heroModel.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] heroModel.update', e); } }
   if (effects.setInput) effects.setInput(input); // [VFX] след руны в воздухе, свечение ладоней

@@ -3,7 +3,7 @@
 //
 // createNetSession({ THREE, scene, world, camera, heroFactory, heroes, settings, uiRoot, hooks })
 //   hooks: { saveSettings(patch), onReady(info), onLeave(), setDebug(on), isDebug() }
-//   → { openLobby(), closeLobby(), frame(dt, now, snap, input, events) → { events, snapshot },
+//   → { openLobby(), closeLobby(), frame(dt, now, snap, input, events, screen?) → { events, snapshot },
 //       host(mode, lanHost), join(mode, code, lanHost), setReady(on), leave(),
 //       net, remote, get active, getOpponent(), debug() }
 //
@@ -296,7 +296,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
 
   // ------------------------------------------------------------ кадр
   const EMPTY = Object.freeze([]);
-  function frame(dt, now, snap, input, events) {
+  function frame(dt, now, snap, input, events, screen) {
     const net = S.net;
     const live = net && (net.state === 'connected' || net.state === 'lost');
     let outEvents = events || EMPTY, outSnap = snap;
@@ -321,7 +321,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     }
     // соперник виден только в бою (в меню снимка нет) и пока он в комнате
     remote.setVisible(!!snap && !!net && net.state !== 'idle' && !S.oppGone);
-    updateBadge(now, !!snap);
+    updateBadge(now, !!snap && (screen === undefined || screen === 'playing' || screen === 'paused' || screen === 'intro'));
     // соперник: события → его модель и общий массив (data.remote = true)
     let inc = null;
     if (S.inEvents.length) { inc = S.inEvents.splice(0, S.inEvents.length); remote.pushEvents(inc); }
