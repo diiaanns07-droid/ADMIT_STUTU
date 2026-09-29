@@ -121,7 +121,7 @@ test('поляна ниже нуля (лес, y = −2.2): искра и сфе�
   assert(hits.includes('spark') && hits.includes('sphere'), `попадания: ${hits}`);
 });
 
-test('лук №6 (registerTarget): ледяная стрела бьёт соперника, fx замедления уходит в hit, Регент не цель', () => {
+test('лук №6 (api.pvp → projectileHit): ледяная стрела бьёт соперника, fx замедления уходит в hit, Регент не цель', () => {
   const D = makeDuel();
   D.untilPhase('fight'); D.run(1.7);
   if (!D.A.hand) return;                              // модуль лука не подключён — нечего проверять
