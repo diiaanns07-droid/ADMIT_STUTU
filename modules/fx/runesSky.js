@@ -190,7 +190,7 @@ export function register(fx) {
     // сигнал в небо: золотой росчерк вверх из ладони
     kit.after(0.08, () => {
       kit.flash(c.hand, { color: P.core, size: [0.2, 1.0], dur: 0.16, intensity: 3.5, sprite: 'star', pull: 0.6, rival: R });
-      kit.emit({ at: c.hand, dir: UP, cone: 0.04, count: 2, speed: [34, 40], life: [0.22, 0.3], size: [0.26, 0.1], ramp: 'whiteHold', intensity: 4, sprite: 'streak', stretch: 0.03, essential: true, rival: R });
+      kit.emit({ at: c.hand, dir: UP, cone: 0.04, count: 1, speed: [34, 40], life: [0.16, 0.2], size: [0.1, 0.05], ramp: ramp, intensity: 2.2, sprite: 'streak', stretch: 0.012, essential: true, rival: R }); // у камеры — тонкий росчерк, не столб
       kit.emit({ at: c.hand, dir: UP, cone: 0.55, count: 12, speed: [3, 8], life: [0.2, 0.45], size: [0.06, 0.01], ramp, intensity: 3, sprite: 'spark', stretch: 0.03, drag: 3, essential: true, rival: R });
     });
 

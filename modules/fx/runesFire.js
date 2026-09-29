@@ -106,7 +106,8 @@ export function register(fx) {
       if (fx.bolts) {
         try {
           fx.bolts.strike({ from: sky, to: tgt, color: P.mid, core: P.core, width: 0.13, branches: 6, jitter: 0.13, segments: 22, dur: 0.5, intensity: 3.4, rival, seed: (Math.random() * 1e6) | 0 });
-          fx.bolts.strike({ from: c.hand, to: tgt, color: P.mid, core: P.core, width: 0.06, branches: 3, jitter: 0.16, segments: 14, dur: 0.32, intensity: 3, rival, seed: (Math.random() * 1e6) | 0 });
+          // разряд из ладони — тонкий и короткий: он начинается у камеры, толстый ореол + bloom дают белый столб
+          fx.bolts.strike({ from: c.hand, to: tgt, color: P.mid, core: P.core, width: 0.022, branches: 1, jitter: 0.12, segments: 14, dur: 0.18, intensity: 1.8, rival, seed: (Math.random() * 1e6) | 0, origin: false });
           fx.bolts.groundArcs({ center: c.targetGround, radius: R ? 2.4 : 4.2, count: 7, dur: 0.7, color: P.mid, core: P.core, intensity: 2.4, rival });
         } catch (e) { /* ignore */ }
       } else {
