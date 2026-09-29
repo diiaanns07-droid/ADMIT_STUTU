@@ -128,6 +128,40 @@ await t('интерполяция: 15% потерь и пинг 300 мс — в�
   const r = simulateRun({ pingMs: 300, jitterMs: 40, loss: 0.15, seed: 9 });
   assert.ok(r.maxStep < 0.3, `шаг ${r.maxStep.toFixed(3)}`);
 });
+await t('интерполяция: рывок 15,6 м/с во время потерь — без скачка при коррекции', () => {
+  // круг 6 м/с, раз в 2 с рывок ×2,6 на 0,22 с (как стенд dev/net-harness.html); 60 fps
+  let worst = 0;
+  for (const seed of [11, 12, 13, 14, 15, 16, 17, 18]) {
+    let s = seed;
+    const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+    const path = [];                        // истинная траектория с шагом 1/240 с
+    let x = 0, z = 8, a = 0;
+    for (let i = 0; i <= 8 * 240; i++) {
+      const tt = i / 240, dash = (tt % 2) < 0.22 && tt > 1 ? 2.6 : 1;
+      const vx = Math.cos(a) * 6 * dash, vz = -Math.sin(a) * 6 * dash;
+      path.push({ x, z, vx, vz });
+      x += vx / 240; z += vz / 240; a += (6 / 8) / 240;
+    }
+    const arrivals = [];
+    for (let tMs = 0, seq = 0; tMs < 8000; tMs += 50, seq++) {
+      if (rnd() < 0.05) continue;
+      const p = path[Math.round(tMs * 0.24)];
+      arrivals.push({ at: tMs + 75 + (rnd() * 2 - 1) * 15, st: { seq, ts: tMs, position: { x: p.x, y: 0, z: p.z }, yaw: 0, velocity: { x: p.vx, z: p.vz } } });
+    }
+    arrivals.sort((q1, q2) => q1.at - q2.at);
+    const buf = createInterpBuffer({ delayMs: 100 });
+    let i = 0, prev = null;
+    for (let now = 0; now < 8000; now += 1000 / 60) {
+      while (i < arrivals.length && arrivals[i].at <= now) { buf.push(arrivals[i].st, arrivals[i].at); i++; }
+      const o = buf.sample(now);
+      if (!o.ok || now < 800) continue;
+      if (prev) worst = Math.max(worst, Math.hypot(o.x - prev.x, o.z - prev.z));
+      prev = { x: o.x, z: o.z };
+    }
+  }
+  // рывок сам по себе — 0,26 м за кадр; без сглаживания коррекция давала до ~0,9 м
+  assert.ok(worst < 0.4, `max шаг ${worst.toFixed(3)} м`);
+});
 await t('интерполяция: скачок > 6 м (респаун) — сразу, без «полёта»', () => {
   const buf = createInterpBuffer({ delayMs: 100 });
   for (let k = 0; k < 10; k++) buf.push({ ts: k * 50, position: { x: k < 5 ? 0 : 20, y: 0, z: 0 }, yaw: 0, velocity: { x: 0, z: 0 } }, k * 50 + 40);

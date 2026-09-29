@@ -28,7 +28,7 @@
 </header>
 <main>
   <div style="position:relative"><iframe id="host" title="Хост"></iframe><span class="tag" style="left:8px">Хост</span></div>
-  <div style="position:relative"><iframe id="guest" title="Гость"></iframe><span class="tag" style="left:calc(50% + 8px)">Гость</span></div>
+  <div style="position:relative"><iframe id="guest" title="Гость"></iframe><span class="tag" style="left:8px">Гость</span></div>
 </main>
 <script>
   // Код комнаты — свой на каждый запуск, чтобы две пары окон не мешали друг другу.
@@ -41,14 +41,19 @@
     for (let i = 0; i < 4; i++) room += A[Math.floor(Math.random() * A.length)];
     const ping = +document.getElementById('ping').value || 0;
     const loss = +document.getElementById('loss').value || 0;
-    const base = `../index.html?debug=1&net=local&room=${room}&netReady&netPing=${ping}&netJitter=15&netLoss=${loss}`;
-    document.getElementById('host').src = `${base}&netAuto=host&netName=${encodeURIComponent('Хост')}&netHero=${q.get('heroA') || 'ashen'}`;
-    setTimeout(() => { document.getElementById('guest').src = `${base}&netAuto=join&netName=${encodeURIComponent('Гость')}&netHero=${q.get('heroB') || 'ashen'}`; }, 800);
+    // ?harness=1 — лёгкий стенд сети (dev/net-harness.html) вместо полной игры
+    const page = q.get('harness') ? 'net-harness.html' : '../index.html';
+    const base = `${page}?debug=1&net=local&room=${room}&netReady&netPing=${ping}&netJitter=15&netLoss=${loss}` + (q.get('harness') ? '' : '');
+    document.getElementById('host').src = `${base}&netAuto=host&role=host&netName=${encodeURIComponent('Хост')}&netHero=${q.get('heroA') || 'ashen'}`;
+    setTimeout(() => { document.getElementById('guest').src = `${base}&netAuto=join&role=guest&netName=${encodeURIComponent('Гость')}&netHero=${q.get('heroB') || 'ashen'}`; }, 800);
     window.__room = room;
   }
   document.getElementById('restart').onclick = start;
   document.getElementById('drop').onclick = () => {
-    try { document.getElementById('host').contentWindow.__ASHEN__.netSession().net.simulateDrop(4000); } catch (e) { console.warn(e); }
+    try {
+      const w = document.getElementById('host').contentWindow;
+      (w.__net || w.__ASHEN__.netSession().net).simulateDrop(4000);
+    } catch (e) { console.warn(e); }
   };
   start();
 </script>

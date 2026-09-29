@@ -291,9 +291,11 @@ export function createNet(opts = {}) {
 
   // для отладки и тестов: обрыв «как у провода» (транспорт перестаёт доставлять)
   function simulateDrop(ms = 4000) { if (S.tr && typeof S.tr.drop === 'function') S.tr.drop(ms); }
+  // «потерял Wi-Fi»: транспорт рвёт сокет/канал сам (net об этом не просил) — проверка переподключения
+  function simulateSocketLoss() { if (S.tr && typeof S.tr.kill === 'function') S.tr.kill(); }
 
   return {
-    host, join, send, on, off, close, setProfile, simulateDrop,
+    host, join, send, on, off, close, setProfile, simulateDrop, simulateSocketLoss,
     get state() { return S.state; },
     get ping() { return Math.round(S.rtt); },
     get isHost() { return S.isHost; },
