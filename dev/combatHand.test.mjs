@@ -3,6 +3,8 @@
 // «Дождь стрел», энергия и откаты, снаряды в snapshot.projectiles, цели PvP через registerTarget.
 
 import { createCombat } from '../modules/combat.js';
+import { createPvpSession, createMemoryNetPair } from '../modules/pvp.js';
+import { config as gameConfig } from '../config.js';
 
 let pass = 0, fail = 0;
 const out = [];
@@ -212,6 +214,95 @@ test('ревью: reset возвращает генератор дождя — �
   const F = fight(); const a = run(F); F.c.reset(); F.events.length = 0; const b = run(F);
   const G = fight(); const c = run(G);
   ok(a === b && b === c, `${a} / ${b} / ${c}`);
+});
+
+// ───────── дуэль №3 [PVP]: настоящие сессии и сеть в памяти (как dev/pvp.test.mjs)
+function duel() {
+  let T = 0;
+  const clock = () => T;
+  const pair = createMemoryNetPair({ latencyMs: 30, jitterMs: 0, seed: 5, clock });
+  const cfg = { ...(gameConfig.pvp || {}) };
+  const A = createCombat({ config: {}, bossBrain: brain() }), B = createCombat({ config: {}, bossBrain: brain() });
+  const coach = () => ({ accuracy: 0.8 });
+  const sA = createPvpSession({ combat: A, net: pair.a, clock, cfg, me: { name: 'A' }, coach });
+  const sB = createPvpSession({ combat: B, net: pair.b, clock, cfg, me: { name: 'B' }, coach });
+  sA.start(); sB.start();
+  const evA = [], evB = [];
+  const D = {
+    A, B, sA, sB, evA, evB,
+    step(inA, dt = 1 / 60) {
+      T += dt * 1000; pair.pump();
+      for (const [s, c, input, ev] of [[sA, A, inA, evA], [sB, B, null, evB]]) {
+        const gi = s.beforeUpdate(I(input || {}));
+        c.update(dt, gi);
+        for (const e of s.afterUpdate(c.drainEvents())) ev.push(e);
+        s.frame();
+      }
+    },
+    run(inA, n) { for (let i = 0; i < n; i++) D.step(inA); },
+    fight(maxSec = 12) { for (let i = 0; i < maxSec * 60; i++) { if (sA.phase === 'fight' && sB.phase === 'fight') { D.run(null, 110); return true; } D.step(null); } return false; },   // + неуязвимость появления 1,5 с
+    shoot(o = {}) {
+      D.run({ bow: bowIn({ draw: 0 }) }, 2);
+      for (let k = 1; k <= 10; k++) D.step({ bow: bowIn({ draw: k / 10, element: o.element || null }) });
+      D.step({ bow: bowIn({ draw: 1, release: true, element: o.element || null }) });
+      D.run({ bow: bowIn({ phase: 'ready' }) }, o.after ?? 90);
+    },
+  };
+  return D;
+}
+const evOf = (list, t) => list.filter((e) => e.type === t);
+
+test('PvP-дуэль: стрела бьёт соперника по сети (урон × PC.dmg.arrow), Регента нет, горения тиками нет', () => {
+  const D = duel();
+  ok(D.fight(), 'бой не начался');
+  ok(D.A.getMode() === 'pvp', 'режим pvp');
+  const hp0 = D.B.getSnapshot().player.hp;
+  D.shoot({ element: 'fire' });
+  const hitB = evOf(D.evB, 'player_hit');
+  ok(hitB.length === 1, `player_hit у соперника: ${hitB.length}`);
+  ok(hitB[0].data.attackKind === 'arrow' && hitB[0].data.fx && hitB[0].data.fx.dot > 0, `kind/fx ${JSON.stringify(hitB[0].data)}`);
+  const hA = evOf(D.evA, 'arrow_hit');
+  ok(hA.length === 1 && hA[0].data.target === 'opponent' && hA[0].data.pvp === true, `arrow_hit ${JSON.stringify(hA.map((e) => e.data))}`);
+  const amt = hitB[0].data.amount, dot = hitB[0].data.fx.dot;
+  ok(Math.abs(amt - hA[0].data.damage * 0.6) < 0.2, `удар ${amt} при стреле ${hA[0].data.damage} (× 0.6)`);
+  const dmg = hp0 - D.B.getSnapshot().player.hp;
+  ok(dmg > amt + 0.5 && dmg <= amt + dot + 0.01, `горение идёт у соперника: всего ${dmg}, удар ${amt}, dot ${dot}`);
+  ok(D.B.getSnapshot().player.burning === true, 'snap.player.burning у соперника');
+  const bh = evOf(D.evA, 'boss_hit');   // подтверждение попадания от №3 (pvp: true); тиков горения отдельными ударами нет
+  ok(bh.length === 1 && bh[0].data.pvp === true && bh[0].data.source === 'arrow', `boss_hit ${JSON.stringify(bh.map((e) => e.data))}`);
+  ok(evOf(D.evA, 'projectile_impact').some((e) => e.data.kind === 'arrow' && e.data.result === 'opponent'), 'projectile_impact opponent');
+  ok(evOf(D.evA, 'projectile_impact').filter((e) => e.data.kind === 'arrow' && e.data.result !== 'floor').length === 1, 'одно projectile_impact на попадание');
+});
+test('PvP-дуэль: лёд замедляет, земля отбрасывает, молния — цепь вторым ударом', () => {
+  {
+    const D = duel(); ok(D.fight(), 'бой'); D.shoot({ element: 'frost' });
+    ok(D.B.getSnapshot().player.slowed === true, 'лёд: соперник замедлен');
+    ok(evOf(D.evB, 'pvp_status').some((e) => e.data.status === 'slow'), 'pvp_status slow');
+  }
+  {
+    const D = duel(); ok(D.fight(), 'бой');
+    D.shoot({ element: 'earth', after: 1 });
+    const z0 = D.B.getSnapshot().player.position.z;
+    D.run({ bow: bowIn({ phase: 'ready' }) }, 40);
+    const h = evOf(D.evB, 'player_hit');
+    ok(h.length === 1 && h[0].data.fx && h[0].data.fx.knock > 0, `земля: fx ${JSON.stringify(h.map((e) => e.data.fx))}`);
+    ok(Math.abs(D.B.getSnapshot().player.position.z - z0) > 0.5 || D.B.getSnapshot().player.position.z < -12.5, `отброс: z ${z0} → ${D.B.getSnapshot().player.position.z}`);
+  }
+  {
+    const D = duel(); ok(D.fight(), 'бой'); D.shoot({ element: 'storm' });
+    const h = evOf(D.evB, 'player_hit');
+    ok(h.length === 2, `молния: попаданий ${h.length}`);
+    ok(evOf(D.evA, 'hand_chain').some((e) => e.data.target === 'opponent'), 'hand_chain → opponent');
+  }
+});
+test('PvP-дуэль: сгусток двумя руками с землёй — оглушение соперника', () => {
+  const D = duel(); ok(D.fight(), 'бой');
+  D.run({ handSpell: spellIn({ element: 'earth', twoHand: true, power: 1, size: 1 }) }, 30);
+  D.step({ handSpell: spellIn({ phase: 'throw', element: 'earth', twoHand: true, power: 1, size: 1 }) });
+  D.run({}, 120);
+  const h = evOf(D.evB, 'player_hit');
+  ok(h.length >= 1 && h[0].data.attackKind === 'hand_orb' && h[0].data.fx.stun > 0, `hit ${JSON.stringify(h.map((e) => e.data))}`);
+  ok(evOf(D.evB, 'pvp_status').some((e) => e.data.status === 'stun'), 'оглушение');
 });
 
 for (const l of out) console.log(l);

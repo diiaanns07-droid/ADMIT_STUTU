@@ -11,6 +11,8 @@
 // соперник PvP (№3 [PVP]): { id, kind:'player', getPosition()→{x,y,z} (ступни), radius, height, onHit(hit) }.
 // hit = { damage, element, kind, projectileId, point, dir{x,y,z}, charged, twoHand, knockback{x,z}|null,
 //         slowSec, burnSec, burnDps, chain } — урон сопернику применяет сама цель (по сети).
+// Дуэль №3 (modules/pvp.js, api.pvp): «Регент» — капсула соперника; попадание уходит в PV.projectileHit
+// с fx стихии (огонь — dot, лёд — slow, земля — knock, сгусток двумя руками — ещё stun; молния — цепь PV.damage).
 // События (контракт C3): bow_draw_start, bow_draw {draw}, bow_release {draw, charged, element}, arrow_hit {damage, element},
 // hand_spell_form {element, power}, hand_spell_throw {element, power, dir}, hand_spell_hit {element, damage},
 // hand_spell_cancel; дополнительно: bow_cancel, bow_element {element, rune}, arrow_rain {center, radius, delay, count},
@@ -45,6 +47,8 @@ export const HAND_COMBAT_DEFAULTS = Object.freeze({
   storm: Object.freeze({ chainMul: 0.45, chainDelay: 0.18 }),
   frost: Object.freeze({ slowSec: 2.5, orbSlowSec: 3.5 }),
   earth: Object.freeze({ knockback: 6, staggerSec: 0.45, orbStunSec: 0.6 }),
+  // дуэль (№3 [PVP]): попадание по сопернику уходит в PV.projectileHit с fx стихии; урон там же × PC.dmg.arrow/hand_orb
+  pvp: Object.freeze({ dotMul: 0.55, knock: 1.6, knockTwoHand: 2.8, stunTwoHand: 0.6 }),
   drawEventStep: 0.1, drawEventMs: 90,
   lockConeDeg: 40,                   // цель стрелы/сгустка/дождя — только в этом конусе от линии прицела
 });
@@ -346,15 +350,35 @@ export function createCombatHand(api, patch = {}) {
     S.stats.damage += dealt;
     return dealt;
   }
+  function pvpOf() { try { return api.pvp || null; } catch (e) { return null; } }
+  // fx стихии для соперника в дуэли (PV.applyRemoteHit у жертвы: dot — урон за PC.dotTime, slow/knock/stun — с потолками PC)
+  function pvpFx(pr) {
+    const el = pr.element, P = K.pvp, two = pr.kind === 'hand_orb' && !!pr.twoHand;
+    if (el === 'fire') return { dot: K.fire.burnDps * K.fire.burnSec * (pr.twoHand ? 1.6 : 1) * P.dotMul };
+    if (el === 'frost') return { slow: pr.kind === 'hand_orb' ? K.frost.orbSlowSec : K.frost.slowSec };
+    if (el === 'earth') return two ? { knock: P.knockTwoHand, stun: P.stunTwoHand } : { knock: P.knock };
+    return null;
+  }
+  function pvpHit(pv, pr, point, dir) {
+    const el = pr.element, fx = pvpFx(pr);
+    // PV.projectileHit сам шлёт hit сопернику (урон × PC.dmg[kind]) и даёт projectile_impact result 'opponent'
+    pv.projectileHit({ id: pr.id, kind: pr.kind, pvpKind: pr.kind, element: el, damage: pr.damage, velocity: vcopy(pr.velocity), radius: pr.radius, power: pr.power, fx }, point);
+    if (!playing()) return;
+    if (fx) emit('element_apply', point, { element: el, target: 'opponent', duration: el === 'fire' ? K.fire.burnSec : el === 'frost' ? fx.slow : (fx.stun || K.earth.staggerSec), knockback: fx.knock ? { x: dir.x * fx.knock, z: dir.z * fx.knock } : null, pvp: true });
+    if (el === 'storm') S.chains.push({ t: S.time + K.storm.chainDelay, amount: pr.damage * K.storm.chainMul, from: vcopy(point), exclude: 'boss', element: 'storm', kind: pr.kind });
+  }
   function applyHit(pr, tgt, point) {
     const kind = pr.kind, el = pr.element;
     const dir = (() => { const v = pr.velocity, l = Math.hypot(v.x, v.y, v.z) || 1; return vec(v.x / l, v.y / l, v.z / l); })();
     const kb = el === 'earth' ? { x: dir.x * K.earth.knockback, z: dir.z * K.earth.knockback } : null;
     const source = kind === 'arrow' ? 'arrow' : 'hand_orb';
-    emit('projectile_impact', point, { owner: 'player', kind, projectileId: pr.id, result: tgt.kind === 'boss' ? 'boss' : 'player', element: el, radius: pr.radius, velocity: vcopy(pr.velocity) });
+    const pv = tgt.kind === 'boss' ? pvpOf() : null;   // в дуэли «boss» — капсула соперника (pvp.js двигает BOSS)
+    if (!pv) emit('projectile_impact', point, { owner: 'player', kind, projectileId: pr.id, result: tgt.kind === 'boss' ? 'boss' : 'player', element: el, radius: pr.radius, velocity: vcopy(pr.velocity) });
     // C3-событие попадания — до урона: смертельный удар тоже его даёт (после исхода emit молчит)
-    if (kind === 'arrow') { S.stats.arrowHits++; emit('arrow_hit', point, { damage: pr.damage, element: el, charged: !!pr.charged, target: tgt.kind, targetId: tgt.ref ? tgt.ref.id : 'boss', projectileId: pr.id, draw: pr.draw, rain: !!pr.rainDrop }); }
-    else { S.stats.orbHits++; emit('hand_spell_hit', point, { element: el, damage: pr.damage, twoHand: !!pr.twoHand, target: tgt.kind, targetId: tgt.ref ? tgt.ref.id : 'boss', projectileId: pr.id, power: pr.power, radius: pr.radius }); }
+    const tk = pv ? 'opponent' : tgt.kind, tid = pv ? 'opponent' : tgt.ref ? tgt.ref.id : 'boss';
+    if (kind === 'arrow') { S.stats.arrowHits++; emit('arrow_hit', point, { damage: pr.damage, element: el, charged: !!pr.charged, target: tk, targetId: tid, projectileId: pr.id, draw: pr.draw, rain: !!pr.rainDrop, pvp: !!pv }); }
+    else { S.stats.orbHits++; emit('hand_spell_hit', point, { element: el, damage: pr.damage, twoHand: !!pr.twoHand, target: tk, targetId: tid, projectileId: pr.id, power: pr.power, radius: pr.radius, pvp: !!pv }); }
+    if (pv) { pvpHit(pv, pr, point, dir); return; }
     if (tgt.kind === 'boss') {
       dealBoss(pr.damage, source, point, { kind, projectileId: pr.id, element: el, charged: !!pr.charged, twoHand: !!pr.twoHand });
       if (!playing()) return;
@@ -412,8 +436,10 @@ export function createCombatHand(api, patch = {}) {
       const all = allTargets();
       let tgt = all.find((t) => t.key !== c.exclude) || all.find((t) => t.key === c.exclude);
       if (!tgt || !playing()) continue;
-      emit('hand_chain', tgt.aim, { from: c.from, to: vcopy(tgt.aim), element: 'storm', target: tgt.kind });
-      if (tgt.kind === 'boss') dealBoss(c.amount, 'chain', tgt.aim, { element: 'storm', chain: true });
+      const pv = tgt.kind === 'boss' ? pvpOf() : null;
+      emit('hand_chain', tgt.aim, { from: c.from, to: vcopy(tgt.aim), element: 'storm', target: pv ? 'opponent' : tgt.kind, pvp: !!pv });
+      if (pv) pv.damage(c.amount, 'chain', tgt.aim, { kind: c.kind || 'arrow', element: 'storm', chain: true });   // дуэль: тот же множитель, что у стрелы/сгустка
+      else if (tgt.kind === 'boss') dealBoss(c.amount, 'chain', tgt.aim, { element: 'storm', chain: true });
       else if (tgt.ref && typeof tgt.ref.onHit === 'function') { try { tgt.ref.onHit({ damage: c.amount, element: 'storm', kind: 'chain', projectileId: null, point: vcopy(tgt.aim), dir: vec(0, 0, 0), chain: true }); } catch (e) { /* ignore */ } }
     }
     S.chains = keep;
