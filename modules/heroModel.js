@@ -70,7 +70,7 @@ export const HEROES = Object.freeze({
     desc: ['Последний магистр Грозовой коллегии.', 'Посох-громоотвод и плащ, прошитый рунами.', 'Лепит сферы молний двумя руками.'],
     gear: 'magus', stance: 'staff', adduct: 0.3, menuStance: 'Stance',
     lashes: 0x5a524a,
-    fx: { style: 'storm', color: 0x8fd0ff, color2: 0xe8f6ff, armor: 0x6fc0ff, armorK: 1.6, armorMode: 'seams', eyes: 0x9fdcff, eyesK: 0.3 },
+    fx: { style: 'storm', color: 0x8fd0ff, color2: 0xe8f6ff, armor: 0x6fc0ff, armorK: 1.6, armorMode: 'seams', eyes: 0x9fdcff, eyesK: 0.16 },
   },
 });
 // прежние аниме-героини VRoid: не в меню и не в лобби (HEROES), но setHero их знает
