@@ -30,21 +30,37 @@ export const HEROES = Object.freeze({
     desc: ['Клятвенный страж павшего святилища.', 'Латы из закалённой стали, посох с углём клятвы.', 'Держит удар и отвечает огнём.'],
     gear: 'warden', stance: 'staff', adduct: 0.3, menuStance: 'Stance',
   },
+  // [HERO] V6: эльфийка и чародейка — реалистичные (тело и костюм Quaternius Ranger, перекраска, своё снаряжение)
   elf: {
-    id: 'elf', name: 'Эльфийка', vrm: 'elf.vrm', height: 1.72, cls: 'Лучница-заклинательница', element: 'Гроза',
+    id: 'elf', name: 'Эльфийка', vrm: null, glb: 'ranger.glb', height: 1.74, cls: 'Лучница-заклинательница', element: 'Гроза',
     desc: ['Следопыт Сияющего леса.', 'Лук из белого ясеня и перстни-руны на пальцах.', 'Бьёт издалека и уходит рывком.'],
-    gear: 'ranger', stance: 'bow', menuStance: 'IdleCalm',
+    gear: 'sylvan', stance: 'bow', adduct: 0.3, menuStance: 'IdleCalm', ears: true, hair: { color: 0xe6dcc0, len: 0.95 },
+    // зелёная ткань → белый шёлк с бирюзой, кожа доспеха → светлая замша
+    recolor: { MI_Ranger: [{ h: [65, 175], toH: 172, s: 0.35, v: 1.55 }, { h: [8, 48], toH: 38, s: 0.55, v: 1.45 }] },
   },
   dark: {
-    id: 'dark', name: 'Тёмная чародейка', vrm: 'dark.vrm', height: 1.7, cls: 'Чародейка', element: 'Тьма и лёд',
+    id: 'dark', name: 'Тёмная чародейка', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Чародейка', element: 'Тьма и лёд',
     desc: ['Изгнанница из башни Затмения.', 'Посох с кристаллом ночи, плащ с живыми рунами.', 'Сковывает льдом и рвёт тьмой.'],
-    gear: 'witch', stance: 'staff', menuStance: 'CastHold',
+    gear: 'witchQ', stance: 'staff', adduct: 0.3, menuStance: 'CastHold', hide: ['Female_Ranger_Acc_Pauldrons'], hair: { color: 0x1c1426, len: 1.05 },
+    // зелёная ткань → глубокий фиолетовый, кожа → почти чёрная
+    recolor: { MI_Ranger: [{ h: [65, 175], toH: 272, s: 1.1, v: 0.62 }, { h: [8, 48], toH: 255, s: 0.35, v: 0.42 }] },
+  },
+  // прежние аниме-героини VRoid (в меню не показываются; heroShading 'anime' — как было)
+  elfVroid: {
+    id: 'elfVroid', name: 'Эльфийка (VRoid)', vrm: 'elf.vrm', height: 1.72, cls: 'Лучница-заклинательница', element: 'Гроза',
+    desc: ['Следопыт Сияющего леса.', 'Аниме-модель VRoid (CC0).', 'Прежний вид героини.'],
+    gear: 'ranger', stance: 'bow', menuStance: 'IdleCalm', hidden: true,
+  },
+  darkVroid: {
+    id: 'darkVroid', name: 'Тёмная чародейка (VRoid)', vrm: 'dark.vrm', height: 1.7, cls: 'Чародейка', element: 'Тьма и лёд',
+    desc: ['Изгнанница из башни Затмения.', 'Аниме-модель VRoid (CC0).', 'Прежний вид героини.'],
+    gear: 'witch', stance: 'staff', menuStance: 'CastHold', hidden: true,
   },
   // [HERO] новые герои (Quaternius Modular Fantasy, CC0)
   ranger: {
     id: 'ranger', name: 'Лучница', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Лучница', element: 'Ветер',
     desc: ['Разведчица пограничных застав.', 'Капюшон следопыта, длинный лук и колчан за спиной.', 'Натягивает тетиву рукой — стрела летит в цель.'],
-    gear: 'scout', stance: 'bow', adduct: 0.3, menuStance: 'IdleCalm',
+    gear: 'scout', stance: 'bow', adduct: 0.3, menuStance: 'IdleCalm', hair: { color: 0x5a3220, len: 0.85 },
   },
   archmage: {
     id: 'archmage', name: 'Архимаг', vrm: null, glb: 'wizard.glb', height: 1.8, cls: 'Архимаг', element: 'Буря',
@@ -53,7 +69,7 @@ export const HEROES = Object.freeze({
   },
 });
 // порядок карточек в меню (№8 может брать отсюда)
-export const HERO_ORDER = Object.freeze(['ashen', 'elf', 'dark', 'ranger', 'archmage']);
+export const HERO_ORDER = Object.freeze(['ashen', 'elf', 'dark', 'ranger', 'archmage']); // elfVroid/darkVroid — скрытые
 
 // Клипы: [имя в игре, файл, имя клипа в файле, петля]. Первый найденный файл — основной.
 const KAY = 'anims_kaykit.glb';
@@ -182,7 +198,7 @@ export function createHeroModel({
   const S = {
     ready: false, disposed: false, hero: 'ashen', token: 0, lean: 0, recoil: 0, prevYaw: null, yawRate: 0,
     blinkT: 2, blink: 0, phase: 0, idleT: 0, lookT: 3, look: 0, lookWant: 0, chestTwist: 0, lod: 0, lodAcc: 0,
-    wLoco: { Idle: 1, Walk: 0, Run: 0, WalkBack: 0, StrafeL: 0, StrafeR: 0 }, stun: 0,
+    wLoco: { Idle: 1, Walk: 0, Run: 0, WalkBack: 0, StrafeL: 0, StrafeR: 0 }, stun: 0, autoLod: true,
   };
   let cur = null;   // { model, vrm, mixer, full, upper, stride, gear, shade, bones }
   let act = null, actName = '', actUntil = 0, actUpper = false, holdName = '';
@@ -259,7 +275,7 @@ export function createHeroModel({
   async function setHero(id) {
     let def = HEROES[id] || HEROES.ashen;
     // удалённый экземпляр не может взять процедурное тело мира: страж — на запасной модели
-    if (!def.vrm && !def.glb && !heroBody) def = { ...def, vrm: HEROES.dark.vrm, height: 1.78, fallbackOf: def.id };
+    if (!def.vrm && !def.glb && !heroBody) def = { ...def, glb: HEROES.ashen.glb, height: 1.84, fallbackOf: def.id };
     if (def.id === S.hero && (S.ready || (!def.vrm && !def.glb))) return;
     const token = ++S.token;
     S.hero = def.id;
@@ -268,6 +284,8 @@ export function createHeroModel({
     try {
       const url = def.glb ? new URL(def.glb, heroesBase).href : new URL(def.vrm, new URL(vrmUrl, base)).href;
       const vrm = def.glb ? await loadHumanoidGLB(THREE, url) : await loadVRM(THREE, url);
+      if (def.recolor) await recolorHero(vrm, def.recolor);
+      if (def.hide) vrm.scene.traverse((o) => { if (o.isMesh && def.hide.some((n) => o.name.startsWith(n))) o.visible = false; });
       if (S.disposed || token !== S.token) { disposeVrm(vrm); return; }
       const lib = await buildClips(THREE, vrm, url, libUrls);
       if (S.disposed || token !== S.token) { disposeVrm(vrm); return; }
@@ -338,6 +356,22 @@ export function createHeroModel({
   // [HERO] модель не загрузилась: страж — процедурное тело мира, прочие — запасная модель
   void disposeVrm;
 
+  // перекраска атласа костюма (heroShading.recolorTexture) — у каждого экземпляра своя текстура
+  async function recolorHero(vrm, rules) {
+    try {
+      const m = await import('./heroShading.js');
+      vrm.scene.traverse((o) => {
+        if (!o.isMesh) return;
+        for (const mt of [].concat(o.material)) {
+          const R = mt && rules[mt.name];
+          if (!R || !mt.map || mt.userData.recolored) continue;
+          const nt = m.recolorTexture(THREE, mt.map, R);
+          if (nt !== mt.map) { mt.map = nt; mt.userData.recolored = true; mt.needsUpdate = true; }
+        }
+      });
+    } catch (e) { console.warn('[HERO] перекраска', e && e.message); }
+  }
+
   async function dressUp(token) {
     if (!cur) return;
     const c = cur;
@@ -354,7 +388,7 @@ export function createHeroModel({
       const add = c.def.adduct ?? 0.22; // та же поза рук, что в игре (см. applyLife)
       adduct(c.bones.leftUpperArm, -add); adduct(c.bones.rightUpperArm, add);
       c.vrm.update(0);
-      c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading });
+      c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null });
       if (c.full.Idle) c.full.Idle.stop();
     } catch (e) { console.warn('[HERO] heroGear недоступен, без снаряжения:', e && e.message); }
   }
@@ -372,7 +406,9 @@ export function createHeroModel({
     if (cur && cur.gear && cur.gear.setQuality) cur.gear.setQuality(q);
   }
   // LOD: 0 — полный, 1 — пружины и ткань через кадр, без теней, 2 — без пружин, 10 Гц анимации
-  function setLod(level) {
+  const _lodV = new THREE.Vector3();
+  function setLod(level) { S.autoLod = false; applyLod(level); }
+  function applyLod(level) {
     const l = clamp(Math.round(num(level, 0)), 0, 2);
     if (l === S.lod) return;
     S.lod = l;
@@ -471,6 +507,7 @@ export function createHeroModel({
     bone.updateWorldMatrix(false, false);
   }
   const RL = new THREE.Vector3(1, 0, 0), RR = new THREE.Vector3(-1, 0, 0);
+  const _aimV = new THREE.Vector3(), _upV = new THREE.Vector3();
   const dA = new THREE.Vector3(), dB = new THREE.Vector3();
   function applyPose(dt) {
     const B = cur.bones;
@@ -492,6 +529,19 @@ export function createHeroModel({
       aimBone(B.rightUpperArm, RR, dB, w);
       dB.set(0.2 + 0.9 * d, 0.1 + 0.1 * d + ay * 0.3, 1 - 0.6 * d); // предплечье: к тетиве → к щеке
       aimBone(B.rightLowerArm, RR, dB, w);
+    }
+    // лук из-за спины — в левую руку (рукоять в кулаке, тетивой к лучнику)
+    if (cur.gear && cur.gear.setBowHeld && cur.gear.bow) {
+      const held = pose.wBow > 0.35 || (pose.bowHeld && pose.wBow > 0.2);
+      pose.bowHeld = held;
+      if (held) {
+        cur.vrm.scene.updateMatrixWorld(true);
+        B.leftUpperArm.getWorldPosition(_v2);
+        anchors.handL.getWorldPosition(_aimV);
+        _aimV.sub(_v2).normalize();
+        cur.model.getWorldQuaternion(_qm); _upV.set(0, 1, 0);
+        cur.gear.setBowHeld(true, anchors.handL, _aimV, _upV);
+      } else cur.gear.setBowHeld(false);
     }
     // чары рукой: обе ладони перед грудью, сфера между ними; с силой руки расходятся
     if (pose.wSpell > 0.01 && pose.wBow < 0.9) {
@@ -582,6 +632,13 @@ export function createHeroModel({
     if (ownRoot && P && P.position) {
       root.position.set(num(P.position.x), num(P.position.y), num(P.position.z));
       root.rotation.y = num(P.yaw, root.rotation.y);
+    }
+    // LOD по расстоянию до камеры (configureHeroes({ camera })); setLod() вручную выключает авто
+    if (S.autoLod && defaults.camera && (S.lodTick = (S.lodTick || 0) + 1) % 15 === 0) {
+      root.getWorldPosition(_lodV);
+      const d = _lodV.distanceTo(defaults.camera.position);
+      const want = d > 55 ? 2 : d > 28 ? 1 : 0;
+      if (want !== S.lod) applyLod(want);
     }
     // LOD: реже обновляем удалённого/дальнего героя
     if (S.lod >= 2) { S.lodAcc += dt; if (S.lodAcc < 0.1) return; dt = S.lodAcc; S.lodAcc = 0; }

@@ -15,8 +15,17 @@ import { encodeState, decodeState, encodeEvent, decodeEvent, encodeProjectiles, 
 import { createRemotePlayer } from '../modules/remotePlayer.js';
 
 const ST_EVERY_MS = 50;    // 20 Гц
+const LAST_KEY = 'ashen-oath.net.last';
+const LAST_TTL_MS = 15 * 60 * 1000;   // хост перезагрузил страницу — та же комната ещё 15 минут
+function readLast() {
+  try { const v = JSON.parse(localStorage.getItem(LAST_KEY) || 'null'); return v && Date.now() - v.at < LAST_TTL_MS && isValidRoomCode(v.code) ? v : null; } catch (e) { return null; }
+}
+function saveLast(code, role, mode) { try { localStorage.setItem(LAST_KEY, JSON.stringify({ code, role, mode, at: Date.now() })); } catch (e) { /* ignore */ } }
 const PR_EVERY_MS = 100;   // 10 Гц
 const START_DELAY_MS = 3200;
+// эти события effects.js пока рисует у СВОЕГО героя (шлейф рывка, вспышка оберега на груди, толчок камеры) —
+// до поддержки remote в эффектах (effects.supportsRemote === true, №7) они идут только модели соперника
+const FX_LOCAL_ONLY = new Set(['player_dash', 'ward_start', 'ward_end', 'bastion_start', 'bastion_end']);
 
 function urlOpts() {
   const o = {};
@@ -128,7 +137,11 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     changed();
     const net = newNet(mode);
     try {
-      const code = await net.host({ code: U.auto === 'host' && isValidRoomCode(U.room || '') ? U.room : undefined });
+      // тот же код, что и до перезагрузки страницы (гость переподключится сам); занят — будет новый
+      const last = readLast();
+      const want = U.auto === 'host' && isValidRoomCode(U.room || '') ? U.room : last && last.role === 'host' && last.mode === mode ? last.code : undefined;
+      const code = await net.host({ code: want });
+      saveLast(code, 'host', mode);
       S.message = 'Комната создана. Продиктуйте код сопернику.';
       return code;
     } catch (e) {
@@ -147,9 +160,20 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     S.busy = true;
     S.message = `Входим в комнату ${code}…`;
     changed();
-    const net = newNet(mode);
+    let net = newNet(mode);
     try {
-      await net.join(code);
+      // комната могла ещё не успеть зарегистрироваться (гость быстрее хоста) — ещё две попытки
+      for (let i = 0; ; i++) {
+        try { await net.join(code); break; }
+        catch (e) {
+          if (!(e && e.code === 'room_not_found') || i >= 2 || S.net !== net) throw e;
+          S.message = `Комната ${code} пока не найдена — пробуем ещё раз…`; changed();
+          await new Promise((r) => setTimeout(r, 1500));
+          if (S.net !== net) throw e;
+          net = newNet(mode);
+        }
+      }
+      saveLast(code, 'guest', mode);
       S.message = 'Вы в комнате.';
       return true;
     } catch (e) {
@@ -247,7 +271,11 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     let inc = null;
     if (S.inEvents.length) { inc = S.inEvents.splice(0, S.inEvents.length); remote.pushEvents(inc); }
     remote.update(dt);
-    if (inc && inc.length) outEvents = outEvents.length ? outEvents.concat(inc) : inc;
+    if (inc && inc.length) {
+      const fxOk = typeof hooks.fxSupportsRemote === 'function' && hooks.fxSupportsRemote();
+      const fxInc = fxOk ? inc : inc.filter((e) => !FX_LOCAL_ONLY.has(e.type));
+      if (fxInc.length) outEvents = outEvents.length ? outEvents.concat(fxInc) : fxInc;
+    }
     // снаряды соперника: последний снимок + экстраполяция по скорости
     if (S.remoteProj.length && snap) {
       const age = now - S.remoteProjAt;
@@ -257,6 +285,11 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
         const list = S.remoteProj.map((p) => ({ ...p, position: { x: p.position.x + p.velocity.x * lead, y: p.position.y + p.velocity.y * lead, z: p.position.z + p.velocity.z * lead } }));
         outSnap = { ...snap, projectiles: (snap.projectiles || []).concat(list) };
       }
+    }
+    // C4: snap.opponent для эффектов (якоря соперника у №7), пока №3 не заполнил его в самом бою
+    if (outSnap && !outSnap.opponent && net && net.state !== 'idle' && !S.oppGone) {
+      const opp = remote.getState();
+      if (opp) outSnap = { ...outSnap, opponent: opp };
     }
     return { events: outEvents, snapshot: outSnap };
   }
@@ -271,6 +304,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
       opponent: net && net.remote ? { ...net.remote, heroName: heroes && heroes[net.remote.hero] ? heroes[net.remote.hero].name : net.remote.hero } : null,
       meReady: S.meReady, oppReady: S.oppReady, startIn: S.startAt ? Math.max(0, S.startAt - performance.now()) : 0, started: S.started,
       name: p.name, hero: p.hero, lanHost: S.lanHost, https: typeof location !== 'undefined' && location.protocol === 'https:',
+      lastCode: (() => { const l = readLast(); return l && l.role === 'guest' ? l.code : ''; })(),
       heroes: heroes ? Object.values(heroes).map((h) => ({ id: h.id, name: h.name })) : [],
       showLocal: S.mode === 'local' || U.transport === 'local' || !!(hooks.isDebug && hooks.isDebug()),
     };

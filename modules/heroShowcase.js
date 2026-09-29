@@ -57,6 +57,7 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
   function update(dt, active, camera) {
     S.t += dt;
     const want = active ? 1 : 0;
+    if (S.t === dt && active) S.w = 1;               // первый кадр в меню — сразу полный свет
     S.w += (want - S.w) * (1 - Math.exp(-(active ? 3 : 6) * dt));
     const w = S.w;
     group.visible = w > 0.01;

@@ -246,7 +246,12 @@
   у своего героя (например, шлейф рывка берёт `fi.player`) — для remote берите `ev.position` или якоря
   `netSession.remote.getAnchors()` (C5: handL, handR, chest, head, bowSocket, staffTip) и цвет соперника.
   Снаряды соперника добавляются в `snapshot.projectiles` для effects: `owner:'opponent'`, `remote:true`, id `r:…`.
+  Пока №3 не заполняет `snap.opponent` в бою, сеть сама кладёт его в снимок для effects (из `remote.getState()`),
+  так что `resolveAnchor(…, remote)` у №7 уже получает позицию соперника.
   world.js и свой heroModel события соперника НЕ получают (иначе свой герой повторял бы чужие удары).
+  Пока в API effects нет `supportsRemote: true`, события `player_dash`, `ward_*`, `bastion_*` соперника в effects
+  не передаются (сейчас они рисуются у своего героя: шлейф рывка, вспышка на груди, толчок камеры). Сделаете их
+  по `ev.position`/якорям соперника — выставьте `supportsRemote: true` в возвращаемом объекте effects.
 - **Для №8 [BDO]:** лобби — `modules/netLobby.css` (классы `nl-*`), уже на токенах `--bdo-*`; кнопка в меню —
   одна строка `netBtn` в ui.js с тегом [NET], стиль подтягивайте как хотите.
 - **Транспорты:** `'peer'` — PeerJS 1.5.5 (DEPS.peerjs, облако 0.peerjs.com, ID `ashen-oath-v1-<КОД>`, STUN Google,
@@ -318,3 +323,28 @@ DEBUG-клавиши, поза процедурного героя), `modules/co
   `element_apply`, `bow_draw`, `bow_cancel`, `bow_element` — соперник не видит круг дождя стрел и цепь молнии.
 - **PVP (№3) / C4 lockTarget:** стрелы и сгустки выбирают цель сами (Регент + цели `registerTarget`, ближайшая к линии прицела);
   если в дуэли нужна именно `snap.lockTarget`, зарегистрируйте соперника — этого достаточно.
+
+## V6 · [VFX] «больше магии» — эффекты рун и заклинаний (№7, в работе)
+- **База `modules/fx/`** поверх `modules/effects.js` (старые эффекты — откат; настройка `fxMagic: true`, `false` — как раньше):
+  - `fx/kit.js` — GPU-частицы одним InstancedMesh (физика в вершинном шейдере: снос, сопротивление, гравитация,
+    турбулентность, закрутка вокруг оси, земля; цвет по жизни — градиенты, форма — атлас 16 спрайтов; аддитив и дым
+    одним проходом с премультипликацией); пул 0/2/3 PointLight (low/medium/high); акторы и таймлайн; экранная вспышка;
+    тряска/толчок камеры и хит-стоп (main.js берёт `effects.takeHitStop()`); мост к волне искажения postfx
+    (`queueShockwave`, если №8 его экспортирует). Ёмкость частиц: low 1400 / medium 4200 / high 8000
+    (+ старые пулы effects.js ≤ 950 на medium, итого < 6000).
+  - `fx/glyph.js` — магические круги (один draw call): кольца, руны по окружности, раскрытие, вращение, стили
+    rune/clock/hex/sigil; символ в центре — из SDF-атласа 20 знаков (10 рун, печати, стихии, лук); `runeStroke(id)`.
+  - `fx/bolts.js` — ветвящиеся молнии, треск, дуги по земле (один draw call).
+  - `fx/trails.js`, `fx/decals.js`, `fx/shock.js`, `fx/shieldHex.js` — ленты-следы, декали (ожог, кратер, иней, трещины…),
+    ударные волны и марево, гексагональный щит/купол.
+  - `fx/index.js` — реестр: обработчик V6 возвращает `true` — старый эффект пропускается; любая ошибка — старый эффект.
+  - Хореографии: `fx/runesFire.js` (▲ ϟ), `fx/runesLight.js` (○ ∞ ℓ), `fx/runesSky.js` (★ ⧗), `fx/runesWild.js` (@ ^ V),
+    `fx/sigils.js` (печати, искра, рассечение, выброс, сфера/призма), `fx/handMagic.js` (ладони, руна в воздухе),
+    `fx/bowHand.js` (лук и магия ладони по C3), `fx/combatFx.js` (удары по материалам, щит, появление/смерть, PvP).
+  - PvP: события с `data.remote = true` рисуются от соперника к нашему герою в холодном фиолетовом.
+- **Хуки в общих файлах** (все с тегом `[VFX]`): `main.js` — `effects.setAnchors` (C5 `heroModel.getAnchors()` →
+  `world.getAnchors()`), `effects.setGround(layout.groundY)`, `effects.setInput(input)` перед `effects.update`,
+  хит-стоп после него, `fxMagic` в `sanitizeSettings`, `__ASHEN__.fx()`; `config.js` — `fxMagic: true`.
+- **Проверка:** стенд `dev/effects_testbench.html` (кнопка на каждое заклинание, мс/частицы/draw calls, PvP, стресс);
+  снимки — `node dev/fx_shots.mjs --page "dev/effects_testbench.html?shot=1" --script ignis,fulgur --times 0.2,0.5`;
+  в игре — `node dev/fx_game.mjs --out DIR` (DEBUG-бой, руны клавишами, ошибки консоли).

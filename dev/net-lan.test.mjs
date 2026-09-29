@@ -75,7 +75,7 @@ await t('lan: обрыв 3 с → lost → связь вернулась; ухо
   const t0 = Date.now();
   B.simulateDrop(4000);
   assert.ok(await until(() => A.state === 'lost' && B.state === 'lost', 4500));
-  assert.ok(Date.now() - t0 >= 2900, `${Date.now() - t0} мс`);
+  assert.ok(Date.now() - t0 >= 2000 && Date.now() - t0 <= 3600, `${Date.now() - t0} мс`);
   assert.ok(await until(() => A.state === 'connected' && B.state === 'connected', 5000));
   // гость ушёл по-настоящему → хост ждёт, новый гость входит по тому же коду
   B.close();
