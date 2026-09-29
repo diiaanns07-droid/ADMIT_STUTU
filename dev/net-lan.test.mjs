@@ -108,6 +108,25 @@ await t('lan: гость переподключается сам, если со�
   A.close(); B.close();
 });
 
+await t('lan + имитация сети (пинг 150 мс, 5% потерь): пинг похож, ненадёжные теряются, надёжные — все и по порядку', async () => {
+  const sim = { pingMs: 150, jitterMs: 10, loss: 0.05 };
+  const A = createNet({ transport: 'lan', lanHost, name: 'A', sim });
+  const B = createNet({ transport: 'lan', lanHost, name: 'B', sim });
+  const code = await A.host();
+  await B.join(code);
+  assert.ok(await until(() => A.state === 'connected' && A.ping > 0, 4000));
+  await sleep(1200);
+  assert.ok(A.ping > 110 && A.ping < 230, `ping ${A.ping}`);
+  const st = [], ev = [];
+  A.on('st', (m) => st.push(m.s));
+  A.on('ev', (m) => ev.push(m.e.i));
+  for (let i = 0; i < 200; i++) { B.send('st', { s: i }); if (i % 5 === 0) B.send('ev', { e: { i } }); }
+  await sleep(600);
+  assert.ok(st.length >= 170 && st.length < 200, `st ${st.length}/200`);
+  assert.deepEqual(ev, [...Array(40).keys()].map((k) => k * 5), 'надёжные ev — все и по порядку');
+  A.close(); B.close();
+});
+
 relay.kill();
 console.log(`\nnet-lan: ${pass} проверок пройдено${process.exitCode ? ', ЕСТЬ ОШИБКИ' : ''}`);
 setTimeout(() => process.exit(process.exitCode || 0), 100);

@@ -442,6 +442,8 @@ export function createAtmosphere({ THREE, scene, renderer, camera, parent, G, M,
     mat.envMapIntensity = intensity;
     if (!envMats.includes(mat)) envMats.push(mat);
   }
+  // [HERO] снять материал с учёта (герой сменился/удалён) — иначе материалы героев копятся в envMats
+  function releaseEnv(mat) { const i = envMats.indexOf(mat); if (i >= 0) envMats.splice(i, 1); }
 
   /* ----------------------------- Световые столбы ----------------------------- */
   const rays = new THREE.Group();
@@ -747,7 +749,7 @@ varying vec3 vAshWorldPos;`;
   setQuality(quality);
   return {
     sunDir, keyDir, sunBase, keyBase, skyRadius, get envTexture() { return envTexture; },
-    fogColor: fog.color, useEnv, patchLit, patchUnlit, flash, update, setQuality, configure, dispose, setLocalClear,
+    fogColor: fog.color, useEnv, releaseEnv, patchLit, patchUnlit, flash, update, setQuality, configure, dispose, setLocalClear,
     setZoneMood, get zoneMood() { return mood.w; },  // [BDO]
     get yaw() { return state.follow; },
   };

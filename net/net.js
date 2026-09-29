@@ -120,6 +120,7 @@ export function createNet(opts = {}) {
           return;
         case 'bye':
           S.remote = null;
+          S.everOpen = false;              // следующий гость — новое 'open', а не 'reconnected'
           setState(S.isHost ? 'connecting' : 'idle');
           emit('left', msg);
           if (!S.isHost) teardown();
@@ -136,8 +137,30 @@ export function createNet(opts = {}) {
     tr.onError = (err) => emit('error', err);
   }
 
+  // имитация плохой сети для 'lan'/'peer' (у 'local' своя): только если заданы ?netPing/?netLoss или opts.sim.
+  // Ненадёжные (st, pr, ping, pong) теряются с долей loss, всё — с задержкой ping/2 ± jitter, надёжные — по порядку.
+  const SIM = kind === 'local' ? null : (() => {
+    const q = (() => { try { return new URLSearchParams(location.search); } catch (e) { return null; } })();
+    const o = { pingMs: 0, jitterMs: 0, loss: 0, ...(opts.sim || {}) };
+    if (q && q.has('netPing')) o.pingMs = Math.max(0, +q.get('netPing') || 0);
+    if (q && q.has('netJitter')) o.jitterMs = Math.max(0, +q.get('netJitter') || 0);
+    if (q && q.has('netLoss')) o.loss = Math.min(0.9, Math.max(0, +q.get('netLoss') || 0));
+    return o.pingMs > 0 || o.loss > 0 ? o : null;
+  })();
+  let simLastReliable = 0;
+  function simSend(obj) {
+    const unreliable = obj.t === 'st' || obj.t === 'pr' || obj.t === 'ping' || obj.t === 'pong';
+    if (unreliable && SIM.loss > 0 && Math.random() < SIM.loss) return true;
+    let at = nowMs() + Math.max(0, SIM.pingMs / 2 + (Math.random() * 2 - 1) * SIM.jitterMs);
+    if (!unreliable) { at = Math.max(at, simLastReliable + 0.5); simLastReliable = at; }
+    const tr = S.tr;
+    setTimeout(() => { if (S.tr === tr && tr) { try { tr.send(obj); } catch (e) { /* ignore */ } } }, at - nowMs());
+    return true;
+  }
+
   function rawSend(obj) {
     if (!S.tr) return false;
+    if (SIM) { S.sent++; return simSend(obj); }
     try {
       const n = S.tr.send(obj);
       S.sent++;

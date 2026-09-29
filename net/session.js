@@ -56,9 +56,9 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
   };
   const remote = createRemotePlayer({ THREE, scene, world, heroFactory, camera });
   // значок связи в бою: соперник и пинг; при обрыве — «переподключение»
-  let badge = null, badgeKey = '', badgeAt = 0;
+  let badge = null, badgeKey = '', badgeAt = 0, lostSince = 0;
   function updateBadge(now, inFight) {
-    if (now - badgeAt < 200) return;
+    if (typeof document === 'undefined' || now - badgeAt < 200) return;
     badgeAt = now;
     const net = S.net;
     const show = inFight && !S.lobbyOpen && net && (net.state === 'connected' || net.state === 'lost');
@@ -73,14 +73,18 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     }
     const opp = net && net.remote ? net.remote.name : 'Соперник';
     const lost = net && net.state === 'lost';
-    const key = show ? `${lost ? 'L' : 'C'}|${opp}|${lost ? '' : Math.round(net.ping / 5) * 5}` : 'hidden';
+    if (!lost) lostSince = 0; else if (!lostSince) lostSince = now;
+    const lostSec = lost ? Math.floor((now - lostSince) / 1000) : 0;
+    const long = lostSec >= 15;
+    const key = show ? `${lost ? 'L' : 'C'}|${opp}|${lost ? (long ? lostSec : '') : Math.round(net.ping / 5) * 5}` : 'hidden';
     if (key === badgeKey) return;
     badgeKey = key;
     badge.hidden = !show;
     if (!show) return;
     badge.classList.toggle('is-lost', !!lost);
     badge.classList.toggle('is-slow', !lost && net.ping > 180);
-    badge.querySelector('.nl-badge__txt').textContent = lost ? `${opp} · связь потеряна — переподключение…` : `${opp} · пинг ${Math.round(net.ping)} мс`;
+    badge.querySelector('.nl-badge__txt').textContent = !lost ? `${opp} · пинг ${Math.round(net.ping)} мс`
+      : long ? `${opp} · нет связи ${lostSec} с — ждём; выйти: Esc → меню` : `${opp} · связь потеряна — переподключение…`;
   }
   remote.setVisible(true);
   let lobby = null;
@@ -114,11 +118,21 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     net.on('pr', (m) => { S.remoteProj = decodeProjectiles(m); S.remoteProjAt = performance.now(); });
     net.on('lobby', (m) => {
       S.oppReady = !!m.ready;
+      if (!S.oppReady) cancelStart(net.isHost);        // соперник передумал во время отсчёта
       if (m.name || m.hero) remote.setInfo({ name: m.name, hero: m.hero });
       if (net.isHost) maybeGo();
       changed();
     });
-    net.on('go', (m) => { if (!net.isHost && Number.isFinite(m.at)) scheduleStart(net.sharedToLocal(m.at)); });
+    net.on('go', (m) => {
+      if (net.isHost) return;
+      if (m.cancel) { cancelStart(false); changed(); return; }
+      if (!Number.isFinite(m.at)) return;
+      // общее время хоста → мои часы; оценка смещения ещё не готова (странная задержка) — просто 3 с от сейчас
+      let at = net.sharedToLocal(m.at);
+      const d = at - performance.now();
+      if (!(d > -1000 && d < START_DELAY_MS + 3000)) at = performance.now() + START_DELAY_MS - net0.ping / 2;
+      scheduleStart(at);
+    });
   }
 
   function newNet(mode) {
@@ -232,8 +246,14 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     S.meReady = !!on;
     sendLobby();
     if (S.net && S.net.isHost) maybeGo();
-    if (!S.meReady && S.startTimer) { clearTimeout(S.startTimer); S.startTimer = null; S.startAt = 0; }
+    if (!S.meReady) cancelStart(S.net && S.net.isHost);
     changed();
+  }
+  // отсчёт отменён (кто-то снял «Готов»): хост сообщает гостю
+  function cancelStart(tellGuest) {
+    if (!S.startTimer && !S.startAt) return;
+    clearTimeout(S.startTimer); S.startTimer = null; S.startAt = 0;
+    if (tellGuest && S.net) S.net.send('go', { cancel: true });
   }
   function maybeGo() {
     const net = S.net;

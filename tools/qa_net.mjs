@@ -103,13 +103,34 @@ for (const c of new Set([ctxA, ctxB])) await c.addInitScript(() => { try { local
 const errors = { A: [], B: [] };
 // --harness: лёгкий стенд dev/net-harness.html — плавность соперника при пинге/потерях на любом GPU
 if (argv.includes('--harness')) {
-  const pg = await ctxA.newPage();
-  await pg.setViewportSize({ width: 1100, height: 380 });
-  pg.on('pageerror', (e) => errors.A.push(String(e)));
-  pg.on('console', (m) => { if (m.type() === 'error') errors.A.push(m.text()); });
   const extra = MODE === 'peer' ? `&net=peer${PEER_BIN ? `&peerHost=127.0.0.1&peerPort=${PEER_PORT}&peerSecure=0` : ''}` : MODE === 'lan' ? `&net=lan&lanHost=127.0.0.1:${RELAY_PORT}` : '';
-  await pg.goto(`http://127.0.0.1:${PORT}/dev/net-two-tabs.html?harness=1&ping=${PING}&loss=${LOSS}${extra}`, { waitUntil: 'domcontentloaded' });
-  const G = () => pg.frames().find((f) => /role=guest/.test(f.url()));
+  let pg, G, H;
+  if (MODE === 'local') {
+    // две iframe на одной странице (BroadcastChannel живёт в одном браузерном контексте)
+    pg = await ctxA.newPage();
+    await pg.setViewportSize({ width: 1100, height: 380 });
+    pg.on('pageerror', (e) => errors.A.push(String(e)));
+    pg.on('console', (m) => { if (m.type() === 'error') errors.A.push(m.text()); });
+    await pg.goto(`http://127.0.0.1:${PORT}/dev/net-two-tabs.html?harness=1&ping=${PING}&loss=${LOSS}${extra}`, { waitUntil: 'domcontentloaded' });
+    G = () => pg.frames().find((f) => /role=guest/.test(f.url()));
+    H = () => pg.frames().find((f) => /role=host/.test(f.url()));
+  } else {
+    // lan/peer: два ОТДЕЛЬНЫХ браузерных контекста (как два ноутбука), имитация пинга/потерь — в net.js
+    const room = 'H4RN';
+    const url = (role) => `http://127.0.0.1:${PORT}/dev/net-harness.html?role=${role}&room=${room}&netPing=${PING}&netJitter=15&netLoss=${LOSS}${extra}`;
+    const open = async (ctx, tag, role) => {
+      const p = await ctx.newPage();
+      await p.setViewportSize({ width: 560, height: 360 });
+      p.on('pageerror', (e) => errors[tag].push(String(e)));
+      p.on('console', (m) => { if (m.type() === 'error') errors[tag].push(m.text()); });
+      await p.goto(url(role), { waitUntil: 'domcontentloaded' });
+      return p;
+    };
+    const pH = await open(ctxA, 'A', 'host');
+    await sleep(1200);
+    const pG = await open(ctxB, 'B', 'guest');
+    pg = pG; G = () => pG; H = () => pH;
+  }
   let conn = false;
   for (let i = 0; i < 50 && !conn; i++) { await sleep(500); try { conn = await G().evaluate(() => window.__net && window.__net.state === 'connected'); } catch (e) { /* ещё грузится */ } }
   check(`стенд (${MODE}): гость подключился`, conn, conn ? '' : await G().evaluate(() => document.getElementById('hud').textContent).catch(() => ''));
@@ -130,7 +151,6 @@ if (argv.includes('--harness')) {
   check(`стенд: плавно при пинге ${PING} мс и ${Math.round(LOSS * 100)}% потерь (бег 6 м/с, рывки 15,6 м/с; телепорт — > 24 м/с)`, tr.length > 30 && bad === 0, `${tr.length} кадров (${fps.toFixed(0)} fps), max ${maxV.toFixed(1)} м/с, max шаг ${maxStep.toFixed(2)} м, пинг ${ping} мс`);
   await pg.screenshot({ path: join(OUT, 'harness.png') });
   // «потерял Wi-Fi»: гость рвёт канал (DataChannel / сокет / BroadcastChannel) — оба видят lost, гость сам возвращается
-  const H = () => pg.frames().find((f) => /role=host/.test(f.url()));
   await G().evaluate(() => window.__net.simulateSocketLoss());
   const t0 = Date.now();
   let sawLost = false, back = 0;
@@ -141,7 +161,7 @@ if (argv.includes('--harness')) {
     await sleep(200);
   }
   check(`стенд (${MODE}): обрыв канала замечен и связь вернулась сама`, sawLost && back > 0, back ? `через ${back} мс` : `lost=${sawLost}`);
-  const errs = errors.A.filter((e) => !/Failed to load resource|net::ERR/i.test(e));
+  const errs = [...errors.A, ...errors.B].filter((e) => !/Failed to load resource|net::ERR/i.test(e));
   check('стенд: нет ошибок в консоли', errs.length === 0, errs.slice(0, 3).join(' | '));
   writeFileSync(join(OUT, 'harness-report.txt'), results.join('\n') + '\n');
   await browser.close(); server.kill(); if (relay) relay.kill();

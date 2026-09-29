@@ -181,6 +181,9 @@ export function retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo
   // семплирование клипа источника
   const mixer = new THREE.AnimationMixer(srcScene);
   const action = mixer.clipAction(clip);
+  // [HERO] LoopOnce + clamp: иначе t = duration заворачивается в 0 и последний ключ = первый кадр
+  action.setLoop(THREE.LoopOnce, 1);
+  action.clampWhenFinished = true;
   action.play();
   const n = Math.max(2, Math.ceil(clip.duration * fps) + 1);
   const times = new Float32Array(n);
