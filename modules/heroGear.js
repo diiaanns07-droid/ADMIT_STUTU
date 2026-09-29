@@ -642,7 +642,7 @@ varying float vCapeT;`)
     const palm = hand.clone().lerp(fing, 0.75).addScaledVector(FWD, 0.015);
     const q = qFromTo(new THREE.Vector3(0, 1, 0), UP.clone().addScaledVector(FWD, 0.12).normalize());
     stick(grp, 'rightHand', palm, q);
-    parts[parts.length - 1].spin = halo; parts[parts.length - 1].crystal = crystal;
+    parts[parts.length - 1].spin = halo; parts[parts.length - 1].crystal = crystal; parts[parts.length - 1].staff = true;
   }
 
   // ---------------- лук и колчан за спиной
@@ -740,6 +740,24 @@ varying float vCapeT;`)
     if (capeU) capeU.uWind.value = l >= 2 ? 0 : 1;
     if (hairU) hairU.uWind.value = l >= 2 ? 0 : 1;
   }
+  // посох идёт за кулаком, но остаётся почти вертикальным (лёгкий наклон по предплечью): иначе при
+  // поднятой руке (зеркало рук игрока) он переворачивался бы вниз
+  const staffPart = parts.find((p) => p.staff);
+  let staffFree = false;
+  const _sm = new THREE.Matrix4(), _sx = new THREE.Vector3(), _sy = new THREE.Vector3(), _sz = new THREE.Vector3(), _spi = new THREE.Matrix4();
+  function followStaff(grip, forearm, fwd) {
+    if (!staffPart) return;
+    const obj = staffPart.obj;
+    if (!staffFree) { staffFree = true; (model || vrm.scene).attach(obj); }
+    _sy.copy(UP).addScaledVector(forearm, 0.35).normalize();
+    _sz.copy(fwd).addScaledVector(_sy, -fwd.dot(_sy)).normalize();
+    _sx.crossVectors(_sy, _sz).normalize();
+    _sm.makeBasis(_sx, _sy, _sz).setPosition(grip);
+    const par = obj.parent; par.updateWorldMatrix(true, false);
+    _sm.premultiply(_spi.copy(par.matrixWorld).invert());
+    _sm.decompose(obj.position, obj.quaternion, obj.scale);
+  }
+
   // лук в левой руке (поза лука C5): отцепить от спины и держать рукоять в кулаке, тетивой к лучнику
   const bowHome = bow ? { parent: bow.parent, pos: bow.position.clone(), quat: bow.quaternion.clone() } : null;
   let bowHeld = false;
@@ -779,5 +797,5 @@ varying float vCapeT;`)
     for (const { m, v } of physSaved) for (const k of Object.keys(v)) m[k] = t === 'high' || (t === 'medium' && k === 'sheen') ? v[k] : 0;
   }
   setQuality(quality);
-  return { names, staffTip, bow, update, setLod, setQuality, setShading() {}, setBowHeld, dispose, parts: () => parts.map((p) => p.obj.name) };
+  return { names, staffTip, bow, followStaff: staffPart ? followStaff : null, update, setLod, setQuality, setShading() {}, setBowHeld, dispose, parts: () => parts.map((p) => p.obj.name) };
 }
