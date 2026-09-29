@@ -46,13 +46,14 @@ export const PVP_DEFAULTS = Object.freeze({
   parryEnergy: 5,
   reflectSpeed: 30,
   counterStagger: 0.6,        // парированный удар вблизи (рассечение/хлопок) сбивает атакующего
+  igniteDist: 4,              // «Искра разгорается в полёте»: урон искры/огня растёт с 50% до 100% на первых метрах
   heal: 0.85,                 // лечение в PvP × (при HP 400 то же лечение вчетверо слабее, чем у героя со 100 HP)
   alpha: { cooldownMul: 0.5, energy: 20 }, // ℓ «Альфа»: откаты не сбрасываются, а сокращаются вдвое
   shield: { blockBase: 4, blockPerDmg: 0.25, brokenMul: 0.5 },
   // множители урона по способностям (урон боя с боссом × множитель, затем кап maxHitShare)
   dmg: {
     bolt: 0.7, spark: 0.75, slash: 0.5, burst: 0.45, sphere: 0.5, prism: 0.5, ignis: 0.5, fulgur: 1.0,
-    stella: 0.55, caret: 0.9, vee: 0.9, clepsydra: 1, frame: 1, clap: 0.8, delta: 0.35, arrow: 0.6, hand_orb: 0.6,
+    stella: 0.5, caret: 0.9, vee: 0.9, clepsydra: 1, frame: 1, clap: 0.8, delta: 0.35, arrow: 0.6, hand_orb: 0.6,
     reflect: 1, default: 0.6,
   },
   // снаряды, которыми в PvP становятся мгновенные удары по Регенту
@@ -73,9 +74,9 @@ export const PVP_DEFAULTS = Object.freeze({
   noParry: ['stella', 'delta'],                // лучи и метеоры парированием не отбить
   // откаты и прочие поля боя, заменяемые на время PvP (путь в конфиге боя → значение)
   override: {
-    'bolt.interval': 0.5, 'bolt.energyCost': 3, 'spark.cooldown': 0.8, 'spark.cost': 8, 'slash.cooldown': 1.1,
+    'bolt.interval': 0.5, 'bolt.energyCost': 3, 'spark.cooldown': 0.8, 'spark.cost': 8, 'slash.cooldown': 1.3, 'slash.radius': 3.6,
     'burst.cooldown': 11, 'throw.cooldown': 1.6,
-    'runes.ignis.cooldown': 9, 'runes.fulgur.cooldown': 14, 'runes.orbis.cooldown': 24, 'runes.stella.cooldown': 20,
+    'runes.ignis.cooldown': 11, 'runes.fulgur.cooldown': 14, 'runes.orbis.cooldown': 24, 'runes.stella.cooldown': 20,
     'runes.spira.cooldown': 16, 'runes.lemnis.cooldown': 32, 'runes.caret.cooldown': 7, 'runes.vee.cooldown': 14,
     'runes.clepsydra.cooldown': 18, 'runes.alpha.cooldown': 40,
     'sigils.clap.cooldown': 14, 'sigils.gate.cooldown': 24, 'sigils.frame.cooldown': 18, 'sigils.delta.cooldown': 26,
@@ -259,7 +260,12 @@ export function buildHooks(K, PC, opts = {}) {
   }
   function projectileHit(pr, point) {
     const kind = pr.pvpKind || (pr.reflected ? 'reflect' : pr.kind) || 'bolt';
-    const raw = pr.pvpFinal ? pr.damage : (pr.damage || 0) * mulOf(kind);
+    let raw = pr.pvpFinal ? pr.damage : (pr.damage || 0) * mulOf(kind);
+    if ((kind === 'spark' || kind === 'bolt') && PC.igniteDist > 0) {
+      const v = pr.velocity || { x: 0, y: 0, z: 0 };
+      const flown = (pr.age || 0) * Math.hypot(v.x, v.y || 0, v.z);
+      raw *= clamp(0.5 + 0.5 * flown / PC.igniteDist, 0.5, 1);
+    }
     const v = pr.velocity || { x: 0, z: 0 };
     sendHit(kind, raw, pr.fx, point, { x: v.x, z: v.z }, { heal: pr.heal });
     K.emit('projectile_impact', point, { owner: 'player', kind: pr.kind, projectileId: pr.id, result: 'opponent', pvp: true, size: pr.size, power: pr.power, radius: pr.radius });
@@ -288,12 +294,10 @@ export function buildHooks(K, PC, opts = {}) {
     const S = PC.shots.burst;
     shoot('burst', dmg, { knock: S.knock * (0.7 + 0.6 * power) });
     K.emit('burst', chest, { amount: dmg, power, both, cleared: 0, from: vcopy(chest), to: vcopy(to), radius: 2.5 * (0.7 + 0.6 * power), pvp: true });
-    count('burst');
     return true;
   }
   function rune(r, R, chest, to) {
     const Pp = P();
-    count(r);
     if (r === 'ignis') {
       shoot('ignis', R.damage, { dot: PC.shots.ignis.dot });
       K.emit('rune_cast', chest, { rune: r, from: vcopy(chest), to: vcopy(to), amount: R.damage, pvp: true });
@@ -326,7 +330,6 @@ export function buildHooks(K, PC, opts = {}) {
     return true;
   }
   function sigil(sg, S, chest, to) {
-    count(sg);
     const pp = K.playerPos();
     if (sg === 'clap') {
       const Q = PC.clap;
@@ -349,7 +352,7 @@ export function buildHooks(K, PC, opts = {}) {
     }
     return false;                          // gate, cor — на себя
   }
-  function count(k) { stats.casts[k] = (stats.casts[k] || 0) + 1; }
+  function count(k) { if (k) stats.casts[k] = (stats.casts[k] || 0) + 1; }
   function runTimed(h) {
     if (!timed.length) return;
     for (let i = 0; i < timed.length; i++) {
@@ -675,7 +678,7 @@ export function buildHooks(K, PC, opts = {}) {
     get floorY() { return Math.min(K.st.p.y, opp.has ? BOSS.y : K.st.p.y); },   // уровень земли дуэли (для «снаряд ушёл в пол»)
     enable, disable, aim, encounter, damage, projectileHit, burst, rune, sigil, preStep, decorate, setOpponent, applyRemoteHit,
     // для сессии
-    onAck, myState, respawn, grantSpawnInvuln,
+    onAck, myState, respawn, grantSpawnInvuln, count,
     drainOutbox() { return outbox.splice(0, outbox.length); },
     setPing(ms) { ping = Math.max(0, num(ms, 0)); },
     setTag(t) { tag = String(t || 'p'); },
@@ -1120,6 +1123,17 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
     if (!S.active) return events;
     let out = Array.isArray(events) ? events.slice() : [];
     for (const m of H.drainOutbox()) { const { t, ...p } = m; send(t, p); }
+    // «любимое заклинание»: свои касты (player_cast 'rune' — дубль rune_cast от main.js adaptEvents)
+    if (S.phase === 'fight') for (const e of out) {
+      const d = e.data || {};
+      if (d.remote) continue;
+      if (e.type === 'player_cast' && d.ability !== 'rune') H.count(d.ability === 'throw' ? (d.kind === 'prism' ? 'prism' : 'sphere') : d.ability);
+      else if (e.type === 'rune_cast') H.count(d.rune);
+      else if (e.type === 'sigil_cast') H.count(d.sigil);
+      else if (e.type === 'burst') H.count('burst');
+      else if (e.type === 'bow_release') H.count('arrow');
+      else if (e.type === 'hand_spell_throw') H.count('hand_orb');
+    }
     // свои события сопернику (для его эффектов); с сетью №2 их пересылает её сессия
     if (!EXT) for (const e of out) {
       if (PC.forwardEventTypes.includes(e.type)) send('ev', { e: { id: e.id, type: e.type, position: e.position, data: e.data } });
@@ -1190,7 +1204,9 @@ export function createPvpSession({ combat, net, cfg, clock, me = {}, spawns = nu
   }
   function favorite() {
     let best = null, n = 0;
-    for (const [k, c] of Object.entries(H.stats.casts)) if (c > n) { best = k; n = c; }
+    const list = Object.entries(H.stats.casts);
+    const pool = list.some(([k]) => k !== 'bolt') ? list.filter(([k]) => k !== 'bolt') : list;   // огонь из зажатой руки — только если больше ничего
+    for (const [k, c] of pool) if (c > n) { best = k; n = c; }
     return best ? { id: best, name: ABILITY_NAMES[best] || best, count: n } : null;
   }
   function getView() {

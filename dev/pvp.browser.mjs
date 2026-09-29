@@ -162,16 +162,34 @@ try {
   await sleep(1200);
   report.dash.B = await stats(B);
   if (FULL) {
-    // матч: A бьёт всеми способностями, пока матч не кончится (B стоит)
-    const keys = ['Digit1', 'KeyU', 'Digit2', 'KeyI', 'Digit4', 'KeyU', 'Digit7', 'KeyL', 'Digit8', 'KeyZ', 'Digit9', 'KeyC', 'KeyV', 'KeyU', 'Digit0', 'KeyU'];
-    for (let r = 0; r < 400; r++) {
+    // матч из трёх раундов: 1 — бьёт A, 2 — бьёт B, 3 — снова A (итог 2:1). Все приёмы по кругу;
+    // нажатия — событиями внутри страницы (debugInput слушает window), вперёд выводится вкладка атакующего.
+    const press = (p, code, holdMs = 70) => p.evaluate(({ code, holdMs }) => new Promise((r) => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true }));
+      setTimeout(() => { window.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true })); r(); }, holdMs);
+    }), { code, holdMs });
+    const MOVES = [['Digit1'], ['KeyU'], ['Digit2'], ['KeyO', 900], ['Digit4'], ['KeyU'], ['Digit7'], ['KeyL'], ['Digit8'], ['KeyZ'], ['Digit9'],
+      ['KeyC'], ['KeyV'], ['KeyP', 900], ['Digit3'], ['KeyX'], ['Digit5'], ['KeyJ', 1200], ['Digit6'], ['KeyB'], ['KeyK', 500], ['KeyF'], ['Space'], ['KeyI'], ['Digit0'], ['KeyU']];
+    report.rounds = [];
+    let i = 0, lastRound = 0;
+    const t0 = Date.now();
+    while (Date.now() - t0 < 420000) {
       const d = await pv(A);
-      if (!d || d.view.phase === 'match_end') break;
-      if (d.view.phase === 'fight') { await key(A, keys[r % keys.length]); await sleep(420); }
-      else await sleep(400);
+      if (!d) { await sleep(500); continue; }
+      const v = d.view;
+      if (v.round !== lastRound) { lastRound = v.round; report.rounds.push({ round: v.round, score: v.score.join(':'), t: Math.round((Date.now() - t0) / 1000) }); }
+      if (v.phase === 'match_end') break;
+      if (v.phase === 'round_end' && !report.roundEndShot) { report.roundEndShot = true; await shot(A, `3_round_end_A.png`); }
+      if (v.phase !== 'fight') { await sleep(300); continue; }
+      const att = v.round === 2 ? B : A;
+      await focus(att);
+      const [code, hold] = MOVES[i++ % MOVES.length];
+      await press(att, code, hold || 70);
+      await sleep(260);
     }
-    await sleep(800);
+    await sleep(1200);
     report.endA = (await pv(A)).view; report.endB = (await pv(B)).view;
+    await shot(A, '4_result_A.png'); await shot(B, '4_result_B.png');
   }
   await shot(A, '2_fight_A.png'); await shot(B, '2_fight_B.png');
 } catch (e) { report.error = String(e && e.stack || e); report.netB = await B.evaluate(() => { const n = window.__ASHEN__ && window.__ASHEN__.net && window.__ASHEN__.net(); return { screen: window.__ASHEN__ && window.__ASHEN__.screen, n: n && { status: n.status, message: n.message, error: n.error, errorCode: n.errorCode, code: n.code } , url: location.href }; }).catch((x) => String(x)); }
