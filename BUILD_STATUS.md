@@ -247,6 +247,9 @@
   `netSession.remote.getAnchors()` (C5: handL, handR, chest, head, bowSocket, staffTip) и цвет соперника.
   Снаряды соперника добавляются в `snapshot.projectiles` для effects: `owner:'opponent'`, `remote:true`, id `r:…`.
   world.js и свой heroModel события соперника НЕ получают (иначе свой герой повторял бы чужие удары).
+  Пока в API effects нет `supportsRemote: true`, события `player_dash`, `ward_*`, `bastion_*` соперника в effects
+  не передаются (сейчас они рисуются у своего героя: шлейф рывка, вспышка на груди, толчок камеры). Сделаете их
+  по `ev.position`/якорям соперника — выставьте `supportsRemote: true` в возвращаемом объекте effects.
 - **Для №8 [BDO]:** лобби — `modules/netLobby.css` (классы `nl-*`), уже на токенах `--bdo-*`; кнопка в меню —
   одна строка `netBtn` в ui.js с тегом [NET], стиль подтягивайте как хотите.
 - **Транспорты:** `'peer'` — PeerJS 1.5.5 (DEPS.peerjs, облако 0.peerjs.com, ID `ashen-oath-v1-<КОД>`, STUN Google,

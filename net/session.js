@@ -23,6 +23,9 @@ function readLast() {
 function saveLast(code, role, mode) { try { localStorage.setItem(LAST_KEY, JSON.stringify({ code, role, mode, at: Date.now() })); } catch (e) { /* ignore */ } }
 const PR_EVERY_MS = 100;   // 10 Гц
 const START_DELAY_MS = 3200;
+// эти события effects.js пока рисует у СВОЕГО героя (шлейф рывка, вспышка оберега на груди, толчок камеры) —
+// до поддержки remote в эффектах (effects.supportsRemote === true, №7) они идут только модели соперника
+const FX_LOCAL_ONLY = new Set(['player_dash', 'ward_start', 'ward_end', 'bastion_start', 'bastion_end']);
 
 function urlOpts() {
   const o = {};
@@ -258,7 +261,11 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     let inc = null;
     if (S.inEvents.length) { inc = S.inEvents.splice(0, S.inEvents.length); remote.pushEvents(inc); }
     remote.update(dt);
-    if (inc && inc.length) outEvents = outEvents.length ? outEvents.concat(inc) : inc;
+    if (inc && inc.length) {
+      const fxOk = typeof hooks.fxSupportsRemote === 'function' && hooks.fxSupportsRemote();
+      const fxInc = fxOk ? inc : inc.filter((e) => !FX_LOCAL_ONLY.has(e.type));
+      if (fxInc.length) outEvents = outEvents.length ? outEvents.concat(fxInc) : fxInc;
+    }
     // снаряды соперника: последний снимок + экстраполяция по скорости
     if (S.remoteProj.length && snap) {
       const age = now - S.remoteProjAt;

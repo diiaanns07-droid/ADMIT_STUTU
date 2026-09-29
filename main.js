@@ -517,6 +517,7 @@ function openNet() {
             if (app.debug) startFight(); else setScreen('camera');
           },
           onLeave: () => { app.netInfo = null; },
+          fxSupportsRemote: () => !!(effects && effects.supportsRemote),   // №7: true — эффекты сами рисуют события соперника
         },
       });
       return netSession;
