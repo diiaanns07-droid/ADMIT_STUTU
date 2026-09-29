@@ -15,6 +15,7 @@
  */
 import { createAtmosphere } from './atmosphere.js';
 import { createElfVillage, ELF_VILLAGE } from './elfVillage.js';
+import { createBrightForest, BRIGHT_FOREST, brightForestHeight, brightForestTint } from './brightForest.js'; // [FOREST] Сияющий лес
 
 export const API_VERSION = 'ASHEN_V1';
 
@@ -1046,6 +1047,7 @@ float ashPuddle( vec2 xz ) {
     hill:   { id: 'hill',   name: 'Холм клятвы',       x: -95,  z: -140, r: 14, top: 22 },
     gate:   { id: 'gate',   name: 'Павшие врата',      x: 0,    z: 214,  r: 16 },
     elves:  { id: ELF_VILLAGE.id, name: ELF_VILLAGE.name, x: ELF_VILLAGE.x, z: ELF_VILLAGE.z, r: ELF_VILLAGE.r, level: ELF_VILLAGE.level },
+    bright: { id: BRIGHT_FOREST.id, name: BRIGHT_FOREST.name, x: BRIGHT_FOREST.x, z: BRIGHT_FOREST.z, r: BRIGHT_FOREST.r, level: BRIGHT_FOREST.level }, // [FOREST]
   };
   const LAKE_ISLAND = { x: -72.9, z: 100.3, r: 5 };
   const LAKE_SHORE = { x: -61.8, z: 84.9 };
@@ -1060,6 +1062,7 @@ float ashPuddle( vec2 xz ) {
     [[96, 96], [138, 46], [152, -20], [140, -95]],                     // город ↔ кладбище
     [[-142, 4], [-122, 50], [-100, 85]],                               // лес ↔ озеро
     [[22, 4], [70, 6], [118, 10], [ELF_VILLAGE.x + ELF_VILLAGE.gate.dx - 6, ELF_VILLAGE.z + ELF_VILLAGE.gate.dz]], // → Эльфийская деревня
+    BRIGHT_FOREST.road.map(([x, z]) => [x, z]),                        // [FOREST] → Сияющий лес (к вратам)
   ];
   const ROAD_HW = 1.9;
   const roadSegs = [];
@@ -1080,7 +1083,8 @@ float ashPuddle( vec2 xz ) {
     }
     return best;
   }
-  const edgeJag = (a) => (noise.fbm((a / TAU + 0.5) * 32, 9.7, 32, 3) - 0.5) * 16;
+  const edgeJag = (a) => (noise.fbm((a / TAU + 0.5) * 32, 9.7, 32, 3) - 0.5) * 16
+    + BRIGHT_FOREST.edgeBulge.m * Math.exp(-((Math.atan2(Math.sin(a - BRIGHT_FOREST.edgeBulge.az), Math.cos(a - BRIGHT_FOREST.edgeBulge.az)) / BRIGHT_FOREST.edgeBulge.w) ** 2)); // [FOREST] край мира отодвинут за лесом
   const superF = (a) => { const s = Math.sin(a), c = Math.cos(a); return Math.sqrt(Math.sqrt(s * s * s * s + c * c * c * c)); };
   // >0 — внутри мира (м до кромки обрыва), <0 — за краем
   function edgeDist(x, z) {
@@ -1131,6 +1135,7 @@ float ashPuddle( vec2 xz ) {
       const dc = segDist(x, z, LAKE_SHORE.x, LAKE_SHORE.z, LAKE_ISLAND.x, LAKE_ISLAND.z);
       if (dc < 6) y = Math.max(y, LAKE_WL + 0.32 - Math.max(0, dc - 1.4) * 1.2);
     }
+    y = brightForestHeight(x, z, y);   // [FOREST] Сияющий лес: поляна, гряда с водопадом, озеро, ручей
     // край мира: скальный вал и обрыв в море тумана
     const ed = edgeDist(x, z);
     if (ed < 18) {
@@ -1231,6 +1236,8 @@ float ashPuddle( vec2 xz ) {
         cr += 0.06 * fG; cb -= 0.07 * fG;
         const fE = smoothstep(ZONES.elves.r + 12, ZONES.elves.r - 6, Math.hypot(x - ZONES.elves.x, z - ZONES.elves.z));
         if (fE > 0) { v0 = lerp(v0, 1.25 * (0.85 + noise.n2(x * 0.11, z * 0.11, 0) * 0.3), fE); cr = lerp(cr, 0.62, fE); cg = lerp(cg, 1.0, fE); cb = lerp(cb, 0.46, fE); } // мох деревни
+        const fB = brightForestTint(x, z);   // [FOREST] мох и золото Сияющего леса
+        if (fB > 0) { v0 = lerp(v0, 1.3 * (0.82 + noise.n2(x * 0.09 + 5.1, z * 0.09 + 1.7, 0) * 0.36), fB); cr = lerp(cr, 0.66, fB); cg = lerp(cg, 1.0, fB); cb = lerp(cb, 0.4, fB); }
         const dl = Math.hypot(x - ZONES.lake.x, z - ZONES.lake.z) - ZONES.lake.r;
         v0 *= lerp(1, 0.62, smoothstep(6, -2, dl));
         const ed = edgeDist(x, z);
@@ -1969,10 +1976,12 @@ float ashPuddle( vec2 xz ) {
     { x: 5, z: ZONES.gate.z + 9, name: ZONES.gate.name },
     { ...cityW(24, 24), name: ZONES.city.name },
     { x: ZONES.elves.x + ELF_VILLAGE.ember.dx, z: ZONES.elves.z + ELF_VILLAGE.ember.dz, name: ZONES.elves.name },
+    ...BRIGHT_FOREST.embers.map((e) => ({ x: e.x, z: e.z, name: BRIGHT_FOREST.name })),   // [FOREST] два угля в лесу
   ];
   for (const s of EMBER_SPOTS) CLEARINGS.push({ x: s.x, z: s.z, r: 4.5 });
   CLEARINGS.push({ x: -142, z: 16, r: 10 });   // поляна в лесу
   CLEARINGS.push({ x: ZONES.elves.x, z: ZONES.elves.z, r: ZONES.elves.r + 7 });   // эльфийская деревня
+  CLEARINGS.push({ x: BRIGHT_FOREST.x, z: BRIGHT_FOREST.z, r: BRIGHT_FOREST.r + 10 });   // [FOREST] Сияющий лес: мёртвых деревьев и валунов нет
 
   /* ---------- Пепельный лес и одиночные деревья, валуны, камешки, скальный вал у края ---------- */
   {
@@ -2027,6 +2036,7 @@ float ashPuddle( vec2 xz ) {
     for (let i = 0; i < 6000 && nP < 700; i++) {
       const x = (rnd() - 0.5) * 480, z = (rnd() - 0.5) * 480;
       if (Math.hypot(x, z) < 40 || edgeDist(x, z) < 4 || inDeepWater(x, z) || Math.hypot(x - ZONES.elves.x, z - ZONES.elves.z) < ZONES.elves.r + 6) continue;
+      if (Math.hypot(x - BRIGHT_FOREST.x, z - BRIGHT_FOREST.z) < BRIGHT_FOREST.r + 8) continue;   // [FOREST]
       addBoulder(x, z, 0.15 + Math.pow(rnd(), 2) * 0.5, rnd, false, nP < 350 ? 1 : 2); nP++;
     }
     landmark(Fz);
@@ -2317,6 +2327,19 @@ float ashPuddle( vec2 xz ) {
     for (const c of elfVillage.colliders) { if (c.type === 'circle') addCircle(c.x, c.z, c.r); else addSegment(c.ax, c.az, c.bx, c.bz, c.r); }
   } catch (e) { console.error('[world] эльфийская деревня не построена:', e); elfVillage = null; }
   landmark(ZONES.elves);
+  /* ============ [FOREST] СИЯЮЩИЙ ЛЕС (modules/brightForest.js) ============ */
+  // Как деревня: до углей и раскладки (коллайдеры входят в layout.colliders). Ошибка леса не ломает мир.
+  let brightForest = null, forestHero2 = null;
+  if (wc.brightForest !== false) {
+    try {
+      brightForest = createBrightForest({
+        THREE, parent: env, groundY: terrainH, quality: initialQuality, reducedMotion: wc.reducedMotion,
+        camera, atmosphere: atmo, lightUnit: LI.point, seed: wc.seed + 5151,
+      });
+      for (const c of brightForest.colliders) { if (c.type === 'circle') addCircle(c.x, c.z, c.r); else addSegment(c.ax, c.az, c.bx, c.bz, c.r); }
+    } catch (e) { console.error('[world] Сияющий лес не построен:', e); brightForest = null; }
+  }
+  landmark(ZONES.bright);
 
   /* ======================= УГЛИ КЛЯТВЫ (ASHEN_V2) ======================= */
   // Пять алтарей на плато вне арены: плита с чашей угля и три стоячих камня со светящимися
@@ -2442,6 +2465,7 @@ float ashPuddle( vec2 xz ) {
     if (r < 12.3) return -0.6;
     if (r < 12.95) return -0.9;
     if (elfVillage) { const b = elfVillage.groundAt(x, z); if (b !== null) return Math.max(b, terrainH(x, z)); } // горбатый мостик
+    if (brightForest) { const b = brightForest.groundAt(x, z); if (b !== null) return Math.max(b, terrainH(x, z)); } // [FOREST] мостики через ручей
     return terrainH(x, z);
   }
   // [ASHEN_V3] ходить можно до скального вала у края мира и по мелководью озера
@@ -2466,10 +2490,13 @@ float ashPuddle( vec2 xz ) {
   })();
   const layout = Object.freeze({
     version: 1,
-    bounds: { minX: -262, maxX: 262, minZ: -262, maxZ: 262 },   // [ASHEN_V3] 500×500 м
+    bounds: { minX: -262, maxX: 262, minZ: -300, maxZ: 262 },   // [ASHEN_V3] 500×500 м; [FOREST] на севере край отодвинут за лесом
     arena: { x: 0, z: 0, r: 13 * K, leash: 6 },
     bossHome: { x: 0, z: 0 },
     playerSpawn: spawn,
+    // [FOREST] места старта (settings.startZone) и точки дуэли на Поляне (BRIGHT_FOREST.duel.spawns)
+    spawns: Object.freeze({ arena: spawn, forest: Object.freeze({ ...BRIGHT_FOREST.start }), duel: BRIGHT_FOREST.duel.spawns }),
+    zones: Object.freeze({ brightForest: BRIGHT_FOREST }),
     colliders: Object.freeze(LAYOUT_COLLIDERS.map((c) => Object.freeze({ ...c }))),
     pois: Object.freeze(EMBER_POIS.slice()),
     // [ASHEN_V3] ориентиры зон для HUD/миникарты: {id, kind:'landmark', name, x, y, z, r}
@@ -3992,6 +4019,11 @@ float ashPuddle( vec2 xz ) {
       elfVillage.update(dt, heroRoot.position);
       ashGeo.setDrawRange(0, Math.round(QUALITY_PRESETS[quality].ash * (1 - 0.85 * elfVillage.weight)));   // в деревне пепел почти не падает
     }
+    if (brightForest) {   // [FOREST] лес: трава, вода, частицы; в лесу пепла нет, настроение неба и тумана
+      brightForest.update(dt, heroRoot.position, forestHero2);
+      ashGeo.setDrawRange(0, Math.round(QUALITY_PRESETS[quality].ash * (1 - 0.85 * (elfVillage ? elfVillage.weight : 0)) * (1 - brightForest.weight)));
+      if (typeof atmo.setZoneMood === 'function') atmo.setZoneMood(brightForest.mood);
+    }
     for (let i = 0; i < braziers.length; i++) {
       const bz = braziers[i];
       const f = 0.82 + 0.1 * Math.sin(time * 11.3 + bz.phase) + 0.08 * Math.sin(time * 23.7 + bz.phase * 2.1) * rm;
@@ -4104,6 +4136,7 @@ float ashPuddle( vec2 xz ) {
     matBlob.opacity = moonLight.castShadow ? 0.42 : 0.62;
     atmo.setQuality(quality);
     if (elfVillage) elfVillage.setQuality(quality);
+    if (brightForest) brightForest.setQuality(quality);   // [FOREST]
   }
 
   function reset() {
@@ -4125,6 +4158,7 @@ float ashPuddle( vec2 xz ) {
     disposed = true;
     if (root.parent) root.parent.remove(root);
     if (elfVillage) elfVillage.dispose();
+    if (brightForest) brightForest.dispose();   // [FOREST]
     atmo.dispose();
     if (renderer && renderer.shadowMap && wc.manageShadowMap && prevShadowEnabled !== undefined) renderer.shadowMap.enabled = prevShadowEnabled;
     root.traverse((o) => {
@@ -4152,6 +4186,7 @@ float ashPuddle( vec2 xz ) {
     for (const k of ['reducedMotion', 'yawOffset', 'heroYawRate', 'bossYawRate']) if (k in patch) wc[k] = patch[k];
     if ('reducedMotion' in patch) atmo.configure({ reducedMotion: !!patch.reducedMotion });
     if ('reducedMotion' in patch && elfVillage) elfVillage.configure({ reducedMotion: !!patch.reducedMotion });
+    if ('reducedMotion' in patch && brightForest) brightForest.configure({ reducedMotion: !!patch.reducedMotion });   // [FOREST]
     if ('ambientAsh' in patch) { wc.ambientAsh = !!patch.ambientAsh; ash.visible = wc.ambientAsh; }
     if ('quality' in patch) setQuality(patch.quality);
   }
@@ -4183,6 +4218,8 @@ float ashPuddle( vec2 xz ) {
     get assets() { return { pending: pbrState.pending, loaded: pbrState.loaded, failed: pbrState.failed }; },
     atmosphere: atmo,
     village: elfVillage,   // [ASHEN_V3] эльфийская деревня (stats(), weight, center) — для стендов и QA
+    forest: brightForest,  // [FOREST] Сияющий лес (weight, inside, mood, drainEvents(), stats()) — для main/QA
+    setForestHero2(p) { forestHero2 = p && Number.isFinite(p.x) && Number.isFinite(p.z) ? p : null; },   // [FOREST] второй игрок (PvP) мнёт траву
     hero: { root: heroRoot, body: heroBody, extras: [cape] }, // [ASHEN_V3] для скиннинговой модели героя (modules/heroModel.js)
   };
 }

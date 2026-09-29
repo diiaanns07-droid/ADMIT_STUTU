@@ -299,6 +299,7 @@ export function createAtmosphere({ THREE, scene, renderer, camera, parent, G, M,
     orbit: 0, orbitPrev: null, follow: 0, followTarget: 0,
     red: 0, dawn: 0, dark: 0, flash: 0, flashT: 0, nextFlash: 14 + rnd() * 16, strike: 0, time: 0,
     clear: 0,          // [ASHEN_V3] 0..1 — местное прояснение (эльфийская деревня): туман реже и теплее
+    mood: null,        // [FOREST] настроение зоны (Сияющий лес): { weight, fog, fogGlow, fogDensity, sun:{color,intensity} }
   };
 
   const dirFrom = (azDeg, elDeg) => new THREE.Vector3(
@@ -585,6 +586,14 @@ varying vec3 vAshWorldPos;`;
     fog.color.copy(fb);
     scene.background && scene.background.isColor && scene.background.copy(fb);
     fogA.w = FOG.density * (1 - state.dawn * 0.5) * (1 - 0.45 * state.clear);
+    // [FOREST] настроение зоны: туман бирюзово-золотой и реже, сияние к солнцу тёплое (вес — близость к зоне)
+    const zm = state.mood, zw = zm && Number.isFinite(zm.weight) ? clamp(zm.weight, 0, 1) : 0;
+    if (zm) {
+      if (zw > 0 && zm.fog) { fb.lerp(zm.fog, zw); fog.color.copy(fb); if (scene.background && scene.background.isColor) scene.background.copy(fb); }
+      if (zw > 0) fogA.w *= lerp(1, Number.isFinite(zm.fogDensity) ? zm.fogDensity : 1, zw);
+      const gc = zm.fogGlow || P.fogGlow;
+      fogGlow.x = lerp(P.fogGlow.r, gc.r, zw); fogGlow.y = lerp(P.fogGlow.g, gc.g, zw); fogGlow.z = lerp(P.fogGlow.b, gc.b, zw);
+    }
     fogLow.w = state.red * 0.8 * (1 - state.dawn);
     skyUniforms.uFogLow.value.w = fogLow.w;
     rayUniforms.uColor.value.copy(cor).multiplyScalar(0.8).lerp(P.key, 0.4);
@@ -611,10 +620,16 @@ varying vec3 vAshWorldPos;`;
     skyUniforms.uFlash.value = fl * 1.4;
     state.strike *= Math.exp(-dt / 0.06);
     const keyCol = _keyCol.copy(P.key).lerp(P.coronaRed, state.red * 0.3).lerp(P.keyDawn, state.dawn);
+    let keyI = 3.0 * (1 + state.dawn) * (1 - state.dark * 0.4), skyFl = fl * 0.25 + state.strike * 0.4;
+    if (zw > 0) {   // [FOREST] в лесу ключ — тёплое солнце, дальние молнии не видны
+      if (zm.sun && zm.sun.color) keyCol.lerp(zm.sun.color, zw);
+      if (zm.sun && Number.isFinite(zm.sun.intensity)) keyI = lerp(keyI, zm.sun.intensity, zw);
+      skyFl *= 1 - zw;
+    }
     return {
       keyColor: keyCol,
-      keyIntensity: 3.0 * (1 + state.dawn) * (1 - state.dark * 0.4),
-      skyFlash: fl * 0.25 + state.strike * 0.4,
+      keyIntensity: keyI,
+      skyFlash: skyFl,
     };
   }
   const _keyCol = new THREE.Color();
@@ -628,6 +643,8 @@ varying vec3 vAshWorldPos;`;
   }
   // [ASHEN_V3] местное прояснение воздуха (0 — как везде, 1 — центр эльфийской деревни)
   function setLocalClear(k) { state.clear = clamp(Number(k) || 0, 0, 1); }
+  // [FOREST] настроение зоны: объект живой (зона меняет weight каждый кадр); null — выключить
+  function setZoneMood(m) { state.mood = m && typeof m === 'object' ? m : null; }
 
   function dispose() {
     if (state.disposed) return;
@@ -650,6 +667,7 @@ varying vec3 vAshWorldPos;`;
   return {
     sunDir, keyDir, sunBase, keyBase, skyRadius, get envTexture() { return envTexture; },
     fogColor: fog.color, useEnv, patchLit, patchUnlit, flash, update, setQuality, configure, dispose, setLocalClear,
+    setZoneMood,   // [FOREST]
     get yaw() { return state.follow; },
   };
 }

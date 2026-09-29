@@ -114,6 +114,7 @@ export const config = {
     // 'stick' — прежний джойстик (поднять руку и замереть — центр)
     moveMode: 'steer',
     hero: 'ashen',          // выбранный герой: ashen | warrior | elf (modules/heroModel.js)
+    startZone: 'arena',     // [FOREST] место старта: 'arena' — Пепельное плато, 'forest' — у врат Сияющего леса
   },
 
   settings: null,            // заполняет main.js (живой объект)

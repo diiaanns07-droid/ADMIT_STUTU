@@ -59,6 +59,8 @@ function sanitizeSettings(patch, base) {
   if ('reducedMotion' in patch) out.reducedMotion = !!patch.reducedMotion;
   if (patch.moveMode === 'steer' || patch.moveMode === 'stick') out.moveMode = patch.moveMode; // [V5] «Руль» / «Джойстик»
   if (typeof patch.hero === 'string' && HEROES[patch.hero]) out.hero = patch.hero;
+  // [FOREST] место старта: Пепельное плато / Сияющий лес
+  if (patch.startZone === 'arena' || patch.startZone === 'forest') out.startZone = patch.startZone;
   return out;
 }
 function loadSettings() {
@@ -197,6 +199,22 @@ function checkEmbers(snap, events) {
   }
   return out;
 }
+// [FOREST] вход в Сияющий лес → событие zone_enter (титр зоны рисует ui/battleHud, №8)
+function forestZoneEvents(events, snap) {
+  const f = world && world.forest;
+  if (!f || typeof f.drainEvents !== 'function') return events;
+  const got = f.drainEvents();
+  if (!got.length) return events;
+  const out = events === NO_EVENTS ? [] : events;
+  const p = snap && snap.player ? snap.player.position : { x: 0, y: 0, z: 0 };
+  for (const z of got) out.push({ id: `zone-enter-${z.zoneId}-${Math.round(performance.now())}`, type: 'zone_enter', position: { x: p.x, y: p.y, z: p.z }, data: { zoneId: z.zoneId, name: z.name, subtitle: z.subtitle } });
+  return out;
+}
+// [FOREST] место старта из настроек: combat.setSpawn до reset (точки — world.layout.spawns)
+function applyStartZone() {
+  if (typeof combat.setSpawn !== 'function' || !worldLayout || !worldLayout.spawns) return;
+  combat.setSpawn(settings.startZone === 'forest' ? worldLayout.spawns.forest : null);
+}
 function unlitEmbers() {
   if (!worldLayout || !Array.isArray(worldLayout.pois)) return null;
   return worldLayout.pois.filter((q) => q.kind === 'ember' && !progression.isEmberLit(q.id));
@@ -266,6 +284,7 @@ function setScreen(screen) {
 }
 
 function resetFight() {
+  applyStartZone();            // [FOREST] место старта
   combat.reset();              // сбрасывает и bossBrain
   world.reset();
   effects.reset();
@@ -295,7 +314,7 @@ function startFight() {
   app.resumableFight = false;
   app.resumeAt = 0;
   effects.setVolume(gameVolume());
-  if (!app.introShown) {
+  if (!app.introShown && settings.startZone !== 'forest') {   // [FOREST] облёт интро — только у арены
     app.introShown = true;
     app.intro = { t: 0, duration: settings.reducedMotion ? 2.6 : 5, awakened: false };
     setScreen('intro');
@@ -396,7 +415,9 @@ const callbacks = {
     const next = sanitizeSettings(patch, settings);
     if (heroModel && next.hero !== settings.hero) heroModel.setHero(next.hero);
     const motionChanged = next.reducedMotion !== settings.reducedMotion;
+    const zoneChanged = next.startZone !== settings.startZone;   // [FOREST]
     Object.assign(settings, next); // мутация на месте: config.settings === settings
+    if (zoneChanged && app.screen === 'menu') { try { resetFight(); } catch (e) { console.warn('[ASHEN] startZone', e); } }   // [FOREST] герой в меню — у выбранного места старта
     applySettings();
     if (motionChanged && typeof world.configure === 'function') world.configure({ reducedMotion: settings.reducedMotion });
     if (motionChanged && postfx) { try { postfx.setReducedMotion(!!settings.reducedMotion); } catch (e) { /* ignore */ } }
@@ -723,6 +744,7 @@ function frame(now) {
     timeEvents(events, now);
     lastSnapshot = combat.getSnapshot();
     events = checkEmbers(lastSnapshot, events);
+    events = forestZoneEvents(events, lastSnapshot);   // [FOREST]
     if (lastSnapshot.status === 'victory') setScreen('victory');
     else if (lastSnapshot.status === 'defeat') setScreen('defeat');
   }

@@ -341,6 +341,7 @@ function normSettings(s) {
     reducedMotion: typeof o.reducedMotion === 'boolean' ? o.reducedMotion : DEFAULT_SETTINGS.reducedMotion,
     sensitivity: isNum(o.sensitivity) ? clamp(o.sensitivity, 0.5, 2) : DEFAULT_SETTINGS.sensitivity,
     moveMode: o.moveMode === 'stick' ? 'stick' : 'steer', // [V5] по умолчанию «Руль»
+    startZone: o.startZone === 'forest' ? 'forest' : 'arena', // [FOREST] место старта
     hero: HERO_OPTIONS.some(([v]) => v === o.hero) ? o.hero : DEFAULT_SETTINGS.hero,
   };
 }
@@ -997,11 +998,37 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     return fs;
   }
 
+  // [FOREST] «Место старта»: Пепельное плато (у арены) / Сияющий лес (у врат леса)
+  const ZONE_OPTIONS = [['arena', 'Пепельное плато'], ['forest', 'Сияющий лес']];
+  function buildStartZone(prefix) {
+    const name = `${uid}-${prefix}-startzone`;
+    const seg = el('div', { class: 'ao-seg' });
+    const fs = el('fieldset', { class: 'ao-field ao-fieldset' }, el('legend', { class: 'ao-field__legend', text: 'Место старта' }), seg);
+    const inputs = [];
+    const TIPS = { arena: 'У арены Регента, на пепельном плато', forest: 'У эльфийских врат Сияющего леса, к северу от арены' };
+    for (const [value, label] of ZONE_OPTIONS) {
+      const input = el('input', { type: 'radio', name, value, class: 'ao-seg__input' });
+      inputs.push(input);
+      seg.append(el('label', { class: 'ao-seg__opt', title: TIPS[value] }, input, el('span', { class: 'ao-seg__label', text: label })));
+      listen(input, 'change', () => { if (input.checked) invoke('onSettings', { startZone: value }); });
+    }
+    const ctl = {
+      sync(settings, force) {
+        if (!force && fs.contains(doc.activeElement)) return;
+        for (const i of inputs) { const on = i.value === settings.startZone; if (i.checked !== on) i.checked = on; }
+      },
+    };
+    listen(fs, 'focusout', (e) => { if (!fs.contains(e.relatedTarget) && state.settings) ctl.sync(state.settings, true); });
+    controls.push(ctl);
+    return fs;
+  }
+
   function buildSettings(keys, prefix) {
     const wrap = el('div', { class: 'ao-settings' });
     for (const key of keys) {
       if (key === 'quality') wrap.append(buildQuality(prefix));
       else if (key === 'moveMode') wrap.append(buildMoveMode(prefix));
+      else if (key === 'startZone') wrap.append(buildStartZone(prefix)); // [FOREST]
       else if (key === 'volume' && !cfg.showVolume) continue;
       else if (key === 'volume') {
         wrap.append(
@@ -1066,7 +1093,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
       el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts), el('p', { class: 'ao-note', text: 'Играется сидя. Нужны веб-камера, Chrome или Edge и устойчивый стул.' })),
       buildHeroPick('menu'),
-      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'quality', 'volume', 'reducedMotion'], 'menu')),
+      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'reducedMotion'], 'menu')),
       el('div', { class: 'ao-menu__foot' }, dbg, dbgKeys),
     );
     return {
@@ -2162,7 +2189,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   function syncSettings(s) {
-    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}`;
+    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}`; // [FOREST] + startZone
     state.settings = s;
     if (key === state.settingsKey) return;
     state.settingsKey = key;
