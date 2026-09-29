@@ -115,6 +115,7 @@ export const config = {
     moveMode: 'steer',
     hero: 'ashen',          // выбранный герой: ashen | warrior | elf (modules/heroModel.js)
     startZone: 'arena',     // [FOREST] место старта: 'arena' — Пепельное плато, 'forest' — у врат Сияющего леса
+    bdoUi: true,            // [BDO] интерфейс в стиле Black Desert (false — прежний вид)
   },
 
   settings: null,            // заполняет main.js (живой объект)

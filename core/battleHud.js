@@ -20,6 +20,8 @@ const KIND = { slam: 'SLAM', orb: 'ORB', nova: 'NOVA' };
 // [ASHEN_V3] двуручные печати
 const SIGIL_NAME = { clap: 'ГРОМОВОЙ ХЛОПОК', gate: 'ВРАТА · БАСТИОН', frame: 'МЕТКА ЦЕЛИ', delta: 'ДЕЛЬТА · ЛУЧ', cor: 'КОР · СЕРДЦЕ' };
 
+import { createBdoHud } from './bdoHud.js'; // [BDO] DOM-слой HUD в стиле Black Desert
+
 const isObj = (v) => v !== null && typeof v === 'object';
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -27,6 +29,9 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 export function createBattleHud({ canvas } = {}) {
   const ctx = canvas && canvas.getContext ? canvas.getContext('2d') : null;
   if (!ctx) return { frame() {}, reset() {}, dispose() {} };
+  // [BDO] DOM-слой (панель умений, полосы, цель, мини-карта, титр зоны); ошибки не ломают canvas-HUD
+  let bdo = null;
+  try { bdo = createBdoHud({ root: canvas.parentNode, canvas }); } catch (e) { console.warn('[battleHud] bdoHud', e); bdo = null; }
   let W = 0, H = 0, dpr = 1, disposed = false, drawn = false;
   let t = 0;
   const lock = { x0: 0, y0: 0, x1: 0, y1: 0, ok: false, hitFlash: 0 };
@@ -701,6 +706,7 @@ export function createBattleHud({ canvas } = {}) {
 
   function frame(f) {
     if (disposed) return;
+    if (bdo) { try { bdo.frame(f); } catch (e) { console.warn('[battleHud] bdoHud.frame', e); bdo = null; } } // [BDO]
     try {
       const vp = isObj(f.viewport) ? f.viewport : { w: canvas.clientWidth, h: canvas.clientHeight };
       resize(vp.w, vp.h);
@@ -754,7 +760,8 @@ export function createBattleHud({ canvas } = {}) {
     combo = { n: 0, shown: 0, pop: 0, lost: 0, lostN: 0 };
     rune = { name: '', sub: '', t: 9, trail: null };
     flash.t = 1; hurt.t = 1; dashFx.t = 1; fizzleT = 9; coach = { hint: null, t: 9 }; lock.ok = false; lock.hitFlash = 0;
+    if (bdo) { try { bdo.reset(); } catch (e) { /* ignore */ } } // [BDO]
   }
-  function dispose() { disposed = true; clearAll(); }
+  function dispose() { disposed = true; clearAll(); if (bdo) { try { bdo.dispose(); } catch (e) { /* ignore */ } } }
   return { frame, reset, dispose };
 }

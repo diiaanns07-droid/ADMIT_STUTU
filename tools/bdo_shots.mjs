@@ -22,7 +22,7 @@ const CDN = argOf('--cdn', process.env.ASHEN_CDN_MIRROR || '');
 const ONLY = (argOf('--only', '') || '').split(',').filter(Boolean);
 const QUALITY = argOf('--quality', 'medium');
 const FPS = argv.includes('--fps');
-const PORT = 8840 + Math.floor(Math.random() * 40);
+let PORT = 20000 + Math.floor(Math.random() * 20000);
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -73,7 +73,7 @@ async function mirrorCdn(ctx) {
 const want = (name) => !ONLY.length || ONLY.some((o) => name.includes(o));
 
 async function gameShots(browser, W, H, tag, log) {
-  const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+  const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1, ignoreHTTPSErrors: true });
   await mirrorCdn(ctx);
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') log.push(`${tag} ${m.type()}: ${m.text()}`); });
@@ -126,7 +126,7 @@ async function gameShots(browser, W, H, tag, log) {
 }
 
 async function previewShots(browser, W, H, tag, log) {
-  const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+  const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1, ignoreHTTPSErrors: true });
   await mirrorCdn(ctx);
   const page = await ctx.newPage();
   page.on('pageerror', (e) => log.push(`${tag} preview EXC: ${e.message}`));
@@ -142,7 +142,8 @@ async function previewShots(browser, W, H, tag, log) {
 
 const { chromium } = loadPlaywright();
 const exe = argOf('--browser', existsSync('/opt/pw-browsers/chromium-1194/chrome-linux/chrome') ? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' : undefined);
-const server = await startServer();
+let server = null;
+for (let i = 0; i < 6 && !server; i++) { try { server = await startServer(); } catch (e) { if (i === 5) throw e; PORT = 20000 + Math.floor(Math.random() * 20000); } } // порт мог быть занят параллельным запуском
 const browser = await chromium.launch({ executablePath: exe, args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'] });
 const log = [];
 try {
