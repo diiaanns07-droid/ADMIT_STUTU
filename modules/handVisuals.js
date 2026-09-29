@@ -91,6 +91,7 @@ const NOCK_Y = 0.03, REST_X = 0.02;                        // стрела ло�
 const ARROW_LEN = 0.8;
 const AIM_YAW = 28 * Math.PI / 180, AIM_PITCH = 22 * Math.PI / 180, BOW_CANT = 0.2;
 const BOW_SHOW_YAW = -0.42;      // [HAND] лук чуть развёрнут к камере за спиной, чтобы читалась дуга плеч
+const BOW_GAME_SCALE = 1.2;      // [HAND] с камеры боя (≈5 м) лук в натуральную величину теряется
 
 // ---------------------------------------------------------------- шейдеры
 // Билборды: aPos(xyz, размер), aCol(rgb, поворот), aVel(вектор вытягивания в мире, кадр атласа 0..3 + 4·k —
@@ -1028,7 +1029,7 @@ export function createHandVisuals({ THREE, scene, config } = {}) {
       bowGroup.visible = false; strLine.visible = false; nockArrow.visible = false; bow.aimInit = false; bow.arrowVis = 0;
       return;
     }
-    const vis = bow.vis, sIn = 0.82 + 0.18 * easeOut(vis);
+    const vis = bow.vis, sIn = (0.82 + 0.18 * easeOut(vis)) * BOW_GAME_SCALE;
     if (b) {
       const draw = clamp01(num(b.draw, 0));
       bow.draw += (draw - bow.draw) * (1 - Math.exp(-dt * 28));
@@ -1098,7 +1099,8 @@ export function createHandVisuals({ THREE, scene, config } = {}) {
     for (let i = 0; i < limbGlowU.length; i++) {
       const u = limbGlowU[i];
       toW(u.x * sIn, u.y * sIn * flexY, u.z * sIn * flexZ, loc);
-      bbc(loc.x, loc.y, loc.z, 0.075 + 0.03 * draw, c, 0.22 * vis * (1 + 0.6 * ch * pulse), 0);
+      bbc(loc.x, loc.y, loc.z, 0.1 + 0.04 * draw, c, 0.5 * vis * (1 + 0.6 * ch * pulse), 0);
+      bbc(loc.x, loc.y, loc.z, 0.035, ECORE[bow.el], 0.9 * vis, 3);
     }
     if (draw > 0.02 || ch > 0) {
       const sk = (0.1 + 0.28 * draw) * vis * (1 + 0.8 * ch * pulse);
