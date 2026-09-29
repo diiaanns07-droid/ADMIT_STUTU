@@ -493,8 +493,8 @@ export function createCombatHand(api, patch = {}) {
   function decorateSnapshot(snap) {
     if (!snap || typeof snap !== 'object') return snap;
     if (snap.player) {
-      snap.player.bow = S.bow === IDLE_BOW ? IDLE_BOW : { ...S.bow };
-      snap.player.handSpell = S.spell === IDLE_SPELL ? IDLE_SPELL : { ...S.spell };
+      snap.player.bow = { ...S.bow };            // свежие объекты: потребители снимка могут их менять
+      snap.player.handSpell = { ...S.spell };
       if (S.bow.active && (snap.player.action === 'idle' || snap.player.action === 'move')) snap.player.action = 'cast';
     }
     if (snap.cooldowns) {

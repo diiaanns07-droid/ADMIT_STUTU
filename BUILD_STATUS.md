@@ -207,3 +207,26 @@
 - **Настройка** `startZone: 'arena'|'forest'` (config, sanitizeSettings, ui). При 'forest' старт у врат леса, облёт-интро
   у арены пропускается; в меню герой стоит у врат.
 - `world.forest` — `{ weight 0..1, inside, mood, drainEvents(), stats(), plan, map }`; `world.layout.zones.brightForest`.
+
+## V6 · [HAND] лук и магия рукой — API для других команд (черновик, дополняется)
+Файлы зоны: `core/bowGesture.js` (лук), `core/handMagic.js` (сгусток в ладони), `core/handZone.js` (связка с вводом,
+DEBUG-клавиши, поза процедурного героя), `modules/combatHand.js` (бой), `core/handFxOverlay.js` (оверлей на превью),
+`modules/handVisuals.js` (3D-заглушки — №7 [VFX] может заменить). Настройка `settings.handCombat` (true по умолчанию).
+- **Ввод (C2)** — main.js сразу после `readInput()`: `input.bow = { active, phase:'idle'|'ready'|'nocked'|'drawing', draw, aimX, aimY,
+  charged, release (1 кадр), element, rain, rapid, rune }`, `input.handSpell = { phase:'idle'|'form'|'hold'|'throw', element, power,
+  dir{x,y}, size, twoHand, how, formed (1 кадр), cancel (1 кадр) }`. Пока `bow.active` (и 0,45 с после) main **уже обнуляет**
+  moveX/moveZ/dash/dashDir/stick, щит, парирование, «OK», искру, выброс, взмах — №1 [CTRL] может дополнительно проверять `input.bow.active`.
+- **События (C3)** из combat: `bow_draw_start`, `bow_draw {draw, charged}`, `bow_release {draw, charged, element, projectileId, rain}`,
+  `arrow_hit {damage, element, target:'boss'|'player', targetId, charged, rain}`, `hand_spell_form {element, power}`,
+  `hand_spell_throw {element, power, dir, twoHand, projectileId}`, `hand_spell_hit {element, damage, twoHand, target}`, `hand_spell_cancel {element, reason}`;
+  дополнительно `bow_cancel`, `bow_element {element, rune}`, `arrow_rain {center, radius, delay, count, element}`, `hand_chain {from, to}`,
+  `element_apply {element, target, duration, knockback}`, а также `projectile_impact` (kind arrow/hand_orb) и `boss_hit` (source arrow/hand_orb/burn/chain).
+- **Снимок (C3/C4):** в `snap.projectiles` — `{ id, owner:'player', kind:'arrow'|'hand_orb', element, position, velocity, radius, damage, charged,
+  twoHand, pierce, from:'hand' }`; `snap.player.bow`, `snap.player.handSpell`; `snap.cooldowns.arrow*/handOrb*/rain*`.
+- **PvP (№3):** `combat.hand.registerTarget({ id, kind:'player', getPosition()→{x,y,z}, radius, height, onHit(hit) })` — мои стрелы и
+  сгустки сами делают swept-тест по сопернику и зовут `onHit({ damage, element, kind, projectileId, point, dir, charged, twoHand,
+  knockback{x,z}|null, slowSec, burnSec, burnDps, chain })`; урон и эффекты по сети применяет №3. `combat.hand.setBossTargetable(false)` —
+  в дуэли стрелы не бьют Регента. Либо можно брать снаряды из `snap.projectiles` (поле `damage` есть) в свой hit-тест — но тогда не
+  регистрировать цель, чтобы урон не прошёл дважды.
+- **Герой (C5):** VRM-героям позу даёт `[HERO] heroPoseFromInput` в main.js; процедурному стражу — `createHeroBowPose()` (core/handZone.js).
+- **VFX (№7):** `modules/handVisuals.js` — `setDelegated({ arrows, orbs, bow })` прячет мои заглушки, когда эффекты рисуют своё.
