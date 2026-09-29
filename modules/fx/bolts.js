@@ -272,7 +272,7 @@ export function createBolts(deps) {
     hexLin(isNum(o.color) ? o.color : ELEMENTS.storm.mid, s.col);
     hexLin(isNum(o.core) ? o.core : ELEMENTS.storm.core, s.core);
     s.width = clamp(num(o.width, defW), 0.002, 2);
-    s.intensity = clamp(num(o.intensity, defI), 0, 50);
+    s.intensity = Math.min(3, clamp(num(o.intensity, defI), 0, 50) * 0.75); // [VFX] калибровка под bloom игры
     s.rival = clamp(num(o.rival, 0), 0, 1);
     s.jitter = clamp(num(o.jitter, defJ), 0, 1);
     s.segs = clampi(num(o.segments, defSeg), 2, 48);

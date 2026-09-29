@@ -102,6 +102,15 @@ const bossG = new THREE.Group();
 const settings = { quality: qs.get('quality') || 'medium', volume: 0, reducedMotion: qs.has('rm'), fxMagic: !qs.has('nov6') };
 const config = { settings, effects: {} };
 const fx = createEffects({ THREE, scene, camera, renderer, config });
+// ?post=1 — настоящая постобработка игры (bloom, грейд) из core/postfx.js: калибровка яркости как в бою
+let postfx = null;
+const postReady = qs.has('post') ? import('../core/postfx.js').then(async (m) => {
+  try {
+    postfx = m.createPostFX({ THREE, renderer, scene, camera, quality: settings.quality, reducedMotion: settings.reducedMotion });
+    postfx.setSize(innerWidth, innerHeight, renderer.getPixelRatio());
+    if (postfx.whenReady) await postfx.whenReady;
+  } catch (e) { console.warn('postfx', e); postfx = null; }
+}) : Promise.resolve();
 fx.setQuality(settings.quality);
 fx.setVolume(0);
 fx.setAnchors(() => hero.userData.anchors);
@@ -439,7 +448,7 @@ function frame(dt) {
   const hs = fx.takeHitStop(); if (hs > 0) { hitStopLeft = Math.max(hitStopLeft, hs); perf.hitstop = hs; }
   const t1 = performance.now();
   placeCamera();
-  renderer.render(scene, camera);
+  if (postfx && postfx.enabled) postfx.render(sdt || 1 / 60); else renderer.render(scene, camera);
   const t2 = performance.now();
   perf.upd += t1 - t0; perf.ren += t2 - t1; perf.n++;
   if (perf.n >= 30) { perf.updAvg = perf.upd / perf.n; perf.renAvg = perf.ren / perf.n; perf.upd = perf.ren = 0; perf.n = 0; }
@@ -487,7 +496,7 @@ function loop(now) {
   if (!SHOT) requestAnimationFrame(loop);
 }
 const stand = {
-  ready: (async () => { if (fx.v6 && fx.v6.ready) { try { await fx.v6.ready; } catch (e) { /* ignore */ } } return true; })(),
+  ready: (async () => { if (fx.v6 && fx.v6.ready) { try { await fx.v6.ready; } catch (e) { /* ignore */ } } await postReady; return true; })(),
   play(name) { if (ACTIONS[name]) ACTIONS[name](); else console.warn('нет действия', name); },
   run(sec) { const n = Math.max(1, Math.round(sec * 60)); for (let i = 0; i < n; i++) frame(sec > 0 ? sec / n : 0); },
   reset: resetSim, info,

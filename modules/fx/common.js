@@ -62,7 +62,7 @@ export function runeCircle(fx, c, rune, el, o) {
     try {
       h = g.spawn({
         pos: { x: c.feet.x, y: c.feet.y + 0.04, z: c.feet.z }, radius: o.radius || 1.7, symbol: rune,
-        color: P.mid, hot: P.core, intensity: o.intensity || 1.8, dur: o.dur || 1.8, unfold: o.unfold || 0.3,
+        color: P.mid, hot: P.core, intensity: (o.intensity || 1.8) * 0.8, dur: o.dur || 1.8, unfold: o.unfold || 0.3,
         spin: o.spin ?? 0.5, rings: o.rings || 2, ticks: o.ticks || 28, style: o.style || 'rune', rival: c.rival,
         follow: o.follow ? () => fx.anchor('feet', c.feet, c.remote) : null,
       });
