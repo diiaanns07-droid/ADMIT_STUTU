@@ -38,6 +38,7 @@ const PRESETS = {
     pauldrons: null, bracers: false, belt: 'pouches', pouches: 1, dagger: 'left', rings: false, sigil: false,
     cape: { w: 0.5, len: 0.98, color: 0xd6cdb8, trim: 0xc9a45c, emblem: 'leaf', lining: 0x5f7d6a }, bow: { wood: 0xb9a888, rough: 0.62 }, quiver: 'hip',
     tabard: { panels: [{ az: 0.42, w: 0.11, len: 0.66, pleats: 0.8 }, { az: -0.42, w: 0.11, len: 0.66, pleats: 0.8 }] },
+    necklace: { drop: 0.12 },
   },
   // Тёмная чародейка на теле Quaternius: воронёные наплечники, длинный плащ, посох с кристаллом ночи
   witchQ: {
@@ -45,12 +46,14 @@ const PRESETS = {
     pauldrons: 'plate', bracers: false, belt: 'pouches', pouches: 2, dagger: 'right', rings: false, sigil: true,
     cape: { w: 0.6, len: 1.3, color: 0x1a1128, trim: 0xb8aee0, emblem: 'moon', lining: 0x40235f }, staff: { crystal: 0x9fe0ff, glow: 0xa77bff, style: 'crescent', wood: 0x1b1522 },
     tabard: { panels: [{ az: 0, w: 0.26, len: 0.8, emblem: true }, { az: 1.12, w: 0.17, len: 0.7 }, { az: -1.12, w: 0.17, len: 0.7 }] },
+    necklace: { drop: 0.14 },
   },
   // Лучница (Quaternius Ranger): лук и колчан, кинжал
   scout: {
     metal: 0xb0b4bc, metal2: 0xc9a45c, leather: 0x4a3322, cloth: 0x234a2a, glow: 0x9dffb0,
     pauldrons: null, bracers: false, belt: 'pouches', pouches: 2, dagger: 'right', rings: false,
     bow: { wood: 0x5a3a22 }, quiver: 'back',
+    necklace: { drop: 0.11 },
   },
   // Архимаг (Quaternius Wizard): посох-громоотвод, плащ с рунами, наручи, перстни
   magus: {
@@ -427,6 +430,45 @@ export function dressHero(THREE, vrm, opts = {}) {
       if (hit) surf = hit.point.clone().addScaledVector(FWD, 0.004);
     } catch (e) { /* без луча — прежнее смещение */ }
     stick(grp, chestB, surf, modelQ);
+  }
+
+  // ---------------- цепочка с кулоном (героини): тонкая цепь по поверхности груди от боков шеи к кулону
+  // у грудины. Точки — лучами к оси груди по коже и костюму (капюшон не в счёт: по бокам цепь уходит под
+  // него); кулон — огранённый камень в оправе цвета стихии.
+  if (P.necklace && bp[chestB] && bp.neck) {
+    try {
+      vrm.scene.updateMatrixWorld(true);
+      const meshes = [];
+      vrm.scene.traverse((o) => { if (o.isSkinnedMesh && o.visible && !/Hood|Hair|Eye|Brow/i.test(o.name)) meshes.push(o); });
+      const axis = bp[chestB].clone(), yTop = bp.neck.y - 0.03, yV = bp.neck.y - (P.necklace.drop ?? 0.13);
+      const rc = new THREE.Raycaster(), pts = [];
+      for (let i = 0; i <= 16; i++) {
+        const u = i / 8 - 1, az = u * 1.15, y = yV + (yTop - yV) * u * u;
+        const dir = new THREE.Vector3().addScaledVector(FWD, Math.cos(az)).addScaledVector(LEFT, Math.sin(az));
+        const from = new THREE.Vector3(axis.x, y, axis.z).addScaledVector(dir, 0.4);
+        rc.set(from, dir.clone().negate()); rc.far = 0.4;
+        const hit = rc.intersectObjects(meshes, false)[0];
+        if (hit) pts.push(hit.point.clone().addScaledVector(dir, 0.0035));
+      }
+      if (pts.length >= 12) {
+        const grp = new THREE.Group(); grp.name = 'necklace';
+        const curve = new THREE.CatmullRomCurve3(pts);
+        grp.add(new THREE.Mesh(G(tube(THREE, curve, 80, 5, () => 0.0019)), mats.trim));
+        // кулон: оправа-капля и камень, висит у самой нижней точки цепи
+        const low = pts.reduce((m, p) => (p.y < m.y ? p : m), pts[0]);
+        const setting = new THREE.Mesh(G(new THREE.TorusGeometry(0.012, 0.0024, 6, 18)), mats.trim);
+        setting.position.copy(low).addScaledVector(UP, -0.016).addScaledVector(FWD, 0.004); setting.quaternion.copy(qFromTo(new THREE.Vector3(0, 0, 1), FWD)); setting.scale.set(0.85, 1.25, 1);
+        const stone = new THREE.Mesh(G(gem(THREE, { r: 0.0085, h: 0.03, n: 6 })), mats.crystal);
+        stone.position.copy(low).addScaledVector(UP, -0.017).addScaledVector(FWD, 0.006);
+        const bail = new THREE.Mesh(G(new THREE.TorusGeometry(0.0038, 0.0014, 5, 10)), mats.trim);
+        bail.position.copy(low).addScaledVector(UP, -0.001).addScaledVector(FWD, 0.003); bail.quaternion.copy(qFromTo(new THREE.Vector3(0, 0, 1), LEFT));
+        grp.add(setting, stone, bail);
+        const c0 = bp[chestB].clone();
+        for (const m of grp.children) m.position.sub(c0);
+        stick(grp, chestB, c0, new THREE.Quaternion());
+        grp.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.userData.noShadow = true; } });
+      }
+    } catch (e) { /* без цепочки */ }
   }
 
   // ---------------- наручи
