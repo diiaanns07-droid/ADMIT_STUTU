@@ -61,6 +61,7 @@ export function createFxV6(deps) {
     THREE, kit, E: ELEMENTS, SPRITES,
     glyph: null, bolts: null, trails: null, decals: null, shock: null, hex: null,
     legacy: deps.legacy || {},
+    external: { bow: false },   // части, которые рисует чужой модуль (bow — 3D-лук modules/handVisuals.js №6)
     get snap() { return snap; },
     get input() { return input; },
     get clock() { return kit.clock; },

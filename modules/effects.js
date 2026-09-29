@@ -3429,6 +3429,17 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     setGround: (fn) => { groundFn = typeof fn === 'function' ? fn : null; },
     setInput: (input) => { lastInput = input || null; if (v6) v6.setInput(lastInput); },
     takeHitStop: () => (v6 && v6.enabled ? v6.takeHitStop() : 0),
+    // [VFX] делёж с modules/handVisuals.js (№6): V6 рисует стрелы, сгустки и попадания, лук и метку «Дождя стрел» — №6
+    linkHandVisuals: (hv) => {
+      if (!hv || typeof hv.setDelegated !== 'function') return;
+      const on = !!(v6 && v6.enabled);
+      if (hv.__fxDelegated === on) return;
+      try {
+        hv.setDelegated(on ? { arrows: true, orbs: true, palm: true, bow: false, rain: false } : { arrows: false, orbs: false, palm: false, bow: false, rain: false });
+        hv.__fxDelegated = on;
+        if (v6) v6.fx.external.bow = on;
+      } catch (e) { warnOnce('hv', 'handVisuals.setDelegated', e); }
+    },
     get v6() { return v6; },
   };
 }

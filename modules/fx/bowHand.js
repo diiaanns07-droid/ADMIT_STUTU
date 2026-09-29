@@ -276,9 +276,7 @@ export function register(fx) {
     P(B.nock, 10); oP.shape = 'line'; oP.to = B.bot[3]; sp(0.3, 1.2); lf(0.1, 0.22); sz(0.04, 0.01); oP.ramp = rampEl(E0, R); oP.intensity = 3; oP.sprite = 'spark'; oP.drag = 3; oP.rival = R; go();
     // выброс у лука
     muzzle(fx, B.head, B.aim, E0 || 'gold', R, { size: charged ? 1.25 : 0.8, count: charged ? 24 : 14 });
-    if (!ring(B.head, B.aim, charged ? 1.7 : 0.9, 0.24, col, Pl.core, R, charged ? 2 : 1.4)) {
-      kit.flash(B.head, { color: col, size: [0.2, charged ? 1.6 : 0.9], dur: 0.2, intensity: 2, sprite: 'ring', pull: 0.3, rival: R });
-    }
+    kit.flash(B.head, { color: col, size: [0.2, charged ? 1.1 : 0.7], dur: 0.2, intensity: 2, sprite: 'ring', pull: 0.3, rival: R }); // [VFX] без кольца во весь экран
     if (charged) {
       kit.flash(B.grip, { color: col, size: [0.4, 1.4], dur: 0.25, intensity: 1.8, sprite: 'glow', pull: 0.6, rival: R });
       shed(E0, R, B.head, B.aim, 3, 6, 1.4);
@@ -401,6 +399,7 @@ export function register(fx) {
 
   function bowStep(B, dt) {
     if (B.phase === 0) return;
+    if (fx.external && fx.external.bow && !B.remote) { B.phase = 0; B.vis = 0; for (const L of B.lines) lineKill(L); return; } // [VFX] 3D-лук рисует handVisuals (№6)
     B.t += dt; B.pt += dt;
     if (B.phase === 1) B.vis = Math.min(1, B.vis + dt / 0.12);
     else {
