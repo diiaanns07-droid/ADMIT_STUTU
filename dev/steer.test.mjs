@@ -469,6 +469,22 @@ test('[V6] «Руль»: осознанный толчок ладонью — щ
   ok(!f.shield && f.moveZ > 0, 'убрал ладонь назад → щит опущен, идём: ' + JSON.stringify({ sh: f.shield, z: f.moveZ }));
 });
 
+test('[V6] «Руль»: резко к плечу на бег (кисть растёт в кадре на 29 %) — бег, не щит', () => {
+  // проверка смещения ладони здесь выключена: на живом шуме она такой подъём пропускает, держит скорость руки
+  const g = createHandGestures({ moveMode: 'steer', shieldPushShift: 9 });
+  let t = g8(g, 1000, 900, () => [LH(0, CHEST, BODYN, 0.12)]);
+  const t0 = t;
+  let shield = false;
+  t = g8(g, t, 900, (tt) => { const u = Math.min(1, (tt - t0) / 300), e = u * u * (3 - 2 * u); shield = shield || g.peek(tt).shield; return [LH(0, CHEST + 0.55 * e, BODYN, 0.12 * (1 + 0.29 * e))]; });
+  const f = g.peek(t);
+  ok(!shield, 'щит не поднялся: ' + JSON.stringify(g.getDebug().left.push));
+  ok(f.moveZ > 0.95 && f.stick.gait === 'run', 'бежим: ' + JSON.stringify({ z: f.moveZ, g: f.stick.gait }));
+  // а остановил руку у плеча и толкнул — щит
+  const t1 = t;
+  t = g8(g, t, 400, (tt) => [LH(0, CHEST + 0.55, BODYN, 0.155 * (1 + 0.3 * Math.min(1, (tt - t1) / 180)))]);
+  ok(g.peek(t).shield, 'толчок у плеча — щит: ' + JSON.stringify(g.getDebug().left.push));
+});
+
 test('[ОШИБКА] рука поднята, но ниже груди → подсказка steer_low (одна, не спам)', () => {
   const g = createHandGestures({ moveMode: 'steer' });
   let t = g8(g, 1000, 600, () => [LH(0, -1.5)]);

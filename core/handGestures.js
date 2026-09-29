@@ -101,6 +101,7 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   shieldConfirmMs: 90,     // ладонь к камере раскрыта хотя бы столько (не мигание формы)
   shieldStillShare: 0.6,   // в момент подъёма щита ладонь всё ещё впереди: не меньше этой доли толчка над размером до него
   shieldAfterRaiseMs: 400, // в «Руле»: столько после подъёма руки щит не поднимается (подъём — не толчок)
+  shieldMaxLevelSpeed: 1.2, //   и пока рука заметно идёт вверх/вниз (sw/с): к плечу на бег — не толчок
   shieldRetract: 0.07,     // ладонь вернулась назад: размер < (размер до толчка)·(1 + столько)…
   shieldRetractShare: 0.5, //   …или ушла назад больше чем на эту долю толчка (от пика) — что больше…
   shieldRetractMs: 200,    //   …в сумме столько (шум кадров копилку не обнуляет) — щит опускается
@@ -676,7 +677,7 @@ export function createHandGestures(configPatch = {}) {
       burstBlockedUntil: -Infinity, pendingBurst: null,
       parryBlockedUntil: -Infinity, sparkBlockedUntil: -Infinity, strokeBlockedUntil: -Infinity,
       stickState: null,
-      shield: { on: false, openSince: null, badSince: null, base: null, peak: null, back: 0, lastT: null },
+      shield: { on: false, openSince: null, badSince: null, base: null, peak: null, back: 0, lastT: null, vertT: null },
       stroke: null, trail: [], trailUntil: -Infinity, lastRune: null, runeBlockedUntil: -Infinity, lastRecognition: null,
       tipF: null,
       swipe: { armed: true, until: -Infinity },
@@ -802,7 +803,7 @@ export function createHandGestures(configPatch = {}) {
       H.scaleHist.push({ t, s: H.scaleF, p: H.spanF, nz: H.nzF, sw, x: pcx, y: pcy });
       while (H.scaleHist.length > 30 || (H.scaleHist.length && t - H.scaleHist[0].t > cfg.shieldPushMs + 60)) H.scaleHist.shift();
       const hs = H.scaleHist, n = hs.length, b = hs[0];
-      let pushing = false, base = 0, baseNz = null;
+      let pushing = false, base = 0, baseNz = null, baseT0 = t;
       const ratio = moveMode === 'steer' ? cfg.shieldPushRatioSteer : cfg.shieldPushRatio;
       if (n >= 3 && t - b.t >= cfg.shieldPushMs * 0.5 && b.s > 1e-6 && b.p > 1e-6) {
         // размер образца в масштабе текущих плеч (наклон всем корпусом не считается);
@@ -815,7 +816,7 @@ export function createHandGestures(configPatch = {}) {
           minS = Math.min(minS, hs[i].s * k(hs[i]));
         }
         base = minP;
-        baseNz = hs[minI].nz;
+        baseNz = hs[minI].nz; baseT0 = hs[minI].t;
         const turned = H.nzF !== null && baseNz !== null ? Math.abs(H.nzF - baseNz) : 0;
         const cur = (H.spanF + hs[n - 2].p * k(hs[n - 2])) / 2;
         const scaleUp = (H.scaleF + hs[n - 2].s * k(hs[n - 2])) / 2 / minS;
@@ -846,6 +847,7 @@ export function createHandGestures(configPatch = {}) {
         if (H.pushRun === 1) {
           H.pushBaseRun = sw ? base / sw : null;   // размах ладони до толчка (в ширинах плеч)
           H.pushPin = { t, p: base, pn: sw ? base / sw : null, sw: !!sw, nz: baseNz };
+          H.pushT0 = baseT0;   // когда толчок начался (самая маленькая кисть в окне)
         }
         if (H.pushRun >= cfg.shieldPushFrames) { H.pushAt = t; H.pushBase = H.pushBaseRun; }
       } else { H.pushRun = 0; H.pushPin = null; }
@@ -981,12 +983,19 @@ export function createHandGestures(configPatch = {}) {
     const still = mag < cfg.shieldStickMax;
     const confirmed = t - S.openSince >= cfg.shieldConfirmMs;
     // [V6] «Руль»: подъём руки к груди (кисть растёт в кадре) — не толчок
-    const justRaised = so && so.mode === 'steer' && fin(so.raisedAt) && t - so.raisedAt < cfg.shieldAfterRaiseMs;
+    // рука идёт к плечу / вниз — это руль; толчок должен начаться, когда она уже не едет
+    if (so && so.mode === 'steer' && fin(so.levelSpeed) && so.levelSpeed > cfg.shieldMaxLevelSpeed) S.vertT = t;
+    const justRaised = so && so.mode === 'steer' && ((fin(so.raisedAt) && t - so.raisedAt < cfg.shieldAfterRaiseMs)
+      || t - (S.vertT ?? -Infinity) < 40 || (fin(L.pushT0) && L.pushT0 <= (S.vertT ?? -Infinity)));
     // и ладонь всё ещё впереди: толчок, после которого кисть пропала и вернулась уже назад, щит не ставит
     const ratio = moveMode === 'steer' ? cfg.shieldPushRatioSteer : cfg.shieldPushRatio;
     const stillForward = L.pushBase === null || L.spanNowN === null || L.scaleN === null
       || Math.min(L.spanNowN, L.scaleN) >= L.pushBase * (1 + (ratio - 1) * cfg.shieldStillShare);
-    const pushed = t - L.pushAt <= cfg.shieldPushKeepMs && mag < cfg.shieldStickStart && confirmed && !justRaised && stillForward;
+    const fresh = t - L.pushAt <= cfg.shieldPushKeepMs;
+    // толчок во время руления (рука идёт к плечу, вбок) или после которого ладонь уже не впереди —
+    // аннулируется, а не ждёт конца движения (иначе щит вставал в конце подъёма руки на бег)
+    if (fresh && (justRaised || mag >= cfg.shieldStickStart || !stillForward)) L.pushAt = -Infinity;
+    const pushed = fresh && mag < cfg.shieldStickStart && confirmed && !justRaised && stillForward;
     if (pushed || (cfg.shieldHoldMs > 0 && still && t - S.openSince >= cfg.shieldHoldMs)) {
       S.on = true; S.back = 0; S.lastT = t;
       S.base = pushed ? L.pushBase : null; S.peak = L.scaleN;

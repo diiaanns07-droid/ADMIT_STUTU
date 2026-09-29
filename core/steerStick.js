@@ -365,6 +365,7 @@ export function createSteerStick(configPatch = {}) {
       lean: s.bodyF && s.bodySlowX !== null ? mirrorSign * (s.bodyF.x - s.bodySlowX) / W : 0,
       rising,
       raisedAt: fresh && s.raised ? s.raisedSince : null,   // [V6] когда подняли руку (щит не путает подъём с толчком)
+      levelSpeed: fresh ? Math.abs(s.vy) : 0,                // [V6] как быстро рука идёт вверх/вниз, sw/с (толчок щита — к камере, не вверх)
     };
   }
 

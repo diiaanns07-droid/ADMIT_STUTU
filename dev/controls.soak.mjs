@@ -153,7 +153,8 @@ function simulate(seed, gOpts = {}) {
       M.frames++;
       const moving = f.moveZ > 0;
       if (f.dash || f.dashDir) { M.falseDash++; if (DEBUG) console.log(`ложный рывок: seed=${seed} «${P.tag}» +${t - t0} мс`, JSON.stringify(g.getDebug().stick.dash)); }
-      if (P.want !== 'shield' && P.want !== 'any') {
+      // щит вне осознанного толчка — ложный (и в переходах: подъём руки, рука к плечу, резкое руление)
+      if (P.want !== 'shield' && P.tag !== 'толчок щита' && P.tag !== 'убрал ладонь' && !(P.tag === 'снова идёт' && prevShield)) {
         if (f.shield) M.falseShieldFrames++;
         if (f.shield && !prevShield) { M.falseShieldOn++; if (DEBUG) console.log(`ложный щит: seed=${seed} «${P.tag}» +${t - t0} мс`, JSON.stringify(g.getDebug().left.push), 'recent hand frames:', recent.join('')); }
       }
