@@ -333,7 +333,8 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     }
     // соперник виден только в бою (в меню снимка нет) и пока он в комнате
     remote.setVisible(!!snap && !!net && net.state !== 'idle' && !S.oppGone);
-    updateBadge(now, !!snap && (screen === undefined || screen === 'playing' || screen === 'paused' || screen === 'intro'));
+    // в дуэли №3 имя соперника и пинг уже в панели раунда — значок только вне PvP
+    updateBadge(now, !!snap && snap.mode !== 'pvp' && (screen === undefined || screen === 'playing' || screen === 'paused' || screen === 'intro'));
     // соперник: события → его модель и общий массив (data.remote = true)
     let inc = null;
     if (S.inEvents.length) { inc = S.inEvents.splice(0, S.inEvents.length); remote.pushEvents(inc); }
