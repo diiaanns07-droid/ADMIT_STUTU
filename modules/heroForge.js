@@ -248,7 +248,7 @@ export function buildStaff(THREE, M, S = {}) {
 
 // ---------------------------------------------------------------- лук
 // B: { len (от кончика до кончика), brace (тетива от рукояти) } →
-//   { group, tipT, tipB, nockRest, rest (полка стрелы), inlays[] }
+//   { group, tipT, tipB, nockRest, rest (полка стрелы), bend(k) — изгиб плеч при натяжении 0…1 }
 export function buildBow(THREE, M, B = {}) {
   const L = B.len || 1.3, brace = B.brace || 0.17;
   const grp = new THREE.Group(); grp.name = 'bow';
@@ -256,7 +256,13 @@ export function buildBow(THREE, M, B = {}) {
   const half = L / 2, RY = 0.13;
   // ось плеча в плоскости y–z: от рукояти назад к лучнику, у кончика — загиб вперёд (рекурв)
   const yz = [[RY - 0.01, 0.012], [RY + 0.1, 0.04], [RY + 0.24, 0.1], [RY + 0.37, 0.158], [half - 0.07, 0.196], [half - 0.02, 0.19], [half, 0.16]];
+  // плечи — на шарнирах у корня (изгиб при натяжении, bend(k)); 'bow-limb' не склеивается с рукоятью
+  const limbs = [];
   for (const sg of [1, -1]) {
+    const piv = new THREE.Group(); piv.name = 'bow-limb'; piv.position.set(0, sg * (RY - 0.01), 0.012); grp.add(piv);
+    const inner = new THREE.Group(); inner.position.set(0, -sg * (RY - 0.01), -0.012); piv.add(inner);
+    limbs.push({ piv, sg });
+    const add2 = (g, m) => add(g, m, inner);
     const pts = yz.map(([y, z]) => new THREE.Vector3(0, sg * y, z));
     const c = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
     const W = (s) => lerp(0.042, 0.013, s ** 0.85), T = (s) => lerp(0.021, 0.0085, s);
@@ -269,7 +275,7 @@ export function buildBow(THREE, M, B = {}) {
       const ex = Math.sign(cs) * Math.abs(cs) ** 0.55, ez = Math.sign(sn) * Math.abs(sn) ** 0.55;
       out.copy(Pp).addScaledVector(X, ex * W(v) * 0.5 * sg).addScaledVector(Nn, ez * T(v) * 0.5);
     }, 12, 40);
-    add(limb, M.wood);
+    add2(limb, M.wood);
     // руническая вставка по спинке плеча (сторона −z, к цели): узкая светящаяся полоса
     const inlay = surface(THREE, (u, v, out) => {
       const s = lerp(0.06, 0.78, v);
@@ -278,19 +284,19 @@ export function buildBow(THREE, M, B = {}) {
       const back = Nn.z < 0 ? 1 : -1;
       out.copy(Pp).addScaledVector(X, (u - 0.5) * W(s) * 0.32).addScaledVector(Nn, back * (T(s) * 0.5 + 0.0009));
     }, 2, 24, { closedU: false });
-    add(inlay, M.inlay).name = 'bow-inlay';
+    add2(inlay, M.inlay).name = 'bow-inlay';
     // наконечник плеча: кованый колпак и камень
     const tp = c.getPointAt(1), tt = c.getTangentAt(1);
-    const cap = add(new THREE.ConeGeometry(0.0085, 0.05, 7), M.trim);
+    const cap = add2(new THREE.ConeGeometry(0.0085, 0.05, 7), M.trim);
     cap.position.copy(tp).addScaledVector(tt, 0.012); cap.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tt);
-    const g2 = add(gem(THREE, { r: 0.0055, h: 0.018, n: 5 }), M.crystal);
+    const g2 = add2(gem(THREE, { r: 0.0055, h: 0.018, n: 5 }), M.crystal);
     g2.position.copy(c.getPointAt(0.93)).add(new THREE.Vector3(0, 0, -0.012 * 1)); g2.rotation.x = Math.PI / 2;
     // накладка у рукояти: кольцо-обойма
-    const band = add(new THREE.TorusGeometry(1, 0.12, 6, 20), M.trim);
+    const band = add2(new THREE.TorusGeometry(1, 0.12, 6, 20), M.trim);
     const bp = c.getPointAt(0.03), bt = c.getTangentAt(0.03);
     band.position.copy(bp); band.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), bt); band.scale.set(0.024, 0.014, 0.014);
     // крыло-клинок на спинке (к цели), изогнутое наружу
-    const wing = add(bladeGeo(THREE, 0.2, 0.035, 0.004, 0.45), M.metal);
+    const wing = add2(bladeGeo(THREE, 0.2, 0.035, 0.004, 0.45), M.metal);
     wing.position.set(0, sg * (RY - 0.02), -0.028);
     wing.rotation.set(0, Math.PI / 2, sg > 0 ? Math.PI / 2 + 0.55 : -Math.PI / 2 - 0.55);
     wing.scale.set(1, sg > 0 ? 1 : -1, 1);
@@ -320,7 +326,24 @@ export function buildBow(THREE, M, B = {}) {
   const nockRest = new THREE.Vector3(0, 0, 0.172);
   const rest = new THREE.Vector3(-0.02, 0.07, -0.012);   // полка стрелы: над кулаком, со стороны −x
   void brace;
-  return { group: grp, tipT, tipB, nockRest, rest };
+  // изгиб плеч при натяжении: поворот шарниров к лучнику (+z), кончики тетивы — следом (те же объекты векторов)
+  const tip0 = [tipT.clone(), tipB.clone()], BEND = 0.14;
+  let bendK = -1;
+  function bend(k) {
+    k = Math.min(1, Math.max(0, k));
+    if (Math.abs(k - bendK) < 1e-4) return;
+    bendK = k;
+    const e = k * k * (3 - 2 * k);   // тугой лук: гнётся к концу натяжения
+    limbs.forEach(({ piv, sg }, i) => {
+      const a = sg * BEND * e;
+      piv.rotation.x = a;
+      const tp = i === 0 ? tipT : tipB, t0 = tip0[i];
+      const dy = t0.y - piv.position.y, dz = t0.z - piv.position.z, c = Math.cos(a), sn = Math.sin(a);
+      tp.set(t0.x, piv.position.y + dy * c - dz * sn, piv.position.z + dy * sn + dz * c);
+    });
+  }
+  bend(0);
+  return { group: grp, tipT, tipB, nockRest, rest, bend };
 }
 
 // Стрела: от хвостовика (0) вдоль +y к острию (len).

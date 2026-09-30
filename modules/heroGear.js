@@ -290,7 +290,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   const tmpM = new THREE.Matrix4();
   // склейка неподвижных деталей группы по материалу: меньше вызовов отрисовки (подсумки, кольца, пряжки…)
   // (поддеревья с именами из KEEP не трогаем: они крутятся, светятся или двигаются сами)
-  const KEEP = /^(staff-halo|staff-crystal|staff-core|staff-shards|hair-mesh|cape|bow-string-top|bow-string-bot|arrow|bow-nocked)$/;
+  const KEEP = /^(staff-halo|staff-crystal|staff-core|staff-shards|hair-mesh|cape|bow-string-top|bow-string-bot|arrow|bow-nocked|bow-limb)$/;
   function compact(grp) {
     grp.updateMatrixWorld(true);
     const inv = new THREE.Matrix4().copy(grp.matrixWorld).invert();
@@ -1723,6 +1723,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       }
       stepBowTr();
       if (arrow) arrow.visible = false;
+      if (bowRig.bend) { bowRig.bend(0); layString(bowRig.nockRest); }
       return;
     }
     if (!grip) return;
@@ -1731,7 +1732,8 @@ export function dressHero(THREE, vrm, opts = {}) {
       grip.attach(bow);
       startBowTr(_v0.set(0, 0, 0), _q0.identity(), _ws.setScalar(1 / (grip.getWorldScale(new THREE.Vector3()).x || 1)), 0.22);
     }
-    if (stepBowTr() < 1) { layString(bowRig.nockRest); if (arrow) arrow.visible = false; return; }
+    if (stepBowTr() < 1) { if (bowRig.bend) bowRig.bend(0); layString(bowRig.nockRest); if (arrow) arrow.visible = false; return; }
+    if (bowRig.bend) bowRig.bend(draw);   // плечи гнутся к лучнику, кончики тетивы — следом
     if (nockNode && draw > 0.03) {
       bow.updateWorldMatrix(true, false);
       nockNode.getWorldPosition(_nk);
