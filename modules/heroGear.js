@@ -980,6 +980,24 @@ export function dressHero(THREE, vrm, opts = {}) {
       const lashC = new THREE.Color(opts.lashes);
       const lashM = (dense) => { const t = lashTex(THREE, dense); return Mt(new Std({ name: dense ? 'gear-lash-up' : 'gear-lash-low', color: lashC, map: t, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.55, metalness: 0 })); };
       const mUp = lashM(true), mLow = lashM(false);
+      // влажная кромка нижнего века (как у лиц BDO): чёрный диффуз + сложение — видны только отражения и
+      // блик ключевого света, узкая полоса там, где веко касается глазного яблока; прозрачность — вершинами
+      const mTear = Mt(new Std({ name: 'gear-tearline', color: 0x000000, roughness: 0.06, metalness: 0, transparent: true, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, vertexColors: true, envMapIntensity: 1.4, ...(physical ? { specularIntensity: 1 } : {}) }));
+      function tearStrip(e) {
+        const N = 20, pos = [], col = [], idx = [];
+        for (let i = 0; i <= N; i++) {
+          const t = i / N, a = -0.7 + 1.8 * t, fade = Math.sin(Math.PI * t) ** 0.6;
+          for (const [dy, rr, al] of [[-0.01, 1.018, 1], [0.08, 1.012, 0]]) {
+            const p = radial(e.s, a, yL(a) + dy).multiplyScalar(e.r * rr);
+            pos.push(p.x, p.y, p.z); col.push(1, 1, 1, al * fade);
+          }
+        }
+        for (let i = 0; i < N; i++) { const a = i * 2, b = a + 2; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+        g.setIndex(idx); g.computeVertexNormals();
+        return G(g);
+      }
       // лента ресниц: ряды корень → середина → кончик, столбцы по азимуту
       function lashStrip(e, a0, a1, rim, dR, len, up) {
         const N = 18, rows = 3, pos = [], uv = [], idx = [];
@@ -1037,6 +1055,7 @@ export function dressHero(THREE, vrm, opts = {}) {
         piv.add(lid, up);
         const low = new THREE.Group(); low.name = 'lash-low';
         low.add(new THREE.Mesh(lashStrip(e, -0.7, 1.15, yL, F.dL, (t) => F.lenL * 0.2 * (0.3 + 0.7 * Math.sin(Math.PI * t)) * (0.6 + 0.6 * t), -1), mLow));
+        const tear = new THREE.Mesh(tearStrip(e), mTear); tear.name = 'tearline'; tear.renderOrder = 3; low.add(tear);
         stick(piv, 'head', e.c, new THREE.Quaternion());
         stick(low, 'head', e.c, new THREE.Quaternion());
         for (const o of [piv, low]) o.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; m.userData.noShadow = true; } });
