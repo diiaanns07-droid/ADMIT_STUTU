@@ -964,6 +964,7 @@ export function createHeroModel({
       S.yawRate = 0; S.prevYaw = null;
       if (act && !holdName && time >= actUntil) { stopAct(0.3); if (stance) setStance(stance); }
       if (cur.shade && cur.shade.setGlow) cur.shade.setGlow(1);
+      if (cur.shade && cur.shade.setHurt) cur.shade.setHurt(0);
       // появление героя на витрине — вспышка ауры, гаснет за ~1.3 с
       S.appear = Math.max(0, (S.appear || 0) - dt / 1.3);
       if (cur.aura && cur.aura.setIntensity) cur.aura.setIntensity(1 + 2.5 * S.appear * S.appear);
@@ -1092,6 +1093,7 @@ export function createHeroModel({
     const low = hpR < 0.3 ? (0.45 + 0.55 * Math.abs(Math.sin(time * 9 + Math.sin(time * 23) * 2))) * (0.5 + hpR) : 1;
     const glowK = (1 + 1.6 * S.flare - 0.5 * S.hurt) * low;
     if (cur.shade && cur.shade.setGlow) cur.shade.setGlow(glowK);
+    if (cur.shade && cur.shade.setHurt) cur.shade.setHurt(S.hurt * S.hurt);   // красная кромка при попадании
     if (cur.aura && cur.aura.setIntensity) cur.aura.setIntensity(clamp(0.8 + 1.5 * S.flare, 0, 3) * (hpR < 0.3 ? 0.6 : 1));
     if (cur.gear && cur.gear.setGlow) cur.gear.setGlow(glowK);
     vrmTick(dt);
