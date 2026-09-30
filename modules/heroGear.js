@@ -1541,9 +1541,10 @@ export function dressHero(THREE, vrm, opts = {}) {
   let t = 0, lodL = 0;
   const perf = { cloth: 0, hair: 0 }; // мс на кадр (скользящее среднее) — для QA
   const _pv = new THREE.Vector3(), _pd = new THREE.Vector3(), _pInv = new THREE.Matrix4(), _pDown = new THREE.Vector3(0, -1, 0);
-  // шлейф: навершие и точка древка на 0.26 м ниже; скорость навершия — в осях тела (бег не в счёт)
+  // шлейф: навершие и точка древка на 0.26 м ниже; скорость навершия — в осях таза (бег не в счёт)
   const _ta = new THREE.Vector3(), _tb = new THREE.Vector3(), _tl = new THREE.Vector3(), _tPrev = new THREE.Vector3(), _ts = new THREE.Vector3();
   let tHave = false;
+  const hipsRef = raw('hips');
   function trailTick(dt) {
     const holderR = model || vrm.scene;
     if (!trail.mesh.parent) { let r = holderR; while (r.parent) r = r.parent; if (r.isScene) r.add(trail.mesh); }
@@ -1552,8 +1553,10 @@ export function dressHero(THREE, vrm, opts = {}) {
     if (!shown || !(dt > 1e-4)) { if (!shown) { trail.reset(); tHave = false; } return; }
     staffRig.tip.getWorldPosition(_ta);
     staffRig.group.localToWorld(_tb.set(0, staffRig.top - 0.26, 0));
-    _tl.copy(_ta); holderR.worldToLocal(_tl);
-    const sp = tHave ? (_tl.distanceTo(_tPrev) * holderR.getWorldScale(_ts).x) / dt : 0;   // локальные единицы → метры
+    // скорость — в осях таза: бег, рывок и кувырок (перенос тела клипом) не в счёт, только взмах руки
+    const ref = hipsRef || holderR;
+    _tl.copy(_ta); ref.worldToLocal(_tl);
+    const sp = tHave ? (_tl.distanceTo(_tPrev) * ref.getWorldScale(_ts).x) / dt : 0;   // локальные единицы → метры
     _tPrev.copy(_tl); tHave = true;
     trail.push(_ta, _tb, sp, glowNow, dt);
   }

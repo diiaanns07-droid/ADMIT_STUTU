@@ -285,10 +285,12 @@ export function createHeroModel({
       if (cur.gear && cur.gear.dispose) { try { cur.gear.dispose(); } catch (e) { console.warn('[HERO] снаряжение не освободилось', e && e.message); } }
       if (cur.shade && cur.shade.dispose) { try { cur.shade.dispose(); } catch (e) { /* ignore */ } }
       if (cur.aura) { try { cur.aura.dispose(); } catch (e) { /* ignore */ } }
+      if (cur.ghost) { try { cur.ghost.dispose(); } catch (e) { /* ignore */ } }
       if (cur.model.parent) cur.model.parent.remove(cur.model);
     }
     if (curScene) import('@pixiv/three-vrm').then((V) => { try { V.VRMUtils.deepDispose(curScene); } catch (e) { /* ignore */ } }).catch(() => {});
     cur = null; act = null; actName = ''; holdName = ''; lastStatus = ''; S.dead = false; S.pend = null;
+    S.ghostQ = null;
     S.ready = false;
   }
 
@@ -586,6 +588,13 @@ export function createHeroModel({
         c.aura = am.createHeroAura(THREE, c.model, c.def.fx, { quality: opts.quality, height: (c.def.height || 1.8) / (c.scale || 1) });
       } catch (e) { console.warn('[HERO] аура недоступна:', e && e.message); }
     }
+    // остаточные образы рывка (modules/heroGhost.js): светящийся силуэт цвета стихии
+    try {
+      const gm = await import('./heroGhost.js');
+      if (token !== S.token || cur !== c) return;
+      c.ghost = gm.createAfterimages(THREE, { color: (c.def.fx && c.def.fx.color) || 0x9ff4ff });
+      S.ghostWarm = true;   // невидимый снимок на следующем кадре (модель уже в сцене): шейдер собирается заранее
+    } catch (e) { console.warn('[HERO] остаточные образы недоступны:', e && e.message); }
   }
 
   function setShading(mode) {
@@ -1019,6 +1028,7 @@ export function createHeroModel({
             n = Math.abs(dl) < 0.8 ? 'DodgeF' : Math.abs(dl) > 2.35 ? 'DodgeB' : dl > 0 ? 'DodgeL' : 'DodgeR';
           }
           want = { name: n, speed: 1.5, full: true };
+          S.ghostQ = [0, 0.07, 0.14];   // остаточные образы: снимки в начале рывка и по ходу
           break;
         }
         case 'player_hit': S.hurt = 1; S.recoil = 1; if (!want) want = { name: P.shielding ? 'BlockHit' : num(d.amount) >= 20 ? 'HitB' : 'Hit', speed: 1.4 }; break;
@@ -1106,6 +1116,19 @@ export function createHeroModel({
     } else vrm.update(Math.min(dt, 1 / 20));
     if (cur.gear && cur.gear.update) cur.gear.update(dt, root, S.lod);
     if (cur.aura) cur.aura.update(heroTimeU ? heroTimeU.value : time);
+    if (cur.ghost) {
+      if (S.ghostWarm) { S.ghostWarm = false; try { cur.ghost.snap(cur.model, true); } catch (e) { /* ignore */ } }
+      if (S.ghostQ) {
+        for (let i = S.ghostQ.length - 1; i >= 0; i--) {
+          S.ghostQ[i] -= dt;
+          if (S.ghostQ[i] > 0) continue;
+          S.ghostQ.splice(i, 1);
+          if (S.lod < 2) { try { cur.ghost.snap(cur.model); } catch (e) { /* без образа */ } }
+        }
+        if (!S.ghostQ.length) S.ghostQ = null;
+      }
+      cur.ghost.update(dt);
+    }
     if (cur.shade && cur.shade.update) cur.shade.update(dt);
     // взгляд: на витрине глаза следят за камерой, когда герой смотрит на игрока (или при приближении)
     if (cur.shade && cur.shade.updateGaze && S.lod < 2) {

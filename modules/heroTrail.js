@@ -65,8 +65,8 @@ export function createTrail(THREE, { color = 0x9d7bff, n = 18, sub = 3, life = 0
   };
   // i-й замер от нового к старому
   const at_ = (i) => (head - 1 - i + n * 4) % n;
-  let lit = false;
-  function reset() { for (let i = 0; i < n; i++) age[i] = 1e9; count = 0; lit = false; mesh.visible = false; }
+  let lit = false, warm = 2;   // первые кадры меш «виден» вырожденным (нулевая площадь): шейдер собирается при загрузке
+  function reset() { for (let i = 0; i < n; i++) age[i] = 1e9; count = 0; lit = false; if (warm > 0) warm--; mesh.visible = warm > 0; }
   function push(a, b, speed, glow = 1, dt = 1 / 60) {
     // скачок (телепорт, смена героя) — лента не тянется через полкарты
     if (count && A[at_(0)].distanceToSquared(a) > 1.5 * 1.5) reset();
@@ -78,7 +78,8 @@ export function createTrail(THREE, { color = 0x9d7bff, n = 18, sub = 3, life = 0
     lit = false;
     for (let i = 0; i < count; i++) { const j = at_(i); if (age[j] < life && K[j] > 0.01) { lit = true; break; } }
     mesh.visible = lit && count >= 3;
-    if (!mesh.visible) return;
+    if (!mesh.visible) { if (warm > 0) { warm--; mesh.visible = true; } return; }
+    warm = 0;
     let w = 0;
     for (let i = 0; i < n - 1; i++) {
       const i0 = Math.min(count - 1, Math.max(0, i - 1)), i1 = Math.min(count - 1, i), i2 = Math.min(count - 1, i + 1), i3 = Math.min(count - 1, i + 2);
