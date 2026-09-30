@@ -302,7 +302,8 @@ async function scenarioFakeCamera() {
     const mp = page.requests.filter((u) => /mediapipe|\.wasm|\.task/.test(u));
     writeFileSync(join(OUT, 'mediapipe_requests.txt'), mp.join('\n'));
     check('CDP подключён к worker распознавания', (page.workers || 0) >= 1, `сессий worker: ${page.workers || 0}`);
-    check('запросы MediaPipe (и из worker) — только закреплённые URL 0.10.35', mp.length >= 3 && mp.every((u) => u.includes('@0.10.35') || u.includes('pose_landmarker_lite/float16/1/') || u.includes('hand_landmarker/hand_landmarker/float16/1/')), mp.join(' , '));
+    // [PERF] на дискретной видеокарте core/perfTuner.js берёт точную модель позы (full) — тоже закреплённый URL
+    check('запросы MediaPipe (и из worker) — только закреплённые URL 0.10.35', mp.length >= 3 && mp.every((u) => u.includes('@0.10.35') || u.includes('pose_landmarker_lite/float16/1/') || u.includes('pose_landmarker_full/float16/1/') || u.includes('hand_landmarker/hand_landmarker/float16/1/')), mp.join(' , '));
     const hosts = [...new Set(page.requests.filter((u) => /^https?:/.test(u)).map((u) => u.split('/')[2]))];
     const allowed = ['127.0.0.1:' + PORT, 'cdn.jsdelivr.net', 'storage.googleapis.com'];
     const env = hosts.filter((h) => /kaspersky|avast|eset|drweb|norton|mcafee/i.test(h));

@@ -50,6 +50,18 @@
       window.__aoBootTimer = setTimeout(function () {
         if (!window.__ASHEN__ && !failed) { window.__aoBoot.fail('Игра не запустилась за 25 секунд. Проверьте интернет и обновите страницу (F5). Подробности — в консоли (F12).'); timedOut = true; }
       }, 25000);
+      // [PERF] частота экрана, пока грузятся модули и ничего тяжёлого не рисуется: в бою браузер под
+      // нагрузкой зовёт rAF реже, и по игровым кадрам 165 Гц не отличить от 70. Читает core/perfTuner.js.
+      (function () {
+        var dts = [], last = 0;
+        function tick(t) {
+          if (last) { var d = t - last; if (d > 2.5 && d < 50) dts.push(d); }
+          last = t;
+          if (dts.length < 45 && !window.__ASHEN__) requestAnimationFrame(tick);
+          else if (dts.length >= 12) { dts.sort(function (a, b) { return a - b; }); window.__aoRefreshHz = 1000 / dts[dts.length >> 1]; }
+        }
+        requestAnimationFrame(tick);
+      })();
       // Ошибка разбора/выполнения модуля (SyntaxError и т.п.) до старта — показать сразу, а не ждать 25 с.
       window.addEventListener('error', function (e) {
         if (window.__ASHEN__ || failed) return;

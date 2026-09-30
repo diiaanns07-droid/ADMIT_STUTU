@@ -30,7 +30,8 @@ const TRACK_STATES = ['idle', 'loading', 'permission', 'calibrating', 'ready', '
 const CAMERA_RUNNING = ['ready', 'lost', 'calibrating'];
 const CAMERA_STARTING = ['permission', 'loading'];
 const BOSS_NAME = 'Регент Нимба';
-const QUALITY_OPTIONS = [['low', 'Низкое'], ['medium', 'Среднее'], ['high', 'Высокое']];
+// [PERF] 'auto' — уровень и разрешение подбирает автоподстройка под железо (core/perfTuner.js)
+const QUALITY_OPTIONS = [['auto', 'Авто'], ['low', 'Низкое'], ['medium', 'Среднее'], ['high', 'Высокое']];
 const QUALITY_VALUES = QUALITY_OPTIONS.map((q) => q[0]);
 const DEFAULT_SETTINGS = Object.freeze({ quality: 'medium', volume: 0.8, reducedMotion: false, sensitivity: 1, hero: 'ashen' });
 // [ASHEN_V3] выбор героя (модели — modules/heroModel.js)

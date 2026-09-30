@@ -117,6 +117,13 @@ export const DEFAULT_VISION_CONFIG = Object.freeze({
   staleMs: 250,            // кадр старше — удержания и moveX отпускаются
   lostGraceMs: 700,        // плеч нет дольше — valid=false, статус lost
   pulseTtlMs: 300,         // непрочитанный импульс dash/burst сгорает
+  // [PERF] устойчивость трекинга
+  minShoulderConfHold: 0.3,  // гистерезис: уже видимые плечи держатся, пока достоверность ≥ этого (вход — minShoulderConf)
+  handsKeepAliveMs: 4000,    // плечи закрыты руками (жест перед грудью), но кисти видны — ввод валиден до стольких мс
+  adaptBaseline: true,       // без torsoMove калибровка плавно следует за посадкой игрока (ширина и центр плеч)
+  adaptTauMs: 8000,
+  rebaselineMs: 1500,        // пересел ближе/дальше: вне полосы масштаба, но устойчиво столько — калибровка обновляется сама
+  lostGraceFrames: 4.5,      // grace и «свежесть» не короче стольких интервалов между кадрами (медленный инференс)
   // Калибровка
   calibrationMs: 1500,
   // Порог по числу кадров — для слабых ноутбуков: при позе+кистях инференс бывает ~6 Гц
@@ -124,7 +131,10 @@ export const DEFAULT_VISION_CONFIG = Object.freeze({
   calibrationMinSamples: 6,
   calibrationMaxSpread: 0.05,
   calibrationMaxWidthSpread: 0.06,
-  calibrationGapMs: 700,   // было 300: на 6 Гц одиночная задержка кадра сбрасывала накопленное
+  calibrationGapMs: 1500,  // было 700: подвисание вкладки (компиляция шейдеров) сбрасывало накопленное
+  calibrationRelaxAfterMs: 3000, // [PERF] пороги неподвижности мягчеют после стольких мс попыток…
+  calibrationRelaxMs: 8000,      // …линейно за столько мс…
+  calibrationRelaxMax: 1.6,      // …до ×1.6 (шумная камера, тусклый свет — калибровка всё равно сходится)
   calibrationTimeoutMs: 25000,
   minNoise: 0.004,
   // Движок и производительность
@@ -245,8 +255,15 @@ export function createPoseInterpreter(configPatch = {}) {
   const track = {
     lastObsT: null, lastBodyOkT: null, shouldersOk: false, conf: 0, confT: null,
     visZeroStreak: 0, visibilityUnavailable: false, scaleWarning: null, recoveredAt: null, calibrationInvalid: null,
+    lastHandsT: null, frameIntervalMs: null, outBand: null, rebaselinedAt: null, // [PERF]
   };
-  const counters = { observations: 0, rejectedSpikes: 0, rejectedDepthSpikes: 0, discontinuities: 0, resets: 0, dashes: 0, bursts: 0, reacquired: 0 };
+  const counters = { observations: 0, rejectedSpikes: 0, rejectedDepthSpikes: 0, discontinuities: 0, resets: 0, dashes: 0, bursts: 0, reacquired: 0, rebaselines: 0, keptAlive: 0 };
+  // [PERF] при медленном инференсе (5–8 Гц) окна «свежести» и потери растягиваются на несколько интервалов кадров
+  const lostGrace = () => Math.max(cfg.lostGraceMs, track.frameIntervalMs ? cfg.lostGraceFrames * track.frameIntervalMs : 0);
+  const staleFor = () => Math.max(cfg.staleMs, track.frameIntervalMs ? 1.6 * track.frameIntervalMs : 0);
+  // кисти видны и свежие, а плечи закрыты не дольше handsKeepAliveMs — это жест перед корпусом, не уход из кадра
+  const handsAlive = (now) => track.lastHandsT !== null && track.lastBodyOkT !== null
+    && now - track.lastHandsT <= Math.max(staleFor(), 400) && now - track.lastBodyOkT <= cfg.handsKeepAliveMs;
   const lastLateral = { raw: null, moveX: 0 };
   // Глубина: отсечка одиночных выбросов ширины → EMA.
   let dep = null;
@@ -575,6 +592,8 @@ export function createPoseInterpreter(configPatch = {}) {
     if (t - c.startT > cfg.calibrationTimeoutMs) { failCalibration(calibrationTimeoutMessage()); return; }
     const gapTooLong = c.lastGoodT !== null && t - c.lastGoodT > cfg.calibrationGapMs;
     if (gapTooLong) c.samples.length = 0;
+    // [PERF] чем дольше попытка, тем мягче пороги неподвижности (до calibrationRelaxMax)
+    const relax = 1 + (cfg.calibrationRelaxMax - 1) * clamp((t - c.startT - cfg.calibrationRelaxAfterMs) / Math.max(1, cfg.calibrationRelaxMs), 0, 1);
     if (!shOk) {
       c.hint = 'Не видно обоих плеч — сядьте так, чтобы плечи были в кадре';
       c.progress = calibrationProgress(t);
@@ -602,7 +621,7 @@ export function createPoseInterpreter(configPatch = {}) {
     const medX = median(xs);
     const spread = (1.4826 * mad(xs, medX)) / medW;
     const wSpread = (1.4826 * mad(ws, medW)) / medW;
-    if (spread <= cfg.calibrationMaxSpread && wSpread <= cfg.calibrationMaxWidthSpread) {
+    if (spread <= cfg.calibrationMaxSpread * relax && wSpread <= cfg.calibrationMaxWidthSpread * relax) {
       const n = c.samples.length;
       const restOf = (key) => {
         const v = c.samples.map((s) => s[key]).filter(finite);
@@ -651,6 +670,11 @@ export function createPoseInterpreter(configPatch = {}) {
     const fw = obs.frameW | 0;
     const fh = obs.frameH | 0;
     if (fw > 0 && fh > 0 && (fw !== frame.w || fh !== frame.h)) onFrameSize(fw, fh);
+    const prevObsT = track.lastObsT;
+    if (prevObsT !== null) {
+      const di = clamp(t - prevObsT, 8, 500);
+      track.frameIntervalMs = track.frameIntervalMs === null ? di : track.frameIntervalMs + 0.1 * (di - track.frameIntervalMs);
+    }
     track.lastObsT = t;
     const aspect = frame.w > 0 && frame.h > 0 ? frame.w / frame.h : 4 / 3;
     const lms = Array.isArray(obs.landmarks) && obs.landmarks.length ? obs.landmarks : null;
@@ -661,7 +685,11 @@ export function createPoseInterpreter(configPatch = {}) {
     const rsP = readPoint(lms, R.s, aspect, useVis);
     const lsP = readPoint(lms, L.s, aspect, useVis);
 
-    let shOk = !!(rsP && lsP) && Math.min(rsP.c, lsP.c) >= cfg.minShoulderConf;
+    // [PERF] гистерезис достоверности: плечи, которые уже видны, не «моргают» при кратком провале visibility
+    // (рука перед плечом, тень). Калибровка всегда берёт строгий порог.
+    const shConf = rsP && lsP ? Math.min(rsP.c, lsP.c) : 0;
+    const confNeed = track.shouldersOk ? Math.min(cfg.minShoulderConf, cfg.minShoulderConfHold) : cfg.minShoulderConf;
+    let shOk = !!(rsP && lsP) && shConf >= confNeed;
     let cx = 0;
     let cy = 0;
     let width = 0;
@@ -672,12 +700,35 @@ export function createPoseInterpreter(configPatch = {}) {
       width = Math.hypot(lsP.X - rsP.X, lsP.Y - rsP.Y);
       if (!(width >= cfg.minShoulderWidth)) shOk = false;
     }
-    const shOkForCalibration = shOk;
+    const shOkForCalibration = shOk && shConf >= cfg.minShoulderConf;
     if (shOk && baseline) {
       const ratio = width / baseline.width;
+      const adapt = cfg.adaptBaseline && cfg.torsoMove !== true;
       if (ratio < cfg.widthRatioMin || ratio > cfg.widthRatioMax) {
         shOk = false;
         track.scaleWarning = ratio < 1 ? 'far' : 'near';
+        // [PERF] игрок пересел: плечи уверенно видны на новом масштабе дольше rebaselineMs — калибровка
+        // переезжает сама, без паузы «сядьте ближе». Одиночные выбросы трекера (скачок ширины) так не проходят.
+        if (adapt && shConf >= cfg.minShoulderConf) {
+          const ob = track.outBand;
+          if (!ob || Math.abs(width / ob.w - 1) > 0.15 || (prevObsT !== null && t - prevObsT > 400)) track.outBand = { since: t, w: width };
+          else if (t - ob.since >= cfg.rebaselineMs) {
+            baseline.width = width; baseline.cx = cx; baseline.cy = cy;
+            track.outBand = null; track.scaleWarning = null; track.rebaselinedAt = t;
+            counters.rebaselines++;
+            shOk = true;
+          }
+        }
+      } else {
+        track.outBand = null;
+        // [PERF] посадка «плывёт» (откинулся, сдвинул стул): медленно следуем, иначе через полчаса игра
+        // упрётся в полосу масштаба. Движение героя от корпуса выключено (torsoMove), поэтому это безопасно.
+        if (adapt && prevObsT !== null && shConf >= cfg.minShoulderConf) {
+          const k = emaAlpha(clamp(t - prevObsT, 0, 200), cfg.adaptTauMs);
+          baseline.width += k * (width - baseline.width);
+          baseline.cx += k * (cx - baseline.cx);
+          baseline.cy += k * (cy - baseline.cy);
+        }
       }
     }
 
@@ -686,7 +737,10 @@ export function createPoseInterpreter(configPatch = {}) {
     if (shOk) {
       const first = track.lastBodyOkT === null;
       const gap = first ? Infinity : t - track.lastBodyOkT;
-      const wasLost = !first && gap > cfg.lostGraceMs;
+      // [PERF] плечи были закрыты руками, но кисти всё время были видны — это не потеря (без «Трекинг восстановлен»)
+      const kept = !first && gap > lostGrace() && track.lastHandsT !== null && track.lastHandsT >= track.lastBodyOkT && gap <= cfg.handsKeepAliveMs;
+      if (kept) counters.keptAlive++;
+      const wasLost = !first && gap > lostGrace() && !kept;
       if (first || wasLost || gap > cfg.gapResetMs) {
         resetMotion(first ? 'acquired' : wasLost ? 'reacquired' : 'gap');
         if (first) blockGestures('acquired');
@@ -735,7 +789,9 @@ export function createPoseInterpreter(configPatch = {}) {
   }
 
   function isLost(now) {
-    return track.lastBodyOkT === null || now - track.lastBodyOkT > cfg.lostGraceMs;
+    if (track.lastBodyOkT === null) return true;
+    if (now - track.lastBodyOkT <= lostGrace()) return false;
+    return !handsAlive(now);
   }
 
   function peek(now = nowMs()) {
@@ -748,7 +804,7 @@ export function createPoseInterpreter(configPatch = {}) {
     if (!valid) {
       return { source, valid: false, calibrated, tMs, moveX: 0, moveZ: 0, dash: 0, attack: false, shield: false, burst: false, conjure: null, throw: null };
     }
-    const fresh = now - track.lastObsT <= cfg.staleMs;
+    const fresh = now - track.lastObsT <= staleFor();
     const torso = cfg.torsoMove === true;
     const moveX = torso && fresh && track.shouldersOk ? lastLateral.moveX : 0;
     const moveZ = torso && fresh && track.shouldersOk ? lastDepth.moveZ : 0;
@@ -768,7 +824,7 @@ export function createPoseInterpreter(configPatch = {}) {
   }
 
   function getTracking(now = nowMs()) {
-    const fresh = track.lastObsT !== null && now - track.lastObsT <= cfg.staleMs;
+    const fresh = track.lastObsT !== null && now - track.lastObsT <= staleFor();
     const lost = isLost(now);
     let confidence = 0;
     if (!lost) confidence = clamp(track.conf * (track.shouldersOk && fresh ? 1 : 0.5), 0, 1);
@@ -778,8 +834,12 @@ export function createPoseInterpreter(configPatch = {}) {
       frameAgeMs: track.lastObsT === null ? null : now - track.lastObsT,
       scaleWarning: track.scaleWarning, recoveredAt: track.recoveredAt,
       calibrationInvalid: track.calibrationInvalid,
+      handsKeepAlive: !lost && !(track.shouldersOk && fresh) && handsAlive(now), // [PERF] плечи закрыты, держимся за кисти
+      rebaselinedAt: track.rebaselinedAt,                                         // [PERF] калибровка переехала сама
     };
   }
+  // [PERF] оболочка сообщает о кадре с кистями: пока они видны, закрытые руками плечи — не потеря трекинга
+  function noteHands(t) { if (finite(t) && (track.lastHandsT === null || t > track.lastHandsT)) track.lastHandsT = t; }
 
   function armDebug(a, now) {
     return {
@@ -822,6 +882,8 @@ export function createPoseInterpreter(configPatch = {}) {
       reliability: {
         shouldersOk: track.shouldersOk, visibilityUnavailable: track.visibilityUnavailable,
         scaleWarning: track.scaleWarning, lastResetReason, calibrationInvalid: track.calibrationInvalid,
+        frameIntervalMs: r1(track.frameIntervalMs), lostGraceMs: r1(lostGrace()), conf: r3(track.conf), // [PERF]
+        handsKeepAlive: !isLost(now) && !track.shouldersOk && handsAlive(now),
       },
       counters: { ...counters },
     };
@@ -855,6 +917,7 @@ export function createPoseInterpreter(configPatch = {}) {
 
   return {
     pushObservation,
+    noteHands, // [PERF]
     read,
     peek,
     getTracking,
@@ -991,7 +1054,15 @@ export async function createVision(options = {}) {
     arrivals: [], hz: 0, inferMs: null, latencyMs: null, results: 0,
     skippedBusy: 0, skippedRate: 0, errors: 0, consecutiveErrors: 0, captureErrors: 0,
     lastInferT: -Infinity, minIntervalMs: 0,
+    camArrivals: [], camFallback: null, handsFrames: 0, // [PERF]
   };
+  // [PERF] частота кадров камеры по последним 30 новым кадрам
+  function cameraFps() {
+    const a = perf.camArrivals;
+    if (a.length < 8 || nowMs() - a[a.length - 1] > 1000) return null;
+    return ((a.length - 1) * 1000) / Math.max(1, a[a.length - 1] - a[0]);
+  }
+  const poseModelName = () => { const m = /pose_landmarker_(lite|full|heavy)/.exec(String((cfg.mediaPipe && cfg.mediaPipe.modelUrl) || '')); return m ? m[1] : 'custom'; };
   if (mpResolved.versionMismatch) console.warn('[vision] версии moduleUrl и wasmRoot MediaPipe различаются', mpResolved);
 
   // ── статус ──
@@ -1038,6 +1109,10 @@ export async function createVision(options = {}) {
         workerFallbackReason,
         loadStage,
         video: { w: video.videoWidth || 0, h: video.videoHeight || 0 },
+        cameraFps: r1(cameraFps()),          // [PERF] реальная частота камеры
+        poseModel: poseModelName(),          // [PERF] lite | full
+        captureMaxWidth: cfg.captureMaxWidth,
+        cameraFallback: perf.camFallback,
         mediaPipe: { version: mpResolved.version, versionMismatch: mpResolved.versionMismatch },
         handGestures: cfg.hands ? handsInterp.getDebug() : null,
       },
@@ -1463,6 +1538,11 @@ export async function createVision(options = {}) {
     if (!running || !engine || switching) return;
     if (key === loop.lastKey) return; // этот кадр уже обработан
     const now = nowMs();
+    if (key !== loop.camKey) { // [PERF] реальная частота кадров камеры (тусклый свет режет её до 15)
+      loop.camKey = key;
+      perf.camArrivals.push(now);
+      if (perf.camArrivals.length > 30) perf.camArrivals.shift();
+    }
     if (engine.kind === 'worker') {
       if (loop.busy) { loop.dirty = true; loop.dirtyKey = key; perf.skippedBusy++; return; }
       if (now - perf.lastInferT < perf.minIntervalMs) { perf.skippedRate++; return; }
@@ -1609,6 +1689,8 @@ export async function createVision(options = {}) {
     if (finite(inferMs)) perf.inferMs = emaValue(perf.inferMs, inferMs, 0.15);
     perf.latencyMs = emaValue(perf.latencyMs, arrived - tMs, 0.15);
     updateMinInterval();
+    // [PERF] кадр с уверенной кистью: закрытые руками плечи не считаются потерей трекинга
+    if (Array.isArray(hands) && hands.some((hd) => hd && Array.isArray(hd.landmarks) && hd.landmarks.length && !(finite(hd.score) && hd.score < 0.5))) interp.noteHands(tMs);
     interp.pushObservation({ tMs, frameW: w, frameH: h, landmarks: lms });
     lastPose = { tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, landmarks: lms };
     if (cfg.hands) {
@@ -1657,6 +1739,20 @@ export async function createVision(options = {}) {
     interp.tick(now);
     processCalibration(now);
     updateTrackingStatus(now);
+    checkCameraRate(now);
+  }
+
+  // [PERF] камера на 960×720 в тусклом свете часто сама падает до 15 к/с (длинная выдержка) — тогда
+  // 640×480 даёт больше кадров и меньше смаза. Формат 4:3 тот же, калибровка сохраняется.
+  function checkCameraRate(now) {
+    if (perf.camFallback || !stream || now - runningSince < 4000 || !(video.videoWidth > 640)) return;
+    const fps = cameraFps();
+    if (fps === null || fps >= 20) return;
+    const vt = stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
+    if (!vt || typeof vt.applyConstraints !== 'function') { perf.camFallback = 'unsupported'; return; }
+    perf.camFallback = `${video.videoWidth}x${video.videoHeight}@${fps.toFixed(0)} → 640x480`;
+    console.warn('[vision] камера выдаёт', fps.toFixed(1), 'к/с при', video.videoWidth, '— переход на 640×480');
+    vt.applyConstraints({ width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } }).catch((e) => { perf.camFallback += ` (ошибка: ${(e && e.message) || e})`; });
   }
 
   // ── калибровка ──
@@ -1946,5 +2042,31 @@ export async function createVision(options = {}) {
   function stopRecording() { const snap = takeRecording(); recorder = null; return snap; }
   function recordingSize() { return recorder ? recorder.size() : 0; }
 
-  return { start, calibrate, read, getStatus, configure, stop, dispose, getPose, getHands, getStick, setHandTap /* [HAND] */, startRecording, takeRecording, stopRecording, recordingSize };
+  // [PERF] горячая смена модели позы (full → lite на медленной машине) без перезапуска камеры.
+  // Пока движок пересоздаётся (≈1 с, файлы уже в кэше браузера), кадры не обрабатываются —
+  // main.js зовёт это только вне боя.
+  async function setPoseModel(url) {
+    if (!url || disposed) return false;
+    if (cfg.mediaPipe && cfg.mediaPipe.modelUrl === url) return true;
+    cfg = mergeVisionConfig(cfg, { mediaPipe: { ...(cfg.mediaPipe || {}), modelUrl: url } });
+    if (!engine && !enginePromise) return true; // движок ещё не создан — возьмёт новый URL
+    if (switching) return false;
+    switching = true;
+    try {
+      if (!engine && enginePromise) { try { await enginePromise; } catch { /* пересоздадим ниже */ } }
+      const old = engine;
+      engine = null; enginePromise = null;
+      loop.busy = false; loop.inflightSeq = null; loop.dirty = false;
+      closeEngine(old);
+      await ensureEngine();
+      return true;
+    } catch (err) {
+      if (running) fail('model-failed', 'Не удалось сменить модель распознавания позы. Обновите страницу.', err);
+      return false;
+    } finally {
+      switching = false;
+    }
+  }
+
+  return { start, calibrate, read, getStatus, configure, stop, dispose, getPose, getHands, getStick, setHandTap /* [HAND] */, startRecording, takeRecording, stopRecording, recordingSize, setPoseModel /* [PERF] */ };
 }

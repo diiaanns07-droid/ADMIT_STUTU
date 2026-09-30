@@ -8,6 +8,7 @@
 | three.js | 0.185.1 (r185) | https://cdn.jsdelivr.net/npm/three@0.185.1/ | MIT, © 2010-2026 three.js authors |
 | MediaPipe Tasks Vision | 0.10.35 | https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/ | Apache-2.0, © Google LLC |
 | Pose Landmarker (lite, float16, v1) | 1 | https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task | модель Google MediaPipe; условия — в карточке модели на developers.google.com/edge/mediapipe |
+| Pose Landmarker (full, float16, v1) [PERF] | 1 | https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task (грузится вместо lite только на дискретной видеокарте, core/perfTuner.js) | модель Google MediaPipe; условия — в карточке модели |
 | Hand Landmarker (float16, v1) | 1 | https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task | модель Google MediaPipe; условия — в карточке модели |
 | PeerJS [NET] | 1.5.5 | https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js (грузится только в режиме «Онлайн-дуэль → Интернет»); сигнальный сервер — облако PeerJS 0.peerjs.com; STUN — stun.l.google.com | MIT, © 2013 Michelle Bu, Eric Zhang and PeerJS contributors |
 

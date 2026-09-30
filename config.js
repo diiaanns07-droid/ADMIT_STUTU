@@ -27,6 +27,8 @@ export const DEPS = {
     moduleUrl: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/vision_bundle.mjs',
     wasmRoot: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm',
     modelUrl: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+    // [PERF] точная модель позы для сильного железа (core/perfTuner.js): лучше держит плечи, когда руки перед корпусом
+    modelFullUrl: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task',
     handModelUrl: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
     license: 'Apache-2.0',
   },
@@ -135,6 +137,7 @@ export const config = {
 
   defaultSettings: {
     quality: 'medium',
+    qualityAuto: true,      // [PERF] уровень качества и разрешение подбирает core/perfTuner.js под железо игрока
     volume: 0.6,
     reducedMotion: false,
     sensitivity: 1.0,

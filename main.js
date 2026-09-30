@@ -29,6 +29,8 @@ import { createProgression } from './core/progression.js';
 import { createPushupCounter } from './core/pushupCounter.js';
 import { createSquatCounter, topSquatFault, synthSquatPose } from './core/squatCounter.js';
 import { createHandZone, createHeroBowPose } from './core/handZone.js'; // [HAND] лук и магия рукой
+import { createPerfTuner } from './core/perfTuner.js'; // [PERF] автоподстройка под железо
+import { createPerfHud } from './core/perfHud.js';     // [PERF] F3 — кадры и трекинг
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
 
@@ -54,7 +56,10 @@ const SETTINGS_KEY = 'ashen-oath.settings.v1';
 function sanitizeSettings(patch, base) {
   const out = { ...base };
   if (!patch || typeof patch !== 'object') return out;
-  if (['low', 'medium', 'high'].includes(patch.quality)) out.quality = patch.quality;
+  // [PERF] quality — текущий уровень (его читают world/effects); qualityAuto — уровень и разрешение выбирает core/perfTuner.js
+  if ('qualityAuto' in patch) out.qualityAuto = patch.qualityAuto !== false;
+  if (patch.quality === 'auto') out.qualityAuto = true;
+  else if (['low', 'medium', 'high'].includes(patch.quality)) { out.quality = patch.quality; if (!('qualityAuto' in patch)) out.qualityAuto = false; }
   if (Number.isFinite(+patch.volume) && patch.volume !== null && patch.volume !== '') out.volume = Math.max(0, Math.min(1, +patch.volume));
   if (Number.isFinite(+patch.sensitivity) && patch.sensitivity !== null && patch.sensitivity !== '') out.sensitivity = Math.max(0.5, Math.min(2, +patch.sensitivity));
   if ('reducedMotion' in patch) out.reducedMotion = !!patch.reducedMotion;
@@ -78,6 +83,8 @@ function sanitizeSettings(patch, base) {
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); } catch (e) { /* хранилище недоступно */ }
+  // [PERF] сохранения до автоподстройки: прежний «средний» уровень был значением по умолчанию — переводим в «Авто»
+  if (saved && typeof saved === 'object' && !('qualityAuto' in saved)) saved = { ...saved, qualityAuto: true };
   return sanitizeSettings(saved, config.defaultSettings);
 }
 function saveSettings(s) { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) { /* ignore */ } }
@@ -98,6 +105,19 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;          // рекомендация №3, под неё подобран свет
 renderer.shadowMap.type = THREE.PCFShadowMap;
+
+// [PERF] автоподстройка под железо (core/perfTuner.js): предел кадров кратно частоте экрана,
+// динамическое разрешение, уровень качества в режиме «Авто», стартовые настройки распознавания.
+// ?uncapped=1 — без предела кадров (замеры QA), ?pose=lite|full — модель позы вручную.
+const PERF_Q = new URLSearchParams(location.search);
+const UNCAPPED = PERF_Q.get('uncapped') === '1';
+let perfTuner = null;
+try {
+  perfTuner = createPerfTuner({ renderer });
+  perfTuner.setAuto(settings.qualityAuto !== false);
+  if (settings.qualityAuto !== false) settings.quality = perfTuner.tier;   // до создания мира: он читает уровень при старте
+  console.info('[perf]', JSON.stringify({ gpu: perfTuner.hardware.gpu, class: perfTuner.hardware.gpuClass, tier: perfTuner.tier, scale: perfTuner.scale, pose: perfTuner.profile.vision.poseModel }));
+} catch (e) { console.warn('[PERF] автоподстройка недоступна:', e); perfTuner = null; }
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(config.camera.fov, 1, 0.1, 1200); // небо затмения ~900 м, шпили до ~700 м
@@ -366,11 +386,46 @@ function unlockAudio() { if (!AUDIO_ON) return; try { effects.unlockAudio().catc
 
 const REC_ON = /[?&]rec=1\b/.test(location.search); // [CONTROLS] запись кистей (см. saveRecording)
 
+// [PERF] распознавание под железо: на дискретной видеокарте — точная модель позы и камера 960×720 (4:3),
+// на встроенной — быстрая модель и 640×480, на программном рендере — ещё и реже кадры.
+function visionProfile() {
+  const vp = perfTuner ? perfTuner.profile.vision : null;
+  const forced = PERF_Q.get('pose');
+  const model = forced === 'lite' || forced === 'full' ? forced : (vp ? vp.poseModel : 'lite');
+  const out = { mediaPipe: { ...config.vision.mediaPipe, modelUrl: model === 'full' && DEPS.mediaPipe.modelFullUrl ? DEPS.mediaPipe.modelFullUrl : DEPS.mediaPipe.modelUrl } };
+  if (vp) {
+    out.camera = { width: vp.camera.width, height: vp.camera.height, frameRate: 30 };
+    out.captureMaxWidth = vp.captureMaxWidth;
+    out.maxInferenceHz = vp.maxInferenceHz;
+  }
+  return out;
+}
+// [PERF] распознавание → автоподстройке (рендер уступает GPU, если MediaPipe не успевает за камерой);
+// точная модель позы не держит частоту — переход на быструю (сейчас, если не в бою, и в следующие запуски).
+const perfVis = { t: 0, slowSince: null, wantLite: false, switched: false };
+function perfVisionTick(now) {
+  if (!perfTuner || now - perfVis.t < 500) return;
+  perfVis.t = now;
+  const s = vision ? visionStatus() : null;
+  const d = s && s.debug;
+  if (!d || !(s.status === 'ready' || s.status === 'calibrating' || s.status === 'lost')) { perfTuner.setVision(null); perfVis.slowSince = null; return; }
+  perfTuner.setVision({ hz: d.inferenceHz, cameraFps: d.cameraFps, inferMs: d.inferMs });
+  const slow = d.poseModel === 'full' && Number.isFinite(d.inferenceHz) && Number.isFinite(d.cameraFps) && d.cameraFps >= 20 && d.inferenceHz < 16;
+  if (slow) { if (perfVis.slowSince === null) perfVis.slowSince = now; if (now - perfVis.slowSince > 6000) perfVis.wantLite = true; }
+  else perfVis.slowSince = null;
+  if (perfVis.wantLite && !perfVis.switched && app.screen !== 'playing' && app.screen !== 'intro' && typeof vision.setPoseModel === 'function') {
+    perfVis.switched = true;
+    perfTuner.markPoseSlow();
+    console.warn(`[PERF] точная модель позы не успевает (${d.inferenceHz} Гц при камере ${d.cameraFps} к/с) — переход на быструю`);
+    vision.setPoseModel(DEPS.mediaPipe.modelUrl).catch(() => {});
+  }
+}
+
 async function ensureVision() {
   if (vision) return vision;
   if (!visionPromise) {
     visionPromise = createVision({
-      video, overlayCanvas: overlay, config: { ...config.vision, sensitivity: settings.sensitivity, moveMode: settings.moveMode },
+      video, overlayCanvas: overlay, config: { ...config.vision, ...visionProfile(), sensitivity: settings.sensitivity, moveMode: settings.moveMode },
       onStatus: (s) => { lastVisionStatus = s; },
     }).then((v) => {
       vision = v;
@@ -638,12 +693,28 @@ function projectToScreen(p) {
 video.style.transform = config.vision.mirror === false ? 'none' : 'scaleX(-1)';
 
 // ---------------------------------------------------------------- настройки
-function applySettings() {
+// [PERF] плотность пикселей рендера: потолок уровня качества × доля разрешения автоподстройки
+function targetPixelRatio() {
   const q = config.qualityPresets[settings.quality] || config.qualityPresets.medium;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatioCap));
+  const base = Math.min(window.devicePixelRatio || 1, q.pixelRatioCap);
+  const k = perfTuner && settings.qualityAuto !== false ? perfTuner.scale : 1;
+  return Math.max(0.5, Math.round(base * k * 100) / 100);
+}
+function applyPixelRatio() {
+  const pr = targetPixelRatio();
+  if (Math.abs(renderer.getPixelRatio() - pr) > 1e-3) { renderer.setPixelRatio(pr); resize(); }
+}
+function applySettings() {
+  if (perfTuner) {
+    perfTuner.setAuto(settings.qualityAuto !== false);
+    if (settings.qualityAuto !== false) settings.quality = perfTuner.tier;
+  }
+  renderer.setPixelRatio(targetPixelRatio());
   resize();
   if (app.appliedQuality !== settings.quality) {
+    const first = app.appliedQuality === null;
     app.appliedQuality = settings.quality;
+    if (!first) schedulePrecompile('quality');   // [PERF] новые варианты шейдеров — параллельно, а не рывком при появлении
     world.setQuality(settings.quality);   // тени (castShadow), пепел, огни жаровен, декор
     effects.setQuality(settings.quality); // пулы частиц, вспышечный свет
     if (handVisuals) { try { handVisuals.setQuality(settings.quality); } catch (e) { /* [HAND] */ } }
@@ -717,7 +788,7 @@ function renderUI() {
     snapshot: lastSnapshot,
     tracking: trackingForUI(),   // всегда настоящий статус CV; DEBUG передаётся флагом debug
     debug: app.debug,
-    settings,
+    settings: settings.qualityAuto !== false ? { ...settings, quality: 'auto' } : settings, // [PERF] переключатель показывает «Авто»
     error: app.error,
     input: app.lastInput,
     pauseReason: app.pauseReason,
@@ -878,8 +949,42 @@ let last = performance.now();
 let menuAngle = 0.6;
 const perf = { fps: 0, frames: 0, t0: performance.now() };
 
+// [PERF] предкомпиляция шейдеров: все объекты сцены, в том числе скрытые (пулы эффектов, герои),
+// компилируются параллельно (KHR_parallel_shader_compile) — без рывков по 0,3–1,7 с при первом появлении.
+const precomp = { pending: false, heroKey: null, fight: false, boot: false };
+// Без KHR_parallel_shader_compile (программный рендер, старые драйверы) compile() компилирует всё
+// синхронно и вешает страницу на секунды — там шейдеры по-старому собираются при первом показе.
+const PARALLEL_COMPILE = (() => { try { return !!(renderer.extensions && renderer.extensions.has('KHR_parallel_shader_compile')); } catch (e) { return false; } })();
+function schedulePrecompile(why) {
+  if (!PARALLEL_COMPILE || precomp.pending || typeof renderer.compileAsync !== 'function') return;
+  precomp.pending = true;
+  const t0 = performance.now();
+  if (perfTuner) perfTuner.noteStall(t0);
+  Promise.resolve()
+    .then(() => renderer.compileAsync(scene, camera))
+    .then(() => console.info(`[perf] шейдеры (${why}) готовы за ${Math.round(performance.now() - t0)} мс, программ ${renderer.info.programs ? renderer.info.programs.length : '?'}`))
+    .catch((e) => console.warn('[PERF] предкомпиляция шейдеров:', e && e.message))
+    .finally(() => { precomp.pending = false; if (perfTuner) perfTuner.noteStall(performance.now()); });
+}
+function precompileTick() {
+  if (!precomp.boot) { precomp.boot = true; schedulePrecompile('старт'); return; }
+  const hk = heroModel ? `${heroModel.hero}|${heroModel.ready}` : null;
+  if (hk !== precomp.heroKey) { precomp.heroKey = hk; if (heroModel && heroModel.ready) schedulePrecompile('герой'); }
+  if (!precomp.fight && app.screen === 'playing') { precomp.fight = true; schedulePrecompile('бой'); }
+}
+const CALM_SCREENS = new Set(['menu', 'paused', 'camera', 'calibration', 'tutorial', 'oath', 'training', 'victory', 'defeat']);
+let perfHud = null;
+try { perfHud = createPerfHud({ root: document.body }); } catch (e) { console.warn('[PERF] панель', e); }
+if (perfTuner) perfTuner.onChange((why, st) => {
+  if (why === 'tier' && settings.qualityAuto !== false) { settings.quality = st.tier; applySettings(); saveSettings(settings); console.info(`[perf] уровень качества → ${st.tier}`); }
+  else if (why === 'scale') applyPixelRatio();
+});
+
 function frame(now) {
   requestAnimationFrame(frame);
+  // [PERF] предел кадров кратно частоте экрана: лишние вызовы rAF пропускаются (время и dt — от прошлого кадра)
+  if (perfTuner && !perfTuner.beginFrame(now, UNCAPPED)) return;
+  const tFrame0 = performance.now();
   const raw = Math.max(0, (now - last) / 1000);
   last = now;
   const stalled = raw > config.loop.stallSec;       // после ухода вкладки не догоняем
@@ -1031,8 +1136,10 @@ function frame(now) {
   if (postfx && typeof postfx.setMode === 'function') { try { postfx.setMode(app.screen, settings); } catch (e) { /* ignore */ } } // [BDO] DOF меню и грейд по экрану
   if (postfx && postfx.enabled) feedPostFx(events);
   let rendered = false;
+  if (perfTuner) perfTuner.gpuBegin();
   if (postfx && postfx.enabled) { try { postfx.render(dtReal); rendered = true; } catch (e) { console.warn('[ASHEN] postfx.render', e); postfx = null; } }
   if (!rendered) renderer.render(scene, camera);
+  if (perfTuner) perfTuner.gpuEnd();
   renderUI();
   drawTracking(now, input);
   battleHud.frame({
@@ -1047,6 +1154,16 @@ function frame(now) {
 
   perf.frames++;
   if (now - perf.t0 >= 1000) { perf.fps = (perf.frames * 1000) / (now - perf.t0); perf.frames = 0; perf.t0 = now; }
+  // [PERF] статистика кадра → автоподстройка; распознавание → ей же; шейдеры заранее; панель F3
+  if (perfTuner) {
+    try {
+      perfTuner.setCalm(CALM_SCREENS.has(app.screen));
+      perfVisionTick(now);
+      perfTuner.endFrame(performance.now(), performance.now() - tFrame0);
+    } catch (e) { console.warn('[PERF] подстройка', e); }
+  }
+  try { precompileTick(); } catch (e) { /* ignore */ }
+  if (perfHud && perfHud.visible) { try { perfHud.update(now, { perf: perfTuner ? perfTuner.state() : null, tracking: vision ? visionStatus() : null, screen: app.screen }); } catch (e) { /* ignore */ } }
 }
 
 applySettings();
@@ -1065,6 +1182,8 @@ window.__ASHEN__ = Object.freeze({
   get debug() { return app.debug; },
   get pauseReason() { return app.pauseReason; },
   get fps() { return Math.round(perf.fps); },
+  perf: () => (perfTuner ? perfTuner.state() : null), // [PERF] автоподстройка: предел кадров, разрешение, уровень
+  programs: () => (renderer.info.programs || []).map((p) => ({ id: p.id, name: p.name, key: String(p.cacheKey).slice(0, 240) })), // [PERF] QA: какие шейдеры компилируются
   get tracking() { return visionStatus(); },
   hands: () => { try { const h = vision && vision.getHands(); return h ? JSON.parse(JSON.stringify({ ...h, left: h.left && { shape: h.left.shape, palmFacing: h.left.palmFacing, charge: h.left.charge }, right: h.right && { shape: h.right.shape, palmFacing: h.right.palmFacing, charge: h.right.charge } })) : null; } catch (e) { return null; } },
   get timeScale() { return timeScale(performance.now()); },

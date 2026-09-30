@@ -1545,6 +1545,101 @@ test('C18 [CONTROLS] запись кистей: startRecording → кадры т
   });
 });
 
+// ═══════════════════ P. [PERF] устойчивость трекинга (игровой режим: torsoMove выключен) ═══════════════════
+
+test('P01 гистерезис плеч: провал visibility до 0.4 не «моргает» трекингом; калибровка берёт строгий порог', () => {
+  const sim = createSim({ torsoMove: false });
+  sim.calibrate(null);
+  sim.run(300, null);
+  const out = sim.run(1500, (s) => { s.shVis = 0.4; });
+  ok(out.every((f) => f.valid), 'valid всё время');
+  ok(sim.interp.getTracking(sim.now()).bodyVisible, 'плечи видны (0.4 ≥ порога удержания 0.3)');
+  sim.run(1200, (s) => { s.shVis = 0.2; });
+  ok(sim.interp.getTracking(sim.now()).lost, 'ниже 0.3 — потеря после grace');
+  const sim2 = createSim({ torsoMove: false }, { state: { shVis: 0.4 } });
+  sim2.interp.beginCalibration(sim2.now());
+  sim2.run(3000, null);
+  eq(sim2.interp.calibrationStatus().result, null, 'калибровка с плечами 0.4 не проходит (строгий порог 0.5)');
+});
+
+test('P02 руки перед грудью закрыли плечи, кисти видны — ввод валиден до 4 с, без «Трекинг восстановлен»', () => {
+  const sim = createSim({ torsoMove: false });
+  sim.calibrate(null);
+  sim.run(300, null);
+  const hid = sim.run(3000, (s, rel) => { s.shVis = 0.1; sim.interp.noteHands(sim.now()); });
+  ok(hid.every((f) => f.valid), 'valid, пока кисти видны');
+  ok(sim.interp.getTracking(sim.now()).handsKeepAlive, 'handsKeepAlive');
+  sim.run(600, (s) => { s.shVis = 0.99; });
+  eq(sim.interp.getDebug().counters.reacquired, 0, 'не считается возвращением');
+  ok(sim.interp.getDebug().counters.keptAlive >= 1, 'счётчик удержаний');
+  // кистей нет — обычная потеря после grace
+  const lost = sim.run(1200, (s) => { s.shVis = 0.1; });
+  ok(lost.filter((f) => f.rel > 800).every((f) => !f.valid), 'без кистей — lost');
+  // кисти видны, но плечей нет дольше 4 с — потеря
+  sim.run(600, (s) => { s.shVis = 0.99; });
+  const long = sim.run(5000, (s) => { s.shVis = 0.1; sim.interp.noteHands(sim.now()); });
+  ok(long.filter((f) => f.rel > 4200).every((f) => !f.valid), 'дольше handsKeepAliveMs — lost');
+});
+
+test('P03 игрок пересел ближе: через ~1,5 с калибровка переезжает сама, без рывка и паузы', () => {
+  const sim = createSim({ torsoMove: false });
+  sim.calibrate(null);
+  sim.run(300, null);
+  const w0 = sim.interp.getBaseline().width;
+  const out = sim.run(3000, (s) => { s.scale = 2.0; });
+  eq(sim.interp.getDebug().counters.rebaselines, 1, 'одно обновление калибровки');
+  ok(out[out.length - 1].valid, 'снова valid');
+  near(sim.interp.getBaseline().width / w0, 2.0, 0.1, 'новая ширина плеч');
+  eq(sim.interp.getTracking(sim.now()).scaleWarning, null, 'предупреждение снято');
+  ok(out.filter((f) => f.rel > 2300).every((f) => f.valid), 'после обновления — без потерь');
+  // одиночный выброс ширины (1 кадр) калибровку не двигает
+  const w1 = sim.interp.getBaseline().width;
+  sim.run(300, (s, rel) => { s.scale = rel < 34 ? 3.5 : 2.0; });
+  near(sim.interp.getBaseline().width, w1, w1 * 0.05, 'выброс не принят');
+  // в режиме отката torsoMove калибровка неподвижна (A25/A26)
+  const t = createSim();
+  t.calibrate(null);
+  t.run(3000, (s) => { s.scale = 2.0; });
+  eq(t.interp.getDebug().counters.rebaselines, 0, 'torsoMove: без обновления');
+});
+
+test('P04 посадка медленно «плывёт» (откинулся на 30% за минуту) — трекинг не теряется', () => {
+  const sim = createSim({ torsoMove: false });
+  sim.calibrate(null);
+  const out = sim.run(60000, (s, rel) => { s.scale = 1 - 0.5 * Math.min(1, rel / 60000); }, { read: true });
+  ok(out.every((f) => f.valid), 'всё время valid (без медленной подстройки ratio 0.5 < 0.55 → потеря)');
+  eq(sim.interp.getDebug().counters.rebaselines, 0, 'без скачков калибровки — плавная подстройка');
+  const ctl = createSim({ torsoMove: false, adaptBaseline: false });
+  ctl.calibrate(null);
+  const c = ctl.run(60000, (s, rel) => { s.scale = 1 - 0.5 * Math.min(1, rel / 60000); });
+  ok(c.some((f) => !f.valid), 'контроль: без подстройки к концу минуты трекинг теряется');
+});
+
+test('P05 шумная камера: калибровка сходится за счёт смягчения порогов; раскачивание всё равно не принимается', () => {
+  const noisy = createSim({ torsoMove: false }, { state: { noise: 0.02 } });
+  noisy.interp.beginCalibration(noisy.now());
+  noisy.run(14000, null, { until: () => noisy.interp.calibrationStatus().result, read: false });
+  eq(noisy.interp.calibrationStatus().result, 'done', `шумная камера: ${JSON.stringify(noisy.interp.calibrationStatus())}`);
+  const strict = createSim({ torsoMove: false, calibrationRelaxMax: 1 }, { state: { noise: 0.02 } });
+  strict.interp.beginCalibration(strict.now());
+  strict.run(14000, null, { until: () => strict.interp.calibrationStatus().result, read: false });
+  eq(strict.interp.calibrationStatus().result, null, 'без смягчения тот же шум за 14 с не калибруется (контроль)');
+  const sway = createSim({ torsoMove: false });
+  sway.interp.beginCalibration(sway.now());
+  sway.run(14000, (s, rel) => { s.lean = 0.2 * Math.sin(rel / 1000 * 2 * Math.PI * 1.2); }, { read: false });
+  eq(sway.interp.calibrationStatus().result, null, 'раскачивание не принято и через 14 с');
+});
+
+test('P06 медленный инференс (5 к/с): grace и «свежесть» растягиваются, трекинг не мигает', () => {
+  const sim = createSim({ torsoMove: false }, { fps: 5 });
+  sim.calibrate(null);
+  const out = sim.run(4000, null);
+  ok(out.every((f) => f.valid), 'valid при 5 к/с');
+  ok(sim.interp.getDebug().reliability.lostGraceMs >= 850, `grace ${sim.interp.getDebug().reliability.lostGraceMs}`);
+  const d = sim.interp.getTracking(sim.now());
+  ok(d.bodyVisible, 'bodyVisible между кадрами');
+});
+
 // ───────────────────────────── запуск ─────────────────────────────
 const only = process.argv[2] ? new RegExp(process.argv[2]) : null;
 let passed = 0;
