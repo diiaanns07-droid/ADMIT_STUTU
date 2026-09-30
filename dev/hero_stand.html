@@ -52,7 +52,8 @@ floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
 const a = createHeroModel({ THREE, scene, hero: A, shading, quality, vrmUrl: '../assets/vroid/', baseUrl: '../assets/quaternius/' });
 const b = createHeroModel({ THREE, scene, hero: B, shading, quality, vrmUrl: '../assets/vroid/', baseUrl: '../assets/quaternius/', remote: true });
 const spread = qs.get('solo') ? 0 : 0.55;
-const snapA = { status: 'playing', player: { position: { x: -spread, y: 0, z: 0 }, yaw: 0.35, velocity: { x: 0, z: 0 }, action: 'idle' } };
+const yawA = qs.get('yaw') !== null ? +qs.get('yaw') : 0.35;
+const snapA = { status: 'playing', player: { position: { x: -spread, y: 0, z: 0 }, yaw: yawA, velocity: { x: 0, z: 0 }, action: 'idle' } };
 const snapB = { status: 'playing', player: { position: { x: spread, y: 0, z: 0 }, yaw: -0.35, velocity: { x: 0, z: 0 }, action: 'idle' } };
 if (qs.get('solo')) b.root.visible = false;
 const poseKind = qs.get('pose');
@@ -85,7 +86,7 @@ function step(dt) {
   const menu = !!qs.get('stance');
   if (menu && a.ready && !a.__st) { a.__st = 1; a.setStance(qs.get('stance')); }
   if (menu && b.ready && !b.__st) { b.__st = 1; b.setStance(qs.get('stance2') || qs.get('stance')); }
-  if (menu) { a.root.position.set(-spread, 0, 0); a.root.rotation.y = 0.35; b.root.position.set(spread, 0, 0); b.root.rotation.y = -0.35; }
+  if (menu) { a.root.position.set(-spread, 0, 0); a.root.rotation.y = yawA; b.root.position.set(spread, 0, 0); b.root.rotation.y = -0.35; }
   a.update(dt, menu ? null : snapA, evA);
   b.update(dt, menu ? null : snapB, evB);
 }
@@ -164,7 +165,7 @@ window.__HS_DRIFT__ = () => {
   window.__HS_MANUAL__ = false;
   return out;
 };
-window.__HS_API__ = { a, b, scene, camera, renderer, THREE, HEROES, step, place };
+window.__HS_API__ = { a, b, scene, camera, renderer, THREE, HEROES, step, place, snapA, snapB };
 </script>
 </body>
 </html>

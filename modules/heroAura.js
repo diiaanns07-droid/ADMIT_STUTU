@@ -56,10 +56,11 @@ void main() {
     p += vec3(sin(t * 30.0 + aSeed.x * 50.0), cos(t * 27.0 + aSeed.y * 40.0), sin(t * 33.0)) * 0.015;
     a = (1.0 - smoothstep(0.0, 0.18, ph)) * step(0.35, h2);
   }
-  vA = a * uK;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  // у самой камеры (приближенная витрина) искры гаснут и не раздуваются в пелену на весь кадр
+  vA = a * uK * smoothstep(0.45, 1.1, -mv.z);
   gl_Position = projectionMatrix * mv;
-  gl_PointSize = uSize * (0.6 + 0.8 * aSeed.z) * (300.0 / max(0.5, -mv.z)) * (0.5 + 0.5 * a);
+  gl_PointSize = min(56.0, uSize * (0.6 + 0.8 * aSeed.z) * (300.0 / max(0.5, -mv.z)) * (0.5 + 0.5 * a));
 }`;
 
 const FRAG = /* glsl */`

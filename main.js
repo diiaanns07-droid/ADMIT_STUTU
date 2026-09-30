@@ -143,7 +143,7 @@ try {
 } catch (e) { console.warn('[ASHEN] heroModel', e); }
 // [HERO] витрина героя в меню: кинематографичный свет и облёт (modules/heroShowcase.js); ошибка — прежняя камера меню
 let heroShowcase = null;
-if (heroModel && world && world.hero) import('./modules/heroShowcase.js').then((m) => { try { heroShowcase = m.createHeroShowcase({ THREE, scene, heroRoot: world.hero.root, heroModel, getPostfx: () => postfx, settings }); } catch (e) { console.warn('[HERO] витрина', e); } }).catch((e) => console.warn('[HERO] heroShowcase.js', e && e.message));
+if (heroModel && world && world.hero) import('./modules/heroShowcase.js').then((m) => { try { heroShowcase = m.createHeroShowcase({ THREE, scene, heroRoot: world.hero.root, heroModel, getPostfx: () => postfx, settings, dom: canvas }); } catch (e) { console.warn('[HERO] витрина', e); } }).catch((e) => console.warn('[HERO] heroShowcase.js', e && e.message));
 const bossBrain = make('boss.js', () => createBossBrain(config));
 const combat = make('combat.js', () => createCombat({ config, bossBrain, layout: worldLayout }));
 const effects = make('effects.js', () => createEffects({ THREE, scene, camera, renderer, config }));
@@ -151,6 +151,7 @@ const effects = make('effects.js', () => createEffects({ THREE, scene, camera, r
 try {
   if (effects.setAnchors) effects.setAnchors(() => (heroModel && typeof heroModel.getAnchors === 'function' ? heroModel.getAnchors() : (world && typeof world.getAnchors === 'function' ? world.getAnchors() : null)));
   if (effects.setGround && worldLayout && typeof worldLayout.groundY === 'function') effects.setGround(worldLayout.groundY);
+  if (effects.setHeroGhosts) effects.setHeroGhosts(() => !!(heroModel && heroModel.afterimages)); // [HERO] V7.2 свои остаточные образы рывка
   // [VFX] PvP: заклинания соперника — от рук его модели (net/session.js → modules/remotePlayer.js getAnchors)
   if (effects.setRemoteAnchors) effects.setRemoteAnchors(() => (netSession && netSession.remote && typeof netSession.remote.getAnchors === 'function' ? netSession.remote.getAnchors() : null));
 } catch (e) { console.warn('[ASHEN] effects V6 hooks', e); }
@@ -1076,7 +1077,7 @@ window.__ASHEN__ = Object.freeze({
   pushups: () => pushups.getDebug(),
   coach: () => coachStats.summary(),
   hero: () => (heroModel ? heroModel.state() : null),
-  heroShowcase: () => (heroShowcase ? { weight: heroShowcase.weight, lights: heroShowcase.group.children.filter((o) => o.isLight).map((l) => [l.name, +l.intensity.toFixed(1)]) } : null), // [HERO] QA
+  heroShowcase: () => (heroShowcase ? { weight: heroShowcase.weight, zoom: +heroShowcase.zoom.toFixed(2), lights: heroShowcase.group.children.filter((o) => o.isLight).map((l) => [l.name, +l.intensity.toFixed(1)]) } : null), // [HERO] QA
   heroAnchors: () => { if (!heroModel || !heroModel.getAnchors) return null; const a = heroModel.getAnchors(), v = new THREE.Vector3(); return Object.fromEntries(Object.entries(a).map(([k, o]) => { o.getWorldPosition(v); return [k, { x: +v.x.toFixed(3), y: +v.y.toFixed(3), z: +v.z.toFixed(3), attached: !!o.parent }]; })); }, // [HERO] C5
   net: () => (netSession ? netSession.debug() : null),             // [NET]
   netSession: () => netSession,                                    // [NET] для тестов и №3

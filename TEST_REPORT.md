@@ -216,6 +216,10 @@ ui-selftest 139/139 в трёх окнах. **Живым человеком пе
 Как повторить:
 ```
 node dev/heroModel.test.mjs                                    # карточки героев, классы материалов, таблицы переноса
+ASHEN_THREE=…/three.module.js node dev/heroCloth.test.mjs      # V7.1: полотнище спереди, cling, кант (нужен three)
+ASHEN_THREE=…/three.module.js node dev/heroTrail.test.mjs      # V7.2: шлейф посоха
+ASHEN_THREE=…/three.module.js node dev/heroGhost.test.mjs      # V7.2: остаточные образы рывка
+ASHEN_THREE=…/three.module.js node dev/heroForge.test.mjs      # V7.2: лук гнётся (кончики, симметрия, перехлёст)
 node tools/hero_shots.mjs --vendor DIR --stand 'dev/hero_stand.html?a=elf&b=ashen' --drift   # C5 + дрейф головы
 node tools/hero_shots.mjs --vendor DIR --heroes ashen,elf,dark,ranger,archmage --no-battle --menu-step 90  # витрина
 node tools/hero_shots.mjs --vendor DIR --heroes elf --zone forest                         # бой (старт в лесу)

@@ -12,6 +12,20 @@ for (const [id, h] of Object.entries(HEROES)) {
   if (h.vrm) assert.match(h.vrm, /\.vrm$/);
 }
 assert.ok(HEROES.ashen && HEROES.elf && HEROES.dark, 'прежние герои на месте');
+// [HERO] V7: у героинь — причёска (цвет, длина, чёлка), у чародейки спрятаны наплечники Ranger
+for (const id of ['elf', 'dark', 'ranger']) {
+  const h = HEROES[id].hair;
+  assert.ok(h && Number.isFinite(h.color) && h.len > 0.3 && /^(straight|swept)$/.test(h.fringe), `волосы у ${id}`);
+}
+assert.ok(Array.isArray(HEROES.dark.hide) && HEROES.dark.hide.length, 'чародейка прячет наплечники Ranger');
+assert.ok(HEROES.ashen.recolor && HEROES.ashen.fx.armorMode === 'seams', 'страж: воронёная сталь и свет по швам');
+// ресницы у героинь; перекраска ткани не задевает металл (иначе «камуфляж» на наплечниках атласа 512²)
+for (const id of ['elf', 'dark', 'ranger']) assert.ok(Number.isFinite(HEROES[id].lashes), `ресницы у ${id}`);
+for (const id of ['elf', 'dark']) {
+  const R = HEROES[id].recolor.MI_Ranger;
+  assert.ok(R.some((r) => r.metal === 'only'), `${id}: своё правило для металла`);
+  assert.ok(R.filter((r) => r.metal !== 'only').every((r) => r.metal === false), `${id}: ткань и кожа — без металла`);
+}
 
 // классы материалов VRoid
 const C = classifyMaterial;

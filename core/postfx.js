@@ -17,6 +17,8 @@
  *            edge chromatic aberration, animated grain unless reducedMotion) → screen.
  *   high   — RenderPass → GTAO (half resolution, modest) → Bloom → Output → SMAA → Grade.
  *            GTAO/SMAA are loaded lazily the first time 'high' is requested; until then high = medium.
+ *   [HERO] menu (medium/high): + Bokeh DOF after RenderPass/GTAO — setMode(screen) turns it on only for
+ *            'menu', setFocus(metres) is fed by heroShowcase (distance to the hero / to the face).
  *
  * Tone mapping / colour space — what main.js must do:
  *   Keep renderer.toneMapping = ACESFilmicToneMapping and renderer.outputColorSpace = SRGBColorSpace
@@ -119,6 +121,8 @@ const GTAO_SCALE = 0.5; // AO targets at half the composer resolution
 const GTAO_PARAMS = { radius: 0.55, distanceExponent: 1.4, thickness: 1.6, scale: 1.0, samples: 12, distanceFallOff: 1.0, screenSpaceRadius: false };
 const GTAO_BLEND = 0.7;
 const RAYS = { strength: 1.35 }; // лучи от короны (medium/high); на low постобработки нет
+// [HERO] глубина резкости витрины меню: размытие = (фокус − дистанция) · aperture (доли экрана), не больше maxblur
+const DOF = { aperture: 0.0022, maxblur: 0.009 };
 const GRADE = { grain: 0.036, vignette: 0.45, ca: 0.0, contrast: 0.16, sat: 1.04,
   shadowTint: [-0.010, 0.002, 0.026], highTint: [0.028, 0.010, -0.020] };
 
@@ -247,6 +251,53 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
     }, (e) => { S.highLoading = false; S.highFailed = true; console.warn('[postfx] high tier modules failed to load:', e && e.message); });
   }
 
+  // [HERO] DOF витрины (экран выбора в духе BDO): BokehPass грузится при первом входе в меню, включён только
+  // там. Проход глубины — без обновления карт теней и без частиц/прозрачного/аддитивного (иначе квадраты
+  // точек и спрайтов попадают в глубину и размывают героя вокруг искр).
+  function loadDof() {
+    if (S.dofLoading || S.dofReady || S.dofFailed || !composer) return;
+    S.dofLoading = true;
+    import('three/addons/postprocessing/BokehPass.js').then((BK) => {
+      S.dofLoading = false;
+      if (S.disposed || S.failed || !composer) return;
+      try {
+        const pass = new BK.BokehPass(scene, camera, { focus: S.focus || 3, aperture: DOF.aperture, maxblur: DOF.maxblur });
+        const orig = pass.render.bind(pass);
+        const hidden = [];
+        pass.render = (r, wb, rb, dt, mask) => {
+          hidden.length = 0;
+          scene.traverseVisible((o) => {
+            let hide = o.isPoints || o.isLine || o.isSprite;
+            if (!hide && o.isMesh && o.material) {
+              const m = Array.isArray(o.material) ? o.material[0] : o.material;
+              hide = !!m && (m.transparent === true || m.depthWrite === false || m.blending === THREE.AdditiveBlending);
+            }
+            if (hide) hidden.push(o);
+          });
+          for (const o of hidden) o.visible = false;
+          const au = r.shadowMap.autoUpdate;
+          r.shadowMap.autoUpdate = false;
+          try { orig(r, wb, rb, dt, mask); } finally { r.shadowMap.autoUpdate = au; for (const o of hidden) o.visible = true; }
+        };
+        pass.enabled = S.mode === 'menu';
+        composer.insertPass(pass, composer.passes.indexOf(P.render) + 1 + (P.gtao ? 1 : 0));
+        P.dof = pass; S.dofReady = true;
+        resizeComposer();
+      } catch (e) { S.dofFailed = true; console.warn('[postfx] DOF недоступен:', e); }
+    }, (e) => { S.dofLoading = false; S.dofFailed = true; console.warn('[postfx] BokehPass не загрузился:', e && e.message); });
+  }
+  function setMode(screen) {
+    S.mode = screen;
+    const want = screen === 'menu' && S.tier !== 'low';
+    if (want && !S.dofReady) loadDof();
+    if (P.dof) P.dof.enabled = want;
+  }
+  function setFocus(m) {
+    if (!(m > 0)) return;
+    S.focus = m;
+    if (P.dof) P.dof.uniforms.focus.value = m;
+  }
+
   function applyTier() {
     if (!composer) return;
     const high = S.tier === 'high' && S.highReady;
@@ -329,6 +380,15 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
     if (k > S.punch) { S.punch = k; S.punchC.x = Number.isFinite(x) ? x : 0.5; S.punchC.y = Number.isFinite(y) ? y : 0.5; }
   }
 
+  // [HERO] ослабление bloom (витрина меню при приближении к лицу: светлый герой на полэкрана иначе
+  // уходит в молочную пелену): k = 1 — как задано, меньше — слабее и выше порог
+  function setBloomK(k) {
+    if (!P.bloom) return;
+    k = Math.max(0, Math.min(1, Number.isFinite(+k) ? +k : 1));
+    P.bloom.strength = BLOOM.strength * k;
+    P.bloom.threshold = BLOOM.threshold + (1 - k) * 1.2;
+  }
+
   function setReducedMotion(b) {
     S.reduced = !!b;
     try { applyTier(); } catch (e) { /* ignore */ }
@@ -343,7 +403,7 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
   const whenReady = init().then((ok) => !!ok && !S.failed, (e) => { fail('init', e); return false; });
 
   return {
-    render, setSize, setQuality, setReducedMotion, setSun, punch, dispose, whenReady,
+    render, setSize, setQuality, setReducedMotion, setSun, punch, setBloomK, setMode, setFocus, dispose, whenReady,
     get enabled() { return active(); },
     get ready() { return S.ready && !S.failed; },
     get tier() { return S.tier; },
