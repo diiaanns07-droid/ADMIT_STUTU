@@ -399,18 +399,10 @@ export function buildBrooch(THREE, M, { emblem = 'flame', r = 0.05 } = {}) {
 }
 
 // ---------------------------------------------------------------- текстуры плаща
-// Ткань с плетением, вышитая кайма (побеги и ромбы) по краям и подолу, герб на спине.
-// → { map (sRGB), bump, emissive } — холсты 512×1024, u поперёк, v сверху вниз.
-export function capeTextures(THREE, { base = 0x2a1a17, trim = 0xd8b070, glow = 0xff8a3a, emblem = 'flame', key = '' } = {}) {
-  if (typeof document === 'undefined') return {};
-  const W = 512, H = 1024;
-  const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
-  const col = (hex, k = 1) => { const c = new THREE.Color(hex).multiplyScalar(k); return `rgb(${Math.round(Math.min(1, c.r) * 255)},${Math.round(Math.min(1, c.g) * 255)},${Math.round(Math.min(1, c.b) * 255)})`; };
-  const cm = mk(), cb = mk(), ce = mk();
-  const gm = cm.getContext('2d'), gb = cb.getContext('2d'), ge = ce.getContext('2d');
-  // основа: цвет + плетение + лёгкие переливы
-  gm.fillStyle = col(base); gm.fillRect(0, 0, W, H);
-  const im = gm.getImageData(0, 0, W, H), px = im.data;
+// основа ткани: цвет + плетение + лёгкие переливы (детерминированно)
+function weaveFill(g, W, H, css) {
+  g.fillStyle = css; g.fillRect(0, 0, W, H);
+  const im = g.getImageData(0, 0, W, H), px = im.data;
   let sd = 1234567;
   const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -421,7 +413,109 @@ export function capeTextures(THREE, { base = 0x2a1a17, trim = 0xd8b070, glow = 0
     const k = weave * n * band;
     px[i] = Math.min(255, px[i] * k); px[i + 1] = Math.min(255, px[i + 1] * k); px[i + 2] = Math.min(255, px[i + 2] * k);
   }
-  gm.putImageData(im, 0, 0);
+  g.putImageData(im, 0, 0);
+}
+
+// [HERO] Узкие полотнища (полы мантии, стола): своя вышивка в масштабе полосы — у холста плаща кайма
+// рассчитана на 0.5–0.66 м ширины и на полосе 9–17 см сжимается в нитку. Кайма «ёлочкой» по краям,
+// по центру — стебель с медальонами-ромбами и листьями, подол — полосы, зубцы и кисти.
+// Свечение — сердцевины медальонов и нить стебля (цвет магии героя). → { map, bump, emissive }, 192×1024.
+export function panelTextures(THREE, { base = 0x2a1a17, trim = 0xd8b070, glow = 0xff8a3a } = {}) {
+  if (typeof document === 'undefined') return {};
+  const W = 192, H = 1024;
+  const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+  const col = (hex, k = 1) => { const c = new THREE.Color(hex).multiplyScalar(k); return `rgb(${Math.round(Math.min(1, c.r) * 255)},${Math.round(Math.min(1, c.g) * 255)},${Math.round(Math.min(1, c.b) * 255)})`; };
+  const cm = mk(), cb = mk(), ce = mk();
+  const gm = cm.getContext('2d'), gb = cb.getContext('2d'), ge = ce.getContext('2d');
+  weaveFill(gm, W, H, col(base));
+  gb.fillStyle = 'rgb(128,128,128)'; gb.fillRect(0, 0, W, H);
+  ge.fillStyle = '#000'; ge.fillRect(0, 0, W, H);
+  const bw = 24, hemH = 118, yHem = H - hemH, cx = W / 2;
+  const medY = []; for (let y = 150; y < yHem - 90; y += 210) medY.push(y);
+  const draw = (g, c, bump) => {
+    g.save();
+    g.strokeStyle = c; g.fillStyle = c; g.lineCap = 'round'; g.lineJoin = 'round';
+    // кайма: двойная линия и «ёлочка» между ними
+    g.lineWidth = bump ? 4 : 3;
+    g.beginPath(); g.moveTo(5, -4); g.lineTo(5, H - 5); g.lineTo(W - 5, H - 5); g.lineTo(W - 5, -4); g.stroke();
+    g.lineWidth = bump ? 3 : 2;
+    g.beginPath(); g.moveTo(5 + bw, -4); g.lineTo(5 + bw, yHem); g.moveTo(W - 5 - bw, -4); g.lineTo(W - 5 - bw, yHem); g.stroke();
+    g.lineWidth = bump ? 2.6 : 1.8;
+    for (const x0 of [5, W - 5 - bw]) {
+      for (let y = 4; y < yHem - 4; y += 13) {
+        g.beginPath(); g.moveTo(x0 + 4, y); g.lineTo(x0 + bw / 2, y + 7); g.lineTo(x0 + bw - 4, y); g.stroke();
+      }
+    }
+    // стебель
+    g.lineWidth = bump ? 3 : 2.2;
+    g.beginPath(); g.moveTo(cx, 18); g.lineTo(cx, yHem - 14); g.stroke();
+    // листья парами вдоль стебля (между медальонами)
+    for (let y = 40; y < yHem - 30; y += 34) {
+      if (medY.some((m) => Math.abs(y - m) < 80)) continue;
+      for (const s of [-1, 1]) {
+        g.beginPath(); g.moveTo(cx, y + 8);
+        g.quadraticCurveTo(cx + s * 16, y - 6, cx + s * 30, y + 2); g.quadraticCurveTo(cx + s * 14, y + 10, cx, y + 8); g.fill();
+      }
+    }
+    // медальоны: ромб в ромбе, завитки на остриях, бусина в центре
+    for (const my of medY) {
+      const a = 46, b = 58;
+      g.lineWidth = bump ? 4 : 3;
+      g.beginPath(); g.moveTo(cx, my - b); g.lineTo(cx + a, my); g.lineTo(cx, my + b); g.lineTo(cx - a, my); g.closePath(); g.stroke();
+      g.lineWidth = bump ? 2.4 : 1.6;
+      g.beginPath(); g.moveTo(cx, my - b + 14); g.lineTo(cx + a - 12, my); g.lineTo(cx, my + b - 14); g.lineTo(cx - a + 12, my); g.closePath(); g.stroke();
+      for (const s of [-1, 1]) {
+        // завитки у боковых остриёв
+        g.beginPath(); g.moveTo(cx + s * a, my);
+        g.bezierCurveTo(cx + s * (a + 16), my - 20, cx + s * (a + 26), my + 6, cx + s * (a + 12), my + 12);
+        g.bezierCurveTo(cx + s * (a + 4), my + 16, cx + s * (a + 4), my + 4, cx + s * (a + 12), my + 4); g.stroke();
+        // лепестки у верхнего и нижнего остриёв
+        g.beginPath(); g.moveTo(cx, my + s * b);
+        g.quadraticCurveTo(cx + 12, my + s * (b + 12), cx, my + s * (b + 26)); g.quadraticCurveTo(cx - 12, my + s * (b + 12), cx, my + s * b); g.fill();
+      }
+      g.beginPath(); g.arc(cx, my, bump ? 8 : 7, 0, TAU); g.fill();
+    }
+    // подол: две полосы, зубцы, кисти с бусинами
+    g.lineWidth = bump ? 4 : 3;
+    g.beginPath(); g.moveTo(5, yHem); g.lineTo(W - 5, yHem); g.moveTo(5, yHem + 9); g.lineTo(W - 5, yHem + 9); g.stroke();
+    const n = 6, step = (W - 10) / n;
+    g.lineWidth = bump ? 3 : 2.2;
+    for (let k = 0; k < n; k++) {
+      const x0 = 5 + k * step, xm = x0 + step / 2;
+      g.beginPath(); g.moveTo(x0 + 3, yHem + 16); g.lineTo(xm, yHem + 62); g.lineTo(x0 + step - 3, yHem + 16); g.stroke();
+      g.beginPath(); g.moveTo(xm, yHem + 62); g.lineTo(xm, H - 22); g.stroke();
+      g.beginPath(); g.arc(xm, yHem + 64, bump ? 5 : 4.5, 0, TAU); g.fill();
+      g.beginPath(); g.arc(xm, H - 20, bump ? 4 : 3.5, 0, TAU); g.fill();
+    }
+    g.restore();
+  };
+  // тень под вышивкой (стежок приподнят) → золото сверху
+  gm.save(); gm.globalAlpha = 0.4; gm.translate(1.5, 2.5); draw(gm, 'rgb(0,0,0)', false); gm.restore();
+  draw(gm, col(trim), false);
+  // блик по нити: светлее к верхнему краю стежка
+  gm.save(); gm.globalAlpha = 0.35; gm.translate(-0.8, -1); draw(gm, col(trim, 1.45), false); gm.restore();
+  draw(gb, '#fff', true);
+  // свечение: сердцевины медальонов и нить стебля
+  ge.shadowColor = col(glow); ge.shadowBlur = 6; ge.fillStyle = col(glow, 0.8); ge.strokeStyle = col(glow, 0.4); ge.lineWidth = 1.2;
+  ge.beginPath(); ge.moveTo(cx, 18); ge.lineTo(cx, yHem - 14); ge.stroke();
+  for (const my of medY) {
+    ge.beginPath(); ge.moveTo(cx, my - 22); ge.lineTo(cx + 15, my); ge.lineTo(cx, my + 22); ge.lineTo(cx - 15, my); ge.closePath(); ge.fill();
+  }
+  const tex = (cv, color) => { const t = new THREE.CanvasTexture(cv); t.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; return t; };
+  return { map: tex(cm, true), bump: tex(cb, false), emissive: tex(ce, true) };
+}
+
+// Ткань с плетением, вышитая кайма (побеги и ромбы) по краям и подолу, герб на спине.
+// → { map (sRGB), bump, emissive } — холсты 512×1024, u поперёк, v сверху вниз.
+export function capeTextures(THREE, { base = 0x2a1a17, trim = 0xd8b070, glow = 0xff8a3a, emblem = 'flame', key = '' } = {}) {
+  if (typeof document === 'undefined') return {};
+  const W = 512, H = 1024;
+  const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+  const col = (hex, k = 1) => { const c = new THREE.Color(hex).multiplyScalar(k); return `rgb(${Math.round(Math.min(1, c.r) * 255)},${Math.round(Math.min(1, c.g) * 255)},${Math.round(Math.min(1, c.b) * 255)})`; };
+  const cm = mk(), cb = mk(), ce = mk();
+  const gm = cm.getContext('2d'), gb = cb.getContext('2d'), ge = ce.getContext('2d');
+  // основа: цвет + плетение + лёгкие переливы
+  weaveFill(gm, W, H, col(base));
   gb.fillStyle = 'rgb(128,128,128)'; gb.fillRect(0, 0, W, H);
   ge.fillStyle = '#000'; ge.fillRect(0, 0, W, H);
   const trimC = col(trim), trimD = col(trim, 0.55), glowC = col(glow, 1.0);

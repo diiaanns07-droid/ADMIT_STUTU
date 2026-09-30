@@ -7,7 +7,8 @@
 // Материалы создаются на каждый вызов (у каждого героя свои); общие только процедурные текстуры.
 //
 // export: dressHero(THREE, vrm, { preset, heroId, model, atmosphere, quality, shading })
-//   → { names, staffTip, bow, cloth, update(dt, root, lod), setLod(l), setQuality(q), setShading(m), setBowHeld(on, grip, nock, draw), setGlow(k), dispose() }
+//   → { names, staffTip, bow, cloth, trail, update(dt, root, lod), setLod(l), setQuality(q), setShading(m), setBowHeld(on, grip, nock, draw), setGlow(k), dispose() }
+// trail — световой шлейф взмаха посоха (modules/heroTrail.js), меш добавляется в сцену сам на первом кадре.
 // opts.grips = { R, L } — узлы хвата кистей из heroModel (центр кулака; y — вдоль большого пальца).
 
 const PRESETS = {
@@ -66,8 +67,9 @@ const PRESETS = {
 };
 
 import { patchHeroLight } from './heroShading.js';
-import { buildStaff, buildBow, buildArrow, buildQuiver, buildBrooch, capeTextures, runeRingTexture, glintTexture, tube, gem, gem as gemGeo } from './heroForge.js';
+import { buildStaff, buildBow, buildArrow, buildQuiver, buildBrooch, capeTextures, panelTextures, runeRingTexture, glintTexture, tube, gem, gem as gemGeo } from './heroForge.js';
 import { createCloth, createStrands, fitCapsules } from './heroCloth.js';
+import { createTrail } from './heroTrail.js';
 
 // ---------------------------------------------------------------- общие процедурные текстуры
 const texCache = {};
@@ -659,6 +661,23 @@ export function dressHero(THREE, vrm, opts = {}) {
         const ear = new THREE.Mesh(eg, faceM.material); ear.name = `elf-ear-${k > 0 ? 'l' : 'r'}`;
         if (k < 0) ear.scale.set(-1, 1, 1);   // зеркально: загиб кончика — назад у обоих ушей
         const grp = new THREE.Group(); grp.name = ear.name + '-grp'; grp.add(ear);
+        // украшения уха (как у эльфиек BDO): две золотые манжеты на внешнем крае и подвеска с камнем
+        // на короткой цепочке; в осях уха (у правого — зеркально по x), цепочка висит вниз по миру
+        {
+          const m = k < 0 ? -1 : 1, down = new THREE.Vector3(0, -1, 0).applyQuaternion(q.clone().invert());
+          down.x *= m;
+          for (const [x, y, r] of [[0.0158, 0.036, 0.0052], [0.0125, 0.05, 0.0046]]) {
+            const cuff = new THREE.Mesh(G(new THREE.TorusGeometry(r, 0.0013, 6, 16)), mats.trim);
+            cuff.position.set(x * m, y, 0);
+            cuff.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(-0.35 * m, 1, 0).normalize());
+            grp.add(cuff);
+          }
+          const a = new THREE.Vector3(0.0205 * m, 0.036, 0), b = a.clone().addScaledVector(down, 0.022);
+          const chain = new THREE.Mesh(G(tube(THREE, new THREE.LineCurve3(a, b), 4, 4, () => 0.0007)), mats.trim);
+          const drop = new THREE.Mesh(G(gemGeo(THREE, { r: 0.0038, h: 0.013, n: 6 })), mats.crystal);
+          drop.position.copy(b).addScaledVector(down, 0.005); drop.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), down);
+          grp.add(chain, drop);
+        }
         stick(grp, 'head', root, q);
         elfEars.meshes.push(ear);
       }
@@ -1138,7 +1157,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       const yAt = (z) => { const k = Math.round(z / 0.012); for (let d = 0; d < 4; d++) { if (prof.has(k + d)) return prof.get(k + d); if (prof.has(k - d)) return prof.get(k - d); } return 0; };
       const topY = Math.max(...prof.values());
       const toW = (z, y, x = 0) => bp.head.clone().addScaledVector(FWD, z).addScaledVector(UP, y).addScaledVector(LEFT, x);
-      const locks = [];
+      const locks = [], roots = [];
       const n = 11, L = P.plume.len || 0.5;
       let sd = 3;
       const rr = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
@@ -1147,22 +1166,26 @@ export function dressHero(THREE, vrm, opts = {}) {
         const z = zMax - 0.03 - u * (zMax - zMin) * 0.62;            // от лба к затылку по гребню
         const y0 = yAt(z) + 0.006;
         if (y0 < topY - 0.09) continue;
-        for (const x of [-0.006, 0.006]) {
+        roots.push(toW(z, y0 - 0.002));
+        // три пучка конского волоса на станцию гребня: средний выше, боковые — веером и короче
+        for (const x of [-0.008, 0, 0.008]) {
           // корень гребня — жёсткая дуга вверх-назад (4 прибитые точки), дальше хвост свободно падает за спину
-          const h = 0.05 + 0.03 * (1 - u);
+          const h = (0.05 + 0.03 * (1 - u)) * (x ? 0.85 : 1.08);
           const pts = [toW(z, y0, x), toW(z - 0.03, y0 + h * 0.8, x), toW(z - 0.08, y0 + h, x * 1.5), toW(z - 0.13, y0 + h * 0.75, x * 2)];
-          const len = L * (0.6 + 0.4 * u) * (0.9 + 0.2 * rr());
+          const len = L * (0.6 + 0.4 * u) * (0.9 + 0.2 * rr()) * (x ? 0.88 : 1);
           for (let k = 4; k < 10; k++) {
             const t = (k - 3) / 6;
             pts.push(toW(z - 0.13 - t * len * 0.45, y0 + h * 0.75 - t * len * 0.85, x * (2 + 4 * t)));
           }
-          locks.push({ pts, pin: 4, r0: 0.015 + 0.004 * (1 - u), r1: 0.011, flat: 0.3, seed: rr(), tone: 0.9 + rr() * 0.2, stiff: 0.6, taper: 0.9, back: true });
+          locks.push({ pts, pin: 4, r0: 0.013 + 0.004 * (1 - u), r1: 0.008, flat: 0.5, seed: rr(), tone: 0.86 + rr() * 0.26, stiff: 0.6, taper: 0.9, back: true });
         }
       }
       const plC = new THREE.Color(P.plume.color || 0x7a1510);
       const pm = Mt(new Std({
-        name: 'gear-plume', color: plC, map: hairStrandTex(THREE), vertexColors: true, roughness: 0.55, metalness: 0,
-        ...(physical ? { sheen: 0.6, sheenRoughness: 0.4, sheenColor: plC.clone().multiplyScalar(1.8) } : {}),
+        // кончики рассыпаются на волоски (альфа по uv1, как у волос), блеск вдоль волоса
+        name: 'gear-plume', color: plC, map: hairStrandTex(THREE), bumpMap: hairStrandTex(THREE), bumpScale: 1.6, vertexColors: true,
+        alphaMap: hairTipTex(THREE), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.5, metalness: 0,
+        ...(physical ? { sheen: 0.6, sheenRoughness: 0.4, sheenColor: plC.clone().multiplyScalar(1.8), anisotropy: 0.5, anisotropyRotation: Math.PI / 2 } : {}),
       }));
       const helmR = Math.max(0.1, (zMax - zMin) * 0.5);
       const hc = new THREE.Object3D(); hc.name = 'plume-helm'; headBone.add(hc);
@@ -1175,6 +1198,17 @@ export function dressHero(THREE, vrm, opts = {}) {
       plume.mesh.name = 'plume';
       parts.push({ obj: plume.mesh, bone: headBone }, { obj: hc, bone: headBone });
       names.push('plume');
+      // золочёный гребень-держатель по линии корней: прячет, где пучки выходят из шлема; спереди — навершие с камнем
+      if (roots.length >= 2) {
+        const c0 = bp.head.clone(), a0 = roots[0], a1 = roots[roots.length - 1];
+        const ext = (p, q, k) => p.clone().addScaledVector(p.clone().sub(q).normalize(), k);
+        const pts = [ext(a0, roots[1], 0.018), ...roots, ext(a1, roots[roots.length - 2], 0.012)].map((p) => p.sub(c0));
+        const crest = new THREE.Group(); crest.name = 'plume-crest';
+        crest.add(new THREE.Mesh(G(tube(THREE, new THREE.CatmullRomCurve3(pts), 40, 8, (v) => 0.0085 * (1 - 0.35 * v))), mats.trim));
+        const fin = new THREE.Mesh(G(new THREE.SphereGeometry(0.0115, 14, 10)), mats.trim); fin.position.copy(pts[0]); crest.add(fin);
+        const fg = new THREE.Mesh(G(new THREE.OctahedronGeometry(0.0065)), mats.glow); fg.position.copy(pts[0]).addScaledVector(FWD, 0.009); crest.add(fg);
+        stick(crest, 'head', c0, new THREE.Quaternion());
+      }
     }
   }
 
@@ -1194,9 +1228,11 @@ export function dressHero(THREE, vrm, opts = {}) {
   }
 
   // ---------------- посох: в кулаке правой (узел хвата heroModel: древко поперёк пальцев, навершие у большого)
-  let staffTip = null, staffRig = null, ribbons = null;
+  let staffTip = null, staffRig = null, ribbons = null, trail = null;
   if (P.staff && bp.rightHand) {
     staffRig = buildStaff(THREE, mats, { style: P.staff.style || 'crown' });
+    // световой шлейф взмаха (modules/heroTrail.js): лента в мире, добавляется в сцену на первом кадре
+    trail = createTrail(THREE, { color: P.staff.glow || P.glow, n: 24 });
     const holder = new THREE.Group(); holder.name = 'staff-holder';
     holder.add(staffRig.group);
     const slot = opts.grips && opts.grips.R;
@@ -1258,6 +1294,26 @@ export function dressHero(THREE, vrm, opts = {}) {
       // стрела на тетиве (видна при натяжении)
       arrow = buildArrow(THREE, mats, { len: 0.78 }); arrow.name = 'arrow'; arrow.visible = false;
       grp.add(arrow);
+      // заряд стрелы у полного натяжения (как у лучников BDO): светящаяся оболочка передней половины древка
+      // и звёздный блик у наконечника цвета магии героя; гаснут при отпускании
+      {
+        const glowC = new THREE.Color(P.glow);
+        // оболочка: яркость по кромке силуэта (френель) — мягкий ореол, а не светящаяся палка
+        const shM = Mt(new THREE.MeshBasicMaterial({ name: 'gear-arrow-charge', color: glowC.clone().multiplyScalar(1.5), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+        shM.onBeforeCompile = (sh) => {
+          sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vArF;')
+            .replace('#include <project_vertex>', '#include <project_vertex>\n  { vec3 n = normalize( normalMatrix * normal ); vArF = 1.0 - abs( dot( n, normalize( - mvPosition.xyz ) ) ); }');
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vArF;')
+            .replace('#include <opaque_fragment>', 'diffuseColor.a *= 0.25 + 0.75 * ( 1.0 - vArF * vArF );\n  outgoingLight *= 0.6 + 0.8 * ( 1.0 - vArF );\n  #include <opaque_fragment>');
+        };
+        shM.customProgramCacheKey = () => 'arrowCharge';
+        const shG = G(new THREE.CylinderGeometry(0.013, 0.005, 0.42, 10, 1, true)); shG.translate(0, 0.78 - 0.06 - 0.21, 0);
+        const sheath = new THREE.Mesh(shG, shM); sheath.name = 'arrow-charge'; sheath.userData.noShadow = true; sheath.castShadow = false;
+        const spM = Mt(new THREE.SpriteMaterial({ name: 'gear-arrow-glint', map: glintTexture(THREE), color: glowC.clone().lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar(1.6), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
+        const sp = new THREE.Sprite(spM); sp.name = 'arrow-glint'; sp.position.y = 0.78 - 0.04; sp.scale.setScalar(0.001);
+        arrow.add(sheath, sp);
+        arrow.userData.charge = { shM, spM, sp, k: 0 };
+      }
       // за спиной по диагонали: верх — у левого плеча, тетива наружу (от спины)
       const diag = UP.clone().multiplyScalar(0.93).addScaledVector(LEFT, 0.42).normalize();
       const q = qFromTo(new THREE.Vector3(0, 1, 0), diag);
@@ -1286,7 +1342,36 @@ export function dressHero(THREE, vrm, opts = {}) {
 
   // ---------------- плащ: ткань (modules/heroCloth.js) — прибит к плечам, падает, развевается на бегу,
   // не проходит сквозь ноги и корпус (капсулы по коже модели); вышитая кайма и герб (heroForge.capeTextures)
-  let cloth = null, capeMat = null;
+  let cloth = null, capeMat = null, panelMat = null;
+  // материал вышитой ткани (плащ, полы мантии): карта/рельеф/свечение вышивки, sheen, подкладка на изнанке
+  const clothMat = (tx, name) => {
+    const { color, trim, lining } = P.cape;
+    for (const k of ['map', 'bump', 'emissive']) if (tx[k]) owned.tex.push(tx[k]);
+    const m = Mt(new Std({
+      name, color: 0xffffff, map: tx.map || null, bumpMap: tx.bump || null, bumpScale: 1.4,
+      emissive: 0xffffff, emissiveMap: tx.emissive || null, emissiveIntensity: tx.emissive ? 1.1 : 0,
+      roughness: 0.82, metalness: 0, side: THREE.DoubleSide,
+      ...(physical ? { sheen: 0.8, sheenRoughness: 0.55, sheenColor: new THREE.Color(color).lerp(new THREE.Color(trim), 0.35).multiplyScalar(1.6) } : {}),
+    }));
+    // подкладка: изнанка (сторона к телу) — шёлк своего цвета, без вышивки и свечения
+    if (lining) {
+      const lin = { value: new THREE.Color(lining) };
+      const prevC = m.onBeforeCompile;
+      m.onBeforeCompile = (sh, r) => {
+        if (prevC) prevC.call(m, sh, r);
+        sh.uniforms.capeLining = lin;
+        sh.fragmentShader = sh.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform vec3 capeLining;')
+          .replace('#include <map_fragment>', `#include <map_fragment>
+  if ( gl_FrontFacing ) diffuseColor.rgb = capeLining * ( 0.8 + 0.4 * dot( diffuseColor.rgb, vec3( 0.3, 0.59, 0.11 ) ) );`)
+          .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  if ( gl_FrontFacing ) totalEmissiveRadiance *= 0.0;`);
+      };
+      const pk = m.customProgramCacheKey;
+      m.customProgramCacheKey = () => 'capeLining:' + (pk ? pk.call(m) : '');
+    }
+    return m;
+  };
   if (P.cape && bp[chestB] && bp.hips && bp.leftUpperArm) {
     const { w, len, color, trim, emblem } = P.cape;
     // поверх копны волос по спине — корпус для ткани толще
@@ -1315,30 +1400,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       }
     }
     const tx = capeTextures(THREE, { base: color, trim, glow: P.glow, emblem, key: preset });
-    for (const k of ['map', 'bump', 'emissive']) if (tx[k]) owned.tex.push(tx[k]);
-    capeMat = Mt(new Std({
-      name: 'gear-cape', color: 0xffffff, map: tx.map || null, bumpMap: tx.bump || null, bumpScale: 1.4,
-      emissive: 0xffffff, emissiveMap: tx.emissive || null, emissiveIntensity: tx.emissive ? 1.1 : 0,
-      roughness: 0.82, metalness: 0, side: THREE.DoubleSide,
-      ...(physical ? { sheen: 0.8, sheenRoughness: 0.55, sheenColor: new THREE.Color(color).lerp(new THREE.Color(trim), 0.35).multiplyScalar(1.6) } : {}),
-    }));
-    // подкладка: изнанка плаща (сторона к телу) — шёлк своего цвета, без вышивки и свечения
-    if (P.cape.lining) {
-      const lin = { value: new THREE.Color(P.cape.lining) };
-      const prevC = capeMat.onBeforeCompile;
-      capeMat.onBeforeCompile = (sh, r) => {
-        if (prevC) prevC.call(capeMat, sh, r);
-        sh.uniforms.capeLining = lin;
-        sh.fragmentShader = sh.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform vec3 capeLining;')
-          .replace('#include <map_fragment>', `#include <map_fragment>
-  if ( gl_FrontFacing ) diffuseColor.rgb = capeLining * ( 0.8 + 0.4 * dot( diffuseColor.rgb, vec3( 0.3, 0.59, 0.11 ) ) );`)
-          .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-  if ( gl_FrontFacing ) totalEmissiveRadiance *= 0.0;`);
-      };
-      const pk = capeMat.customProgramCacheKey;
-      capeMat.customProgramCacheKey = () => 'capeLining:' + (pk ? pk.call(capeMat) : '');
-    }
+    capeMat = clothMat(tx, 'gear-cape');
     const holder = model || vrm.scene;
     const _mq = new THREE.Quaternion();
     cloth = createCloth(THREE, {
@@ -1375,8 +1437,8 @@ export function dressHero(THREE, vrm, opts = {}) {
   }
 
   // ---------------- полы мантии (чародейка, эльфийка): полотнища ткани с пояса — силуэт мантии, а не
-  // костюма лучницы. Материал плаща (вышивка, герб, подкладка — без новых текстур): переднее полотнище
-  // с гербом, боковые — нижняя часть холста (кайма и подол без герба). Физика ткани, прибиты к тазу,
+  // костюма лучницы. Полотнище с гербом — холст плаща; узкие — своя вышивка в масштабе полосы
+  // (panelMat: кайма, медальоны, подол с кистями; та же подкладка). Физика ткани, прибиты к тазу,
   // обтекают бёдра и голени; переднее не уходит назад между ног.
   const tabards = [];
   if (P.tabard && capeMat && bp.hips) {
@@ -1440,6 +1502,11 @@ export function dressHero(THREE, vrm, opts = {}) {
     const holder = model || vrm.scene;
     const _mq2 = new THREE.Quaternion();
     const legCaps = bodyCaps.filter((c) => (stole ? /Leg|hips|hest/ : /Leg/).test(c.name)).map((c) => ({ ...c, r: c.r - 0.008 }));   // запас капсул (+0.018) велик для прилегающей ткани
+    // полотнища без герба — своя вышивка в масштабе полосы (heroForge.panelTextures)
+    if (P.tabard.panels.some((pn) => !pn.emblem)) {
+      const ptx = panelTextures(THREE, { base: P.cape.color, trim: P.cape.trim, glow: P.glow });
+      if (ptx.map) panelMat = clothMat(ptx, 'gear-panel');
+    }
     for (const pn of P.tabard.panels) {
       const cols = 7, rows = 12;
       const R0 = Rat(pn.az) + 0.008;
@@ -1457,10 +1524,10 @@ export function dressHero(THREE, vrm, opts = {}) {
         }
       }
       const cl = createCloth(THREE, {
-        cols, rows, rest, anchor: raw(stole ? chestB : 'hips'), parent: holder, colliders: legCaps, material: capeMat,
+        cols, rows, rest, anchor: raw(stole ? chestB : 'hips'), parent: holder, colliders: legCaps, material: pn.emblem || !panelMat ? capeMat : panelMat,
         pleats: pn.pleats ?? 1.5, pleatDepth: 0.008, name: 'tabard', plane: Math.abs(pn.az) < 0.5 ? 'front' : 'none', hem: { r: 0.0045, material: mats.trim },
         cling: P.tabard.cling ?? 3,
-        uv: pn.emblem ? { u0: 0, u1: 1, v0: 0, v1: 1 } : { u0: 0, u1: 1, v0: 0, v1: 0.62 },
+        uv: pn.emblem || panelMat ? { u0: 0, u1: 1, v0: 0, v1: 1 } : { u0: 0, u1: 1, v0: 0, v1: 0.62 },
         hips: raw('hips'), back: { lim: 0.03, h: 0.3 },
         fwd: (out) => out.set(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(_mq2)),
         floor: () => holder.getWorldPosition(new THREE.Vector3()).y,
@@ -1474,6 +1541,22 @@ export function dressHero(THREE, vrm, opts = {}) {
   let t = 0, lodL = 0;
   const perf = { cloth: 0, hair: 0 }; // мс на кадр (скользящее среднее) — для QA
   const _pv = new THREE.Vector3(), _pd = new THREE.Vector3(), _pInv = new THREE.Matrix4(), _pDown = new THREE.Vector3(0, -1, 0);
+  // шлейф: навершие и точка древка на 0.26 м ниже; скорость навершия — в осях тела (бег не в счёт)
+  const _ta = new THREE.Vector3(), _tb = new THREE.Vector3(), _tl = new THREE.Vector3(), _tPrev = new THREE.Vector3(), _ts = new THREE.Vector3();
+  let tHave = false;
+  function trailTick(dt) {
+    const holderR = model || vrm.scene;
+    if (!trail.mesh.parent) { let r = holderR; while (r.parent) r = r.parent; if (r.isScene) r.add(trail.mesh); }
+    let shown = lodL < 2 && !!trail.mesh.parent;
+    for (let o = staffRig.group; shown && o; o = o.parent) if (!o.visible) shown = false;
+    if (!shown || !(dt > 1e-4)) { if (!shown) { trail.reset(); tHave = false; } return; }
+    staffRig.tip.getWorldPosition(_ta);
+    staffRig.group.localToWorld(_tb.set(0, staffRig.top - 0.26, 0));
+    _tl.copy(_ta); holderR.worldToLocal(_tl);
+    const sp = tHave ? (_tl.distanceTo(_tPrev) * holderR.getWorldScale(_ts).x) / dt : 0;   // локальные единицы → метры
+    _tPrev.copy(_tl); tHave = true;
+    trail.push(_ta, _tb, sp, glowNow, dt);
+  }
   function update(dt) {
     t += dt;
     if (elfEars) for (const m of elfEars.meshes) if (m.material !== elfEars.face.material) m.material = elfEars.face.material;
@@ -1503,6 +1586,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       } catch (e) { /* подвески не критичны */ }
     }
     t1 = now(); perf.hair += (t1 - t0 - perf.hair) * 0.1;
+    if (trail) { try { trailTick(dt); } catch (e) { trail.reset(); } }
     if (staffRig) {
       staffRig.halo.rotation.y = t * 0.9;
       staffRig.shards.rotation.y = -t * 0.7;
@@ -1523,6 +1607,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     mats.glow.color.copy(glowBase).multiplyScalar(0.6 + 0.4 * glowNow);
     mats.inlay.color.copy(inlayBase).multiplyScalar((0.7 + 0.3 * Math.sin(t * 1.7)) * (0.6 + 0.4 * glowNow));
     if (capeMat) capeMat.emissiveIntensity = (0.8 + 0.25 * Math.sin(t * 1.3)) * Math.min(2, glowNow);
+    if (panelMat) panelMat.emissiveIntensity = (0.5 + 0.15 * Math.sin(t * 1.3 + 1.1)) * Math.min(2, glowNow);
     if (visorMat) visorMat.opacity = Math.min(1, 0.55 + 0.25 * Math.sin(t * 3.3) + 0.3 * (glowNow - 1));
   }
   function setLod(l) {
@@ -1611,6 +1696,15 @@ export function dressHero(THREE, vrm, opts = {}) {
         _sd.copy(bowRig.rest).sub(_nk).normalize();
         arrow.quaternion.setFromUnitVectors(_sY, _sd);
       }
+      const ch = arrow.userData.charge;
+      if (ch) {
+        const x = Math.min(1, Math.max(0, (draw - 0.6) / 0.35)), k = arrow.visible ? x * x * (3 - 2 * x) : 0;
+        ch.k = k;
+        ch.shM.opacity = 0.6 * k * (0.85 + 0.15 * Math.sin(t * 9));
+        ch.spM.opacity = k;
+        ch.spM.rotation = t * 0.8;
+        ch.sp.scale.setScalar(0.001 + (0.07 + 0.02 * Math.sin(t * 6.3)) * k);
+      }
     }
   }
   function dispose() {
@@ -1625,6 +1719,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     if (hairSheet) hairSheet.dispose();
     if (plume) plume.dispose();
     if (ribbons) { ribbons.dispose(); for (const g of ribbons.pendants || []) if (g.parent) g.parent.remove(g); }
+    if (trail) trail.dispose();
     for (const p of parts) if (p.obj.parent) p.obj.parent.remove(p.obj);
     if (bow && bow.parent) bow.parent.remove(bow);
     for (const g of geos) g.dispose();
@@ -1648,7 +1743,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   let glowNow = 1;
   function setGlow(k) { glowNow = k; }
   return {
-    names, staffTip, bow, cloth, perf, setGlow, get glow() { return glowNow; }, update, setLod, setQuality, setShading() {}, setBowHeld, setBlink, holdBlink(k) { if (lids) { lids.hold = k; setBlink(k); } }, get lids() { return lids ? lids.pivots.length : 0; }, dispose,
+    names, staffTip, bow, cloth, perf, get trail() { return trail; }, setGlow, get glow() { return glowNow; }, update, setLod, setQuality, setShading() {}, setBowHeld, setBlink, holdBlink(k) { if (lids) { lids.hold = k; setBlink(k); } }, get lids() { return lids ? lids.pivots.length : 0; }, dispose,
     parts: () => parts.map((p) => p.obj.name),
   };
 }
