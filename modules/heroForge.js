@@ -248,7 +248,7 @@ export function buildStaff(THREE, M, S = {}) {
 
 // ---------------------------------------------------------------- лук
 // B: { len (от кончика до кончика), brace (тетива от рукояти) } →
-//   { group, tipT, tipB, nockRest, rest (полка стрелы), bend(k) — изгиб плеч при натяжении 0…1 }
+//   { group, tipT, tipB, nockRest, rest (полка стрелы), bend(k) — изгиб плеч при натяжении 0…1 (< 0 — перехлёст) }
 export function buildBow(THREE, M, B = {}) {
   const L = B.len || 1.3, brace = B.brace || 0.17;
   const grp = new THREE.Group(); grp.name = 'bow';
@@ -330,10 +330,10 @@ export function buildBow(THREE, M, B = {}) {
   const tip0 = [tipT.clone(), tipB.clone()], BEND = 0.14;
   let bendK = -1;
   function bend(k) {
-    k = Math.min(1, Math.max(0, k));
+    k = Math.min(1, Math.max(-0.35, k));   // < 0 — перехлёст вперёд после выстрела
     if (Math.abs(k - bendK) < 1e-4) return;
     bendK = k;
-    const e = k * k * (3 - 2 * k);   // тугой лук: гнётся к концу натяжения
+    const e = k >= 0 ? k * k * (3 - 2 * k) : k * 0.8;   // тугой лук: гнётся к концу натяжения
     limbs.forEach(({ piv, sg }, i) => {
       const a = sg * BEND * e;
       piv.rotation.x = a;

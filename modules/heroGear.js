@@ -1717,6 +1717,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     return k;
   }
   const _q0 = new THREE.Quaternion(), _v0 = new THREE.Vector3();
+  let bowHiT = -1, bowRelT = -1;   // последний миг полного натяжения и миг выстрела (время снаряжения t)
   function setBowHeld(on, grip, nockNode = null, draw = 0) {
     if (!bow || !bowHome) return;
     if (!on) {
@@ -1738,7 +1739,12 @@ export function dressHero(THREE, vrm, opts = {}) {
       startBowTr(_v0.set(0, 0, 0), _q0.identity(), _ws.setScalar(1 / (grip.getWorldScale(new THREE.Vector3()).x || 1)), 0.22);
     }
     if (stepBowTr() < 1) { if (bowRig.bend) bowRig.bend(0); layString(bowRig.nockRest); if (arrow) arrow.visible = false; return; }
-    if (bowRig.bend) bowRig.bend(draw);   // плечи гнутся к лучнику, кончики тетивы — следом
+    // выстрел: натяжение резко упало — плечи распрямляются с перехлёстом вперёд, тетива дрожит (~0.4 с)
+    if (draw > 0.7) { bowHiT = t; bowRelT = -1; }
+    else if (draw < 0.3 && bowHiT >= 0 && t - bowHiT < 0.25 && bowRelT < 0) bowRelT = t;
+    const rel = bowRelT >= 0 ? t - bowRelT : 9;
+    const snap = rel < 0.4 ? Math.exp(-rel / 0.07) : 0;
+    if (bowRig.bend) bowRig.bend(draw + 0.45 * snap * Math.cos(2 * Math.PI * 8 * rel));   // плечи гнутся к лучнику, кончики тетивы — следом
     if (nockNode && draw > 0.03) {
       bow.updateWorldMatrix(true, false);
       nockNode.getWorldPosition(_nk);
@@ -1748,7 +1754,11 @@ export function dressHero(THREE, vrm, opts = {}) {
       if (_nk.z < bowRig.nockRest.z) _nk.z = bowRig.nockRest.z;
       if (_nk.length() > 0.78) _nk.setLength(0.78);
       layString(_nk);
-    } else { _nk.copy(bowRig.nockRest); layString(_nk); }
+    } else {
+      _nk.copy(bowRig.nockRest);
+      if (rel < 0.4) _nk.z += 0.03 * Math.exp(-rel / 0.05) * Math.sin(2 * Math.PI * 16 * rel);   // дрожь тетивы
+      layString(_nk);
+    }
     if (arrow) {
       arrow.visible = draw > 0.03;
       if (arrow.visible) {
