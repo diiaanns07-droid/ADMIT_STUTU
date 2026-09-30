@@ -7,7 +7,8 @@
 // Playwright (глобальный пакет) + serve_game.py. Если CDN (cdn.jsdelivr.net) недоступен, --vendor DIR
 // отдаёт библиотеки локально: DIR/three-0.185.1/package/… и DIR/pixiv-three-vrm-3.5.5/package/…
 // (npm pack three@0.185.1 @pixiv/three-vrm@3.5.5 и распаковать в DIR).
-// Снимки: NN_<hero>_menu.png — меню выбора героя; NN_<hero>_battle*.png — бой в DEBUG.
+// Снимки: NN_<hero>_menu.png — меню выбора героя; NN_<hero>_battle*.png — бой в DEBUG (старт, бег, стрейф,
+// каст, рывок Q — остаточные образы, «Рассечение» I — шлейф посоха).
 // stats.json: fps (SwiftShader, только для сравнения), мс на heroModel.update, ошибки консоли.
 
 import { spawn } from 'node:child_process';
@@ -173,6 +174,13 @@ try {
       await page.keyboard.up('KeyD'); await frames(page, 12, 500);
       await page.keyboard.press('KeyU'); await frames(page, 8, 250);
       await page.screenshot({ path: join(OUT, `${nn()}_${hero}_battle_cast.png`), timeout: 120000 });
+      // V7.2: рывок влево (остаточные образы) и «Рассечение» (шлейф посоха)
+      await frames(page, 20, 600);
+      await page.keyboard.press('KeyQ'); await frames(page, 5, 180);
+      await page.screenshot({ path: join(OUT, `${nn()}_${hero}_battle_dash.png`), timeout: 120000 });
+      await frames(page, 30, 900);
+      await page.keyboard.press('KeyI'); await frames(page, 6, 200);
+      await page.screenshot({ path: join(OUT, `${nn()}_${hero}_battle_slash.png`), timeout: 120000 });
       await sleep(800);
       const t0 = Date.now(); const f0 = await page.evaluate(() => performance.now());
       await sleep(3000);

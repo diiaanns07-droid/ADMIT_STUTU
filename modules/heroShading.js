@@ -189,6 +189,7 @@ export function patchMicro(THREE, mat, { unit = 1, mode = 'gear', lips = false }
   if (!mat || mat.userData.heroMicro || !mat.isMeshStandardMaterial) return mat;
   mat.userData.heroMicro = true;
   const U = { heroMicroK: HERO_MICRO, heroMicroUnit: { value: unit } };
+  if (mode === 'hair') { initHeroLight(THREE); U.heroMicroKeyC = HERO_LIGHT.heroKeyColor; U.heroMicroKeyD = HERO_LIGHT.heroKeyDir; }
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (shader, r) => {
     if (prev) prev.call(mat, shader, r);
@@ -199,7 +200,7 @@ export function patchMicro(THREE, mat, { unit = 1, mode = 'gear', lips = false }
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vHeroMicro = position;' + (hair ? '\n  vHeroMicroN = normal;' : ''));
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
-varying vec3 vHeroMicro;${hair ? '\nvarying vec3 vHeroMicroN;' : ''}
+varying vec3 vHeroMicro;${hair ? '\nvarying vec3 vHeroMicroN;\nuniform vec3 heroMicroKeyC;\nuniform vec3 heroMicroKeyD;' : ''}
 uniform float heroMicroK;
 uniform float heroMicroUnit;
 float hmHash( vec3 p ) { p = fract( p * 0.1031 ); p += dot( p, p.zyx + 31.32 ); return fract( ( p.x + p.y ) * p.z ); }
@@ -274,6 +275,31 @@ float hmAA( float lambda, float fw ) { return 1.0 - smoothstep( 0.3 * lambda, 0.
       normal = normalize( normal - hmG );
     }
   }`);
+    // волосы на витрине: «кольцо блеска» Каджия-Кей вдоль потока от портретного ключа (в бою ключ = 0).
+    // Направление пряди в осях камеры — поперёк градиента неподвижных осей полос (экранные производные
+    // гладких координат, до ветвлений); узкий светлый блик и широкий в цвет волос, рвутся по пучкам
+    if (hair) {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  {
+    vec3 kkSp = - vViewPosition, kkDx = dFdx( kkSp ), kkDy = dFdy( kkSp );
+    float kkQ1x = dFdx( hmQ1 ), kkQ1y = dFdy( hmQ1 ), kkQ2x = dFdx( hmQ2 ), kkQ2y = dFdy( hmQ2 );
+    vec3 kkR1 = cross( kkDy, normal ), kkR2 = cross( normal, kkDx );
+    float kkDet = dot( kkDx, kkR1 );
+    vec3 kkGa = mix( kkQ1x * kkR1 + kkQ1y * kkR2, kkQ2x * kkR1 + kkQ2y * kkR2, hmW2 ) * sign( kkDet );
+    float kkGl = length( kkGa );
+    if ( abs( kkDet ) > 1e-16 && kkGl > 1e-12 ) {
+      vec3 kkT = normalize( cross( normal, kkGa / kkGl ) );
+      vec3 kkH = normalize( heroMicroKeyD + normalize( vViewPosition ) );
+      float kkSh = hmClump * 0.06;
+      vec3 kt1 = normalize( kkT + normal * ( -0.08 + kkSh ) ), kt2 = normalize( kkT + normal * ( 0.12 + kkSh ) );
+      float kd1 = dot( kt1, kkH ), kd2 = dot( kt2, kkH );
+      float ks1 = pow( sqrt( max( 0.0, 1.0 - kd1 * kd1 ) ), 240.0 ), ks2 = pow( sqrt( max( 0.0, 1.0 - kd2 * kd2 ) ), 70.0 );
+      float kkNL = saturate( dot( normal, heroMicroKeyD ) ) * 0.85 + 0.15;
+      float kkM = 0.55 + 0.45 * ( 0.5 + 0.5 * hmClump );
+      totalEmissiveRadiance += heroMicroKeyC * kkNL * kkM * ( ks1 * 0.12 + ks2 * 0.14 * diffuseColor.rgb );
+    }
+  }`);
+    }
   };
   const prevKey = mat.customProgramCacheKey;
   mat.customProgramCacheKey = () => 'heroMicro:' + mode + (lips ? 'L' : '') + ':' + (prevKey ? prevKey.call(mat) : '');
