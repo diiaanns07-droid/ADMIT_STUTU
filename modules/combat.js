@@ -95,7 +95,7 @@ export const DEFAULT_COMBAT_CONFIG = deepFreeze({
     strafeFactor: 0.9,      // в lock-on: боком чуть медленнее
     turnRate: 12,           // рад/с: разворот корпуса (explore — по движению, engaged — на босса)
     minBossDistance: 2.8,   // ближе к боссу не подойти (тело Регента)
-    moveSign: 1,            // +1: +moveX → вправо на экране (см. handoff)
+    moveSign: 1,            // +1: +moveX → вправо на экране
     // [ASHEN_V3] «замок кадра» вне арены: ось управления фиксируется, когда игрок выбрал
     // направление, и не крутится вслед за камерой исследования (иначе «вправо» — бег по кругу).
     frameLock: true,

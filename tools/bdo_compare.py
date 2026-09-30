@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""[BDO] Склейка «до / после» для TEST_REPORT: пары PNG одного имени из двух папок → JPEG рядом.
+"""[BDO] Склейка «до / после»: пары PNG одного имени из двух папок → JPEG рядом.
 
 python tools/bdo_compare.py BEFORE_DIR AFTER_DIR OUT_DIR [name1 name2 ...]
 Без имён — все общие файлы. Нужен Pillow (pip install pillow). Ширина половинки — 900 px.

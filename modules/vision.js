@@ -19,7 +19,7 @@ export const API_VERSION = 'ASHEN_V2';
 import { createHandGestures } from '../core/handGestures.js';
 import { createInputRecorder } from '../core/inputRecorder.js'; // [CONTROLS] запись кистей для разбора (dev/replay.mjs)
 
-// Версия проверена по реестру npm 28.09.2026 (см. отчёт в 02_HANDOFF.txt).
+// Версия проверена по реестру npm 28.09.2026.
 // Главный сборщик может передать свои URL через config.mediaPipe — тогда эти не используются.
 // [№1, интеграция] 0.10.35 вместо 1.0.1: бандл 1.0.x отправляет метрики на odml.pa.googleapis.com/v1/log.
 export const MEDIAPIPE_VERSION = '0.10.35';

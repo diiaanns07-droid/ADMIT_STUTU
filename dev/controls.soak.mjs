@@ -328,7 +328,7 @@ else {
   for (const [k, v] of Object.entries(R)) console.log(`  ${k.padEnd(16)} ${v}`);
 }
 
-// пороги качества (см. BUILD_STATUS.md, раздел V6)
+// пороги качества движения
 const LIMITS = [
   ['falseShieldOn', (v) => v === 0, 'щит не должен подниматься сам'],
   ['hintsOut', (v) => Object.keys(v).length === 0, 'при ходьбе без правой руки подсказок нет (кодов)'],

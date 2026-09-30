@@ -6,7 +6,7 @@
  * ВАЖНО: это тесты на ИСКУССТВЕННЫХ landmarks и подделках браузерных API. Они проверяют
  * логику интерпретации, протокол worker и оболочку createVision, но НЕ реальную вебку,
  * реальный MediaPipe, GPU, FPS или задержку. Проверки с живой камерой — отдельно
- * (vision-webcam-check.html и чек-лист в 02_HANDOFF.txt).
+ * (dev/vision-webcam-check.html).
  *
  * Разделы:
  *   A. Интерпретатор на синтетических позах (createPoseInterpreter).

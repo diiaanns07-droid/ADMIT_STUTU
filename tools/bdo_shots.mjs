@@ -1,4 +1,4 @@
-// [BDO] Снимки всех экранов и боевого HUD в нескольких размерах (стиль Black Desert, TEST_REPORT).
+// [BDO] Снимки всех экранов и боевого HUD в нескольких размерах (стиль Black Desert).
 // node tools/bdo_shots.mjs --out DIR [--sizes 1366x768,1920x1080,1366x650] [--browser PATH]
 //        [--cdn DIR] [--only menu,playing] [--quality medium] [--fps]
 // Playwright (глобальный или локальный). Если CDN недоступен (облако без jsdelivr), --cdn DIR
