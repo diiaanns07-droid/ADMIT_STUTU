@@ -42,7 +42,7 @@ export const HEROES = Object.freeze({
   elf: {
     id: 'elf', name: 'Эльфийка', vrm: null, glb: 'ranger.glb', height: 1.74, cls: 'Лучница-заклинательница', element: 'Гроза',
     desc: ['Следопыт Сияющего леса.', 'Лук из белого ясеня и перстни-руны на пальцах.', 'Бьёт издалека и уходит рывком.'],
-    gear: 'sylvan', stance: 'bow', adduct: 0.42, headScale: 0.9, menuStance: null, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, ears: true, hair: { color: 0xe6dcc0, len: 0.95, fringe: 'swept' }, brows: 0.62, circlet: { gem: 0x7fe8ff }, lashes: 0x5a4230, hoodTrim: { base: 0xe9efe9, thread: 0xd4ad62 },
+    gear: 'sylvan', stance: 'bow', adduct: 0.42, headScale: 0.9, menuStance: null, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, ears: true, hair: { color: 0xe6dcc0, len: 0.95, fringe: 'swept' }, brows: 0.62, smile: 1, circlet: { gem: 0x7fe8ff }, lashes: 0x5a4230, hoodTrim: { base: 0xe9efe9, thread: 0xd4ad62 },
     makeup: { lips: 0xd97c86, lipsA: 0.7, shadow: 0xb08a6a, shadowA: 0.35, liner: 0x3a2a20, blush: 0xf09090, blushA: 0.16 },
     // зелёная ткань → белый шёлк с бирюзой, кожа доспеха → светлая замша
     recolor: { MI_Ranger: [{ h: [0, 360], minS: 0, metal: 'only', toH: 195, s: 0.3, v: 1.12 }, { h: [65, 175], toH: 172, s: 0.35, v: 1.55, metal: false }, { h: [8, 48], toH: 38, s: 0.55, v: 1.45, metal: false }], MI_Regular_Female: [{ h: [0, 60], minS: 0.04, toH: 16, s: 0.52, v: 1.3 }] },
@@ -52,7 +52,7 @@ export const HEROES = Object.freeze({
     id: 'dark', name: 'Тёмная чародейка', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Чародейка', element: 'Тьма и лёд',
     desc: ['Изгнанница из башни Затмения.', 'Посох с кристаллом ночи, плащ с живыми рунами.', 'Сковывает льдом и рвёт тьмой.'],
     // [HERO] на витрине — спокойная стойка (широкая «двуручная» не к лицу чародейке)
-    gear: 'witchQ', stance: 'staff', adduct: 0.42, headScale: 0.9, menuStance: null, hide: ['Female_Ranger_Acc_Pauldrons'], makeup: { lips: 0x7a2a52, lipsA: 0.85, shadow: 0x5a3a7a, shadowA: 0.6, liner: 0x0c0610, blush: 0xc08aa0, blushA: 0.1 }, hair: { color: 0x1c1426, len: 1.05, fringe: 'straight' }, brows: 0.6, lashes: 0x08050c, hoodTrim: { base: 0x1c1228, thread: 0xb49cff },
+    gear: 'witchQ', stance: 'staff', adduct: 0.42, headScale: 0.9, menuStance: null, hide: ['Female_Ranger_Acc_Pauldrons'], makeup: { lips: 0x7a2a52, lipsA: 0.85, shadow: 0x5a3a7a, shadowA: 0.6, liner: 0x0c0610, blush: 0xc08aa0, blushA: 0.1 }, hair: { color: 0x1c1426, len: 1.05, fringe: 'straight' }, brows: 0.6, smile: 0.5, lashes: 0x08050c, hoodTrim: { base: 0x1c1228, thread: 0xb49cff },
     // зелёная ткань → глубокий фиолетовый, кожа → почти чёрная
     recolor: { MI_Ranger: [{ h: [0, 360], minS: 0, metal: 'only', toH: 262, s: 0.45, v: 0.92 }, { h: [65, 175], toH: 272, s: 1.1, v: 0.62, metal: false }, { h: [8, 48], toH: 255, s: 0.35, v: 0.42, metal: false }], MI_Regular_Female: [{ h: [0, 60], minS: 0.04, toH: 12, s: 0.45, v: 1.26 }] },
     fx: { style: 'frost', color: 0xb58cff, color2: 0x9fe0ff, armor: 0xa77bff, armorK: 1.4, armorMode: 'seams', eyes: 0xa77bff, eyesK: 0.4 },
@@ -62,7 +62,7 @@ export const HEROES = Object.freeze({
     id: 'ranger', name: 'Лучница', vrm: null, glb: 'ranger.glb', height: 1.72, cls: 'Лучница', element: 'Ветер',
     desc: ['Разведчица пограничных застав.', 'Капюшон следопыта, длинный лук и колчан за спиной.', 'Натягивает тетиву рукой — стрела летит в цель.'],
     gear: 'scout', stance: 'bow', adduct: 0.42, headScale: 0.9, menuStance: null, recolor: { MI_Regular_Female: [{ h: [0, 60], minS: 0.04, toH: 19, s: 0.72, v: 1.14 }] },
-    makeup: { lips: 0xc8706a, lipsA: 0.55, liner: 0x2a1a12, blush: 0xe89080, blushA: 0.2, freckles: 0x8a5a3a }, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, hair: { color: 0x5a3220, len: 0.85, fringe: 'swept' }, brows: 0.7, lashes: 0x1c120c, hoodTrim: { base: 0x24381c, thread: 0xc9a05a },
+    makeup: { lips: 0xc8706a, lipsA: 0.55, liner: 0x2a1a12, blush: 0xe89080, blushA: 0.2, freckles: 0x8a5a3a }, menuPose: { bowActive: true, bowDraw: 0.1, aim: { x: 0.45, y: -0.55 } }, hair: { color: 0x5a3220, len: 0.85, fringe: 'swept' }, brows: 0.7, smile: 0.8, lashes: 0x1c120c, hoodTrim: { base: 0x24381c, thread: 0xc9a05a },
     fx: { style: 'wind', color: 0xc8ff9a, color2: 0xffe08a },
   },
   archmage: {
@@ -312,6 +312,7 @@ export function createHeroModel({
       if (def.recolor) await recolorHero(vrm, def.recolor, def.makeup || null);
       if (def.hide) vrm.scene.traverse((o) => { if (o.isMesh && def.hide.some((n) => o.name.startsWith(n))) o.visible = false; });
       if (def.brows) thinBrows(vrm, def.brows);
+      if (def.smile) smileFace(vrm, def.smile);
       // пропорции: у Quaternius голова стилизованно крупная — чуть меньше (снаряжение головы крепится после)
       if (def.headScale) { const hb = vrm.humanoid.getRawBoneNode ? vrm.humanoid.getRawBoneNode('head') : null; if (hb) hb.scale.setScalar(def.headScale); }
       if (S.disposed || token !== S.token) { disposeVrm(vrm); return; }
@@ -525,6 +526,40 @@ export function createHeroModel({
         const c = c0 !== null && c1 !== null ? c0 + (c1 - c0) * t : (c0 ?? c1);
         if (c === null) continue;
         pa.setY(i, c + (pa.getY(i) - c) * k);
+      }
+      pa.needsUpdate = true; g.computeBoundingBox(); g.computeBoundingSphere();
+      o.geometry = g;
+    });
+  }
+
+  // [HERO] лёгкая улыбка (у моделей нет морфов лица): уголки рта в позе привязки чуть вверх и назад —
+  // спокойное, уверенное лицо вместо «грустного». Губы — вершины кожи лица внутри эллипса губ на атласе
+  // (тот же, что у влажного блеска губ), уголки — крайние по X; сдвиг до 2 мм гаснет гауссом ~10 мм. Своя копия геометрии.
+  function smileFace(vrm, k) {
+    vrm.scene.traverse((o) => {
+      if (!o.isMesh || Array.isArray(o.material) || !o.material || !/^MI_Regular_Female/.test(o.material.name || '')) return;
+      const src = o.geometry, uv = src.attributes.uv, pa0 = src.attributes.position;
+      if (!uv || !pa0) return;
+      const lips = [];
+      for (let i = 0; i < pa0.count; i++) {
+        const du = (uv.getX(i) - 0.1797) / 0.03, dv = (uv.getY(i) - 0.2598) / 0.0125;
+        if (du * du + dv * dv < 1) lips.push(i);
+      }
+      if (lips.length < 6) return;
+      let iL = lips[0], iR = lips[0];
+      for (const i of lips) { if (pa0.getX(i) > pa0.getX(iL)) iL = i; if (pa0.getX(i) < pa0.getX(iR)) iR = i; }
+      const corners = [iL, iR].map((i) => ({ x: pa0.getX(i), y: pa0.getY(i), z: pa0.getZ(i) }));
+      if (Math.abs(corners[0].x - corners[1].x) < 0.02) return;   // не нашли рот (другая развёртка)
+      const g = src.clone(), pa = g.attributes.position;
+      for (let i = 0; i < pa.count; i++) {
+        const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i);
+        let dy = 0, dz = 0, dx = 0;
+        for (const c of corners) {
+          const d2 = (x - c.x) ** 2 + (y - c.y) ** 2 + (z - c.z) ** 2, w = Math.exp(-d2 / (0.01 * 0.01));
+          if (w < 1e-3) continue;
+          dy += 0.0021 * k * w; dz -= 0.0005 * k * w; dx += Math.sign(c.x) * 0.0004 * k * w;
+        }
+        if (dy) pa.setXYZ(i, x + dx, y + dy, z + dz);
       }
       pa.needsUpdate = true; g.computeBoundingBox(); g.computeBoundingSphere();
       o.geometry = g;
