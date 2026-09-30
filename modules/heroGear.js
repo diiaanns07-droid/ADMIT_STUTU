@@ -1054,6 +1054,9 @@ export function dressHero(THREE, vrm, opts = {}) {
     let hood = null;
     vrm.scene.traverse((o) => { if (o.isMesh && /Hood/i.test(o.name) && o.visible) hood = o; });
     if (hood) {
+      const HT = opts.hoodTrim, tx = trimTex(THREE, HT.base, HT.thread);
+      const tm = Mt(new Std({ name: 'gear-hood-trim', color: 0xffffff, map: tx.map, bumpMap: tx.bump, bumpScale: 1.4, roughness: 0.5, metalness: 0.25, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, ...(physical ? { sheen: 0.5, sheenRoughness: 0.4, sheenColor: new THREE.Color(HT.thread) } : {}) }));
+      if (tx.map) { tx.map.wrapS = THREE.RepeatWrapping; tx.map.wrapT = THREE.ClampToEdgeWrapping; }
       const cy = 0.08, B = 30, a0 = -0.72, a1 = Math.PI + 0.72;   // азимут вокруг лица: от щеки через темя
       const best = new Array(B).fill(null);
       const v = new THREE.Vector3(), pa = hood.geometry.attributes.position;
@@ -1106,13 +1109,61 @@ export function dressHero(THREE, vrm, opts = {}) {
         const nz = tg.attributes.normal;
         let dot = 0; for (let i = 0; i < nz.count; i++) dot += nz.getX(i) * FWD.x + nz.getY(i) * FWD.y + nz.getZ(i) * FWD.z;
         if (dot < 0) { for (let k = 0; k < idx.length; k += 3) { const t2 = idx[k + 1]; idx[k + 1] = idx[k + 2]; idx[k + 2] = t2; } tg.setIndex(idx); tg.computeVertexNormals(); }
-        const HT = opts.hoodTrim, tx = trimTex(THREE, HT.base, HT.thread);
-        const tm = Mt(new Std({ name: 'gear-hood-trim', color: 0xffffff, map: tx.map, bumpMap: tx.bump, bumpScale: 1.4, roughness: 0.5, metalness: 0.25, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, ...(physical ? { sheen: 0.5, sheenRoughness: 0.4, sheenColor: new THREE.Color(HT.thread) } : {}) }));
-        if (tx.map) { tx.map.wrapS = THREE.RepeatWrapping; tx.map.wrapT = THREE.ClampToEdgeWrapping; }
         const trim = new THREE.Mesh(G(tg), tm); trim.name = 'hood-trim';
         const grp = new THREE.Group(); grp.name = 'hood-trim-grp'; grp.add(trim);
         stick(grp, 'head', c0, new THREE.Quaternion());
         trim.castShadow = false; trim.userData.noShadow = true;
+      }
+      // центральный шов капюшона: вышитая лента той же каймой от лба по темени и вниз по спине — сзади
+      // капюшон больше не гладкий «колпак». Точки — самые внешние вершины капюшона у средней линии по углу
+      // в сагиттальной плоскости; берётся самый длинный непрерывный отрезок, начало — за передним валиком
+      {
+        const C0 = bp.head.clone().addScaledVector(UP, 0.05);
+        const NB = 40, s0 = 0.12 * Math.PI, s1 = 1.42 * Math.PI;
+        const bins = new Array(NB).fill(null);
+        const pa2 = hood.geometry.attributes.position;
+        for (let i = 0; i < pa2.count; i++) {
+          hood.getVertexPosition(i, v); v.applyMatrix4(hood.matrixWorld).sub(C0);
+          if (Math.abs(v.dot(LEFT)) > 0.014) continue;
+          const y = v.dot(UP), z = v.dot(FWD);
+          let a = Math.atan2(y, z); if (a < -Math.PI / 2) a += Math.PI * 2;
+          if (a < s0 || a > s1) continue;
+          const r = Math.hypot(y, z), b = Math.min(NB - 1, Math.floor(((a - s0) / (s1 - s0)) * NB));
+          if (!bins[b] || r > bins[b].r) bins[b] = { a: s0 + ((b + 0.5) / NB) * (s1 - s0), r };
+        }
+        let run = [], cur = [];
+        for (const b of bins.concat([null])) { if (b) cur.push(b); else { if (cur.length > run.length) run = cur; cur = []; } }
+        run = run.slice(2);   // передние корзины — валик края капюшона (под лентой каймы)
+        if (run.length >= 10) {
+          for (let pass = 0; pass < 3; pass++) run = run.map((p, i) => { const A = run[Math.max(0, i - 1)], C2 = run[Math.min(run.length - 1, i + 1)]; return { a: p.a, r: (A.r + 2 * p.r + C2.r) / 4 }; });
+          const w = 0.02, rows = [[-0.5, 0.0009], [0, 0.0026], [0.5, 0.0009]];
+          const pos = [], uv = [], idx = [];
+          let arc = 0, prev = null;
+          const n = run.length;
+          run.forEach((p, i) => {
+            const R = new THREE.Vector3().addScaledVector(UP, Math.sin(p.a)).addScaledVector(FWD, Math.cos(p.a));
+            const C = C0.clone().addScaledVector(R, p.r);
+            if (prev) arc += C.distanceTo(prev);
+            prev = C;
+            const t = i / (n - 1), taper = Math.min(1, t / 0.06, (1 - t) / 0.1);
+            for (const [k, dr] of rows) {
+              const P = C.clone().addScaledVector(LEFT, k * w * taper).addScaledVector(R, dr);
+              pos.push(P.x - C0.x, P.y - C0.y, P.z - C0.z); uv.push(arc / (w * 4), k + 0.5);
+            }
+          });
+          for (let i = 0; i < n - 1; i++) for (let k = 0; k < 2; k++) { const a = i * 3 + k, b = a + 3; idx.push(a, a + 1, b, b, a + 1, b + 1); }
+          const sg = new THREE.BufferGeometry();
+          sg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); sg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+          sg.setIndex(idx); sg.computeVertexNormals();
+          // лицевая сторона — наружу от центра головы
+          const nn = sg.attributes.normal, pp = sg.attributes.position;
+          let out = 0; for (let i = 0; i < nn.count; i++) out += nn.getX(i) * pp.getX(i) + nn.getY(i) * pp.getY(i) + nn.getZ(i) * pp.getZ(i);
+          if (out < 0) { for (let k = 0; k < idx.length; k += 3) { const t2 = idx[k + 1]; idx[k + 1] = idx[k + 2]; idx[k + 2] = t2; } sg.setIndex(idx); sg.computeVertexNormals(); }
+          const seam = new THREE.Mesh(G(sg), tm); seam.name = 'hood-seam';
+          const sgp = new THREE.Group(); sgp.name = 'hood-seam-grp'; sgp.add(seam);
+          stick(sgp, 'head', C0.clone(), new THREE.Quaternion());
+          seam.castShadow = false; seam.userData.noShadow = true;
+        }
       }
     }
   }
