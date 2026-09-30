@@ -1178,6 +1178,8 @@ export function createHeroModel({
     get hero() { return S.hero; },
     get vrm() { return cur ? cur.vrm : null; },
     get gear() { return cur ? cur.gear : null; },   // QA
+    // остаточные образы рывка своей формы (modules/heroGhost.js) — effects.js тогда не рисует свой силуэт-заглушку
+    get afterimages() { return !!(cur && cur.ghost && S.ready && S.lod < 2); },
     get shade() { return cur ? cur.shade : null; },   // QA
     get mixer() { return cur ? cur.mixer : null; },
     state: () => {

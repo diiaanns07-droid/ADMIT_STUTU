@@ -62,7 +62,7 @@ export function createAfterimages(THREE, { color = 0x9ff4ff, sets = 4, life = 0.
           skOf.set(src.skeleton, sk);
         }
         const g = new THREE.SkinnedMesh(src.geometry, set.mat);
-        g.name = 'hero-afterimage'; g.frustumCulled = false; g.castShadow = false; g.receiveShadow = false;
+        g.name = 'hero-afterimage'; g.userData.src = src.name; g.frustumCulled = false; g.castShadow = false; g.receiveShadow = false;
         g.matrixAutoUpdate = false; g.matrixWorldAutoUpdate = false;
         // режим 'attached' (по умолчанию): bindMatrixInverse = (matrixWorld = I)⁻¹ = I — и при пересчёте мира
         g.skeleton = sk; g.bindMatrix.copy(src.bindMatrix); g.bindMatrixInverse.identity();

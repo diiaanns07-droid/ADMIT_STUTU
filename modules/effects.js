@@ -2582,11 +2582,14 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
 
   // ---------------------------------------------------------------- рывок
   const dashFx = { active: false, t: 0, ghostsLeft: 0, next: 0, sign: 1, acc: 0 };
+  let heroGhostsFn = null;   // [HERO] V7.2: у модели героя свои остаточные образы — силуэт-заглушка не нужен
   function syncDash(dt) {
     if (!dashFx.active) return;
     dashFx.t += dt;
     if (dashFx.ghostsLeft > 0 && dashFx.t >= dashFx.next && fi.has && !reducedMotion()) {
-      fxGhost(fi.player, Math.atan2(fi.fwd.x, fi.fwd.z));
+      let own = false;
+      try { own = !!(heroGhostsFn && heroGhostsFn()); } catch (e) { own = false; }
+      if (!own) fxGhost(fi.player, Math.atan2(fi.fwd.x, fi.fwd.z));
       dashFx.ghostsLeft--;
       dashFx.next += 0.06;
     }
@@ -3452,6 +3455,8 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     // [VFX] для net/session.js (№2): события соперника с data.remote рисуются от соперника в его цвете
     get supportsRemote() { return !!(v6 && v6.enabled); },
     setGround: (fn) => { groundFn = typeof fn === 'function' ? fn : null; },
+    // [HERO] V7.2: fn() → true, когда модель героя рисует остаточные образы рывка сама (heroModel.afterimages)
+    setHeroGhosts: (fn) => { heroGhostsFn = typeof fn === 'function' ? fn : null; },
     setInput: (input) => { lastInput = input || null; if (v6) v6.setInput(lastInput); },
     takeHitStop: () => (v6 && v6.enabled ? v6.takeHitStop() : 0),
     // [VFX] делёж с modules/handVisuals.js (№6): V6 рисует стрелы, сгустки и попадания, лук и метку «Дождя стрел» — №6

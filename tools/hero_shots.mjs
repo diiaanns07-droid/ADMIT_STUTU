@@ -1,6 +1,6 @@
 // [HERO] Снимки героев для сравнения «до/после» и замер цены героя.
 // node tools/hero_shots.mjs --out DIR [--browser PATH] [--vendor DIR] [--size 1600x900] [--heroes ashen,elf,dark]
-//   [--shading realistic|anime] [--no-battle] [--vt] (виртуальное время: бой идёт и в SwiftShader)
+//   [--shading realistic|anime] [--no-battle] [--vt] (виртуальное время: бой идёт и в SwiftShader) [--init 'js']
 //   [--clip x,y,w,h] — кадрирование снимка меню (доли кадра); [--zoom] — ещё снимки витрины: колесо (лицо) и поворот мышью
 // node tools/hero_shots.mjs --stand 'dev/hero_stand.html?a=elf&b=dark' [--stand '…'] --out DIR
 //   — стенд героев: снимок и результаты проверок C5 (window.__HS__) в stand.json
@@ -28,6 +28,7 @@ const VENDOR = argOf('--vendor', process.env.ASHEN_VENDOR || '');
 const BROWSER = [argOf('--browser'), '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].filter(Boolean).find((p) => existsSync(p));
 const PORT = 8000 + Math.floor(Math.random() * 700);
 const VT = argv.includes('--vt');
+const INIT = argOf('--init', '');   // код в страницу до загрузки (флаги QA, напр. 'globalThis.__NOGHOST__ = true')
 // ждать n кадров виртуального времени (или просто паузу без --vt)
 async function frames(page, n, msIfReal) {
   if (!VT) return sleep(msIfReal);
@@ -100,6 +101,7 @@ try {
     if (argOf('--zone')) settings.startZone = argOf('--zone');
     if (SHADING) settings.heroShading = SHADING;
     await ctx.addInitScript((s) => { try { localStorage.setItem('ashen-oath.settings.v1', JSON.stringify(s)); } catch (e) { /* ignore */ } }, settings);
+    if (INIT) await ctx.addInitScript({ content: INIT });
     // --vt: виртуальное время — каждый кадр rAF продвигает часы ровно на 1/30 с (SwiftShader рисует ~1 кадр/с,
     // а игра считает кадры длиннее 0,25 с разрывом и не двигает бой)
     if (VT) await ctx.addInitScript(() => {
