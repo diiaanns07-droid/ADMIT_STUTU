@@ -2,7 +2,8 @@
 // рывка остаётся в воздухе светящейся кромкой цвета стихии и гаснет за ~0.4 с.
 // Без копий геометрии и без CPU-скиннинга: призрак — SkinnedMesh на той же геометрии со «замороженным»
 // скелетом (копия матриц костей на момент снимка), в мировых координатах. Пул из нескольких наборов —
-// без выделений в бою. Материал — аддитивная кромка (френель), глубину не пишет, теней нет.
+// без выделений в бою. Материал — кромка по френелю (обычное смешивание: видно и на светлом фоне), глубину
+// не пишет, теней нет.
 //
 // export: createAfterimages(THREE, { color, sets, life }) →
 //   { snap(root, warmOnly), update(dt), setColor(hex), active(), dispose() }
@@ -10,11 +11,14 @@
 //   root — модель героя (берутся видимые SkinnedMesh), scene — первый предок-сцена (ищется сам).
 
 export function createAfterimages(THREE, { color = 0x9ff4ff, sets = 4, life = 0.42 } = {}) {
-  const col = new THREE.Color(color);
+  // цвет призрака: насыщеннее и темнее цвета стихии — обычное смешивание (не сложение), чтобы силуэт читался
+  // и на светлом фоне (Сияющий лес, небо); кромка поднимается в HDR и на тёмном фоне светится как раньше
+  const ghostCol = (hex) => { const c = new THREE.Color(hex), h = {}; c.getHSL(h); return c.setHSL(h.h, Math.max(h.s, 0.8), Math.min(h.l, 0.5)); };
+  const col = ghostCol(color);
   const pool = [];      // { meshes: [{ g, sk }], mat, age, on }
   let next = 0, disposed = false;
   function makeMat() {
-    const m = new THREE.MeshBasicMaterial({ name: 'hero-afterimage', color: col.clone().multiplyScalar(1.6), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+    const m = new THREE.MeshBasicMaterial({ name: 'hero-afterimage', color: col.clone(), transparent: true, opacity: 0, depthWrite: false });
     m.onBeforeCompile = (sh) => {
       // у SkinnedMesh basic-шейдер считает нормали (USE_SKINNING) — кромка по силуэту
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vGhF;')
@@ -25,9 +29,9 @@ export function createAfterimages(THREE, { color = 0x9ff4ff, sets = 4, life = 0.
     vGhF = 1.0;
   #endif`);
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGhF;')
-        .replace('#include <opaque_fragment>', `float ghK = 0.12 + 0.88 * pow( clamp( vGhF, 0.0, 1.0 ), 2.2 );
-  outgoingLight *= ghK * 1.6;
-  diffuseColor.a *= ghK;
+        .replace('#include <opaque_fragment>', `float ghE = pow( clamp( vGhF, 0.0, 1.0 ), 2.2 );
+  outgoingLight *= 0.7 + 2.2 * ghE;             // кромка ярче (HDR — ловит bloom на тёмном фоне)
+  diffuseColor.a *= 0.16 + 0.84 * ghE;          // тело — лёгкая дымка, силуэт — плотный
   #include <opaque_fragment>`);
     };
     m.customProgramCacheKey = () => 'heroAfterimage';
@@ -85,7 +89,7 @@ export function createAfterimages(THREE, { color = 0x9ff4ff, sets = 4, life = 0.
       m.g.visible = true;
     }
     set.age = 0; set.on = true; set.warm = warmOnly;
-    set.mat.opacity = warmOnly ? 0 : 0.55;
+    set.mat.opacity = warmOnly ? 0 : 0.75;
     return true;
   }
   function update(dt) {
@@ -94,12 +98,12 @@ export function createAfterimages(THREE, { color = 0x9ff4ff, sets = 4, life = 0.
       set.age += dt;
       const k = 1 - set.age / (set.warm ? 0.1 : life);
       if (k <= 0) { set.on = false; set.warm = false; for (const m of set.meshes) m.g.visible = false; continue; }
-      set.mat.opacity = set.warm ? 0 : 0.55 * k * k;
+      set.mat.opacity = set.warm ? 0 : 0.75 * k * k;
     }
   }
   return {
     snap, update,
-    setColor(hex) { col.set(hex); for (const s of pool) if (s) s.mat.color.copy(col).multiplyScalar(1.6); },
+    setColor(hex) { col.copy(ghostCol(hex)); for (const s of pool) if (s) s.mat.color.copy(col); },
     active() { return pool.filter((s) => s && s.on && !s.warm).length; },
     dispose() {
       disposed = true;

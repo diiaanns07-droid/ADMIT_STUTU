@@ -2,7 +2,8 @@
 // древка ниже, в мировых координатах — дуга остаётся в воздухе и гаснет за ~0.25 с.
 // Яркость — от скорости навершия ОТНОСИТЕЛЬНО ТЕЛА героя (бег и поворот витрины шлейф не рисуют,
 // взмах и каст — рисуют). Сглаживание Catmull-Rom между замерами: дуга гладкая и при 30 кадрах/с.
-// Аддитивный шейдер, HDR-цвет (ловит bloom), без записи глубины и теней.
+// Обычное смешивание (яркость → прозрачность: видно и на светлом фоне), HDR-цвет (ловит bloom),
+// без записи глубины и теней.
 //
 // export: createTrail(THREE, { color, n, sub, life, hot }) →
 //   { mesh, push(a, b, speed, glow, dt), reset(), setVisible(on), dispose() }
@@ -26,10 +27,12 @@ void main() {
   float body = smoothstep( 0.15, 0.9, a ) * ( 1.0 - smoothstep( 0.97, 1.0, a ) );
   float core = exp( - pow( ( a - 0.9 ) * 12.0, 2.0 ) );
   float streak = 0.72 + 0.28 * sin( a * 38.0 + age * 9.0 );
-  vec3 col = uColor * ( body * 0.55 * streak + core * uHot );
+  // обычное смешивание (видно и на светлом небе/лесе): яркость — в прозрачность, цвет — HDR, нить ярче
+  float I = body * 0.85 * streak + core * uHot * 0.8;
+  vec3 col = uColor * ( 0.6 + 1.0 * core );   // тело ниже 1 — цвет стихии не выгорает тонмаппингом в жёлтый/белый
   // к старому краю — холоднее и прозрачнее
   col = mix( col, col * vec3( 0.7, 0.8, 1.2 ), age );
-  gl_FragColor = vec4( col, clamp( fade, 0.0, 1.0 ) );
+  gl_FragColor = vec4( col, clamp( fade * I, 0.0, 1.0 ) );
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -49,7 +52,7 @@ export function createTrail(THREE, { color = 0x9d7bff, n = 18, sub = 3, life = 0
   const mat = new THREE.ShaderMaterial({
     name: 'hero-trail', vertexShader: VERT, fragmentShader: FRAG,
     uniforms: { uColor: { value: new THREE.Color(color).multiplyScalar(1.7) }, uHot: { value: hot } },
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.name = 'staff-trail'; mesh.frustumCulled = false; mesh.matrixAutoUpdate = false; mesh.castShadow = false; mesh.receiveShadow = false;
