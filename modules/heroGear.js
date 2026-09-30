@@ -1593,7 +1593,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   const perf = { cloth: 0, hair: 0 }; // мс на кадр (скользящее среднее) — для QA
   const _pv = new THREE.Vector3(), _pd = new THREE.Vector3(), _pInv = new THREE.Matrix4(), _pDown = new THREE.Vector3(0, -1, 0);
   // шлейф: навершие и точка древка на 0.26 м ниже; скорость навершия — в осях таза (бег не в счёт)
-  const _ta = new THREE.Vector3(), _tb = new THREE.Vector3(), _tl = new THREE.Vector3(), _tPrev = new THREE.Vector3(), _ts = new THREE.Vector3();
+  const _ta = new THREE.Vector3(), _tb = new THREE.Vector3(), _tl = new THREE.Vector3(), _tPrev = new THREE.Vector3(), _ts = new THREE.Vector3(), _th = new THREE.Vector3(), _thPrev = new THREE.Vector3();
   let tHave = false;
   const hipsRef = raw('hips');
   function trailTick(dt) {
@@ -1608,8 +1608,13 @@ export function dressHero(THREE, vrm, opts = {}) {
     const ref = hipsRef || holderR;
     _tl.copy(_ta); ref.worldToLocal(_tl);
     const sp = tHave ? (_tl.distanceTo(_tPrev) * ref.getWorldScale(_ts).x) / dt : 0;   // локальные единицы → метры
-    _tPrev.copy(_tl); tHave = true;
-    trail.push(_ta, _tb, sp, glowNow, dt);
+    _tPrev.copy(_tl);
+    // рывок: тело само летит 8+ м/с — лента в мире растянулась бы полосой вдоль пути, шлейф молчит
+    ref.getWorldPosition(_th);
+    const hs = tHave ? _th.distanceTo(_thPrev) / dt : 0;
+    _thPrev.copy(_th); tHave = true;
+    const mute = hs <= 6 ? 1 : hs >= 8 ? 0 : 1 - (hs - 6) / 2;
+    trail.push(_ta, _tb, sp * mute, glowNow, dt);
   }
   function update(dt) {
     t += dt;
