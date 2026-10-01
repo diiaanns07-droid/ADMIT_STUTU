@@ -63,6 +63,7 @@ function sanitizeSettings(patch, base) {
   if (Number.isFinite(+patch.volume) && patch.volume !== null && patch.volume !== '') out.volume = Math.max(0, Math.min(1, +patch.volume));
   if (Number.isFinite(+patch.sensitivity) && patch.sensitivity !== null && patch.sensitivity !== '') out.sensitivity = Math.max(0.5, Math.min(2, +patch.sensitivity));
   if ('reducedMotion' in patch) out.reducedMotion = !!patch.reducedMotion;
+  if (patch.difficulty === 'easy' || patch.difficulty === 'normal') out.difficulty = patch.difficulty; // [FEEL] сложность боя с Регентом
   if (patch.moveMode === 'steer' || patch.moveMode === 'stick') out.moveMode = patch.moveMode; // [V5] «Руль» / «Джойстик»
   if (typeof patch.hero === 'string' && HEROES[patch.hero]) out.hero = patch.hero;
   // [HERO] C1: шейдинг героев
@@ -331,6 +332,7 @@ function setScreen(screen) {
 
 function resetFight() {
   applyStartZone();            // [FOREST] место старта
+  if (typeof combat.setDifficulty === 'function') { try { combat.setDifficulty(settings.difficulty); } catch (e) { console.warn('[FEEL] сложность', e); } } // [FEEL] HP и урон Регента
   combat.reset();              // сбрасывает и bossBrain
   world.reset();
   effects.reset();

@@ -380,6 +380,7 @@ function normSettings(s) {
     sensitivity: isNum(o.sensitivity) ? clamp(o.sensitivity, 0.5, 2) : DEFAULT_SETTINGS.sensitivity,
     moveMode: o.moveMode === 'stick' ? 'stick' : 'steer', // [V5] по умолчанию «Руль»
     startZone: o.startZone === 'forest' ? 'forest' : 'arena', // [FOREST] место старта
+    difficulty: o.difficulty === 'normal' ? 'normal' : 'easy', // [FEEL] сложность боя с Регентом
     hero: HERO_OPTIONS.some(([v]) => v === o.hero) ? o.hero : DEFAULT_SETTINGS.hero,
   };
 }
@@ -1062,6 +1063,31 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     return fs;
   }
 
+  // [FEEL] «Сложность»: Лёгкая (Регент на 30% слабее, по умолчанию) / Обычная. Действует со следующего боя.
+  const DIFFICULTY_OPTIONS = [['easy', 'Лёгкая'], ['normal', 'Обычная']];
+  function buildDifficulty(prefix) {
+    const name = `${uid}-${prefix}-difficulty`;
+    const seg = el('div', { class: 'ao-seg' });
+    const fs = el('fieldset', { class: 'ao-field ao-fieldset' }, el('legend', { class: 'ao-field__legend', text: 'Сложность' }), seg);
+    const inputs = [];
+    const TIPS = { easy: 'Для первого боя: у Регента на 30% меньше здоровья и урона', normal: 'Полная сила Регента' };
+    for (const [value, label] of DIFFICULTY_OPTIONS) {
+      const input = el('input', { type: 'radio', name, value, class: 'ao-seg__input' });
+      inputs.push(input);
+      seg.append(el('label', { class: 'ao-seg__opt', title: `${label}: ${TIPS[value]}` }, input, el('span', { class: 'ao-seg__label', text: label })));
+      listen(input, 'change', () => { if (input.checked) invoke('onSettings', { difficulty: value }); });
+    }
+    const ctl = {
+      sync(settings, force) {
+        if (!force && fs.contains(doc.activeElement)) return;
+        for (const i of inputs) { const on = i.value === settings.difficulty; if (i.checked !== on) i.checked = on; }
+      },
+    };
+    listen(fs, 'focusout', (e) => { if (!fs.contains(e.relatedTarget) && state.settings) ctl.sync(state.settings, true); });
+    controls.push(ctl);
+    return fs;
+  }
+
   function buildSettings(keys, prefix) {
     const wrap = el('div', { class: 'ao-settings' });
     for (const key of keys) {
@@ -1088,7 +1114,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
             toRaw: (v) => Math.round(v * 100), fromRaw: (r) => r / 100, format: (v) => `${v.toFixed(2).replace('.', ',')}×`,
           }),
         );
-      } else if (key === 'reducedMotion') wrap.append(buildMotion(prefix));
+      } else if (key === 'difficulty') wrap.append(buildDifficulty(prefix)); // [FEEL]
+      else if (key === 'reducedMotion') {
+        const mo = buildMotion(prefix), prev = wrap.lastElementChild;
+        // [FEEL] в одном ряду со «Сложностью» (меню не растёт по высоте)
+        if (prev && keys[keys.indexOf(key) - 1] === 'difficulty') { const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 16px;align-items:flex-end' }); wrap.replaceChild(row, prev); row.append(prev, mo); }
+        else wrap.append(mo);
+      }
     }
     return wrap;
   }
@@ -1137,7 +1169,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
       el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts, netBtn.node /* [NET] */), el('p', { class: 'ao-note', text: 'Играется сидя. Нужны веб-камера, Chrome или Edge и устойчивый стул.' })),
       buildHeroPick('menu'),
-      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'reducedMotion'], 'menu')),
+      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'difficulty', 'reducedMotion'], 'menu')),
       el('div', { class: 'ao-menu__foot' }, dbg, dbgKeys),
     );
     return {
@@ -2248,7 +2280,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   function syncSettings(s) {
-    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}`; // [FOREST] + startZone
+    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}|${s.difficulty}`; // [FOREST] + startZone, [FEEL] + difficulty
     state.settings = s;
     if (key === state.settingsKey) return;
     state.settingsKey = key;
