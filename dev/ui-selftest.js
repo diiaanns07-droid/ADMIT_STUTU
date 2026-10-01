@@ -321,6 +321,7 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     check('«Пройти ещё раз» → снова шаг 1', cnt() === '1 / 4');
     check('DEBUG: на шаге подписана клавиша (W) вместо превью камеры',
       isVisible(tq('.ao-trn-keycap')) && tq('.ao-trn-keycap__key').textContent === 'W' && /держи W/.test(tq('.ao-trn-key').textContent));
+    check('DEBUG: «В бой» доступна и на шаге (скрипты QA, показ без камеры)', !!btnByText(tutSec, 'В бой') && btnByText(tutSec, 'В бой').getAttribute('aria-disabled') !== 'true');
     // настоящий распознанный жест: щит (удержание ≥ 0,3 с) → «✓ Распознано!» → через 0,8 с шаг 3
     ui.update(F('menu'));
     ui.update(F('tutorial-ready'));
@@ -340,6 +341,15 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     // [№1] С HandLandmarker («Перстни») ладонь и кулак реально распознаются — их можно называть.
     // По-прежнему запрещено просить резких бросков корпусом/головой.
     check('в обучении нет «резко брось» (броски корпусом запрещены)', !/брось|бросьте|бросок/.test(tutText));
+    // пройдено в этой сессии → новый вход (дуэль, «Начать», перекалибровка) — сразу итог с «В бой»
+    btnByText(tutSec, 'Пропустить обучение').click();
+    ui.update(F('tutorial-ready'));
+    ui.update(F('menu'));
+    ui.update(F('tutorial-ready'));
+    check('повторный вход после прохождения — сразу итог и «В бой»', cnt() === '4 / 4' && isVisible(tq('.ao-trn-done')) && !!btnByText(tutSec, 'В бой'), cnt());
+    check('на итоге превью камеры не прячется (слот не display:none)', isVisible(tq('.ao-trn-cam .ao-slothost')));
+    btnByText(tutSec, 'Пройти ещё раз').click();
+    ui.update(F('tutorial-ready'));
     check('в обучении — не больше 120 слов на экране (было ~290)', tutSec.innerText.split(/\s+/).filter(Boolean).length <= 120, String(tutSec.innerText.split(/\s+/).filter(Boolean).length));
 
     /* 11б. «Книга заклинаний»: из меню и паузы; старые карточки — в разделе «Продвинутые» */
@@ -351,12 +361,17 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     bookBtnM.click();
     ui.update(F('menu'));
     check('книга открывается поверх меню, фокус на «Закрыть»', isVisible(bookSec) && document.activeElement === btnByText(bookSec, 'Закрыть'));
+    check('книга модальна: меню под ней inert (Tab не уходит за книгу)', section('menu').inert === true && !bookSec.inert);
+    check('книга: клавиши отладки скрыты без отладки', !bookSec.querySelector('.ao-book-card__key') || !isVisible(bookSec.querySelector('.ao-book-card__key')));
+    ui.update(F('menu', { settings: { ...(fixtures.menu.settings || {}), moveMode: 'stick' } }));
+    check('книга: в «Джойстике» карточка хода — текст «Джойстика»', /Ладонь вверх/.test(bookSec.querySelector('.ao-book-card .ao-h3').textContent), bookSec.querySelector('.ao-book-card .ao-h3').textContent);
+    ui.update(F('menu'));
     const tabsB = bookSec.querySelectorAll('[role="tab"]');
     check('книга: вкладки «Базовые» и «Продвинутые: руны, печати, лук, магия»', tabsB.length === 2 && /Продвинутые: руны, печати, лук, магия/.test(tabsB[1].textContent));
     tabsB[1].click();
     check('книга: в «Продвинутых» все 7 прежних карточек', bookSec.querySelectorAll('.ao-book-pane:not([hidden]) .ao-tut-card').length === 7);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    check('Esc закрывает книгу и возвращает фокус на кнопку', !isVisible(bookSec) && document.activeElement === bookBtnM);
+    check('Esc закрывает книгу и возвращает фокус на кнопку', !isVisible(bookSec) && document.activeElement === bookBtnM && section('menu').inert === false);
     check('книга не вызывает callback игры', calls.length === 0, calls.map((c) => c.name).join(','));
     ui.update(F('paused-user'));
     const bookBtnP = btnByText(section('paused'), 'Книга заклинаний');

@@ -8,8 +8,9 @@
 // Удержания (ход, щит, «OK») копятся по времени и прощают короткие провалы распознавания;
 // выброс — импульс, а пока кулак сжат, шкала показывает его заряд.
 // Подсказки режима «ОШИБКА» (коды core/handGestures.js → тексты core/gestureCoach.js) показываются
-// только те, что относятся к текущему шагу, плюс общие про кадр. В отладке клавиша H показывает
-// пример подсказки текущего шага.
+// только те, что относятся к текущему шагу, плюс общие про кадр. Где распознаватель молчит (в «Руле»
+// он не подсказывает про стоящую ладонь), тренажёр подсказывает сам: кисть в кадре, а жеста всё нет.
+// В отладке клавиша H показывает пример подсказки текущего шага.
 //
 //   const tr = createTutorialTrainer();
 //   const view = tr.update(inputFrame, performance.now(), { moveMode: 'steer' });
@@ -31,13 +32,19 @@ export const TRAINER_STEPS = Object.freeze([
     stick: Object.freeze({ title: 'Ладонь вверх', tip: 'Подними левую руку, замри на миг и сдвинь её вверх — герой пойдёт вперёд.' }),
     key: 'W', keyText: 'держи W', holdMs: 700,
     hints: Object.freeze(['steer_low', 'steer_lean']),
+    // левая кисть видна, а герой не идёт 3 с — «подними до груди» (в «Джойстике» не подходит)
+    nudge: Object.freeze({ code: 'steer_low', ms: 3000, modes: Object.freeze(['steer']) }),
   }),
   Object.freeze({
     id: 'shield', side: 'left', hand: 'Левая рука',
     title: 'Толчок ладонью к камере', effect: 'Щит',
-    tip: 'Резко толкни раскрытую ладонь к камере сантиметров на 20 и держи её там.',
+    // в «Руле» толчок, начатый вместе с подъёмом руки, не считается — сначала ладонь у груди, пауза
+    tip: 'Ладонь у груди, замри на миг — и резко толкни её к камере сантиметров на 20.',
+    stick: Object.freeze({ tip: 'Верни левую руку в центр (герой встанет), замри — и резко толкни ладонь к камере.' }),
     key: 'K', keyText: 'держи K', holdMs: 300,
     hints: Object.freeze(['shield_push', 'shield_palm']),
+    // раскрытая левая ладонь в кадре 2 с, а щита нет — «толкни резче»
+    nudge: Object.freeze({ code: 'shield_push', ms: 2000, shape: 'open' }),
   }),
   Object.freeze({
     id: 'shot', side: 'right', hand: 'Правая рука',
@@ -107,6 +114,7 @@ export function createTutorialTrainer(options = {}) {
       acc: 0,                          // накопленное удержание, мс
       level: 0,
       live: false,
+      nearMs: 0,                       // кисть в кадре, а жеста нет (для подсказки тренажёра)
       okAt: null,
       stepAt: fin(now) ? now : null,
       lastT: null,
@@ -120,7 +128,7 @@ export function createTutorialTrainer(options = {}) {
 
   function goNext(now) {
     s.index++;
-    s.acc = 0; s.level = 0; s.live = false; s.okAt = null; s.hint = null;
+    s.acc = 0; s.level = 0; s.live = false; s.okAt = null; s.hint = null; s.nearMs = 0;
     s.stepAt = now;
     s.phase = s.index >= total ? 'done' : 'try';
     seq++;
@@ -133,10 +141,22 @@ export function createTutorialTrainer(options = {}) {
     // отладка: H — пример подсказки именно этого шага (показ режима «ОШИБКА» без камеры)
     if (input.source === 'debug') { code = step.hints[s.demoHint % step.hints.length]; s.demoHint++; }
     else if (!step.hints.includes(code) && !TRAINER_FRAME_HINTS.includes(code)) return;
+    setHint(code, h.side, now);
+  }
+  function setHint(code, side, now) {
     const info = hintInfo(code);
     if (!info) return;
-    const side = h.side === 'left' || h.side === 'right' ? h.side : null;
-    s.hint = { code, gesture: info.gesture, text: info.text, side, at: now };
+    s.hint = { code, gesture: info.gesture, text: info.text, side: side === 'left' || side === 'right' ? side : null, at: now };
+  }
+  // подсказка самого тренажёра: нужная кисть видна (и нужной формы), а жест не выходит
+  function nudge(step, input, sig, dt, now, moveMode) {
+    const n = step.nudge;
+    if (!n || input.source !== 'cv' || (n.modes && !n.modes.includes(moveMode))) { s.nearMs = 0; return; }
+    const hands = input.hands && typeof input.hands === 'object' ? input.hands : null;
+    const h = hands ? hands[step.side] : null;
+    const near = !!h && typeof h === 'object' && (!n.shape || h.shape === n.shape) && !sig.active && !sig.impulse;
+    s.nearMs = near ? s.nearMs + dt : 0;
+    if (s.nearMs >= n.ms && !s.hint) { setHint(n.code, step.side, now); s.nearMs = 0; }
   }
 
   function update(input, nowMs, opts = {}) {
@@ -165,7 +185,10 @@ export function createTutorialTrainer(options = {}) {
         s.hint = null;
         s.results[s.index] = 'ok';
         seq++;
-      } else pickHint(input, step, now);
+      } else {
+        pickHint(input, step, now);
+        if (input && input.valid === true) nudge(step, input, sig, dt, now, opts && opts.moveMode === 'stick' ? 'stick' : 'steer');
+      }
     }
     if (s.hint && now - s.hint.at >= cfg.hintMs) s.hint = null;
     return view(now);

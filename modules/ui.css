@@ -2143,7 +2143,12 @@
 }
 
 /* итог */
-.ao-trn-done[hidden] {
+.ao-trn-done {
+  min-width: 0;
+  align-self: center;
+}
+.ao-trn-done[hidden],
+.ao-trn-gesture[hidden] {
   display: none;
 }
 .ao-trn-done__h {
@@ -2218,7 +2223,8 @@
   50% { box-shadow: 0 0 0 5px rgba(227, 199, 146, 0.45); }
 }
 
-/* меньше движения: без циклов, ключевая поза жеста видна сразу */
+/* меньше движения (настройка игры или системная): без циклов — ключевая поза жеста
+   и конечное состояние реакции манекена видны сразу */
 .ao-reduced-motion .ao-pic *,
 .ao-reduced-motion .ao-mq *,
 .ao-reduced-motion .ao-trn-ok__badge,
@@ -2246,11 +2252,71 @@
 .ao-reduced-motion .ao-pic .pic-charge {
   stroke-dashoffset: 0;
 }
+.ao-reduced-motion .ao-trn-mq.is-ok[data-step='walk'] .mq-hero {
+  transform: translateX(150px);
+}
+.ao-reduced-motion .ao-trn-mq.is-ok[data-step='shield'] .mq-block,
+.ao-reduced-motion .ao-trn-mq.is-ok[data-step='shot'] .mq-dmg:not(.mq-dmg--big),
+.ao-reduced-motion .ao-trn-mq.is-ok[data-step='burst'] .mq-dmg--big {
+  opacity: 1;
+  transform: none;
+}
+.ao-reduced-motion .ao-trn-mq.is-ok[data-step='shot'] .mq-dummy {
+  transform: rotate(7deg);
+}
+.ao-reduced-motion .ao-trn-mq.is-ok[data-step='burst'] .mq-dummy {
+  transform: rotate(16deg);
+}
+.ao-reduced-motion .ao-trn-mq.is-ok[data-step='burst'] .mq-wave {
+  opacity: 0.6;
+  transform: scale(4);
+}
 @media (prefers-reduced-motion: reduce) {
-  .ao-pic *,
-  .ao-mq * {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
+  .ao-ui .ao-pic *,
+  .ao-ui .ao-mq *,
+  .ao-ui .ao-trn-ok__badge,
+  .ao-ui .ao-trn-ok__sub,
+  .ao-ui .ao-btn.is-stuck {
+    animation: none !important;
+  }
+  .ao-ui .ao-pic .pic-rise,
+  .ao-ui .ao-pic .pic-arrow--up {
+    transform: none;
+    opacity: 1;
+  }
+  .ao-ui .ao-pic .pic-push {
+    transform: scale(1.1);
+  }
+  .ao-ui .ao-pic .pic-waves path,
+  .ao-ui .ao-pic .pic-b,
+  .ao-ui .ao-pic .pic-rays {
+    opacity: 1;
+  }
+  .ao-ui .ao-pic .pic-a,
+  .ao-ui .ao-pic .pic-bolt {
+    opacity: 0;
+  }
+  .ao-ui .ao-pic .pic-charge {
+    stroke-dashoffset: 0;
+  }
+  .ao-ui .ao-trn-mq.is-ok[data-step='walk'] .mq-hero {
+    transform: translateX(150px);
+  }
+  .ao-ui .ao-trn-mq.is-ok[data-step='shield'] .mq-block,
+  .ao-ui .ao-trn-mq.is-ok[data-step='shot'] .mq-dmg:not(.mq-dmg--big),
+  .ao-ui .ao-trn-mq.is-ok[data-step='burst'] .mq-dmg--big {
+    opacity: 1;
+    transform: none;
+  }
+  .ao-ui .ao-trn-mq.is-ok[data-step='shot'] .mq-dummy {
+    transform: rotate(7deg);
+  }
+  .ao-ui .ao-trn-mq.is-ok[data-step='burst'] .mq-dummy {
+    transform: rotate(16deg);
+  }
+  .ao-ui .ao-trn-mq.is-ok[data-step='burst'] .mq-wave {
+    opacity: 0.6;
+    transform: scale(4);
   }
 }
 

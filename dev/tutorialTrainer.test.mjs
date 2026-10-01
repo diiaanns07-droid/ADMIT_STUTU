@@ -5,7 +5,7 @@ import { createTutorialTrainer, stepSignal, TRAINER_STEPS, TRAINER_FRAME_HINTS }
 import { COACH_HINTS } from '../core/gestureCoach.js';
 import { createHandGestures } from '../core/handGestures.js';
 import { createDebugInput } from '../core/debugInput.js';
-import { makeHand, SHAPES } from './handSynth.mjs';
+import { makeHand, makeScene, handAt, obsOf as sceneObs, SHAPES } from './handSynth.mjs';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -178,11 +178,15 @@ function obsOf(t, hands) {
 }
 // кадр распознавателя → InputFrame, как его собирает modules/vision.js (поля, которые читает тренажёр)
 function frameOf(f) {
-  return { source: 'cv', valid: true, attack: !!f.attack, shield: !!f.shield, burst: !!f.burst, charge: f.charge || 0, moveX: f.moveX || 0, moveZ: f.moveZ || 0, stick: f.stick || null, hint: f.hint || null };
+  const side = (H) => (H ? { shape: H.shape, palmFacing: H.palmFacing, charge: H.charge } : null);
+  return {
+    source: 'cv', valid: true, attack: !!f.attack, shield: !!f.shield, burst: !!f.burst, charge: f.charge || 0, moveX: f.moveX || 0, moveZ: f.moveZ || 0,
+    stick: f.stick || null, hint: f.hint || null, hands: { available: !!f.available, left: side(f.left), right: side(f.right) },
+  };
 }
-function runCv(g, tr, t0, ms, hands, dt = 33) {
+function runCv(g, tr, t0, ms, hands, dt = 33, opts) {
   let t = t0, v = null;
-  for (; t < t0 + ms; t += dt) { g.push(obsOf(t, hands(t))); v = tr.update(frameOf(g.read(t)), t); }
+  for (; t < t0 + ms; t += dt) { g.push(obsOf(t, hands(t))); v = tr.update(frameOf(g.read(t)), t, opts); }
   return { t, v };
 }
 const R = (o) => makeHand({ side: 'right', cx: 0.35, ...o });
@@ -245,6 +249,55 @@ test('камера: толчок левой ладонью к камере → �
   let seen = null;
   for (let t = 1000; t < 3800 && !seen; t += 33) { g2.push(obsOf(t, [L({ ...SHAPES.open })])); const v = tr2.update(frameOf(g2.read(t)), t); if (v.hint) seen = v.hint; }
   assert(seen && seen.code === 'shield_push', 'подсказка: ' + JSON.stringify(seen));
+});
+
+test('камера, «Руль» (по умолчанию): ладонь стоит → распознаватель молчит, подсказку shield_push даёт тренажёр', () => {
+  const g = createHandGestures({ moveMode: 'steer' });
+  const tr = trainerAt(1);
+  const engine = [];
+  let seen = null;
+  for (let t = 1000; t < 5000 && !seen; t += 33) {
+    g.push(obsOf(t, [L({ ...SHAPES.open })]));
+    const f = frameOf(g.read(t));
+    if (f.hint) engine.push(f.hint.code);
+    const v = tr.update(f, t, { moveMode: 'steer' });
+    if (v.hint) seen = { ...v.hint, t };
+  }
+  assert(!engine.includes('shield_push'), 'в «Руле» распознаватель shield_push не выдаёт: ' + engine);
+  assert(seen && seen.code === 'shield_push' && seen.side === 'left' && seen.text === COACH_HINTS.shield_push.text, 'подсказка тренажёра: ' + JSON.stringify(seen));
+  assert(seen.t - 1000 <= 2600, 'не позже ~2,5 с: ' + (seen.t - 1000));
+  assert(tr.view().results[1] === null, 'шаг не засчитан');
+});
+
+test('камера, «Руль»: щит — как в совете шага: ладонь у груди, пауза, толчок; толчок вместе с подъёмом не считается', () => {
+  const S = makeScene();
+  const tryPush = (pauseMs) => {
+    const g = createHandGestures({ moveMode: 'steer' });
+    const tr = trainerAt(1);
+    let t = 1000;
+    const step = (y, size) => { g.push(sceneObs(S, t, { left: handAt(S, 'left', -0.7, y, 'open', { size }) })); tr.update(frameOf(g.read(t)), t, { moveMode: 'steer' }); t += 33; };
+    for (let i = 0; i < 10; i++) step(1.4 - i * 0.12, 0.075);            // с колен — к груди
+    for (let k = 0; k < pauseMs / 33; k++) step(0.2, 0.075);             // «замри на миг»
+    for (let i = 0; i < 6; i++) step(0.2, 0.075 * (1 + 0.45 * Math.min(1, i / 5))); // толчок к камере
+    for (let i = 0; i < 15; i++) step(0.2, 0.075 * 1.45);
+    return tr.view().results[1];
+  };
+  assert(tryPush(600) === 'ok', 'пауза 0,6 с → щит');
+  assert(tryPush(0) === null, 'без паузы распознаватель «Руля» толчок не засчитывает — поэтому совет просит замереть');
+});
+
+test('подсказка тренажёра не мешает: в отладке и в «Джойстике» на шаге хода её нет; при жесте счётчик сбрасывается', () => {
+  const tr = createTutorialTrainer();
+  tr.update(I(), 0);
+  const handsL = { available: true, left: { shape: 'open', palmFacing: 'camera' }, right: null };
+  let r = feed(tr, 0, 4000, () => I({ hands: handsL }), 33, { moveMode: 'stick' });
+  assert(!r.v.hint, 'в «Джойстике» «подними до груди» не подходит');
+  r = feed(tr, r.t, 4000, () => I({ source: 'debug', hands: handsL }));
+  assert(!r.v.hint, 'в отладке — только по H');
+  r = feed(tr, r.t, 2000, () => I({ hands: handsL }));
+  assert(!r.v.hint, 'ещё рано (3 с)');
+  r = feed(tr, r.t, 1200, () => I({ hands: handsL }));
+  assert(r.v.hint && r.v.hint.code === 'steer_low', '«Руль»: подними до груди: ' + JSON.stringify(r.v.hint));
 });
 
 // ---------------------------------------------------------------- «Отладка с клавиатуры»
