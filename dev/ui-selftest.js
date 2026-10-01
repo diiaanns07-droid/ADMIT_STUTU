@@ -348,7 +348,15 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     ui.update(F('tutorial-ready'));
     check('повторный вход после прохождения — сразу итог и «В бой»', cnt() === '4 / 4' && isVisible(tq('.ao-trn-done')) && !!btnByText(tutSec, 'В бой'), cnt());
     check('на итоге превью камеры не прячется (слот не display:none)', isVisible(tq('.ao-trn-cam .ao-slothost')));
-    btnByText(tutSec, 'Пройти ещё раз').click();
+    // пройдено в отладке → камере не засчитывается
+    ui.update(F('menu'));
+    ui.update(F('tutorial-debug'));
+    check('пройденное камерой не засчитывается отладке: в отладке — снова шаг 1', cnt() === '1 / 4', cnt());
+    btnByText(tutSec, 'Пропустить обучение').click();
+    ui.update(F('tutorial-debug'));
+    ui.update(F('menu'));
+    ui.update(F('tutorial-ready'));
+    check('пройденное клавишами не засчитывается камере: с камерой — снова шаг 1', cnt() === '1 / 4', cnt());
     ui.update(F('tutorial-ready'));
     check('в обучении — не больше 120 слов на экране (было ~290)', tutSec.innerText.split(/\s+/).filter(Boolean).length <= 120, String(tutSec.innerText.split(/\s+/).filter(Boolean).length));
 

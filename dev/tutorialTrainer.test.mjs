@@ -264,7 +264,7 @@ test('камера, «Руль» (по умолчанию): ладонь сто�
     if (v.hint) seen = { ...v.hint, t };
   }
   assert(!engine.includes('shield_push'), 'в «Руле» распознаватель shield_push не выдаёт: ' + engine);
-  assert(seen && seen.code === 'shield_push' && seen.side === 'left' && seen.text === COACH_HINTS.shield_push.text, 'подсказка тренажёра: ' + JSON.stringify(seen));
+  assert(seen && seen.code === 'shield_push' && seen.side === 'left' && seen.text === TRAINER_STEPS[1].nudge.text && /замри/.test(seen.text), 'подсказка тренажёра (про паузу перед толчком): ' + JSON.stringify(seen));
   assert(seen.t - 1000 <= 2600, 'не позже ~2,5 с: ' + (seen.t - 1000));
   assert(tr.view().results[1] === null, 'шаг не засчитан');
 });
@@ -298,6 +298,16 @@ test('подсказка тренажёра не мешает: в отладке
   assert(!r.v.hint, 'ещё рано (3 с)');
   r = feed(tr, r.t, 1200, () => I({ hands: handsL }));
   assert(r.v.hint && r.v.hint.code === 'steer_low', '«Руль»: подними до груди: ' + JSON.stringify(r.v.hint));
+  // подсказка не мигает: после её 4,5 с — снова не раньше чем через 3 с
+  const on = r.v.hint.at;
+  let off = null, again = null;
+  for (let t = r.t; t < on + 12000 && again === null; t += 33) {
+    const v = tr.update(I({ hands: handsL }), t);
+    if (!v.hint && off === null) off = t;
+    if (v.hint && off !== null) again = t;
+  }
+  assert(off !== null && off - on >= 4400, 'держится 4,5 с: ' + (off - on));
+  assert(again !== null && again - off >= 2900, 'пауза между повторами ≥ 3 с: ' + (again - off));
 });
 
 // ---------------------------------------------------------------- «Отладка с клавиатуры»

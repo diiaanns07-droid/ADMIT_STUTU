@@ -43,8 +43,8 @@ export const TRAINER_STEPS = Object.freeze([
     stick: Object.freeze({ tip: 'Верни левую руку в центр (герой встанет), замри — и резко толкни ладонь к камере.' }),
     key: 'K', keyText: 'держи K', holdMs: 300,
     hints: Object.freeze(['shield_push', 'shield_palm']),
-    // раскрытая левая ладонь в кадре 2 с, а щита нет — «толкни резче»
-    nudge: Object.freeze({ code: 'shield_push', ms: 2000, shape: 'open' }),
+    // раскрытая левая ладонь в кадре 2 с, а щита нет — «замри и толкни» (свой текст: про паузу перед толчком)
+    nudge: Object.freeze({ code: 'shield_push', ms: 2000, shape: 'open', text: 'Ладонь стоит, а щита нет: замри у груди на миг и резко толкни ладонь к камере сантиметров на 20' }),
   }),
   Object.freeze({
     id: 'shot', side: 'right', hand: 'Правая рука',
@@ -143,10 +143,10 @@ export function createTutorialTrainer(options = {}) {
     else if (!step.hints.includes(code) && !TRAINER_FRAME_HINTS.includes(code)) return;
     setHint(code, h.side, now);
   }
-  function setHint(code, side, now) {
+  function setHint(code, side, now, text) {
     const info = hintInfo(code);
     if (!info) return;
-    s.hint = { code, gesture: info.gesture, text: info.text, side: side === 'left' || side === 'right' ? side : null, at: now };
+    s.hint = { code, gesture: info.gesture, text: text || info.text, side: side === 'left' || side === 'right' ? side : null, at: now };
   }
   // подсказка самого тренажёра: нужная кисть видна (и нужной формы), а жест не выходит
   function nudge(step, input, sig, dt, now, moveMode) {
@@ -155,8 +155,9 @@ export function createTutorialTrainer(options = {}) {
     const hands = input.hands && typeof input.hands === 'object' ? input.hands : null;
     const h = hands ? hands[step.side] : null;
     const near = !!h && typeof h === 'object' && (!n.shape || h.shape === n.shape) && !sig.active && !sig.impulse;
-    s.nearMs = near ? s.nearMs + dt : 0;
-    if (s.nearMs >= n.ms && !s.hint) { setHint(n.code, step.side, now); s.nearMs = 0; }
+    // пока подсказка на экране, время «не выходит» не копится: следующая — не раньше чем через n.ms после неё
+    s.nearMs = !near ? 0 : s.hint ? s.nearMs : s.nearMs + dt;
+    if (s.nearMs >= n.ms && !s.hint) { setHint(n.code, step.side, now, n.text); s.nearMs = 0; }
   }
 
   function update(input, nowMs, opts = {}) {

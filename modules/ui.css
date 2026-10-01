@@ -2320,10 +2320,13 @@
   }
 }
 
-/* узкие окна: кисть над камерой */
+/* узкие окна: кисть над камерой; на итоге камера — маленькая сбоку, «В бой» остаётся в кадре */
 @media (max-width: 900px) {
   .ao-trn-stage {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .ao-trn-stage.is-done {
+    grid-template-columns: minmax(0, 1fr) clamp(6rem, 22vw, 11rem);
   }
   .ao-trn-cam {
     max-width: 26rem;

@@ -1812,11 +1812,11 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const doneLead = el('p', { class: 'ao-lead' });
     const sums = TRAINER_STEPS.map((st) => {
       const state = el('span', { class: 'ao-trn-sum__state' });
+      const g = el('span', { class: 'ao-trn-sum__g' });
       const node = el('li', { class: 'ao-trn-sum', 'data-state': 'ok' },
         el('div', { class: 'ao-trn-sum__pic', html: TRAINER_MINI[st.id] }),
-        el('strong', { class: 'ao-trn-sum__t', text: `${st.effect}` }),
-        el('span', { class: 'ao-trn-sum__g', text: `${st.hand}: ${lowerFirst(st.title)}` }), state);
-      return { node, state };
+        el('strong', { class: 'ao-trn-sum__t', text: `${st.effect}` }), g, state);
+      return { node, state, g, st };
     });
     const doneView = el('div', { class: 'ao-trn-done', hidden: true },
       el('h3', { class: 'ao-trn-done__h', text: 'Готово! Четыре жеста — и ты в бою' }), doneLead,
@@ -1827,7 +1827,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const ready = el('p', { class: 'ao-msg ao-trn-ready' });
     const start = btn('В бой', () => invoke('onStart', { from: 'tutorial' }), { variant: 'primary', size: 'lg' });
     const skip = localBtn('Пропустить', () => { tr.skip(win.performance.now()); });
-    const again = localBtn('Пройти ещё раз', () => { tr.restart(win.performance.now()); });
+    const again = localBtn('Пройти ещё раз', () => { tr.restart(win.performance.now()); h.focus({ preventScroll: true }); });
     const recal = btn('Перекалибровать', pressCalibrate);
     const bookBtn = localBtn('Книга заклинаний', (e) => openBook(e && e.currentTarget));
     const back = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
@@ -1845,8 +1845,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     let shownMode = '';
     let wasDone = false;
     // тренажёр пройден (или пропущен) в этой сессии: при новом входе (дуэль, «Начать» из меню,
-    // перекалибровка) — сразу итог с «В бой»; «Пройти ещё раз» — снова с шага 1
-    let passed = false;
+    // перекалибровка) — сразу итог с «В бой»; «Пройти ещё раз» — снова с шага 1.
+    // Только в том же режиме ввода: пройденное клавишами не засчитывается камере.
+    let passedDebug = null;
     function paintStep(step, moveMode) {
       const v = step.stick && moveMode === 'stick' ? { ...step, ...step.stick } : step;
       setAttr(gesture, 'data-side', step.side);
@@ -1867,7 +1868,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       // фокус — на заголовок: пробел/Enter в отладке не должны случайно нажать «Пропустить»
       focus: () => (tr.done ? start.node : h),
       reset() {
-        if (!(passed && tr.done)) tr.restart(win.performance.now());
+        if (!(tr.done && passedDebug === state.debug)) tr.restart(win.performance.now());
         shownSeq = -1;
         wasDone = tr.done;
         state.tut.hint = null;
@@ -1879,7 +1880,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         const input = raw && (ctx.debug ? raw.source === 'debug' : raw.source === 'cv') ? raw : null;
         const v = tr.update(input, ctx.now, { moveMode });
         const step = v.step;
-        if (v.done) passed = true;
+        if (v.done && !wasDone) passedDebug = ctx.debug;
 
         // шапка: шаги и «2 / 4»
         setText(count, `${v.number} / ${v.total}`);
@@ -1942,6 +1943,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         if (v.done) {
           sums.forEach((x, i) => {
             const r = v.results[i];
+            const sv = x.st.stick && moveMode === 'stick' ? { ...x.st, ...x.st.stick } : x.st;
+            setText(x.g, `${x.st.hand}: ${lowerFirst(sv.title)}`);
             setAttr(x.node, 'data-state', r === 'ok' ? 'ok' : 'skip');
             setText(x.state, r === 'ok' ? '✓ получилось' : 'пропущено');
           });
@@ -2053,7 +2056,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       section,
       get open() { return !section.hidden; },
       show(from) {
+        if (!section.hidden) return; // уже открыта: не теряем список inert и кнопку возврата фокуса
         opener = from || doc.activeElement;
+        paintBasic(state.settings && state.settings.moveMode === 'stick' ? 'stick' : 'steer', state.debug);
         selectTab('basic');
         section.hidden = false;
         setInert(true);
