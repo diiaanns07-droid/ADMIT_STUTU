@@ -155,7 +155,8 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     let disabledFired = [];
     for (const [name, v] of Object.entries(fixtures)) {
       ui.update(clone(v));
-      const buttons = $$('button').filter(isVisible);
+      // data-ui-local — переключатель внутри UI без колбэка (режим презентации), проверяется в 22б
+      const buttons = $$('button').filter((b) => isVisible(b) && !b.hasAttribute('data-ui-local'));
       for (const b of buttons) {
         ui.update(clone(v));
         if (!isVisible(b)) continue;
@@ -543,6 +544,15 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
       ui.update(F('playing'));
       await frame();
       check('повторный P выключает режим, слот снова в доке', !document.documentElement.classList.contains('ao-present') && pslot.parentElement.classList.contains('ao-cvdock__slot'));
+      ui.update(F('menu'));
+      await frame();
+      const pbtn = $('.ao-toggle--present');
+      pbtn.click();
+      ui.update(F('menu'));
+      const onByClick = document.documentElement.classList.contains('ao-present') && pbtn.getAttribute('aria-pressed') === 'true';
+      pbtn.click();
+      ui.update(F('menu'));
+      check('кнопка «Режим презентации · P» в меню включает и выключает режим', onByClick && !document.documentElement.classList.contains('ao-present'));
       ui.update(F('playing-debug'));
       await frame();
       key('p', { code: 'KeyP' });

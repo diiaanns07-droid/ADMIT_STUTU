@@ -1219,6 +1219,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const oathPts = el('span', { class: 'ao-oathpts', hidden: true });
     const dbg = el('button', { type: 'button', class: 'ao-toggle', 'aria-pressed': 'false' }, el('span', { class: 'ao-toggle__track', 'aria-hidden': 'true' }), el('span', { class: 'ao-toggle__label', text: 'Отладка с клавиатуры' }));
     listen(dbg, 'click', () => invoke('onDebug', !state.debug));
+    // [ПРОЕКТОР] режим презентации для питча через проектор (то же, что клавиша P)
+    const presentBtn = el('button', { type: 'button', class: 'ao-toggle ao-toggle--present', 'aria-pressed': 'false', 'aria-keyshortcuts': 'P', 'data-ui-local': '' }, el('span', { class: 'ao-toggle__track', 'aria-hidden': 'true' }), el('span', { class: 'ao-toggle__label', text: 'Режим презентации · P' }));
+    listen(presentBtn, 'click', () => setPresent(!state.present));
     const dbgKeys = el('p', { class: 'ao-debugkeys', hidden: true, text: DEBUG_KEYS_TEXT });
     const title = el(
       'h1',
@@ -1236,7 +1239,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts, netBtn.node /* [NET] */), el('p', { class: 'ao-note', text: 'Играется сидя. Нужны веб-камера, Chrome или Edge и устойчивый стул.' })),
       buildHeroPick('menu'),
       el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'reducedMotion'], 'menu')),
-      el('div', { class: 'ao-menu__foot' }, dbg, dbgKeys),
+      el('div', { class: 'ao-menu__foot' }, el('div', { class: 'ao-menu__toggles' }, dbg, presentBtn), dbgKeys),
     );
     return {
       section: screenSection('menu', panel, hid),
@@ -1244,6 +1247,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       focus: () => start.node,
       update(ctx) {
         setAttr(dbg, 'aria-pressed', ctx.debug ? 'true' : 'false');
+        setAttr(presentBtn, 'aria-pressed', state.present ? 'true' : 'false');
         setHidden(dbgKeys, !ctx.debug);
         const pts = ctx.vm.progress && isNum(ctx.vm.progress.points) ? ctx.vm.progress.points : 0;
         setText(oathPts, pts > 0 ? `${pts} ${plural(pts, 'очко', 'очка', 'очков')}` : '');
@@ -1587,8 +1591,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           ready,
           coach,
           el('p', { class: 'ao-note', text: 'Остановить бой: кнопка «Пауза» в углу экрана или Esc. Если выйти из кадра, бой встанет на паузу сам.' }),
-          el('div', { class: 'ao-actions ao-actions--inline' }, start.node, recal.node, el('span', { class: 'ao-spacer' }), back.node),
         ),
+        // [ПРОЕКТОР] кнопки — отдельной колонкой справа, чтобы «В бой» не уходила под край на 1366×768
+        el('div', { class: 'ao-actions ao-actions--inline ao-tut-actions' }, start.node, recal.node, el('span', { class: 'ao-spacer' }), back.node),
       ),
     );
     const setChip = (c, st, text) => {
