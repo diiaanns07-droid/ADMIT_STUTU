@@ -17,7 +17,7 @@
 'use strict';
 
 // <AO_MANIFEST> — генерирует node tools/sw_manifest.mjs, руками не править
-const VERSION = 'bcf10359b680';
+const VERSION = '9392f6862def';
 const VENDOR_VERSION = '82621cd74530';
 const SHELL = [
   "./",
@@ -253,13 +253,14 @@ self.addEventListener('message', (e) => {
 const inflight = new Map();   // url → Promise, которая выполнится, когда файл ляжет в кэш
 
 async function fetchVendor(req, path) {
+  const twin = path ? cdnTwin(path) : null;
   try {
     const res = await fetch(req);
-    if (res.ok) return res;
+    if (res.ok || !twin) return res;
     if (res.status !== 404 && res.status < 500) return res;
-  } catch (err) { /* нет сети или сервера — пробуем CDN */ }
-  const twin = path ? cdnTwin(path) : null;
-  if (!twin) return fetch(req);
+  } catch (err) {
+    if (!twin) throw err;   // нет сети или сервера — пробуем CDN
+  }
   const cdn = await fetch(twin, { mode: 'cors', credentials: 'omit' });
   if (!cdn.ok) return cdn;
   console.warn('[sw] локального файла нет, взят с CDN:', path);

@@ -48,13 +48,26 @@ export function cdnTwinUrl(url) {
   if (i >= 0) return 'https://storage.googleapis.com/mediapipe-models/' + u.slice(i + 25);
   return null;
 }
-function cdnTwinMediaPipe(mp) {
+// На CDN уходят только те файлы, которых нет локально (HEAD не 2xx или нет ответа): если в vendor/
+// не хватает одной модели, библиотека и WASM остаются свои.
+async function cdnTwinMediaPipe(mp) {
   if (!mp) return null;
+  const probe = async (u) => {
+    try { const r = await fetch(u, { method: 'HEAD', cache: 'no-store' }); return r.ok; } catch { return false; }
+  };
   const tw = { ...mp };
   let changed = false;
   for (const k of ['moduleUrl', 'wasmRoot', 'modelUrl', 'handModelUrl']) {
     const t = mp[k] ? cdnTwinUrl(mp[k]) : null;
-    if (t) { tw[k] = t; changed = true; }
+    if (!t) continue;
+    if (await probe(k === 'wasmRoot' ? `${mp[k]}/vision_wasm_internal.wasm` : mp[k])) continue;
+    tw[k] = t;
+    changed = true;
+  }
+  // модуль и WASM — одной версии из одного места
+  if (tw.moduleUrl !== mp.moduleUrl || tw.wasmRoot !== mp.wasmRoot) {
+    tw.moduleUrl = cdnTwinUrl(mp.moduleUrl) || tw.moduleUrl;
+    tw.wasmRoot = cdnTwinUrl(mp.wasmRoot) || tw.wasmRoot;
   }
   return changed ? tw : null;
 }
@@ -1381,7 +1394,7 @@ export async function createVision(options = {}) {
     } catch (e) {
       // только ошибки загрузки файлов (404, нет сети, модуль не импортировался), а не отказ GPU/модели
       const loadErr = /fetch|import|load|network|HTTP|404|wasm|скрипт worker/i.test(String((e && e.message) || e));
-      const twin = cfg.cdnFallback === false || !loadErr ? null : cdnTwinMediaPipe(mpResolved);
+      const twin = cfg.cdnFallback === false || !loadErr ? null : await cdnTwinMediaPipe(mpResolved);
       if (!twin || disposed) throw e;
       console.warn('[vision] локальные файлы MediaPipe не загрузились — пробуем CDN:', (e && e.message) || e);
       workerFallbackReason = null;

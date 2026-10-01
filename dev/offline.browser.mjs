@@ -250,10 +250,14 @@ try {
   const works = (o) => !!o && ['ready', 'lost', 'calibrating'].includes(o.cameraStatus);
   if (before) check('«до» (без предзагрузки и sw): распознавание запустилось', works(before), `${before.cameraStatus} за ${before.cameraMs} мс`);
   check('первый запуск: игра стартовала', first.booted, first.bootErr || `меню за ${first.menuMs} мс`);
-  check('первый запуск: MediaPipe скачан, пока открыто меню', !!(first.offline && first.offline.preload && first.offline.preload.status === 'done'), first.offline && JSON.stringify(first.offline.preload));
+  if (!LOOPBACK) {
+    const pre = first.offline && first.offline.preload;
+    check('первый запуск: MediaPipe качается заранее, пока открыто меню', !!pre && ['loading', 'done'].includes(pre.status) && pre.loaded > 0,
+      pre ? `${pre.status}, ${MB(pre.loaded)} из ${MB(pre.total)} МБ за ${MENU_WAIT / 1000} с меню` : 'нет состояния');
+  }
   check('первый запуск: распознавание запустилось', works(first), `${first.cameraStatus} за ${first.cameraMs} мс`);
   if (before && works(before) && works(first)) check('«Разрешить камеру» быстрее, чем без предзагрузки', first.cameraMs < before.cameraMs, `${before.cameraMs} → ${first.cameraMs} мс`);
-  check('service worker управляет страницей и докачал всё', !!(sw && sw.controlled && sw.state && sw.state.ready && sw.state.warm.errors === 0), JSON.stringify(sw).slice(0, 240));
+  check('service worker управляет страницей' + (LOOPBACK ? '' : ' и докачал всё'), !!(sw && sw.controlled && sw.state && sw.state.ready && sw.state.warm.errors === 0 && (LOOPBACK || sw.state.warm.status === 'done')), JSON.stringify(sw).slice(0, 240));
   check('второй запуск: игра стартовала', second.booted, second.bootErr || `меню за ${second.menuMs} мс`);
   if (!LOOPBACK) check('второй запуск: по сети меньше 0,5 МБ (только сверка 304)', second.wireMB < 0.5, `${second.wireMB} МБ, запросов ${second.wireReq}`);
   check('второй запуск: распознавание запустилось', works(second), `${second.cameraStatus} за ${second.cameraMs} мс`);

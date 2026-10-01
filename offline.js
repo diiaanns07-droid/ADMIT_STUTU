@@ -4,14 +4,18 @@
 //     чтобы «Разрешить камеру» не ждало ~25 МБ.
 //  3. Потом в фоне докачивает остальное из списка sw.js (другие герои, лес, запасной WASM, точная модель позы).
 // Ничего не ломает: без service worker (старый браузер, ?sw=0) остаётся обычная загрузка из сети.
-// ?sw=0 — выключить и удалить service worker и его кэш; ?preload=0 — без предзагрузки (замеры «до»).
+// ?sw=0 — выключить и удалить service worker и его кэш; ?preload=0 — без предзагрузки (замеры «до»);
+// на 127.0.0.1 предзагрузки и докачки нет (сервер рядом), ?preload=1 — включить.
 // Состояние для QA: window.__aoOffline.state(), await window.__aoOffline.whenReady().
 import { config, DEPS } from './config.js';
 import { mediaPipePreloadList, preloadMediaPipe } from './modules/vision.js';
 
 const Q = new URLSearchParams(location.search);
 const SW_OFF = Q.get('sw') === '0';
-const PRELOAD_OFF = Q.get('preload') === '0';
+// Локальный сервер (START_GAME.cmd, 127.0.0.1) отдаёт всё мгновенно и без интернета — заранее качать нечего,
+// а фоновая работа мешала бы замерам кадров. ?preload=1 — включить и здесь.
+const LOCAL = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/.test(location.hostname);
+const PRELOAD_OFF = Q.get('preload') === '0' || (LOCAL && Q.get('preload') !== '1');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.info('[offline]', ...a);
 
@@ -109,6 +113,11 @@ async function preload() {
 
 // ── докачка в фоне: всё из списка sw.js, чего ещё нет в кэше ──
 async function warm() {
+  if (PRELOAD_OFF) { st.warm.status = 'skipped'; return; }
+  // на медленной сети service worker мог включиться уже после предзагрузки — ждём его до минуты
+  const sw = navigator.serviceWorker;
+  if (sw && !sw.controller && st.sw !== 'off' && st.sw !== 'unsupported') await Promise.race([new Promise((r) => sw.addEventListener('controllerchange', r, { once: true })), sleep(60000)]);
+  st.controlled = !!(sw && sw.controller);
   if (!st.controlled) { st.warm.status = 'skipped'; return; }
   const m = await askSW({ type: 'ao-manifest' });
   if (!m || !Array.isArray(m.warm)) { st.warm.status = 'error'; return; }
