@@ -353,6 +353,34 @@ TUTORIAL.push({
   svg: svgWrap(palmFlameFigure()),
 });
 
+/* [НОВИЧОК] В «Новичке» карточки обучения — только про базовые жесты; лук и магия рукой скрыты.
+   Поле novice — тексты для «Новичка», novice.auto — для «Новичка» с «Автоходом» (герой идёт сам). */
+{
+  const T = Object.fromEntries(TUTORIAL.map((it) => [it.key, it]));
+  T.strafe.novice = { auto: {
+    title: 'Герой идёт сам',
+    gesture: '«Автоход» ведёт героя к Регенту и вокруг него. Вам — только сражаться.',
+    effect: 'Левая рука свободна для щита и рывка. Вести героя рукой — выключите «Автоход» в меню.',
+  } };
+  T.hands.novice = {
+    title: 'Огонь и щит',
+    gesture: 'Правая: «OK» — кольцо из большого и указательного — снаряды. Левая: толкните раскрытую ладонь к камере — щит.',
+    effect: 'Щит держится, пока ладонь впереди. Уберите ладонь назад — щит опущен.',
+  };
+  T.both.novice = {
+    title: 'Кулак — выброс',
+    gesture: 'Сожмите правый кулак, подержите секунду и резко раскройте.',
+    effect: 'Взрыв энергии по Регенту. Чем дольше держали кулак, тем сильнее.',
+  };
+  T.conjure.novice = {
+    title: 'Сфера двумя руками',
+    gesture: 'Ладони друг к другу, будто держите мяч. Потом толкните обе ладони к камере.',
+    effect: 'Сфера летит в Регента. Чем дольше лепили, тем сильнее.',
+  };
+  T.bow.masterOnly = true;
+  T.handMagic.masterOnly = true;
+}
+
 /* Карта видимых точек для калибровки (вид со спины, как в пиктограммах). */
 const BODY_MAP_SVG =
   '<svg class="ao-bodymap__svg" viewBox="0 0 100 84" fill="none" stroke-linecap="round" stroke-linejoin="round" ' +
@@ -1508,6 +1536,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const host = el('div', { class: 'ao-slothost' });
     const status = statusLine();
     const ready = el('p', { class: 'ao-msg' });
+    // [НОВИЧОК] подзаголовок — под режим жестов и автоход
+    const LEADS = {
+      master: 'Левая рука ведёт героя, обе руки колдуют — всё сидя и без большой амплитуды.',
+      novice: 'Левая рука ведёт героя, руки сражаются — пять базовых жестов, сидя или стоя.',
+      auto: 'Герой идёт сам — вы только сражаетесь: щит, рывок, снаряды, выброс и сфера.',
+    };
+    const lead = el('p', { class: 'ao-lead', text: LEADS.master });
     // [ТВИСТ «ОШИБКА»] почти-правильный жест на обучении: что не так и как исправить
     const coachHead = el('span', { class: 'ao-tut-coach__head' });
     const coachText = el('span', { class: 'ao-tut-coach__text' });
@@ -1518,7 +1553,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const panel = el(
       'div',
       { class: 'ao-panel ao-panel--tutorial ao-frame' },
-      el('div', { class: 'ao-head' }, h, el('p', { class: 'ao-lead', text: 'Левая рука ведёт героя, обе руки колдуют — всё сидя и без большой амплитуды.' })),
+      el('div', { class: 'ao-head' }, h, lead),
       grid,
       el(
         'div',
@@ -1564,14 +1599,21 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         else text = 'Камера ещё не готова.';
         setText(ready, text);
         // [V5] тексты карточки движения — под выбранную схему («Руль» / «Джойстик»)
+        // [НОВИЧОК] и под режим жестов: в «Новичке» — тексты базовых жестов, лук и магия рукой скрыты
         const moveMode = ctx.settings && ctx.settings.moveMode === 'stick' ? 'stick' : 'steer';
+        const novice = !(ctx.settings && ctx.settings.gestureMode === 'master');
+        const autoWalk = !(ctx.settings && ctx.settings.autoWalk === false);
+        const mkey = `${moveMode}|${novice}|${autoWalk}`;
         for (const c of Object.values(cards)) {
-          if (!c.item.stick || c.mode === moveMode) continue;
-          c.mode = moveMode;
-          const v = moveMode === 'stick' ? { ...c.item, ...c.item.stick } : c.item;
+          if (c.mode === mkey) continue;
+          c.mode = mkey;
+          setHidden(c.card, novice && !!c.item.masterOnly);
+          let v = moveMode === 'stick' && c.item.stick ? { ...c.item, ...c.item.stick } : c.item;
+          if (novice && c.item.novice) v = { ...v, ...c.item.novice, ...(autoWalk && c.item.novice.auto ? c.item.novice.auto : {}) };
           setText(c.titleEl, v.title); setText(c.gestEl, v.gesture); setText(c.effEl, v.effect);
           c.figEl.innerHTML = v.svg; // только статические строки этого модуля
         }
+        setText(lead, !novice ? LEADS.master : autoWalk ? LEADS.auto : LEADS.novice);
 
         const inp = ctx.input;
         const liveCv = !!inp && inp.source === 'cv' && !ctx.debug;
