@@ -78,6 +78,12 @@ function sanitizeSettings(patch, base) {
   if ('bdoUi' in patch) out.bdoUi = patch.bdoUi !== false;
   // [HAND] лук и магия рукой
   if ('handCombat' in patch) out.handCombat = patch.handCombat !== false;
+  // [НОВИЧОК] набор жестов и автоход; смена режима ставит автоход по умолчанию режима (если его не задали явно)
+  if (patch.gestureMode === 'novice' || patch.gestureMode === 'master') {
+    if (patch.gestureMode !== base.gestureMode && !('autoWalk' in patch)) out.autoWalk = patch.gestureMode === 'novice';
+    out.gestureMode = patch.gestureMode;
+  }
+  if ('autoWalk' in patch) out.autoWalk = patch.autoWalk !== false;
   return out;
 }
 function loadSettings() {
@@ -88,6 +94,8 @@ function loadSettings() {
   return sanitizeSettings(saved, config.defaultSettings);
 }
 function saveSettings(s) { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) { /* ignore */ } }
+// [НОВИЧОК] лук и магия рукой камерой — только в «Мастере»; «Отладка с клавиатуры» — как раньше, со всеми жестами
+const handCombatOn = () => settings.handCombat !== false && (app.debug || settings.gestureMode !== 'novice');
 
 // Живой объект настроек: world/effects читают его через config.settings.
 const settings = loadSettings();
@@ -425,7 +433,7 @@ async function ensureVision() {
   if (vision) return vision;
   if (!visionPromise) {
     visionPromise = createVision({
-      video, overlayCanvas: overlay, config: { ...config.vision, ...visionProfile(), sensitivity: settings.sensitivity, moveMode: settings.moveMode },
+      video, overlayCanvas: overlay, config: { ...config.vision, ...visionProfile(), sensitivity: settings.sensitivity, moveMode: settings.moveMode, gestureMode: settings.gestureMode },
       onStatus: (s) => { lastVisionStatus = s; },
     }).then((v) => {
       vision = v;
@@ -722,7 +730,7 @@ function applySettings() {
     if (heroModel && heroModel.setQuality) { try { heroModel.setQuality(settings.quality); configureHeroes({ quality: settings.quality }); } catch (e) { /* ignore */ } } // [HERO]
   }
   effects.setVolume(app.screen === 'paused' ? 0 : gameVolume());
-  if (vision) vision.configure({ sensitivity: settings.sensitivity, moveMode: settings.moveMode });
+  if (vision) vision.configure({ sensitivity: settings.sensitivity, moveMode: settings.moveMode, gestureMode: settings.gestureMode });
   if (typeof debugInput.setMoveMode === 'function') debugInput.setMoveMode(settings.moveMode); // [V5] WASD как «Руль»
 }
 
@@ -777,7 +785,7 @@ function drawTracking(now, input) {
   let hands = null, pose = null;
   try { hands = vision.getHands(); pose = vision.getPose(); } catch (e) { /* ignore */ }
   trackingHud.draw(now, { pose, status: visionStatus(), input, settings, mode: mini ? 'mini' : 'full', hands });
-  if (handFx && handZone && settings.handCombat !== false) { try { handFx.draw(now, { ...handZone.overlay(now), pose, settings, mode: mini ? 'mini' : 'full' }); } catch (e) { /* [HAND] оверлей не критичен */ } } // [HAND]
+  if (handFx && handZone && handCombatOn()) { try { handFx.draw(now, { ...handZone.overlay(now), pose, settings, mode: mini ? 'mini' : 'full' }); } catch (e) { /* [HAND] оверлей не критичен */ } } // [HAND]
 }
 
 // ---------------------------------------------------------------- UI
@@ -994,7 +1002,7 @@ function frame(now) {
 
   const input = readInput();
   // [HAND] лук и магия рукой → input.bow / input.handSpell; конфликтующие жесты гасятся (C2)
-  if (handZone) { try { handZone.apply(input, now, { debug: app.debug, playing: app.screen === 'playing', enabled: settings.handCombat !== false }); } catch (e) { console.warn('[HAND] apply', e); } }
+  if (handZone) { try { handZone.apply(input, now, { debug: app.debug, playing: app.screen === 'playing', enabled: handCombatOn() }); } catch (e) { console.warn('[HAND] apply', e); } }
   // [ТВИСТ «ОШИБКА»] код подсказки → жест и текст исправления (для HUD, обучения и итогов)
   if (input && input.hint && hintInfo(input.hint.code)) input.hint = { ...input.hint, ...hintInfo(input.hint.code) };
   app.lastInput = input;
@@ -1034,6 +1042,9 @@ function frame(now) {
       if (Number.isFinite(rig.inputYaw)) input.viewYaw = rig.inputYaw;   // [V3] курс управления без плечевого сдвига
       else if (Number.isFinite(rig.yaw)) input.viewYaw = rig.yaw;
       input.moveMode = settings.moveMode;   // [V5] «Руль»: moveX — поворот героя, moveZ — вперёд по его курсу
+      // [НОВИЧОК] combat гасит импульсы выключенных жестов и ведёт героя сам (автоход); клавиатура и дуэль — как раньше
+      input.gestureMode = app.debug ? 'master' : settings.gestureMode;
+      input.autoWalk = settings.autoWalk !== false && !app.debug && !(pvpCtl && pvpCtl.active);
       let inputC = input;
       if (pvpCtl && pvpCtl.active) { try { inputC = pvpCtl.beforeUpdate(input); } catch (e) { console.error('[PVP] beforeUpdate', e); } } // [PVP] фазы раунда, оглушение, соперник
       try { combat.update(dt, inputC); } catch (e) { console.error('[ASHEN] combat.update', e); }

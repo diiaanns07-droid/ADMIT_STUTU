@@ -29,6 +29,18 @@ import { createSteerStick } from './steerStick.js';
 
 export const HAND_GESTURES_VERSION = 'ASHEN_V3-hands-6';
 
+// [НОВИЧОК] Профили жестов. «Мастер» — все детекторы (как раньше). «Новичок» — только базовые:
+// ход и поворот левой рукой, щит (толчок ладонью), рывок (дёрг левой), «OK» — снаряды,
+// кулак → выброс, сфера двумя руками и её бросок. Остальные детекторы не работают вовсе, поэтому
+// не перехватывают позы базовых жестов (щепоть «Искры» у кулака, перо руны у «OK», «кулак → ладонь»
+// левой как парирование, хлопок/врата у сферы) и не сыплют подсказками о жестах, которых нет.
+export const GESTURE_PROFILES = Object.freeze({
+  novice: Object.freeze(['steer', 'shield', 'dash', 'attack', 'burst', 'orb', 'throw']),
+  master: Object.freeze(['steer', 'shield', 'dash', 'attack', 'burst', 'orb', 'throw', 'rune', 'spark', 'slash', 'parry', 'prism', 'sigil', 'twin']),
+});
+// Подсказки «ОШИБКА» о выключенных в «Новичке» жестах
+const NOVICE_MUTED_HINTS = /^(rune_|spark_|slash_|parry_|prism_|gate_|frame_)/;
+
 export const DEFAULT_HAND_CONFIG = Object.freeze({
   // надёжность
   staleMs: 350,            // наблюдение старше — удержания отпускаются
@@ -650,6 +662,10 @@ export function createHandGestures(configPatch = {}) {
   const steer = createSteerStick(configPatch && configPatch.steer);
   let moveMode = configPatch && configPatch.moveMode === 'steer' ? 'steer' : 'stick';
   const mover = () => (moveMode === 'steer' ? steer : stick);
+  // [НОВИЧОК] профиль жестов: 'master' (по умолчанию модуля — всё как раньше) или 'novice'
+  let profile = configPatch && configPatch.profile === 'novice' ? 'novice' : 'master';
+  let enabled = new Set(GESTURE_PROFILES[profile]);
+  const on = (g) => enabled.has(g);
   // «насколько левая рука сейчас рулит» — для гейтов щита, парирования, чар: у джойстика — длина
   // выхода; у руля — только поворот (подъём руки для шага сам по себе щит и чары не запрещает)
   const steering = (so) => (!so || !so.engaged ? 0 : so.mode === 'steer' ? Math.abs(so.turn || 0) : Math.hypot(so.x, so.z));
@@ -914,6 +930,7 @@ export function createHandGestures(configPatch = {}) {
     }
     if (oL) {
       if (charged(L) && stillCharging(R) && t - L.releasedAt < cfg.pairWindowMs) return; // ждём правую
+      if (!on('parry')) { L.releasedAt = null; return; }   // [НОВИЧОК] левая одна «кулак → ладонь» не парирует
       // подсказки парирования — только если левая явно толкнула к камере (а не просто расслабила кулак)
       const meant = t - L.pushAt <= 500;
       if (L.palmFacing === 'camera') {
@@ -1037,6 +1054,7 @@ export function createHandGestures(configPatch = {}) {
 
   // ───────── [ТВИСТ «ОШИБКА»] подсказки ─────────
   function hint(code, t, data, cooldownMs) {
+    if (profile === 'novice' && NOVICE_MUTED_HINTS.test(code)) return;   // [НОВИЧОК] о выключенных жестах молчим
     const C = st.coach;
     if (t < C.gapUntil || t < (C.until[code] ?? -Infinity)) return;
     C.until[code] = t + (fin(cooldownMs) ? cooldownMs : cfg.hintCooldownMs);
@@ -1262,7 +1280,7 @@ export function createHandGestures(configPatch = {}) {
     const gap = gapPx / S;
     const info = { gap: Math.round(gap * 100) / 100 };
     // ПРИЗМА: кончики больших вместе, кончики указательных вместе, между ними окно
-    {
+    if (enabled.has('prism')) {   // [НОВИЧОК] в «Новичке» призмы нет — только сфера
       const on = cur === 'prism';
       const thumbs = d2(L.pts[4], R.pts[4]) / S, index = d2(L.pts[8], R.pts[8]) / S;
       const win = d2(mid(L.pts[8], R.pts[8]), mid(L.pts[4], R.pts[4])) / S;
@@ -1595,12 +1613,13 @@ export function createHandGestures(configPatch = {}) {
       updateCharge(st.hands.left, t);
       updateCharge(st.hands.right, t);
       tryBurst(t);
-      updateStroke(t);
-      updateSwipe(t);
+      // [НОВИЧОК] выключенные детекторы не считаются вовсе (и не держат «занятость» рук)
+      if (on('rune')) updateStroke(t); else if (st.stroke) { st.stroke = null; st.tipF = null; }
+      if (on('slash')) updateSwipe(t);
       updateConjure(t, obs);
-      updateSigils(t);
-      updateTwin(t);
-      updateSpark(t);
+      if (on('sigil')) updateSigils(t); else { st.sig.hist.length = 0; st.sig.togetherSince = null; st.sig.frameSince = null; }
+      if (on('twin')) updateTwin(t); else st.twin = null;
+      if (on('spark')) updateSpark(t);
       // левая рука — джойстик: центр ладони в кадре (с аспектом) относительно середины плеч
       const L = st.hands.left;
       const seen = L.present && L.lastSeen === t && L.pts && L.scale;
@@ -1615,7 +1634,7 @@ export function createHandGestures(configPatch = {}) {
       const dsh = mover().takeDash();
       if (dsh) firePulse('dashDir', t, { x: dsh.x, z: dsh.z, speed: dsh.speed });
       updateShield(t);
-      checkSlowSwipe(t);
+      if (on('slash')) checkSlowSwipe(t);
       updateCoach(t, obs);
     } catch (e) {
       st.counters.badObs++;
@@ -1705,6 +1724,13 @@ export function createHandGestures(configPatch = {}) {
       moveMode = patch.moveMode;
       mover().reset();   // новая схема начинает с чистого листа (без старой хватки/подъёма)
     }
+    if (patch && (patch.profile === 'novice' || patch.profile === 'master') && patch.profile !== profile) {
+      profile = patch.profile;
+      enabled = new Set(GESTURE_PROFILES[profile]);
+      // начатые выключенными детекторами жесты гаснут молча
+      st.stroke = null; st.tipF = null; st.trail = []; st.twin = null;
+      if (!on('prism') && (st.conj.kind === 'prism' || (st.conj.pending && st.conj.pending.kind === 'prism'))) Object.assign(st.conj, { on: false, kind: null, pending: null, size: 0, charge: 0 });
+    }
   }
 
   function getDebug() {
@@ -1723,7 +1749,7 @@ export function createHandGestures(configPatch = {}) {
       left: h(st.hands.left), right: h(st.hands.right),
       stroke: st.stroke ? { points: st.stroke.pts.length, ms: st.lastObsT - st.stroke.t0 } : null,
       lastRecognition: st.lastRecognition,
-      moveMode,
+      moveMode, profile,
       stick: mover().getDebug(),
       conjure: { on: st.conj.on, kind: st.conj.kind, pending: st.conj.pending ? st.conj.pending.kind : null, size: Math.round(st.conj.size * 100) / 100, charge: Math.round(st.conj.charge * 100) / 100, eval: st.conj.lastEval },
       counters: { ...st.counters },

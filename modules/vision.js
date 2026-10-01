@@ -52,6 +52,9 @@ export const DEFAULT_VISION_CONFIG = Object.freeze({
   torsoMove: false,
   // [V5] схема движения левой рукой: 'steer' — «Руль» (core/steerStick.js), 'stick' — джойстик (core/leftStick.js)
   moveMode: 'steer',
+  // [НОВИЧОК] набор жестов: 'master' — все; 'novice' — только базовые (core/handGestures.js, GESTURE_PROFILES).
+  // Игра по умолчанию включает «Новичка» (config.defaultSettings.gestureMode); модуль сам по себе — «Мастер».
+  gestureMode: 'master',
   // Маппинг
   mirror: true,            // true: наклон игрока к СВОЕЙ правой стороне → moveX>0 (как в зеркальном превью)
   swapHands: false,        // для камер/драйверов, которые сами зеркалят поток
@@ -1027,6 +1030,12 @@ export async function createVision(options = {}) {
     try { handsInterp.configure({ moveMode: cfg.moveMode === 'stick' ? 'stick' : 'steer' }); } catch { /* ignore */ }
   }
   applyMoveMode();
+  // [НОВИЧОК] профиль жестов (настройка «Жесты: Новичок / Мастер»)
+  function applyGestureMode() {
+    if (!handsInterp || typeof handsInterp.configure !== 'function') return;
+    try { handsInterp.configure({ profile: cfg.gestureMode === 'novice' ? 'novice' : 'master' }); } catch { /* ignore */ }
+  }
+  applyGestureMode();
   let handsStatus = { enabled: !!cfg.hands, ready: false, error: null, delegate: null };
 
   const st = { status: 'idle', message: 'Камера не включена', progress: 0, emittedProgress: 0, code: null };
@@ -1972,6 +1981,12 @@ export async function createVision(options = {}) {
       out.rune = null; out.runeScore = 0; out.parry = false; out.slash = null;
     }
     if (out.burst) { out.attack = false; out.spark = false; }
+    if (cfg.gestureMode === 'novice') {
+      // [НОВИЧОК] страховка поверх профиля распознавателя: импульсы выключенных жестов не уходят в бой
+      out.spark = false; out.slash = null; out.parry = false; out.sigil = null;
+      out.rune = null; out.runeScore = 0; out.runeFizzle = false;
+    }
+    out.gestureMode = cfg.gestureMode === 'novice' ? 'novice' : 'master';
     out.hands = {
       available: h.available,
       left: L ? { shape: L.shape, palmFacing: L.palmFacing, charge: L.charge, center: L.center } : null,
@@ -1993,6 +2008,7 @@ export async function createVision(options = {}) {
     if (patch.handGestures) handsInterp.configure(patch.handGestures);
     if ('sensitivity' in patch) applyStickSensitivity();
     if ('moveMode' in patch) applyMoveMode();
+    if ('gestureMode' in patch) applyGestureMode();
     if ('overlay' in patch && !cfg.overlay) clearOverlay();
     if ('mediaPipe' in patch && engine) console.warn('[vision] новые URL MediaPipe применятся после dispose/createVision');
     updateMinInterval();

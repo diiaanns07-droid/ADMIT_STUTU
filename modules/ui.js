@@ -380,6 +380,8 @@ function normSettings(s) {
     sensitivity: isNum(o.sensitivity) ? clamp(o.sensitivity, 0.5, 2) : DEFAULT_SETTINGS.sensitivity,
     moveMode: o.moveMode === 'stick' ? 'stick' : 'steer', // [V5] по умолчанию «Руль»
     startZone: o.startZone === 'forest' ? 'forest' : 'arena', // [FOREST] место старта
+    gestureMode: o.gestureMode === 'master' ? 'master' : 'novice', // [НОВИЧОК] набор жестов
+    autoWalk: o.autoWalk !== false,                                 // [НОВИЧОК] автоход
     hero: HERO_OPTIONS.some(([v]) => v === o.hero) ? o.hero : DEFAULT_SETTINGS.hero,
   };
 }
@@ -1036,6 +1038,45 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     return fs;
   }
 
+  // [НОВИЧОК] «Жесты»: Новичок (только базовые) / Мастер (все) + «Автоход» — на виду, рядом с «Начать»
+  const GESTURE_OPTIONS = [['novice', 'Новичок'], ['master', 'Мастер']];
+  function buildGestureMode(prefix) {
+    const name = `${uid}-${prefix}-gesturemode`;
+    const seg = el('div', { class: 'ao-seg' });
+    const hintId = `${name}-hint`;
+    const hint = el('div', { class: 'ao-field__hint', id: hintId });
+    const TIPS = {
+      novice: 'Только базовые жесты: щит, рывок, «OK», кулак → выброс, сфера',
+      master: 'Все жесты: ещё руны, «Искра», рассечение, парирование, печати, лук, магия рукой',
+    };
+    const autoId = `${name}-auto`;
+    const auto = el('input', { type: 'checkbox', id: autoId, class: 'ao-check__input' });
+    const autoLabel = el('label', { class: 'ao-check', for: autoId, title: 'Герой сам идёт к Регенту и обходит его по кругу — вы только сражаетесь, левая рука свободна для щита и рывка' }, auto, el('span', { text: 'Автоход' }));
+    const fs = el('fieldset', { class: 'ao-field ao-fieldset', 'aria-describedby': hintId },
+      el('legend', { class: 'ao-field__legend', text: 'Жесты' }),
+      el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center' }, seg, autoLabel), hint);
+    const inputs = [];
+    for (const [value, label] of GESTURE_OPTIONS) {
+      const input = el('input', { type: 'radio', name, value, class: 'ao-seg__input' });
+      inputs.push(input);
+      seg.append(el('label', { class: 'ao-seg__opt', title: TIPS[value] }, input, el('span', { class: 'ao-seg__label', text: label })));
+      listen(input, 'change', () => { if (input.checked) invoke('onSettings', { gestureMode: value }); });
+    }
+    listen(auto, 'change', () => invoke('onSettings', { autoWalk: auto.checked }));
+    const ctl = {
+      sync(settings, force) {
+        const m = settings.gestureMode === 'master' ? 'master' : 'novice';
+        setText(hint, `${TIPS[m]}${settings.autoWalk !== false ? '. Автоход ведёт героя к Регенту и вокруг него.' : '.'}`);
+        if (!force && fs.contains(doc.activeElement)) return;
+        for (const i of inputs) { const on = i.value === m; if (i.checked !== on) i.checked = on; }
+        if (auto.checked !== (settings.autoWalk !== false)) auto.checked = settings.autoWalk !== false;
+      },
+    };
+    listen(fs, 'focusout', (e) => { if (!fs.contains(e.relatedTarget) && state.settings) ctl.sync(state.settings, true); });
+    controls.push(ctl);
+    return fs;
+  }
+
   // [FOREST] «Место старта»: Пепельное плато (у арены) / Сияющий лес (у врат леса)
   const ZONE_OPTIONS = [['arena', 'Пепельное плато'], ['forest', 'Сияющий лес']];
   function buildStartZone(prefix) {
@@ -1067,6 +1108,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     for (const key of keys) {
       if (key === 'quality') wrap.append(buildQuality(prefix));
       else if (key === 'moveMode') wrap.append(buildMoveMode(prefix));
+      else if (key === 'gestureMode') wrap.append(buildGestureMode(prefix));   // [НОВИЧОК]
       else if (key === 'startZone') { // [FOREST] в одном ряду с «Управлением движением» (меню 1366×650 не растёт)
         const zs = buildStartZone(prefix), prev = wrap.lastElementChild;
         if (prev && keys[keys.indexOf(key) - 1] === 'moveMode') { const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 16px;align-items:flex-end' }); wrap.replaceChild(row, prev); row.append(prev, zs); }
@@ -1135,7 +1177,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       title,
       el('p', { class: 'ao-subtitle', text: 'Бой с Регентом Нимба' }),
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
-      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts, netBtn.node /* [NET] */), el('p', { class: 'ao-note', text: 'Играется сидя. Нужны веб-камера, Chrome или Edge и устойчивый стул.' })),
+      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts, netBtn.node /* [NET] */), el('p', { class: 'ao-note', text: 'Играется сидя. Нужны веб-камера, Chrome или Edge и устойчивый стул.' }), buildSettings(['gestureMode'], 'menu')), // [НОВИЧОК] режим жестов — на виду
       buildHeroPick('menu'),
       el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'reducedMotion'], 'menu')),
       el('div', { class: 'ao-menu__foot' }, dbg, dbgKeys),
@@ -1643,7 +1685,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         'div',
         { class: 'ao-cols' },
         el('div', { class: 'ao-col ao-col--media' }, host, status.node, hint),
-        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
+        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['gestureMode', 'moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
       ),
       dbgKeys,
       el('div', { class: 'ao-actions' }, resume.node, recal.node, restart.node, oathP.node, el('span', { class: 'ao-spacer' }), exit.node),
@@ -2248,7 +2290,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   function syncSettings(s) {
-    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}`; // [FOREST] + startZone
+    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}|${s.gestureMode}|${s.autoWalk}`; // [FOREST] + startZone, [НОВИЧОК] + жесты
     state.settings = s;
     if (key === state.settingsKey) return;
     state.settingsKey = key;
