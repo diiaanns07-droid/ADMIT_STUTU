@@ -146,7 +146,8 @@ export const config = {
     moveMode: 'steer',
     hero: 'ashen',          // выбранный герой: ashen | warrior | elf (modules/heroModel.js)
     heroShading: 'realistic', // [HERO] C1: 'realistic' — PBR-материалы героев (modules/heroShading.js), 'anime' — MToon как было
-    startZone: 'arena',     // [FOREST] место старта: 'arena' — Пепельное плато, 'forest' — у врат Сияющего леса
+    startZone: 'edge',      // [FOREST] место старта: 'edge' — у края арены [ONBOARD], 'arena' — Пепельное плато (прогулка), 'forest' — у врат Сияющего леса
+    startZoneV: 2,          // [ONBOARD] версия настройки места старта (миграция сохранений в main.js)
     netName: '',            // [NET] имя в онлайн-дуэли (C1)
     fxMagic: true,          // [VFX] эффекты V6 (modules/fx): false — прежние эффекты effects.js
     bdoUi: true,            // [BDO] интерфейс в стиле Black Desert (false — прежний вид)

@@ -1640,6 +1640,71 @@ test('P06 медленный инференс (5 к/с): grace и «свежес
   ok(d.bodyVisible, 'bodyVisible между кадрами');
 });
 
+// ═══════════ [ONBOARD] калибровка между входами (localStorage в main.js) ═══════════
+
+test('K01 importBaseline: сохранённая поза восстанавливается без калибровки, ввод валиден', () => {
+  const a = createSim({ torsoMove: false });
+  a.run(300, null);
+  a.calibrate(null);
+  const saved = JSON.parse(JSON.stringify(a.interp.getBaseline()));
+  const b = createSim({ torsoMove: false });
+  eq(b.interp.importBaseline(saved), true, 'поза принята');
+  eq(b.interp.getTracking(b.now()).calibrated, true, 'calibrated сразу');
+  const f = b.run(400, null).pop();
+  eq(f.valid, true, 'после первых кадров ввод валиден');
+  near(b.interp.getBaseline().width, saved.width, 0.02, 'ширина плеч из сохранения');
+  eq(b.interp.calibrationStatus(), null, 'калибровка не запускалась');
+});
+
+test('K02 importBaseline: мусор и запуск посреди калибровки отклоняются', () => {
+  const s = createSim({ torsoMove: false });
+  for (const bad of [null, 5, {}, { cx: 1, cy: 0.5, width: NaN, aspect: 4 / 3 }, { cx: 1, cy: 0.5, width: 0.001, aspect: 4 / 3 }, { cx: 1, cy: 0.5, width: 0.3, aspect: 99 }]) {
+    eq(s.interp.importBaseline(bad), false, `отклонено: ${JSON.stringify(bad)}`);
+  }
+  eq(s.interp.getBaseline(), null, 'калибровки нет');
+  s.interp.beginCalibration(s.now());
+  eq(s.interp.importBaseline({ cx: 0.66, cy: 0.55, width: 0.35, aspect: 4 / 3 }), false, 'во время калибровки — нет');
+});
+
+test('K03 importBaseline: другой формат кадра (16:9 против 4:3) сбрасывает сохранённую позу', () => {
+  const a = createSim({ torsoMove: false });
+  a.run(300, null);
+  a.calibrate(null);
+  const saved = a.interp.getBaseline();
+  const b = createSim({ torsoMove: false }, { state: { w: 1280, h: 720 } });
+  eq(b.interp.importBaseline(saved), true, 'до первого кадра формат неизвестен — принято');
+  b.run(200, null);
+  eq(b.interp.getBaseline(), null, 'после кадра 16:9 калибровка сброшена');
+  eq(b.interp.getTracking(b.now()).calibrationInvalid, 'aspect');
+  eq(b.interp.importBaseline(saved), false, 'формат известен — 4:3 не принимается');
+});
+
+test('K04 оболочка: getCalibration → JSON → setCalibration в новом createVision', async () => {
+  let saved = null;
+  await withShell({}, async (env, v) => {
+    eq(v.getCalibration(), null, 'до калибровки — null');
+    await v.start();
+    await pump(env, 300, null);
+    let done = false;
+    v.calibrate().then(() => { done = true; }, () => {});
+    await pump(env, 3000, null, { until: () => done });
+    ok(done, 'калибровка завершилась');
+    saved = JSON.parse(JSON.stringify(v.getCalibration()));
+    eq(saved.v, 1, 'версия формата');
+    ok(saved.baseline && saved.baseline.width > 0 && saved.baseline.restRise, 'поза в сохранении');
+  });
+  await withShell({}, async (env, v) => {
+    eq(v.setCalibration({ v: 99, baseline: saved.baseline }), false, 'чужая версия формата');
+    eq(v.setCalibration(saved), true, 'сохранение принято до start()');
+    await v.start();
+    await pump(env, 500, null);
+    const s = v.getStatus();
+    eq(s.status, 'ready'); eq(s.calibrated, true, 'откалибровано без calibrate()');
+    ok(!/выполните калибровку/.test(s.message), s.message);
+    ok(v.read().valid, 'ввод валиден');
+  });
+});
+
 // ───────────────────────────── запуск ─────────────────────────────
 const only = process.argv[2] ? new RegExp(process.argv[2]) : null;
 let passed = 0;

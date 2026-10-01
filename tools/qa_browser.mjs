@@ -174,15 +174,15 @@ async function scenarioBootAndDebug() {
     await sleep(150);
     const badge = await page.eval(`[...document.querySelectorAll('*')].some((e) => e.children.length === 0 && e.offsetParent !== null && /DEBUG\\s*\\/\\s*НЕ CV/.test(e.textContent))`);
     check('DEBUG включается явно, видна надпись DEBUG / НЕ CV', badge && (await page.eval('__ASHEN__.debug')) === true);
-    await page.click('Начать');
+    await page.click('Играть');
     await sleep(150);
-    check('Начать → экран камеры', (await screen(page)) === 'camera');
+    check('Играть → экран камеры', (await screen(page)) === 'camera');
     await page.click('Продолжить без камеры (DEBUG)');
     await sleep(150);
     check('DEBUG: без камеры → обучение', (await screen(page)) === 'tutorial');
     await page.shot('02_tutorial_debug');
     await page.click('В бой');
-    await sleep(2200);
+    await sleep(600);   // [ONBOARD] интро 1,8 с
     const introScr = await screen(page);
     await page.shot('02b_intro');
     check('В бой → кинематографичное интро (screen=intro)', introScr === 'intro', introScr);
@@ -273,10 +273,10 @@ async function scenarioFakeCamera() {
   const { page, kill } = await launch('fakecam', ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream']);
   try {
     await page.waitFor('!!window.__ASHEN__', 60000);
-    await page.click('Начать');
+    await page.click('Играть');
     await sleep(150);
-    check('экран камеры до запроса: камера не включена', (await page.eval('__ASHEN__.tracking.status')) === 'idle');
-    await page.click('Разрешить камеру');
+    // [ONBOARD] «Играть» сразу запрашивает камеру — второго клика нет
+    check('«Играть» сразу включает камеру', (await screen(page)) === 'camera' && (await page.eval('__ASHEN__.tracking.status')) !== 'idle');
     const st = await page.waitFor(`(() => { const t = __ASHEN__.tracking; return ['ready','lost','error'].includes(t.status) ? t : null; })()`, 90000, 300);
     check('фейковая камера: MediaPipe 0.10.35 (модуль + WASM + модель) загружен', st && st.status !== 'error', st ? `${st.status}: ${st.message} mode=${st.mode} delegate=${st.delegate} fallback=${st.debug && st.debug.workerFallbackReason}` : 'timeout');
     check('распознавание в module worker (не в главном потоке)', st && st.mode === 'worker', st ? `mode=${st.mode}` : '');
@@ -289,14 +289,11 @@ async function scenarioFakeCamera() {
     const perf = await page.eval(`({ fps: __ASHEN__.fps, hz: __ASHEN__.tracking.debug.inferenceHz, inferMs: __ASHEN__.tracking.debug.inferMs, latencyMs: __ASHEN__.tracking.debug.latencyMs, mode: __ASHEN__.tracking.mode })`);
     writeFileSync(join(OUT, 'perf_cv_scene.json'), JSON.stringify(perf));
     check('замер: сцена + CV одновременно (headless, эта машина; не обещание FPS)', perf.fps > 0 && perf.hz > 0, `рендер ${perf.fps} к/с, распознавание ${perf.hz} Гц, inference ${perf.inferMs} мс, задержка ${perf.latencyMs} мс, ${perf.mode}`);
-    await page.click('Далее: калибровка');
-    await sleep(200);
-    check('Далее: калибровка → экран калибровки', (await screen(page)) === 'calibration');
-    await page.click('Начать калибровку');
+    // [ONBOARD] калибровка запускается сама, только когда в кадре плечи; узор без человека — ждём на экране камеры
     await sleep(1500);
-    const cs = await page.eval('__ASHEN__.tracking');
-    check('калибровка без человека не завершается', cs.calibrated === false, `${cs.status}: ${cs.message}`);
-    await page.shot('09_calibration_no_body');
+    const cs = await page.eval('({ t: __ASHEN__.tracking, scr: __ASHEN__.screen })');
+    check('без человека калибровка не запускается и экран не уходит дальше', cs.t.calibrated === false && cs.t.status !== 'calibrating' && cs.scr === 'camera', `${cs.scr}; ${cs.t.status}: ${cs.t.message}`);
+    await page.shot('09_camera_no_body');
     const errs = errorsOf(page).filter((e) => !/GPU|WebGL|gpu|delegate|OpenGL|INFO:/.test(e));
     check('нет ошибок консоли (фейковая камера)', errs.length === 0, errs.slice(0, 5).join(' | '));
     const mp = page.requests.filter((u) => /mediapipe|\.wasm|\.task/.test(u));
@@ -364,8 +361,7 @@ async function scenarioDenied() {
   const { page, kill } = await launch('denied', ['--deny-permission-prompts']);
   try {
     await page.waitFor('!!window.__ASHEN__', 60000);
-    await page.click('Начать');
-    await page.click('Разрешить камеру');
+    await page.click('Играть');   // [ONBOARD] камера запрашивается сразу
     const st = await page.waitFor(`__ASHEN__.tracking.status === 'error' && __ASHEN__.tracking`, 20000);
     const last = st ? null : await page.eval(`({ scr: __ASHEN__.screen, t: __ASHEN__.tracking })`);
     check('отказ в камере → понятное сообщение, игра не падает', !!st && /запрещ/i.test(st.message), st ? `${st.error}: ${st.message}` : 'timeout; последнее состояние: ' + JSON.stringify(last).slice(0, 300));
@@ -379,8 +375,7 @@ async function scenarioNoModel() {
   const { page, kill } = await launch('nomodel', ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--host-resolver-rules=MAP storage.googleapis.com ~NOTFOUND']);
   try {
     await page.waitFor('!!window.__ASHEN__', 60000);
-    await page.click('Начать');
-    await page.click('Разрешить камеру');
+    await page.click('Играть');   // [ONBOARD] камера запрашивается сразу
     const st = await page.waitFor(`__ASHEN__.tracking.status === 'error' && __ASHEN__.tracking`, 90000);
     check('модель недоступна → сообщение об ошибке загрузки модели', !!st && /модел/i.test(st.message), st ? `${st.error}: ${st.message}` : 'timeout');
     await page.shot('11_model_failed');

@@ -912,6 +912,30 @@ export function createPoseInterpreter(configPatch = {}) {
     blockGestures('calibration');
   }
 
+  // [ONBOARD] сохранённая калибровка (localStorage, main.js): нейтральная поза прошлого входа.
+  // Числа проверяются; формат кадра сверяет onFrameSize на первом кадре (другой — калибровка сбрасывается).
+  function importBaseline(src) {
+    if (!src || typeof src !== 'object' || (calib && !calib.result)) return false;
+    const rr = src.restRise && typeof src.restRise === 'object' ? src.restRise : {};
+    const opt = (v) => (finite(v) ? v : null);
+    const b = {
+      cx: src.cx, cy: src.cy, width: src.width, aspect: src.aspect,
+      frameW: src.frameW | 0, frameH: src.frameH | 0,
+      noise: finite(src.noise) ? Math.max(cfg.minNoise, src.noise) : cfg.minNoise,
+      widthNoise: finite(src.widthNoise) ? Math.max(cfg.minNoise, src.widthNoise) : cfg.minNoise,
+      noseGap: opt(src.noseGap), restRise: { right: opt(rr.right), left: opt(rr.left) },
+      samples: src.samples | 0, tMs: nowMs(), restored: true,
+    };
+    if (![b.cx, b.cy, b.width, b.aspect].every(finite) || !(b.width >= cfg.minShoulderWidth) || !(b.aspect > 0.3 && b.aspect < 4)) return false;
+    if (frame.w > 0 && frame.h > 0 && Math.abs(frame.w / frame.h - b.aspect) / b.aspect > 0.02) return false;
+    baseline = b;
+    track.calibrationInvalid = null;
+    recompute();
+    resetMotion('calibration-restored');
+    blockGestures('calibration-restored');
+    return true;
+  }
+
   recompute();
   resetMotion('init');
 
@@ -932,6 +956,7 @@ export function createPoseInterpreter(configPatch = {}) {
     clearCalibration: () => { baseline = null; recompute(); resetMotion('calibration-cleared'); },
     setActive: (v) => { active = !!v; if (!active) { pulses.dash = null; pulses.burst = null; } },
     getBaseline: () => (baseline ? { ...baseline, restRise: { ...baseline.restRise } } : null),
+    importBaseline, // [ONBOARD]
     getDerived: () => ({ ...derived }),
     getConfig: () => mergeVisionConfig(cfg, {}),
   };
@@ -1904,6 +1929,25 @@ export async function createVision(options = {}) {
     return new Promise((resolve, reject) => { calibWaiter = { resolve, reject }; });
   }
 
+  // [ONBOARD] калибровка между входами: getCalibration() → объект для JSON (null — не откалибровано),
+  // setCalibration(data) → true, если поза принята (пока идёт калибровка — false).
+  const CALIB_FORMAT = 1;
+  function getCalibration() {
+    const b = interp.getBaseline();
+    if (!b) return null;
+    const pick = ['cx', 'cy', 'width', 'aspect', 'frameW', 'frameH', 'noise', 'widthNoise', 'noseGap', 'samples'];
+    const out = {};
+    for (const k of pick) out[k] = b[k];
+    out.restRise = { right: b.restRise.right, left: b.restRise.left };
+    return { v: CALIB_FORMAT, savedAt: Date.now(), baseline: out };
+  }
+  function setCalibration(data) {
+    if (disposed || !data || typeof data !== 'object' || data.v !== CALIB_FORMAT) return false;
+    const ok = interp.importBaseline(data.baseline);
+    if (ok) { stickyNote = null; updateTrackingStatus(nowMs()); }
+    return ok;
+  }
+
   // [№1, «Перстни»] Слияние: кисть, которую видно, заменяет жест «поднятой рукой» своей стороны
   // (иначе рисование руны поднятой правой рукой стреляло бы). Нет кистей — прежнее управление позой.
   // [conjure/throw] Контракт HandIntent: conjure — удержание «лепки» двумя руками, throw — импульс.
@@ -2068,5 +2112,5 @@ export async function createVision(options = {}) {
     }
   }
 
-  return { start, calibrate, read, getStatus, configure, stop, dispose, getPose, getHands, getStick, setHandTap /* [HAND] */, startRecording, takeRecording, stopRecording, recordingSize, setPoseModel /* [PERF] */ };
+  return { start, calibrate, read, getStatus, configure, stop, dispose, getPose, getHands, getStick, setHandTap /* [HAND] */, startRecording, takeRecording, stopRecording, recordingSize, setPoseModel /* [PERF] */, getCalibration, setCalibration /* [ONBOARD] */ };
 }
