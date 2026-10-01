@@ -975,7 +975,8 @@ function renderUI() {
     // [ONBOARD] причина на кнопках «В бой»/«Продолжить бой»; отсчёт автопродолжения; калибровка из сохранения
     gate: { ok: app.gate.ok, reason: app.gate.reason },
     autoResumeMs: app.autoResume ? Math.max(0, app.autoResume.at - performance.now()) : null,
-    onboard: { quick: QUICK, restored: app.onb.restored, demo: DEMO },
+    onboard: { quick: QUICK, restored: app.onb.restored, demo: DEMO,
+      starting: app.screen === 'camera' && app.onb.autoEnabled && !app.error && (!vision || visionStatus().status === 'idle') }, // камера уже запрошена
   });
 }
 function trainingView() {
@@ -1192,7 +1193,7 @@ function frame(now) {
     }
     if (I.t >= I.duration || I.skip) { rig.reset(lastSnapshot.player.position, lastSnapshot.boss.position); readInput(); setScreen('playing'); } // из облёта — в lock-on, дальше камера сама перейдёт в explore
   }
-  showIntroHint(app.screen === 'intro');
+  showIntroHint(QUICK && app.screen === 'intro');
 
   if (app.screen === 'playing') {
     let frozen = false;

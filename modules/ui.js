@@ -1281,7 +1281,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       setText(q.sub, sub);
       setHidden(q.sub, !sub);
       // кнопки: «Включить камеру» — только если камера выключена или упала; «Далее» — если калибровка уже есть
-      setBtn(enable, { hidden: running || ctx.debug || (CAMERA_STARTING.includes(st) && st !== 'error') });
+      setBtn(enable, { hidden: running || ctx.debug || pend || CAMERA_STARTING.includes(st) });
       setBtn(next, { hidden: !(done && shoulders) || ctx.debug, label: 'Далее' });
     }
     return {
@@ -1321,7 +1321,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setBtn(next, { hidden: !running });
         setBtn(skip, { hidden: !ctx.debug || running });
         setAttr(host, 'data-tone', describeTracking(ctx.tr, cfg).tone);
-        if (quick) updateQuick(ctx, st, pend);
+        if (quick) updateQuick(ctx, st, pend || !!(ctx.vm.onboard && ctx.vm.onboard.starting));
       },
     };
   })();
