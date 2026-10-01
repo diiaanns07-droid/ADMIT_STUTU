@@ -226,8 +226,13 @@ function simulate(seed, gOpts = {}) {
         const d = g.getDebug();
         console.log(P.tag, t - t0, 'shield', f.shield, 'raw', d.left.raw, 'facing', d.left.palmFacing, 'turn', f.moveX.toFixed(2), 'hand', !!hand, JSON.stringify(d.left.push));
       }
-      if (P.tag === 'снова идёт' && t - t0 > 600 && f.shield) M.shieldDropped = false;
-      if (P.tag === 'снова идёт' && t - t0 > 600 && !f.shield && M.shieldDropped === false && t - t0 < 700) M.shieldDropped = true;
+      // щит опущен к 0,6–0,7 с после «убрал ладонь» (или к первому кадру после 0,6 с — на 8–10 Гц в окне может не быть кадра)
+      // и больше не поднимается в этой фазе
+      if (P.tag === 'снова идёт' && t - t0 > 600) {
+        if (f.shield) M.shieldDropped = false;
+        else if (!M.dropChecked || t - t0 < 700) M.shieldDropped = true;
+        M.dropChecked = true;
+      }
       if (DEBUG) {
         const b = byTag[P.tag] || (byTag[P.tag] = { frames: 0, stops: 0, shield: 0, noHand: 0, stopShield: 0 });
         b.frames++; if (!moving) b.stops++; if (f.shield) b.shield++; if (!hand) b.noHand++; if (!moving && f.shield) b.stopShield++;
@@ -306,6 +311,16 @@ if (ONLY === null && !argv.includes('--fps')) {
   R.fps15WalkStopPct = F.walkStopPct; R.fps15FlipsPerMin = F.flipsPerMin; R.fps15FalseShieldOn = F.falseShieldOn;
   R.fps15FalseDash = F.falseDash; R.fps15RestMove = F.restMove; R.fps15ShieldUpPct = F.shieldUpPct;
 }
+// [НИЗКАЯ ЧАСТОТА] очень слабый ноутбук: распознавание 8 раз в секунду (поза + кисти)
+if (ONLY === null && !argv.includes('--fps')) {
+  DT = 125;
+  const ee = [];
+  for (let s = 0; s < Math.max(4, SEEDS / 2); s++) ee.push(simulate(25000 + s * 7919, G_OPTS));
+  DT = 33;
+  const E = summarize(ee);
+  R.fps8WalkStopPct = E.walkStopPct; R.fps8FalseShieldOn = E.falseShieldOn; R.fps8FalseDash = E.falseDash;
+  R.fps8RestMove = E.restMove; R.fps8ShieldUpPct = E.shieldUpPct; R.fps8ShieldDropped = E.shieldDropped; R.fps8Runs = ee.length;
+}
 // левая ладонь закрыла плечо: ширины плеч нет — щит и «убрал ладонь» сравнивают размер кисти в кадре
 if (ONLY === null && !NO_SW) {
   NO_SW = true;
@@ -358,6 +373,13 @@ const LIMITS = [
   ['fps15FalseShieldOn', (v) => v === undefined || v === 0, 'камера 15 к/с: щит не поднимается сам'],
   ['fps15FalseDash', (v) => v === undefined || v === 0, 'камера 15 к/с: ложные рывки'],
   ['fps15RestMove', (v) => v === undefined || v <= 3, 'камера 15 к/с: рука на коленях — герой стоит (кадров)'],
+  ['fps8WalkStopPct', (v) => v === undefined || v <= 2, 'камера 8 к/с: герой идёт, % кадров «стоим»'],
+  ['fps8FalseShieldOn', (v) => v === undefined || v === 0, 'камера 8 к/с: щит не поднимается сам'],
+  ['fps8FalseDash', (v) => v === undefined || v === 0, 'камера 8 к/с: ложные рывки'],
+  // на 8 Гц кисть, пропавшая посреди опускания руки, останавливает героя на ~кадр позже (так же и до [НИЗКАЯ ЧАСТОТА])
+  ['fps8RestMove', (v) => v === undefined || v <= 6, 'камера 8 к/с: рука на коленях — герой стоит (кадров на 4 прогона)'],
+  ['fps8ShieldUpPct', (v) => v === undefined || v >= 75, 'камера 8 к/с: осознанный толчок поднимает щит, %'],
+  ['fps8ShieldDropped', (v) => v === undefined || v === `${R.fps8Runs}/${R.fps8Runs}`, 'камера 8 к/с: убрал ладонь — щит опустился'],
   ['glitchFalseDash', (v) => v === undefined || v <= 2, 'сбои трекинга 1 %: ложные рывки'],
   ['glitchWrongTurn', (v) => v === undefined || v === 0, 'сбои трекинга 1 %: поворот не в ту сторону'],
   ['glitchWalkStopPct', (v) => v === undefined || v <= 3, 'сбои трекинга 1 %: герой идёт, % кадров «стоим»'],
