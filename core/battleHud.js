@@ -205,22 +205,23 @@ export function createBattleHud({ canvas } = {}) {
     ctx.restore();
   }
   function moveSize(m) { const base = clamp(H * 0.058, 28, 52); return m.big ? base * 1.25 : m.small ? base * 0.62 : base; }
-  // Якорь надписей: над головой героя, левее рамки Регента (не перекрывать стража).
+  // Якорь надписей: над головой героя; если там рамка Регента — левее неё (при нехватке места надписи
+  // ужимаются до 72%), иначе под рамкой. Вправо не уходим: там счётчик комбо.
   function moveAnchor(wMax, hTot) {
-    let x = hero ? hero.cx : W * 0.36, y = hero ? hero.top - 16 : H * 0.52;
+    let x = hero ? hero.cx : W * 0.36, y = hero ? hero.top - 16 : H * 0.52, k = 1;
     y = clamp(y, H * 0.2 + hTot, H * 0.7);
     x = clamp(x, wMax / 2 + 16, W - wMax / 2 - 16);
     if (lock.ok) {
       const bx0 = lock.x0 - 28, bx1 = lock.x1 + 28, by0 = lock.y0 - 28, by1 = lock.y1 + 18;
       const overlaps = x + wMax / 2 > bx0 && x - wMax / 2 < bx1 && y > by0 && y - hTot < by1;
       if (overlaps) {
-        const left = bx0 - wMax / 2;                       // слева от Регента
-        if (left - wMax / 2 >= 12) x = left;
-        else if (bx1 + wMax + 12 <= W) x = bx1 + wMax / 2;  // справа
-        else y = Math.min(H * 0.78, by1 + hTot + 8);       // под ним
+        const room = bx0 - 14;                              // ширина слева от Регента
+        if (room >= wMax) x = bx0 - wMax / 2;
+        else if (room >= wMax * 0.72) { k = room / wMax; x = 14 + room / 2; }
+        else y = Math.min(H * 0.78, by1 + hTot + 8);         // под ним
       }
     }
-    return { x, y };
+    return { x, y, k };
   }
   function drawMoves(dtR, rm) {
     if (!moves.length) return;
@@ -240,7 +241,8 @@ export function createBattleHud({ canvas } = {}) {
     let yCursor = A.y;
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     for (let i = moves.length - 1; i >= 0; i--) {
-      const m = moves[i], sz = moveSize(m), older = moves.length - 1 - i;
+      const m = moves[i], sz = moveSize(m) * A.k, older = moves.length - 1 - i;
+      m.w *= A.k; m.h *= A.k;
       const life = m.dur * (older ? 0.75 : 1);
       const kIn = clamp(m.t / 0.1, 0, 1);
       const out = clamp((life - m.t) / 0.2, 0, 1);
