@@ -333,7 +333,7 @@ export function createBattleHud({ canvas } = {}) {
           break;
         case 'perfect_dodge':
           if (FEEL.legacyMoveTags || !FEEL.moves) addCallout('PERFECT DODGE', W / 2, H * 0.3, STEEL, 30, { vy: 0, dur: 1.2, serif: false, scramble: true });
-          showMove('dodge', 'ИДЕАЛЬНЫЙ РЫВОК!', CRIT, 'dash', { big: true, dur: 0.9, sub: `+${Math.round(num(d.energy, 20))} энергии` });
+          showMove('dodge', 'ИДЕАЛЬНЫЙ РЫВОК!', CRIT, 'dash', { big: true, sub: `+${Math.round(num(d.energy, 20))} энергии` });
           break;
         case 'player_dash': dashFx = { t: 0, dir: num(d.direction, 1) >= 0 ? 1 : -1 }; showMove('dash', 'РЫВОК!', STEEL, 'dash'); break;
         // [FEEL] остальные приёмы: каждое распознанное движение — своя надпись
@@ -351,7 +351,7 @@ export function createBattleHud({ canvas } = {}) {
         case 'parry':
           if (d.success) {
             if (d.projectileId) parried.set(d.projectileId, t);
-            showMove('parry', 'ПАРИРОВАНО!', CRIT, 'parry', { big: true, dur: 0.9, sub: 'сфера летит в Регента · ×1.5' });
+            showMove('parry', 'ПАРИРОВАНО!', CRIT, 'parry', { big: true, sub: 'сфера летит в Регента · ×1.5' });
             flash = { t: 0, dur: 0.3, color: 'rgba(255,207,74,', a: 0.28 };
           } else showMove('parry', 'ПАРИРОВАНИЕ', DIM, 'parry', { small: true, sub: 'рано — ждите летящую сферу' });
           break;
@@ -397,7 +397,7 @@ export function createBattleHud({ canvas } = {}) {
           flash = { t: 0, dur: 0.28, color: 'rgba(227,199,146,', a: 0.32 };
           const mul = (0.5 + num(d.power, 0.5)) * (d.both ? 1.25 : 1);
           if (FEEL.moves) {
-            lastBurstMove = showMove('burst', `ВЫБРОС ×${mul.toFixed(1)}`, CRIT, 'burst', { big: true, dur: 0.8, sub: d.both ? 'двумя руками' : d.cleared ? `сфер рассеяно: ${d.cleared}` : '' });
+            lastBurstMove = showMove('burst', `ВЫБРОС ×${mul.toFixed(1)}`, CRIT, 'burst', { big: true, sub: d.both ? 'двумя руками' : d.cleared ? `сфер рассеяно: ${d.cleared}` : '' });
             if (lastBurstMove) lastBurstMove.mul = mul;
           } else addCallout(`ВЫБРОС ×${(0.5 + num(d.power, 0.5)).toFixed(1)}`, W / 2, H * 0.42, GOLD_HI, 20, { vy: -10, dur: 1, scramble: true });
           break;
