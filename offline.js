@@ -140,8 +140,8 @@ async function main() {
   await setupServiceWorker();
   emit();
   if (!window.__ASHEN__) { st.preload.status = 'skipped'; st.warm.status = 'skipped'; settle(); return; }   // игра не стартовала
-  // не мешать миру и героям: сначала их ассеты (до 8 с), потом MediaPipe
-  for (let i = 0; i < 40; i++) {
+  // не мешать миру и героям: сначала их ассеты (но не дольше 4 с — у MediaPipe низкий приоритет), потом MediaPipe
+  for (let i = 0; i < 20; i++) {
     let pending = 0;
     try { const a = window.__ASHEN__.worldAssets && window.__ASHEN__.worldAssets(); pending = a ? a.pending : 0; } catch (e) { /* ignore */ }
     if (!pending) break;

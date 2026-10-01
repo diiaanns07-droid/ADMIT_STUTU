@@ -47,7 +47,7 @@ const hashOf = (files) => {
   for (const f of files) {
     h.update(f + '\0');
     // блок /*AO_BOOT*/ в index.html пишет этот же скрипт — в версию он не входит
-    h.update(f === 'index.html' ? readFileSync(join(ROOT, f), 'utf8').replace(/\/\*AO_BOOT\*\/[^/]*\/\*\/AO_BOOT\*\//, '') : readFileSync(join(ROOT, f)));
+    h.update(f === 'index.html' ? readFileSync(join(ROOT, f), 'utf8').replace(/\/\*AO_BOOT\*\/.*?\/\*\/AO_BOOT\*\//, '') : readFileSync(join(ROOT, f)));
   }
   return h.digest('hex').slice(0, 12);
 };
@@ -77,7 +77,8 @@ function collect(f) {
 collect('main.js');
 collect('offline.js');
 for (const css of ['styles.css', 'modules/ui.css', 'vendor/fonts/fonts.css']) if (existsSync(join(ROOT, css))) boot.add(css);
-const BOOT = { bytes: [...boot].reduce((s, f) => s + size(f), 0), files: boot.size };
+// big — три самых больших файла старта: заставка называет тот, что ещё грузится
+const BOOT = { bytes: [...boot].reduce((s, f) => s + size(f), 0), files: boot.size, big: [...boot].sort((a, b) => size(b) - size(a)).slice(0, 3) };
 
 // ── запись ──
 const q = (a) => '[\n' + a.map((f) => `  ${JSON.stringify(f)},`).join('\n') + '\n]';
@@ -92,7 +93,7 @@ const sw = readFileSync(swPath, 'utf8');
 const swNext = sw.replace(/\/\/ <AO_MANIFEST>[\s\S]*?\/\/ <\/AO_MANIFEST>/, block);
 const idxPath = join(ROOT, 'index.html');
 const idx = readFileSync(idxPath, 'utf8');
-const idxNext = idx.replace(/\/\*AO_BOOT\*\/[^/]*\/\*\/AO_BOOT\*\//, `/*AO_BOOT*/${JSON.stringify(BOOT)}/*/AO_BOOT*/`);
+const idxNext = idx.replace(/\/\*AO_BOOT\*\/.*?\/\*\/AO_BOOT\*\//, `/*AO_BOOT*/${JSON.stringify(BOOT)}/*/AO_BOOT*/`);
 const MB = (n) => (n / 1048576).toFixed(1) + ' МБ';
 const sum = (a) => a.reduce((s, f) => s + (f === './' ? 0 : size(f)), 0);
 console.log(`VERSION ${VERSION}, VENDOR ${VENDOR_VERSION}`);

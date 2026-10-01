@@ -51,8 +51,8 @@
       var timedOut = false;
       var domReady = false;
       // Объём стартовой загрузки (статические импорты main.js + стили). Обновляет tools/sw_manifest.mjs.
-      var BOOT = /*AO_BOOT*/{"bytes":2640987,"files":42}/*/AO_BOOT*/;
-      var prog = { bytes: 0, files: 0, pct: 0, label: 'Код игры', lastT: Date.now(), startT: Date.now() };
+      var BOOT = /*AO_BOOT*/{"bytes":2641054,"files":42,"big":["vendor/npm/three@0.185.1/build/three.core.min.js","vendor/npm/three@0.185.1/build/three.module.min.js","modules/world.js"]}/*/AO_BOOT*/;
+      var prog = { bytes: 0, files: 0, pct: 0, label: 'Код игры', lastT: Date.now(), startT: Date.now(), done: {} };
       var seen = {};
       function el(id) { return document.getElementById(id); }
       function show(msg) {
@@ -90,8 +90,11 @@
         prog.pct = pct;
         var bar = b.querySelector('.ao-boot-bar');
         if (bar) { bar.firstChild.style.width = pct + '%'; bar.setAttribute('aria-valuenow', String(pct)); }
+        // что грузится сейчас: крупный файл старта, которого ещё нет (браузер сообщает только о готовых)
+        var label = prog.label;
+        if (fb >= 0.4 && BOOT.big) for (var i = 0; i < BOOT.big.length; i++) if (!prog.done[BOOT.big[i]]) { label = labelFor(BOOT.big[i]); break; }
         var what = b.querySelector('.ao-boot-what');
-        if (what) what.textContent = pct >= 97 ? 'Сборка мира и героев…' : prog.label;
+        if (what) what.textContent = pct >= 97 ? 'Сборка мира и героев…' : 'Загрузка · ' + label;
         var pc = b.querySelector('.ao-boot-pct');
         if (pc) pc.textContent = pct + '%';
       }
@@ -100,6 +103,7 @@
         if (seen[u] || u.indexOf('data:') === 0) return;
         if (u.indexOf(location.origin) !== 0 && !/cdn\.jsdelivr\.net|fonts\.(gstatic|googleapis)\.com/.test(u)) return;
         seen[u] = 1;
+        if (BOOT.big) for (var i = 0; i < BOOT.big.length; i++) if (u.split('?')[0].slice(-BOOT.big[i].length) === BOOT.big[i]) prog.done[BOOT.big[i]] = 1;
         prog.bytes += e.decodedBodySize || e.encodedBodySize || 0;
         prog.files++;
         prog.lastT = Date.now();
@@ -131,14 +135,25 @@
           show('Игра открыта как файл. Браузер так не загрузит модули и камеру. Закройте вкладку и запустите START_GAME.cmd из папки игры.');
         });
       }
-      // Код не загрузился (файл не отдался, обрыв сети): один раз пробуем те же библиотеки с CDN (?cdn=1).
+      // Код не загрузился. vendor/ не выложен (404) — те же библиотеки с CDN (?cdn=1); сбой сети или
+      // сервера — ещё одна попытка (?retry=1); не помогло — понятное сообщение и кнопка «Обновить».
+      function failLoad() {
+        window.__aoBoot.fail('Не удалось загрузить код игры. Обновите страницу. Если игра запущена через START_GAME.cmd — проверьте, что окно сервера открыто; если по ссылке — нужна сеть хотя бы для первого запуска.');
+      }
       window.__aoModuleError = function () {
+        if (location.protocol === 'file:') return;
         var q = location.search;
-        if (location.protocol !== 'file:' && !/[?&]cdn=1(&|$)/.test(q) && navigator.onLine !== false) {
-          location.replace(location.pathname + (q ? q + '&' : '?') + 'cdn=1' + location.hash);
-          return;
-        }
-        window.__aoBoot.fail('Не удалось загрузить код игры. Обновите страницу (F5). Если игра запущена через START_GAME.cmd — проверьте, что окно сервера открыто; если по ссылке — подключитесь к сети хотя бы для первого запуска.');
+        var has = function (k) { return new RegExp('[?&]' + k + '=1(&|$)').test(q); };
+        var go = function (k) { location.replace(location.pathname + (q ? q + '&' : '?') + k + '=1' + location.hash); };
+        if (has('cdn')) { failLoad(); return; }
+        fetch('vendor/npm/three@0.185.1/build/three.module.min.js', { method: 'HEAD', cache: 'no-store' }).then(function (r) {
+          if (r.status === 404) go('cdn');
+          else if (!has('retry')) go('retry');
+          else failLoad();
+        }, function () { if (!has('retry')) go('retry'); else failLoad(); });
+      };
+      window.__aoReload = function () {
+        location.replace(location.pathname + location.search.replace(/[?&](retry|cdn)=1(?=&|$)/g, '').replace(/^&/, '?') + location.hash);
       };
       // [OFFLINE] 25 с — не приговор: пока файлы продолжают приходить, ждём и пишем, что сеть медленная.
       // Ошибка — только если загрузка встала (45 с без единого файла) или код загрузился, но игра не стартовала.
@@ -195,7 +210,7 @@
         <div class="ao-boot-bar" role="progressbar" aria-label="Загрузка игры" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
         <div class="ao-boot-meta"><span class="ao-boot-what">Загрузка…</span><b class="ao-boot-pct">0%</b></div>
         <p class="ao-boot-msg"></p>
-        <button type="button" class="ao-boot-retry" onclick="location.reload()">Обновить страницу</button>
+        <button type="button" class="ao-boot-retry" onclick="window.__aoReload()">Обновить страницу</button>
       </div>
     </div>
     <noscript><div class="ao-noscript">Для игры нужен JavaScript.</div></noscript>

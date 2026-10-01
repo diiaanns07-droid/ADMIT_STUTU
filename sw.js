@@ -6,8 +6,9 @@
  *                                Пути содержат версии → cache-first. Одна загрузка на файл: если предзагрузка
  *                                (offline.js) и движок MediaPipe просят модель одновременно, второй ждёт кэш.
  *                                Локальный файл не отдался → тот же путь с CDN (cdn.jsdelivr.net / storage.googleapis.com).
- *   ao-app-<VERSION>           — код и стили: network-first (свежий код сразу после обновления, кэш — без сети
- *                                или если сеть молчит дольше 4 с). На 127.0.0.1 — всегда сначала сервер.
+ *   ao-app-<VERSION>           — код и стили: network-first (свежий код сразу после обновления; сверка с сервером —
+ *                                ответ 304 без тела). Кэш — без сети или если сеть молчит дольше 2,5 с.
+ *                                На 127.0.0.1 (START_GAME.cmd) — всегда сначала сервер.
  *   ao-assets                  — assets/ (герои, мир): из кэша сразу, обновление в фоне; на 127.0.0.1 — сначала сервер.
  *   ao-cdn                     — ответы CDN (режим ?cdn=1 и запасной путь).
  * VERSION меняется при любом изменении кода/ассетов (tools/sw_manifest.mjs) — старые кэши удаляются в activate.
@@ -16,7 +17,7 @@
 'use strict';
 
 // <AO_MANIFEST> — генерирует node tools/sw_manifest.mjs, руками не править
-const VERSION = '6f0a71bb9756';
+const VERSION = 'bcf10359b680';
 const VENDOR_VERSION = '82621cd74530';
 const SHELL = [
   "./",
@@ -201,7 +202,7 @@ const CDN_TWINS = [
   ['vendor/mediapipe-models/', 'https://storage.googleapis.com/mediapipe-models/'],
 ];
 const CDN_HOSTS = ['cdn.jsdelivr.net', 'storage.googleapis.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
-const NET_TIMEOUT_MS = 4000;
+const NET_TIMEOUT_MS = 2500;
 const abs = (p) => new URL(p, SCOPE).href;
 const noSearch = (u) => { const x = new URL(u); return x.origin + x.pathname; };
 const isVendor = (p) => p.startsWith('vendor/');

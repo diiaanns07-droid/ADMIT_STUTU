@@ -76,12 +76,13 @@ class GameHandler(http.server.SimpleHTTPRequestHandler):
 
     def end_headers(self):
         # [OFFLINE] vendor/ — библиотеки, WASM и модели с версией в пути: браузер может держать их в кэше,
-        # повторный запуск без service worker не читает 47 МБ заново. Код игры — всегда свежий.
+        # повторный запуск без service worker не читает 47 МБ заново. Код игры — всегда свежий:
+        # no-cache = браузер каждый раз сверяется с сервером (ответ 304 без тела, если файл не менялся).
         path = urllib.parse.unquote(self.path.split("?", 1)[0])
         if path.startswith("/vendor/") and getattr(self, "_ao_code", 0) == 200:
             self.send_header("Cache-Control", "public, max-age=86400")
         else:
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", "no-cache")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         # Camera for this origin only; microphone and geolocation are not used.
@@ -96,6 +97,9 @@ class GameHandler(http.server.SimpleHTTPRequestHandler):
 class Server(http.server.ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False  # never share a port with another process
+    # [OFFLINE] browser + service worker open many parallel requests on first launch;
+    # the default backlog of 5 refuses some of them and a module fails to load.
+    request_queue_size = 64
 
 
 def bind(port_hint):
