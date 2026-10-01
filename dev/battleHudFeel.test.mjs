@@ -115,6 +115,8 @@ test('телеграф: красная зона с подписью ответа
   assert(has(safe, /вы вне круга/), 'герой вне круга');
   const nova = run([], snap({ telegraphs: [{ id: 'n1', kind: 'nova', origin: { x: 0, y: 0, z: 0 }, target: { x: 0, y: 0, z: 0 }, center: { x: 0, y: 0, z: 0 }, radius: 9.5, remaining: 0.5, duration: 2.1, blockable: true, damage: 15 }] }), 2);
   assert(has(nova, /ЩИТ или РЫВОК/), 'нова: щит или рывок');
+  const fly = run([], { ...snap(), projectiles: [{ id: 'o1', owner: 'boss', kind: 'orb', position: { x: 0, y: 1.2, z: 3 }, velocity: { x: 0, y: 0, z: 11 }, radius: 0.55 }] }, 2);
+  assert(has(fly, /СФЕРА ЛЕТИТ/) && has(fly, /ЩИТ или ПАРИРОВАНИЕ/), 'сфера в полёте: подсказка до попадания');
 });
 
 test('финал: «ПОБЕДА» и время боя; поражение — «РЕГЕНТ УСТОЯЛ» с остатком здоровья Регента', () => {

@@ -209,7 +209,7 @@ export function createBattleHud({ canvas } = {}) {
   // ужимаются до 72%), иначе под рамкой. Вправо не уходим: там счётчик комбо.
   function moveAnchor(wMax, hTot) {
     let x = hero ? hero.cx : W * 0.36, y = hero ? hero.top - 16 : H * 0.52, k = 1;
-    y = clamp(y, H * 0.2 + hTot, H * 0.7);
+    y = clamp(y, Math.min(H * 0.7, H * 0.16 + hTot), H * 0.7);
     x = clamp(x, wMax / 2 + 16, W - wMax / 2 - 16);
     if (lock.ok) {
       const bx0 = lock.x0 - 28, bx1 = lock.x1 + 28, by0 = lock.y0 - 28, by1 = lock.y1 + 18;
@@ -237,9 +237,9 @@ export function createBattleHud({ canvas } = {}) {
       m.h = sz * (m.sub ? 1.55 : 1.15);
       wMax = Math.max(wMax, m.w); hTot += m.h;
     }
-    const A = moveAnchor(wMax, moves[moves.length - 1].h);
+    const A = moveAnchor(wMax, hTot);   // вся стопка надписей, не только нижняя
     let yCursor = A.y;
-    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';   // без «шипов» у обводки
     for (let i = moves.length - 1; i >= 0; i--) {
       const m = moves[i], sz = moveSize(m) * A.k, older = moves.length - 1 - i;
       m.w *= A.k; m.h *= A.k;
@@ -274,7 +274,7 @@ export function createBattleHud({ canvas } = {}) {
       ctx.restore();
       yCursor -= m.h;
     }
-    ctx.textBaseline = 'top'; ctx.globalAlpha = 1;
+    ctx.textBaseline = 'top'; ctx.globalAlpha = 1; ctx.lineJoin = 'miter';
   }
   // Крит: удар по открытому Регенту (×1.5 рассечения), заряженный выстрел, отражённая сфера, большой урон.
   function isCrit(d, amount) {
@@ -347,13 +347,13 @@ export function createBattleHud({ canvas } = {}) {
           break;
         }
         case 'player_slash':
-          showMove('slash', 'РАССЕЧЕНИЕ!', GOLD_HI, 'slash', { sub: d.hit ? '' : d.cut ? `сфер рассечено: ${num(d.cut, 1)}` : 'мимо — подойдите ближе к Регенту' });
+          showMove('slash', 'РАССЕЧЕНИЕ!', GOLD_HI, 'slash', { sub: d.hit ? '' : d.cut ? `сфер рассечено: ${num(d.cut, 1)}` : `мимо — подойдите ближе к ${snap && snap.mode === 'pvp' ? 'сопернику' : 'Регенту'}` });
           break;
         case 'shield_start': showMove('shield', 'ЩИТ!', BLUE, 'shield'); break;
         case 'parry':
           if (d.success) {
             if (d.projectileId) parried.set(d.projectileId, t);
-            showMove('parry', 'ПАРИРОВАНО!', CRIT, 'parry', { big: true, sub: 'сфера летит в Регента · ×1.5' });
+            showMove('parry', 'ПАРИРОВАНО!', CRIT, 'parry', { big: true, sub: `сфера летит ${snap && snap.mode === 'pvp' ? 'в соперника' : 'в Регента'} · ×1.5` });
             flash = { t: 0, dur: 0.3, color: 'rgba(255,207,74,', a: 0.28 };
           } else showMove('parry', 'ПАРИРОВАНИЕ', DIM, 'parry', { small: true, sub: 'рано — ждите летящую сферу' });
           break;
@@ -414,7 +414,7 @@ export function createBattleHud({ canvas } = {}) {
           if (!txt) break;
           if (FEEL.moves) {
             // [FEEL] жест понят, но приём не готов — честно и тоже крупно (не чаще раза в секунду на приём)
-            const AB = { shield: 'ЩИТ', burst: 'ВЫБРОС', dash: 'РЫВОК', spark: 'ИСКРА', slash: 'РАССЕЧЕНИЕ', parry: 'ПАРИРОВАНИЕ', rune: 'РУНА', sigil: 'ПЕЧАТЬ', throw: 'БРОСОК' };
+            const AB = { shield: 'ЩИТ', burst: 'ВЫБРОС', dash: 'РЫВОК', spark: 'ИСКРА', slash: 'РАССЕЧЕНИЕ', parry: 'ПАРИРОВАНИЕ', rune: 'РУНА', sigil: 'ПЕЧАТЬ', throw: 'БРОСОК', arrow: 'ВЫСТРЕЛ', arrow_rain: 'ДОЖДЬ СТРЕЛ', hand_orb: 'МАГИЯ' };
             const k = String(d.ability || '');
             if (t - num(deniedAt[k], -9) > 1.0) { deniedAt[k] = t; showMove('deny-' + k, `${AB[k] || 'ПРИЁМ'}: ${txt}`, DIM, 'deny', { small: true }); }
           } else if (d.ability !== 'shield') addCallout(txt, W / 2, H * 0.68, DIM, 12, { vy: -8, dur: 0.8 });
@@ -782,7 +782,9 @@ export function createBattleHud({ canvas } = {}) {
   }
   function drawGroundZones(snap, proj, layout, rm) {
     const list = Array.isArray(snap.telegraphs) ? snap.telegraphs.slice(0, 4) : [];
-    if (!list.length) return;
+    // замах кончился, а сфера Регента ещё летит — подсказка держится до попадания
+    const orbFlying = Array.isArray(snap.projectiles) && snap.projectiles.some((q) => isObj(q) && q.owner === 'boss');
+    if (!list.length && !orbFlying) return;
     const P = snap.player && snap.player.position;
     const baseA = ctx.globalAlpha;    // на паузе HUD приглушён
     let lead = null;
@@ -810,7 +812,7 @@ export function createBattleHud({ canvas } = {}) {
         ctx.strokeStyle = cue ? `rgba(255,${Math.round(90 + 120 * pulse)},80,1)` : 'rgba(255,59,42,0.9)';
         if (!rm) { ctx.setLineDash([14, 8]); ctx.lineDashOffset = -t * 40; }
         ctx.stroke();
-        ctx.setLineDash([]);
+        ctx.setLineDash([]); ctx.lineDashOffset = 0;
         // сходящееся кольцо: встретит край зоны в момент удара
         if (sh.closing > 0 && k < 1) {
           const rr = sh.closing * (1 + 0.8 * (1 - k));
@@ -821,18 +823,17 @@ export function createBattleHud({ canvas } = {}) {
       }
       if (!lead || rem < telK(lead).rem) lead = tl;
     }
-    if (!lead) return;
     // подпись у ног героя: что летит и чем ответить
-    const { rem, cue } = telK(lead);
-    const { name, counter } = telegraphCounter(lead.kind, !!lead.blockable);
+    const { rem, cue } = lead ? telK(lead) : { rem: 0, cue: true };
+    const { name, counter } = lead ? telegraphCounter(lead.kind, !!lead.blockable) : { name: 'СФЕРА ЛЕТИТ', counter: 'ЩИТ или ПАРИРОВАНИЕ' };
     let line = counter, col = '#ffe2d6';
     // герой уже вне круга удара / радиуса новы — честно сказать, что он в безопасности
-    if (lead.kind !== 'orb' && P && isObj(lead.center) && Math.hypot(P.x - lead.center.x, P.z - lead.center.z) > num(lead.radius, 2) + 0.5) { line = lead.kind === 'nova' ? 'вы вне зоны — хорошо' : 'вы вне круга — хорошо'; col = OK_GREEN; }
+    if (lead && lead.kind !== 'orb' && P && isObj(lead.center) && Math.hypot(P.x - lead.center.x, P.z - lead.center.z) > num(lead.radius, 2) + 0.5) { line = lead.kind === 'nova' ? 'вы вне зоны — хорошо' : 'вы вне круга — хорошо'; col = OK_GREEN; }
     const fs = Math.round(clamp(H * 0.034, 18, 30));
     ctx.font = `800 ${fs}px ${SANS}`;
     const wLine = ctx.measureText(line).width;
     ctx.font = `800 ${Math.round(fs * 0.58)}px ${SANS}`;
-    const head = `${name} · ${rem.toFixed(1)} с`;
+    const head = lead ? `${name} · ${rem.toFixed(1)} с` : name;
     const wHead = ctx.measureText(head).width;
     const bw = Math.max(wLine, wHead) + 34, bh = fs * 1.95 + 12;
     let x = hero ? hero.cx : W * 0.4, y = hero ? hero.bot + 14 : H * 0.72;
@@ -846,7 +847,7 @@ export function createBattleHud({ canvas } = {}) {
     ctx.fillRect(-bw / 2, 0, bw, bh);
     ctx.strokeStyle = cue ? RED : 'rgba(255,59,42,0.7)'; ctx.lineWidth = cue ? 3 : 2;
     ctx.strokeRect(-bw / 2 + 0.5, 0.5, bw - 1, bh - 1);
-    ctx.fillStyle = RED; ctx.fillRect(-bw / 2, bh - 4, bw * clamp(rem / Math.max(0.05, num(lead.duration, 1)), 0, 1), 4);
+    if (lead) { ctx.fillStyle = RED; ctx.fillRect(-bw / 2, bh - 4, bw * clamp(rem / Math.max(0.05, num(lead.duration, 1)), 0, 1), 4); }
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     ctx.font = `800 ${Math.round(fs * 0.58)}px ${SANS}`; ctx.fillStyle = '#ff8a73';
     ctx.fillText(head, 0, 6);
@@ -912,7 +913,8 @@ export function createBattleHud({ canvas } = {}) {
 
   function drawHero(snap, proj, input) {
     const p = snap.player.position;
-    const top = proj({ x: p.x, y: 1.95, z: p.z }), bot = proj({ x: p.x, y: 0, z: p.z });
+    const py = num(p.y, 0);   // [FEEL] от высоты героя (рельеф большой карты, лес ниже нуля)
+    const top = proj({ x: p.x, y: py + 1.95, z: p.z }), bot = proj({ x: p.x, y: py, z: p.z });
     if (!top || !bot || top.behind || bot.behind) { hero = null; return; }
     const h = Math.abs(bot.y - top.y), w = h * 0.42, cx = (top.x + bot.x) / 2;
     hero = { cx, top: Math.min(top.y, bot.y), bot: Math.max(top.y, bot.y), h }; // [FEEL] якорь надписей жестов и подписи зоны
