@@ -419,7 +419,7 @@ export function createBattleHud({ canvas } = {}) {
           break;
         }
         case 'victory': case 'defeat':
-          if (FEEL.outro) {
+          if (FEEL.outro && !(snap && snap.mode === 'pvp')) {   // в дуэли исход раунда показывает modules/pvp.js
             const B = snap && snap.boss;
             outro = { kind: e.type, t: 0, time: num(d.time, num(snap && snap.time, 0)), bossPct: B ? Math.round(100 * num(B.hp, 0) / Math.max(1, num(B.maxHp, 1))) : 0 };
             if (e.type === 'victory') flash = { t: 0, dur: 0.6, color: 'rgba(255,207,74,', a: 0.45 };
@@ -1040,7 +1040,7 @@ export function createBattleHud({ canvas } = {}) {
     const n = num(P.combo, 0);
     if (n < combo.n) combo.n = n;
     const x = W - 34, y = H * 0.46;
-    if (FEEL.bigCombo) { drawBigCombo(P, n, dtR, rm); return; }
+    if (FEEL.bigCombo) { if (!outro.kind) drawBigCombo(P, n, dtR, rm); return; }   // в финале — только «ПОБЕДА»
     if (n >= 2) {
       const s = 1 + (rm ? 0 : combo.pop * 0.25);
       ctx.textAlign = 'right';
