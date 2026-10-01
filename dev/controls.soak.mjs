@@ -129,7 +129,7 @@ function simulate(seed, gOpts = {}) {
       S.sw = 0.3 * (1 + 0.15 * leanK);
       S.cx = 0.5 + sway * S.sw / S.aspect;
       S.cy = 0.4 + 0.02 * osc(0.17, ph[1]) * S.sw + 0.03 * leanK;
-      let hand = null;
+      let hand = null, glShift = null;
       if (dropLeft > 0) dropLeft--;
       else if (rnd() < 0.04) dropLeft = 1 + Math.floor(rnd() * 6);    // серии пропусков 1–6 кадров
       if (q && dropLeft === 0) {
@@ -139,6 +139,7 @@ function simulate(seed, gOpts = {}) {
         const gl = GLITCH > 0 && rnd() < GLITCH;
         const gx = gl ? (rnd() - 0.5) * 0.8 : 0, gy = gl ? (rnd() - 0.5) * 0.8 : 0, gs = gl ? 1 + (rnd() - 0.5) * 0.4 : 1;
         const at = S.at(q.x + gx + 0.05 * osc(0.6, ph[3]) + 0.015 * gauss(), q.y + gy + 0.05 * osc(0.5, ph[4]) + 0.015 * gauss());
+        if (gl) glShift = { x: -(gx * S.sw) / S.aspect, y: gy * S.sw };   // сбой модели кисти: на сколько «прыгнула» кисть в кадре
         hand = makeHand({
           side: 'left', aspect: S.aspect, ...SHAPES[q.shape], size: q.size * wobSize * gs * (1 + 0.15 * leanK),
           yaw: (edge ? 1.1 : 0.25) * osc(0.3, ph[5]) + (edge ? 0.3 : 0), pitch: 0.2 * osc(0.35, ph[6]), roll: 0.15 * osc(0.2, ph[7]),
@@ -170,7 +171,10 @@ function simulate(seed, gOpts = {}) {
         hands.push(makeHand({ side: 'right', aspect: S.aspect, ...SHAPES[q2.shape], size: SIZE * (1 + 0.03 * gauss()), yaw: q2.yaw || 0.15 * osc(0.3, ph[5] + 1), noise: 0.035, cx: at2.cx, cy: at2.cy }));
       }
       recent.push(hand ? 'x' : '.'); if (recent.length > 16) recent.shift();
-      const wr = hand ? { x: hand.landmarks[0].x + 0.004 * gauss(), y: hand.landmarks[0].y + 0.004 * gauss(), visibility: 0.9 } : null;
+      // запястье позы считает ОТДЕЛЬНАЯ модель (Pose): выброс модели кисти его не сдвигает — оно у настоящей руки;
+      // у позы свои выбросы с той же частотой, независимые от кисти
+      let wr = hand ? { x: hand.landmarks[0].x - (glShift ? glShift.x : 0) + 0.004 * gauss(), y: hand.landmarks[0].y - (glShift ? glShift.y : 0) + 0.004 * gauss(), visibility: 0.9 } : null;
+      if (wr && GLITCH > 0 && rnd() < GLITCH) wr = { ...wr, x: wr.x + (rnd() - 0.5) * 0.8 * S.sw / S.aspect, y: wr.y + (rnd() - 0.5) * 0.8 * S.sw };
       const obs = {
         tMs: t, frameW: 640, frameH: 480, mirror: true, hands,
         poseWrists: { left: wr, right: hands[1] ? { x: hands[1].landmarks[0].x, y: hands[1].landmarks[0].y, visibility: 0.9 } : null },
