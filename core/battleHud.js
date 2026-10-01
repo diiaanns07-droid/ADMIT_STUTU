@@ -824,7 +824,8 @@ export function createBattleHud({ canvas } = {}) {
     const { rem, cue } = telK(lead);
     const { name, counter } = telegraphCounter(lead.kind, !!lead.blockable);
     let line = counter, col = '#ffe2d6';
-    if (lead.kind === 'slam' && P && isObj(lead.center) && Math.hypot(P.x - lead.center.x, P.z - lead.center.z) > num(lead.radius, 2) + 0.5) { line = 'вы вне круга — хорошо'; col = OK_GREEN; }
+    // герой уже вне круга удара / радиуса новы — честно сказать, что он в безопасности
+    if (lead.kind !== 'orb' && P && isObj(lead.center) && Math.hypot(P.x - lead.center.x, P.z - lead.center.z) > num(lead.radius, 2) + 0.5) { line = lead.kind === 'nova' ? 'вы вне зоны — хорошо' : 'вы вне круга — хорошо'; col = OK_GREEN; }
     const fs = Math.round(clamp(H * 0.034, 18, 30));
     ctx.font = `800 ${fs}px ${SANS}`;
     const wLine = ctx.measureText(line).width;
