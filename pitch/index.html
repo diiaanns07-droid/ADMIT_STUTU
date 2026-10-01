@@ -38,7 +38,7 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: #050505; overflow: hidden; }
-body { color: var(--text); font-family: var(--f-body); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+body { color: var(--text); font-family: var(--f-body); font-variant-numeric: lining-nums; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
 
 /* Сцена 1920×1080, масштабируется под окно целиком: на любом ноутбуке и проекторе вёрстка одна. */
 .deck {
@@ -186,8 +186,8 @@ kbd { font-family: var(--f-body); font-size: 23px; color: var(--text); border: 1
 .stat .v small { font-size: .45em; letter-spacing: .02em; }
 .stat .l { font-size: 28px; color: var(--text); margin-top: 14px; line-height: 1.25; }
 .stat .d { font-size: 22px; color: var(--faint); margin-top: 10px; line-height: 1.3; }
-.src { margin-top: auto; font-size: 21px; color: var(--faint); line-height: 1.4; }
-.src code { font-family: ui-monospace, Consolas, monospace; font-size: 20px; color: var(--muted); }
+.src { margin-top: auto; padding-top: 18px; font-size: 19px; color: var(--faint); line-height: 1.4; }
+.src code { font-family: ui-monospace, Consolas, monospace; font-size: 17px; color: var(--muted); }
 
 /* ---------- 8. Приватность */
 .priv { display: grid; grid-template-columns: 1fr 1fr; gap: 54px; margin-top: 48px; flex: 1; min-height: 0; }
@@ -245,7 +245,8 @@ kbd { font-family: var(--f-body); font-size: 23px; color: var(--text); border: 1
   .deck { position: static; transform: none; width: 1920px; height: auto; background: none; overflow: visible; }
   .slide { position: relative; width: 1920px; height: 1080px; opacity: 1; visibility: visible; transform: none; break-after: page; page-break-after: always; overflow: hidden;
     background: radial-gradient(ellipse 120% 90% at 50% 45%, #141417 0%, #0d0d10 60%, #070708 100%); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .progress, .timer { display: none !important; }
+  .progress, .timer, .foot, .frame { display: none !important; }
+  .slide:last-of-type { break-after: auto; page-break-after: auto; }
   .s-demo .live::before { animation: none; }
 }
 </style>
@@ -337,7 +338,7 @@ kbd { font-family: var(--f-body); font-size: 23px; color: var(--text); border: 1
     <marker id="ahg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8fb784"/></marker></defs>
     <rect class="d-zone" x="-24" y="28" width="1728" height="660"/>
     <text class="d-k" x="-4" y="16" style="fill:#8fb784">ВСЁ ВЫПОЛНЯЕТСЯ В БРАУЗЕРЕ · КАДРЫ НЕ УХОДЯТ В СЕТЬ</text>
-    <g><rect class="d-box " x="0" y="78" width="300" height="262"/><text class="d-k" x="24" y="118">ВХОД</text><text class="d-t" x="24" y="162">Веб-камера</text><text class="d-s" x="24" y="202">640×480, 30 к/с</text><text class="d-s" x="24" y="234">кадр → ImageBitmap</text><text class="d-s" x="24" y="266">в Web Worker</text><path d="M266 61 l17 17 l-17 17 l-17 -17z" fill="url(#dg)"/><text class="d-n" x="266" y="86" text-anchor="middle">1</text></g>
+    <g><rect class="d-box " x="0" y="78" width="300" height="262"/><text class="d-k" x="24" y="118">ВХОД</text><text class="d-t" x="24" y="162">Веб-камера</text><text class="d-s" x="24" y="202">640×480, до 30 к/с</text><text class="d-s" x="24" y="234">кадр → ImageBitmap</text><text class="d-s" x="24" y="266">в Web Worker</text><path d="M266 61 l17 17 l-17 17 l-17 -17z" fill="url(#dg)"/><text class="d-n" x="266" y="86" text-anchor="middle">1</text></g>
     <g><rect class="d-box hi" x="345" y="78" width="300" height="262"/><text class="d-k" x="369" y="118">WEB WORKER · GPU</text><text class="d-t" x="369" y="162">MediaPipe</text><text class="d-s" x="369" y="202">Pose: 33 точки тела</text><text class="d-s" x="369" y="234">Hands: 2 × 21 точка</text><text class="d-s" x="369" y="266">без GPU — откат на CPU</text><path d="M611 61 l17 17 l-17 17 l-17 -17z" fill="url(#dg)"/><text class="d-n" x="611" y="86" text-anchor="middle">2</text></g>
     <g><rect class="d-box hi" x="690" y="78" width="300" height="262"/><text class="d-k" x="714" y="118">СВОЙ КОД</text><text class="d-t" x="714" y="162">Геометрия</text><text class="d-s" x="714" y="202">сгибы суставов</text><text class="d-s" x="714" y="234">нормаль ладони</text><text class="d-s" x="714" y="266">кончики пальцев, скорость</text><text class="d-s" x="714" y="298">мерка — ваши плечи</text><path d="M956 61 l17 17 l-17 17 l-17 -17z" fill="url(#dg)"/><text class="d-n" x="956" y="86" text-anchor="middle">3</text></g>
     <g><rect class="d-box hi" x="1035" y="78" width="300" height="262"/><text class="d-k" x="1059" y="118">СВОЙ КОД</text><text class="d-t" x="1059" y="162">Состояния</text><text class="d-s" x="1059" y="202">руль, рывок, щит</text><text class="d-s" x="1059" y="234">кулак → выброс</text><text class="d-s" x="1059" y="266">руны: $1 + проверки</text><text class="d-s" x="1059" y="298">сфера, печати, лук</text><path d="M1301 61 l17 17 l-17 17 l-17 -17z" fill="url(#dg)"/><text class="d-n" x="1301" y="86" text-anchor="middle">4</text></g>
@@ -382,9 +383,16 @@ kbd { font-family: var(--f-body); font-size: 23px; color: var(--text); border: 1
   <p class="kicker">Цифры · всё посчитано по репозиторию</p>
   <h2>Проверено тестами, а не на глаз</h2>
   <div class="stats">
-    ⟨STATS⟩
+    <div class="stat"><p class="v">22</p><p class="l">жеста — у каждого своё действие</p><p class="d">31, если считать 10 рун по отдельности</p></div>
+    <div class="stat"><p class="v">57</p><p class="l">подсказок «ОШИБКА»</p><p class="d">43 к жестам рук + 14 к технике приседаний и отжиманий</p></div>
+    <div class="stat"><p class="v">559</p><p class="l">проверок в 32 наборах автотестов</p><p class="d">0 падений; все наборы запускаются одной командой из README</p></div>
+    <div class="stat"><p class="v">96<small>%</small></p><p class="l">форм кисти верно на реальных фото</p><p class="d">130 из 135 снимков датасета HaGRID</p></div>
+    <div class="stat"><p class="v">6,4<small> мс</small></p><p class="l">MediaPipe: поза + 2 кисти на кадр</p><p class="d">замер команды, RTX 4060 Laptop</p></div>
+    <div class="stat"><p class="v">55<small> к/с</small></p><p class="l">бой + распознавание, видеокарта занята 47 %</p><p class="d">тот же ноутбук, экран 165 Гц; автокачество целится в ≈60 к/с</p></div>
+    <div class="stat"><p class="v">&lt;0,1<small> мс</small></p><p class="l">своя логика жестов на кадр</p><p class="d">две кисти, замер в тесте dev/handGestures.test.mjs</p></div>
+    <div class="stat"><p class="v">2,6<small> МБ</small></p><p class="l">из интернета до меню</p><p class="d">+25,2 МБ MediaPipe и моделей — только после «Разрешить камеру»</p></div>
   </div>
-  <p class="src">⟨STATS_SRC⟩</p>
+  <p class="src">Источники: прогон <code>tools/qa_node.mjs</code> и <code>dev/*.test.*</code>; <code>dev/handGestures.real.test.mjs</code>; <code>core/gestureCoach.js</code>; отчёт команды о замере на RTX 4060 Laptop (коммит 956756e); загрузка игры в Chromium с записью сети.</p>
 </section>
 
 <!-- ============================================================ 8. Приватность -->
@@ -418,7 +426,7 @@ kbd { font-family: var(--f-body); font-size: 23px; color: var(--text); border: 1
       <li><b>Прогресс и настройки</b> — только в localStorage этого браузера.</li>
       <li><b>Онлайн-дуэль</b> передаёт сопернику только состояние героя: позицию, здоровье, действие. Ни видео, ни точек кистей.</li>
       <li><b>F8</b> сохраняет точки кистей (без видео) файлом на ваш компьютер — только по нажатию.</li>
-      <li class="x">Из сети игра только <b>скачивает</b> библиотеки и модели: jsDelivr и Google Storage.</li>
+      <li class="x">Вне онлайн-дуэли игра только <b>скачивает</b> из сети библиотеки, модели и шрифты: jsDelivr и Google.</li>
     </ul>
   </div>
 </section>
