@@ -868,10 +868,10 @@ export function createBattleHud({ canvas } = {}) {
     const r = clamp(H * 0.042, 22, 40) * (rm ? 1 : 1 + 0.12 * pulseAt(22));
     const x = clamp(p.x, r + 8, W - r - 8), y = clamp(p.y, H * 0.13 + r, H * 0.6);
     ctx.save();
-    if (!rm) { ctx.shadowColor = RED; ctx.shadowBlur = r * 0.9; }
+    ctx.fillStyle = 'rgba(255,59,42,0.22)';   // ореол без shadowBlur
+    ctx.beginPath(); ctx.arc(x, y, r * 1.45, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = RED;
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowBlur = 0;
     ctx.lineWidth = 3; ctx.strokeStyle = '#fff3ea';
     ctx.beginPath(); ctx.arc(x, y, r + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp(rem / cueLen, 0, 1)); ctx.stroke();
     ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1080,9 +1080,13 @@ export function createBattleHud({ canvas } = {}) {
       ctx.lineWidth = Math.max(3, sz * 0.12); ctx.strokeStyle = 'rgba(0,0,0,0.8)';
       const num_ = `×${n}`;
       ctx.strokeText(num_, x, y + sz * 0.8);
-      if (tier && !rm) { ctx.shadowColor = col; ctx.shadowBlur = sz * 0.35; }
+      if (tier) {   // подсветка без shadowBlur: комбо рисуется каждый кадр, размытие тени дорогое на слабой графике
+        ctx.globalAlpha *= 0.35; ctx.lineWidth = Math.max(6, sz * 0.22); ctx.strokeStyle = col;
+        ctx.strokeText(num_, x, y + sz * 0.8);
+        ctx.globalAlpha /= 0.35; ctx.lineWidth = Math.max(3, sz * 0.12); ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+        ctx.strokeText(num_, x, y + sz * 0.8);
+      }
       ctx.fillStyle = col; ctx.fillText(num_, x, y + sz * 0.8);
-      ctx.shadowBlur = 0;
       const ls = Math.round(clamp(base * 0.36, 15, 26));
       ctx.font = `800 ${ls}px ${SANS}`;
       ctx.lineWidth = Math.max(2, ls * 0.18);
