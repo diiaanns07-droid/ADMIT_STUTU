@@ -12,6 +12,7 @@
 // стражница с копьём у врат, гуляющие по кругу и через мостик, две собеседницы, сидящая у пруда,
 // мастерица за работой. Подошёл ближе ~4 м — эльф поворачивается (корпус и голова), над головой
 // имя и приветствие. Если VRM не загрузился — тот же житель на модели Quaternius.
+// [LOAD] Жители грузятся лениво — при подходе к деревне или в простое после минуты игры (loadNpcs).
 //
 // Геометрия слита по материалам (≈20 вызовов отрисовки на всю деревню), мелочь — InstancedMesh
 // с уровнями качества. Анимация жителей: один AnimationMixer на эльфа; обновляются только ближние
@@ -380,7 +381,7 @@ void main() {
 /* =============================== ДЕРЕВНЯ =============================== */
 export function createElfVillage({
   THREE, parent, groundY, quality = 'medium', reducedMotion = false, camera = null,
-  atmosphere = null, lightUnit = 1, seed = 4242,
+  atmosphere = null, lightUnit = 1, seed = 4242, npcEager = false,
 } = {}) {
   if (!THREE || !parent || typeof groundY !== 'function') throw new Error('[elfVillage] нужны THREE, parent и groundY');
   const V = ELF_VILLAGE, CX = V.x, CZ = V.z;
@@ -1444,7 +1445,7 @@ export function createElfVillage({
   function loadModel(file) {
     const url = new URL('../assets/quaternius/' + file, import.meta.url).href;
     if (!loaderCache.has(url)) {
-      if (!loaderP) loaderP = import('three/addons/loaders/GLTFLoader.js').then((m) => new m.GLTFLoader());
+      if (!loaderP) loaderP = import('./vrmKit.js').then((m) => m.createGltfLoader()); // [LOAD] с распаковщиком meshopt
       loaderCache.set(url, loaderP.then((l) => l.loadAsync(url)));
     }
     return loaderCache.get(url);
@@ -1637,6 +1638,30 @@ export function createElfVillage({
     npc.mixer.update(0);
     if (def.spear && bones.RightHand) attachSpear(npc);
     return npc;
+  }
+
+  // [LOAD] Жители (~4 МБ моделей и перенос клипов в главном потоке) грузятся лениво: когда игрок
+  // подходит ближе NPC_LOAD_R к центру деревни (от арены и от врат леса до деревни ~180–200 м) или в
+  // простое после NPC_IDLE_SEC секунд движения героя (бой или прогулка идут). В меню герой стоит —
+  // до него и в нём ни одного запроса. Дома, Древо, свет и коллайдеры строятся сразу, как раньше.
+  // npcEager: true — прежнее поведение (жители грузятся сразу при создании деревни).
+  const NPC_LOAD_R = V.r + 110, NPC_IDLE_SEC = 60;
+  const lazy = { started: false, playT: 0, last: null, idle: false };
+  function loadNpcs(reason = 'manual') {
+    if (lazy.started || state.disposed) return;
+    lazy.started = true; state.npcLoad = reason;
+    spawn();
+  }
+  function watchNpcLoad(dt, px, pz, dP, hasPlayer) {
+    if (dP < NPC_LOAD_R) { loadNpcs('near'); return; }
+    if (!hasPlayer || lazy.idle) return;
+    // время движения героя: телепорты (сброс боя, смена места старта) не считаются
+    if (lazy.last) { const d = Math.hypot(px - lazy.last.x, pz - lazy.last.z); if (d > 0.002 && d < 3) lazy.playT += dt; }
+    lazy.last = { x: px, z: pz };
+    if (lazy.playT < NPC_IDLE_SEC) return;
+    lazy.idle = true;
+    const go = () => loadNpcs('idle');
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 4000 }); else setTimeout(go, 300);
   }
 
   async function spawn() {
@@ -1922,6 +1947,7 @@ export function createElfVillage({
     const dP = Math.hypot(px - CX, pz - CZ), dC = Math.hypot(camX - CX, camZ - CZ);
     const w = smoothstep(V.r + 45, V.r + 4, dP);
     state.weight = w;
+    if (!lazy.started) watchNpcLoad(dt, px, pz, dP, !!(playerPos && Number.isFinite(playerPos.x)));   // [LOAD]
     // свет и воздух деревни — по близости игрока
     hemi.intensity = 1.25 * w;
     const fl = 1 + 0.04 * Math.sin(t * 1.7) * rm;
@@ -1982,7 +2008,7 @@ export function createElfVillage({
   }
 
   setQuality(state.quality);
-  spawn();
+  if (npcEager) loadNpcs('eager');   // [LOAD] по умолчанию — лениво (watchNpcLoad в update)
 
   return {
     root,
@@ -1996,8 +2022,10 @@ export function createElfVillage({
     groundAt,
     get weight() { return state.weight; },
     get ready() { return state.npcReady; },
+    loadNpcs,   // [LOAD] загрузить жителей сейчас (стенды, QA)
     stats: () => ({
       quality: state.quality, npcs: npcs.length, npcReady: state.npcReady, npcError: state.npcError,
+      npcLoad: lazy.started ? state.npcLoad : 'waiting', npcPlaySec: +lazy.playT.toFixed(1),   // [LOAD]
       vrmNpcs: npcs.filter((n) => n.vrm).length, vrmError: state.vrmError || null,
       animated: npcs.filter((n) => n.root.visible).length, weight: +state.weight.toFixed(3),
       lights: plights.filter((l) => l.visible).length, colliders: colliders.length,
