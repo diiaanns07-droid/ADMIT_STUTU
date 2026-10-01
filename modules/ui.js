@@ -2196,17 +2196,22 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const now = ctx.now;
     const g = normGestures(ctx.vm && ctx.vm.input);
     const fired = R.fired;
-    if (g && !g.empty && ctx.screen === 'playing') {
-      if (g.parry) { latchSide('left', 'ПАРИРОВАНИЕ', now); fired.parry = now; }
-      if (g.dashDir) { latchSide('left', g.dashDir.x > 0.3 ? 'РЫВОК →' : g.dashDir.x < -0.3 ? 'РЫВОК ←' : 'РЫВОК', now); fired.dash = now; }
-      if (g.burst) { latchSide('right', 'ВЫБРОС!', now); if (g.burstBoth) latchSide('left', 'ВЫБРОС!', now); fired.burst = now; }
+    // подписи защёлкиваются на любом экране с превью (обучение — там жюри пробует жесты), шпаргалка — только в бою
+    const live = g && !g.empty && ctx.screen !== 'menu' && ctx.screen !== 'error';
+    const fight = live && ctx.screen === 'playing';
+    if (live) {
+      if (g.parry) { latchSide('left', 'ПАРИРОВАНИЕ', now); if (fight) fired.parry = now; }
+      if (g.dashDir) { latchSide('left', g.dashDir.x > 0.3 ? 'РЫВОК →' : g.dashDir.x < -0.3 ? 'РЫВОК ←' : 'РЫВОК', now); if (fight) fired.dash = now; }
+      if (g.burst) { latchSide('right', 'ВЫБРОС!', now); if (g.burstBoth) latchSide('left', 'ВЫБРОС!', now); if (fight) fired.burst = now; }
       if (g.rune) latchSide('right', `РУНА ${RUNE_RU[g.rune] || g.rune.toUpperCase()}`, now);
-      if (g.spark) { latchSide('right', 'ИСКРА', now); fired.spark = now; }
+      if (g.spark) { latchSide('right', 'ИСКРА', now); if (fight) fired.spark = now; }
       if (g.slash) latchSide('right', 'РАССЕЧЕНИЕ', now);
       if (g.sigil) { const t = `ПЕЧАТЬ ${SIGIL_RU[g.sigil] || g.sigil.toUpperCase()}`; latchSide('left', t, now); latchSide('right', t, now); }
       if (g.thrown) { latchSide('left', 'БРОСОК ЧАР', now); latchSide('right', 'БРОСОК ЧАР', now); }
       if (g.bowRelease) latchSide('right', 'ВЫСТРЕЛ ИЗ ЛУКА', now);
       if (g.spellThrow) latchSide('right', 'МАГИЯ: БРОСОК', now);
+    }
+    if (fight) {
       if (g.attack) fired.bolt = now;
       if (g.shield) fired.shield = now;
       if ((g.stick && g.stick.engaged && (g.stick.gait !== 'idle' || Math.abs(g.stick.turn) > 0.25 || (g.stick.mode === 'stick' && Math.hypot(g.stick.x, g.stick.z) > 0.15)))
@@ -2216,8 +2221,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       const key = `${g.hint.code}|${g.hint.tMs}|${g.hint.text}`;
       if (key !== R.errKey) { R.errKey = key; R.err = { ...g.hint, until: now + READ_ERR_MS }; }
     }
-    if (ctx.screen !== 'playing' && ctx.screen !== 'paused') R.err = null;
-    const pick = (side, live) => (R[side] && now < R[side].until ? R[side] : live(g));
+    if (['menu', 'error', 'victory', 'defeat', 'oath'].includes(ctx.screen)) R.err = null;
+    const pick = (side, liveText) => (R[side] && now < R[side].until ? R[side] : liveText(g));
     const err = R.err && now < R.err.until ? R.err : null;
     R.view = { left: pick('left', liveLeft), right: pick('right', liveRight), err, debug: ctx.debug };
     return R.view;
@@ -2477,20 +2482,22 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
    * и крупными подписями жестов, справа игра (html.ao-present сдвигает #ao-app и .ao-ui вправо; main.js
    * берёт размер рендера с канваса и получает событие resize). Для живого питча через проектор. */
 
-  const PRESENT_SCREENS = ['camera', 'calibration', 'tutorial', 'playing', 'paused', 'training'];
+  // в меню и на экране ошибки камера выключена — там слот паркуется, панель показывает подсказку
+  const PRESENT_SCREENS = ['camera', 'calibration', 'tutorial', 'playing', 'paused', 'training', 'victory', 'defeat', 'oath'];
   const present = (() => {
-    const host = el('div', { class: 'ao-slothost ao-present__cam' });
+    const host = el('div', { class: 'ao-slothost ao-pres__cam' });
     const read = readoutView('ao-gread--big');
     const status = statusLine();
-    const idle = el('p', { class: 'ao-present__idle', text: 'Камера включится после «Начать» — здесь будет видно, что распознаёт игра.' });
+    const idle = el('p', { class: 'ao-pres__idle' });
+    const keyHint = el('span', { class: 'ao-pres__key', text: 'P — выйти' });
     const node = el(
       'aside',
-      { class: 'ao-present', 'aria-label': 'Режим презентации: камера и распознанные жесты', hidden: true },
-      el('div', { class: 'ao-present__head' }, el('span', { class: 'ao-present__title', text: 'Что видит камера' }), el('span', { class: 'ao-present__key', text: 'P — выйти' })),
+      { class: 'ao-pres', 'aria-label': 'Режим презентации: камера и распознанные жесты', hidden: true },
+      el('div', { class: 'ao-pres__head' }, el('span', { class: 'ao-pres__title', text: 'Что видит камера' }), keyHint),
       host,
       idle,
       read.node,
-      el('p', { class: 'ao-present__legend' },
+      el('p', { class: 'ao-pres__legend' },
         el('span', { class: 'ao-cheat__lg' }, el('span', { class: 'ao-cheat__sw', 'data-side': 'left' }), 'левая кисть — движение'),
         el('span', { class: 'ao-cheat__lg' }, el('span', { class: 'ao-cheat__sw', 'data-side': 'right' }), 'правая — магия')),
       status.node,
@@ -2502,7 +2509,11 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         const info = ctx.debug ? DEBUG_INFO : describeTracking(ctx.tr, cfg);
         paintStatus(status, info, ctx.debug ? '' : ctx.tr.message);
         setAttr(host, 'data-tone', info.tone);
-        setHidden(idle, slot.parentNode === host);
+        const shown = slot.parentNode === host;
+        setHidden(idle, shown);
+        if (!shown) setText(idle, CAMERA_RUNNING.includes(ctx.tr.status) ? 'Камера на паузе — превью вернётся в бою.' : 'Камера включится после «Начать» — здесь будет видно, что распознаёт игра.');
+        // в бою и обучении с отладкой P — «призма» (core/debugInput.js), режим переключает Shift+P
+        setText(keyHint, ctx.debug && (ctx.screen === 'playing' || ctx.screen === 'tutorial') ? 'Shift+P — выйти' : 'P — выйти');
         read.paint(state.read.view);
         setAttr(node, 'data-err', state.read.view && state.read.view.err ? 'on' : null);
       },
@@ -2665,9 +2676,16 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   // [ПРОЕКТОР] Tab в бою — скрыть/показать шпаргалку; P — режим презентации (в бою с отладкой P — «призма»,
   // там режим переключает Shift+P). В полях ввода (лобби дуэли) клавиши не перехватываются.
   const typingTarget = (t) => !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''));
+  // Tab остаётся навигацией, если фокус на чужой кнопке (итоги дуэли modules/pvp.js и т. п.) или открыто окно дуэли
+  const tabFree = () => {
+    const a = doc.activeElement;
+    if (a && a !== doc.body && a !== doc.documentElement && !hud.node.contains(a)) return false;
+    const m = doc.querySelector('.pvp-modal');
+    return !(m && m.getClientRects().length);
+  };
   listen(win, 'keydown', (e) => {
     if (disposed || e.repeat || e.ctrlKey || e.metaKey || e.altKey || typingTarget(e.target)) return;
-    if (e.key === 'Tab' && state.screen === 'playing') {
+    if (e.key === 'Tab' && state.screen === 'playing' && tabFree()) {
       e.preventDefault();
       state.cheatHidden = !state.cheatHidden;
       try { win.localStorage.setItem(CHEAT_KEY, state.cheatHidden ? 'hidden' : 'shown'); } catch (err) { /* хранилище недоступно */ }
@@ -2706,7 +2724,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     }
     for (const id of timers) win.clearTimeout(id);
     timers.clear();
-    if (state.present) doc.documentElement.classList.remove('ao-present');
+    if (state.present) {
+      setClass(doc.documentElement, 'ao-present', false);   // через кеш setClass: следующий экземпляр UI включит режим снова
+      try { win.dispatchEvent(new win.Event('resize')); } catch (err) { /* ignore */ }
+    }
     ui.remove();
   }
 

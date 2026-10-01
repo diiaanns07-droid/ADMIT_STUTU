@@ -539,7 +539,9 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
       ui.update(F('playing'));
       await frame();
       const pslot = ui.cameraSlot;
-      check('P: режим презентации, слот камеры в левой панели 40 %', document.documentElement.classList.contains('ao-present') && pslot.parentElement.classList.contains('ao-present__cam') && isVisible($('.ao-present')) && Math.abs($('.ao-present').getBoundingClientRect().width - 0.4 * W) < 3);
+      check('P: режим презентации, слот камеры в левой панели 40 %', document.documentElement.classList.contains('ao-present') && pslot.parentElement.classList.contains('ao-pres__cam') && isVisible($('.ao-pres')) && Math.abs($('.ao-pres').getBoundingClientRect().width - 0.4 * W) < 3);
+      const htmlCs = getComputedStyle(document.documentElement);
+      check('в режиме презентации <html> не получает стилей панели (не fixed, указатель работает)', htmlCs.position !== 'fixed' && htmlCs.pointerEvents !== 'none', `${htmlCs.position}/${htmlCs.pointerEvents}`);
       key('p', { code: 'KeyP' });
       ui.update(F('playing'));
       await frame();
@@ -557,6 +559,12 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
       await frame();
       key('p', { code: 'KeyP' });
       check('в бою с отладкой P остаётся «призмой» (режим не переключается)', !document.documentElement.classList.contains('ao-present'));
+      key('P', { code: 'KeyP', shiftKey: true });
+      ui.update(F('playing-debug'));
+      const shiftOn = document.documentElement.classList.contains('ao-present');
+      key('P', { code: 'KeyP', shiftKey: true });
+      ui.update(F('playing-debug'));
+      check('в бою с отладкой режим переключает Shift+P', shiftOn && !document.documentElement.classList.contains('ao-present'));
       try { if (cheatSaved === null) localStorage.removeItem('ashen-oath.cheat.v1'); else localStorage.setItem('ashen-oath.cheat.v1', cheatSaved); } catch (e) { /* нет хранилища */ }
     }
 
