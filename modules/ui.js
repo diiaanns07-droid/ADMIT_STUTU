@@ -2117,7 +2117,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     // [FEEL] вспышка плитки при срабатывании (переход в «активно» или из готовности в перезарядку)
     // и короткий отблеск, когда перезарядка закончилась. CSS-анимация: «Уменьшенное движение» её гасит.
     const flashTile = (t, cls) => {
-      t.node.classList.remove(cls);
+      for (const c of ['is-flash', 'is-ready']) { t.node.classList.remove(c); cancel(t[c]); t[c] = 0; } // одна вспышка за раз
       void t.node.offsetWidth; // перезапуск анимации
       t.node.classList.add(cls);
       cancel(t[cls]);
