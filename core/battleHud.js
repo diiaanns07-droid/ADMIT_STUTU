@@ -666,7 +666,9 @@ export function createBattleHud({ canvas } = {}) {
   }
 
   function drawIntro(intro, rm) {
-    const T = num(intro.t, 0), D = Math.max(1, num(intro.duration, 5));
+    // [ONBOARD] титры размечены под интро 5 с; короткое (1,8 с) растягивается на ту же разметку
+    const D0 = Math.max(1, num(intro.duration, 5)), S = D0 < 5 ? 5 / D0 : 1;
+    const T = num(intro.t, 0) * S, D = D0 * S;
     const barIn = clamp(T / 0.6, 0, 1), barOut = clamp((D - T) / 0.5, 0, 1);
     const bh = H * 0.11 * Math.min(barIn, barOut);
     ctx.fillStyle = '#000';

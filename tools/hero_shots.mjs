@@ -98,7 +98,7 @@ try {
     const ctx = await browser.newContext({ viewport: { width: W, height: H } });
     await routeVendor(ctx);
     const settings = { hero, quality: argOf('--quality', 'medium') };
-    if (argOf('--zone')) settings.startZone = argOf('--zone');
+    if (argOf('--zone')) { settings.startZone = argOf('--zone'); settings.startZoneV = 2; }   // startZoneV: без него main.js переводит старое «arena» в «edge»
     if (SHADING) settings.heroShading = SHADING;
     await ctx.addInitScript((s) => { try { localStorage.setItem('ashen-oath.settings.v1', JSON.stringify(s)); } catch (e) { /* ignore */ } }, settings);
     if (INIT) await ctx.addInitScript({ content: INIT });

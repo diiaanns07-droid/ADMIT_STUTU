@@ -1074,7 +1074,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     for (const [value, label] of ZONE_OPTIONS) {
       const input = el('input', { type: 'radio', name, value, class: 'ao-seg__input' });
       inputs.push(input);
-      const short = prefix === 'menu' && value === 'arena' ? 'Плато' : label;   // в меню — коротко, чтобы встать в ряд
+      const short = prefix === 'menu' ? ({ arena: 'Плато', forest: 'Лес' }[value] || label) : label;   // в меню — коротко, чтобы встать в ряд
       seg.append(el('label', { class: 'ao-seg__opt', title: `${label}: ${TIPS[value]}` }, input, el('span', { class: 'ao-seg__label', text: short })));
       listen(input, 'change', () => { if (input.checked) invoke('onSettings', { startZone: value }); });
     }
@@ -1259,18 +1259,23 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       const done = running && !calibrating && ctx.calibrated === true;
       const fit = !running ? 'off' : !shoulders ? 'none' : wristL && wristR ? 'ok' : 'partial';
       setAttr(q.frame, 'data-fit', fit);
+      setAttr(q.node, 'data-state', st === 'error' ? 'error' : null);   // ошибка: превью меньше, подсказки скрыты — «Повторить» в кадре
       setAttr(q.hands.left, 'data-on', wristL ? 'true' : 'false');
       setAttr(q.hands.right, 'data-on', wristR ? 'true' : 'false');
       const prog = calibrating ? clamp(num(tr.progress), 0, 1) : done && shoulders ? 1 : 0;
       setStyle(q.ring, 'stroke-dashoffset', String(Math.round((1 - prog) * 1000) / 10));
       setAttr(q.frame, 'data-ring', calibrating ? 'run' : done && shoulders ? 'done' : 'off');
       const hint = String(tr.message || '');
+      const rel = ctx.vm.tracking && ctx.vm.tracking.debug && ctx.vm.tracking.debug.reliability;
+      const scale = running && rel ? rel.scaleWarning : null;   // 'far' | 'near' — масштаб не совпал с сохранённой калибровкой
       let title, sub = '';
       if (ctx.debug) { title = 'Отладка с клавиатуры'; sub = 'Камера не нужна: «Продолжить без камеры».'; }
       else if (st === 'error') title = 'Камера не включилась';
       else if (st === 'permission') { title = 'Разрешите камеру'; sub = 'Запрос — у адресной строки браузера.'; }
       else if (st === 'loading') { title = 'Загружаем распознавание…'; sub = tr.progress !== null && tr.progress > 0 && tr.progress < 1 ? pct(tr.progress) : ''; }
       else if (!running) { title = pend ? 'Включаем камеру…' : 'Камера выключена'; sub = pend ? '' : 'Нажмите «Включить камеру».'; }
+      else if (scale === 'far') { title = 'Сядьте ближе'; sub = 'Или замрите на 1,5 с — игра подстроится.'; }
+      else if (scale === 'near') { title = 'Отодвиньтесь'; sub = 'Или замрите на 1,5 с — игра подстроится.'; }
       else if (!shoulders) { title = 'Сядьте в рамку'; sub = 'Чтобы плечи и кисти попали в кадр.'; }
       else if (calibrating && /опустите/i.test(hint)) { title = 'Опустите руки'; sub = 'И замрите на полторы секунды.'; }
       else if (calibrating) { title = prog > 0.02 ? 'Замрите…' : 'Сядьте ровно'; sub = prog > 0.02 ? pct(prog) : 'Руки вниз.'; }
@@ -1604,6 +1609,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         else if (ctx.calibrated === false) text = 'Нужна калибровка. Нажмите «Перекалибровать».';
         else if (st === 'lost') text = 'Камера не видит позу. Кнопка «В бой» станет доступна, когда трекинг восстановится.';
         else if (st === 'calibrating') text = 'Идёт калибровка.';
+        else if (gate && gate.reason) text = `${gate.reason}.`;   // [ONBOARD]
         else text = 'Камера ещё не готова.';
         setText(ready, text);
         // [V5] тексты карточки движения — под выбранную схему («Руль» / «Джойстик»)
@@ -1718,6 +1724,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     // [ONBOARD] автопродолжение после потери трекинга: крупный отсчёт 3-2-1
     const countNum = el('span', { class: 'ao-countdown__num' });
     const countdown = el('div', { class: 'ao-countdown', hidden: true, 'aria-hidden': 'true' }, countNum);
+    host.append(countdown);   // поверх превью: слот камеры встаёт рядом (moveSlot), отсчёт — выше по z-index
     const recal = btn('Перекалибровать', pressCalibrate);
     const restart = btn('Начать бой заново', () => invoke('onRestart'));
     const oathP = btn('Клятва героя', () => invoke('onOath', { from: 'paused' }));
@@ -1730,7 +1737,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el(
         'div',
         { class: 'ao-cols' },
-        el('div', { class: 'ao-col ao-col--media' }, el('div', { class: 'ao-countwrap' }, host, countdown), status.node, hint),
+        el('div', { class: 'ao-col ao-col--media' }, host, status.node, hint),
         el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
       ),
       dbgKeys,

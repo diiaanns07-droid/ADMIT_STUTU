@@ -368,6 +368,9 @@ function gateNow() {
   if (s.status === 'permission' || s.status === 'loading') return 'Камера запускается…';
   if (s.status === 'calibrating') return 'Идёт калибровка…';
   if (!s.calibrated) return 'Нужна калибровка';
+  const scale = s.debug && s.debug.reliability ? s.debug.reliability.scaleWarning : null;   // сохранённая калибровка с другого расстояния
+  if (scale === 'far') return 'Сядьте ближе к камере';
+  if (scale === 'near') return 'Отодвиньтесь от камеры';
   if (s.status === 'lost' || (s.debug && s.debug.bodyVisible === false)) return 'Не вижу плечи — сядьте в кадр';
   return '';
 }
@@ -494,7 +497,13 @@ function onboardTick(now) {
 }
 function leaveCamera() {
   app.onb.okSince = null;
-  if (app.resumableFight) { app.resumableFight = false; app.pauseReason = 'tracking'; setScreen('paused'); app.pauseReason = 'tracking'; return; }
+  if (app.resumableFight) {
+    // пауза игрока (Esc) остаётся паузой игрока; автопродолжение — только после потери трекинга
+    const why = app.resumableReason === 'user' ? 'user' : 'tracking';
+    app.resumableFight = false; app.resumableReason = null;
+    app.pauseReason = why; setScreen('paused'); app.pauseReason = why;
+    return;
+  }
   if (DEMO || (pvpCtl && pvpCtl.active && pvpCtl.inMatch)) { startFight(); return; }   // [PVP] дуэль уже идёт — обратно в бой
   setScreen('tutorial');
 }
@@ -605,6 +614,8 @@ function calibrateAndSave() {
   return vision.calibrate().then((r) => { saveCalibration(); app.onb.calibratedAt = performance.now(); return r; });
 }
 
+// [ONBOARD] камера нужна на экранах камеры, калибровки, обучения, тренировки и в бою/паузе — не в меню и не в DEBUG
+function cameraWanted() { return !app.debug && app.screen !== 'menu' && app.screen !== 'oath' && app.screen !== 'error'; }
 async function enableCamera() {
   unlockAudio();
   app.error = null;
@@ -612,7 +623,12 @@ async function enableCamera() {
   try {
     const v = await ensureVision();
     try { await v.start(); }
-    catch (e) { if (e && e.code === 'aborted') await v.start(); else throw e; }
+    catch (e) {
+      if (!(e && e.code === 'aborted')) throw e;
+      if (!cameraWanted()) return;   // [ONBOARD] «В меню» / DEBUG, пока камера запускалась: не включать её снова
+      await v.start();
+    }
+    if (!cameraWanted()) { v.stop(); return; }
     if (!QUICK && app.resumableFight && app.screen === 'camera') setScreen('calibration');   // [ONBOARD] в быстром потоке дальше ведёт onboardTick
   } catch (e) {
     // Ошибки камеры/модели vision показывает статусом error; UI выводит их на экране камеры.
@@ -637,7 +653,7 @@ const callbacks = {
       return;
     }
     if (from === 'calibration') {
-      if (app.resumableFight) { app.resumableFight = false; app.pauseReason = 'tracking'; setScreen('paused'); return; }
+      if (app.resumableFight) { const why = app.resumableReason === 'user' ? 'user' : 'tracking'; app.resumableFight = false; app.resumableReason = null; app.pauseReason = why; setScreen('paused'); return; }
       setScreen('tutorial');
       return;
     }
@@ -1191,7 +1207,8 @@ function frame(now) {
       I.awakened = true; // «пробуждение»: рёв стража у world, волна и звук у effects (урона нет)
       events = [{ id: `intro-awaken-${Math.round(now)}`, type: 'boss_phase', position: { ...lastSnapshot.boss.position, y: 3 }, data: { stage: 1, awaken: true } }];
     }
-    if (I.t >= I.duration || I.skip) { rig.reset(lastSnapshot.player.position, lastSnapshot.boss.position); readInput(); setScreen('playing'); } // из облёта — в lock-on, дальше камера сама перейдёт в explore
+    // [ONBOARD] пропуск в тот же кадр, что и «пробуждение», — переход на следующий кадр, чтобы world/effects получили событие
+    if (I.t >= I.duration || (I.skip && events === NO_EVENTS)) { rig.reset(lastSnapshot.player.position, lastSnapshot.boss.position); readInput(); setScreen('playing'); } // из облёта — в lock-on, дальше камера сама перейдёт в explore
   }
   showIntroHint(QUICK && app.screen === 'intro');
 
@@ -1262,7 +1279,7 @@ function frame(now) {
 
   if (app.screen === 'paused' && !app.debug && vision) {
     const vs = visionStatus();
-    if (vs.status === 'error' || vs.status === 'idle') { app.resumableFight = true; setScreen('camera'); }
+    if (vs.status === 'error' || vs.status === 'idle') { app.resumableFight = true; app.resumableReason = app.pauseReason || 'tracking'; setScreen('camera'); }   // [ONBOARD] причина паузы — после переподключения
   }
   // [ONBOARD] экран камеры ведёт сам, пауза «Трекинг потерян» снимается сама, причина недоступности кнопок
   try { onboardTick(now); autoResumeTick(now); gateTick(now); } catch (e) { console.warn('[ONBOARD]', e); }
