@@ -31,7 +31,7 @@ import { createSquatCounter, topSquatFault, synthSquatPose } from './core/squatC
 import { createHandZone, createHeroBowPose } from './core/handZone.js'; // [HAND] лук и магия рукой
 import { createPerfTuner } from './core/perfTuner.js'; // [PERF] автоподстройка под железо
 import { createPerfHud } from './core/perfHud.js';     // [PERF] F3 — кадры и трекинг
-import { feelOfEvents } from './core/gameFeel.js';     // [FEEL] остановка кадра, замедление, тряска по силе удара
+import { feelOfEvents, FEEL_TIME } from './core/gameFeel.js';     // [FEEL] остановка кадра, замедление, тряска по силе удара
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
 
@@ -346,7 +346,8 @@ function resetFight() {
   lastSnapshot = combat.getSnapshot();
   rig.reset(rigState(lastSnapshot, ZERO));
   app.lostTime = 0;
-  app.outroAt = 0;             // [FEEL]
+  app.outroAt = 0;             // [FEEL] финал и замедление прошлого боя не переходят в новый
+  timeFx.slowUntil = 0; timeFx.stopUntil = 0;
 }
 
 // [ASHEN_V2] состояние камеры из снимка: вне арены — камера исследования, в арене — lock-on.
@@ -380,6 +381,7 @@ function startFight() {
 
 function pause(reason) {
   if (app.screen !== 'playing') return;
+  if (app.outroAt) return;     // [FEEL] бой уже окончен: замедленный финал не ставится на паузу
   setScreen('paused');
   app.pauseReason = reason || 'user';
   effects.setVolume(0); // петли щита/полёта орбов не звучат всю паузу
@@ -1039,7 +1041,7 @@ function frame(now) {
       } else app.lostTime = 0;
     }
     if (now < app.resumeAt) frozen = true;
-    if (app.screen === 'playing' && !frozen) trackCoach(input);
+    if (app.screen === 'playing' && !frozen && !app.outroAt) trackCoach(input);   // [FEEL] после исхода жесты не считаются
     if (app.screen === 'playing' && dt > 0 && !frozen) {
       // [ASHEN_V2] стик — в осях камеры: «вперёд на стике» = «вперёд на экране»
       if (Number.isFinite(rig.inputYaw)) input.viewYaw = rig.inputYaw;   // [V3] курс управления без плечевого сдвига
@@ -1114,7 +1116,7 @@ function frame(now) {
   if (effects.setInput) effects.setInput(input); // [VFX] след руны в воздухе, свечение ладоней
   if (heroBowPose) { try { heroBowPose.update(dt, { root: world.hero && world.hero.root, heroModel, snap: lastSnapshot }); } catch (e) { /* [HAND] */ } } // [HAND] поза лука/ладони
   try { effects.update(dt, fxSnap, fxEvents); } catch (e) { console.error('[ASHEN] effects.update', e); } // [NET] fxSnap/fxEvents
-  if (effects.takeHitStop && app.screen === 'playing') { const hs = effects.takeHitStop(); if (hs > 0) timeFx.stopUntil = Math.max(timeFx.stopUntil, now + hs); } // [VFX] хит-стоп по силе удара
+  if (effects.takeHitStop && app.screen === 'playing') { const hs = Math.min(effects.takeHitStop(), settings.reducedMotion ? FEEL_TIME.reducedStopMaxMs : Infinity); if (hs > 0) timeFx.stopUntil = Math.max(timeFx.stopUntil, now + hs); } // [VFX] хит-стоп по силе удара; [FEEL] «Уменьшенное движение» — не дольше 40 мс
   if (handVisuals && effects.linkHandVisuals) effects.linkHandVisuals(handVisuals); // [VFX] стрелы/сгустки/попадания — V6, лук — №6
   if (handVisuals) { try { handVisuals.update(dt, fxSnap, fxEvents, handAnchors()); } catch (e) { /* [HAND] */ } } // [HAND] (fxSnap — со стрелами соперника)
 
