@@ -542,6 +542,20 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
       check('P: режим презентации, слот камеры в левой панели 40 %', document.documentElement.classList.contains('ao-present') && pslot.parentElement.classList.contains('ao-pres__cam') && isVisible($('.ao-pres')) && Math.abs($('.ao-pres').getBoundingClientRect().width - 0.4 * W) < 3);
       const htmlCs = getComputedStyle(document.documentElement);
       check('в режиме презентации <html> не получает стилей панели (не fixed, указатель работает)', htmlCs.position !== 'fixed' && htmlCs.pointerEvents !== 'none', `${htmlCs.position}/${htmlCs.pointerEvents}`);
+      // в 60 % ширины длинные экраны могут прокручиваться, но главная кнопка обязана быть видна сразу
+      const presFail = [];
+      for (const [name, label] of [['menu', 'Начать'], ['tutorial-live', 'В бой'], ['paused-lost', 'Продолжить бой']]) {
+        if (!fixtures[name]) continue;
+        ui.update(F(name));
+        await frame();
+        const pnl = $$('.ao-screen').filter(isVisible).map((sc) => sc.querySelector('.ao-panel'))[0];
+        const b = pnl && btnByText(pnl, label);
+        const r = b && b.getBoundingClientRect(), pr = pnl && pnl.getBoundingClientRect();
+        if (!r || r.top < pr.top - 1 || r.bottom > Math.min(pr.bottom, H) + 1 || r.left < 0.4 * W - 1) presFail.push(`${name}: «${label}» ${r ? Math.round(r.top) + '..' + Math.round(r.bottom) : 'нет'}`);
+      }
+      check(`режим презентации: главная кнопка видна без прокрутки (меню, обучение, пауза) в ${W}×${H}`, presFail.length === 0, presFail.join('; '));
+      ui.update(F('playing'));
+      await frame();
       key('p', { code: 'KeyP' });
       ui.update(F('playing'));
       await frame();

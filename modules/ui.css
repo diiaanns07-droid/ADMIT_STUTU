@@ -2707,8 +2707,10 @@ html.ao-present .ao-cheat-pill {
     display: none;
   }
 }
-/* ключи отладки в меню — плашкой в правом нижнем углу, а не в колонке меню */
-.ao-panel--menu .ao-debugkeys {
+/* ключи отладки в меню — плашкой в правом нижнем углу, а не в колонке меню (только на широком экране без
+   режима презентации: там справа от колонки гарантированно пусто); текст, клики проходят насквозь */
+@media (min-width: 1180px) {
+html:not(.ao-present) .ao-panel--menu .ao-debugkeys {
   position: fixed;
   right: var(--ao-pad);
   bottom: var(--ao-pad);
@@ -2719,6 +2721,8 @@ html.ao-present .ao-cheat-pill {
   background: rgba(30, 22, 10, 0.94);
   border: 1px solid var(--ao-debug);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
 }
 @media (min-height: 961px) {
   .ao-title {
@@ -2823,4 +2827,84 @@ html.ao-present .ao-tut-cam {
   html.ao-present .ao-tut-foot {
     grid-template-columns: minmax(0, 1fr) auto;
   }
+}
+
+/* ---- [ПРОЕКТОР] режим презентации: игровая область — 60 % окна, а медиа-запросы считают всё окно */
+html.ao-present .ao-boss {
+  width: min(560px, 27vw);
+}
+html.ao-present .ao-cheat__head,
+html.ao-present .ao-cheat__foot {
+  display: none;               /* легенда цветов уже есть в левой панели */
+}
+html.ao-present .ao-tut-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+html.ao-present .ao-tut-card,
+html.ao-present .ao-tut-card:nth-child(n + 4),
+html.ao-present .ao-tut-card:last-child:nth-child(odd) {
+  grid-column: auto;
+  grid-template-columns: minmax(0, 1fr);
+}
+html.ao-present .ao-tut-card:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+html.ao-present .ao-tut-fig,
+html.ao-present .ao-tut-effect {
+  display: none;               /* скелет и так крупно слева */
+}
+html.ao-present .ao-tut-foot {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+/* главная кнопка — сразу под заголовком, видна без прокрутки; карточки и настройки прокручиваются ниже */
+html.ao-present .ao-panel--tutorial,
+html.ao-present .ao-panel--pause {
+  display: flex;
+  flex-direction: column;
+}
+html.ao-present .ao-panel--tutorial > .ao-head,
+html.ao-present .ao-panel--pause > .ao-head {
+  order: -2;
+}
+html.ao-present .ao-panel--tutorial > .ao-tut-foot {
+  order: -1;
+  margin: 0 0 0.7rem;
+}
+html.ao-present .ao-panel--pause > .ao-actions {
+  order: -1;
+  margin: 0 0 0.8rem;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* ---- [ПРОЕКТОР] невысокое окно (ноутбук 1366×768 с панелями браузера): док чуть уже, чтобы не закрывать
+   счётчик комбо battleHud у правого края */
+@media (max-height: 700px) {
+  .ao-cvdock {
+    width: clamp(220px, 19vw, 420px);
+  }
+}
+/* узкие окна: шпаргалка ниже полосы босса и телеграфа; на телефонах клавиши Tab нет — шпаргалка скрыта */
+@media (max-width: 900px) {
+  .ao-cheat,
+  .ao-cheat-pill {
+    top: calc(var(--ao-pad) + 8rem);
+  }
+}
+@media (max-width: 620px) {
+  .ao-cvdock {
+    width: 150px;
+  }
+  .ao-cvdock .ao-gread__row {
+    font-size: 14px;
+  }
+  .ao-cheat,
+  .ao-cheat-pill {
+    display: none !important;
+  }
+}
+/* значок соединения онлайн-дуэли (net/session.js, .nl-badge: top 72px слева) — шпаргалка под ним */
+body:has(> .nl-badge:not([hidden])) .ao-cheat,
+body:has(> .nl-badge:not([hidden])) .ao-cheat-pill {
+  top: 112px;
 }
