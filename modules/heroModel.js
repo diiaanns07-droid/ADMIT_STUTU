@@ -143,7 +143,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 let dressModsP = null;
 function prefetchHeroDeps(libUrls) {
   if (!dressModsP) {
-    dressModsP = Promise.all([import('./heroShading.js'), import('./heroGear.js'), import('./heroAura.js'), import('./heroGhost.js'), import('three/addons/utils/SkeletonUtils.js')]);
+    dressModsP = Promise.all([import('./heroShading.js'), import('./heroGear.js'), import('./heroAura.js'), import('./heroGhost.js'), import('three/addons/utils/SkeletonUtils.js'), import('@pixiv/three-vrm')]);
     dressModsP.catch(() => { dressModsP = null; });
   }
   if (libUrls && libUrls.kaykit) loadGltf(libUrls.kaykit).catch(() => {});
@@ -152,14 +152,25 @@ function prefetchHeroDeps(libUrls) {
 // [LOAD] байты GLB-моделей героев: url → Promise<ArrayBuffer>. Кладёт setHero и предзагрузка витрины
 // (prefetch: в простое, когда выбранный герой уже стоит; при выходе из меню отменяется — канал нужен
 // MediaPipe). Отменённая или упавшая загрузка из кэша убирается.
+// Запись { p, ctl, keep }: у каждой загрузки свой AbortController; keep — модель ждёт герой (setHero,
+// клипы, соперник в дуэли): отмена предзагрузки такую загрузку не трогает.
 const glbBytes = new Map();
 function fetchBytes(url, signal) {
-  if (!glbBytes.has(url)) {
-    const p = fetch(url, { signal }).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); });
-    p.catch(() => glbBytes.delete(url));
-    glbBytes.set(url, p);
+  let e = glbBytes.get(url);
+  if (!e) {
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const cur = e = { ctl, keep: false, p: null };
+    e.p = fetch(url, ctl ? { signal: ctl.signal } : undefined).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); });
+    e.p.catch(() => { if (glbBytes.get(url) === cur) glbBytes.delete(url); });
+    glbBytes.set(url, e);
   }
-  return glbBytes.get(url);
+  if (!signal) e.keep = true;
+  else if (!e.keep && e.ctl) {
+    const cur = e;
+    if (signal.aborted) cur.ctl.abort();
+    else signal.addEventListener('abort', () => { if (!cur.keep) cur.ctl.abort(); }, { once: true });
+  }
+  return e.p;
 }
 
 // Перенос всех клипов на VRM (кусками, чтобы не было длинного кадра) + длина шага клипов ходьбы.
@@ -337,6 +348,7 @@ export function createHeroModel({
       // [LOAD] байты GLB — через общий кэш (предзагрузка витрины, возврат к прежнему герою — без сети);
       // не скачались (отмена предзагрузки, ошибка) — загрузчик попробует сам
       const pre = def.glb ? await fetchBytes(url).catch(() => null) : null;
+      if (S.disposed || token !== S.token) return;   // пока качали, выбрали другого героя — дальше не грузим
       const vrm = def.glb ? await loadHumanoidGLB(THREE, url, undefined, pre) : await loadVRM(THREE, url);
       if (def.recolor) await recolorHero(vrm, def.recolor, def.makeup || null);
       if (def.hide) vrm.scene.traverse((o) => { if (o.isMesh && def.hide.some((n) => o.name.startsWith(n))) o.visible = false; });

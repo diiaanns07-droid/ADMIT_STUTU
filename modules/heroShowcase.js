@@ -122,15 +122,15 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
   const heroes = () => (heroModel && heroModel.heroes) || null;
 
   // [LOAD] выбранный герой стоит на витрине 2,5 с — в простое скачиваем модели остальных героев меню,
-  // чтобы смена героя не ждала сети. Ушли из меню (камера, бой) — отмена: канал нужен MediaPipe.
+  // чтобы смена героя не ждала сети. Ушли из меню (камера, бой) или грузится выбранный герой — отмена
+  // (канал нужен MediaPipe и ему); то, что уже ждёт герой, heroModel не отменяет.
   // Экономия трафика в браузере (Save-Data) — без предзагрузки.
   // Время — по часам (performance.now): dt кадра main.js режет до 1/20 с и на слабом железе отстаёт.
   const PF = { since: 0, ctl: null, done: false };
   const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   function prefetchHeroes(dt, active) {
-    if (!active) { if (PF.ctl) { if (PF.ctl.abort) PF.ctl.abort(); PF.ctl = null; } PF.since = 0; return; }
-    if (PF.done || PF.ctl || !heroModel || typeof heroModel.prefetch !== 'function') return;
-    if (!heroModel.ready) { PF.since = 0; return; }
+    if (!active || !heroModel || !heroModel.ready) { if (PF.ctl) { if (PF.ctl.abort) PF.ctl.abort(); PF.ctl = null; } PF.since = 0; return; }
+    if (PF.done || PF.ctl || typeof heroModel.prefetch !== 'function') return;
     if (typeof navigator !== 'undefined' && navigator.connection && navigator.connection.saveData) { PF.done = true; return; }
     if (!PF.since) PF.since = nowMs();
     if (nowMs() - PF.since < 2500) return;
