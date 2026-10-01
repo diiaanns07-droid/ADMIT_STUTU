@@ -489,3 +489,51 @@
 .ao-coach-overlay {
   pointer-events: none;
 }
+
+/* --------------------------------------------- обучение и меню: метки твиста */
+
+.ao-tut-coach:has(.ao-tut-coach__pic svg) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+}
+.ao-tut-coach[hidden] {
+  display: none;
+}
+.ao-tut-coach__pic {
+  display: block;
+  width: 126px;
+  height: 54px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.ao-tut-coach__pic:empty {
+  display: none;
+}
+.ao-tut-coach__pic svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ao-tut-coach__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.ao-menu__tech {
+  position: relative;
+}
+.ao-menu__tech::after {
+  content: 'ОШИБКА';
+  position: absolute;
+  top: -0.55rem;
+  right: -0.4rem;
+  padding: 0.05rem 0.32rem;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #fff;
+  background: var(--ao-err);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}

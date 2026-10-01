@@ -1134,6 +1134,9 @@ function frame(now) {
   // [ТВИСТ «ОШИБКА»] тренажёр техники: условия из распознавателя (vision → handGestures.checks), поза — счётчикам
   if (app.screen === 'technique') {
     let live = null;
+    // пока камера и модель включаются (несколько секунд) — демо, чтобы твист был виден сразу
+    const vst = vision ? visionStatus().status : 'idle';
+    trainer.setAuto(!app.debug && !(vst === 'ready' || vst === 'lost' || vst === 'calibrating'));
     if (!app.debug && vision) {
       try {
         const vs = visionStatus();

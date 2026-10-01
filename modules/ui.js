@@ -1480,7 +1480,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     // [ТВИСТ «ОШИБКА»] почти-правильный жест на обучении: что не так и как исправить
     const coachHead = el('span', { class: 'ao-tut-coach__head' });
     const coachText = el('span', { class: 'ao-tut-coach__text' });
-    const coach = el('div', { class: 'ao-tut-coach', role: 'status', 'aria-live': 'polite', hidden: true }, coachHead, coachText);
+    const coachPic = el('span', { class: 'ao-tut-coach__pic', 'aria-hidden': 'true' });   // «как сейчас → как надо»
+    const coach = el('div', { class: 'ao-tut-coach', role: 'status', 'aria-live': 'polite', hidden: true }, coachPic, el('span', { class: 'ao-tut-coach__body' }, coachHead, coachText));
+    let coachPicCode = '';
     const start = btn('В бой', () => invoke('onStart', { from: 'tutorial' }), { variant: 'primary', size: 'lg' });
     const recal = btn('Перекалибровать', pressCalibrate);
     const back = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
@@ -1552,6 +1554,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           const side = t.hint.side === 'left' ? ' · левая рука' : t.hint.side === 'right' ? ' · правая рука' : '';
           setText(coachHead, `Ошибка · ${t.hint.gesture}${side}`);
           setText(coachText, t.hint.text);
+          if (t.hint.code !== coachPicCode) { coachPicCode = t.hint.code || ''; coachPic.innerHTML = hintPictogram(coachPicCode, { width: 126, height: 54, labels: true }); }
         }
         if (liveCv && inp.valid) {
           if (inp.moveX <= -STRAFE_SEEN) t.left = true;

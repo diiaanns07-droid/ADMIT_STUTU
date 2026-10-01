@@ -66,7 +66,8 @@ function fixInfo(kind, code) {
   }
   if (kind === 'pushup') {
     const text = PUSHUP_FAULTS[code] || (code === 'frame' ? 'Поставьте камеру так, чтобы плечи и кисти были в кадре' : '');
-    return text ? { code, fix: PUSHUP_FIX[code] || '', text, pictogram: safeSvg('pushup_' + code) } : null;
+    // у кадра своей пиктограммы отжиманий нет — общая «в кадр»
+    return text ? { code, fix: PUSHUP_FIX[code] || '', text, pictogram: safeSvg('pushup_' + code) || hintPictogram('hands_missing', { width: 210, height: 90, labels: true }) } : null;
   }
   const e = COACH_HINTS[code];
   return e ? { code, fix: e.fix, text: e.text, mark: e.mark, pictogram: hintPictogram(code, { width: 210, height: 90, labels: true }) } : null;
@@ -261,7 +262,8 @@ const TRANSIENT_MS = 1500;   // условие-движение (толчок, �
 
 export function createTechniqueTrainer() {
   let gid = 'ok';
-  let demoOn = false;
+  let demoUser = false;   // демо включил игрок (или отладка с клавиатуры)
+  let autoOn = false;     // демо само, пока камера включается
   const d = { interp: null, squat: null, pushup: null, t0: null, simT: 0, lastLoop: -1, hands: null, pose: null };
   const live = { squat: createSquatCounter(), pushup: createPushupCounter(), lastPoseT: null };
   let latch = {};
@@ -313,7 +315,7 @@ export function createTechniqueTrainer() {
 
   // Условия жеста рук → строки чек-листа. Условия-движения «защёлкиваются» на TRANSIENT_MS после выполнения.
   function handRows(gc, now) {
-    const items = gc && Array.isArray(gc.items) ? gc.items : [];
+    const items = gc && Array.isArray(gc.items) ? gc.items.filter((it) => isObj(it) && typeof it.key === 'string') : [];
     return items.map((it) => {
       const key = `${gid}.${it.key}`;
       let value = fin(it.value) ? clamp(it.value, 0, 1) : 0;
@@ -328,7 +330,7 @@ export function createTechniqueTrainer() {
     });
   }
   function bodyRows(ck) {
-    const items = ck && Array.isArray(ck.items) ? ck.items : [];
+    const items = ck && Array.isArray(ck.items) ? ck.items.filter((it) => isObj(it) && typeof it.key === 'string') : [];
     const keyHint = gid === 'squat' ? SQUAT_KEY_HINT : PUSHUP_KEY_HINT;
     return items.map((it) => ({
       key: it.key, label: (LABELS[gid] && LABELS[gid][it.key]) || it.key,
@@ -341,7 +343,8 @@ export function createTechniqueTrainer() {
   function frame(nowMs, liveIn) {
     const now = fin(nowMs) ? nowMs : 0;
     const g = BY_ID[gid];
-    const src = demoOn ? 'demo' : liveIn ? 'camera' : 'none';
+    const demoOn = demoUser || autoOn;
+    const src = demoOn ? (demoUser ? 'demo' : 'demo-auto') : liveIn ? 'camera' : 'none';
     let rows = [], recognized = false, present = false, clean = 0, message = '';
     let hands = null, pose = null;
     if (g.kind === 'hand') {
@@ -395,7 +398,7 @@ export function createTechniqueTrainer() {
     })).flatMap((m) => (m.hand === 'both' ? [{ ...m, hand: 'left' }, { ...m, hand: 'right' }] : [m]));
     return {
       id: gid, title: g.title, hand: g.hand, handName: HAND_NAME[g.hand] || '', kind: g.kind, how: g.how,
-      source: src, demo: demoOn, present, recognized, allOk, rows, focus,
+      source: src, demo: demoOn, demoAuto: demoOn && !demoUser, present, recognized, allOk, rows, focus,
       ideal: showIdeal, idealCount: ideal.count, message,
       marks, synthHands: demoOn ? hands : null, synthPose: demoOn ? pose : null,
     };
@@ -403,9 +406,11 @@ export function createTechniqueTrainer() {
 
   return {
     get gesture() { return gid; },
-    get demo() { return demoOn; },
+    get demo() { return demoUser || autoOn; },
     select(id) { if (!BY_ID[id] || id === gid) return; gid = id; reset(); },
-    setDemo(on) { const v = !!on; if (v === demoOn) return; demoOn = v; reset(); },
+    setDemo(on) { const v = !!on; if (v === demoUser) return; demoUser = v; reset(); },
+    // демо, пока камера включается (модель грузится несколько секунд): твист виден сразу
+    setAuto(on) { const v = !!on; if (v === autoOn) return; autoOn = v; if (!demoUser) reset(); },
     reset,
     frame,
   };
@@ -414,6 +419,7 @@ export function createTechniqueTrainer() {
 // ───────────────────────── экран (DOM, внутри ui.js) ─────────────────────────
 // kit: { uid, el, btn, setBtn, listen, heading, screenSection, statusLine, paintStatus, describe(tr) → info, setText,
 //        setHidden, setAttr, setClass, setStyle, invoke, announce, pressEnable, cameraStarting:[…], debugInfo }
+const DEMO_INFO = Object.freeze({ tone: 'debug', label: 'Демо: тот же распознаватель, без камеры' });
 export function createTechniqueScreen(kit) {
   const { el, btn, setText, setHidden, setAttr, setClass, setStyle, invoke } = kit;
   const uid = kit.uid || 'ao';
@@ -481,14 +487,15 @@ export function createTechniqueScreen(kit) {
       const v = ctx.vm.technique && typeof ctx.vm.technique === 'object' ? ctx.vm.technique : null;
       const st = ctx.tr.status;
       const camOn = ['ready', 'lost', 'calibrating'].includes(st);
-      kit.paintStatus(status, ctx.debug ? kit.debugInfo : kit.describe(ctx.tr), '');
+      kit.paintStatus(status, v && v.demo ? DEMO_INFO : ctx.debug ? kit.debugInfo : kit.describe(ctx.tr), '');
       setAttr(host, 'data-tone', v && v.ideal ? 'good' : v && v.focus ? 'bad' : ctx.debug ? 'debug' : kit.describe(ctx.tr).tone);
-      kit.setBtn(enable, { hidden: ctx.debug || camOn || !!(v && v.demo), disabled: kit.cameraStarting.includes(st) });
+      kit.setBtn(enable, { hidden: ctx.debug || camOn || !!(v && v.demo && !v.demoAuto), disabled: kit.cameraStarting.includes(st) });
       if (!v) return;
-      state.demo = v.demo;
+      state.demo = v.demo && !v.demoAuto;   // кнопка переключает только демо, выбранное игроком
       // в «Отладке с клавиатуры» камеры нет — демо включено всегда
-      kit.setBtn(demoBtn, { label: v.demo ? (ctx.debug ? 'Демо (отладка без камеры)' : 'Вернуться к камере') : 'Демо без камеры', disabled: ctx.debug });
-      setText(srcTag, v.demo ? 'ДЕМО · синтетическая кисть проходит путь «ошибка → исправление»' : camOn ? 'КАМЕРА · вживую' : '');
+      kit.setBtn(demoBtn, { label: v.demo && !v.demoAuto ? (ctx.debug ? 'Демо (отладка без камеры)' : 'Вернуться к камере') : 'Демо без камеры', disabled: ctx.debug });
+      const who = v.kind === 'body' ? 'синтетическая поза' : 'синтетическая кисть';
+      setText(srcTag, v.demoAuto ? `ДЕМО, пока включается камера · ${who}` : v.demo ? `ДЕМО · ${who} проходит путь «ошибка → исправление»` : camOn ? 'КАМЕРА · вживую' : '');
       setHidden(srcTag, !(v.demo || camOn));
       if (v.id !== state.id) {
         state.id = v.id;
