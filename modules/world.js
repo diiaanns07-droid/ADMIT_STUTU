@@ -4018,9 +4018,14 @@ float ashPuddle( vec2 xz ) {
     if (camera) for (const c of culledChunks) c.mesh.visible = Math.hypot(camera.position.x - c.x, camera.position.z - c.z) - c.r < c.cull;
     updateEmbers(dt);
     if (elfVillage) {
-      // [LOAD] busy — идёт бой (Регент или дуэль): жителей деревни «в простое» не грузим (подвисания кадров)
+      // [LOAD] busy — жителей деревни «в простое» не грузим (перенос клипов в главном потоке — подвисания):
+      // идёт бой с Регентом или раунд дуэли (в дуэли статус всегда 'playing' — смотрим фазу), или снимка
+      // нет (меню после выхода из боя). Конец раунда, итоги, победа, поражение, прогулка — можно.
       const P = snap && snap.player;
-      elfVillage.update(dt, heroRoot.position, !!(P && P.encounter === 'engaged' && (!snap.status || snap.status === 'playing')));
+      const pvPhase = snap && snap.mode === 'pvp' ? (snap.pvp && snap.pvp.phase) : null;
+      const villageBusy = !P || (P.encounter === 'engaged' && (!snap.status || snap.status === 'playing')
+        && (!pvPhase || pvPhase === 'fight' || pvPhase === 'countdown'));
+      elfVillage.update(dt, heroRoot.position, villageBusy);
       ashGeo.setDrawRange(0, Math.round(QUALITY_PRESETS[quality].ash * (1 - 0.85 * elfVillage.weight)));   // в деревне пепел почти не падает
     }
     if (brightForest) {   // [FOREST] лес: трава, вода, частицы; в лесу пепла нет, настроение неба и тумана
