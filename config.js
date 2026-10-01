@@ -13,32 +13,62 @@
 
 export const API_VERSION = 'ASHEN_V1';
 
+// [OFFLINE] Все библиотеки, WASM, модели и шрифты лежат в vendor/ (tools/vendor_update.mjs): игра работает
+// без интернета — на сцене, в школе, на Wi-Fi площадки. Пути vendor/ повторяют CDN, поэтому запасной вариант
+// (cdnUrl / cdn) — просто другой префикс: cdnTwin(). sw.js и vision.js переключаются на CDN сами, если
+// локальный файл не отдался; index.html — по ?cdn=1 или после ошибки загрузки модулей.
+const VENDOR = new URL('./vendor/', import.meta.url).href;
+const CDN_PREFIX = [
+  [VENDOR + 'npm/', 'https://cdn.jsdelivr.net/npm/'],
+  [VENDOR + 'mediapipe-models/', 'https://storage.googleapis.com/mediapipe-models/'],
+];
+// Локальный URL из vendor/ → тот же файл на CDN (для остальных URL — null).
+export function cdnTwin(url) {
+  const u = String(url || '');
+  for (const [local, cdn] of CDN_PREFIX) if (u.startsWith(local)) return cdn + u.slice(local.length);
+  return null;
+}
+const npm = (path) => VENDOR + 'npm/' + path;
+const mpModel = (path) => VENDOR + 'mediapipe-models/' + path;
+
 export const DEPS = {
   three: {
     version: '0.185.1',
     revision: '185',
-    moduleUrl: 'https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js',
+    moduleUrl: npm('three@0.185.1/build/three.module.min.js'),
+    cdnUrl: 'https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.min.js',
     license: 'MIT',
   },
   // 0.10.35 выбрана сознательно: бандл 1.0.x содержит отправку метрик использования
   // на odml.pa.googleapis.com/v1/log, что противоречит требованию «без аналитики».
   mediaPipe: {
     version: '0.10.35',
-    moduleUrl: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/vision_bundle.mjs',
-    wasmRoot: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm',
-    modelUrl: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+    moduleUrl: npm('@mediapipe/tasks-vision@0.10.35/vision_bundle.mjs'),
+    wasmRoot: npm('@mediapipe/tasks-vision@0.10.35/wasm'),
+    modelUrl: mpModel('pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task'),
     // [PERF] точная модель позы для сильного железа (core/perfTuner.js): лучше держит плечи, когда руки перед корпусом
-    modelFullUrl: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task',
-    handModelUrl: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+    modelFullUrl: mpModel('pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task'),
+    handModelUrl: mpModel('hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'),
+    // запасной вариант — те же файлы на CDN
+    cdn: {
+      moduleUrl: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/vision_bundle.mjs',
+      wasmRoot: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm',
+      modelUrl: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+      modelFullUrl: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task',
+      handModelUrl: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+    },
     license: 'Apache-2.0',
   },
   // [NET] онлайн-дуэль через интернет: PeerJS (WebRTC DataChannel + бесплатный PeerServer 0.peerjs.com).
   // Грузится обычным <script> только при выборе режима «Интернет» (window.peerjs.Peer).
   peerjs: {
     version: '1.5.5',
-    scriptUrl: 'https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js',
+    scriptUrl: npm('peerjs@1.5.5/dist/peerjs.min.js'),
+    cdnUrl: 'https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js',
     license: 'MIT',
   },
+  // шрифты интерфейса (Google Fonts, OFL): vendor/fonts/fonts.css подключает modules/ui.css
+  fonts: { cssUrl: VENDOR + 'fonts/fonts.css', license: 'OFL-1.1' },
 };
 
 // Параметры рендера, которыми владеет main.js (тени и детали — у world/effects).
