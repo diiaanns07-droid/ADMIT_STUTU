@@ -1118,7 +1118,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       else if (key === 'reducedMotion') {
         const mo = buildMotion(prefix), prev = wrap.lastElementChild;
         // [FEEL] в одном ряду со «Сложностью» (меню не растёт по высоте)
-        if (prev && keys[keys.indexOf(key) - 1] === 'difficulty') { const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 16px;align-items:flex-end' }); wrap.replaceChild(row, prev); row.append(prev, mo); }
+        if (prev && keys[keys.indexOf(key) - 1] === 'difficulty') { const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 22px;align-items:flex-end' }); wrap.replaceChild(row, prev); row.append(prev, mo); }
         else wrap.append(mo);
       }
     }
@@ -1729,7 +1729,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   function resultScreen(kind) {
     const win_ = kind === 'victory';
     const hid = `${uid}-${kind}-h`;
-    const h = heading('h2', hid, win_ ? 'Регент повержен' : 'Вы пали', 'ao-h1');
+    const h = heading('h2', hid, win_ ? 'Регент повержен' : 'Хорошая попытка!', 'ao-h1');
     const summary = el('p', { class: 'ao-lead' });
     const rows = {};
     const stats = el('dl', { class: 'ao-stats' });
@@ -1750,7 +1750,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const tip = el('p', { class: 'ao-tip', hidden: true });
     // [ТВИСТ «ОШИБКА»] самая частая ошибка жеста за бой и как её исправить
     const coachTip = el('p', { class: 'ao-tip ao-tip--coach', hidden: true });
-    const again = btn('Сразиться снова', () => invoke('onRestart'), { variant: 'primary', size: 'lg' });
+    // [FEEL] поражение — дружелюбно: «Ещё раз» сразу, без упрёков
+    const again = btn(win_ ? 'Сразиться снова' : 'Ещё раз', () => invoke('onRestart'), { variant: 'primary', size: 'lg' });
     const oathR = btn('Клятва героя', () => invoke('onOath', { from: kind }));
     const exit = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
     const panel = el(
@@ -1793,14 +1794,17 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         if (win_) {
           const maxHp = Math.max(1, num(p.maxHp, 1));
           setText(rows.remain, `${Math.ceil(clamp(num(p.hp), 0, maxHp))} из ${Math.round(maxHp)}`);
-          setText(summary, num(st.damageTaken) === 0 ? 'Бой без единого пропущенного удара.' : 'Обет исполнен: страж больше не поднимется.');
+          setText(summary, `Победа за ${fmtClock(s.time)}. ${num(st.damageTaken) === 0 ? 'Бой без единого пропущенного удара.' : 'Обет исполнен: страж больше не поднимется.'}`);
           setHidden(tip, true);
         } else {
           const maxHp = Math.max(1e-6, num(b.maxHp, 1));
           const left = clamp(num(b.hp) / maxHp, 0, 1);
           setText(rows.remain, pct(left));
+          // [FEEL] дружелюбный итог: заголовок по прогрессу, совет про «Лёгкую» сложность
+          setText(h, left <= 0.5 ? 'Почти получилось!' : 'Хорошая попытка!');
           let text = `Регент устоял: у него осталось ${pct(left)} здоровья.`;
           if (b.stage === 2) text += ' Вы довели бой до второй стадии.';
+          text += ctx.settings.difficulty === 'normal' ? ' На «Лёгкой» сложности (меню → Настройки) Регент на 30% слабее.' : ' Новый бой — с полным здоровьем.';
           setText(summary, text);
           setText(tip, defeatTip(st, s));
           setHidden(tip, false);
@@ -2110,7 +2114,22 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       return { node, cd, time, name, hint };
     };
     const STATE_WORD = { ready: 'готово', active: 'активно', cooldown: 'перезарядка', low: 'мало энергии', off: 'недоступно' };
+    // [FEEL] вспышка плитки при срабатывании (переход в «активно» или из готовности в перезарядку)
+    // и короткий отблеск, когда перезарядка закончилась. CSS-анимация: «Уменьшенное движение» её гасит.
+    const flashTile = (t, cls) => {
+      t.node.classList.remove(cls);
+      void t.node.offsetWidth; // перезапуск анимации
+      t.node.classList.add(cls);
+      cancel(t[cls]);
+      t[cls] = later(() => t.node.classList.remove(cls), 520);
+    };
     const paintTile = (t, st, cdFrac, timeText) => {
+      const prev = t.state;
+      if (prev && prev !== st) {
+        if ((st === 'active' && prev !== 'active') || (st === 'cooldown' && (prev === 'ready' || prev === 'low'))) flashTile(t, 'is-flash');
+        else if (prev === 'cooldown' && st === 'ready') flashTile(t, 'is-ready');
+      }
+      t.state = st;
       setAttr(t.node, 'data-state', st);
       setStyle(t.node, '--ao-cd', cdFrac.toFixed(3));
       setText(t.time, timeText);

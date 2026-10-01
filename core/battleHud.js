@@ -782,6 +782,7 @@ export function createBattleHud({ canvas } = {}) {
     const list = Array.isArray(snap.telegraphs) ? snap.telegraphs.slice(0, 4) : [];
     if (!list.length) return;
     const P = snap.player && snap.player.position;
+    const baseA = ctx.globalAlpha;    // на паузе HUD приглушён
     let lead = null;
     for (const tl of list) {
       if (!isObj(tl)) continue;
@@ -800,7 +801,7 @@ export function createBattleHud({ canvas } = {}) {
       } else shapes.push({ pts: ringPts(proj, layout, c.x, c.z, R, nova ? 64 : 44), fill: (nova ? 0.05 : 0.12) + (nova ? 0.12 : 0.22) * k, closing: nova ? 0 : R, at: c });
       for (const sh of shapes) {
         if (!groundPath(sh.pts)) continue;
-        ctx.globalAlpha = 1;
+        ctx.globalAlpha = baseA;
         ctx.fillStyle = `rgba(255,46,30,${(sh.fill * (cue ? 1.25 + 0.35 * pulse : 1)).toFixed(3)})`;
         ctx.fill();
         ctx.lineWidth = 2.5 + 2 * k + (cue ? 1.5 * pulse : 0);
@@ -812,7 +813,7 @@ export function createBattleHud({ canvas } = {}) {
         if (sh.closing > 0 && k < 1) {
           const rr = sh.closing * (1 + 0.8 * (1 - k));
           if (groundPath(ringPts(proj, layout, sh.at.x, sh.at.z, rr, 36))) {
-            ctx.lineWidth = 2; ctx.strokeStyle = `rgba(255,220,200,${(0.25 + 0.6 * k).toFixed(3)})`; ctx.stroke();
+            ctx.lineWidth = 1.5; ctx.strokeStyle = `rgba(255,200,180,${(0.15 + 0.45 * k).toFixed(3)})`; ctx.stroke();
           }
         }
       }

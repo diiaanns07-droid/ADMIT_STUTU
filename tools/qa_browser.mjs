@@ -254,7 +254,7 @@ async function scenarioBootAndDebug() {
       await sleep(600);
       const b = await page.eval('__ASHEN__.snapshot().time');
       check('после исхода симуляция остановлена', a === b);
-      await page.click('Сразиться снова');
+      await page.click(end === 'defeat' ? 'Ещё раз' : 'Сразиться снова');   // [FEEL] на поражении — «Ещё раз»
       await sleep(300);
       const r = await page.eval('({s: __ASHEN__.screen, hp: __ASHEN__.snapshot().boss.hp, max: __ASHEN__.snapshot().boss.maxHp, t: __ASHEN__.snapshot().time})');
       check('повтор: новый бой с полным HP', r.s === 'playing' && r.hp === r.max && r.t < 1, JSON.stringify(r));
