@@ -121,6 +121,29 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
   }
   const heroes = () => (heroModel && heroModel.heroes) || null;
 
+  // [LOAD] выбранный герой стоит на витрине 2,5 с — в простое скачиваем модели остальных героев меню,
+  // чтобы смена героя не ждала сети. Ушли из меню (камера, бой) — отмена: канал нужен MediaPipe.
+  // Экономия трафика в браузере (Save-Data) — без предзагрузки.
+  // Время — по часам (performance.now): dt кадра main.js режет до 1/20 с и на слабом железе отстаёт.
+  const PF = { since: 0, ctl: null, done: false };
+  const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  function prefetchHeroes(dt, active) {
+    if (!active) { if (PF.ctl) { if (PF.ctl.abort) PF.ctl.abort(); PF.ctl = null; } PF.since = 0; return; }
+    if (PF.done || PF.ctl || !heroModel || typeof heroModel.prefetch !== 'function') return;
+    if (!heroModel.ready) { PF.since = 0; return; }
+    if (typeof navigator !== 'undefined' && navigator.connection && navigator.connection.saveData) { PF.done = true; return; }
+    if (!PF.since) PF.since = nowMs();
+    if (nowMs() - PF.since < 2500) return;
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    PF.ctl = ctl || {};
+    const go = () => {
+      if (PF.ctl !== (ctl || PF.ctl)) return;
+      // завершилась не отменой (успех или ошибка сети) — больше не повторяем
+      heroModel.prefetch(undefined, { signal: ctl ? ctl.signal : undefined }).then(() => { if (PF.ctl === (ctl || PF.ctl)) { PF.ctl = null; PF.done = true; } });
+    };
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 2000 }); else setTimeout(go, 0);
+  }
+
   function place() {
     const hp = heroRoot.position, yaw = heroRoot.rotation.y;
     _f.set(Math.sin(yaw), 0, Math.cos(yaw));        // вперёд героя
@@ -146,6 +169,7 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     const loading = !!(active && heroModel && !heroModel.ready);
     S.loadT = loading ? (S.loadT || 0) + dt : 0;
     if (summon) { const show = S.loadT > 0.4 ? '1' : '0'; if (summon.style.opacity !== show) summon.style.opacity = show; }
+    prefetchHeroes(dt, active);
     const want = active ? 1 : 0;
     if (S.t === dt && active) S.w = 1;               // первый кадр в меню — сразу полный свет
     S.w += (want - S.w) * (1 - Math.exp(-(active ? 3 : 6) * dt));
@@ -252,6 +276,7 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
   }
 
   function dispose() {
+    if (PF.ctl && PF.ctl.abort) PF.ctl.abort();
     scene.remove(group);
     if (dom && dom.removeEventListener) {
       dom.removeEventListener('wheel', onWheel); dom.removeEventListener('pointerdown', onDown); dom.removeEventListener('pointermove', onMove);

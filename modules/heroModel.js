@@ -128,8 +128,9 @@ export function configureHeroes(patch = {}) { defaults = { ...defaults, ...patch
 
 function loadGltf(url) {
   if (!gltfCache.has(url)) {
-    if (!gltfLoaderP) gltfLoaderP = createGltfLoader(); // [LOAD] с распаковщиком meshopt
-    const p = gltfLoaderP.then((l) => l.loadAsync(url));
+    if (!gltfLoaderP) { gltfLoaderP = createGltfLoader(); gltfLoaderP.catch(() => { gltfLoaderP = null; }); } // [LOAD] с распаковщиком meshopt; ошибка — повторить позже
+    // [LOAD] байты качаются сразу, не дожидаясь модулей загрузчика (они грузятся после main.js)
+    const p = Promise.all([gltfLoaderP, fetchBytes(url)]).then(([l, buf]) => l.parseAsync(buf, url.slice(0, url.lastIndexOf('/') + 1)));
     p.catch(() => gltfCache.delete(url));
     gltfCache.set(url, p);
   }
@@ -146,6 +147,19 @@ function prefetchHeroDeps(libUrls) {
     dressModsP.catch(() => { dressModsP = null; });
   }
   if (libUrls && libUrls.kaykit) loadGltf(libUrls.kaykit).catch(() => {});
+}
+
+// [LOAD] байты GLB-моделей героев: url → Promise<ArrayBuffer>. Кладёт setHero и предзагрузка витрины
+// (prefetch: в простое, когда выбранный герой уже стоит; при выходе из меню отменяется — канал нужен
+// MediaPipe). Отменённая или упавшая загрузка из кэша убирается.
+const glbBytes = new Map();
+function fetchBytes(url, signal) {
+  if (!glbBytes.has(url)) {
+    const p = fetch(url, { signal }).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); });
+    p.catch(() => glbBytes.delete(url));
+    glbBytes.set(url, p);
+  }
+  return glbBytes.get(url);
 }
 
 // Перенос всех клипов на VRM (кусками, чтобы не было длинного кадра) + длина шага клипов ходьбы.
@@ -320,7 +334,10 @@ export function createHeroModel({
     try {
       const url = def.glb ? new URL(def.glb, heroesBase).href : new URL(def.vrm, new URL(vrmUrl, base)).href;
       prefetchHeroDeps(libUrls);   // [LOAD] клипы и модули оболочки — параллельно с моделью
-      const vrm = def.glb ? await loadHumanoidGLB(THREE, url) : await loadVRM(THREE, url);
+      // [LOAD] байты GLB — через общий кэш (предзагрузка витрины, возврат к прежнему герою — без сети);
+      // не скачались (отмена предзагрузки, ошибка) — загрузчик попробует сам
+      const pre = def.glb ? await fetchBytes(url).catch(() => null) : null;
+      const vrm = def.glb ? await loadHumanoidGLB(THREE, url, undefined, pre) : await loadVRM(THREE, url);
       if (def.recolor) await recolorHero(vrm, def.recolor, def.makeup || null);
       if (def.hide) vrm.scene.traverse((o) => { if (o.isMesh && def.hide.some((n) => o.name.startsWith(n))) o.visible = false; });
       if (def.brows) thinBrows(vrm, def.brows);
@@ -1214,10 +1231,19 @@ export function createHeroModel({
     if (ownRoot && root.parent) root.parent.remove(root);
   }
 
+  // [LOAD] скачать модели героев меню заранее (по одной, чтобы не забивать канал); signal — отмена
+  function prefetch(ids = HERO_ORDER, { signal } = {}) {
+    const urls = [...new Set(ids.map((id) => HEROES[id] && HEROES[id].glb).filter(Boolean).map((f) => new URL(f, heroesBase).href))];
+    let chain = Promise.resolve();
+    for (const u of urls) chain = chain.then(() => (signal && signal.aborted ? null : fetchBytes(u, signal)));
+    return chain.then(() => true, () => false);
+  }
+
   parentAnchors();
   setHero(hero);
 
   return {
+    prefetch,
     root, update, setHero, setPose, setMirror, getAnchors, setShading, setQuality, setLod, setStance, dispose,
     menuStance: (id) => (HEROES[id] && HEROES[id].menuStance) || null,
     menuPose: (id) => (HEROES[id] && HEROES[id].menuPose) || null,

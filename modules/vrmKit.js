@@ -34,22 +34,22 @@ function vrmModule() {
 }
 
 // [LOAD] модели в assets/ сжаты tools/compress_assets.mjs (EXT_meshopt_compression + WebP-текстуры):
-// каждому GLTFLoader нужен MeshoptDecoder (three/addons/libs, ~30 КБ, WASM внутри файла). Несжатые
-// модели грузятся тем же загрузчиком как раньше. Распаковщик не загрузился — загрузчик без него
-// (несжатые модели по-прежнему откроются, сжатые дадут понятную ошибку GLTFLoader).
+// каждому GLTFLoader нужен MeshoptDecoder (three/addons/libs, ~30 КБ, WASM внутри файла); несжатые
+// модели тот же загрузчик открывает как раньше. Распаковщик не загрузился — ошибка (все модели
+// assets/ без него не откроются), а не загрузчик без него: кэши загрузчиков сбрасываются и следующая
+// попытка (смена героя, вход в бой) повторит загрузку распаковщика.
 let meshoptP = null;
 function meshoptDecoder() {
   if (!meshoptP) {
-    meshoptP = import('three/addons/libs/meshopt_decoder.module.js')
-      .then((m) => m.MeshoptDecoder.ready.then(() => m.MeshoptDecoder))
-      .catch((e) => { console.warn('[LOAD] MeshoptDecoder недоступен:', e && e.message); meshoptP = null; return null; });
+    meshoptP = import('three/addons/libs/meshopt_decoder.module.js').then((m) => m.MeshoptDecoder.ready.then(() => m.MeshoptDecoder));
+    meshoptP.catch((e) => { console.warn('[LOAD] MeshoptDecoder недоступен:', e && e.message); meshoptP = null; });
   }
   return meshoptP;
 }
 export async function createGltfLoader() {
   const [{ GLTFLoader }, dec] = await Promise.all([import('three/addons/loaders/GLTFLoader.js'), meshoptDecoder()]);
   const loader = new GLTFLoader();
-  if (dec) loader.setMeshoptDecoder(dec);
+  loader.setMeshoptDecoder(dec);
   return loader;
 }
 
@@ -87,9 +87,10 @@ for (const s of ['l', 'r']) {
     UAL_BONES[`${S}${f}Proximal`] = `${q}_01_${s}`; UAL_BONES[`${S}${f}Intermediate`] = `${q}_02_${s}`; UAL_BONES[`${S}${f}Distal`] = `${q}_03_${s}`;
   }
 }
-export async function loadHumanoidGLB(THREE, url, boneMap = UAL_BONES) {
+// data — уже скачанные байты файла (ArrayBuffer, предзагрузка героев меню): разбор без повторной загрузки
+export async function loadHumanoidGLB(THREE, url, boneMap = UAL_BONES, data = null) {
   const [loader, V] = await Promise.all([createGltfLoader(), vrmModule()]);
-  const gltf = await loader.loadAsync(url);
+  const gltf = data ? await loader.parseAsync(data, url.slice(0, url.lastIndexOf('/') + 1)) : await loader.loadAsync(url);
   const scene = gltf.scene;
   scene.updateMatrixWorld(true);
   const find = (n) => scene.getObjectByName(n) || scene.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(n));
