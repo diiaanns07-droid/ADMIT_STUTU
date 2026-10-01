@@ -165,6 +165,14 @@ export const DEFAULT_VISION_CONFIG = Object.freeze({
   minHandPresenceConfidence: 0.5,
   minHandTrackingConfidence: 0.5,
   handGestures: Object.freeze({}), // патч DEFAULT_HAND_CONFIG
+  // [СТОЯ] игрок стоит: бёдра и колени видны, колени заметно ниже бёдер (бедро вертикально).
+  // Сидя бедро идёт к камере — колено в кадре почти на уровне бедра (или его не видно за столом).
+  standHipVis: 0.6,
+  standKneeVis: 0.5,
+  standTorsoMin: 1.0,      // (бёдра − плечи) / ширина плеч не меньше — это правда корпус
+  standKneeDrop: 1.05,     // (колени − бёдра) / ширина плеч не меньше — бедро вертикально (сидя ≲ 0.8)
+  standOnMs: 700,          // признаки держатся столько — «стоит»
+  standOffMs: 1200,        // признаков нет столько — «сидит»
   camera: Object.freeze({ width: 640, height: 480, frameRate: 30, deviceId: null }),
   mediaPipe: DEFAULT_MEDIAPIPE,
 });
@@ -237,6 +245,30 @@ function copyLandmarks(pose) {
     if (p) out[i] = { x: p.x, y: p.y, z: p.z, visibility: p.visibility };
   }
   return out;
+}
+
+// [СТОЯ] Детектор позы «стоит» по 33 точкам позы (чистая логика). update(landmarks, tMs, aspect) → boolean.
+export function createStandingDetector(configPatch = {}) {
+  const c = mergeVisionConfig(DEFAULT_VISION_CONFIG, configPatch);
+  let on = false, evSince = null, noSince = null, last = null;
+  const vis = (p, v) => p && finite(p.x) && finite(p.y) && (!finite(p.visibility) || p.visibility >= v);
+  function update(lms, tMs, aspect = 4 / 3) {
+    let ev = false;
+    last = null;
+    if (Array.isArray(lms) && vis(lms[11], 0.5) && vis(lms[12], 0.5) && vis(lms[23], c.standHipVis) && vis(lms[24], c.standHipVis)
+      && vis(lms[25], c.standKneeVis) && vis(lms[26], c.standKneeVis)) {
+      const sw = Math.hypot((lms[11].x - lms[12].x) * aspect, lms[11].y - lms[12].y);
+      if (sw > 1e-3) {
+        const shY = (lms[11].y + lms[12].y) / 2, hipY = (lms[23].y + lms[24].y) / 2, knY = (lms[25].y + lms[26].y) / 2;
+        last = { torso: (hipY - shY) / sw, kneeDrop: (knY - hipY) / sw };
+        ev = last.torso >= c.standTorsoMin && last.kneeDrop >= c.standKneeDrop && knY <= 1.02;
+      }
+    }
+    if (ev) { noSince = null; if (evSince === null) evSince = tMs; if (!on && tMs - evSince >= c.standOnMs) on = true; }
+    else { evSince = null; if (noSince === null) noSince = tMs; if (on && tMs - noSince >= c.standOffMs) on = false; }
+    return on;
+  }
+  return { update, get standing() { return on; }, getDebug: () => ({ standing: on, ...(last ? { torso: r3(last.torso), kneeDrop: r3(last.kneeDrop) } : {}) }), reset() { on = false; evSince = null; noSince = null; last = null; } };
 }
 
 // ─────────────────────── 1. интерпретатор поз ───────────────────────
@@ -1005,6 +1037,7 @@ export async function createVision(options = {}) {
   const handsInterp = hi && typeof hi.read === 'function' && typeof hi.push === 'function'
     ? hi : createHandGestures(cfg.handGestures || {});
   let lastPose = null;      // { tMs, frameW, frameH, mirror, landmarks[33] } — для трекинг-HUD
+  const standDet = createStandingDetector(cfg);   // [СТОЯ] игрок стоит (бёдра и колени в кадре)
   let lastBody = null;      // [V3.1] последняя надёжная середина плеч {x, y, t}
   let handTap = null;       // [HAND] core/handZone.js: наблюдения кистей для лука и магии рукой
   let recorder = null;      // [CONTROLS] core/inputRecorder.js: запись того же наблюдения (?rec=1 в main.js)
@@ -1105,6 +1138,7 @@ export async function createVision(options = {}) {
         ...interp.getDebug(now),
         frameAgeMs: r1(tr.frameAgeMs),
         bodyVisible: tr.bodyVisible,
+        stand: standDet.getDebug(),   // [СТОЯ]
         inferenceHz: arr.length >= 2 ? r1(perf.hz) : null,
         inferMs: r1(perf.inferMs),
         latencyMs: r1(perf.latencyMs),
@@ -1701,6 +1735,7 @@ export async function createVision(options = {}) {
     // [PERF] кадр с уверенной кистью: закрытые руками плечи не считаются потерей трекинга
     if (Array.isArray(hands) && hands.some((hd) => hd && Array.isArray(hd.landmarks) && hd.landmarks.length && !(finite(hd.score) && hd.score < 0.5))) interp.noteHands(tMs);
     interp.pushObservation({ tMs, frameW: w, frameH: h, landmarks: lms });
+    const standing = standDet.update(lms, tMs, h > 0 ? w / h : 4 / 3);   // [СТОЯ]
     lastPose = { tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, landmarks: lms };
     if (cfg.hands) {
       const wr = (i) => (lms && lms[i] ? { x: lms[i].x, y: lms[i].y, visibility: lms[i].visibility } : null);
@@ -1717,7 +1752,7 @@ export async function createVision(options = {}) {
         sw = h > 0 ? Math.hypot((lms[11].x - lms[12].x) * (w / h), lms[11].y - lms[12].y) : null;
         lastBody = { ...body, sw, t: tMs };
       } else if (lastBody && tMs - lastBody.t <= 700) { body = { x: lastBody.x, y: lastBody.y }; sw = lastBody.sw; }
-      const handObs = { tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, hands: Array.isArray(hands) ? hands : [], poseWrists: { left: wr(15), right: wr(16) }, bodyCenter: body, shoulderWidth: sw };
+      const handObs = { tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, hands: Array.isArray(hands) ? hands : [], poseWrists: { left: wr(15), right: wr(16) }, bodyCenter: body, shoulderWidth: sw, standing };
       handsInterp.push(handObs);
       if (recorder) { try { recorder.add(handObs); } catch (e) { /* [CONTROLS] запись не ломает трекинг */ } }
       // [HAND] лук и магия рукой (core/handZone.js): то же наблюдение + поза (плечи, уши)
@@ -1987,6 +2022,7 @@ export async function createVision(options = {}) {
       out.rune = null; out.runeScore = 0; out.runeFizzle = false;
     }
     out.gestureMode = cfg.gestureMode === 'novice' ? 'novice' : 'master';
+    out.standing = standDet.standing;   // [СТОЯ] игрок стоит
     out.hands = {
       available: h.available,
       left: L ? { shape: L.shape, palmFacing: L.palmFacing, charge: L.charge, center: L.center } : null,
@@ -2028,6 +2064,7 @@ export async function createVision(options = {}) {
     rejectCalibration('stopped', 'Калибровка прервана: камера остановлена');
     interp.resetMotion('stopped');
     handsInterp.reset('stopped');
+    standDet.reset();
     lastPose = null;
     lastBody = null;
     clearOverlay();

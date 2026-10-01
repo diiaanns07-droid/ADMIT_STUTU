@@ -100,9 +100,12 @@ function seqRune() {
 }
 
 // Прогон: камера с частотой hz, фаза кадров случайна; шум точек и редкие пропуски кадров трекера.
-function runSeq(seq, hz, seed, profile) {
+// [СТОЯ] сцена «стоит в ~2 м»: плечи и кисть вдвое мельче в кадре, относительный шум точек вдвое больше
+const SCENES = { sit: { cy: 0.4, sw: 0.3, noise: 0.03 }, stand: { cy: 0.3, sw: 0.16, noise: 0.056 } };
+function runSeq(seq, hz, seed, profile, scene = 'sit') {
   reseed(seed);
-  const S = makeScene({ cx: 0.5, cy: 0.4, sw: 0.3 });
+  const SC = SCENES[scene], kk = SC.sw / 0.3;
+  const S = makeScene({ cx: 0.5, cy: SC.cy, sw: SC.sw });
   const g = createHandGestures({ moveMode: 'steer', profile, ...G_OPTS });
   const dt = 1000 / hz;
   let t = 1000 + rnd() * dt;          // фаза кадров
@@ -117,7 +120,7 @@ function runSeq(seq, hz, seed, profile) {
         if (!fn || drop) return null;
         const q = fn(u);
         if (!q) return null;
-        return handAt(S, q.side, q.x + 0.012 * gauss(), q.y + 0.012 * gauss(), q.shape, { noise: 0.03, yaw: q.yaw || 0, size: q.size || 0.075 });
+        return handAt(S, q.side, q.x + 0.012 * gauss(), q.y + 0.012 * gauss(), q.shape, { noise: SC.noise, yaw: q.yaw || 0, size: (q.size || 0.075) * kk });
       };
       const L = mk(P.L), R = mk(P.R);
       g.push(obsOf(S, t, { left: L, right: R }));
@@ -143,7 +146,7 @@ const SEQS = {
 };
 const MASTER_SEQS = { 'рассечение': seqSlash, 'руна ▲': seqRune };
 
-export function measure(profile = PROFILE, trials = TRIALS) {
+export function measure(profile = PROFILE, trials = TRIALS, scene = 'sit') {
   const out = {};
   const all = { ...SEQS, ...(profile === 'master' ? MASTER_SEQS : {}) };
   for (const [name, mk] of Object.entries(all)) {
@@ -151,7 +154,7 @@ export function measure(profile = PROFILE, trials = TRIALS) {
     for (const hz of RATES) {
       let hits = 0, falses = 0; const lat = [];
       for (let k = 0; k < trials; k++) {
-        const r = runSeq(mk(), hz, 101 + k * 7919 + hz, profile);
+        const r = runSeq(mk(), hz, 101 + k * 7919 + hz, profile, scene);
         if (r.hit) { hits++; lat.push(r.hitT); }
         falses += r.falseHit;
       }
@@ -163,7 +166,7 @@ export function measure(profile = PROFILE, trials = TRIALS) {
 
 const isMain = import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
-  const R = { novice: measure('novice'), master: measure('master') };
+  const R = { novice: measure('novice'), master: measure('master'), 'стоя, master': measure('master', TRIALS, 'stand') };
   if (REPORT) {
     for (const [p, tab] of Object.entries(R)) {
       console.log(`\n${p}: доля срабатываний, % (ложных кадров до жеста) · задержка от начала жеста, мс`);

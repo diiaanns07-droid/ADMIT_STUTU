@@ -52,8 +52,13 @@ let DT = Math.round(1000 / +argOf('--fps', 30));   // шаг кадров кам
 let NX = -0.55 + OFFSET;     // нейтраль руля (перед левым плечом) на зеркальном экране — у этого игрока
 const CHEST = 0.28 - LEVEL;  // «на уровне груди» (y вниз): ход
 const SHOULDER = -0.25;      // «у плеча и выше»: бег
-const LAP = 1.45;            // на коленях
-const SIZE = 0.075;
+let LAP = 1.45;              // на коленях
+let SIZE = 0.075;
+// [СТОЯ] игрок стоит в ~2 м от камеры: плечи вдвое меньше в кадре (0.16 высоты кадра), кисть тоже,
+// опущенная рука висит у бедра (≈1.8 ширины плеч под плечами), корпус покачивается сильнее
+let STAND = argv.includes('--stand');
+// шум точек MediaPipe — в пикселях: у вдвое меньшей кисти относительный шум вдвое больше
+const sceneOf = () => (STAND ? { cy: 0.3, sw: 0.16, lap: 1.8, sway: 0.12, noise: 0.066 } : { cy: 0.4, sw: 0.3, lap: 1.45, sway: 0.06, noise: 0.035 });
 const ease = (u) => (u < 0 ? 0 : u > 1 ? 1 : u * u * (3 - 2 * u));
 const lerp = (a, b, u) => a + (b - a) * u;
 
@@ -98,7 +103,9 @@ function scenario() {
 
 function simulate(seed, gOpts = {}) {
   reseed(seed);
-  const S = makeScene({ cx: 0.5, cy: 0.4, sw: 0.3 });
+  const SC = sceneOf();
+  LAP = SC.lap; SIZE = 0.075 * SC.sw / 0.3;
+  const S = makeScene({ cx: 0.5, cy: SC.cy, sw: SC.sw });
   const g = createHandGestures({ moveMode: 'steer', ...gOpts });
   const phases = scenario();
   let t = 1000;
@@ -123,12 +130,12 @@ function simulate(seed, gOpts = {}) {
       const u = (t - t0) / P.ms;
       const q = P.hand(u);
       // живость: корпус качается, ладонь гуляет к камере и вбок, кисть поворачивается
-      const sway = 0.06 * osc(0.23, ph[0]);
+      const sway = SC.sway * osc(0.23, ph[0]);
       // наклон корпуса к камере: раз в ~6 с на 1,5 с, всё тело (и кисть) крупнее на 15 %, плечи чуть ниже
       const leanK = LEAN ? (() => { const c = ((t - 1000) % 6000) / 1000; const e = (u) => u * u * (3 - 2 * u); return c < 2 ? 0 : c < 2.4 ? e((c - 2) / 0.4) : c < 3.5 ? 1 : c < 3.9 ? 1 - e((c - 3.5) / 0.4) : 0; })() : 0;
-      S.sw = 0.3 * (1 + 0.15 * leanK);
+      S.sw = SC.sw * (1 + 0.15 * leanK);
       S.cx = 0.5 + sway * S.sw / S.aspect;
-      S.cy = 0.4 + 0.02 * osc(0.17, ph[1]) * S.sw + 0.03 * leanK;
+      S.cy = SC.cy + (STAND ? 0.05 : 0.02) * osc(0.17, ph[1]) * S.sw + 0.03 * leanK;
       let hand = null, glShift = null;
       if (dropLeft > 0) dropLeft--;
       else if (rnd() < 0.04) dropLeft = 1 + Math.floor(rnd() * 6);    // серии пропусков 1–6 кадров
@@ -143,7 +150,7 @@ function simulate(seed, gOpts = {}) {
         hand = makeHand({
           side: 'left', aspect: S.aspect, ...SHAPES[q.shape], size: q.size * wobSize * gs * (1 + 0.15 * leanK),
           yaw: (edge ? 1.1 : 0.25) * osc(0.3, ph[5]) + (edge ? 0.3 : 0), pitch: 0.2 * osc(0.35, ph[6]), roll: 0.15 * osc(0.2, ph[7]),
-          noise: 0.035, cx: at.cx, cy: at.cy,
+          noise: SC.noise, cx: at.cx, cy: at.cy,
         });
         // сдвиг всей сцены (корпус качнулся) уже учтён в S.at
       }
@@ -154,7 +161,7 @@ function simulate(seed, gOpts = {}) {
         if (S.swapLeft > 0) {
           S.swapLeft--;
           const at2 = S.at(0.45 + 0.015 * gauss(), 0.3 + 0.015 * gauss());
-          hands = [makeHand({ side: 'left', aspect: S.aspect, ...SHAPES.open, size: SIZE, noise: 0.035, cx: at2.cx, cy: at2.cy })];
+          hands = [makeHand({ side: 'left', aspect: S.aspect, ...SHAPES.open, size: SIZE, noise: SC.noise, cx: at2.cx, cy: at2.cy })];
         }
       }
       // правая рука: цикл 4 с — «OK» у груди (огонь), указательным рисует ▲ у середины груди,
@@ -168,7 +175,7 @@ function simulate(seed, gOpts = {}) {
         else if (c < 3.3) q2 = { x: 0.5, y: 0.3, shape: 'open' };
         else q2 = { x: 0.55, y: 0.6, shape: 'open', yaw: 0.9 };
         const at2 = S.at(q2.x + 0.015 * gauss(), q2.y + 0.015 * gauss());
-        hands.push(makeHand({ side: 'right', aspect: S.aspect, ...SHAPES[q2.shape], size: SIZE * (1 + 0.03 * gauss()), yaw: q2.yaw || 0.15 * osc(0.3, ph[5] + 1), noise: 0.035, cx: at2.cx, cy: at2.cy }));
+        hands.push(makeHand({ side: 'right', aspect: S.aspect, ...SHAPES[q2.shape], size: SIZE * (1 + 0.03 * gauss()), yaw: q2.yaw || 0.15 * osc(0.3, ph[5] + 1), noise: SC.noise, cx: at2.cx, cy: at2.cy }));
       }
       recent.push(hand ? 'x' : '.'); if (recent.length > 16) recent.shift();
       // запястье позы считает ОТДЕЛЬНАЯ модель (Pose): выброс модели кисти его не сдвигает — оно у настоящей руки;
@@ -321,6 +328,16 @@ if (ONLY === null && !argv.includes('--fps')) {
   R.fps8WalkStopPct = E.walkStopPct; R.fps8FalseShieldOn = E.falseShieldOn; R.fps8FalseDash = E.falseDash;
   R.fps8RestMove = E.restMove; R.fps8ShieldUpPct = E.shieldUpPct; R.fps8ShieldDropped = E.shieldDropped; R.fps8Runs = ee.length;
 }
+// [СТОЯ] игрок стоит в ~2 м от камеры: кисть вдвое мельче, шум точек относительно вдвое больше
+if (ONLY === null && !STAND) {
+  STAND = true;
+  const ss = [];
+  for (let s = 0; s < Math.max(4, SEEDS / 2); s++) ss.push(simulate(29000 + s * 7919, G_OPTS));
+  STAND = false;
+  const Q = summarize(ss);
+  R.standFalseShieldOn = Q.falseShieldOn; R.standFalseDash = Q.falseDash; R.standWalkStopPct = Q.walkStopPct; R.standWrongTurn = Q.wrongTurn;
+  R.standRestMove = Q.restMove; R.standShieldUpPct = Q.shieldUpPct; R.standTurnAvg = Q.straightTurnAvg;
+}
 // левая ладонь закрыла плечо: ширины плеч нет — щит и «убрал ладонь» сравнивают размер кисти в кадре
 if (ONLY === null && !NO_SW) {
   NO_SW = true;
@@ -380,6 +397,13 @@ const LIMITS = [
   ['fps8RestMove', (v) => v === undefined || v <= 6, 'камера 8 к/с: рука на коленях — герой стоит (кадров на 4 прогона)'],
   ['fps8ShieldUpPct', (v) => v === undefined || v >= 75, 'камера 8 к/с: осознанный толчок поднимает щит, %'],
   ['fps8ShieldDropped', (v) => v === undefined || v === `${R.fps8Runs}/${R.fps8Runs}`, 'камера 8 к/с: убрал ладонь — щит опустился'],
+  ['standFalseShieldOn', (v) => v === undefined || v === 0, 'стоя: щит не поднимается сам'],
+  ['standFalseDash', (v) => v === undefined || v === 0, 'стоя: ложные рывки'],
+  ['standWalkStopPct', (v) => v === undefined || v <= 3, 'стоя: герой идёт, % кадров «стоим»'],
+  ['standWrongTurn', (v) => v === undefined || v === 0, 'стоя: поворот не в ту сторону'],
+  ['standTurnAvg', (v) => v === undefined || v <= 0.03, 'стоя: руль на прямой'],
+  ['standRestMove', (v) => v === undefined || v === 0, 'стоя: рука опущена вдоль тела — герой стоит'],
+  ['standShieldUpPct', (v) => v === undefined || v >= 75, 'стоя: осознанный толчок поднимает щит, %'],
   ['glitchFalseDash', (v) => v === undefined || v <= 2, 'сбои трекинга 1 %: ложные рывки'],
   ['glitchWrongTurn', (v) => v === undefined || v === 0, 'сбои трекинга 1 %: поворот не в ту сторону'],
   ['glitchWalkStopPct', (v) => v === undefined || v <= 3, 'сбои трекинга 1 %: герой идёт, % кадров «стоим»'],
