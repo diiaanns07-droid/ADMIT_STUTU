@@ -354,6 +354,88 @@ R.rune_shadow = (r) => {
   return trim(normalize(reverb(x, { room: 0.85, wet: 0.3, tail: 1.0 }), -1), -60, 0.1);
 };
 
+// ---- Регент Нимба (каменный страж). Замах — нарастание, у которого «момент удара» ровно на WINDUP_HIT с:
+// в игре сэмпл стартует со сдвигом (WINDUP_HIT − длительность замаха), и пик совпадает с ударом.
+export const WINDUP_HIT = 2.0;
+function riser(r, body) {
+  const n = len(WINDUP_HIT + 0.35), x = new Float32Array(n);
+  body(x, n);
+  // последние 0.35 с — быстрое затухание: дальше звучит сам удар
+  const e = curve(n, [[0, 1], [WINDUP_HIT - 0.02, 1], [WINDUP_HIT + 0.3, 0, 'sin'], [WINDUP_HIT + 0.35, 0]]);
+  return normalize(mul(x, e), -1);
+}
+R.windup_slam = (r) => riser(r, (x, n) => {
+  const up = curve(n, [[0, 0], [WINDUP_HIT, 1, 'sin']]);
+  add(x, mul(drive(biquad(noise(n, 'brown', r), 'lowpass', curve(n, [[0, 90], [WINDUP_HIT, 700, 'exp']]), 0.9), 2), mul(up, 1.2)));
+  add(x, mul(drive(osc(n, curve(n, [[0, 38], [WINDUP_HIT, 70, 'exp']]), 'saw'), 1.5), mul(up, 0.18)));
+  add(x, grains(n, r, { count: 50, t0: 0.4, t1: WINDUP_HIT, f0: 900, f1: 3000, q: 1.5, amp: [0.03, 0.12] })); // осыпается камень
+});
+R.windup_orb = (r) => riser(r, (x, n) => {
+  const up = curve(n, [[0, 0.02], [WINDUP_HIT, 1, 'exp']]);
+  const f = curve(n, [[0, 110], [WINDUP_HIT, 330, 'exp']]);
+  for (const k of [1, 1.5, 2.01]) add(x, mul(osc(n, mul(f, k), 'saw'), mul(up, 0.06 / k)));
+  add(x, mul(biquad(noise(n, 'pink', r), 'bandpass', curve(n, [[0, 600], [WINDUP_HIT, 3600, 'exp']]), 3), mul(up, 0.9)));
+  add(x, mul(lp(noise(n, 'brown', r), 300), mul(up, 0.7)));
+});
+R.windup_nova = (r) => riser(r, (x, n) => {
+  const up = curve(n, [[0, 0], [WINDUP_HIT, 1, 'sin']]);
+  add(x, mul(pad(WINDUP_HIT + 0.35, [hz('D3'), hz('A3'), hz('D4'), hz('Eb4')], r, { type: 'saw', amp: 0.16, attack: WINDUP_HIT * 0.9, lpf: 1800 }), up));
+  add(x, mul(biquad(noise(n, 'pink', r), 'bandpass', curve(n, [[0, 300], [WINDUP_HIT, 2400, 'exp']]), 1.2), mul(up, 0.8)));
+  add(x, mul(drive(lp(noise(n, 'brown', r), 220), 2), mul(up, 0.8)));
+});
+// ---- удар о землю: саб с сатурацией, грохот, треск камня, долгий хвост обломков
+R.boss_slam = (r) => {
+  const n = len(2.6), x = new Float32Array(n);
+  add(x, mul(hp(noise(n, 'white', r), 1200), perc(n, 0.0005, 0.012, 0.9)));
+  add(x, drive(mul(osc(n, sweep(n, 75, 27, 0.7), 'sine'), perc(n, 0.002, 0.45, 1)), 3.5), 0.9);
+  add(x, mul(biquad(noise(n, 'brown', r), 'lowpass', sweep(n, 1800, 140, 0.8), 0.8), perc(n, 0.001, 0.3, 1.3)));
+  add(x, grains(n, r, { count: 22, t0: 0, t1: 0.15, f0: 1200, f1: 3500, q: 1.4, amp: [0.2, 0.6] }));
+  add(x, grains(n, r, { count: 45, t0: 0.12, t1: 1.8, f0: 800, f1: 4000, q: 1.6, amp: [0.04, 0.18] }));
+  return trim(normalize(reverb(x, { room: 0.9, damp: 0.45, wet: 0.3, tail: 1.5, pre: 0.02 }), -1), -60, 0.15);
+};
+// ---- нова: ударная волна холода — «вуумп» наружу, низкий удар, ледяной звон
+R.boss_nova = (r) => {
+  const n = len(2.4), x = new Float32Array(n);
+  add(x, mul(biquad(noise(n, 'pink', r), 'bandpass', curve(n, [[0, 250], [0.35, 3200, 'exp'], [1.2, 900, 'exp']]), 1.1), curve(n, [[0, 0], [0.02, 1.6], [1.2, 0.001, 'exp']])));
+  add(x, drive(mul(osc(n, sweep(n, 90, 34, 0.6), 'sine'), perc(n, 0.003, 0.35, 1)), 3), 0.8);
+  for (const [nm, t] of [['D6', 0.02], ['F6', 0.05], ['A6', 0.08], ['C#7', 0.11]]) add(x, bell(1.6, hz(nm), r, { bright: 0.3, decay: 0.8 }), 0.12, t);
+  add(x, mul(hp(noise(n, 'white', r), 5000), curve(n, [[0, 0], [0.05, 0.12], [1.4, 0.001, 'exp']])));
+  return trim(normalize(reverb(x, { room: 0.88, wet: 0.3, tail: 1.3 }), -1), -60, 0.12);
+};
+// ---- выпуск орба: тёмный «вжух» с рыком и треском энергии
+R.orb_launch = (r) => {
+  const n = len(1.0), x = new Float32Array(n);
+  add(x, mul(biquad(noise(n, 'pink', r), 'bandpass', curve(n, [[0, 300], [0.25, 1800, 'exp'], [0.7, 600, 'exp']]), 1.5), curve(n, [[0, 0], [0.06, 1.4, 'sin'], [0.75, 0, 'sin']])));
+  add(x, mul(drive(osc(n, curve(n, [[0, 55], [0.3, 110, 'exp'], [0.8, 70, 'exp']]), 'saw'), 2), curve(n, [[0, 0], [0.05, 0.3], [0.8, 0.001, 'exp']])));
+  add(x, grains(n, r, { count: 14, t0: 0, t1: 0.5, f0: 2500, f1: 7000, q: 3, amp: [0.05, 0.2] }));
+  return trim(normalize(reverb(x, { room: 0.7, wet: 0.2, tail: 0.6 }), -1), -55);
+};
+// ---- орб лопнул: глухой хлопок и холодный стеклянный треск
+R.orb_hit = (r) => {
+  const n = len(1.2), x = new Float32Array(n);
+  add(x, drive(mul(osc(n, sweep(n, 110, 45, 0.3), 'sine'), perc(n, 0.002, 0.18, 1)), 2.5), 0.8);
+  add(x, mul(lp(noise(n, 'brown', r), 900), perc(n, 0.001, 0.12, 1.1)));
+  add(x, grains(n, r, { count: 20, t0: 0, t1: 0.25, f0: 3000, f1: 8000, q: 4, amp: [0.08, 0.3] }));
+  add(x, mul(bell(1.0, hz('F#6'), r, { bright: 0.6, decay: 0.4 }), 0.12));
+  return trim(normalize(reverb(x, { room: 0.75, wet: 0.22, tail: 0.7 }), -1), -55);
+};
+// ---- пробуждение и вторая стадия: низкий гонг, рык (пила через «гортанные» полосы), диссонанс хора
+R.boss_phase = (r) => {
+  const n = len(3.6), x = new Float32Array(n);
+  const g = modal(n, 55, [[1, 1, 2.2], [1.47, 0.6, 1.6], [2.09, 0.45, 1.1], [2.56, 0.3, 0.8], [3.3, 0.2, 0.5], [4.1, 0.12, 0.35]], r, 0.004);
+  add(x, drive(mul(g, curve(n, [[0, 0], [0.01, 0.6], [3.6, 0.6]])), 2.2), 0.9);
+  const rf = curve(n, [[0, 70], [0.5, 92, 'exp'], [2.2, 64, 'exp']]);
+  const vib = new Float32Array(n); for (let i = 0; i < n; i++) vib[i] = rf[i] * (1 + 0.03 * Math.sin(2 * Math.PI * 7 * i / SR) + 0.02 * Math.sin(2 * Math.PI * 23 * i / SR));
+  let roar = osc(n, vib, 'saw');
+  const form = new Float32Array(n);
+  for (const [f, q, a] of [[420, 4, 1], [880, 5, 0.7], [1650, 6, 0.35]]) add(form, bp(roar, f, q), a);
+  roar = drive(form, 2.5);
+  add(x, mul(roar, curve(n, [[0, 0], [0.25, 0.55, 'sin'], [1.6, 0.4], [2.6, 0, 'sin']])));
+  add(x, mul(pad(3.4, ['D3', 'Eb3', 'A3', 'D4', 'Eb4'], r, { type: 'saw', amp: 0.1, attack: 0.9, lpf: 1600 }), 1, 0.2));
+  add(x, mul(drive(lp(noise(n, 'brown', r), 200), 2), curve(n, [[0, 0], [0.4, 0.9], [3.2, 0.001, 'exp']])));
+  return trim(normalize(reverb(x, { room: 0.92, damp: 0.45, wet: 0.3, tail: 1.6, pre: 0.03 }), -1), -60, 0.2);
+};
+
 // ================================================================== что и сколько печём
 // [имя файла, рецепт, вариантов, seed]
 export const BAKE = [
@@ -365,6 +447,9 @@ export const BAKE = [
   ['defeat', 'defeat', 1, 151], ['ambient', 'ambient', 1, 161], ['perfect', 'perfect', 1, 171],
   ['rune_fire', 'rune_fire', 1, 181], ['rune_storm', 'rune_storm', 1, 182], ['rune_light', 'rune_light', 1, 183],
   ['rune_star', 'rune_star', 1, 184], ['rune_wind', 'rune_wind', 1, 185], ['rune_shadow', 'rune_shadow', 1, 186],
+  ['windup_slam', 'windup_slam', 1, 191], ['windup_orb', 'windup_orb', 1, 192], ['windup_nova', 'windup_nova', 1, 193],
+  ['boss_slam', 'boss_slam', 2, 201], ['boss_nova', 'boss_nova', 1, 211], ['orb_launch', 'orb_launch', 2, 221],
+  ['orb_hit', 'orb_hit', 2, 231], ['boss_phase', 'boss_phase', 1, 241],
 ];
 
 function encode(x, file, q) {

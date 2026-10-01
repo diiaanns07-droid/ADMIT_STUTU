@@ -29,7 +29,7 @@ export const API_VERSION = 'ASHEN_V1';
 // [VFX] V6 «больше магии»: новые эффекты — в modules/fx/*.js, поверх этого модуля (откат — настройка fxMagic:false).
 import { createFxV6 } from './fx/index.js';
 // [SFX] звук на сэмплах (assets/sfx, tools/sfx_bake.mjs) и «режиссёр» событий боя; синтез ниже — запасной
-import { SFX, SFX_ALIAS, SFX_SYNTH_FALLBACK, SFX_DIR, sfxForEvent, createSampleBank, createStepper } from './sfx.js';
+import { SFX, SFX_ALIAS, SFX_SYNTH_FALLBACK, SFX_DIR, WINDUP_SFX, sfxForEvent, createSampleBank, createStepper } from './sfx.js';
 
 const TAU = Math.PI * 2;
 const EMPTY_OBJ = Object.freeze({});
@@ -4238,19 +4238,23 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
     src.buffer = b; src.playbackRate.value = rate;
     src.connect(v.out); addSource(v, src);
     const t = T();
+    // замах Регента: пик нарастания (s.hit) совпадает с ударом через o.dur секунд
+    const offset = s.hit && o && isNum(o.dur) ? clamp(s.hit - o.dur * rate, 0, s.hit) : 0;
     if (v.panner && o && isNum(o.sign) && o.sign !== 0) {
       // рывок: свист пролетает поперёк, в сторону рывка
       const sg = o.sign > 0 ? 1 : -1;
       v.panner.pan.setValueAtTime(clamp(v.pan - sg * 0.35, -1, 1), t);
       v.panner.pan.linearRampToValueAtTime(clamp(v.pan + sg * 0.55, -1, 1), t + 0.35);
     }
-    src.start(t);
+    src.start(t, offset);
     return true;
   }
   function play(name, pos, param) {
     if (!ctx || disposed || volume <= 0 || ctx.state !== 'running') return;
     // [SFX] сначала сэмпл (по своему имени или по прежнему через SFX_ALIAS), затем синтез
-    const sName = SFX[name] ? name : (bank ? SFX_ALIAS[name] : null);
+    const sName = SFX[name] ? name
+      : name === 'windup' ? WINDUP_SFX[(param && param.kind) || 'slam'] || WINDUP_SFX.slam
+      : (bank ? SFX_ALIAS[name] : null);
     if (sName && bank && bank.has(sName)) {
       try { if (playSample(sName, pos, param)) return; } catch (err) { warnOnce('smp:' + sName, 'ошибка сэмпла', sName, err); }
     }

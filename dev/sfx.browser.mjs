@@ -11,6 +11,7 @@ import { readFileSync, existsSync, statSync, mkdirSync, writeFileSync } from 'no
 import { join, dirname, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
+import { sfxFiles } from '../modules/sfx.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -124,6 +125,7 @@ const audio = () => page.evaluate(() => window.__ASHEN__.fx().audio);
 const probe = () => page.evaluate(() => { const p = window.__sfxProbe; return { created: { ...p.created }, starts: p.starts, peakDb: p.peakDb, rmsMax: p.rmsMax ?? -120, contexts: p.contexts }; });
 const resetLevels = () => page.evaluate(() => { const p = window.__sfxProbe; p.peakDb = -120; p.rmsMax = -120; p.rmsSum = 0; p.rmsN = 0; });
 const levels = () => page.evaluate(() => { const p = window.__sfxProbe; return { peakDb: +p.peakDb.toFixed(1), rmsMaxDb: +(p.rmsMax ?? -120).toFixed(1), rmsAvgDb: +(10 * Math.log10((p.rmsSum || 0) / Math.max(1, p.rmsN || 0) + 1e-12)).toFixed(1) }; });
+const N_FILES = sfxFiles().length;
 const totalCreated = (c) => Object.values(c.created).reduce((a, b) => a + b, 0);
 const clickText = (label) => page.evaluate((l) => { const b = [...document.querySelectorAll('button')].find((x) => x.offsetParent !== null && x.textContent.trim() === l); if (!b) return false; b.click(); return true; }, label);
 const key = async (code, ms = 80) => { await page.keyboard.down(code); await sleep(ms); await page.keyboard.up(code); };
@@ -141,11 +143,11 @@ const key = async (code, ms = 80) => { await page.keyboard.down(code); await sle
   check('в меню есть ползунок громкости и «Без звука»', ui.range && !!ui.mute, JSON.stringify(ui));
   check('громкость по умолчанию 50%', ui.value === '50%', ui.value);
   await page.mouse.click(20, 740); // пустое место внизу слева: любой клик разблокирует звук
-  await page.waitForFunction(() => { const a = window.__ASHEN__.fx().audio; return a.created && a.samples && a.samples.loaded + a.samples.failed >= 40; }, null, { timeout: 30000 }).catch(() => {});
+  await page.waitForFunction((n) => { const a = window.__ASHEN__.fx().audio; return a.created && a.samples && a.samples.loaded + a.samples.failed >= n; }, N_FILES, { timeout: 30000 }).catch(() => {});
   await sleep(600);
   const a1 = await audio();
   check('первый клик разблокировал звук', a1.created && a1.state === 'running', a1.state);
-  check('все сэмплы загрузились', a1.samples && a1.samples.loaded === 40 && a1.samples.failed === 0, JSON.stringify(a1.samples));
+  check('все сэмплы загрузились', a1.samples && a1.samples.loaded === N_FILES && a1.samples.failed === 0, JSON.stringify(a1.samples));
   check('эмбиент арены играет из сэмпла', a1.ambient && a1.ambientSample, JSON.stringify({ ambient: a1.ambient, sample: a1.ambientSample }));
   await resetLevels(); await sleep(3000);
   report.levels.menuAmbient = await levels();
@@ -168,6 +170,8 @@ const key = async (code, ms = 80) => { await page.keyboard.down(code); await sle
 }
 
 // ---------------------------------------------------------------- 2. бой (отладка с клавиатуры)
+// бою хватает маленького окна: программный рендер быстрее, звуку размер окна не важен
+await page.setViewportSize({ width: 800, height: 450 });
 await clickText('Отладка с клавиатуры'); await sleep(200);
 await clickText('Начать'); await sleep(400);
 await clickText('Продолжить без камеры (DEBUG)'); await sleep(600);
@@ -276,6 +280,7 @@ clearInterval(watch);
   await page.evaluate(() => { const r = document.querySelector('.ao-panel--pause input[type=range]'); r.value = '55'; r.dispatchEvent(new Event('input', { bubbles: true })); });
   await sleep(500);
   check('пауза: проба громкости слышна', (await probe()).starts > s0);
+  await page.setViewportSize({ width: 1366, height: 768 }); await sleep(800);
   await page.screenshot({ path: join(OUT, 'pause.png') });
   await page.evaluate(() => { const r = document.querySelector('.ao-panel--pause input[type=range]'); r.value = '50'; r.dispatchEvent(new Event('input', { bubbles: true })); });
   await sleep(200);

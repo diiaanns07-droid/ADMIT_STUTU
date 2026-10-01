@@ -35,6 +35,15 @@ export const SFX = {
   victory:     { v: 1, gain: 0.85, cat: 'outcome', lim: 1, ui: true },
   defeat:      { v: 1, gain: 0.8, cat: 'outcome', lim: 1, ui: true },
   ambient:     { v: 1, gain: 0.5, loop: true },
+  // Регент: замах — нарастание с «моментом удара» на hit секунд (стартует со сдвигом под длительность замаха)
+  windup_slam: { v: 1, gain: 0.55, cat: 'windup', lim: 2, pitch: 0.4, rev: 0.15, hit: 2.0 },
+  windup_orb:  { v: 1, gain: 0.45, cat: 'windup', lim: 2, pitch: 0.4, rev: 0.15, hit: 2.0 },
+  windup_nova: { v: 1, gain: 0.5, cat: 'windup', lim: 2, pitch: 0.3, rev: 0.2, hit: 2.0 },
+  boss_slam:   { v: 2, gain: 0.85, cat: 'heavy', lim: 2, pitch: 0.8, vol: 1, rev: 0.25 },
+  boss_nova:   { v: 1, gain: 0.75, cat: 'heavy', lim: 2, pitch: 0.5, rev: 0.25 },
+  orb_launch:  { v: 2, gain: 0.5, cat: 'launch', lim: 2, pitch: 1, vol: 1, rev: 0.15 },
+  orb_hit:     { v: 2, gain: 0.55, cat: 'impact', lim: 3, pitch: 1, vol: 1, rev: 0.15, gap: 0.05 },
+  boss_phase:  { v: 1, gain: 0.8, cat: 'phase', lim: 1, pitch: 0.2, rev: 0.3 },
 };
 
 // Прежние имена звуков (вызовы из effects.js по снимку) → сэмплы. Чего здесь нет — синтез старого движка.
@@ -42,13 +51,18 @@ export const SFX_ALIAS = {
   shieldUp: 'shield_up', shieldDown: 'shield_down', shieldHum: 'shield_loop',
   cast: 'shot', boltImpact: 'spark', block: 'block', bossHit: 'boss_hit', playerHit: 'player_hit',
   dash: 'dash', burst: 'burst', victory: 'victory', defeat: 'defeat',
+  slam: 'boss_slam', nova: 'boss_nova', orbLaunch: 'orb_launch', orbImpact: 'orb_hit', phase: 'boss_phase',
 };
+// Замах Регента по виду атаки (синтез 'windup' — запасной)
+export const WINDUP_SFX = { slam: 'windup_slam', orb: 'windup_orb', nova: 'windup_nova' };
 // Синтез на случай, если сэмпл не загрузился (старый браузер без Ogg Vorbis, файл недоступен).
 export const SFX_SYNTH_FALLBACK = {
   shot: 'cast', spark: 'boltImpact', slash: 'cast', burst: 'burst', shield_up: 'shieldUp', shield_down: 'shieldDown',
   block: 'block', parry: 'block', perfect: 'conjureReady', boss_hit: 'bossHit', player_hit: 'playerHit', dash: 'dash',
   rune_fire: 'burst', rune_storm: 'nova', rune_light: 'conjureReady', rune_star: 'conjureReady', rune_wind: 'orbLaunch',
   rune_shadow: 'nova', ui_ok: 'conjureReady', ui_error: 'fizzle', victory: 'victory', defeat: 'defeat',
+  windup_slam: 'windup', windup_orb: 'windup', windup_nova: 'windup', boss_slam: 'slam', boss_nova: 'nova',
+  orb_launch: 'orbLaunch', orb_hit: 'orbImpact', boss_phase: 'phase',
 };
 
 // Список файлов банка: [{ name, url }]
