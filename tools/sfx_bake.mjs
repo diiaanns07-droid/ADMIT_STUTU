@@ -54,7 +54,7 @@ function brass(sec, f, r, { amp = 1, open = 2600, attack = 0.04, release = 0.4, 
 function bell(sec, f, r, { amp = 1, bright = 1, decay = 1 } = {}) {
   const n = len(sec);
   const x = modal(n, f, [[1, 1, 0.9 * decay], [2.0, 0.45 * bright, 0.5 * decay], [3.01, 0.25 * bright, 0.32 * decay], [4.1, 0.14 * bright, 0.2 * decay], [5.43, 0.08 * bright, 0.12 * decay]], r, 0.001);
-  return mul(x, curve(n, [[0, 0], [0.003, amp], [sec, amp]]));
+  return mul(x, curve(n, [[0, 0], [0.003, amp], [sec * 0.6, amp], [sec, 0, 'sin']])); // хвост гаснет, а не обрывается
 }
 
 // ================================================================== рецепты
@@ -134,9 +134,14 @@ R.burst = (r) => {
   add(x, drive(boom, 3.2), 0.9);
   add(x, mul(biquad(noise(n, 'brown', r), 'lowpass', curve(n, [[0, 1600], [T0, 1600], [T0 + 0.5, 180, 'exp']]), 0.8), curve(n, [[0, 0], [T0, 0], [T0 + 0.003, 1.1], [T0 + 0.6, 0.02, 'exp'], [2.6, 0]])), 1);
   add(x, mul(hp(noise(n, 'white', r), 1800), curve(n, [[0, 0], [T0, 0], [T0 + 0.001, 0.9], [T0 + 0.05, 0.01, 'exp'], [T0 + 0.06, 0]])));
+  // «мясо» удара в полосе, которую играют динамики ноутбука: плотный шум 250–1200 Гц и рычащая пила
+  add(x, mul(bp(noise(n, 'pink', r), 520, 0.7), curve(n, [[0, 0], [T0, 0], [T0 + 0.002, 2.2], [T0 + 0.4, 0.01, 'exp'], [2.6, 0]])));
+  const body = new Float32Array(n);
+  add(body, mul(osc(len(1.0), sweep(len(1.0), 95, 42, 0.45), 'saw'), perc(len(1.0), 0.002, 0.22, 1)), 1, T0);
+  add(x, lp(drive(body, 3), 1400), 0.55);
   // обломки и угли
   add(x, grains(n, r, { count: 30, t0: T0 + 0.05, t1: T0 + 1.2, f0: 1500, f1: 5500, q: 1.6, amp: [0.04, 0.16] }));
-  return trim(normalize(reverb(x, { room: 0.88, damp: 0.4, wet: 0.32, tail: 1.6, pre: 0.02 }), -1), -60, 0.1);
+  return trim(normalize(reverb(drive(x, 1.6), { room: 0.88, damp: 0.4, wet: 0.32, tail: 1.6, pre: 0.02 }), -1), -60, 0.1);
 };
 
 // ---- щит поднят: «гул и звон» — шорох вверх, низкий гул и кристаллический звон.
@@ -199,7 +204,9 @@ R.boss_hit = (r) => {
   add(x, mul(drive(osc(n, sweep(n, r.range(150, 175), 70, 0.12), 'sine'), 2.2), perc(n, 0.002, 0.06, 0.7)));
   add(x, grains(n, r, { count: 16, t0: 0.003, t1: 0.09, f0: 1400, f1: 4200, q: 1.8, amp: [0.15, 0.45] }));
   add(x, mul(bp(noise(n, 'white', r), 3200, 1.5), curve(n, [[0, 0], [0.02, 0.18], [0.3, 0.001, 'exp']])));
-  return trim(normalize(reverb(x, { room: 0.7, wet: 0.16, tail: 0.45 }), -1), -55);
+  add(x, mul(bp(noise(n, 'pink', r), r.range(700, 900), 1), perc(n, 0.001, 0.045, 1.4)));     // каменный «чок»
+  add(x, mul(modal(n, r.range(360, 420), [[1, 1, 0.07], [2.3, 0.5, 0.05], [3.7, 0.3, 0.03]], r, 0.01), 0.35));
+  return trim(normalize(reverb(drive(x, 1.4), { room: 0.7, wet: 0.16, tail: 0.45 }), -1), -55);
 };
 // ---- удар Регента по герою: тяжёлый глухой удар, дребезг доспеха, хруст.
 R.player_hit = (r) => {
@@ -209,7 +216,8 @@ R.player_hit = (r) => {
   add(x, mul(bp(noise(n, 'white', r), 1200, 1), perc(n, 0.001, 0.025, 0.5)));
   add(x, mul(modal(n, r.range(290, 330), [[1, 1, 0.16], [2.4, 0.7, 0.12], [3.9, 0.5, 0.08], [5.6, 0.3, 0.05]], r, 0.01), 0.25));
   add(x, grains(n, r, { count: 8, t0: 0.01, t1: 0.12, f0: 1200, f1: 3500, q: 1.5, amp: [0.1, 0.3] }));
-  return trim(normalize(reverb(x, { room: 0.6, wet: 0.14, tail: 0.5 }), -1), -55);
+  add(x, mul(bp(noise(n, 'pink', r), 600, 0.9), perc(n, 0.002, 0.07, 1.5)));                   // «хрясь» в середине
+  return trim(normalize(reverb(drive(x, 1.4), { room: 0.6, wet: 0.14, tail: 0.5 }), -1), -55);
 };
 
 // ---- обучение: «✓ Распознано» — два кристальных тона вверх (квинта), мягко.
@@ -347,7 +355,7 @@ R.rune_shadow = (r) => {
   // обратный «вдох» (нарастающий шум) → глухой удар → тёмный минор с шёпотом
   add(x, mul(biquad(noise(n, 'pink', r), 'bandpass', curve(n, [[0, 400], [0.3, 1800, 'exp']]), 1.3), curve(n, [[0, 0], [0.29, 1.3, 'exp'], [0.31, 0], [1.9, 0]])));
   add(x, mul(drive(osc(n, sweep(n, 110, 42, 0.4), 'sine'), 2.4), curve(n, [[0, 0], [0.3, 0], [0.305, 0.9], [1.1, 0.001, 'exp']])));
-  for (const nm of ['D3', 'F3', 'A3', 'C#4']) add(x, brass(1.5, hz(nm), r, { amp: 0.15, open: 900, attack: 0.08, release: 0.9 }), 1, 0.3);
+  for (const nm of ['D3', 'F3', 'A3', 'C#4']) add(x, brass(1.5, hz(nm), r, { amp: 0.15, open: 1700, attack: 0.08, release: 0.9 }), 1, 0.3);
   const wh = mul(bp(noise(n, 'white', r), 2800, 2), curve(n, [[0, 0], [0.35, 0], [0.6, 0.18, 'sin'], [1.7, 0, 'sin']]));
   const am = new Float32Array(n); for (let i = 0; i < n; i++) am[i] = 0.5 + 0.5 * Math.sin(2 * Math.PI * 6.5 * i / SR);
   add(x, mul(wh, am));
@@ -391,7 +399,10 @@ R.boss_slam = (r) => {
   add(x, mul(biquad(noise(n, 'brown', r), 'lowpass', sweep(n, 1800, 140, 0.8), 0.8), perc(n, 0.001, 0.3, 1.3)));
   add(x, grains(n, r, { count: 22, t0: 0, t1: 0.15, f0: 1200, f1: 3500, q: 1.4, amp: [0.2, 0.6] }));
   add(x, grains(n, r, { count: 45, t0: 0.12, t1: 1.8, f0: 800, f1: 4000, q: 1.6, amp: [0.04, 0.18] }));
-  return trim(normalize(reverb(x, { room: 0.9, damp: 0.45, wet: 0.3, tail: 1.5, pre: 0.02 }), -1), -60, 0.15);
+  add(x, mul(bp(noise(n, 'pink', r), 420, 0.8), perc(n, 0.002, 0.14, 1.8))); // слышно и на ноутбуке
+  const body = mul(osc(n, sweep(n, 70, 32, 0.6), 'saw'), perc(n, 0.002, 0.25, 1));
+  add(x, lp(drive(body, 3), 1200), 0.5);
+  return trim(normalize(reverb(drive(x, 1.5), { room: 0.9, damp: 0.45, wet: 0.3, tail: 1.5, pre: 0.02 }), -1), -60, 0.15);
 };
 // ---- нова: ударная волна холода — «вуумп» наружу, низкий удар, ледяной звон
 R.boss_nova = (r) => {
@@ -417,7 +428,8 @@ R.orb_hit = (r) => {
   add(x, mul(lp(noise(n, 'brown', r), 900), perc(n, 0.001, 0.12, 1.1)));
   add(x, grains(n, r, { count: 20, t0: 0, t1: 0.25, f0: 3000, f1: 8000, q: 4, amp: [0.08, 0.3] }));
   add(x, mul(bell(1.0, hz('F#6'), r, { bright: 0.6, decay: 0.4 }), 0.12));
-  return trim(normalize(reverb(x, { room: 0.75, wet: 0.22, tail: 0.7 }), -1), -55);
+  add(x, mul(bp(noise(n, 'pink', r), 650, 0.9), perc(n, 0.002, 0.08, 1.3)));
+  return trim(normalize(reverb(drive(x, 1.4), { room: 0.75, wet: 0.22, tail: 0.7 }), -1), -55);
 };
 // ---- пробуждение и вторая стадия: низкий гонг, рык (пила через «гортанные» полосы), диссонанс хора
 R.boss_phase = (r) => {

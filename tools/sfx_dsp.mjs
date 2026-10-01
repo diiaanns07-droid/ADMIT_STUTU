@@ -148,7 +148,7 @@ export function drive(x, amount = 2) { const o = new Float32Array(x.length); con
 export function peak(x) { let p = 0; for (const v of x) { const a = Math.abs(v); if (a > p) p = a; } return p; }
 export function normalize(x, db = -1) { const p = peak(x) || 1, g = Math.pow(10, db / 20) / p; for (let i = 0; i < x.length; i++) x[i] *= g; return x; }
 export function fadeIn(x, sec) { const n = Math.min(x.length, len(sec)); for (let i = 0; i < n; i++) x[i] *= i / n; return x; }
-export function fadeOut(x, sec) { const n = Math.min(x.length, len(sec)); for (let i = 0; i < n; i++) x[x.length - 1 - i] *= i / n; return x; }
+export function fadeOut(x, sec) { const n = Math.min(x.length, len(sec)); for (let i = 0; i < n; i++) x[x.length - 1 - i] *= 0.5 - 0.5 * Math.cos(Math.PI * i / n); return x; }
 // Обрезать тишину в хвосте (ниже thrDb от пика) и сделать короткое затухание.
 export function trim(x, thrDb = -60, tailSec = 0.02) {
   const thr = peak(x) * Math.pow(10, thrDb / 20);
@@ -176,7 +176,7 @@ export function sweep(n, f0, f1, sec, mode = 'exp') { return curve(n, [[0, f0], 
 // Простая ревербация (Freeverb, моно): 8 гребенчатых + 4 фазовых фильтра.
 export function reverb(x, { room = 0.8, damp = 0.35, wet = 0.25, dry = 1, pre = 0.012, tail = 1.2, scale = 1 } = {}) {
   // сухой сигнал обрывается на конце буфера — короткое затухание, иначе щелчок перед хвостом
-  x = fadeOut(x.slice(), Math.min(0.06, x.length / SR / 4));
+  x = fadeOut(x.slice(), Math.min(0.35, x.length / SR / 4));
   const n = x.length + len(tail), out = new Float32Array(n), inp = new Float32Array(n);
   const preN = len(pre);
   for (let i = 0; i < x.length; i++) inp[i + preN < n ? i + preN : n - 1] += x[i];
