@@ -904,7 +904,9 @@ export function createBattleHud({ canvas } = {}) {
     ctx.shadowBlur = 0;
     const ss = Math.round(clamp(H * 0.036, 18, 32));
     ctx.font = `800 ${ss}px ${SANS}`;
-    const sub = win ? `Регент повержен · время боя ${fmtClock(outro.time)}` : `у Регента осталось ${outro.bossPct}% — ещё попытка, и он падёт`;
+    const sub = win ? `Регент повержен · время боя ${fmtClock(outro.time)}`
+      : outro.bossPct <= 50 ? `у Регента осталось ${outro.bossPct}% — ещё попытка, и он падёт`
+        : `у Регента осталось ${outro.bossPct}% — ещё попытка: щит и рывок спасают от ударов`;
     ctx.globalAlpha = clamp((T - 0.25) / 0.3, 0, 1);
     ctx.lineWidth = 4; ctx.strokeText(sub, W / 2, H * 0.42 + ss * 1.8);
     ctx.fillStyle = win ? GOLD_HI : STEEL; ctx.fillText(sub, W / 2, H * 0.42 + ss * 1.8);

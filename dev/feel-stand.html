@@ -144,6 +144,12 @@ const stand = {
     for (let i = 0; i < maxSec / DT; i++) { if (fn(lastSnap)) return true; stepOnce(policy(lastSnap)); frameHud(DT); }
     return false;
   },
+  /** перемотка без отрисовки (длинные сценарии): headless-браузер иначе копит тысячи кадров в очереди GPU */
+  skip(fnSrc, maxSec = 240) {
+    const fn = new Function('s', `return (${fnSrc});`);
+    for (let i = 0; i < maxSec / DT; i++) { if (fn(lastSnap)) return true; stepOnce(policy(lastSnap)); events.length = 0; }
+    return false;
+  },
   setPolicy(name, extra) { policy = name === 'smart' ? smart : name === 'hold' ? () => I({ ...hold, ...(extra || {}) }) : () => I(); hold = extra || {}; },
   setBossHp(hp) { /* для финала: добить Регента быстрее — урон напрямую недоступен, поэтому ждём ботом */ },
   info() { const s = lastSnap; return { t: +simT.toFixed(2), status: s.status, bossHp: Math.round(s.boss.hp), bossMax: s.boss.maxHp, hp: Math.round(s.player.hp), combo: s.player.combo, tel: s.telegraphs.map((x) => `${x.kind}:${x.remaining.toFixed(2)}`), action: s.boss.action }; },
@@ -173,8 +179,8 @@ const SCENES = {
   moves() { stand.setPolicy('hold', { attack: true }); stand.advance(3.0); },
   telegraph() { stand.setPolicy('hold', { attack: true }); stand.until("s.telegraphs.length && s.telegraphs[0].kind === 'slam' && s.telegraphs[0].remaining < 0.75", 40); },
   combo() { stand.setPolicy('hold', { attack: true }); stand.until('s.player.combo >= 12', 30); },
-  victory() { stand.setPolicy('smart'); stand.until("s.status !== 'playing'", 240); },
-  defeat() { stand.setPolicy('hold', { moveZ: 1 }); stand.advance(1.2); stand.setPolicy('idle'); stand.until("s.status !== 'playing'", 240); },
+  victory() { stand.setPolicy('smart'); stand.skip('s.boss.hp < 60', 240); stand.until("s.status !== 'playing'", 30); },
+  defeat() { stand.setPolicy('hold', { moveZ: 1 }); stand.advance(1.2, null, { noHud: true }); stand.setPolicy('idle'); stand.skip('s.player.hp < 25', 240); stand.until("s.status !== 'playing'", 30); },
 };
 const sc = params.get('scene');
 if (sc && SCENES[sc]) SCENES[sc]();
