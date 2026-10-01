@@ -2459,6 +2459,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           setAttr(dock, 'data-err', r && r.err ? 'on' : null);
         }
         cheat.paint(ctx, energy, alive);
+        setClass(node, 'is-cheat', !state.cheatHidden);
       },
     };
   })();

@@ -2507,8 +2507,8 @@
   text-align: right;
   color: var(--ao-faint);
 }
-/* жесты расписаны в шпаргалке — подписи плиток умений дублировать мелким шрифтом незачем */
-.ao-hud:has(.ao-cheat:not([hidden])) .ao-ab__hint {
+/* жесты расписаны в шпаргалке — подписи плиток умений дублировать незачем (класс ставит ui.js) */
+.ao-hud.is-cheat .ao-ab__hint {
   display: none;
 }
 @media (max-height: 700px) {
@@ -2815,4 +2815,12 @@ html.ao-present .ao-cheat-pill {
 /* в режиме презентации игровая область — 60 % окна: панель героя уже, чтобы не наезжать на «руль» в центре снизу */
 html.ao-present .ao-hero {
   width: min(300px, 34vw);
+}
+html.ao-present .ao-tut-cam {
+  display: none;
+}
+@media (min-width: 1180px) {
+  html.ao-present .ao-tut-foot {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
 }

@@ -1215,7 +1215,8 @@ export function createTrackingHud(opts) {
     // [ПРОЕКТОР] режим от слота камеры (ui.js) важнее режима main.js; масштаб — от ширины канваса
     let forced = null;
     try { const host = canvas.parentNode; forced = host && host.getAttribute ? host.getAttribute('data-hud-mode') : null; } catch (e) { forced = null; }
-    const mini = forced === 'full' ? false : forced === 'mini' ? true : f.mode === 'mini';
+    // маленькое превью (обучение, узкие окна) — мини-рисунок: колонка данных и координаты там нечитаемы
+    const mini = forced === 'full' ? false : forced === 'mini' ? true : f.mode === 'mini' || cw < 240;
     const zoom = clamp(cw / (mini ? MINI_BASE_W : FULL_BASE_W), 1, mini ? 2.6 : 2.4);
     const vw = cw / zoom, vh = chh / zoom;   // логический размер рисунка
     dpr = d * zoom;
