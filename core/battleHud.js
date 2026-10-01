@@ -21,6 +21,24 @@ const KIND = { slam: 'SLAM', orb: 'ORB', nova: 'NOVA' };
 const SIGIL_NAME = { clap: 'ГРОМОВОЙ ХЛОПОК', gate: 'ВРАТА · БАСТИОН', frame: 'МЕТКА ЦЕЛИ', delta: 'ДЕЛЬТА · ЛУЧ', cor: 'КОР · СЕРДЦЕ' };
 
 import { createBdoHud } from './bdoHud.js'; // [BDO] DOM-слой HUD в стиле Black Desert
+import { BOSS_CUE_SEC, telegraphCounter } from '../modules/boss.js'; // [FEEL] «!» над Регентом и подписи телеграфа
+
+// [FEEL] «Отклик»: каждое распознанное движение — крупная надпись с иконкой у героя (0,6 с), крупные цифры
+// урона (криты — золотые), большое комбо, красные зоны атак на земле и «!» над Регентом, финал боя.
+// Прежние мелкие подписи не удалены — выключены здесь (legacy*: true вернёт их).
+const FEEL = {
+  moves: true,             // крупные надписи жестов у героя
+  bigNumbers: true,        // крупные цифры урона, золотые криты
+  bigCombo: true,          // «×5 КОМБО» крупно
+  groundZones: true,       // красная зона атаки на земле + подпись «ЩИТ или РЫВОК»
+  bossCue: true,           // «!» над Регентом за BOSS_CUE_SEC до удара
+  outro: true,             // «ПОБЕДА» / «РЕГЕНТ УСТОЯЛ» поверх замедленного финала
+  legacyTeleTags: false,   // прежние мелкие метки «▲ SLAM 1.2s · УЙДИ» у зоны
+  legacyMoveTags: false,   // прежние мелкие BLOCK / DODGE / PERFECT DODGE
+};
+const SANS = '"Segoe UI","Trebuchet MS",system-ui,sans-serif';
+const CRIT = '#ffcf4a', RED = '#ff3b2a', OK_GREEN = '#9be39b';
+const MOVE_DUR = 0.6;      // сколько живёт надпись жеста
 
 const isObj = (v) => v !== null && typeof v === 'object';
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -44,6 +62,15 @@ export function createBattleHud({ canvas } = {}) {
   let rune = { name: '', sub: '', t: 9, trail: null };
   let fizzleT = 9;
   let coach = { hint: null, t: 9 };   // [ТВИСТ «ОШИБКА»] текущая карточка подсказки
+  // [FEEL] надписи жестов, крит отражённой сферы, финал, троттлинг частых жестов
+  const moves = [];                   // {key, text, sub, color, icon, t, dur, big, n}
+  const parried = new Map();          // projectileId → t (отражённая сфера — крит)
+  let critNext = false;               // projectile_impact отражённой сферы → следующий boss_hit — крит
+  let lastBurstMove = null, lastBoltT = -9;
+  const deniedAt = {};                // ability → t последней надписи «нет энергии»
+  let hero = null;                    // экранная рамка героя за кадр: {cx, top, bot, h}
+  let outro = { kind: '', t: 0, time: 0, bossPct: 0 };
+  let comboMilestone = 0;
   const COACH_DUR = 4.2;
   let lastScreen = '';
   let playingSince = -1;
@@ -90,7 +117,8 @@ export function createBattleHud({ canvas } = {}) {
   }
   function addCallout(text, x, y, color, size = 13, opts = {}) {
     if (callouts.length >= MAX_CALLOUTS) callouts.shift();
-    callouts.push({ text, x, y, vy: opts.vy ?? -26, t: 0, dur: opts.dur ?? 0.9, color, size, serif: !!opts.serif, scramble: !!opts.scramble });
+    callouts.push({ text, x, y, vy: opts.vy ?? -26, t: 0, dur: opts.dur ?? 0.9, color, size, serif: !!opts.serif, scramble: !!opts.scramble,
+      sans: !!opts.sans, pop: !!opts.pop, label: opts.label || '' }); // [FEEL] крупные цифры: жирный шрифт с обводкой, «щелчок», подпись «КРИТ!»
   }
   function vignette(color, a, inner = 0.55) {
     const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * inner * 0.5, W / 2, H / 2, Math.max(W, H) * 0.75);
@@ -98,6 +126,157 @@ export function createBattleHud({ canvas } = {}) {
     g.addColorStop(1, color + a + ')');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
+  }
+
+  // ------------------------------------------------------------------ [FEEL] надписи жестов
+  // Каждое распознанное движение — крупная надпись с иконкой над героем: появляется «щелчком» (0,1 с),
+  // держится и гаснет за MOVE_DUR. Тот же приём подряд не дублируется, а «перещёлкивается».
+  // Не больше трёх надписей: новая снизу, старые уходят вверх и гаснут быстрее.
+  function showMove(key, text, color, icon, opts = {}) {
+    if (!FEEL.moves) return null;
+    const last = moves[moves.length - 1];
+    if (last && last.key === key && last.t < 0.4) {
+      last.t = Math.min(last.t, 0.05); last.text = text; last.n++;
+      if (opts.sub !== undefined) last.sub = opts.sub;
+      return last;
+    }
+    if (moves.length >= 3) moves.shift();
+    const m = { key, text, sub: opts.sub || '', color, icon, t: 0, dur: opts.dur || MOVE_DUR, big: !!opts.big, small: !!opts.small, n: 1, slot: 0 };
+    moves.push(m);
+    return m;
+  }
+  // Векторные иконки приёмов (без шрифтов-эмодзи: на ноутбуке жюри их может не быть).
+  function drawIcon(kind, x, y, r, color) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.fillStyle = 'rgba(5,7,11,0.78)';
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(2, r * 0.12);
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+    const k = r * 0.55;
+    ctx.lineWidth = Math.max(2, r * 0.14);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    switch (kind) {
+      case 'shield':
+        ctx.moveTo(0, -k); ctx.lineTo(k * 0.85, -k * 0.6); ctx.lineTo(k * 0.7, k * 0.35); ctx.lineTo(0, k); ctx.lineTo(-k * 0.7, k * 0.35); ctx.lineTo(-k * 0.85, -k * 0.6); ctx.closePath(); ctx.stroke();
+        break;
+      case 'parry':
+        ctx.arc(0, 0, k * 0.85, -Math.PI * 0.85, Math.PI * 0.15); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-k, k); ctx.lineTo(k * 0.15, -k * 0.15); ctx.moveTo(k * 0.15, -k * 0.15); ctx.lineTo(k * 0.15, k * 0.45); ctx.moveTo(k * 0.15, -k * 0.15); ctx.lineTo(-k * 0.45, -k * 0.15); ctx.stroke();
+        break;
+      case 'spark':
+        for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; ctx.moveTo(Math.cos(a) * k * 1.05, Math.sin(a) * k * 1.05); ctx.lineTo(Math.cos(a + Math.PI / 4) * k * 0.3, Math.sin(a + Math.PI / 4) * k * 0.3); ctx.lineTo(Math.cos(a + Math.PI / 2) * k * 1.05, Math.sin(a + Math.PI / 2) * k * 1.05); }
+        ctx.closePath(); ctx.fill();
+        break;
+      case 'slash':
+        ctx.arc(-k * 0.6, k * 0.6, k * 1.5, -Math.PI * 0.5, 0); ctx.stroke();
+        ctx.beginPath(); ctx.arc(-k * 0.9, k * 0.9, k * 1.1, -Math.PI * 0.45, -Math.PI * 0.05); ctx.stroke();
+        break;
+      case 'arrow':
+        ctx.moveTo(-k, k); ctx.lineTo(k, -k); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(k, -k); ctx.lineTo(k * 0.1, -k * 0.85); ctx.lineTo(k * 0.85, -k * 0.1); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-k, k); ctx.lineTo(-k * 0.95, k * 0.45); ctx.moveTo(-k, k); ctx.lineTo(-k * 0.45, k * 0.95); ctx.stroke();
+        break;
+      case 'bolt':
+        ctx.arc(k * 0.35, -k * 0.35, k * 0.45, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-k, k); ctx.lineTo(-k * 0.05, k * 0.05); ctx.moveTo(-k * 0.95, k * 0.35); ctx.lineTo(-k * 0.4, -k * 0.2); ctx.moveTo(-k * 0.35, k * 0.95); ctx.lineTo(k * 0.2, k * 0.4); ctx.stroke();
+        break;
+      case 'burst':
+        ctx.arc(0, 0, k * 0.38, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath();
+        for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; ctx.moveTo(Math.cos(a) * k * 0.62, Math.sin(a) * k * 0.62); ctx.lineTo(Math.cos(a) * k * 1.1, Math.sin(a) * k * 1.1); }
+        ctx.stroke();
+        break;
+      case 'dash':
+        ctx.moveTo(-k, -k * 0.75); ctx.lineTo(-k * 0.1, 0); ctx.lineTo(-k, k * 0.75); ctx.moveTo(k * 0.05, -k * 0.75); ctx.lineTo(k * 0.95, 0); ctx.lineTo(k * 0.05, k * 0.75); ctx.stroke();
+        break;
+      case 'orb':
+        ctx.arc(0, 0, k * 0.8, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(-k * 0.25, -k * 0.25, k * 0.28, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'deny':
+        ctx.moveTo(-k * 0.7, -k * 0.7); ctx.lineTo(k * 0.7, k * 0.7); ctx.moveTo(k * 0.7, -k * 0.7); ctx.lineTo(-k * 0.7, k * 0.7); ctx.stroke();
+        break;
+      default:
+        ctx.moveTo(0, -k); ctx.lineTo(k, 0); ctx.lineTo(0, k); ctx.lineTo(-k, 0); ctx.closePath(); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function moveSize(m) { const base = clamp(H * 0.058, 28, 52); return m.big ? base * 1.25 : m.small ? base * 0.62 : base; }
+  // Якорь надписей: над головой героя, левее рамки Регента (не перекрывать стража).
+  function moveAnchor(wMax, hTot) {
+    let x = hero ? hero.cx : W * 0.36, y = hero ? hero.top - 16 : H * 0.52;
+    y = clamp(y, H * 0.2 + hTot, H * 0.7);
+    x = clamp(x, wMax / 2 + 16, W - wMax / 2 - 16);
+    if (lock.ok) {
+      const bx0 = lock.x0 - 28, bx1 = lock.x1 + 28, by0 = lock.y0 - 28, by1 = lock.y1 + 18;
+      const overlaps = x + wMax / 2 > bx0 && x - wMax / 2 < bx1 && y > by0 && y - hTot < by1;
+      if (overlaps) {
+        const left = bx0 - wMax / 2;                       // слева от Регента
+        if (left - wMax / 2 >= 12) x = left;
+        else if (bx1 + wMax + 12 <= W) x = bx1 + wMax / 2;  // справа
+        else y = Math.min(H * 0.78, by1 + hTot + 8);       // под ним
+      }
+    }
+    return { x, y };
+  }
+  function drawMoves(dtR, rm) {
+    if (!moves.length) return;
+    for (let i = moves.length - 1; i >= 0; i--) { moves[i].t += dtR; if (moves[i].t >= moves[i].dur) moves.splice(i, 1); }
+    if (!moves.length) return;
+    // общий якорь: ширина по самой широкой надписи
+    let wMax = 0, hTot = 0;
+    for (const m of moves) {
+      const sz = moveSize(m);
+      ctx.font = `800 ${Math.round(sz)}px ${SANS}`;
+      m.w = ctx.measureText(m.text).width + sz * 1.3;
+      if (m.sub) { ctx.font = `700 ${Math.round(sz * 0.4)}px ${SANS}`; m.w = Math.max(m.w, ctx.measureText(m.sub).width + sz * 1.3); }
+      m.h = sz * (m.sub ? 1.55 : 1.15);
+      wMax = Math.max(wMax, m.w); hTot += m.h;
+    }
+    const A = moveAnchor(wMax, moves[moves.length - 1].h);
+    let yCursor = A.y;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    for (let i = moves.length - 1; i >= 0; i--) {
+      const m = moves[i], sz = moveSize(m), older = moves.length - 1 - i;
+      const life = m.dur * (older ? 0.75 : 1);
+      const kIn = clamp(m.t / 0.1, 0, 1);
+      const out = clamp((life - m.t) / 0.2, 0, 1);
+      const a = Math.min(rm ? clamp(m.t / 0.08, 0, 1) : kIn, out) * (older ? 0.75 : 1);
+      if (a <= 0.01) { yCursor -= m.h; continue; }
+      const pop = rm ? 1 : 1 + 0.45 * (1 - kIn) * (1 - kIn);
+      const rise = rm ? 0 : 10 * (m.t / m.dur);
+      const cx = A.x, base = yCursor - rise;
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.translate(cx, base - sz * 0.35);
+      ctx.scale(pop, pop);
+      ctx.translate(-cx, -(base - sz * 0.35));
+      const ir = sz * 0.5, tx = cx - m.w / 2 + ir * 2 + sz * 0.18;
+      drawIcon(m.icon, cx - m.w / 2 + ir, base - sz * 0.36, ir, m.color);
+      ctx.font = `800 ${Math.round(sz)}px ${SANS}`;
+      ctx.lineWidth = Math.max(3, sz * 0.13); ctx.strokeStyle = 'rgba(0,0,0,0.82)';
+      ctx.strokeText(m.text, tx, base);
+      if (!rm) { ctx.shadowColor = m.color; ctx.shadowBlur = sz * 0.45 * (1 - kIn * 0.5); }
+      ctx.fillStyle = m.color;
+      ctx.fillText(m.text, tx, base);
+      ctx.shadowBlur = 0;
+      if (m.sub) {
+        ctx.font = `700 ${Math.round(sz * 0.4)}px ${SANS}`;
+        ctx.lineWidth = Math.max(2, sz * 0.08);
+        ctx.strokeText(m.sub, tx + 2, base + sz * 0.5);
+        ctx.fillStyle = STEEL; ctx.fillText(m.sub, tx + 2, base + sz * 0.5);
+      }
+      ctx.restore();
+      yCursor -= m.h;
+    }
+    ctx.textBaseline = 'top'; ctx.globalAlpha = 1;
+  }
+  // Крит: удар по открытому Регенту (×1.5 рассечения), заряженный выстрел, отражённая сфера, большой урон.
+  function isCrit(d, amount) {
+    return !!(d.recoverBonus || d.charged || critNext || amount >= 45);
   }
 
   function handleEvents(events, proj, snap, rm) {
@@ -109,27 +288,85 @@ export function createBattleHud({ canvas } = {}) {
       switch (e.type) {
         case 'boss_hit': {
           lock.hitFlash = 1;
+          const amount = num(d.amount, 0);
           const big = d.source === 'burst' || d.source === 'rune';
           const p = at && !at.behind ? at : { x: W / 2, y: H * 0.35 };
-          addCallout(`-${Math.round(num(d.amount, 0))}`, p.x + (Math.random() - 0.5) * 30, p.y - 10, big ? GOLD_HI : GOLD, big ? 22 : 13);
+          const jx = (Math.random() - 0.5) * 30;
+          if (FEEL.bigNumbers) {
+            // [FEEL] крупные цифры: обычные — светлые 20–34 px, криты — золотые 34–56 px с «КРИТ!»
+            const crit = isCrit(d, amount);
+            const size = crit ? clamp(32 + amount * 0.22, 34, 56) : clamp(18 + amount * 0.3, 20, 34);
+            addCallout(`${Math.round(amount)}`, p.x + jx, p.y - 14, crit ? CRIT : big ? GOLD_HI : '#f4ecdc', size,
+              { sans: true, pop: true, label: crit ? 'КРИТ!' : '', vy: crit ? -34 : -30, dur: crit ? 1.0 : 0.8 });
+            critNext = false;
+            if (d.source === 'burst' && lastBurstMove && lastBurstMove.t < 0.3) {
+              // множитель выброса с учётом комбо и метки: «ВЫБРОС ×2.1»
+              lastBurstMove.mul *= num(d.multiplier, 1);
+              lastBurstMove.text = `ВЫБРОС ×${lastBurstMove.mul.toFixed(1)}`;
+            }
+          } else addCallout(`-${Math.round(amount)}`, p.x + jx, p.y - 10, big ? GOLD_HI : GOLD, big ? 22 : 13);
           if (num(d.combo, 0) > combo.n) { combo.n = d.combo; combo.pop = 1; }
           break;
         }
-        case 'combo_break': combo.lost = 1; combo.lostN = num(d.combo, combo.n); combo.n = 0; break;
+        case 'combo_break': combo.lost = 1; combo.lostN = num(d.combo, combo.n); combo.n = 0; comboMilestone = 0; break;
         case 'player_hit': {
           hurt.t = 0;
           const p = at && !at.behind ? at : { x: W * 0.4, y: H * 0.6 };
-          addCallout(`-${Math.round(num(d.amount, 0))}`, p.x, p.y - 20, EMBER, 16);
+          if (FEEL.bigNumbers) addCallout(`−${Math.round(num(d.amount, 0))}`, p.x, p.y - 24, EMBER, clamp(24 + num(d.amount, 0) * 0.3, 26, 40), { sans: true, pop: true, vy: -22 });
+          else addCallout(`-${Math.round(num(d.amount, 0))}`, p.x, p.y - 20, EMBER, 16);
           break;
         }
         case 'block': {
           const p = at && !at.behind ? at : { x: W * 0.4, y: H * 0.6 };
-          addCallout(d.ward ? 'ОБЕРЕГ' : 'BLOCK', p.x, p.y - 30, d.ward ? GOLD_HI : BLUE, 14, { scramble: true });
+          if (FEEL.legacyMoveTags) addCallout(d.ward ? 'ОБЕРЕГ' : 'BLOCK', p.x, p.y - 30, d.ward ? GOLD_HI : BLUE, 14, { scramble: true });
+          if (d.ward) showMove('block', 'ОБЕРЕГ!', GOLD_HI, 'shield', { sub: 'удар поглощён' });
+          else if (d.bastion) showMove('block', 'БАСТИОН!', GOLD_HI, 'shield', { sub: 'урон срезан' });
+          else showMove('block', 'БЛОК!', BLUE, 'shield', { sub: d.prevented ? 'удар отражён щитом' : '' });
           break;
         }
-        case 'dodge': if (!d.perfect) { const p = at && !at.behind ? at : { x: W * 0.4, y: H * 0.62 }; addCallout('DODGE', p.x, p.y - 30, STEEL, 13, { scramble: true }); } break;
-        case 'perfect_dodge': addCallout('PERFECT DODGE', W / 2, H * 0.3, STEEL, 30, { vy: 0, dur: 1.2, serif: false, scramble: true }); break;
-        case 'player_dash': dashFx = { t: 0, dir: num(d.direction, 1) >= 0 ? 1 : -1 }; break;
+        case 'dodge':
+          if (!d.perfect) {
+            const p = at && !at.behind ? at : { x: W * 0.4, y: H * 0.62 };
+            if (FEEL.legacyMoveTags) addCallout('DODGE', p.x, p.y - 30, STEEL, 13, { scramble: true });
+            showMove('dodge', 'УКЛОНЕНИЕ!', STEEL, 'dash');
+          }
+          break;
+        case 'perfect_dodge':
+          if (FEEL.legacyMoveTags || !FEEL.moves) addCallout('PERFECT DODGE', W / 2, H * 0.3, STEEL, 30, { vy: 0, dur: 1.2, serif: false, scramble: true });
+          showMove('dodge', 'ИДЕАЛЬНЫЙ РЫВОК!', CRIT, 'dash', { big: true, dur: 0.9, sub: `+${Math.round(num(d.energy, 20))} энергии` });
+          break;
+        case 'player_dash': dashFx = { t: 0, dir: num(d.direction, 1) >= 0 ? 1 : -1 }; showMove('dash', 'РЫВОК!', STEEL, 'dash'); break;
+        // [FEEL] остальные приёмы: каждое распознанное движение — своя надпись
+        case 'player_cast': {
+          const ab = d.ability;
+          if (ab === 'spark') showMove('spark', 'ИСКРА!', GOLD_HI, 'spark');
+          else if (ab === 'bolt') { if (t - lastBoltT > 0.7) showMove('bolt', 'СНАРЯД', STEEL, 'bolt', { sub: 'держите «OK» — огонь очередью' }); lastBoltT = t; }
+          else if (ab === 'throw') showMove('throw', d.kind === 'prism' ? 'ПРИЗМА!' : 'СФЕРА!', BLUE, 'orb');
+          break;
+        }
+        case 'player_slash':
+          showMove('slash', 'РАССЕЧЕНИЕ!', GOLD_HI, 'slash', { sub: d.hit ? '' : d.cut ? `сфер рассечено: ${num(d.cut, 1)}` : 'мимо — подойдите ближе к Регенту' });
+          break;
+        case 'shield_start': showMove('shield', 'ЩИТ!', BLUE, 'shield'); break;
+        case 'parry':
+          if (d.success) {
+            if (d.projectileId) parried.set(d.projectileId, t);
+            showMove('parry', 'ПАРИРОВАНО!', CRIT, 'parry', { big: true, dur: 0.9, sub: 'сфера летит в Регента · ×1.5' });
+            flash = { t: 0, dur: 0.3, color: 'rgba(255,207,74,', a: 0.28 };
+          } else showMove('parry', 'ПАРИРОВАНИЕ', DIM, 'parry', { small: true, sub: 'рано — ждите летящую сферу' });
+          break;
+        case 'projectile_impact':
+          if (d.result === 'boss' && d.projectileId && parried.has(d.projectileId)) { critNext = true; parried.delete(d.projectileId); }
+          break;
+        case 'bow_release':
+          if (d.rain) showMove('arrow', 'ДОЖДЬ СТРЕЛ!', GOLD_HI, 'arrow', { big: true });
+          else showMove('arrow', d.charged ? 'ЗАРЯЖЕННЫЙ ВЫСТРЕЛ!' : 'ВЫСТРЕЛ!', d.charged ? CRIT : GOLD_HI, 'arrow');
+          break;
+        case 'hand_spell_throw': {
+          const EL = { fire: 'ОГОНЬ', storm: 'ГРОЗА', frost: 'ЛЁД', earth: 'КАМЕНЬ' };
+          showMove('spell', `${EL[d.element] || 'СГУСТОК'}!`, d.element === 'frost' || d.element === 'storm' ? BLUE : GOLD_HI, 'orb', { sub: d.twoHand ? 'двумя руками' : '' });
+          break;
+        }
         case 'sigil_cast': {   // [ASHEN_V3] печать двумя руками
           const k = d.sigil;
           flash = { t: 0, dur: 0.3, color: k === 'clap' ? 'rgba(159,196,255,' : 'rgba(227,199,146,', a: k === 'clap' ? 0.3 : 0.2 };
@@ -156,7 +393,15 @@ export function createBattleHud({ canvas } = {}) {
           addCallout(`УГОЛЬ КЛЯТВЫ  +${num(d.points, 3)}`, W / 2, H * 0.3, GOLD_HI, 26, { vy: -8, dur: 2.4, serif: true, scramble: false });
           if (num(d.total, 0) > 0) addCallout(`${num(d.lit, 0)} / ${num(d.total, 0)}`, W / 2, H * 0.3 + 34, EMBER, 13, { vy: -8, dur: 2.4, scramble: true });
           break;
-        case 'burst': flash = { t: 0, dur: 0.28, color: 'rgba(227,199,146,', a: 0.32 }; addCallout(`ВЫБРОС ×${(0.5 + num(d.power, 0.5)).toFixed(1)}`, W / 2, H * 0.42, GOLD_HI, 20, { vy: -10, dur: 1, scramble: true }); break;
+        case 'burst': {
+          flash = { t: 0, dur: 0.28, color: 'rgba(227,199,146,', a: 0.32 };
+          const mul = (0.5 + num(d.power, 0.5)) * (d.both ? 1.25 : 1);
+          if (FEEL.moves) {
+            lastBurstMove = showMove('burst', `ВЫБРОС ×${mul.toFixed(1)}`, CRIT, 'burst', { big: true, dur: 0.8, sub: d.both ? 'двумя руками' : d.cleared ? `сфер рассеяно: ${d.cleared}` : '' });
+            if (lastBurstMove) lastBurstMove.mul = mul;
+          } else addCallout(`ВЫБРОС ×${(0.5 + num(d.power, 0.5)).toFixed(1)}`, W / 2, H * 0.42, GOLD_HI, 20, { vy: -10, dur: 1, scramble: true });
+          break;
+        }
         case 'rune_cast':
           rune = { name: RUNE_NAME[d.rune] || String(d.rune || ''), sub: RUNE_SUB[d.rune] || '', t: 0, trail: rune.trail };
           flash = { t: 0, dur: 0.3, color: d.rune === 'fulgur' ? 'rgba(159,196,255,' : 'rgba(227,199,146,', a: 0.28 };
@@ -164,9 +409,22 @@ export function createBattleHud({ canvas } = {}) {
         case 'boss_stunned': lock.hitFlash = 1.5; break;
         case 'ability_denied': {
           const txt = d.reason === 'energy' ? 'НЕТ ЭНЕРГИИ' : d.reason === 'cooldown' ? (d.ability === 'rune' ? 'РУНА ПЕРЕЗАРЯЖАЕТСЯ' : 'ПЕРЕЗАРЯДКА') : '';
-          if (txt && d.ability !== 'shield') addCallout(txt, W / 2, H * 0.68, DIM, 12, { vy: -8, dur: 0.8 });
+          if (!txt) break;
+          if (FEEL.moves) {
+            // [FEEL] жест понят, но приём не готов — честно и тоже крупно (не чаще раза в секунду на приём)
+            const AB = { shield: 'ЩИТ', burst: 'ВЫБРОС', dash: 'РЫВОК', spark: 'ИСКРА', slash: 'РАССЕЧЕНИЕ', parry: 'ПАРИРОВАНИЕ', rune: 'РУНА', sigil: 'ПЕЧАТЬ', throw: 'БРОСОК' };
+            const k = String(d.ability || '');
+            if (t - num(deniedAt[k], -9) > 1.0) { deniedAt[k] = t; showMove('deny-' + k, `${AB[k] || 'ПРИЁМ'}: ${txt}`, DIM, 'deny', { small: true }); }
+          } else if (d.ability !== 'shield') addCallout(txt, W / 2, H * 0.68, DIM, 12, { vy: -8, dur: 0.8 });
           break;
         }
+        case 'victory': case 'defeat':
+          if (FEEL.outro) {
+            const B = snap && snap.boss;
+            outro = { kind: e.type, t: 0, time: num(d.time, num(snap && snap.time, 0)), bossPct: B ? Math.round(100 * num(B.hp, 0) / Math.max(1, num(B.maxHp, 1))) : 0 };
+            if (e.type === 'victory') flash = { t: 0, dur: 0.6, color: 'rgba(255,207,74,', a: 0.45 };
+          }
+          break;
         default: break;
       }
     }
@@ -469,11 +727,191 @@ export function createBattleHud({ canvas } = {}) {
     }
   }
 
+  // ------------------------------------------------------------------ [FEEL] телеграфы: зона и «!»
+  function groundAt(layout, x, z) {
+    if (!layout || typeof layout.groundY !== 'function') return 0;
+    try { const g = Number(layout.groundY(x, z)); return Number.isFinite(g) ? g : 0; } catch (e) { return 0; }
+  }
+  // Контур на земле → путь canvas. Точки за камерой (большая НОВА накрывает и камеру) отрезаются,
+  // а разрыв замыкается по нижнему краю экрана — там, ближе к камере, зона и продолжается.
+  function groundPath(pts) {
+    const n = pts.length;
+    let start = -1;
+    for (let i = 0; i < n; i++) if (pts[i] && !pts[i].behind && (!pts[(i + n - 1) % n] || pts[(i + n - 1) % n].behind)) { start = i; break; }
+    ctx.beginPath();
+    if (start < 0) {
+      if (pts.some((q) => !q || q.behind)) return false;
+      pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+      ctx.closePath();
+      return true;
+    }
+    let first = null, last = null;
+    for (let j = 0; j < n; j++) {
+      const q = pts[(start + j) % n];
+      if (!q || q.behind) break;
+      if (!first) { first = q; ctx.moveTo(q.x, q.y); } else ctx.lineTo(q.x, q.y);
+      last = q;
+    }
+    if (!first) return false;
+    const yb = H + 60;
+    ctx.lineTo(clamp(last.x, -W, 2 * W), yb); ctx.lineTo(clamp(first.x, -W, 2 * W), yb);
+    ctx.closePath();
+    return true;
+  }
+  function ringPts(proj, layout, cx, cz, R, n = 44) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2, x = cx + Math.cos(a) * R, z = cz + Math.sin(a) * R;
+      out.push(proj({ x, y: groundAt(layout, x, z) + 0.04, z }));
+    }
+    return out;
+  }
+  function lanePts(proj, layout, o, e, w) {
+    const dx = e.x - o.x, dz = e.z - o.z, L = Math.hypot(dx, dz) || 1, nx = -dz / L * w, nz = dx / L * w;
+    const out = [];
+    const N = 8;
+    for (let i = 0; i <= N; i++) { const u = i / N, x = o.x + dx * u + nx, z = o.z + dz * u + nz; out.push(proj({ x, y: groundAt(layout, x, z) + 0.04, z })); }
+    for (let i = N; i >= 0; i--) { const u = i / N, x = o.x + dx * u - nx, z = o.z + dz * u - nz; out.push(proj({ x, y: groundAt(layout, x, z) + 0.04, z })); }
+    return out;
+  }
+  function telK(tl) {
+    const dur = Math.max(0.05, num(tl.duration, 1)), rem = Math.max(0, num(tl.remaining, 0));
+    return { dur, rem, k: clamp(1 - rem / dur, 0, 1), cue: rem <= Math.min(BOSS_CUE_SEC, dur) };
+  }
+  function drawGroundZones(snap, proj, layout, rm) {
+    const list = Array.isArray(snap.telegraphs) ? snap.telegraphs.slice(0, 4) : [];
+    if (!list.length) return;
+    const P = snap.player && snap.player.position;
+    let lead = null;
+    for (const tl of list) {
+      if (!isObj(tl)) continue;
+      const { rem, k, cue } = telK(tl);
+      const pulse = rm ? 0.6 : 0.5 + 0.5 * Math.sin(t * (cue ? 20 : 9));
+      const nova = tl.kind === 'nova', orb = tl.kind === 'orb';
+      const c = isObj(tl.center) ? tl.center : nova ? tl.origin : tl.target;
+      if (!isObj(c)) continue;
+      const R = Math.max(0.3, num(tl.radius, 1));
+      const shapes = [];
+      if (orb) {
+        const o = isObj(tl.origin) ? tl.origin : c, e = isObj(tl.pathEnd) ? tl.pathEnd : isObj(tl.target) ? tl.target : c;
+        shapes.push({ pts: lanePts(proj, layout, o, e, R + 0.45), fill: 0.1 + 0.18 * k });
+        const tg = isObj(tl.target) ? tl.target : e;
+        shapes.push({ pts: ringPts(proj, layout, tg.x, tg.z, Math.max(0.9, R + 0.5), 28), fill: 0.14 + 0.2 * k, closing: Math.max(0.9, R + 0.5), at: tg });
+      } else shapes.push({ pts: ringPts(proj, layout, c.x, c.z, R, nova ? 64 : 44), fill: (nova ? 0.05 : 0.12) + (nova ? 0.12 : 0.22) * k, closing: nova ? 0 : R, at: c });
+      for (const sh of shapes) {
+        if (!groundPath(sh.pts)) continue;
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = `rgba(255,46,30,${(sh.fill * (cue ? 1.25 + 0.35 * pulse : 1)).toFixed(3)})`;
+        ctx.fill();
+        ctx.lineWidth = 2.5 + 2 * k + (cue ? 1.5 * pulse : 0);
+        ctx.strokeStyle = cue ? `rgba(255,${Math.round(90 + 120 * pulse)},80,1)` : 'rgba(255,59,42,0.9)';
+        if (!rm) { ctx.setLineDash([14, 8]); ctx.lineDashOffset = -t * 40; }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // сходящееся кольцо: встретит край зоны в момент удара
+        if (sh.closing > 0 && k < 1) {
+          const rr = sh.closing * (1 + 0.8 * (1 - k));
+          if (groundPath(ringPts(proj, layout, sh.at.x, sh.at.z, rr, 36))) {
+            ctx.lineWidth = 2; ctx.strokeStyle = `rgba(255,220,200,${(0.25 + 0.6 * k).toFixed(3)})`; ctx.stroke();
+          }
+        }
+      }
+      if (!lead || rem < telK(lead).rem) lead = tl;
+    }
+    if (!lead) return;
+    // подпись у ног героя: что летит и чем ответить
+    const { rem, cue } = telK(lead);
+    const { name, counter } = telegraphCounter(lead.kind, !!lead.blockable);
+    let line = counter, col = '#ffe2d6';
+    if (lead.kind === 'slam' && P && isObj(lead.center) && Math.hypot(P.x - lead.center.x, P.z - lead.center.z) > num(lead.radius, 2) + 0.5) { line = 'вы вне круга — хорошо'; col = OK_GREEN; }
+    const fs = Math.round(clamp(H * 0.034, 18, 30));
+    ctx.font = `800 ${fs}px ${SANS}`;
+    const wLine = ctx.measureText(line).width;
+    ctx.font = `800 ${Math.round(fs * 0.58)}px ${SANS}`;
+    const head = `${name} · ${rem.toFixed(1)} с`;
+    const wHead = ctx.measureText(head).width;
+    const bw = Math.max(wLine, wHead) + 34, bh = fs * 1.95 + 12;
+    let x = hero ? hero.cx : W * 0.4, y = hero ? hero.bot + 14 : H * 0.72;
+    y = clamp(y, H * 0.45, H - bh - 150);                 // выше «руля» внизу по центру
+    const panelR = clamp(W * 0.27, 320, 400) + clamp(Math.min(W * 0.024, H * 0.04), 12, 40) + 14; // правый край панели героя
+    x = clamp(x, Math.max(bw / 2 + 12, y + bh > H - 230 ? panelR + bw / 2 : 0), W - bw / 2 - 12);
+    const sc = rm || !cue ? 1 : 1 + 0.06 * pulseAt(20);
+    ctx.save();
+    ctx.translate(x, y); ctx.scale(sc, sc);
+    ctx.fillStyle = 'rgba(30,4,2,0.8)';
+    ctx.fillRect(-bw / 2, 0, bw, bh);
+    ctx.strokeStyle = cue ? RED : 'rgba(255,59,42,0.7)'; ctx.lineWidth = cue ? 3 : 2;
+    ctx.strokeRect(-bw / 2 + 0.5, 0.5, bw - 1, bh - 1);
+    ctx.fillStyle = RED; ctx.fillRect(-bw / 2, bh - 4, bw * clamp(rem / Math.max(0.05, num(lead.duration, 1)), 0, 1), 4);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.font = `800 ${Math.round(fs * 0.58)}px ${SANS}`; ctx.fillStyle = '#ff8a73';
+    ctx.fillText(head, 0, 6);
+    ctx.font = `800 ${fs}px ${SANS}`; ctx.fillStyle = col;
+    ctx.fillText(line, 0, 6 + fs * 0.72);
+    ctx.restore();
+    ctx.textAlign = 'left';
+  }
+  function pulseAt(f) { return 0.5 + 0.5 * Math.sin(t * f); }
+  // «!» над Регентом за BOSS_CUE_SEC до удара: красный знак с кольцом-отсчётом.
+  function drawBossCue(snap, proj, rm) {
+    const list = Array.isArray(snap.telegraphs) ? snap.telegraphs : [];
+    let tl = null;
+    for (const q of list) if (isObj(q) && telK(q).cue && (!tl || q.remaining < tl.remaining)) tl = q;
+    if (!tl || !snap.boss || snap.boss.action === 'dead') return;
+    const b = snap.boss.position;
+    let p = proj({ x: b.x, y: num(b.y, 0) + 6.4, z: b.z });
+    if (!p || p.behind) { if (!lock.ok) return; p = { x: (lock.x0 + lock.x1) / 2, y: lock.y0 - 40 }; }
+    const { rem, dur } = telK(tl);
+    const cueLen = Math.min(BOSS_CUE_SEC, dur);
+    const r = clamp(H * 0.042, 22, 40) * (rm ? 1 : 1 + 0.12 * pulseAt(22));
+    const x = clamp(p.x, r + 8, W - r - 8), y = clamp(p.y, H * 0.13 + r, H * 0.6);
+    ctx.save();
+    if (!rm) { ctx.shadowColor = RED; ctx.shadowBlur = r * 0.9; }
+    ctx.fillStyle = RED;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 3; ctx.strokeStyle = '#fff3ea';
+    ctx.beginPath(); ctx.arc(x, y, r + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp(rem / cueLen, 0, 1)); ctx.stroke();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `900 ${Math.round(r * 1.5)}px ${SANS}`;
+    ctx.fillText('!', x, y + r * 0.06);
+    ctx.restore();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  }
+  // [FEEL] финал боя поверх замедленного последнего удара (main.js держит экран боя ~1,5 с)
+  function fmtClock(sec) { const v = Math.max(0, Math.round(num(sec, 0))); return `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}`; }
+  function drawOutro(dtR, rm) {
+    if (!outro.kind) return;
+    outro.t += dtR;
+    const T = outro.t, win = outro.kind === 'victory';
+    const kIn = clamp(T / 0.35, 0, 1);
+    ctx.globalAlpha = clamp(T / 0.3, 0, 1) * 0.55;
+    vignette(win ? 'rgba(10,8,2,' : 'rgba(6,8,14,', '0.85', 0.25);
+    ctx.globalAlpha = kIn;
+    const sz = Math.round(clamp(H * (win ? 0.14 : 0.1), 48, 128) * (rm ? 1 : 1 + 0.35 * (1 - kIn) * (1 - kIn)));
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
+    ctx.font = `700 ${sz}px ${SERIF}`;
+    const title = win ? 'ПОБЕДА' : 'РЕГЕНТ УСТОЯЛ';
+    ctx.lineWidth = Math.max(4, sz * 0.08); ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+    ctx.strokeText(title, W / 2, H * 0.42);
+    if (!rm && win) { ctx.shadowColor = CRIT; ctx.shadowBlur = sz * 0.4; }
+    ctx.fillStyle = win ? CRIT : STEEL; ctx.fillText(title, W / 2, H * 0.42);
+    ctx.shadowBlur = 0;
+    const ss = Math.round(clamp(H * 0.036, 18, 32));
+    ctx.font = `800 ${ss}px ${SANS}`;
+    const sub = win ? `Регент повержен · время боя ${fmtClock(outro.time)}` : `у Регента осталось ${outro.bossPct}% — ещё попытка, и он падёт`;
+    ctx.globalAlpha = clamp((T - 0.25) / 0.3, 0, 1);
+    ctx.lineWidth = 4; ctx.strokeText(sub, W / 2, H * 0.42 + ss * 1.8);
+    ctx.fillStyle = win ? GOLD_HI : STEEL; ctx.fillText(sub, W / 2, H * 0.42 + ss * 1.8);
+    ctx.globalAlpha = 1; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.lineJoin = 'miter';
+  }
+
   function drawHero(snap, proj, input) {
     const p = snap.player.position;
     const top = proj({ x: p.x, y: 1.95, z: p.z }), bot = proj({ x: p.x, y: 0, z: p.z });
-    if (!top || !bot || top.behind || bot.behind) return;
+    if (!top || !bot || top.behind || bot.behind) { hero = null; return; }
     const h = Math.abs(bot.y - top.y), w = h * 0.42, cx = (top.x + bot.x) / 2;
+    hero = { cx, top: Math.min(top.y, bot.y), bot: Math.max(top.y, bot.y), h }; // [FEEL] якорь надписей жестов и подписи зоны
     ctx.strokeStyle = STEEL; ctx.globalAlpha = 0.35; ctx.lineWidth = 1;
     brackets(cx - w / 2, top.y, cx + w / 2, bot.y, 10);
     ctx.globalAlpha = 1;
@@ -600,6 +1038,7 @@ export function createBattleHud({ canvas } = {}) {
     const n = num(P.combo, 0);
     if (n < combo.n) combo.n = n;
     const x = W - 34, y = H * 0.46;
+    if (FEEL.bigCombo) { drawBigCombo(P, n, dtR, rm); return; }
     if (n >= 2) {
       const s = 1 + (rm ? 0 : combo.pop * 0.25);
       ctx.textAlign = 'right';
@@ -624,6 +1063,51 @@ export function createBattleHud({ canvas } = {}) {
     combo.lost = Math.max(0, combo.lost - dtR * 0.9);
   }
 
+  // [FEEL] «×5 КОМБО» крупно справа по центру: число растёт с серией, на ×5/×10/×15… — вспышка и «щелчок».
+  function drawBigCombo(P, n, dtR, rm) {
+    const x = W - 30, y = H * 0.36;
+    if (n >= 5 && n % 5 === 0 && n !== comboMilestone) { comboMilestone = n; combo.pop = 1.6; }
+    if (n >= 2) {
+      const tier = n >= 20 ? 3 : n >= 10 ? 2 : n >= 5 ? 1 : 0;
+      const col = tier >= 3 ? EMBER : tier === 2 ? CRIT : tier === 1 ? GOLD_HI : STEEL;
+      const base = clamp(H * (0.07 + 0.012 * tier), 36, 78);
+      const s = rm ? 1 : 1 + Math.min(1.6, combo.pop) * 0.22;
+      const sz = Math.round(base * s);
+      ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
+      ctx.font = `800 ${sz}px ${SANS}`;
+      ctx.lineWidth = Math.max(3, sz * 0.12); ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+      const num_ = `×${n}`;
+      ctx.strokeText(num_, x, y + sz * 0.8);
+      if (tier && !rm) { ctx.shadowColor = col; ctx.shadowBlur = sz * 0.35; }
+      ctx.fillStyle = col; ctx.fillText(num_, x, y + sz * 0.8);
+      ctx.shadowBlur = 0;
+      const ls = Math.round(clamp(base * 0.36, 15, 26));
+      ctx.font = `800 ${ls}px ${SANS}`;
+      ctx.lineWidth = Math.max(2, ls * 0.18);
+      ctx.strokeText('КОМБО', x, y + sz * 0.8 + ls + 4);
+      ctx.fillStyle = col; ctx.fillText('КОМБО', x, y + sz * 0.8 + ls + 4);
+      ctx.font = `700 ${Math.round(ls * 0.62)}px ${SANS}`;
+      ctx.fillStyle = STEEL;
+      const yl = y + sz * 0.8 + ls * 1.75 + 6;
+      ctx.lineWidth = 3; ctx.strokeText(`урон ×${num(P.comboMultiplier, 1).toFixed(2)}`, x, yl);
+      ctx.fillText(`урон ×${num(P.comboMultiplier, 1).toFixed(2)}`, x, yl);
+      const frac = clamp(num(P.comboTimer, 0) / 3, 0, 1), bw = 130;
+      ctx.fillStyle = 'rgba(223,232,245,0.22)'; ctx.fillRect(x - bw, yl + 6, bw, 4);
+      ctx.fillStyle = col; ctx.fillRect(x - bw * frac, yl + 6, bw * frac, 4);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.lineJoin = 'miter';
+    }
+    if (combo.lost > 0.02 && combo.lostN >= 5) {
+      ctx.globalAlpha = combo.lost; ctx.textAlign = 'right';
+      ctx.font = `800 16px ${SANS}`; ctx.fillStyle = EMBER;
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+      ctx.strokeText(`КОМБО ПОТЕРЯНО · ×${combo.lostN}`, x, y + H * 0.17);
+      ctx.fillText(`КОМБО ПОТЕРЯНО · ×${combo.lostN}`, x, y + H * 0.17);
+      ctx.textAlign = 'left'; ctx.globalAlpha = 1;
+    }
+    combo.pop = Math.max(0, combo.pop - dtR * 6);
+    combo.lost = Math.max(0, combo.lost - dtR * 0.9);
+  }
+
   function drawCallouts(dtR, rm) {
     for (let i = callouts.length - 1; i >= 0; i--) {
       const c = callouts[i];
@@ -632,6 +1116,27 @@ export function createBattleHud({ canvas } = {}) {
       c.y += c.vy * dtR;
       const a = c.t < c.dur * 0.7 ? 1 : 1 - (c.t - c.dur * 0.7) / (c.dur * 0.3);
       ctx.globalAlpha = a;
+      if (c.sans) {
+        // [FEEL] цифра урона: «щелчок» (крупнее → норма за 0,12 с), чёрная обводка, у крита — свечение и «КРИТ!»
+        const k = clamp(c.t / 0.12, 0, 1);
+        const sz = Math.round(c.size * (rm || !c.pop ? 1 : 1 + 0.5 * (1 - k) * (1 - k)));
+        ctx.font = `800 ${sz}px ${SANS}`;
+        ctx.textAlign = 'center';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = Math.max(3, sz * 0.14); ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+        ctx.strokeText(c.text, c.x, c.y);
+        if (c.label && !rm) { ctx.shadowColor = c.color; ctx.shadowBlur = sz * 0.5; }
+        ctx.fillStyle = c.color; ctx.fillText(c.text, c.x, c.y);
+        ctx.shadowBlur = 0;
+        if (c.label) {
+          const ls = Math.round(Math.max(13, sz * 0.36));
+          ctx.font = `800 ${ls}px ${SANS}`;
+          ctx.lineWidth = Math.max(2, ls * 0.2); ctx.strokeText(c.label, c.x, c.y - ls - 2);
+          ctx.fillStyle = c.color; ctx.fillText(c.label, c.x, c.y - ls - 2);
+        }
+        ctx.lineJoin = 'miter';
+        continue;
+      }
       ctx.font = `600 ${c.size}px ${c.serif ? SERIF : MONO}`;
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -732,16 +1237,22 @@ export function createBattleHud({ canvas } = {}) {
         return;
       }
       if (paused) ctx.globalAlpha = 0.6;
+      const over = snap.status === 'victory' || snap.status === 'defeat'; // [FEEL] финал: только удар, цифры и надпись
+      if (FEEL.groundZones && !over) drawGroundZones(snap, proj, f.layout, rm);
+      if (paused) ctx.globalAlpha = 0.6;
       drawLock(snap, proj, rm, dtR, false);
       drawPois(snap, proj, f.pois);
-      drawTelegraphs(snap, proj);
+      if (FEEL.legacyTeleTags || !FEEL.groundZones) drawTelegraphs(snap, proj);
       drawHero(snap, proj, f.input);
-      if (!paused) drawStickHud(f.input, snap, dtR, rm);
+      if (FEEL.bossCue && !over) drawBossCue(snap, proj, rm);
+      if (!paused && !over) drawStickHud(f.input, snap, dtR, rm);
       drawCombo(snap, dtR, rm);
       drawRune(f.input, rm, dtR);
-      drawCoach(f.coach, dtR, rm);
+      if (!over) drawCoach(f.coach, dtR, rm);
       drawCallouts(dtR, rm);
-      drawScreenFx(num(f.timeScale, 1), dtR, rm);
+      drawMoves(dtR, rm);
+      drawScreenFx(over ? 1 : num(f.timeScale, 1), dtR, rm);
+      if (FEEL.outro) drawOutro(dtR, rm);
       if (num(f.resumeLeftMs, 0) > 0) drawResume(f.resumeLeftMs);
       if (t - playingSince < 1.2 && playingSince >= 0) {
         ctx.globalAlpha = 1 - (t - playingSince) / 1.2;
@@ -760,6 +1271,9 @@ export function createBattleHud({ canvas } = {}) {
     combo = { n: 0, shown: 0, pop: 0, lost: 0, lostN: 0 };
     rune = { name: '', sub: '', t: 9, trail: null };
     flash.t = 1; hurt.t = 1; dashFx.t = 1; fizzleT = 9; coach = { hint: null, t: 9 }; lock.ok = false; lock.hitFlash = 0;
+    moves.length = 0; parried.clear(); critNext = false; lastBurstMove = null; lastBoltT = -9; hero = null; comboMilestone = 0; // [FEEL]
+    outro = { kind: '', t: 0, time: 0, bossPct: 0 };
+    for (const k of Object.keys(deniedAt)) delete deniedAt[k];
     if (bdo) { try { bdo.reset(); } catch (e) { /* ignore */ } } // [BDO]
   }
   function dispose() { disposed = true; clearAll(); if (bdo) { try { bdo.dispose(); } catch (e) { /* ignore */ } } }

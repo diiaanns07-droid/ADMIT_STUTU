@@ -27,6 +27,22 @@
 
 export const BOSS_API_VERSION = 'ASHEN_V1';
 
+/** [FEEL] За сколько секунд до удара HUD ставит «!» над Регентом (по умолчанию; см. telegraph.cue). */
+export const BOSS_CUE_SEC = 0.9;
+
+/**
+ * [FEEL] Подписи телеграфа для HUD: как называется атака и чем на неё ответить. Ответ честный:
+ * щит предлагается только для blockable-атак (удар ладонью щитом не держится — только уйти).
+ */
+export function telegraphCounter(kind, blockable) {
+  const name = kind === 'slam' ? 'УДАР ЛАДОНЬЮ' : kind === 'orb' ? 'СФЕРА' : kind === 'nova' ? 'НОВА' : 'АТАКА';
+  let counter;
+  if (kind === 'slam') counter = blockable ? 'ЩИТ или РЫВОК из круга' : 'РЫВОК — уйди из круга';
+  else if (kind === 'orb') counter = blockable ? 'ЩИТ или РЫВОК' : 'РЫВОК с линии';
+  else counter = blockable ? 'ЩИТ или РЫВОК' : 'РЫВОК в момент удара';
+  return { name, counter };
+}
+
 /** Общий допуск сравнения времени. Combat должен снимать телеграф при remaining <= этого значения. */
 export const BOSS_TIME_EPSILON = 1e-6;
 
@@ -48,6 +64,9 @@ export const DEFAULT_BOSS_CONFIG = deepFreeze({
   // Запас на реакцию: задержка CV + реакция человека + запас на распознавание жеста.
   // Любой windup принудительно не короче суммы (или minWindup, если он больше).
   reaction: { cvLatency: 0.25, human: 0.45, margin: 0.3 },
+  // [FEEL] читаемость атак: красная зона на земле видна весь замах, а за cue секунд до удара над Регентом
+  // встаёт «!» (HUD, core/battleHud.js). Любой windup не короче cue + lead — «!» успевает у каждой атаки.
+  telegraph: { cue: 0.9, lead: 0.2 },
   minWindup: 0,
   minRecover: 0.6,           // у каждой атаки есть recover не короче этого
   idle: { base: [1.1, 0.8], jitter: [0.25, 0.2] },
@@ -256,6 +275,7 @@ export function createBossBrain(config) {
       blockable: a.blockable,
       projectileSpeed,
       stage: st.stage, // расширение: для визуала стадии
+      cue: Math.min(cfg.telegraph.cue, a.windup[i]), // [FEEL] расширение: за сколько секунд до удара «!» над Регентом
     };
 
     st.current = { id: spec.id, kind, attackDur: a.attack, recover: a.recover[i], aim };
@@ -351,6 +371,9 @@ export function createBossBrain(config) {
       idCounter: st.idCounter,
       currentAttackId: st.current ? st.current.id : null,
       currentKind: st.current ? st.current.kind : null,
+      // [FEEL] до удара и до «!» над Регентом (только в windup)
+      impactIn: st.phase === 'windup' ? Math.max(0, st.phaseDuration - st.phaseElapsed) : null,
+      cueIn: st.phase === 'windup' ? Math.max(0, st.phaseDuration - st.phaseElapsed - cfg.telegraph.cue) : null,
       introQueue: st.introQueue.slice(),
       bag: st.bag.slice(),
       history: st.history.slice(),
@@ -453,8 +476,10 @@ function normalizeConfig(input) {
     human: num(rs.human, D.reaction.human, 0),
     margin: num(rs.margin, D.reaction.margin, 0),
   };
+  const ts = o(src.telegraph);
+  const telegraph = { cue: clamp(num(ts.cue, D.telegraph.cue, 0), 0, 3), lead: clamp(num(ts.lead, D.telegraph.lead, 0), 0, 2) };
   const windupFloor = Math.max(num(src.minWindup, D.minWindup, 0),
-    reaction.cvLatency + reaction.human + reaction.margin);
+    reaction.cvLatency + reaction.human + reaction.margin, telegraph.cue + telegraph.lead);
   const minRecover = num(src.minRecover, D.minRecover, 0);
 
   const as = o(src.attacks);
@@ -505,6 +530,7 @@ function normalizeConfig(input) {
     stage2Opener: opener,
     intro,
     reaction,
+    telegraph,
     windupFloor,
     minRecover,
     idle: { base: idleBase, jitter: idleJitter },
