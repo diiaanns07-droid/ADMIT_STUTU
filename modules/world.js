@@ -4018,7 +4018,9 @@ float ashPuddle( vec2 xz ) {
     if (camera) for (const c of culledChunks) c.mesh.visible = Math.hypot(camera.position.x - c.x, camera.position.z - c.z) - c.r < c.cull;
     updateEmbers(dt);
     if (elfVillage) {
-      elfVillage.update(dt, heroRoot.position);
+      // [LOAD] busy — идёт бой (Регент или дуэль): жителей деревни «в простое» не грузим (подвисания кадров)
+      const P = snap && snap.player;
+      elfVillage.update(dt, heroRoot.position, !!(P && P.encounter === 'engaged' && (!snap.status || snap.status === 'playing')));
       ashGeo.setDrawRange(0, Math.round(QUALITY_PRESETS[quality].ash * (1 - 0.85 * elfVillage.weight)));   // в деревне пепел почти не падает
     }
     if (brightForest) {   // [FOREST] лес: трава, вода, частицы; в лесу пепла нет, настроение неба и тумана

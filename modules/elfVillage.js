@@ -1445,7 +1445,7 @@ export function createElfVillage({
   function loadModel(file) {
     const url = new URL('../assets/quaternius/' + file, import.meta.url).href;
     if (!loaderCache.has(url)) {
-      if (!loaderP) loaderP = import('./vrmKit.js').then((m) => m.createGltfLoader()); // [LOAD] с распаковщиком meshopt
+      if (!loaderP) { loaderP = import('./vrmKit.js').then((m) => m.createGltfLoader()); loaderP.catch(() => { loaderP = null; }); } // [LOAD] с распаковщиком meshopt
       loaderCache.set(url, loaderP.then((l) => l.loadAsync(url)));
     }
     return loaderCache.get(url);
@@ -1642,25 +1642,27 @@ export function createElfVillage({
 
   // [LOAD] Жители (~4 МБ моделей и перенос клипов в главном потоке) грузятся лениво: когда игрок
   // подходит ближе NPC_LOAD_R к центру деревни (от арены и от врат леса до деревни ~180–200 м) или в
-  // простое после NPC_IDLE_SEC секунд движения героя (бой или прогулка идут). В меню герой стоит —
-  // до него и в нём ни одного запроса. Дома, Древо, свет и коллайдеры строятся сразу, как раньше.
+  // простое после NPC_IDLE_SEC секунд движения героя, но не посреди боя (busy от world.js: перенос
+  // клипов в главном потоке дал бы подвисания кадров) — тогда после победы, поражения или на прогулке.
+  // В меню герой стоит — до него и в нём ни одного запроса. Дома, Древо, свет и коллайдеры строятся сразу.
   // npcEager: true — прежнее поведение (жители грузятся сразу при создании деревни).
   const NPC_LOAD_R = V.r + 110, NPC_IDLE_SEC = 60;
-  const lazy = { started: false, playT: 0, last: null, idle: false };
+  const lazy = { started: false, playT: 0, last: null, idle: false, busy: false };
   function loadNpcs(reason = 'manual') {
     if (lazy.started || state.disposed) return;
     lazy.started = true; state.npcLoad = reason;
     spawn();
   }
-  function watchNpcLoad(dt, px, pz, dP, hasPlayer) {
+  function watchNpcLoad(dt, px, pz, dP, hasPlayer, busy) {
     if (dP < NPC_LOAD_R) { loadNpcs('near'); return; }
+    lazy.busy = busy;
     if (!hasPlayer || lazy.idle) return;
     // время движения героя: телепорты (сброс боя, смена места старта) не считаются
     if (lazy.last) { const d = Math.hypot(px - lazy.last.x, pz - lazy.last.z); if (d > 0.002 && d < 3) lazy.playT += dt; }
     lazy.last = { x: px, z: pz };
-    if (lazy.playT < NPC_IDLE_SEC) return;
+    if (lazy.playT < NPC_IDLE_SEC || busy) return;
     lazy.idle = true;
-    const go = () => loadNpcs('idle');
+    const go = () => { if (lazy.busy) { lazy.idle = false; return; } loadNpcs('idle'); };   // бой начался, пока ждали простоя — позже
     if (typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 4000 }); else setTimeout(go, 300);
   }
 
@@ -1934,7 +1936,7 @@ export function createElfVillage({
   }
 
   /* ------------------------------ Кадр ------------------------------ */
-  function update(dt, playerPos) {
+  function update(dt, playerPos, busy = false) {
     if (state.disposed) return;
     dt = clamp(Number.isFinite(dt) ? dt : 1 / 60, 0, 0.1);
     state.time += dt; state.frame++;
@@ -1947,7 +1949,7 @@ export function createElfVillage({
     const dP = Math.hypot(px - CX, pz - CZ), dC = Math.hypot(camX - CX, camZ - CZ);
     const w = smoothstep(V.r + 45, V.r + 4, dP);
     state.weight = w;
-    if (!lazy.started) watchNpcLoad(dt, px, pz, dP, !!(playerPos && Number.isFinite(playerPos.x)));   // [LOAD]
+    if (!lazy.started) watchNpcLoad(dt, px, pz, dP, !!(playerPos && Number.isFinite(playerPos.x)), !!busy);   // [LOAD]
     // свет и воздух деревни — по близости игрока
     hemi.intensity = 1.25 * w;
     const fl = 1 + 0.04 * Math.sin(t * 1.7) * rm;
