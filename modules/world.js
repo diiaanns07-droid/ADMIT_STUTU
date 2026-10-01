@@ -852,8 +852,10 @@ float ashPuddle( vec2 xz ) {
     let left = 3, bad = false;
     pbrState.pending++;
     for (const kind of ['diff', 'nor_gl', 'arm']) {
+      // [LOAD] WebP (tools/compress_assets.mjs): цвет 1024, нормали и ARM 512 — 0,4 МБ вместо 4,6 МБ JPG 1k
+      const file = `${name}/${name}_${kind}.webp`;
       let url;
-      try { url = new URL(`../assets/polyhaven/${name}/${name}_${kind}_1k.jpg`, import.meta.url).href; } catch (e) { url = `assets/polyhaven/${name}/${name}_${kind}_1k.jpg`; }
+      try { url = new URL(`../assets/polyhaven/${file}`, import.meta.url).href; } catch (e) { url = `assets/polyhaven/${file}`; }
       loader.load(url, (t) => {
         if (disposed) { t.dispose(); return; }
         if (kind === 'diff') t.colorSpace = THREE.SRGBColorSpace;
