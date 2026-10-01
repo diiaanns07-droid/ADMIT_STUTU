@@ -67,6 +67,16 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   // удержание формы до признания, мс
   hold: Object.freeze({ pinch: 70, point: 110, fist: 120, open: 90, victory: 120, unknown: 220 }),
   palmSideRatio: 0.18,     // |векторное произведение| / ладонь² меньше — ладонь «ребром»
+  palmSideHyst: 0.03,      // [ЩИТ НЕ МИГАЕТ] гистерезис стороны ладони: к камере → ребро ниже (порог − столько), ребро → к камере выше (порог + столько)
+  // [ЩИТ НЕ МИГАЕТ] One-Euro для точек кисти, по которым распознаётся ФОРМА (пальцы, сторона ладони). Позиции и
+  // скорости (руль, рывок, взмах, толчок) считаются по сырым точкам — без задержки. Кисть стоит — сглаживание
+  // сильное (шум точек не «мигает» формой); пальцы движутся — частота среза растёт, задержки почти нет.
+  shapeFilter: 1,          // 0 — выключить
+  shapeMinCutoffHz: 2,
+  shapeBeta: 0.5,          // Гц на (ладонь/с)
+  shapeDCutoffHz: 1,
+  shapeAlphaMax: 0.6,      // [НИЗКАЯ ЧАСТОТА] у неподвижной кисти новый кадр весит не больше этого (на 8 Гц срез ниже: кадров мало, шум тот же)
+  shapeFilterResetMs: 250, // кисть пропадала дольше — фильтр начинается заново
   // заряд и выброс
   chargeMs: 1100,
   minCharge: 0.3,
@@ -635,6 +645,28 @@ function handScale(I, world) {
   return Math.max(1e-6, s);
 }
 
+// [ЩИТ НЕ МИГАЕТ] One-Euro по точкам (каждая точка — своя скорость в ладонях в секунду). F — состояние,
+// pts — точки, unit — размер ладони в тех же единицах. Возвращает сглаженную копию.
+function euroPoints(F, pts, t, unit, cfg) {
+  const fresh = !F.p || F.p.length !== pts.length || !(t > F.t) || t - F.t > cfg.shapeFilterResetMs;
+  if (fresh) {
+    F.p = pts.map((q) => ({ x: q.x, y: q.y, z: q.z })); F.v = new Array(pts.length).fill(0); F.t = t;
+    return F.p.map((q) => ({ ...q }));
+  }
+  const dt = (t - F.t) / 1000, u = Math.max(1e-6, unit);
+  const ad = 1 - Math.exp(-2 * Math.PI * cfg.shapeDCutoffHz * dt);
+  const fcMin = Math.min(cfg.shapeMinCutoffHz, -Math.log(1 - cfg.shapeAlphaMax) / (2 * Math.PI * dt));
+  for (let i = 0; i < pts.length; i++) {
+    const q = pts[i], p = F.p[i];
+    const sp = Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z) / dt / u;
+    F.v[i] += (sp - F.v[i]) * ad;
+    const a = 1 - Math.exp(-2 * Math.PI * (fcMin + cfg.shapeBeta * F.v[i]) * dt);
+    p.x += (q.x - p.x) * a; p.y += (q.y - p.y) * a; p.z += (q.z - p.z) * a;
+  }
+  F.t = t;
+  return F.p.map((q) => ({ ...q }));
+}
+
 function classify(f, prev, cfg) {
   // Выпрямленность с гистерезисом относительно прошлого кадра.
   const ext = f.bends.map((b, i) => {
@@ -772,8 +804,18 @@ export function createHandGestures(configPatch = {}) {
     if (!H.present) { H.present = true; H.firstSeen = t; }
     H.lastSeen = t;
     const f = handFeatures(data.img, data.world, st.aspect, cfg);
-    H.feat = f;
-    const c = classify(f, H, cfg);
+    // [ЩИТ НЕ МИГАЕТ] форма — по сглаженным точкам (One-Euro), позиции и размер — по сырым (f)
+    let fs = f;
+    if (cfg.shapeFilter > 0) {
+      const E = H.euro || (H.euro = { img: {}, world: {} });
+      const I = data.img, palmImg = Math.hypot((I[9].x - I[0].x) * st.aspect, I[9].y - I[0].y);
+      const img = euroPoints(E.img, data.img, t, palmImg, cfg);
+      const world = data.world ? euroPoints(E.world, data.world, t, dist(data.world[0], data.world[9]), cfg) : null;
+      fs = handFeatures(img, world, st.aspect, cfg);
+      fs.I = f.I; fs.scale = f.scale; fs.n3 = f.n3; fs.palm2d = f.palm2d;
+    }
+    H.feat = fs;
+    const c = classify(fs, H, cfg);
     H.rawShape = c.shape;
     H.extended = c.extended;
     H.pinchLevel = c.pinchLevel;
@@ -781,8 +823,10 @@ export function createHandGestures(configPatch = {}) {
     // палец/ладонь. Правая кисть ладонью к камере: указательный правее мизинца в незеркальном
     // кадре → cross < 0 (y вниз). Левая — наоборот.
     const s = H.side === 'right' ? 1 : -1;
-    H.cross = f.cross;
-    H.palmFacing = Math.abs(f.cross) < cfg.palmSideRatio ? 'side' : (f.cross * s < 0 ? 'camera' : 'away');
+    H.cross = fs.cross;
+    // [ЩИТ НЕ МИГАЕТ] гистерезис: ладонь у границы «ребро / к камере» не переключается от шума точек
+    const sideLim = cfg.palmSideRatio + (H.palmFacing === 'side' ? cfg.palmSideHyst : H.palmFacing === 'unknown' ? 0 : -cfg.palmSideHyst);
+    H.palmFacing = Math.abs(fs.cross) < sideLim ? 'side' : (fs.cross * s < 0 ? 'camera' : 'away');
     // для двуручных чар: точки кадра с поправкой на соотношение сторон, масштаб, нормаль ладони
     H.pts = f.I;
     H.scale = f.scale;
