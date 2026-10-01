@@ -2249,3 +2249,372 @@
   .ao-tut-card[data-key="bow"] > .ao-h3, .ao-tut-card[data-key="handMagic"] > .ao-h3 { margin: 0; white-space: nowrap; }
   .ao-tut-card[data-key="bow"] .ao-tut-gesture, .ao-tut-card[data-key="handMagic"] .ao-tut-gesture { margin: 0; flex: 1 1 16rem; font-size: 0.84rem; line-height: 1.22; }
 }
+
+/* =====================================================================================
+ * [ПРОЕКТОР] Зритель и жюри видят одновременно движение человека и то, что распознала игра:
+ * крупное превью камеры в бою (~23 % ширины) с подписями «ЛЕВАЯ: …» / «ПРАВАЯ: …», красная рамка
+ * «ОШИБКИ», шпаргалка жестов (Tab) и режим презентации 40/60 (P, ?present). Текст не мельче 14 px.
+ * Левая рука — синяя («движение»), правая — оранжевая («магия»), как скелет кистей в core/trackingHud.js.
+ * ===================================================================================== */
+.ao-ui {
+  --ao-left: #5aaeff;
+  --ao-left-bg: rgba(90, 174, 255, 0.2);
+  --ao-right: #ff9a3c;
+  --ao-right-bg: rgba(255, 154, 60, 0.22);
+  --ao-err: #ff4a3d;
+}
+
+/* ---- крупное превью камеры в бою */
+.ao-cvdock {
+  width: clamp(240px, 22vw, 460px);
+  padding: 0.4rem 0.4rem 0.45rem;
+}
+.ao-cvdock[data-err='on'] {
+  border-color: var(--ao-err);
+  box-shadow: 0 0 0 2px var(--ao-err), 0 0 24px rgba(255, 74, 61, 0.45);
+}
+.ao-cvdock[data-err='on'] .ao-cvdock__slot,
+.ao-present[data-err='on'] .ao-present__cam {
+  outline: 3px solid var(--ao-err);
+  outline-offset: -3px;
+}
+.ao-cvdock .ao-status {
+  margin-top: 0.3rem;
+}
+.ao-cvdock .ao-status--compact .ao-status__label {
+  font-size: max(14px, 0.875rem);
+}
+.ao-cvdock .ao-camera-slot:empty::after {
+  font-size: max(14px, 0.875rem);
+}
+@media (max-width: 620px) {
+  .ao-cvdock {
+    width: min(46vw, 240px);
+  }
+}
+
+/* ---- подписи распознанного жеста каждой руки */
+.ao-gread {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: 0.35rem;
+}
+.ao-gread__row {
+  margin: 0;
+  padding: 0.14rem 0.45rem;
+  border-left: 4px solid currentColor;
+  background: rgba(0, 0, 0, 0.42);
+  font-size: clamp(15px, 1.15vw, 22px);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color 0.12s, opacity 0.2s;
+}
+.ao-gread__row[data-side='left'] {
+  color: var(--ao-left);
+}
+.ao-gread__row[data-side='right'] {
+  color: var(--ao-right);
+}
+.ao-gread__v {
+  color: #fff;
+}
+.ao-gread__row[data-tone='off'] {
+  opacity: 0.6;
+}
+.ao-gread__row[data-tone='off'] .ao-gread__v {
+  color: var(--ao-muted);
+  font-weight: 600;
+}
+.ao-gread__row[data-tone='idle'] .ao-gread__v {
+  color: var(--ao-text);
+}
+.ao-gread__row[data-side='left'][data-tone='go'] {
+  background: var(--ao-left-bg);
+}
+.ao-gread__row[data-side='right'][data-tone='go'] {
+  background: var(--ao-right-bg);
+}
+.ao-gread__row[data-tone='fire'] {
+  background: currentColor;
+}
+.ao-gread__row[data-tone='fire'] .ao-gread__k,
+.ao-gread__row[data-tone='fire'] .ao-gread__v {
+  color: #0b0d11;
+}
+.ao-gread__row[data-tone='err'] {
+  border-left-color: var(--ao-err);
+  background: rgba(255, 74, 61, 0.2);
+}
+.ao-gread__err {
+  margin: 0.15rem 0 0;
+  padding: 0.35rem 0.5rem 0.4rem;
+  border: 1px solid var(--ao-err);
+  border-left-width: 4px;
+  background: rgba(46, 7, 5, 0.92);
+  color: #ffe9e4;
+  font-size: max(14px, 0.9rem);
+  line-height: 1.3;
+}
+.ao-gread__errhead {
+  display: block;
+  color: #ff8a7d;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ---- шпаргалка жестов (Tab) */
+.ao-cheat,
+.ao-cheat-pill {
+  position: absolute;
+  left: var(--ao-pad);
+  top: calc(var(--ao-pad) + 3.4rem);
+  margin: 0;
+  background: var(--ao-plate);
+  border: 1px solid var(--ao-line-soft);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+.ao-cheat {
+  width: clamp(230px, 19vw, 340px);
+  padding: 0.45rem 0.5rem 0.35rem;
+}
+.ao-cheat[hidden],
+.ao-cheat-pill[hidden] {
+  display: none;
+}
+.ao-cheat-pill {
+  padding: 0.3rem 0.6rem;
+  font-size: 14px;
+  color: var(--ao-muted);
+}
+.ao-cheat__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem 0.4rem;
+  margin: 0 0 0.35rem;
+  font-size: 14px;
+  line-height: 1.25;
+  color: var(--ao-muted);
+}
+.ao-cheat__sw {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 2px;
+  background: var(--ao-left);
+}
+.ao-cheat__sw[data-side='right'] {
+  background: var(--ao-right);
+}
+.ao-cheat__lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-right: 0.5rem;
+  white-space: nowrap;
+}
+.ao-cheat__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+.ao-cheat__item {
+  --ao-side: var(--ao-left);
+  --ao-side-bg: var(--ao-left-bg);
+  position: relative;
+  display: grid;
+  grid-template-columns: clamp(30px, 2.6vw, 44px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: clamp(40px, 6.4vh, 60px);
+  padding: 0.2rem 0.4rem;
+  overflow: hidden;
+  border-left: 3px solid var(--ao-side);
+  background: rgba(0, 0, 0, 0.25);
+  transition: background-color 0.12s, opacity 0.25s, transform 0.12s;
+}
+.ao-cheat__item[data-side='right'] {
+  --ao-side: var(--ao-right);
+  --ao-side-bg: var(--ao-right-bg);
+}
+.ao-cheat__icon {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  color: var(--ao-side);
+}
+.ao-cheat__icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ao-cheat__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.ao-cheat__name {
+  font-size: max(15px, 1rem);
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--ao-text);
+}
+.ao-cheat__how {
+  font-size: 14px;
+  line-height: 1.2;
+  color: var(--ao-muted);
+}
+.ao-cheat__time {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ao-text);
+  white-space: nowrap;
+}
+.ao-cheat__cd {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--ao-side);
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+.ao-cheat__item[data-state='active'] {
+  background: var(--ao-side-bg);
+  box-shadow: inset 0 0 0 1px var(--ao-side);
+  transform: translateX(4px);
+}
+.ao-cheat__item[data-state='active'] .ao-cheat__icon,
+.ao-cheat__item[data-state='active'] .ao-cheat__name {
+  color: #fff;
+}
+.ao-cheat__item[data-state='cooldown'],
+.ao-cheat__item[data-state='low'] {
+  opacity: 0.42;
+}
+.ao-cheat__item[data-state='off'] {
+  opacity: 0.3;
+}
+.ao-cheat__foot {
+  margin: 0.3rem 0 0;
+  font-size: 14px;
+  text-align: right;
+  color: var(--ao-faint);
+}
+/* жесты расписаны в шпаргалке — подписи плиток умений дублировать мелким шрифтом незачем */
+.ao-hud:has(.ao-cheat:not([hidden])) .ao-ab__hint {
+  display: none;
+}
+@media (max-height: 700px) {
+  .ao-cheat__head,
+  .ao-cheat__foot {
+    display: none;
+  }
+  .ao-cheat__item {
+    min-height: 36px;
+  }
+}
+
+/* ---- крупнее мелкий текст HUD боя */
+.ao-row__head,
+.ao-ab__name,
+.ao-boss__stage,
+.ao-tele,
+.ao-pausebtn {
+  font-size: max(14px, 0.875rem);
+}
+.ao-ab__hint {
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+/* ---- режим презентации: слева 40 % — камера и подписи, справа 60 % — игра */
+html.ao-present #ao-app,
+html.ao-present .ao-ui {
+  left: 40%;
+}
+.ao-present {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 40vw;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(6px, 1.2vh, 16px);
+  padding: clamp(10px, 1.4vw, 28px);
+  overflow: hidden;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 30%, #161a22 0%, #07080b 75%);
+  border-right: 2px solid var(--ao-line);
+}
+.ao-present[hidden] {
+  display: none;
+}
+.ao-present__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+.ao-present__title {
+  font-family: var(--ao-font-display);
+  font-size: clamp(18px, 1.6vw, 32px);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ao-gold-hi);
+}
+.ao-present__key {
+  font-size: 14px;
+  color: var(--ao-faint);
+}
+.ao-present__cam {
+  flex: none;
+  width: min(100%, calc((100vh - 15rem) * 4 / 3));
+  align-self: center;
+}
+.ao-present__idle {
+  margin: 0;
+  font-size: clamp(15px, 1.2vw, 22px);
+  color: var(--ao-muted);
+}
+.ao-gread--big {
+  gap: 0.35rem;
+}
+.ao-gread--big .ao-gread__row {
+  font-size: clamp(20px, 2.3vw, 46px);
+  white-space: normal;
+  padding: 0.2rem 0.6rem;
+  border-left-width: 6px;
+}
+.ao-gread--big .ao-gread__err {
+  font-size: clamp(16px, 1.45vw, 28px);
+}
+.ao-present__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.5rem;
+  margin: 0;
+  font-size: clamp(14px, 1vw, 20px);
+  color: var(--ao-muted);
+}
+.ao-present .ao-status__label {
+  font-size: clamp(14px, 1vw, 20px);
+}
+html.ao-present .ao-cvdock,
+html.ao-present .ao-slothost:not(.ao-present__cam) {
+  display: none;
+}
+html.ao-present .ao-cheat,
+html.ao-present .ao-cheat-pill {
+  top: calc(var(--ao-pad) + 6.4rem);
+}

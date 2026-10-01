@@ -123,8 +123,11 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(config.camera.fov, 1, 0.1, 1200); // небо затмения ~900 м, шпили до ~700 м
 scene.add(camera);
 
+// [ПРОЕКТОР] размер игровой области — по канвасу: в режиме презентации (ui.js, html.ao-present) это правые 60 % окна
+function viewW() { return canvas.clientWidth || window.innerWidth; }
+function viewH() { return canvas.clientHeight || window.innerHeight; }
 function resize() {
-  const w = window.innerWidth, h = window.innerHeight;
+  const w = viewW(), h = viewH();
   renderer.setSize(w, h, false);
   camera.aspect = w / Math.max(1, h);
   camera.updateProjectionMatrix();
@@ -182,7 +185,7 @@ import('./core/postfx.js').then((m) => {
   try {
     postfx = m.createPostFX({ THREE, renderer, scene, camera, quality: settings.quality });
     postfx.setReducedMotion(!!settings.reducedMotion);
-    postfx.setSize(window.innerWidth, window.innerHeight, renderer.getPixelRatio());
+    postfx.setSize(viewW(), viewH(), renderer.getPixelRatio());
   } catch (e) { console.warn('[ASHEN] postfx недоступен, обычный рендер:', e); postfx = null; }
 }).catch((e) => console.warn('[ASHEN] core/postfx.js не загружен, обычный рендер:', e && e.message));
 const rig = createCameraRig(config.camera);
@@ -688,7 +691,7 @@ import('./modules/pvp.js').then((m) => {
 const _proj = new THREE.Vector3();
 function projectToScreen(p) {
   _proj.set(p.x, p.y, p.z).project(camera);
-  return { x: (_proj.x + 1) * 0.5 * window.innerWidth, y: (1 - _proj.y) * 0.5 * window.innerHeight, behind: _proj.z > 1 };
+  return { x: (_proj.x + 1) * 0.5 * viewW(), y: (1 - _proj.y) * 0.5 * viewH(), behind: _proj.z > 1 };
 }
 video.style.transform = config.vision.mirror === false ? 'none' : 'scaleX(-1)';
 
@@ -1144,7 +1147,7 @@ function frame(now) {
   drawTracking(now, input);
   battleHud.frame({
     dtReal, timeScale: ts, screen: app.screen, snapshot: lastSnapshot, events, input: app.debug ? null : input,
-    project: projectToScreen, viewport: { w: window.innerWidth, h: window.innerHeight },
+    project: projectToScreen, viewport: { w: viewW(), h: viewH() },
     intro: { active: app.screen === 'intro', t: app.intro.t, duration: app.intro.duration },
     settings, resumeLeftMs: app.screen === 'playing' ? Math.max(0, app.resumeAt - now) : 0,
     pois: unlitEmbers(),
