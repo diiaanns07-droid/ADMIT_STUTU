@@ -984,7 +984,8 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       radius: 0,
       windup: clamp(windup, A.minWindup, A.maxWindup),
       remaining: 0, duration: 0,
-      damage: clamp(scaleBossDamage(damage), 0, A.maxDamage),   // [FEEL] множитель сложности
+      damage: scaleBossDamage(clamp(damage, 0, A.maxDamage)),   // [FEEL] множитель сложности — после санитарного предела
+      baseDamage: clamp(damage, 0, A.maxDamage),                // [FEEL] без сложности: от него — урон отражённой сферы
       blockable: spec.blockable === true,
       speed: 0, dir: null, pathEnd: null, travel: 0,
     };
@@ -1841,7 +1842,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       o.owner = 'player';
       o.reflected = true;
       o.velocity = vec(ax / al * sp, ay / al * sp, az / al * sp);
-      o.damage = Math.round((o.damage || 20) * Q.reflectDamageMul);
+      o.damage = Math.round((o.baseDamage || o.damage || 20) * Q.reflectDamageMul);   // [FEEL] сложность не режет награду за парирование
       o.age = 0;
       o.lifetime = Math.max(o.lifetime || 0, al / sp + 0.5);
       o.passed = false;
@@ -2056,7 +2057,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         id, owner: 'boss', kind: 'orb',
         position: vcopy(t.origin), velocity: v, radius: t.radius,
         age: 0, lifetime: Math.min(C.bossAttack.orbMaxLifetime, t.travel / t.speed + 0.1),
-        damage: t.damage, blockable: t.blockable, attackId: t.id, passed: false,
+        damage: t.damage, baseDamage: t.baseDamage, blockable: t.blockable, attackId: t.id, passed: false,
       });
       emit('boss_projectile', t.origin, {
         attackId: t.id, attackKind: 'orb', projectileId: id, velocity: vcopy(v),

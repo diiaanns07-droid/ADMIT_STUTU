@@ -34,6 +34,7 @@ test('прежние стоп-кадры сохранены: руна/выбро
   for (const t of ['rune_cast', 'burst', 'sigil_cast', 'boss_phase']) assert(feelOf(ev(t, { power: 0.5 })).stopMs === 80, t);
   assert(feelOf(ev('player_hit', { amount: 22 })).stopMs === 60, 'player_hit 22');
   assert(feelOf(ev('player_hit', { amount: 12 })).stopMs === 0, 'player_hit 12');
+  assert(feelOf(ev('player_hit', { amount: 13 })).stopMs === 50, 'player_hit 13 («Лёгкая»: удар ладонью)');
   assert(feelOf(ev('player_hit', { amount: 12 })).shake >= 0.3, 'попадание по герою трясёт');
 });
 

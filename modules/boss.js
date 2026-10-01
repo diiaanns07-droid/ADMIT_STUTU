@@ -27,8 +27,6 @@
 
 export const BOSS_API_VERSION = 'ASHEN_V1';
 
-/** [FEEL] За сколько секунд до удара HUD ставит «!» над Регентом (по умолчанию; см. telegraph.cue). */
-export const BOSS_CUE_SEC = 0.9;
 
 /**
  * [FEEL] Подписи телеграфа для HUD: как называется атака и чем на неё ответить. Ответ честный:
@@ -95,6 +93,9 @@ export const DEFAULT_BOSS_CONFIG = deepFreeze({
     },
   },
 });
+
+/** [FEEL] За сколько секунд до удара HUD ставит «!» над Регентом — из начального баланса (telegraph.cue). */
+export const BOSS_CUE_SEC = DEFAULT_BOSS_CONFIG.telegraph.cue;
 
 // Фаза мозга -> BossDecision.action. 'shift' (смена стойки) — окно для игрока.
 const ACTION_OF_PHASE = Object.freeze({

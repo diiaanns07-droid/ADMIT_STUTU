@@ -120,6 +120,28 @@ test('«Лёгкая»: урон атак Регента ×0.7 (телеграф
   }
 });
 
+test('«Лёгкая» не режет награду за парирование: отражённая сфера бьёт Регента так же, как на «Обычной»', () => {
+  const spec = { id: 'tst-orb-1', kind: 'orb', origin: { x: 0, y: 1.2, z: 1.4 }, target: { x: 0, y: 1, z: 6 }, windup: 0.5, radius: 0.55, damage: 20, blockable: true, projectileSpeed: 8 };
+  const brain = () => { let sent = false; return { reset() { sent = false; }, update() { if (sent) return { stage: 1, action: 'idle', attacks: [] }; sent = true; return { stage: 1, action: 'windup', attacks: [{ ...spec }] }; } }; };
+  const reflected = {};
+  for (const level of ['normal', 'easy']) {
+    const c = createCombat({ config: {}, bossBrain: brain() });
+    c.setDifficulty(level); c.reset();
+    let parried = false, hit = null;
+    for (let i = 0; i < 300 && !hit; i++) {
+      const s = c.getSnapshot();
+      const orb = s.projectiles.find((p) => p.owner === 'boss');
+      const near = orb && Math.hypot(orb.position.x - s.player.position.x, orb.position.z - s.player.position.z) < 2.2;
+      c.update(DT, I(near && !parried ? { parry: true } : {}));
+      if (near) parried = true;
+      hit = c.drainEvents().find((e) => e.type === 'boss_hit') || null;
+    }
+    assert(hit, `${level}: отражённая сфера не попала`);
+    reflected[level] = hit.data.amount;
+  }
+  assert(reflected.easy === reflected.normal && reflected.normal >= 30, JSON.stringify(reflected));
+});
+
 test('config.js: множители «Лёгкой» из раздела combat; уровень по умолчанию в настройках — easy', () => {
   assert(gameConfig.defaultSettings.difficulty === 'easy', 'первый бой — «Лёгкая»');
   const c = createCombat({ config: gameConfig, bossBrain: createBossBrain({ seed: 2 }) });
