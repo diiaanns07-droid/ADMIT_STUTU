@@ -111,12 +111,13 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     hint.setAttribute('aria-hidden', 'true');
     Object.assign(hint.style, { position: 'absolute', right: '18px', bottom: '14px', fontSize: '13px', lineHeight: '1.3', fontFamily: 'inherit', letterSpacing: '0.04em', color: 'rgba(232,220,192,0.72)', textShadow: '0 1px 3px rgba(0,0,0,0.8)', pointerEvents: 'none', opacity: '0', transition: 'opacity 0.6s ease', zIndex: '1' });
     dom.parentElement.appendChild(hint);
-    // [LOAD] пока модель героя грузится — подпись у рунного круга (сам круг в это время пульсирует)
+    // [LOAD] пока модель героя грузится — подпись у рунного круга (сам круг в это время пульсирует).
+    // z-index 11: слой интерфейса .ao-ui (fixed, z-index 10) лежит поверх холста и затемнил бы её.
     summon = document.createElement('div');
     summon.className = 'ao-showcase-summon';
     summon.textContent = 'Призыв героя…';
     summon.setAttribute('aria-hidden', 'true');
-    Object.assign(summon.style, { position: 'absolute', left: '68%', bottom: '9%', transform: 'translateX(-50%)', fontSize: '15px', letterSpacing: '0.18em', fontFamily: 'inherit', color: 'rgba(240,214,170,0.85)', textShadow: '0 0 10px rgba(255,170,90,0.55), 0 1px 3px rgba(0,0,0,0.9)', pointerEvents: 'none', opacity: '0', transition: 'opacity 0.4s ease', zIndex: '1', whiteSpace: 'nowrap' });
+    Object.assign(summon.style, { position: 'absolute', left: '63%', bottom: '9%', transform: 'translateX(-50%)', fontSize: '15px', letterSpacing: '0.18em', fontFamily: 'inherit', color: 'rgba(240,214,170,0.85)', textShadow: '0 0 10px rgba(255,170,90,0.55), 0 1px 3px rgba(0,0,0,0.9)', pointerEvents: 'none', opacity: '0', transition: 'opacity 0.4s ease', zIndex: '11', whiteSpace: 'nowrap' });
     dom.parentElement.appendChild(summon);
   }
   const heroes = () => (heroModel && heroModel.heroes) || null;
@@ -165,9 +166,10 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     // щипок на тач-экране: в меню жесты холста наши (не масштаб страницы), в бою — как было
     if (dom && dom.style && S.touchA !== S.active) { S.touchA = S.active; dom.style.touchAction = S.active ? 'none' : ''; }
     if (hint) { const show = active && !U.used && S.t > 3 ? '1' : '0'; if (hint.style.opacity !== show) hint.style.opacity = show; }
-    // [LOAD] герой ещё грузится: подпись через 0,4 с (без мигания при быстрой смене) и пульс круга
+    // [LOAD] герой ещё грузится: подпись через 0,4 с по часам (без мигания при быстрой смене) и пульс круга
     const loading = !!(active && heroModel && !heroModel.ready);
-    S.loadT = loading ? (S.loadT || 0) + dt : 0;
+    if (!loading) S.loadSince = 0; else if (!S.loadSince) S.loadSince = nowMs();
+    S.loadT = loading ? (nowMs() - S.loadSince) / 1000 + 1e-3 : 0;
     if (summon) { const show = S.loadT > 0.4 ? '1' : '0'; if (summon.style.opacity !== show) summon.style.opacity = show; }
     prefetchHeroes(dt, active);
     const want = active ? 1 : 0;
