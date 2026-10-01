@@ -1122,7 +1122,7 @@ export function createTrackingHud(opts) {
     if (H.shape === 'fist' && !mini) txt = `▣ ${Math.round(ch * 100)}%${ch >= 0.3 ? ' · РАСКРОЙ' : ''}`;
     setLabel(lab, txt, mini ? F_MINI_CHIP : F_CHIP, now);
     if (txt) {
-      const shown = scrambled(lab.text, lab.since, now, rm);
+      const shown = scrambled(lab.text, lab.since, now, rm || mini);   // в доке боя — без «глитча» букв
       const f = mini ? F_MINI_CHIP : F_CHIP;
       setFont(f);
       const tw = measure(f, shown);

@@ -2307,10 +2307,8 @@
   font-size: clamp(15px, 1.15vw, 22px);
   font-weight: 700;
   line-height: 1.2;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
   transition: background-color 0.12s, opacity 0.2s;
 }
 .ao-gread__row[data-side='left'] {
@@ -2591,7 +2589,6 @@ html.ao-present .ao-ui {
 }
 .ao-gread--big .ao-gread__row {
   font-size: clamp(20px, 2.3vw, 46px);
-  white-space: normal;
   padding: 0.2rem 0.6rem;
   border-left-width: 6px;
 }
@@ -2660,10 +2657,13 @@ html.ao-present .ao-cheat-pill {
     margin: 0.55rem 0 0.4rem;
   }
   .ao-heroes {
+    display: flex;
+    flex-wrap: wrap;
     gap: 0.35rem;
   }
   .ao-herocard {
-    padding: 0.38rem 0.55rem;
+    flex: 0 0 auto;
+    padding: 0.38rem 0.7rem;
     justify-content: center;
   }
   .ao-herocard__sub {
@@ -2671,8 +2671,6 @@ html.ao-present .ao-cheat-pill {
   }
   .ao-herocard__name {
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   .ao-menu__settings {
     margin-top: 0.55rem;
@@ -2697,7 +2695,7 @@ html.ao-present .ao-cheat-pill {
     display: flex;
     align-items: center;
     gap: 0.28em;
-    font-size: clamp(2.2rem, 6.6vh, 3.6rem);
+    font-size: clamp(2rem, 5.6vh, 3.2rem);
     line-height: 1;
   }
   .ao-title__rule {
@@ -2722,8 +2720,10 @@ html.ao-present .ao-cheat-pill {
   border: 1px solid var(--ao-debug);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
 }
-.ao-title {
-  font-size: clamp(2.6rem, min(5vw, 7.6vh), 5.4rem);
+@media (min-height: 961px) {
+  .ao-title {
+    font-size: clamp(2.6rem, min(5vw, 7.6vh), 5.4rem);
+  }
 }
 @media (max-height: 700px) {
   .ao-subtitle {
@@ -2810,4 +2810,9 @@ html.ao-present .ao-cheat-pill {
     padding-top: 0.3rem;
     padding-bottom: 0.3rem;
   }
+}
+
+/* в режиме презентации игровая область — 60 % окна: панель героя уже, чтобы не наезжать на «руль» в центре снизу */
+html.ao-present .ao-hero {
+  width: min(300px, 34vw);
 }

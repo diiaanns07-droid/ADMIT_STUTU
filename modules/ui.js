@@ -2173,7 +2173,6 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     if (g.source === 'debug' && (Math.abs(g.moveZ) > 0.15 || Math.abs(g.moveX) > 0.15)) return { text: Math.abs(g.moveX) > Math.abs(g.moveZ) ? (g.moveX > 0 ? 'ПОВОРОТ →' : 'ПОВОРОТ ←') : 'ХОД', tone: 'go' };
     const h = g.left;
     if (!h) return g.source === 'debug' ? { text: 'КЛАВИАТУРА', tone: 'off' } : { text: 'НЕ ВИДНА', tone: 'off' };
-    if (h.shape === 'open' && h.palm === 'camera') return { text: 'ЛАДОНЬ · ТОЛКНИ', tone: 'idle' };
     return { text: SHAPE_RU[h.shape] || 'В КАДРЕ', tone: 'idle' };
   }
   function liveRight(g) {
