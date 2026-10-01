@@ -416,7 +416,8 @@ export function createBattleHud({ canvas } = {}) {
             // [FEEL] жест понят, но приём не готов — честно и тоже крупно (не чаще раза в секунду на приём)
             const AB = { shield: 'ЩИТ', burst: 'ВЫБРОС', dash: 'РЫВОК', spark: 'ИСКРА', slash: 'РАССЕЧЕНИЕ', parry: 'ПАРИРОВАНИЕ', rune: 'РУНА', sigil: 'ПЕЧАТЬ', throw: 'БРОСОК', arrow: 'ВЫСТРЕЛ', arrow_rain: 'ДОЖДЬ СТРЕЛ', hand_orb: 'МАГИЯ' };
             const k = String(d.ability || '');
-            if (t - num(deniedAt[k], -9) > 1.0) { deniedAt[k] = t; showMove('deny-' + k, `${AB[k] || 'ПРИЁМ'}: ${txt}`, DIM, 'deny', { small: true }); }
+            const why = d.reason === 'energy' ? 'НЕТ ЭНЕРГИИ' : 'ПЕРЕЗАРЯДКА';   // имя приёма уже в начале надписи
+            if (t - num(deniedAt[k], -9) > 1.0) { deniedAt[k] = t; showMove('deny-' + k, `${AB[k] || 'ПРИЁМ'}: ${why}`, DIM, 'deny', { small: true }); }
           } else if (d.ability !== 'shield') addCallout(txt, W / 2, H * 0.68, DIM, 12, { vy: -8, dur: 0.8 });
           break;
         }
@@ -1074,6 +1075,7 @@ export function createBattleHud({ canvas } = {}) {
   // [FEEL] «×5 КОМБО» крупно справа по центру: число растёт с серией, на ×5/×10/×15… — вспышка и «щелчок».
   function drawBigCombo(P, n, dtR, rm) {
     const x = W - 30, y = H * 0.36;
+    if (n < comboMilestone) comboMilestone = 0;   // серия обнулилась без combo_break (новый раунд дуэли)
     if (n >= 5 && n % 5 === 0 && n !== comboMilestone) { comboMilestone = n; combo.pop = 1.6; }
     if (n >= 2) {
       const tier = n >= 20 ? 3 : n >= 10 ? 2 : n >= 5 ? 1 : 0;

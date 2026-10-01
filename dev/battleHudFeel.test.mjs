@@ -131,6 +131,8 @@ test('«Уменьшенное движение»: надписи есть (бе
   assert(has(t, /^ЩИТ!$/) && has(t, /^50$/), 'надписи при rm');
   const junk = run([null, 5, { type: 'boss_hit' }, { type: 'player_cast', data: null }, ev('parry', null), ev('ability_denied', { ability: 'shield', reason: 'energy' })]);
   assert(has(junk, /ЩИТ: НЕТ ЭНЕРГИИ/), 'отказ — честная надпись');
+  const rune = run([ev('ability_denied', { ability: 'rune', reason: 'cooldown' })]);
+  assert(has(rune, /^РУНА: ПЕРЕЗАРЯДКА$/) && !has(rune, /РУНА: РУНА/), 'руна на откате — без повтора слова');
 });
 
 let failed = 0;
