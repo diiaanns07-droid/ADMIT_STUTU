@@ -432,7 +432,7 @@ function startFight() {
   if (!app.introShown && settings.startZone !== 'forest') {   // [FOREST] облёт интро — только у арены
     app.introShown = true;
     // [ONBOARD] облёт 1,8 с (было 5 с): первый удар успевает за 3 с после «В бой»; любая клавиша, клик или жест — пропустить
-    app.intro = { t: 0, duration: settings.reducedMotion ? 1.5 : 1.8, awakened: false, skip: false };
+    app.intro = { t: 0, duration: CLASSIC ? (settings.reducedMotion ? 2.6 : 5) : settings.reducedMotion ? 1.5 : 1.8, awakened: false, skip: false };
     setScreen('intro');
     return;
   }
