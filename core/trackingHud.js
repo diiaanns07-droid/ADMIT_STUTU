@@ -16,7 +16,7 @@
 // [ПРОЕКТОР] Цвет кисти — по стороне: левая синяя («движение»), правая оранжевая («магия»).
 // Рисунок масштабируется под размер канваса (zoom): в крупном доке боя и в режиме презентации
 // подписи не мельче ~14 px, линии толще. Атрибут data-hud-mode="full|mini" у родителя канваса
-// (слот камеры ui.js) переопределяет режим, переданный main.js.
+// (слот камеры ui.js) переопределяет режим, переданный main.js (main.js читает его и для handFxOverlay).
 
 const MONO = '"Consolas","Cascadia Mono",monospace';
 
@@ -1039,7 +1039,7 @@ export function createTrackingHud(opts) {
   const RUNE_TXT = { ignis: 'ИГНИС ▲', fulgur: 'ФУЛЬГУР ϟ', orbis: 'ОРБИС ○', stella: 'СТЕЛЛА ★', spira: 'СПИРА @', lemnis: 'ЛЕМНИСКА ∞', caret: 'АКУС ^', vee: 'МЕССИС V', clepsydra: 'КЛЕПСИДРА ⧗', alpha: 'АЛЬФА ℓ' };
   const handLabels = { left: makeLabel(), right: makeLabel(), rune: makeLabel() };
   let runeFlashT = -1e9, runeFlashName = '', runeFlashAt = null, lastRuneKey = '';
-  let curAttack = false, curShield = false;
+  let curAttack = false, curShield = false, forcedFull = false;
 
   function hx(p) { return rx + p.x * rw; }
   function hy(p) { return ry + p.y * rh; }
@@ -1118,11 +1118,12 @@ export function createTrackingHud(opts) {
     let txt = mini ? (SHAPE_MINI[H.shape] || '') : (SHAPE_TXT[H.shape] || '');
     if (!mini && side === 'left' && H.shape === 'open' && H.palmFacing === 'away') txt = '◇ ЛАДОНЬ · ТЫЛ';
     if (side === 'left' && curShield) txt = mini ? 'ЩИТ' : '◆ ЩИТ';
-    if (side === 'right' && H.shape === 'pinch' && curAttack) txt = mini ? 'OK→ОГОНЬ' : '◎ OK · ОГОНЬ';
+    if (side === 'right' && H.shape === 'pinch' && curAttack) txt = mini ? 'OK→ВЫСТРЕЛ' : '◎ OK · ВЫСТРЕЛ';
     if (H.shape === 'fist' && !mini) txt = `▣ ${Math.round(ch * 100)}%${ch >= 0.3 ? ' · РАСКРОЙ' : ''}`;
     setLabel(lab, txt, mini ? F_MINI_CHIP : F_CHIP, now);
     if (txt) {
-      const shown = scrambled(lab.text, lab.since, now, rm || mini);   // в доке боя — без «глитча» букв
+      // без «глитча» букв: в доке боя, в панели презентации и у процента заряда кулака (текст меняется каждый кадр)
+      const shown = scrambled(lab.text, lab.since, now, rm || mini || forcedFull || H.shape === 'fist');
       const f = mini ? F_MINI_CHIP : F_CHIP;
       setFont(f);
       const tw = measure(f, shown);
@@ -1217,6 +1218,7 @@ export function createTrackingHud(opts) {
     try { const host = canvas.parentNode; forced = host && host.getAttribute ? host.getAttribute('data-hud-mode') : null; } catch (e) { forced = null; }
     // маленькое превью (обучение, узкие окна) — мини-рисунок: колонка данных и координаты там нечитаемы
     const mini = forced === 'full' ? false : forced === 'mini' ? true : f.mode === 'mini' || cw < 240;
+    forcedFull = forced === 'full';
     const zoom = clamp(cw / (mini ? MINI_BASE_W : FULL_BASE_W), 1, mini ? 2.6 : 2.4);
     const vw = cw / zoom, vh = chh / zoom;   // логический размер рисунка
     dpr = d * zoom;
@@ -1316,6 +1318,8 @@ export function createTrackingHud(opts) {
       ctx.clip();
 
       if (!mini) drawViewfinder(1);
+      // колонка данных — под скелетом и рамками: при крупном рисунке она не закрывает поднятую руку
+      if (!mini) drawData(st, status, dbg, present, now, rm);
       if (!stickMode) drawNeutral(dbg, input, mini);
       if (stick && stickMode) drawStick(stick, now, rm, mini);
       drawConstellation(rUp, lUp, mini);
@@ -1356,7 +1360,6 @@ export function createTrackingHud(opts) {
 
       if (calib && status) drawCalib(status, now, rm, mini);
       if (lostAlpha > 0.01) drawSearch(st, status, lostAlpha, now, rm, mini);
-      if (!mini) drawData(st, status, dbg, present, now, rm);
     } finally {
       ctx.restore();
       ctx.globalAlpha = 1;

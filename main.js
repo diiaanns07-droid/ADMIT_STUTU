@@ -776,11 +776,13 @@ function heroPoseFromInput(input) {
 // ---------------------------------------------------------------- трекинг-HUD
 function drawTracking(now, input) {
   if (app.debug || !vision) { trackingHud.clear(); return; }
-  const mini = app.screen === 'playing';
+  // [ПРОЕКТОР] режим рисунка задаёт слот камеры ui.js (data-hud-mode: панель презентации — 'full'), иначе — экран
+  const forced = overlay.parentNode && overlay.parentNode.getAttribute ? overlay.parentNode.getAttribute('data-hud-mode') : null;
+  const mode = forced === 'full' || forced === 'mini' ? forced : app.screen === 'playing' ? 'mini' : 'full';
   let hands = null, pose = null;
   try { hands = vision.getHands(); pose = vision.getPose(); } catch (e) { /* ignore */ }
-  trackingHud.draw(now, { pose, status: visionStatus(), input, settings, mode: mini ? 'mini' : 'full', hands });
-  if (handFx && handZone && settings.handCombat !== false) { try { handFx.draw(now, { ...handZone.overlay(now), pose, settings, mode: mini ? 'mini' : 'full' }); } catch (e) { /* [HAND] оверлей не критичен */ } } // [HAND]
+  trackingHud.draw(now, { pose, status: visionStatus(), input, settings, mode, hands });
+  if (handFx && handZone && settings.handCombat !== false) { try { handFx.draw(now, { ...handZone.overlay(now), pose, settings, mode }); } catch (e) { /* [HAND] оверлей не критичен */ } } // [HAND]
 }
 
 // ---------------------------------------------------------------- UI
