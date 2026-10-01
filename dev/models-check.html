@@ -5,7 +5,7 @@
 </head><body><div id="info"></div>
 <script type="module">
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createGltfLoader } from '../modules/vrmKit.js'; // модели сжаты meshopt — загрузчик с распаковщиком
 const q = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setSize(innerWidth, innerHeight); renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -15,7 +15,7 @@ const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 100);
 cam.position.set(0, 1.4, 6.5); cam.lookAt(0, 0.95, 0);
 scene.add(new THREE.HemisphereLight(0xdde6ff, 0x404040, 1.6));
 const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(2, 4, 5); scene.add(sun);
-const loader = new GLTFLoader();
+const loader = await createGltfLoader();
 const mixers = [];
 const info = [];
 const list = (q.get('m') || 'human,woman').split(',');

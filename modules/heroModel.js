@@ -21,7 +21,7 @@
 // heroRoot не задан — экземпляр создаёт свой root (для удалённого игрока) и сам ставит его по snapLike.player.
 // snapLike: нужен только { player: { position, yaw, velocity, action, hp, … как в snapshot } }.
 
-import { loadVRM, loadHumanoidGLB, retargetClip } from './vrmKit.js';
+import { loadVRM, loadHumanoidGLB, retargetClip, createGltfLoader } from './vrmKit.js';
 
 // Карточки героев: имя, класс, стихия и три строки описания — для меню №8 и витрины (heroShowcase).
 export const HEROES = Object.freeze({
@@ -128,7 +128,7 @@ export function configureHeroes(patch = {}) { defaults = { ...defaults, ...patch
 
 function loadGltf(url) {
   if (!gltfCache.has(url)) {
-    if (!gltfLoaderP) gltfLoaderP = import('three/addons/loaders/GLTFLoader.js').then((m) => new m.GLTFLoader());
+    if (!gltfLoaderP) gltfLoaderP = createGltfLoader(); // [LOAD] с распаковщиком meshopt
     const p = gltfLoaderP.then((l) => l.loadAsync(url));
     p.catch(() => gltfCache.delete(url));
     gltfCache.set(url, p);
@@ -136,6 +136,17 @@ function loadGltf(url) {
   return gltfCache.get(url);
 }
 const tick = () => new Promise((r) => setTimeout(r, 0));
+// [LOAD] всё, что герою нужно после модели, — заранее и параллельно с её загрузкой: модули оболочки
+// (dressUp ждал их по очереди, после модели), перенос клипов и библиотека клипов. Ошибки здесь не
+// важны: те же import() ниже повторят загрузку и обработают ошибку как раньше.
+let dressModsP = null;
+function prefetchHeroDeps(libUrls) {
+  if (!dressModsP) {
+    dressModsP = Promise.all([import('./heroShading.js'), import('./heroGear.js'), import('./heroAura.js'), import('./heroGhost.js'), import('three/addons/utils/SkeletonUtils.js')]);
+    dressModsP.catch(() => { dressModsP = null; });
+  }
+  if (libUrls && libUrls.kaykit) loadGltf(libUrls.kaykit).catch(() => {});
+}
 
 // Перенос всех клипов на VRM (кусками, чтобы не было длинного кадра) + длина шага клипов ходьбы.
 async function buildClips(THREE, vrm, key, libUrls) {
@@ -308,6 +319,7 @@ export function createHeroModel({
     if (!def.vrm && !def.glb) { S.ready = !!heroBody; return; }
     try {
       const url = def.glb ? new URL(def.glb, heroesBase).href : new URL(def.vrm, new URL(vrmUrl, base)).href;
+      prefetchHeroDeps(libUrls);   // [LOAD] клипы и модули оболочки — параллельно с моделью
       const vrm = def.glb ? await loadHumanoidGLB(THREE, url) : await loadVRM(THREE, url);
       if (def.recolor) await recolorHero(vrm, def.recolor, def.makeup || null);
       if (def.hide) vrm.scene.traverse((o) => { if (o.isMesh && def.hide.some((n) => o.name.startsWith(n))) o.visible = false; });
@@ -355,6 +367,8 @@ export function createHeroModel({
           lower[name] = mixer.clipAction(lowerClips.get(clip));
         }
       }
+      // [LOAD] до первой позы Idle модель не видна: иначе, пока надевается оболочка, на витрине стоит T-поза
+      wrapG.visible = false;
       root.add(wrapG);
       const H = vrm.humanoid;
       const nb = (n) => H.getNormalizedBoneNode(n);
@@ -374,6 +388,7 @@ export function createHeroModel({
       showProcedural(false);
       for (const n of LOCO) if (full[n]) { full[n].play(); full[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); if (lower[n]) { lower[n].play(); lower[n].setEffectiveWeight(0); } }
       mixer.update(0);
+      wrapG.visible = true;   // [LOAD] герой появляется сразу в позе Idle
       parentAnchors();
       if (S.lod) { const l = S.lod; S.lod = -1; applyLod(l); }   // LOD, заданный до загрузки
       S.ready = true;
