@@ -455,6 +455,41 @@
   background: var(--ao-debug);
 }
 
+/* [SFX] «Без звука» в строке громкости */
+.ao-field__head:has(.ao-mute) {
+  justify-content: flex-start;
+  align-items: center;
+  gap: 0.6rem;
+}
+.ao-field__head:has(.ao-mute) .ao-field__value {
+  margin-left: auto;
+}
+.ao-mute {
+  padding: 0.05rem 0.55rem;
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--ao-muted);
+  background: none;
+  border: 1px solid var(--ao-line-strong);
+  border-radius: 1rem;
+  cursor: pointer;
+  pointer-events: auto;
+  white-space: nowrap;
+}
+.ao-mute:hover {
+  color: var(--ao-text);
+}
+.ao-mute[aria-pressed='true'] {
+  color: var(--ao-debug);
+  border-color: var(--ao-debug);
+  background: rgba(224, 162, 76, 0.14);
+}
+.ao-mute:focus-visible {
+  outline: 2px solid var(--ao-gold-hi);
+  outline-offset: 2px;
+}
+
 /* --------------------------------------------------------------- settings */
 
 .ao-settings {

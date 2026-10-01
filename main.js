@@ -31,6 +31,7 @@ import { createSquatCounter, topSquatFault, synthSquatPose } from './core/squatC
 import { createHandZone, createHeroBowPose } from './core/handZone.js'; // [HAND] лук и магия рукой
 import { createPerfTuner } from './core/perfTuner.js'; // [PERF] автоподстройка под железо
 import { createPerfHud } from './core/perfHud.js';     // [PERF] F3 — кадры и трекинг
+import { createCueTracker } from './modules/sfx.js';    // [SFX] «✓ Распознано» и «ОШИБКА» на обучении и в бою
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
 
@@ -63,6 +64,7 @@ function sanitizeSettings(patch, base) {
   if (Number.isFinite(+patch.volume) && patch.volume !== null && patch.volume !== '') out.volume = Math.max(0, Math.min(1, +patch.volume));
   if (Number.isFinite(+patch.sensitivity) && patch.sensitivity !== null && patch.sensitivity !== '') out.sensitivity = Math.max(0.5, Math.min(2, +patch.sensitivity));
   if ('reducedMotion' in patch) out.reducedMotion = !!patch.reducedMotion;
+  if ('muted' in patch) out.muted = patch.muted === true; // [SFX] «Без звука» (кнопка в меню и паузе, клавиша M)
   if (patch.moveMode === 'steer' || patch.moveMode === 'stick') out.moveMode = patch.moveMode; // [V5] «Руль» / «Джойстик»
   if (typeof patch.hero === 'string' && HEROES[patch.hero]) out.hero = patch.hero;
   // [HERO] C1: шейдинг героев
@@ -326,6 +328,7 @@ function setScreen(screen) {
   app.screen = screen;
   if (screen !== 'paused') app.pauseReason = null;
   if (screen !== 'playing') debugInput.clear();
+  screenAudio(screen);
   renderUI();
 }
 
@@ -376,13 +379,46 @@ function pause(reason) {
   if (app.screen !== 'playing') return;
   setScreen('paused');
   app.pauseReason = reason || 'user';
-  effects.setVolume(0); // петли щита/полёта орбов не звучат всю паузу
-  renderUI();
+  renderUI();                // [SFX] звук паузы — в screenAudio(): петли щита/полёта орбов молчат всю паузу
 }
 
 const AUDIO_ON = !(config.audio && config.audio.enabled === false);
-const gameVolume = () => (AUDIO_ON ? settings.volume : 0);
+const gameVolume = () => (AUDIO_ON && !settings.muted ? settings.volume : 0);
 function unlockAudio() { if (!AUDIO_ON) return; try { effects.unlockAudio().catch(() => {}); } catch (e) { /* ignore */ } }
+// [SFX] Громкость по экрану: на паузе боевые звуки и петли молчат, но проба громкости слышна;
+// на любом другом экране звук возвращается (раньше выход из паузы в меню оставлял игру без звука).
+function screenAudio(screen) {
+  try {
+    if (typeof effects.setAudioPaused === 'function') { effects.setAudioPaused(screen === 'paused'); effects.setVolume(gameVolume()); }
+    else effects.setVolume(screen === 'paused' ? 0 : gameVolume());
+    if (screen === 'tutorial') sfxCues.reset();
+  } catch (e) { /* до инициализации звука */ }
+}
+const sfxCues = createCueTracker();
+function cue(name) { if (name && AUDIO_ON && typeof effects.cue === 'function') { try { effects.cue(name); } catch (e) { /* ignore */ } } }
+let previewTimer = 0;
+function previewVolume() { clearTimeout(previewTimer); previewTimer = setTimeout(() => cue('ui_ok'), 120); } // проба после остановки ползунка
+// [SFX] AudioContext разблокируется первым же кликом или клавишей (браузер не даёт звук без жеста игрока)
+for (const type of ['pointerdown', 'keydown', 'touchstart']) window.addEventListener(type, () => unlockAudio(), { capture: true, passive: true });
+// [SFX] M — «Без звука». В отладочном бою M занят огненным шаром (core/handZone.js, capture + preventDefault).
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyM' || e.repeat || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.tagName === 'TEXTAREA' || t.isContentEditable || (t.tagName === 'INPUT' && !['range', 'checkbox', 'radio', 'button'].includes(t.type)))) return;
+  callbacks.onSettings({ muted: !settings.muted });
+});
+// [SFX] «✓ Распознано»: карточка обучения перешла в data-state=seen (атрибут меняется только на переходе)
+if (typeof MutationObserver === 'function' && uiRoot) {
+  new MutationObserver((records) => {
+    if (app.screen !== 'tutorial') return;
+    for (const r of records) {
+      const t = r.target;
+      if (r.oldValue === 'seen' || !t.classList || !t.classList.contains('ao-chip') || t.getAttribute('data-state') !== 'seen') continue;
+      const card = t.closest('.ao-tut-card');
+      cue(sfxCues.chip(card && card.dataset ? card.dataset.key : null));
+    }
+  }).observe(uiRoot, { subtree: true, attributes: true, attributeFilter: ['data-state'], attributeOldValue: true });
+}
 
 const REC_ON = /[?&]rec=1\b/.test(location.search); // [CONTROLS] запись кистей (см. saveRecording)
 
@@ -493,8 +529,7 @@ const callbacks = {
     debugInput.clear();
     app.lostTime = 0;
     app.resumeAt = performance.now() + config.tracking.resumeGraceSec * 1000;
-    effects.setVolume(gameVolume());
-    setScreen('playing');
+    setScreen('playing');      // [SFX] громкость вернёт screenAudio()
   },
 
   onRestart() {
@@ -511,6 +546,9 @@ const callbacks = {
     if (heroModel && next.heroShading !== settings.heroShading) { try { heroModel.setShading(next.heroShading); configureHeroes({ shading: next.heroShading }); } catch (e) { /* ignore */ } } // [HERO]
     const motionChanged = next.reducedMotion !== settings.reducedMotion;
     const zoneChanged = next.startZone !== settings.startZone;   // [FOREST]
+    // [SFX] сдвинули ползунок — звук включается обратно и звучит проба новой громкости
+    const volumeMoved = patch && 'volume' in patch && next.volume !== settings.volume;
+    if (volumeMoved && next.volume > 0 && !('muted' in patch)) next.muted = false;
     Object.assign(settings, next); // мутация на месте: config.settings === settings
     if (zoneChanged && app.screen === 'menu') { try { resetFight(); } catch (e) { console.warn('[ASHEN] startZone', e); } }   // [FOREST] герой в меню — у выбранного места старта
     applySettings();
@@ -518,6 +556,7 @@ const callbacks = {
     if (motionChanged && postfx) { try { postfx.setReducedMotion(!!settings.reducedMotion); } catch (e) { /* ignore */ } }
     saveSettings(settings);
     renderUI();
+    if (volumeMoved || (patch && patch.muted === false)) previewVolume();
   },
 
   onDebug(enabled) {
@@ -721,7 +760,7 @@ function applySettings() {
     if (postfx) { try { postfx.setQuality(settings.quality); } catch (e) { /* ignore */ } }
     if (heroModel && heroModel.setQuality) { try { heroModel.setQuality(settings.quality); configureHeroes({ quality: settings.quality }); } catch (e) { /* ignore */ } } // [HERO]
   }
-  effects.setVolume(app.screen === 'paused' ? 0 : gameVolume());
+  screenAudio(app.screen);
   if (vision) vision.configure({ sensitivity: settings.sensitivity, moveMode: settings.moveMode });
   if (typeof debugInput.setMoveMode === 'function') debugInput.setMoveMode(settings.moveMode); // [V5] WASD как «Руль»
 }
@@ -997,6 +1036,7 @@ function frame(now) {
   if (handZone) { try { handZone.apply(input, now, { debug: app.debug, playing: app.screen === 'playing', enabled: settings.handCombat !== false }); } catch (e) { console.warn('[HAND] apply', e); } }
   // [ТВИСТ «ОШИБКА»] код подсказки → жест и текст исправления (для HUD, обучения и итогов)
   if (input && input.hint && hintInfo(input.hint.code)) input.hint = { ...input.hint, ...hintInfo(input.hint.code) };
+  if (input && input.hint && (app.screen === 'tutorial' || app.screen === 'playing')) cue(sfxCues.hint(input.hint, now)); // [SFX] мягкий «тук»
   app.lastInput = input;
   let events = NO_EVENTS;
 

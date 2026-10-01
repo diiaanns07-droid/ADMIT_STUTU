@@ -381,6 +381,7 @@ function normSettings(s) {
     moveMode: o.moveMode === 'stick' ? 'stick' : 'steer', // [V5] по умолчанию «Руль»
     startZone: o.startZone === 'forest' ? 'forest' : 'arena', // [FOREST] место старта
     hero: HERO_OPTIONS.some(([v]) => v === o.hero) ? o.hero : DEFAULT_SETTINGS.hero,
+    muted: o.muted === true, // [SFX] «Без звука» (клавиша M)
   };
 }
 
@@ -899,7 +900,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const value = el('output', { class: 'ao-field__value', for: id });
     const hint = o.hint ? el('div', { class: 'ao-field__hint', id: `${id}-hint`, text: o.hint }) : null;
     if (hint) input.setAttribute('aria-describedby', `${id}-hint`);
-    const field = el('div', { class: 'ao-field' }, el('div', { class: 'ao-field__head' }, el('label', { for: id, text: o.label }), value), input, hint);
+    const field = el('div', { class: 'ao-field' }, el('div', { class: 'ao-field__head' }, el('label', { for: id, text: o.label }), value, o.head || null), input, hint);
     let lastSent = null;
     const paint = (v) => {
       const text = o.format(v);
@@ -1074,9 +1075,19 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       }
       else if (key === 'volume' && !cfg.showVolume) continue;
       else if (key === 'volume') {
+        // [SFX] «Без звука» — в строке громкости, чтобы меню 1366×650 не выросло; то же делает клавиша M
+        const mute = el('button', { type: 'button', class: 'ao-mute', 'aria-pressed': 'false', title: 'Выключить звук — клавиша M', text: 'Без звука · M' });
+        listen(mute, 'click', () => invoke('onSettings', { muted: !(state.settings && state.settings.muted) }));
+        controls.push({
+          sync(st) {
+            const m = !!(st && st.muted);
+            setAttr(mute, 'aria-pressed', m ? 'true' : 'false');
+            setText(mute, m ? 'Звук выключен · M' : 'Без звука · M');
+          },
+        });
         wrap.append(
           buildRange({
-            key: 'volume', prefix, label: 'Громкость', min: 0, max: 100, step: 5,
+            key: 'volume', prefix, label: 'Громкость', min: 0, max: 100, step: 5, head: mute,
             toRaw: (v) => Math.round(v * 100), fromRaw: (r) => r / 100, format: (v) => `${Math.round(v * 100)}%`,
           }),
         );
@@ -2248,7 +2259,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   function syncSettings(s) {
-    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}`; // [FOREST] + startZone
+    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}|${s.muted}`; // [FOREST] + startZone, [SFX] + muted
     state.settings = s;
     if (key === state.settingsKey) return;
     state.settingsKey = key;
