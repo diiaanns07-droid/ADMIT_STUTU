@@ -441,8 +441,8 @@ const TRAINER_DUMMY_SVG =
   '<g class="mq-dummy"><path class="mq-post" d="M420 98 V40"/><path class="mq-post" d="M394 56 H446"/>' +
   '<ellipse class="mq-straw" cx="420" cy="62" rx="15" ry="22"/><circle class="mq-straw" cx="420" cy="30" r="11"/>' +
   '<circle class="mq-target" cx="420" cy="62" r="7"/><circle class="mq-target" cx="420" cy="62" r="2.2"/></g>' +
-  '<text class="mq-dmg" x="420" y="12" text-anchor="middle">−12</text>' +
-  '<text class="mq-dmg mq-dmg--big" x="420" y="12" text-anchor="middle">−40</text>' +
+  '<text class="mq-dmg" x="462" y="30" text-anchor="middle">−12</text>' +
+  '<text class="mq-dmg mq-dmg--big" x="466" y="30" text-anchor="middle">−40</text>' +
   // камешек от чучела — в щит
   '<circle class="mq-pebble" cx="400" cy="58" r="5"/>' +
   // герой
