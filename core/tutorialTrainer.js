@@ -13,7 +13,7 @@
 //
 //   const tr = createTutorialTrainer();
 //   const view = tr.update(inputFrame, performance.now(), { moveMode: 'steer' });
-//   tr.skip(now); tr.restart(now);
+//   tr.skip(now); tr.skipAll(now); tr.restart(now);
 
 import { hintInfo } from './gestureCoach.js';
 
@@ -59,7 +59,7 @@ const DEFAULTS = Object.freeze({
   advanceMs: 800,     // «✓ Распознано!» висит столько, потом — следующий шаг
   hintMs: 4500,       // подсказка «ОШИБКА» на экране
   decay: 1.5,         // накопленное удержание тает во столько раз быстрее, чем копится (провалы трекинга)
-  maxDtMs: 100,       // шаг времени не больше (после ухода вкладки не «докапываем»)
+  maxDtMs: 250,       // шаг времени не больше: после ухода вкладки не «докапываем», а слабый ноутбук (от 4 к/с) идёт в реальном времени
   stuckMs: 15000,     // столько без успеха — предложить «Пропустить»
 });
 
@@ -179,6 +179,16 @@ export function createTutorialTrainer(options = {}) {
     return true;
   }
 
+  // «Пропустить обучение»: все оставшиеся шаги — skip, сразу итог (уже распознанный шаг остаётся ok)
+  function skipAll(nowMs) {
+    if (s.phase === 'done') return false;
+    const now = fin(nowMs) ? nowMs : (s.lastT ?? 0);
+    for (let i = 0; i < total; i++) if (s.results[i] === null) s.results[i] = 'skip';
+    s.index = total - 1;
+    goNext(now);
+    return true;
+  }
+
   function restart(nowMs) {
     fresh(fin(nowMs) ? nowMs : null);
     seq++;
@@ -217,6 +227,7 @@ export function createTutorialTrainer(options = {}) {
   return {
     update,
     skip,
+    skipAll,
     restart,
     reset: () => { fresh(null); seq++; },
     view,

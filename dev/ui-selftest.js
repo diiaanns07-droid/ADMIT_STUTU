@@ -155,7 +155,7 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     let disabledFired = [];
     for (const [name, v] of Object.entries(fixtures)) {
       ui.update(clone(v));
-      const buttons = $$('button').filter(isVisible);
+      const buttons = $$('button').filter(isVisible).filter((b) => !b.hasAttribute('data-ui-local')); // [ТРЕНАЖЁР] data-ui-local — меняют только сам экран, проверены в п. 11
       for (const b of buttons) {
         ui.update(clone(v));
         if (!isVisible(b)) continue;
@@ -282,12 +282,29 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     ui.update(F('paused-user', { tracking: { status: 'ready', confidence: 0.9, calibrated: false } }));
     check('calibrated=false блокирует «Продолжить бой»', btnByText(pauseSec, 'Продолжить бой').getAttribute('aria-disabled') === 'true');
 
-    /* 11. Обучение: «В бой» только после готовности */
+    /* 11. Обучение — тренажёр «Научись за 60 секунд»: 4 шага, «Пропустить», «В бой» только после готовности */
     reset();
     ui.update(F('tutorial-waiting'));
     const tutSec = section('tutorial');
+    const tq = (sel) => tutSec.querySelector(sel);
+    const cnt = () => tq('.ao-trn-count').textContent;
+    check('тренажёр: шаг 1 из 4 — «Ладонь у груди», крупная кисть и превью камеры рядом',
+      cnt() === '1 / 4' && tq('.ao-trn-title').textContent === 'Ладонь у груди' && !!tq('.ao-trn-pic svg.ao-pic--walk') && !!tq('.ao-trn-cam .ao-slothost'), cnt());
+    check('тренажёр: «В бой» спрятана до конца шагов, «Пропустить» видна', !btnByText(tutSec, 'В бой') && !!btnByText(tutSec, 'Пропустить'));
+    // подсказки «ОШИБКА»: своя — видна под кистью, чужая (про руну) — нет
+    const coachBox = tq('.ao-trn-coach');
+    ui.update(F('tutorial-ready', { input: { source: 'cv', valid: true, calibrated: true, tMs: 1, moveX: 0, hint: { code: 'rune_open', gesture: 'Руна', text: 'x', side: 'right' } } }));
+    check('тренажёр: подсказка не своего шага не показывается', !isVisible(coachBox));
+    ui.update(F('tutorial-ready', { input: { source: 'cv', valid: true, calibrated: true, tMs: 2, moveX: 0, hint: { code: 'steer_low', gesture: 'Руль', text: 'y', side: 'left' } } }));
+    check('тренажёр: «ОШИБКА» своего шага — под пиктограммой, текст из gestureCoach',
+      isVisible(coachBox) && !!coachBox.closest('.ao-trn-picol') && /ошибка/i.test(coachBox.textContent) && /до груди/.test(coachBox.textContent), coachBox.textContent);
+    // «Пропустить» × 4 → итог
+    for (let i = 0; i < 4; i++) { const b = btnByText(tutSec, 'Пропустить'); if (b) b.click(); ui.update(F('tutorial-waiting')); }
+    check('тренажёр: «Пропустить» не трогает игру (только экран)', calls.length === 0, calls.map((c) => c.name).join(','));
+    check('тренажёр: после 4 пропусков — итог «4 / 4», все шаги помечены пропущенными',
+      cnt() === '4 / 4' && isVisible(tq('.ao-trn-done')) && tutSec.querySelectorAll('.ao-trn-pill[data-state="skip"]').length === 4, cnt());
     const fight = btnByText(tutSec, 'В бой');
-    check('обучение при lost: «В бой» недоступна', fight.getAttribute('aria-disabled') === 'true');
+    check('обучение при lost: «В бой» недоступна', !!fight && fight.getAttribute('aria-disabled') === 'true');
     fight.click();
     check('недоступная «В бой» не вызывает onStart', count('onStart') === 0);
     fight.focus();
@@ -299,16 +316,57 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     check('обучение при ready → onStart({from:"tutorial"})', count('onStart') === 1 && last('onStart').from === 'tutorial');
     ui.update(F('tutorial-debug'));
     check('в DEBUG «В бой» доступна без камеры', fight.getAttribute('aria-disabled') !== 'true');
+    btnByText(tutSec, 'Пройти ещё раз').click();
+    ui.update(F('tutorial-debug'));
+    check('«Пройти ещё раз» → снова шаг 1', cnt() === '1 / 4');
+    check('DEBUG: на шаге подписана клавиша (W) вместо превью камеры',
+      isVisible(tq('.ao-trn-keycap')) && tq('.ao-trn-keycap__key').textContent === 'W' && /держи W/.test(tq('.ao-trn-key').textContent));
+    // настоящий распознанный жест: щит (удержание ≥ 0,3 с) → «✓ Распознано!» → через 0,8 с шаг 3
     ui.update(F('menu'));
+    ui.update(F('tutorial-ready'));
+    btnByText(tutSec, 'Пропустить').click();
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const shieldIn = (t) => ({ source: 'cv', valid: true, calibrated: true, tMs: t, moveX: 0, shield: true });
+    let okSeen = false;
+    for (let i = 0; i < 12 && !okSeen; i++) { ui.update(F('tutorial-ready', { input: shieldIn(i) })); okSeen = isVisible(tq('.ao-trn-ok')); if (!okSeen) await sleep(60); }
+    check('живой InputFrame: щит удержан → крупное «✓ Распознано!» и реакция манекена',
+      okSeen && /Распознано!/.test(tq('.ao-trn-ok').textContent) && tq('.ao-trn-mq').classList.contains('is-ok') && cnt() === '2 / 4', cnt());
+    await sleep(900);
+    ui.update(F('tutorial-ready'));
+    check('через 0,8 с — автопереход на шаг 3 «OK»', cnt() === '3 / 4' && /«OK»/.test(tq('.ao-trn-title').textContent), cnt());
     ui.update(F('tutorial-live'));
-    const chip = (k) => tutSec.querySelector(`[data-key="${k}"] .ao-chip`);
-    check('живой InputFrame: наклон вправо отмечен частично', chip('strafe').getAttribute('data-state') === 'partial', chip('strafe').textContent);
-    check('живой InputFrame: правая рука отмечена, левая ещё нет', chip('hands').getAttribute('data-state') === 'partial' && tutSec.querySelector('[data-key="hands"]').classList.contains('is-attack'));
-    check('рывок и выброс без события не отмечены', chip('dash').getAttribute('data-state') === 'try' && chip('both').getAttribute('data-state') === 'try');
+    check('живой InputFrame: «OK» правой подсвечивает шаг и манекен', tq('.ao-trn-gesture').classList.contains('is-live') && tq('.ao-trn-mq').classList.contains('is-live'));
     const tutText = tutSec.textContent.toLowerCase();
     // [№1] С HandLandmarker («Перстни») ладонь и кулак реально распознаются — их можно называть.
     // По-прежнему запрещено просить резких бросков корпусом/головой.
     check('в обучении нет «резко брось» (броски корпусом запрещены)', !/брось|бросьте|бросок/.test(tutText));
+    check('в обучении — не больше 120 слов на экране (было ~290)', tutSec.innerText.split(/\s+/).filter(Boolean).length <= 120, String(tutSec.innerText.split(/\s+/).filter(Boolean).length));
+
+    /* 11б. «Книга заклинаний»: из меню и паузы; старые карточки — в разделе «Продвинутые» */
+    reset();
+    ui.update(F('menu'));
+    const bookSec = $('.ao-screen--book');
+    const bookBtnM = btnByText(section('menu'), 'Книга заклинаний');
+    check('в меню есть кнопка «Книга заклинаний»', !!bookBtnM);
+    bookBtnM.click();
+    ui.update(F('menu'));
+    check('книга открывается поверх меню, фокус на «Закрыть»', isVisible(bookSec) && document.activeElement === btnByText(bookSec, 'Закрыть'));
+    const tabsB = bookSec.querySelectorAll('[role="tab"]');
+    check('книга: вкладки «Базовые» и «Продвинутые: руны, печати, лук, магия»', tabsB.length === 2 && /Продвинутые: руны, печати, лук, магия/.test(tabsB[1].textContent));
+    tabsB[1].click();
+    check('книга: в «Продвинутых» все 7 прежних карточек', bookSec.querySelectorAll('.ao-book-pane:not([hidden]) .ao-tut-card').length === 7);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    check('Esc закрывает книгу и возвращает фокус на кнопку', !isVisible(bookSec) && document.activeElement === bookBtnM);
+    check('книга не вызывает callback игры', calls.length === 0, calls.map((c) => c.name).join(','));
+    ui.update(F('paused-user'));
+    const bookBtnP = btnByText(section('paused'), 'Книга заклинаний');
+    check('в паузе есть «Книга заклинаний»', !!bookBtnP);
+    bookBtnP.click();
+    ui.update(F('paused-user'));
+    check('книга открывается поверх паузы', isVisible(bookSec));
+    ui.update(F('playing'));
+    check('смена экрана закрывает книгу', !isVisible(bookSec));
+    ui.update(F('menu'));
 
     /* 12. Калибровка */
     reset();

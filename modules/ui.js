@@ -23,6 +23,8 @@
  *     приседания: attempts, knee, view, lastHint{code,text,tMs}, sinceHintMs, faults{}, formScore, topFault{code,text,count}, debugSim }
  */
 
+import { createTutorialTrainer, TRAINER_STEPS } from '../core/tutorialTrainer.js';
+
 export const API_VERSION = 'ASHEN_V1';
 
 const SCREENS = ['menu', 'camera', 'calibration', 'tutorial', 'playing', 'paused', 'victory', 'defeat', 'error', 'oath', 'training'];
@@ -197,6 +199,7 @@ const ICONS = {
   pause: `<svg ${SVG24}><path d="M9 6.5v11M15 6.5v11"/></svg>`,
   check: `<svg ${SVG24}><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`,
   warn: `<svg ${SVG24}><path d="M12 4 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.01"/></svg>`,
+  book: `<svg ${SVG24}><path d="M4 5.5C6.8 4.6 9.4 4.9 12 6.6c2.6-1.7 5.2-2 8-1.1v13c-2.8-.9-5.4-.6-8 1.1-2.6-1.7-5.2-2-8-1.1z"/><path d="M12 6.6v13"/></svg>`,
 };
 
 /* Пиктограмма сидящего игрока. Вид со спины: правая рука фигуры справа. */
@@ -352,6 +355,108 @@ TUTORIAL.push({
   effect: 'Сжимай и раскрывай пальцы — сгусток растёт. Толкни ладонь к камере или махни — бросок, опусти руку — отмена.',
   svg: svgWrap(palmFlameFigure()),
 });
+
+/* ------------------------------------------------- [ТРЕНАЖЁР] пиктограммы
+ * «Научись за 60 секунд» (логика — core/tutorialTrainer.js). Кисть нарисована так, как игрок видит
+ * себя в зеркальном превью: ладонь к камере, у ЛЕВОЙ руки большой палец справа. Правая — отражение.
+ * Силуэт в два прохода: сначала все контуры (широкая тёмная линия), затем «кожа» поверх — без швов. */
+
+const HAND_FINGERS = [
+  ['M80 106 L70 62', 13], ['M94 101 L90 48', 14], ['M108 100 L110 44', 14], ['M122 102 L130 54', 14],
+];
+const HAND_THUMB = ['M126 146 L146 126 L158 104', 15];
+const HAND_PALM = 'M70 106 Q70 96 80 96 H124 Q134 96 134 106 L135 140 Q135 164 110 165 H92 Q68 164 68 140 Z';
+const HAND_SLEEVE = '<path class="hd-sleeve" d="M80 214 L84 160 H120 L124 214 Z"/><path class="hd-cuff" d="M83 170 H121"/>';
+function handPass(strokes, palm, cls) {
+  let s = strokes.map(([d, w]) => `<path class="${cls}" d="${d}" stroke-width="${cls === 'hd-o' ? w + 6 : w}"/>`).join('');
+  if (palm) s += `<path class="${cls} hd-palm" d="${palm}"/>`;
+  return s;
+}
+function handShape(strokes, palm, extra = '') {
+  return HAND_SLEEVE + handPass(strokes, palm, 'hd-o') + handPass(strokes, palm, 'hd-s') + extra;
+}
+const HAND_OPEN = handShape([...HAND_FINGERS, HAND_THUMB], HAND_PALM,
+  '<path class="hd-crease" d="M84 136 Q100 144 122 132"/>');
+// «OK»: большой и указательный сомкнуты в кольцо, три пальца вверх
+const HAND_OK = handShape(
+  [HAND_FINGERS[0], HAND_FINGERS[1], HAND_FINGERS[2], ['M122 102 L134 90', 14], ['M126 146 L144 120', 15]],
+  HAND_PALM,
+  '<circle class="hd-o" cx="146" cy="104" r="14" stroke-width="17" fill="none"/>' +
+    '<circle class="hd-s" cx="146" cy="104" r="14" stroke-width="11" fill="none"/>' +
+    '<circle class="hd-ring" cx="146" cy="104" r="7.5"/>',
+);
+// кулак: костяшки сверху, большой палец поперёк
+const HAND_FIST =
+  HAND_SLEEVE +
+  '<path class="hd-o hd-palm" d="M70 112 Q70 92 88 92 H118 Q136 92 136 112 L136 142 Q136 164 112 165 H92 Q70 164 70 142 Z"/>' +
+  '<path class="hd-s hd-palm" d="M70 112 Q70 92 88 92 H118 Q136 92 136 112 L136 142 Q136 164 112 165 H92 Q70 164 70 142 Z"/>' +
+  '<path class="hd-crease" d="M86 94 V112 M102 92 V112 M118 94 V112 M76 116 H132"/>' +
+  '<path class="hd-o" d="M136 142 L100 130" stroke-width="20"/><path class="hd-s" d="M136 142 L100 130" stroke-width="14"/>';
+const handG = (inner, side, cls = '') =>
+  `<g class="hd ${cls}"${side === 'right' ? ' transform="translate(208 0) scale(-1 1)"' : ''}>${inner}</g>`;
+const picWrap = (id, inner) =>
+  `<svg class="ao-pic ao-pic--${id}" viewBox="0 0 208 220" fill="none" stroke-linecap="round" stroke-linejoin="round" ` +
+  `aria-hidden="true" focusable="false">${inner}</svg>`;
+
+// Крупная анимированная пиктограмма шага (CSS-анимации .pic-* в ui.css; при «меньше движения» — ключевая поза).
+const TRAINER_PICS = {
+  // 1. левая ладонь поднимается к линии груди и держится
+  walk: picWrap('walk',
+    '<g class="pic-body"><circle cx="104" cy="34" r="19"/><path d="M28 132 Q34 74 104 70 Q174 74 180 132"/></g>' +
+    '<path class="pic-line" d="M8 104 H200"/><text class="pic-lab" x="200" y="96" text-anchor="end">грудь</text>' +
+    '<g class="pic-rise"><g transform="translate(-4 10) scale(0.72)">' + handG(HAND_OPEN, 'left') + '</g></g>' +
+    '<path class="pic-arrow pic-arrow--up" d="M158 196 V146 M147 158 L158 146 L169 158"/>'),
+  // 2. левая ладонь резко толкается к камере (растёт), волны толчка
+  shield: picWrap('shield',
+    '<g class="pic-waves"><path d="M40 52 Q20 104 40 156"/><path d="M168 52 Q188 104 168 156"/>' +
+    '<path d="M24 36 Q-2 104 24 172"/><path d="M184 36 Q210 104 184 172"/></g>' +
+    '<g class="pic-push"><g transform="translate(-3 -2) scale(0.95)">' + handG(HAND_OPEN, 'left') + '</g></g>' +
+    '<text class="pic-lab" x="104" y="214" text-anchor="middle">толчок к камере</text>'),
+  // 3. правая: ладонь → «OK» (кольцо), из кольца летит снаряд
+  shot: picWrap('shot',
+    '<g transform="translate(14 0) scale(0.95)"><g class="pic-a">' + handG(HAND_OPEN, 'right') + '</g>' +
+    '<g class="pic-b">' + handG(HAND_OK, 'right') + '</g></g>' +
+    '<g class="pic-bolt"><circle cx="72" cy="98" r="9"/><path d="M80 92 L102 78 M81 101 L106 94"/></g>'),
+  // 4. правый кулак: кольцо заряда заполняется → резко раскрыть, лучи выброса
+  burst: picWrap('burst',
+    '<circle class="pic-charge-bg" cx="104" cy="124" r="84"/><circle class="pic-charge" cx="104" cy="124" r="84" pathLength="100"/>' +
+    '<g transform="translate(8 6) scale(0.92)"><g class="pic-a">' + handG(HAND_FIST, 'right') + '</g>' +
+    '<g class="pic-b">' + handG(HAND_OPEN, 'right') + '</g></g>' +
+    '<g class="pic-rays"><path d="M100 28 V8 M158 46 L172 30 M42 46 L28 30 M178 104 H200 M22 104 H2"/></g>'),
+};
+// Маленькие (статичные) — для полосы шагов, итога и «Книги заклинаний».
+const TRAINER_MINI = {
+  walk: picWrap('mini', '<path class="pic-line" d="M8 104 H200"/><g transform="translate(14 22) scale(0.82)">' + handG(HAND_OPEN, 'left') + '</g>'),
+  shield: picWrap('mini', '<g class="pic-waves pic-waves--on"><path d="M40 52 Q20 104 40 156"/><path d="M168 52 Q188 104 168 156"/></g><g transform="translate(14 0) scale(0.86)">' + handG(HAND_OPEN, 'left') + '</g>'),
+  shot: picWrap('mini', '<g transform="translate(14 0) scale(0.86)">' + handG(HAND_OK, 'right') + '</g>'),
+  burst: picWrap('mini', '<g transform="translate(14 0) scale(0.86)">' + handG(HAND_FIST, 'right') + '</g>'),
+};
+
+// Манекен: герой слева, соломенное чучело справа. Реакции — классы .is-live / .is-ok и data-step (ui.css).
+const TRAINER_DUMMY_SVG =
+  '<svg class="ao-mq" viewBox="-110 0 740 112" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+  '<path class="mq-ground" d="M-110 98 H630"/>' +
+  '<path class="mq-ticks" d="M-122 106 h18 M-58 106 h18 M6 106 h18 M70 106 h18 M134 106 h18 M198 106 h18 M262 106 h18 M326 106 h18 M390 106 h18 M454 106 h18 M518 106 h18 M582 106 h18 M646 106 h18"/>' +
+  // чучело
+  '<g class="mq-dummy"><path class="mq-post" d="M420 98 V40"/><path class="mq-post" d="M394 56 H446"/>' +
+  '<ellipse class="mq-straw" cx="420" cy="62" rx="15" ry="22"/><circle class="mq-straw" cx="420" cy="30" r="11"/>' +
+  '<circle class="mq-target" cx="420" cy="62" r="7"/><circle class="mq-target" cx="420" cy="62" r="2.2"/></g>' +
+  '<text class="mq-dmg" x="420" y="12" text-anchor="middle">−12</text>' +
+  '<text class="mq-dmg mq-dmg--big" x="420" y="12" text-anchor="middle">−40</text>' +
+  // камешек от чучела — в щит
+  '<circle class="mq-pebble" cx="400" cy="58" r="5"/>' +
+  // герой
+  '<g class="mq-hero">' +
+  '<path class="mq-leg mq-leg--a" d="M114 98 L120 74"/><path class="mq-leg mq-leg--b" d="M128 98 L122 74"/>' +
+  '<path class="mq-body" d="M106 76 L136 76 L131 44 L111 44 Z"/><circle class="mq-head" cx="121" cy="32" r="9.5"/>' +
+  '<path class="mq-arm" d="M130 50 L150 60"/><circle class="mq-palm" cx="152" cy="60" r="4"/>' +
+  '<circle class="mq-charge" cx="152" cy="60" r="16"/>' +
+  '<path class="mq-shield" d="M162 26 Q186 60 162 94"/>' +
+  '<text class="mq-block" x="178" y="20" text-anchor="middle">Блок!</text>' +
+  '</g>' +
+  '<circle class="mq-bolt" cx="156" cy="60" r="7"/>' +
+  '<circle class="mq-wave" cx="152" cy="60" r="18"/>' +
+  '</svg>';
 
 /* Карта видимых точек для калибровки (вид со спины, как в пиктограммах). */
 const BODY_MAP_SVG =
@@ -651,6 +756,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     confidenceFair: num(options.confidenceFair, 0.4),
     keyboardPause: options.keyboardPause !== false,
     showVolume: options.showVolume !== false, // false — звук выключен в сборке, ползунок не показываем
+    // [ТРЕНАЖЁР] прежний экран обучения из карточек вместо «Научись за 60 секунд»
+    tutorialCards: options.tutorialCards === true || /[?&]tutorial=cards\b/.test((win.location && win.location.search) || ''),
   };
 
   let disposed = false;
@@ -1118,6 +1225,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const start = btn('Начать', () => invoke('onStart', { from: 'menu' }), { variant: 'primary', size: 'lg' });
     const oathBtn = btn('Клятва героя', () => invoke('onOath', { from: 'menu' }), { variant: 'secondary' });
     const netBtn = btn('Онлайн-дуэль', () => invoke('onNet', { from: 'menu' }), { variant: 'secondary' }); // [NET] экран лобби — modules/netLobby.js
+    const bookM = localBtn('Книга заклинаний', (e) => openBook(e && e.currentTarget), { iconName: 'book' }); // [ТРЕНАЖЁР] все жесты
     const oathPts = el('span', { class: 'ao-oathpts', hidden: true });
     const dbg = el('button', { type: 'button', class: 'ao-toggle', 'aria-pressed': 'false' }, el('span', { class: 'ao-toggle__track', 'aria-hidden': 'true' }), el('span', { class: 'ao-toggle__label', text: 'Отладка с клавиатуры' }));
     listen(dbg, 'click', () => invoke('onDebug', !state.debug));
@@ -1135,7 +1243,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       title,
       el('p', { class: 'ao-subtitle', text: 'Бой с Регентом Нимба' }),
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
-      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts, netBtn.node /* [NET] */), el('p', { class: 'ao-note', text: 'Играется сидя. Нужны веб-камера, Chrome или Edge и устойчивый стул.' })),
+      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Играется сидя. Нужны веб-камера, Chrome или Edge и устойчивый стул.' })),
       buildHeroPick('menu'),
       el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'reducedMotion'], 'menu')),
       el('div', { class: 'ao-menu__foot' }, dbg, dbgKeys),
@@ -1423,9 +1531,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
 
   /* ------------------------------------------------------------ TUTORIAL */
 
-  const tutorial = (() => {
-    const hid = `${uid}-tut-h`;
-    const h = heading('h2', hid, 'Как управлять', 'ao-h2');
+  // Карточки «Как управлять» (7 штук, ~35 вводов): теперь живут в «Книге заклинаний» (раздел
+  // «Продвинутые») и в прежнем экране обучения — он выключен по умолчанию (?tutorial=cards).
+  function buildTutCards() {
     const cards = {};
     const grid = el('div', { class: 'ao-tut-grid' });
     for (const item of TUTORIAL) {
@@ -1463,6 +1571,25 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       cards[item.key] = { card, chip, chipText, lean, item, figEl, titleEl, gestEl, effEl, mode: 'steer' };
       grid.append(card);
     }
+    return { grid, cards };
+  }
+  // [V5] тексты карточки движения — под выбранную схему («Руль» / «Джойстик»)
+  function syncTutCards(cards, ctx) {
+    const moveMode = ctx.settings && ctx.settings.moveMode === 'stick' ? 'stick' : 'steer';
+    for (const c of Object.values(cards)) {
+      if (!c.item.stick || c.mode === moveMode) continue;
+      c.mode = moveMode;
+      const v = moveMode === 'stick' ? { ...c.item, ...c.item.stick } : c.item;
+      setText(c.titleEl, v.title); setText(c.gestEl, v.gesture); setText(c.effEl, v.effect);
+      c.figEl.innerHTML = v.svg; // только статические строки этого модуля
+    }
+  }
+
+  // Прежний экран обучения «Как управлять» (стена карточек с живыми отметками). Выключен по умолчанию.
+  const buildCardsTutorial = () => {
+    const hid = `${uid}-tut-h`;
+    const h = heading('h2', hid, 'Как управлять', 'ao-h2');
+    const { grid, cards } = buildTutCards();
     const host = el('div', { class: 'ao-slothost' });
     const status = statusLine();
     const ready = el('p', { class: 'ao-msg' });
@@ -1521,15 +1648,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         else if (st === 'calibrating') text = 'Идёт калибровка.';
         else text = 'Камера ещё не готова.';
         setText(ready, text);
-        // [V5] тексты карточки движения — под выбранную схему («Руль» / «Джойстик»)
-        const moveMode = ctx.settings && ctx.settings.moveMode === 'stick' ? 'stick' : 'steer';
-        for (const c of Object.values(cards)) {
-          if (!c.item.stick || c.mode === moveMode) continue;
-          c.mode = moveMode;
-          const v = moveMode === 'stick' ? { ...c.item, ...c.item.stick } : c.item;
-          setText(c.titleEl, v.title); setText(c.gestEl, v.gesture); setText(c.effEl, v.effect);
-          c.figEl.innerHTML = v.svg; // только статические строки этого модуля
-        }
+        syncTutCards(cards, ctx);
 
         const inp = ctx.input;
         const liveCv = !!inp && inp.source === 'cv' && !ctx.debug;
@@ -1618,7 +1737,321 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         }
       },
     };
+  };
+
+  /* ------------------------------------------------ [ТРЕНАЖЁР] «Научись за 60 секунд» */
+  // Экран обучения по умолчанию: 4 базовых жеста по одному (логика шагов — core/tutorialTrainer.js).
+  // Крупная анимированная кисть рядом с живым превью камеры (скелет кисти рисует trackingHud на overlay),
+  // «✓ Распознано!» и реакция манекена, подсказка «ОШИБКА» прямо под кистью, «Пропустить», прогресс «2 / 4».
+  // В «Отладке с клавиатуры» шаги проходятся клавишами боя: W, K, J, L (H — пример подсказки «ОШИБКА»).
+  // Кнопки, которые меняют только сам экран, помечены data-ui-local (в игру ничего не передают).
+
+  const STEP_SHORT = { walk: 'Ход', shield: 'Щит', shot: 'Выстрел', burst: 'Выброс' };
+  const LIVE_TEXT = {
+    walk: ['Ладонь — на уровень груди', 'Герой идёт — держи ещё…'],
+    shield: ['Толкни ладонь к камере', 'Щит поднят — держи…'],
+    shot: ['Сомкни пальцы в кольцо «OK»', '«OK» есть — держи…'],
+    burst: ['Сожми кулак — копится заряд', 'Заряд есть — теперь резко раскрой!'],
+  };
+  function lowerFirst(t) { return t ? t[0].toLowerCase() + t.slice(1) : ''; }
+  function localBtn(label, onPress, opts) {
+    const b = btn(label, onPress, opts);
+    b.node.setAttribute('data-ui-local', '');
+    return b;
+  }
+
+  const trainer = (() => {
+    const tr = createTutorialTrainer();
+    const hid = `${uid}-tut-h`;
+    const h = heading('h2', hid, 'Научись за 60 секунд', 'ao-h2');
+    const pills = TRAINER_STEPS.map((st, i) =>
+      el('li', { class: 'ao-trn-pill', 'data-state': 'todo' },
+        el('span', { class: 'ao-trn-pill__n', 'aria-hidden': 'true', text: String(i + 1) }),
+        el('span', { class: 'ao-trn-pill__t', text: STEP_SHORT[st.id] || st.title })));
+    const steps = el('ol', { class: 'ao-trn-steps', 'aria-label': 'Шаги обучения' }, pills);
+    const count = el('span', { class: 'ao-trn-count' });
+    const skipAll = localBtn('Пропустить обучение', () => { tr.skipAll(win.performance.now()); }, { variant: 'quiet' });
+
+    // левая колонка: какая рука, что сделать, крупная кисть, подсказка/«ОШИБКА»
+    const handEl = el('p', { class: 'ao-trn-hand' });
+    const titleEl = el('h3', { class: 'ao-trn-title' });
+    const effectEl = el('p', { class: 'ao-trn-effect' });
+    const keyEl = el('p', { class: 'ao-trn-key', hidden: true });
+    const picEl = el('div', { class: 'ao-trn-pic' });
+    const tipEl = el('p', { class: 'ao-trn-tip' });
+    const coachHead = el('span', { class: 'ao-tut-coach__head' });
+    const coachText = el('span', { class: 'ao-tut-coach__text' });
+    const coach = el('div', { class: 'ao-tut-coach ao-trn-coach', role: 'status', 'aria-live': 'polite', hidden: true }, coachHead, coachText);
+    // подсказка «ОШИБКА» — прямо под кистью (место под неё зарезервировано: экран не прыгает)
+    const gesture = el('div', { class: 'ao-trn-gesture' },
+      el('div', { class: 'ao-trn-what' }, handEl, titleEl, effectEl, keyEl, tipEl),
+      el('div', { class: 'ao-trn-picol' }, picEl, el('div', { class: 'ao-trn-say' }, coach)));
+
+    // правая колонка: живое превью камеры, шкала удержания/заряда, статус трекинга
+    const host = el('div', { class: 'ao-slothost' });
+    const capKey = el('kbd', { class: 'ao-trn-keycap__key' });
+    const capText = el('span', { class: 'ao-trn-keycap__text' });
+    const keycap = el('div', { class: 'ao-trn-keycap', hidden: true, 'aria-hidden': 'true' },
+      el('span', { class: 'ao-trn-keycap__lab', text: 'Отладка с клавиатуры' }), capKey, capText,
+      el('span', { class: 'ao-trn-keycap__lab', text: 'H — пример подсказки «ОШИБКА»' }));
+    const meterLab = el('span', { class: 'ao-trn-meter__lab' });
+    const meterM = meter('Прогресс жеста', 'ao-trn-meter__bar');
+    const status = statusLine();
+    const camCol = el('div', { class: 'ao-trn-cam' },
+      el('div', { class: 'ao-trn-camwrap' }, host, keycap),
+      el('div', { class: 'ao-trn-meter' }, meterLab, meterM.node), status.node);
+
+    const okSub = el('span', { class: 'ao-trn-ok__sub' });
+    const okBadge = el('div', { class: 'ao-trn-ok', hidden: true, role: 'status' },
+      el('span', { class: 'ao-trn-ok__badge' }, el('span', { class: 'ao-trn-ok__mark', 'aria-hidden': 'true', text: '✓' }), el('span', { text: 'Распознано!' })), okSub);
+    const stage = el('div', { class: 'ao-trn-stage' }, gesture, camCol, okBadge);
+    const mq = el('div', { class: 'ao-trn-mq', 'data-step': 'walk', html: TRAINER_DUMMY_SVG });
+
+    // итог после 4 шагов
+    const doneLead = el('p', { class: 'ao-lead' });
+    const sums = TRAINER_STEPS.map((st) => {
+      const state = el('span', { class: 'ao-trn-sum__state' });
+      const node = el('li', { class: 'ao-trn-sum', 'data-state': 'ok' },
+        el('div', { class: 'ao-trn-sum__pic', html: TRAINER_MINI[st.id] }),
+        el('strong', { class: 'ao-trn-sum__t', text: `${st.effect}` }),
+        el('span', { class: 'ao-trn-sum__g', text: `${st.hand}: ${lowerFirst(st.title)}` }), state);
+      return { node, state };
+    });
+    const doneView = el('div', { class: 'ao-trn-done', hidden: true },
+      el('h3', { class: 'ao-trn-done__h', text: 'Готово! Четыре жеста — и ты в бою' }), doneLead,
+      el('ol', { class: 'ao-trn-sums' }, sums.map((x) => x.node)),
+      el('p', { class: 'ao-note', text: 'Рывок, руны, печати, лук и стихии — в «Книге заклинаний» (меню и пауза). Пауза в бою — кнопка в углу или Esc.' }));
+
+    const ready = el('p', { class: 'ao-msg ao-trn-ready' });
+    const start = btn('В бой', () => invoke('onStart', { from: 'tutorial' }), { variant: 'primary', size: 'lg' });
+    const skip = localBtn('Пропустить', () => { tr.skip(win.performance.now()); });
+    const again = localBtn('Пройти ещё раз', () => { tr.restart(win.performance.now()); });
+    const recal = btn('Перекалибровать', pressCalibrate);
+    const bookBtn = localBtn('Книга заклинаний', (e) => openBook(e && e.currentTarget));
+    const back = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
+    const panel = el(
+      'div',
+      { class: 'ao-panel ao-panel--tutorial ao-panel--trainer ao-frame' },
+      el('div', { class: 'ao-trn-head' }, h, steps, count, el('span', { class: 'ao-spacer' }), skipAll.node),
+      stage,
+      mq,
+      doneView,
+      el('div', { class: 'ao-trn-foot' }, ready,
+        el('div', { class: 'ao-actions ao-actions--inline' }, start.node, skip.node, again.node, recal.node, bookBtn.node, el('span', { class: 'ao-spacer' }), back.node)),
+    );
+
+    let shownSeq = -1;
+    let shownMode = '';
+    let wasDone = false;
+    function paintStep(step, moveMode) {
+      const v = step.stick && moveMode === 'stick' ? { ...step, ...step.stick } : step;
+      setAttr(gesture, 'data-side', step.side);
+      setText(handEl, step.hand);
+      setText(titleEl, v.title);
+      setText(effectEl, `→ ${step.effect}`);
+      setText(tipEl, v.tip);
+      setText(keyEl, `Клавиатура: ${step.keyText}`);
+      setText(capKey, step.key);
+      setText(capText, step.keyText);
+      setAttr(mq, 'data-step', step.id);
+      picEl.innerHTML = TRAINER_PICS[step.id] || ''; // только статические строки этого модуля; новая разметка — анимация с начала
+    }
+    return {
+      section: screenSection('tutorial', panel, hid),
+      heading: h,
+      host,
+      // фокус — на заголовок: пробел/Enter в отладке не должны случайно нажать «Пропустить»
+      focus: () => (tr.done ? start.node : h),
+      reset() {
+        tr.restart(win.performance.now());
+        shownSeq = -1;
+        wasDone = false;
+        state.tut.hint = null;
+      },
+      update(ctx) {
+        const moveMode = ctx.settings && ctx.settings.moveMode === 'stick' ? 'stick' : 'steer';
+        const raw = ctx.vm && ctx.vm.input && typeof ctx.vm.input === 'object' ? ctx.vm.input : null;
+        // в отладке — только клавиатура, иначе — только камера
+        const input = raw && (ctx.debug ? raw.source === 'debug' : raw.source === 'cv') ? raw : null;
+        const v = tr.update(input, ctx.now, { moveMode });
+        const step = v.step;
+
+        // шапка: шаги и «2 / 4»
+        setText(count, `${v.number} / ${v.total}`);
+        setAttr(steps, 'aria-label', v.done ? 'Обучение пройдено' : `Шаг ${v.number} из ${v.total}`);
+        pills.forEach((p, i) => {
+          const r = v.results[i];
+          setAttr(p, 'data-state', r === 'ok' ? 'ok' : r === 'skip' ? 'skip' : !v.done && i === v.index ? 'now' : 'todo');
+        });
+        setHidden(skipAll.node, v.done);
+
+        if (v.seq !== shownSeq || moveMode !== shownMode) {
+          const stepChanged = v.seq !== shownSeq;
+          shownSeq = v.seq;
+          shownMode = moveMode;
+          if (step && (v.phase === 'try' || !picEl.firstChild)) paintStep(step, moveMode);
+          if (stepChanged && v.phase === 'ok') announce(`Распознано: ${step.effect}.`);
+          else if (stepChanged && v.phase === 'try') announce(`Шаг ${v.number} из ${v.total}: ${step.hand.toLowerCase()}, ${step.title}.`);
+          else if (stepChanged && v.done) announce('Обучение пройдено. Кнопка «В бой».');
+        }
+        setText(okSub, step ? `${step.effect}!` : '');
+        setHidden(okBadge, v.phase !== 'ok');
+        setClass(stage, 'is-ok', v.phase === 'ok');
+        setClass(gesture, 'is-live', v.live);
+        setClass(mq, 'is-live', v.live);
+        setClass(mq, 'is-ok', v.phase === 'ok');
+        setStyle(mq, '--lv', (Math.round(v.level * 20) / 20).toFixed(2));
+
+        // шкала: удержание (ход, щит, «OK») или заряд кулака (выброс)
+        if (step) {
+          const lt = LIVE_TEXT[step.id] || ['', ''];
+          setText(meterLab, v.phase === 'ok' ? `${step.effect} — готово` : lt[v.live ? 1 : 0]);
+          paintMeter(meterM, v.progress);
+          setAttr(meterM.node, 'aria-label', step.holdMs > 0 ? 'Удержание жеста' : 'Заряд кулака');
+        }
+
+        // «ОШИБКА»: что не так и как исправить — на месте совета под кистью
+        const hint = v.hint;
+        setHidden(coach, !hint);
+        if (hint) {
+          const side = hint.side === 'left' ? ' · левая рука' : hint.side === 'right' ? ' · правая рука' : '';
+          setText(coachHead, `Ошибка · ${hint.gesture}${side}`);
+          setText(coachText, hint.text);
+        }
+
+        // отладка: какой клавишей проходится шаг
+        setHidden(keyEl, !ctx.debug || !step);
+        setHidden(keycap, !ctx.debug || !step);
+        const info = ctx.debug ? DEBUG_INFO : describeTracking(ctx.tr, cfg);
+        paintStatus(status, info, ctx.debug ? '' : ctx.tr.message);
+        setAttr(host, 'data-tone', v.phase === 'ok' ? 'good' : info.tone);
+        setClass(skip.node, 'is-stuck', v.stuck);
+
+        // итог
+        setHidden(stage, v.done);
+        setHidden(mq, v.done);
+        setHidden(doneView, !v.done);
+        if (v.done) {
+          sums.forEach((x, i) => {
+            const r = v.results[i];
+            setAttr(x.node, 'data-state', r === 'ok' ? 'ok' : 'skip');
+            setText(x.state, r === 'ok' ? '✓ получилось' : 'пропущено');
+          });
+          setText(doneLead, v.skipped
+            ? `Получилось ${v.recognized} из ${v.total}. Пропущенное можно потренировать в бою или пройти ещё раз.`
+            : 'Все четыре жеста распознаны. Ходи левой ладонью, щит — толчком, «OK» стреляет, кулак → ладонь — выброс.');
+        }
+
+        const st = ctx.tr.status;
+        const canStart = ctx.debug || (st === 'ready' && ctx.calibrated !== false);
+        setBtn(start, { hidden: !v.done, disabled: !canStart });
+        setBtn(skip, { hidden: v.done });
+        setBtn(again, { hidden: !v.done });
+        setBtn(recal, { hidden: ctx.debug || !v.done });
+        setBtn(bookBtn, { hidden: !v.done });
+        let text = '';
+        if (v.done) {
+          if (ctx.debug) text = 'Бой начнётся с управлением с клавиатуры. Это режим отладки, камера в нём не управляет героем.';
+          else if (canStart) text = 'Трекинг готов. Начинайте, когда удобно сели.';
+          else if (ctx.calibrated === false) text = 'Нужна калибровка. Нажмите «Перекалибровать».';
+          else if (st === 'lost') text = 'Камера не видит позу. Кнопка «В бой» станет доступна, когда трекинг восстановится.';
+          else if (st === 'calibrating') text = 'Идёт калибровка.';
+          else text = 'Камера ещё не готова.';
+        } else if (v.stuck) text = 'Не выходит? Нажмите «Пропустить» — жест можно повторить позже, в бою.';
+        else if (ctx.debug) text = `Отладка: ${step ? step.keyText : ''} — шаг засчитается. Это клавиатура, а не трекинг.`;
+        else if (st === 'lost') text = 'Камера не видит позу — вернитесь в кадр, чтобы были видны плечи и кисти.';
+        else if (st !== 'ready' && st !== 'calibrating') text = 'Камера ещё не готова.';
+        else if (input && input.valid && input.hands && input.hands.available === false) text = 'Камера не видит кистей — поднимите руки ладонями в кадр.';
+        setText(ready, text);
+        setHidden(ready, !text);
+
+        // все шаги пройдены — фокус на «В бой» (если фокус был в панели и кнопка исчезла)
+        if (v.done && !wasDone) {
+          const a = doc.activeElement;
+          if (!a || a === doc.body || panel.contains(a)) later(() => { if (state.screen === 'tutorial' && !start.node.hidden) start.node.focus({ preventScroll: true }); }, 0);
+        }
+        wasDone = v.done;
+      },
+    };
   })();
+
+  /* ------------------------------------------------ [ТРЕНАЖЁР] «Книга заклинаний» */
+  // Поверх меню, паузы или обучения: базовые жесты тренажёра и прежние карточки «Как управлять»
+  // (раздел «Продвинутые: руны, печати, лук, магия»). Esc или «Закрыть» — назад, фокус возвращается.
+  const book = (() => {
+    const hid = `${uid}-book-h`;
+    const h = heading('h2', hid, 'Книга заклинаний', 'ao-h2');
+    const close = localBtn('Закрыть', () => closeBook());
+    const TABS = [['basic', 'Базовые: 4 жеста'], ['adv', 'Продвинутые: руны, печати, лук, магия']];
+    const tabs = {};
+    const tabList = el('div', { class: 'ao-book-tabs', role: 'tablist', 'aria-label': 'Разделы книги' });
+    const basic = el('div', { class: 'ao-book-basic' },
+      TRAINER_STEPS.map((st) => el('article', { class: 'ao-book-card', 'data-side': st.side },
+        el('div', { class: 'ao-book-card__pic', html: TRAINER_MINI[st.id] }),
+        el('p', { class: 'ao-trn-hand', text: st.hand }),
+        el('h3', { class: 'ao-h3', text: `${st.title} → ${lowerFirst(st.effect)}` }),
+        el('p', { class: 'ao-tut-gesture', text: st.tip }),
+        el('p', { class: 'ao-book-card__key', text: `Отладка: ${st.keyText}` }))));
+    const { grid, cards } = buildTutCards();
+    const panes = {
+      basic: el('div', { class: 'ao-book-pane', role: 'tabpanel', id: `${uid}-book-basic`, 'aria-labelledby': `${uid}-book-tab-basic` },
+        el('p', { class: 'ao-lead', text: 'Эти жесты учит тренажёр «Научись за 60 секунд» перед боем. Их хватает, чтобы победить.' }), basic),
+      adv: el('div', { class: 'ao-book-pane', role: 'tabpanel', id: `${uid}-book-adv`, 'aria-labelledby': `${uid}-book-tab-adv`, hidden: true },
+        el('p', { class: 'ao-lead', text: 'Рывок, искра, рассечение, парирование, руны ▲ ϟ ○ ★ @ ∞ ^ V ⧗ ℓ, печати двумя руками, лук и стихии.' }), grid),
+    };
+    for (const [key, label] of TABS) {
+      const t = el('button', { type: 'button', class: 'ao-book-tab', role: 'tab', id: `${uid}-book-tab-${key}`, 'aria-controls': `${uid}-book-${key}`, 'aria-selected': key === 'basic' ? 'true' : 'false', 'data-ui-local': '', text: label });
+      listen(t, 'click', () => selectTab(key));
+      tabs[key] = t;
+      tabList.append(t);
+    }
+    function selectTab(key) {
+      for (const k of Object.keys(tabs)) {
+        tabs[k].setAttribute('aria-selected', k === key ? 'true' : 'false');
+        panes[k].hidden = k !== key;
+      }
+    }
+    const dbgKeys = el('p', { class: 'ao-debugkeys', hidden: true, text: DEBUG_KEYS_TEXT });
+    const panel = el('div', { class: 'ao-panel ao-panel--book ao-frame', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': hid },
+      el('div', { class: 'ao-book-head' }, h, el('span', { class: 'ao-spacer' }), close.node),
+      tabList, panes.basic, panes.adv, dbgKeys);
+    const section = el('section', { class: 'ao-screen ao-screen--book', 'data-screen': 'book', hidden: true }, panel);
+    let opener = null;
+    return {
+      section,
+      get open() { return !section.hidden; },
+      show(from) {
+        opener = from || doc.activeElement;
+        selectTab('basic');
+        section.hidden = false;
+        announce('Книга заклинаний');
+        close.node.focus({ preventScroll: true });
+      },
+      hide(restoreFocus = true) {
+        if (section.hidden) return;
+        section.hidden = true;
+        const o = opener;
+        opener = null;
+        if (restoreFocus && o && typeof o.focus === 'function' && o.isConnected && o.getClientRects().length) o.focus({ preventScroll: true });
+      },
+      update(ctx) {
+        if (section.hidden) return;
+        setHidden(dbgKeys, !ctx.debug);
+        syncTutCards(cards, ctx);
+      },
+    };
+  })();
+  function openBook(from) { book.show(from); }
+  function closeBook(restoreFocus = true) { book.hide(restoreFocus); }
+  listen(win, 'keydown', (e) => {
+    if (disposed || e.key !== 'Escape' || !book.open) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    closeBook();
+  }, true);
+
+  // По умолчанию обучение — тренажёр; прежний экран карточек: ?tutorial=cards или options.tutorialCards.
+  const tutorial = cfg.tutorialCards ? buildCardsTutorial() : trainer;
 
   /* -------------------------------------------------------------- PAUSED */
 
@@ -1633,6 +2066,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const recal = btn('Перекалибровать', pressCalibrate);
     const restart = btn('Начать бой заново', () => invoke('onRestart'));
     const oathP = btn('Клятва героя', () => invoke('onOath', { from: 'paused' }));
+    const bookP = localBtn('Книга заклинаний', (e) => openBook(e && e.currentTarget), { iconName: 'book' }); // [ТРЕНАЖЁР]
+    const bookWrap = el('div', { class: 'ao-pause-book' }, bookP.node); // при потере трекинга прячется: сначала — вернуться в кадр
     const exit = btn('Выйти в меню', () => invoke('onExit'), { variant: 'quiet' });
     const dbgKeys = el('p', { class: 'ao-debugkeys', hidden: true, text: DEBUG_KEYS_TEXT });
     const panel = el(
@@ -1642,7 +2077,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el(
         'div',
         { class: 'ao-cols' },
-        el('div', { class: 'ao-col ao-col--media' }, host, status.node, hint),
+        el('div', { class: 'ao-col ao-col--media' }, host, status.node, hint, bookWrap),
         el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
       ),
       dbgKeys,
@@ -1672,6 +2107,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           state.pause.variant = variant;
         }
         setAttr(panel, 'data-variant', variant);
+        setHidden(bookWrap, variant === 'lost');
         setText(h, COPY[variant][0]);
         setText(lead, COPY[variant][1]);
         paintStatus(status, ctx.debug ? DEBUG_INFO : describeTracking(ctx.tr, cfg), ctx.debug ? '' : ctx.tr.message);
@@ -2205,6 +2641,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
 
   ui.append(backdrop, hud.node, banner);
   for (const scr of Object.values(screens)) ui.append(scr.section);
+  ui.append(book.section); // [ТРЕНАЖЁР] «Книга заклинаний» — поверх меню, паузы и обучения
   ui.append(debugBadge, park, live, liveAlert);
   root.appendChild(ui);
 
@@ -2225,6 +2662,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       setHidden(banner, true);
     }
     if (screen === 'tutorial' && prev !== 'tutorial') tutorial.reset();
+    if (book.open) closeBook(false);
     if (screen === 'paused' && prev !== 'paused') {
       state.pause.sawLost = false;
       state.pause.variant = null;
@@ -2327,6 +2765,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     setClass(doc.documentElement, 'ao-bdo', !(vm.settings && vm.settings.bdoUi === false)); // [BDO] стиль Black Desert (настройка bdoUi)
     syncSettings(ctx.settings);
     UPDATERS[screen](ctx);
+    book.update(ctx);
     if (state.focusPending) {
       state.focusPending = false;
       focusScreen(screen);

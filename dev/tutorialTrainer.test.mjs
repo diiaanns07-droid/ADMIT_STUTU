@@ -123,6 +123,17 @@ test('«Пропустить»: шаг помечен skip, сразу след�
   assert(v.index === 0 && v.phase === 'try' && v.results.every((x) => x === null), 'перезапуск');
 });
 
+test('«Пропустить обучение»: остальные шаги — skip, распознанные остаются ok, сразу итог', () => {
+  const tr = createTutorialTrainer();
+  tr.update(I(), 0);
+  feed(tr, 0, 800, () => I({ moveZ: 1 }));
+  assert(tr.view().phase === 'ok', 'шаг 1 распознан');
+  assert(tr.skipAll(900) === true, 'пропуск всего');
+  const v = tr.update(I(), 950);
+  assert(v.done && v.results.join(',') === 'ok,skip,skip,skip' && v.recognized === 1 && v.skipped === 3, JSON.stringify(v.results));
+  assert(tr.skipAll(1000) === false, 'на итоге — нечего');
+});
+
 test('подсказки «ОШИБКА»: только своего шага и про кадр; гаснут через 4,5 с и при успехе', () => {
   const tr = createTutorialTrainer();
   tr.update(I(), 0);
@@ -151,7 +162,7 @@ test('шаг времени ограничен: после ухода вклад
   const tr = createTutorialTrainer();
   tr.update(I({ moveZ: 1 }), 0);
   const v = tr.update(I({ moveZ: 1 }), 60000);
-  assert(v.phase === 'try' && v.progress < 0.2, 'один кадр после паузы ≠ 0,7 с удержания: ' + v.progress);
+  assert(v.phase === 'try' && v.progress < 0.4, 'один кадр после паузы ≠ 0,7 с удержания: ' + v.progress);
 });
 
 test('мусор на входе не ломает тренажёр', () => {
