@@ -8,6 +8,7 @@
  */
 
 import { createProgression } from '../core/progression.js';
+import { createCoachStats, compareCoach, compactSummary } from '../core/gestureCoach.js';
 
 export const API_VERSION = 'ASHEN_V1';
 
@@ -21,6 +22,29 @@ function progressView(pushups, buys, embers = []) {
 }
 const PROGRESS_MID = progressView(31, ['vitality', 'vitality', 'spark', 'stride', 'ward'], ['ember-0', 'ember-2']);
 const PROGRESS_NEW = progressView(0, []);
+
+// [ТВИСТ «ОШИБКА»] итог боя из настоящей статистики: удачи/ошибки по жестам и прошлый бой для сравнения
+function coachEnd(goods, mistakes, prevGoods, prevMistakes) {
+  const make = (g, m) => {
+    const s = createCoachStats();
+    for (const [k, n] of Object.entries(g)) for (let i = 0; i < n; i++) s.success(k);
+    for (const [k, n] of Object.entries(m)) for (let i = 0; i < n; i++) s.mistake(k);
+    return s.summary();
+  };
+  const cur = make(goods, mistakes);
+  const prev = prevGoods ? compactSummary(make(prevGoods, prevMistakes), 0) : null;
+  return { ...cur, prev, compare: compareCoach(cur, prev) };
+}
+const COACH_WIN = coachEnd(
+  { attack: 14, shield: 6, burst: 5, rune: 4, spark: 3, throw: 2 },
+  { ok_ring_open: 4, shield_push: 2, burst_short: 1, rune_open: 2, hand_edge: 1 },
+  { attack: 9, shield: 3, burst: 4, rune: 2, spark: 3 },
+  { ok_ring_open: 6, shield_push: 4, shield_palm: 2, burst_short: 2, rune_open: 3 },
+);
+const COACH_LOSS = coachEnd(
+  { attack: 7, shield: 1, burst: 2, spark: 1 },
+  { shield_push: 5, shield_palm: 3, ok_ring_open: 3, ok_fingers: 2, burst_slow: 2, steer_low: 1 },
+);
 
 export const DEFAULT_SETTINGS = Object.freeze({ quality: 'medium', volume: 0.8, reducedMotion: false, sensitivity: 1 });
 
@@ -181,7 +205,7 @@ export const FIXTURES = {
       boss: { hp: 0, stage: 2, action: 'dead' },
       stats: { damageDealt: 1000, damageTaken: 54, dodges: 9, blocks: 6 },
     }),
-    coach: { good: 31, mistakes: 7, accuracy: 82, top: { code: 'ok_ring_open', count: 4, gesture: '«OK» · снаряд', text: 'Сомкни кончики большого и указательного в кольцо' } },
+    coach: COACH_WIN,
   }),
   defeat: vm({
     screen: 'defeat',
@@ -193,6 +217,7 @@ export const FIXTURES = {
       boss: { hp: 420, stage: 2, action: 'idle' },
       stats: { damageDealt: 580, damageTaken: 100, dodges: 2, blocks: 0 },
     }),
+    coach: COACH_LOSS,
   }),
 
   'error-webgl': vm({ screen: 'error', error: 'WebGL: Error creating WebGL context.' }),

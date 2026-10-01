@@ -65,6 +65,20 @@ const SIDES = [
   { hip: 23, knee: 25, ankle: 27, heel: 29, toe: 31, sh: 11 },
   { hip: 24, knee: 26, ankle: 28, heel: 30, toe: 32, sh: 12 },
 ];
+// [ОШИБКА] прогресс условий техники (тренажёр): ошибки позы нижней части повтора и точки позы, куда смотреть
+const POSTURE_FAULTS = ['valgus', 'knees_forward', 'lean', 'heels'];
+const downTo = (x, lim, hi) => clamp((hi - x) / Math.max(1e-9, hi - lim), 0, 1);   // меньше — лучше: hi → 0, lim → 1
+const FRAME_IDS = [11, 12, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
+const CHECK_ITEMS = Object.freeze([   // [key, код SQUAT_HINTS, точки позы 0..32]
+  ['frame', 'frame', Object.freeze([11, 12, 27, 28, 31, 32])],
+  ['depth', 'shallow', Object.freeze([23, 24, 25, 26])],
+  ['valgus', 'valgus', Object.freeze([25, 26, 27, 28])],
+  ['knees_forward', 'knees_forward', Object.freeze([25, 26, 31, 32])],
+  ['lean', 'lean', Object.freeze([11, 12, 23, 24])],
+  ['heels', 'heels', Object.freeze([29, 30, 31, 32])],
+  ['lockout', 'lockout', Object.freeze([23, 24, 25, 26, 27, 28])],
+]);
+const JUDGED_MS = 5000;   // итог повтора «только что был» столько после него
 
 export function createSquatCounter(userCfg) {
   const cfg = { ...DEFAULT_SQUAT_CONFIG, ...(userCfg && typeof userCfg === 'object' ? userCfg : {}) };
@@ -77,6 +91,8 @@ export function createSquatCounter(userCfg) {
       rep: null, message: 'Встаньте в полный рост: в кадре — от плеч до стоп',
       lastRep: null, lastHint: null, pending: [],
       faults: Object.fromEntries(Object.keys(SQUAT_HINTS).map((k) => [k, 0])),
+      // [ОШИБКА] только для показа (решения не читают): кадр, метрики текущего повтора, итог прошлого
+      chk: { seen: false, vis: 0, live: null, liveT: null, rep: null, last: null },
     };
   }
   reset();
@@ -128,20 +144,27 @@ export function createSquatCounter(userCfg) {
     return { legs, ok, both, view, kneeDeg, main };
   }
 
-  // ошибки позы на текущем кадре (только в нижней части повтора)
-  function postureFaults(m) {
-    const out = [];
+  // Метрики техники на текущем кадре (только в нижней части повтора). Общая функция для решений и для
+  // checks: по каждой ошибке позы — { bad: нарушена (пороги прежние), value: прогресс 0..1 к норме } или null,
+  // если в этом ракурсе/кадре её не оценить.
+  function postureMetrics(m) {
+    const out = { valgus: null, knees_forward: null, lean: null, heels: null };
     const { legs, both, view, main } = m;
     if (both && view !== 'side') {
       const kd = legs[0].knee.x - legs[1].knee.x, ad = legs[0].ankle.x - legs[1].ankle.x;
       if (Math.abs(ad) >= cfg.minStanceRatio * s.thighRef) {
         const lim = view === 'front' ? cfg.valgusRatio : cfg.valgusRatio * 0.9;
-        if (Math.sign(kd) !== Math.sign(ad) || Math.abs(kd) < lim * Math.abs(ad)) out.push('valgus');
+        // колени по линии носков: расстояние между коленями в долях расстояния между лодыжками (внутрь — меньше)
+        const q = (Math.sign(kd) === Math.sign(ad) ? Math.abs(kd) : -Math.abs(kd)) / Math.abs(ad);
+        out.valgus = { bad: Math.sign(kd) !== Math.sign(ad) || Math.abs(kd) < lim * Math.abs(ad), value: clamp(q / lim, 0, 1) };
       }
     }
     if (view === 'side' && main.toe && main.heel) {
       const dir = Math.sign(main.toe.x - main.heel.x) || Math.sign(main.toe.x - main.ankle.x);
-      if (dir && (main.knee.x - main.toe.x) * dir > cfg.kneeToeMax * s.shinRef) out.push('knees_forward');
+      if (dir) {
+        const over = (main.knee.x - main.toe.x) * dir / s.shinRef;   // колено за носком, в голенях
+        out.knees_forward = { bad: (main.knee.x - main.toe.x) * dir > cfg.kneeToeMax * s.shinRef, value: downTo(over, cfg.kneeToeMax, cfg.kneeToeMax * 2) };
+      }
     }
     // корпус: середина плеч над серединой таза
     const shs = m.ok.filter((g) => g.sh);
@@ -150,20 +173,24 @@ export function createSquatCounter(userCfg) {
       const hx = shs.reduce((a, g) => a + g.hip.x, 0) / shs.length, hy = shs.reduce((a, g) => a + g.hip.y, 0) / shs.length;
       const tl = Math.hypot(sx - hx, sy - hy);
       if (view === 'front') {
-        if (s.torsoRef > 1e-4 && (hy - sy) < cfg.leanFrontRatio * s.torsoRef) out.push('lean');
+        if (s.torsoRef > 1e-4) out.lean = { bad: (hy - sy) < cfg.leanFrontRatio * s.torsoRef, value: clamp((hy - sy) / s.torsoRef / cfg.leanFrontRatio, 0, 1) };
       } else if (tl > 1e-4) {
         const ang = Math.atan2(Math.abs(sx - hx), hy - sy) * DEG;
-        if (ang > cfg.leanDeg) out.push('lean');
+        out.lean = { bad: ang > cfg.leanDeg, value: downTo(ang, cfg.leanDeg, 90) };
       }
     }
+    let rise = null;
     for (let i = 0; i < 2; i++) {
       const g = legs[i];
       if (!g || !g.heel || !g.toe || s.heel0[i] === null) continue;
-      const rise = (s.heel0[i] - (g.heel.y - g.toe.y)) / s.shinRef;
-      if (rise > cfg.heelRise) { out.push('heels'); break; }
+      const r = (s.heel0[i] - (g.heel.y - g.toe.y)) / s.shinRef;
+      rise = rise === null ? r : Math.max(rise, r);
     }
+    if (rise !== null) out.heels = { bad: rise > cfg.heelRise, value: downTo(rise, cfg.heelRise, cfg.heelRise * 2) };
     return out;
   }
+  // ошибки позы на текущем кадре (только в нижней части повтора)
+  const faultsOf = (pm) => POSTURE_FAULTS.filter((f) => pm[f] && pm[f].bad);
 
   // эталоны позы «стоя»: длина корпуса, положение пяток относительно носков
   function learnStanding(m) {
@@ -183,6 +210,7 @@ export function createSquatCounter(userCfg) {
   function startRep(t) {
     s.rep = { start: t, min: s.knee, peak: s.knee, deep: false, rising: false, streak: {}, faults: new Set(), live: new Set(), riseSince: null };
     s.phase = 'descent';
+    s.chk.rep = { n: 0, worst: {}, on: {} }; s.chk.live = null;
   }
 
   function finishRep(t, extra) {
@@ -204,6 +232,9 @@ export function createSquatCounter(userCfg) {
       s.lastRep = { tMs: t, ok: false, faults: list };
       hint(list[0], t);
     }
+    // [ОШИБКА] итог повтора для checks: держится до следующего повтора
+    const R = s.chk.rep || { n: 0, worst: {}, on: {} };
+    s.chk.last = { tMs: t, faults: list, worst: { ...R.worst }, on: { ...R.on }, n: R.n, minKnee: r.min, peak: r.peak };
     s.rep = null;
   }
 
@@ -216,6 +247,8 @@ export function createSquatCounter(userCfg) {
     const L = Array.isArray(obs.landmarks) ? obs.landmarks : null;
     const ax = fin(obs.frameW) && fin(obs.frameH) && obs.frameH > 0 ? obs.frameW / obs.frameH : 4 / 3;
     const m = L ? measure(L, ax, dt) : null;
+    s.chk.seen = !!m;
+    s.chk.vis = L ? FRAME_IDS.filter((i) => vis(L[i])).length / FRAME_IDS.length : 0;
     if (!m) {
       if (s.lastSeen === null || t - s.lastSeen > cfg.lostMs) {
         if (s.phase !== 'noPose') {
@@ -256,11 +289,13 @@ export function createSquatCounter(userCfg) {
 
     // ошибки позы в нижней части: держатся holdFrames кадров — фиксируем и сразу подсказываем
     if (k < cfg.checkDeg) {
-      const now = new Set(postureFaults(m));
+      const pm = postureMetrics(m);
+      const now = new Set(faultsOf(pm));
       for (const f of ['valgus', 'knees_forward', 'lean', 'heels']) {
         r.streak[f] = now.has(f) ? (r.streak[f] || 0) + 1 : 0;
         if (r.streak[f] >= cfg.holdFrames && !r.faults.has(f)) { r.faults.add(f); hint(f, t); }
       }
+      noteRepChecks(pm, t);
     }
     if (!r.rising) {
       r.min = Math.min(r.min, k);
@@ -297,6 +332,48 @@ export function createSquatCounter(userCfg) {
     }
   }
 
+  // [ОШИБКА] метрики кадра в нижней части повтора — для показа (худшее значение за повтор)
+  function noteRepChecks(pm, t) {
+    const C = s.chk;
+    C.live = pm; C.liveT = t;
+    const R = C.rep;
+    if (!R) return;
+    R.n++;
+    for (const f of POSTURE_FAULTS) if (pm[f]) { R.on[f] = true; R.worst[f] = Math.min(R.worst[f] ?? 1, pm[f].value); }
+  }
+
+  // [ОШИБКА] прогресс условий техники для тренажёра: { items: [{ key, value, ok, hint, landmarks }], judged }.
+  // Живые значения (кадр в нижней части повтора) + итог последнего повтора: нарушенное условие держит ok:false
+  // до следующего повтора. ok:null — в этом ракурсе/фазе не оценивается. Пороги — те же, что у решений.
+  function checks() {
+    const r = s.rep, C = s.chk, last = C.last;
+    const live = r && C.liveT === s.lastT ? C.live : null;   // этот кадр — в нижней части повтора
+    const depthOf = (k) => clamp((180 - k) / (180 - cfg.downDeg), 0, 1);
+    const lockOf = (k) => (fin(k) ? clamp((k - cfg.downDeg) / (cfg.lockDeg - cfg.downDeg), 0, 1) : 0);
+    const v = { frame: { ok: C.seen, value: C.seen ? 1 : C.vis } };
+    if (r) v.depth = { ok: r.deep ? true : r.rising ? false : null, value: depthOf(fin(s.knee) ? Math.min(r.min, s.knee) : r.min) };
+    else if (last) v.depth = { ok: !last.faults.includes('shallow'), value: depthOf(last.minKnee) };
+    else v.depth = { ok: null, value: 0 };
+    for (const f of POSTURE_FAULTS) {
+      if (r) {
+        const R = C.rep || { worst: {}, on: {} };
+        if (r.faults.has(f)) v[f] = { ok: false, value: R.worst[f] ?? 0 };
+        else if (live && live[f]) v[f] = { ok: !live[f].bad, value: live[f].value };
+        else v[f] = { ok: R.on[f] ? true : null, value: R.on[f] ? 1 : 0 };
+      } else if (last) v[f] = { ok: last.faults.includes(f) ? false : last.on[f] ? true : null, value: last.worst[f] ?? 0 };
+      else v[f] = { ok: null, value: 0 };
+    }
+    if (r) v.lockout = { ok: null, value: r.rising ? lockOf(s.knee) : 0 };
+    else if (last) v.lockout = { ok: !last.faults.includes('lockout'), value: last.faults.includes('lockout') ? lockOf(last.peak) : 1 };
+    else v.lockout = { ok: fin(s.knee) ? s.knee >= cfg.lockDeg : null, value: lockOf(s.knee) };
+    const items = CHECK_ITEMS.map(([key, hint, landmarks]) => {
+      const { ok, value } = v[key];
+      const val = ok === true ? 1 : clamp(fin(value) ? value : 0, 0, ok === false ? 0.99 : 1);
+      return { key, value: Math.round(val * 100) / 100, ok, hint, landmarks };
+    });
+    return { items, judged: !!r || !!(last && s.lastT - last.tMs <= JUDGED_MS) };
+  }
+
   function read() {
     const live = s.phase !== 'noPose' && s.phase !== 'setup';
     return {
@@ -308,6 +385,7 @@ export function createSquatCounter(userCfg) {
       faults: { ...s.faults },
       rejected: s.attempts - s.reps,
       formScore: s.attempts ? +(s.reps / s.attempts).toFixed(3) : null,
+      checks: checks(),   // [ОШИБКА] прогресс условий техники (тренажёр)
     };
   }
   // Новые чистые повторы с прошлого вызова (для начисления очков).

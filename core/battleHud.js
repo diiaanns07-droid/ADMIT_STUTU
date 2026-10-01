@@ -6,8 +6,8 @@
 // frame(f): f = { dtReal, timeScale, screen, snapshot, events, input, project(p)->{x,y,behind},
 //   viewport:{w,h}, intro:{active,t,duration}, settings:{reducedMotion}, resumeLeftMs,
 //   pois:[{id,x,y,z}] — [ASHEN_V2] незажжённые угли клятвы (метка над алтарём или стрелка у края),
-//   coach:{hint:{code,gesture,text,side}|null, accuracy, good, mistakes} — [ТВИСТ «ОШИБКА»] подсказка к
-//   почти-правильному жесту (карточка внизу по центру) и точность жестов за бой }
+//   coach:{hint:{code,gesture,text,fix,side,hand}|null, accuracy, good, mistakes} — [ТВИСТ «ОШИБКА»] подсказка к
+//   почти-правильному жесту (карточка слева над панелью героя, с пиктограммой) и точность жестов за бой }
 
 const MONO = '"Consolas","Cascadia Mono",monospace';
 const SERIF = '"Palatino Linotype","Book Antiqua",Georgia,serif';
@@ -21,6 +21,7 @@ const KIND = { slam: 'SLAM', orb: 'ORB', nova: 'NOVA' };
 const SIGIL_NAME = { clap: 'ГРОМОВОЙ ХЛОПОК', gate: 'ВРАТА · БАСТИОН', frame: 'МЕТКА ЦЕЛИ', delta: 'ДЕЛЬТА · ЛУЧ', cor: 'КОР · СЕРДЦЕ' };
 
 import { createBdoHud } from './bdoHud.js'; // [BDO] DOM-слой HUD в стиле Black Desert
+import { COACH_HINTS, hintPictogram } from './gestureCoach.js'; // [ТВИСТ «ОШИБКА»] пиктограммы карточки
 
 const isObj = (v) => v !== null && typeof v === 'object';
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -45,6 +46,7 @@ export function createBattleHud({ canvas } = {}) {
   let fizzleT = 9;
   let coach = { hint: null, t: 9 };   // [ТВИСТ «ОШИБКА»] текущая карточка подсказки
   const COACH_DUR = 4.2;
+  const PIC_W = 150, PIC_H = 64;   // пиктограмма в карточке (SVG 168×72 → 150×64)
   let lastScreen = '';
   let playingSince = -1;
 
@@ -536,7 +538,9 @@ export function createBattleHud({ canvas } = {}) {
   }
 
   // [ТВИСТ «ОШИБКА»] карточка: что за жест, что не так и как исправить. Держится ~4 с, новая заменяет старую.
-  function wrapLines(text, maxW) {
+  // Стоит слева над панелью героя (центр экрана — герой и Регент — свободен): крупный заголовок ошибки,
+  // пиктограмма «как сейчас → как надо» (core/coachPictograms.js) и текст исправления.
+  function wrapLines(text, maxW, max = 3) {
     const words = String(text).split(' ');
     const lines = [];
     let cur = '';
@@ -545,52 +549,119 @@ export function createBattleHud({ canvas } = {}) {
       if (ctx.measureText(next).width > maxW && cur) { lines.push(cur); cur = w; } else cur = next;
     }
     if (cur) lines.push(cur);
-    return lines.slice(0, 3);
+    if (lines.length > max) { lines.length = max; lines[max - 1] = lines[max - 1].replace(/[\s,.;:—-]*$/, '') + '…'; }
+    return lines;
   }
+  // SVG пиктограммы → Image (data: URL), вдвое крупнее для чётности на HiDPI; грузятся заранее, без вспышки.
+  const picImgs = new Map();
+  function picImage(code) {
+    let im = picImgs.get(code);
+    if (im === undefined) {
+      im = null;
+      try {
+        const svg = typeof Image !== 'undefined' ? hintPictogram(code, { width: PIC_W * 2, height: PIC_H * 2, labels: true }) : '';
+        if (svg) { im = new Image(); im.decoding = 'async'; im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); }
+      } catch (e) { im = null; }
+      picImgs.set(code, im);
+    }
+    return im && im.complete && im.naturalWidth > 0 ? im : null;
+  }
+  try { for (const code of Object.keys(COACH_HINTS)) picImage(code); } catch (e) { /* без пиктограмм — только текст */ }
+  // Где панель героя (DOM ui.js): карточка встаёт над ней; меряется раз в полсекунды.
+  const anchor = { at: -9, x: 24, bottom: 0, w: 0 };
+  function cardAnchor() {
+    if (t - anchor.at < 0.5 && anchor.bottom > 0) return anchor;
+    anchor.at = t;
+    anchor.x = 24; anchor.bottom = H - 236; anchor.w = 0;
+    try {
+      const el = typeof document !== 'undefined' ? document.querySelector('.ao-hud:not([hidden]) .ao-hero') : null;
+      const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+      if (r && r.width > 40 && r.height > 20 && r.top > H * 0.35) { anchor.x = Math.max(8, r.left); anchor.bottom = r.top - 14; anchor.w = r.width; }
+    } catch (e) { /* по умолчанию — над нижним левым углом */ }
+    return anchor;
+  }
+  const HAND_NAME = { left: 'ЛЕВАЯ РУКА', right: 'ПРАВАЯ РУКА', both: 'ОБЕ РУКИ' };
   function drawCoach(cv, dtR, rm) {
     if (!isObj(cv)) return;
     if (isObj(cv.hint) && cv.hint.text && (!coach.hint || cv.hint.tMs !== coach.hint.tMs || cv.hint.code !== coach.hint.code)) {
       coach = { hint: cv.hint, t: 0 };
     }
-    // точность жестов за бой — у правого края под кнопкой паузы
+    // точность жестов за бой — у правого края под кнопкой паузы, с полоской
     if (Number.isFinite(cv.accuracy) && num(cv.good, 0) + num(cv.mistakes, 0) >= 3) {
       const acc = cv.accuracy;
-      tag(`ТОЧНОСТЬ ЖЕСТОВ ${acc}%`, W - 24, 70, acc >= 75 ? GOLD_HI : acc >= 50 ? GOLD : EMBER, `600 11px ${MONO}`, 'right');
+      const col = acc >= 75 ? GOLD_HI : acc >= 50 ? GOLD : EMBER;
+      const bw = 150, bx = W - 24 - bw, by = 68;
+      ctx.fillStyle = PLATE; ctx.fillRect(bx - 8, by - 4, bw + 16, 30);
+      ctx.font = `600 13px ${MONO}`; ctx.textAlign = 'right'; ctx.fillStyle = col;
+      ctx.fillText(`ТОЧНОСТЬ ЖЕСТОВ ${acc}%`, W - 24, by);
+      ctx.fillStyle = 'rgba(223,232,245,0.16)'; ctx.fillRect(bx, by + 18, bw, 4);
+      ctx.fillStyle = col; ctx.fillRect(bx, by + 18, bw * clamp(acc / 100, 0, 1), 4);
+      ctx.textAlign = 'left';
     }
     if (!coach.hint || coach.t >= COACH_DUR) { coach.t += dtR; return; }
     const k = coach.t;
     const a = clamp(k / 0.18, 0, 1) * clamp((COACH_DUR - k) / 0.5, 0, 1);
     const h = coach.hint;
-    const cw = Math.min(560, W - 40);
-    ctx.font = `500 17px ${SERIF}`;
-    const lines = wrapLines(h.text, cw - 58);
-    const ch = 46 + lines.length * 22;
-    const x = W / 2 - cw / 2;
-    const rise = rm ? 0 : (1 - clamp(k / 0.25, 0, 1)) * 14;
-    const y = Math.min(H * 0.6, H - 260 - ch) + rise; // выше панели способностей и превью камеры
+    const an = cardAnchor();
+    const narrow = W < 760;
+    const cw = narrow ? W - 32 : clamp(Math.max(an.w + 60, W * 0.33), 400, 500);
+    const x0 = narrow ? 16 : an.x;
+    const pic = picImage(h.code);
+    const picW = pic ? PIC_W : 0;
+    const tx = 20 + (pic ? picW + 16 : 0);       // отступ текста от левого края карточки
+    ctx.font = `600 21px ${SERIF}`;
+    const fix = h.fix ? String(h.fix) : '';
+    const fixLines = fix ? wrapLines(fix, cw - tx - 14, 2) : [];
+    ctx.font = `500 16px ${SERIF}`;
+    const lines = wrapLines(h.text, cw - tx - 14, 3);
+    const headH = 34;
+    const bodyH = Math.max(pic ? PIC_H + 8 : 0, fixLines.length * 25 + lines.length * 20 + 6);
+    const ch = headH + bodyH + 14;
+    const bottom = Math.max(ch + 90, an.bottom);
+    const slide = rm ? 0 : (1 - clamp(k / 0.22, 0, 1)) * -26;
+    const x = x0 + slide;
+    const y = Math.min(bottom - ch, H - ch - 16);
     ctx.globalAlpha = a;
-    ctx.fillStyle = 'rgba(12,6,6,0.82)';
+    ctx.fillStyle = 'rgba(14,6,6,0.88)';
     ctx.fillRect(x, y, cw, ch);
-    // пульсирующая рамка и красная полоса слева
-    const pulse = rm ? 0.8 : 0.6 + 0.4 * Math.abs(Math.sin(k * 5));
-    ctx.strokeStyle = `rgba(255,106,60,${(0.55 * pulse).toFixed(3)})`;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x + 0.5, y + 0.5, cw - 1, ch - 1);
+    // заголовок-полоса: красная подложка, пульсирующая рамка, широкая полоса слева
+    ctx.fillStyle = 'rgba(255,90,74,0.16)';
+    ctx.fillRect(x, y, cw, headH);
+    const pulse = rm ? 0.85 : 0.6 + 0.4 * Math.abs(Math.sin(k * 5));
+    ctx.strokeStyle = `rgba(255,106,60,${(0.75 * pulse).toFixed(3)})`;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x + 0.75, y + 0.75, cw - 1.5, ch - 1.5);
     ctx.fillStyle = EMBER;
-    ctx.fillRect(x, y, 4, ch);
+    ctx.fillRect(x, y, 6, ch);
     // значок «!»
-    ctx.beginPath(); ctx.arc(x + 27, y + 24, 11, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,106,60,0.18)'; ctx.fill();
-    ctx.strokeStyle = EMBER; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.fillStyle = EMBER; ctx.font = `700 14px ${MONO}`; ctx.textAlign = 'center'; ctx.fillText('!', x + 27, y + 16);
+    ctx.beginPath(); ctx.arc(x + 26, y + headH / 2, 11, 0, Math.PI * 2); ctx.fillStyle = EMBER; ctx.fill();
+    ctx.fillStyle = '#1a0806'; ctx.font = `800 15px ${MONO}`; ctx.textAlign = 'center'; ctx.fillText('!', x + 26, y + headH / 2 - 8);
     ctx.textAlign = 'left';
-    const side = h.side === 'left' ? ' · ЛЕВАЯ РУКА' : h.side === 'right' ? ' · ПРАВАЯ РУКА' : '';
-    ctx.font = `600 11px ${MONO}`; ctx.fillStyle = EMBER;
-    ctx.fillText(scramble(`ОШИБКА · ${String(h.gesture || '').toUpperCase()}${side}`, k, rm, 0.3), x + 48, y + 11);
-    ctx.font = `500 17px ${SERIF}`; ctx.fillStyle = STEEL;
-    lines.forEach((ln, i) => ctx.fillText(ln, x + 48, y + 30 + i * 22));
+    ctx.font = `700 15px ${MONO}`; ctx.fillStyle = '#ff8a6a';
+    const head = scramble(`ОШИБКА · ${String(h.gesture || '').toUpperCase()}`, k, rm, 0.3);
+    ctx.fillText(head, x + 44, y + 9);
+    const hand = HAND_NAME[h.side] || HAND_NAME[h.hand] || '';
+    if (hand) {
+      const hw = ctx.measureText(head).width;
+      ctx.font = `600 12px ${MONO}`; ctx.fillStyle = STEEL;
+      const sw = ctx.measureText(hand).width;
+      if (44 + hw + 18 + sw < cw - 10) { ctx.textAlign = 'right'; ctx.fillText(hand, x + cw - 12, y + 11); ctx.textAlign = 'left'; }
+    }
+    // тело: пиктограмма слева, справа — что исправить (крупно) и как (текст подсказки)
+    const by = y + headH + 8;
+    if (pic) {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(x + 14, by - 2, picW + 4, PIC_H + 4);
+      ctx.drawImage(pic, x + 16, by, picW, PIC_H);
+    }
+    let ty = by + 2;
+    ctx.font = `600 21px ${SERIF}`; ctx.fillStyle = GOLD_HI;
+    for (const ln of fixLines) { ctx.fillText(ln, x + tx, ty); ty += 25; }
+    ctx.font = `500 16px ${SERIF}`; ctx.fillStyle = STEEL;
+    for (const ln of lines) { ctx.fillText(ln, x + tx, ty); ty += 20; }
     // полоска времени жизни
-    ctx.fillStyle = 'rgba(255,106,60,0.5)';
-    ctx.fillRect(x + 4, y + ch - 2, (cw - 4) * (1 - k / COACH_DUR), 2);
+    ctx.fillStyle = 'rgba(255,106,60,0.55)';
+    ctx.fillRect(x + 6, y + ch - 3, (cw - 6) * (1 - k / COACH_DUR), 3);
     ctx.globalAlpha = 1;
     coach.t += dtR;
   }

@@ -265,6 +265,9 @@ export const RUNE_GATES = Object.freeze({
 });
 // свои пороги у сложных фигур (остальные — runeScore)
 export const RUNE_MIN_SCORE = Object.freeze({ stella: 0.7, clepsydra: 0.7, spira: 0.72, lemnis: 0.72 });
+// [ТВИСТ «ОШИБКА»] тренажёр техники: жесты, для которых checks() отдаёт прогресс каждого условия
+export const CHECK_GESTURES = Object.freeze(['ok', 'shield', 'spark', 'burst', 'parry', 'orb']);
+export const CHECK_WINDOW_MS = 1500;   // условия-движения (толчок, заряд, резкое раскрытие): лучшее за столько мс
 
 // ───────────────────────────── утилиты ─────────────────────────────
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -640,6 +643,41 @@ function classify(f, prev, cfg) {
   return { shape, extended, pinchLevel: clamp(1 - (f.pinch - cfg.pinchOn) / Math.max(1e-6, cfg.pinchOff * 2 - cfg.pinchOn), 0, 1), conf };
 }
 
+// ───────────── [ТВИСТ «ОШИБКА»] прогресс условий жестов: общие куски (только показ) ─────────────
+// Прогресс 0..1 к порогу: 1 — порог взят (дальше не растёт), 0 — далеко от него.
+const upTo = (x, lim, lo) => clamp((num0(x) - lo) / Math.max(1e-9, lim - lo), 0, 1);     // больше — лучше: lo → 0, lim → 1
+const downTo = (x, lim, hi) => clamp((hi - num0(x)) / Math.max(1e-9, hi - lim), 0, 1);   // меньше — лучше: hi → 0, lim → 1
+// «Лучшее за окно» без истории кадров: максимум и лучший после него (максимум устарел — его место занимает второй).
+function newPeak() { return { v: -Infinity, t: -Infinity, v2: -Infinity, t2: -Infinity }; }
+function peakNote(p, v, t) {
+  if (!fin(v)) return;
+  if (t - p.t > CHECK_WINDOW_MS) { p.v = p.v2; p.t = p.t2; p.v2 = -Infinity; p.t2 = -Infinity; }
+  if (t - p.t > CHECK_WINDOW_MS || v >= p.v) { p.v = v; p.t = t; p.v2 = -Infinity; p.t2 = -Infinity; }
+  else if (v >= p.v2) { p.v2 = v; p.t2 = t; }
+}
+function peakGet(p, t) { return t - p.t <= CHECK_WINDOW_MS && fin(p.v) ? p.v : 0; }
+// Условия по жестам: [key, код подсказки COACH_HINTS, точки кисти, transient]. Порядок — порядок исправления.
+const LMK = (a) => Object.freeze(a);
+const LM_WRIST = LMK([0, 9]), LM_PALM = LMK([0, 5, 17]), LM_TIPS = LMK([8, 12, 16, 20]), LM_TIPS5 = LMK([4, 8, 12, 16, 20]);
+const FRAME_ITEMS = [['frame', 'hand_edge', LM_WRIST], ['near', 'hand_far', LM_WRIST]];
+const CHECK_SPEC = Object.freeze({
+  ok: { hand: 'right', items: [['ring', 'ok_ring_open', LMK([4, 8])], ['others', 'ok_fingers', LMK([12, 16, 20])], ['index', 'ok_ring_open', LMK([6, 8])], ...FRAME_ITEMS] },
+  shield: { hand: 'left', items: [['open', null, LM_TIPS], ['facing', 'shield_palm', LM_PALM], ['push', 'shield_push', LM_WRIST, true], ...FRAME_ITEMS] },
+  spark: { hand: 'right', items: [['load', null, LMK([4, 8, 12]), true], ['index', 'spark_one', LMK([6, 8])], ['middle', 'spark_one', LMK([12])], ['rest', 'spark_one', LMK([16, 20])], ...FRAME_ITEMS] },
+  burst: { hand: 'right', items: [['fist', null, LM_TIPS, true], ['charge', 'burst_short', LM_TIPS5, true], ['snap', 'burst_slow', LM_TIPS5, true], ...FRAME_ITEMS] },
+  parry: { hand: 'left', items: [['fist', null, LM_TIPS, true], ['facing', 'parry_palm', LM_PALM], ['snap', 'parry_slow', LM_TIPS5, true], FRAME_ITEMS[0]] },
+  orb: { hand: 'both', items: [['both', 'hands_missing', LM_WRIST], ['open', null, LM_TIPS], ['facing', 'orb_facing', LM_PALM], ['level', 'orb_dy', LM_WRIST], ['gap', 'orb_far', LM_WRIST]] },
+});
+const CHECK_SEEN_MS = 150;   // кисть пропала на кадр-два — условия показываются по последнему кадру, без мигания
+// Записи для показа (решения их не читают): лучшие значения условий-движений и время последних импульсов.
+function newChk() {
+  const side = () => ({ wasFist: false, fistAt: -Infinity, charge: newPeak(), held: newPeak(), curl: newPeak(), relAt: null, snap: null });
+  return {
+    push: newPeak(), pushDbg: null, load: newPeak(), loadOkAt: -Infinity, loadLeft: null, flickMissAt: -Infinity,
+    sparkAt: -Infinity, burstAt: -Infinity, parryAt: -Infinity, left: side(), right: side(),
+  };
+}
+
 // ───────────────────────────── фабрика ─────────────────────────────
 export function createHandGestures(configPatch = {}) {
   let cfg = mergeConfig(DEFAULT_HAND_CONFIG, configPatch);
@@ -687,6 +725,7 @@ export function createHandGestures(configPatch = {}) {
       swipe: { armed: true, until: -Infinity },
       counters: { obs: 0, bursts: 0, runes: 0, fizzles: 0, dashes: 0, badObs: 0, conjures: 0, throws: 0, parries: 0, sparks: 0, slashes: 0, sigils: 0, hints: 0 },
       conj: newConj(),
+      chk: newChk(),   // [ОШИБКА] прогресс условий для тренажёра техники (только показ)
     };
     stick.reset();
     steer.reset();
@@ -1617,9 +1656,218 @@ export function createHandGestures(configPatch = {}) {
       updateShield(t);
       checkSlowSwipe(t);
       updateCoach(t, obs);
+      noteChecks(t);
     } catch (e) {
       st.counters.badObs++;
     }
+  }
+
+  // ───────── [ТВИСТ «ОШИБКА»] прогресс условий жестов (тренажёр техники) ─────────
+  // Только чтение: те же формулы и пороги, что в classify / updateShield / updateSpark / updateCharge /
+  // tryBurst / evalConjure / updateCoach. Решения эти записи не читают. Условия-движения (толчок, заряд,
+  // резкое раскрытие) длятся кадр-два, поэтому noteChecks в конце каждого кадра запоминает их лучшее за окно.
+  function noteChecks(t) {
+    try {
+      const K = st.chk, L = st.hands.left, R = st.hands.right, p = st.pulses;
+      // импульсы этого кадра (read() их сотрёт)
+      if (p.spark && p.spark.tMs === t) K.sparkAt = t;
+      if (p.burst && p.burst.tMs === t && p.burst.hand !== 'left') K.burstAt = t;
+      if (p.parry && p.parry.tMs === t) K.parryAt = t;
+      // щит: размах толчка (H.pushDbg пересчитывается, только когда история ладони набрана)
+      if (L.pushDbg && L.pushDbg !== K.pushDbg) { K.pushDbg = L.pushDbg; peakNote(K.push, L.pushDbg.span, t); }
+      // «Искра»: насколько кисть в «заряде» и продержался ли он sparkLoadMs (как в updateSpark)
+      if (R.present && R.lastSeen === t && R.feat) peakNote(K.load, sparkLoadValue(R.feat), t);
+      if ((R.loadSince !== null && t - R.loadSince >= cfg.sparkLoadMs) || R.loadLeft !== null) K.loadOkAt = t;
+      // «заряд» сброшен без щелчка (указательный выпрямился медленнее sparkFlickMs) — условие не выполнено
+      if (K.loadLeft !== null && R.loadLeft === null && K.sparkAt !== t && R.loadSince === null && R.present) K.flickMissAt = t;
+      K.loadLeft = R.loadLeft;
+      noteRelease(L, K.left, t, cfg.parryWindowMs);
+      noteRelease(R, K.right, t, cfg.releaseWindowMs);
+    } catch (e) { /* показ не должен мешать распознаванию */ }
+  }
+  // «Заряд» искры: большой у кончиков указательного/среднего, пальцы согнуты (пороги updateSpark).
+  function sparkLoadValue(f) {
+    const c = (i, extra) => downTo(f.reach[i], cfg.sparkCurl + extra, 1.45);
+    return Math.min(downTo(Math.min(f.pinch, f.thumbMid), cfg.sparkTouch, cfg.sparkTouch * 2), c(0, 0), c(1, 0.04), c(2, 0.04), c(3, 0.08));
+  }
+  // Доля согнутых пальцев (curled из classify).
+  function curledShare(f) {
+    let n = 0;
+    for (let i = 0; i < 4; i++) if (f.bends[i] > cfg.bendCurled || f.reach[i] < cfg.reachCurled) n++;
+    return n / 4;
+  }
+  // Кулак → ладонь: заряд и удержание кулака (updateCharge), время от выхода из кулака до раскрытия —
+  // правая до 'open' (как в tryBurst), левая до 'open' ладонью к камере (как у парирования).
+  function noteRelease(H, K, t, winMs) {
+    const seen = H.present && H.lastSeen === t && H.feat;
+    if (seen) peakNote(K.curl, curledShare(H.feat), t);
+    const inFist = H.fistStableAt !== null;
+    if (inFist) { K.fistAt = t; peakNote(K.charge, H.charge, t); peakNote(K.held, t - H.fistStableAt, t); }
+    else if (K.wasFist && H.present) {
+      // вышли из кулака в этом кадре: updateCharge только что записал заряд и время удержания
+      peakNote(K.charge, H.releaseCharge, t); peakNote(K.held, H.releaseHeldMs, t);
+      K.relAt = t; K.snap = null;
+    }
+    K.wasFist = inFist;
+    if (K.relAt === null) return;
+    const opened = seen && H.rawShape === 'open' && ready(H, t) && (H.side === 'right' || H.palmFacing === 'camera');
+    if (opened) { K.snap = { ms: t - K.relAt, t }; K.relAt = null; }
+    else if (t - K.relAt > winMs * 3 || !H.present) { K.snap = { ms: Infinity, t }; K.relAt = null; }
+  }
+
+  // Метрики СФЕРЫ без раннего выхода (evalConjure обрывается на первой неудаче): те же формулы и пороги.
+  function orbMetrics(L, R, on) {
+    const S = (L.scale + R.scale) / 2;
+    const cL = palmCenter(L), cR = palmCenter(R), gapPx = d2(cL, cR);
+    const nExt = (H) => H.extended.slice(1).filter(Boolean).length;
+    const openish = (H) => H.rawShape === 'open' || nExt(H) >= 3;
+    const fc = palmsFacing(L, R, cL, cR);
+    const fL = fc ? fc.l : null, fR = fc ? fc.r : null;
+    const fOn = on ? cfg.orbFacingOff : cfg.orbFacingOn, sideOn = on ? cfg.orbSideOff : cfg.orbSideOn;
+    const handOk = (H, f) => (f !== null && f >= fOn) || (Math.abs(H.cross) < sideOn && (f === null || f >= cfg.orbSideMinFacing));
+    const handV = (H, f) => (f !== null ? upTo(f, fOn, 0) : downTo(Math.abs(H.cross), sideOn, 1));
+    const slack = on ? cfg.orbGapSlack : 0;
+    return {
+      openL: openish(L), openR: openish(R), openVL: openish(L) ? 1 : nExt(L) / 3, openVR: openish(R) ? 1 : nExt(R) / 3,
+      okL: handOk(L, fL), okR: handOk(R, fR), valL: handV(L, fL), valR: handV(R, fR),
+      gap: gapPx / S, gMin: cfg.orbGapMin * (1 - slack), gMax: cfg.orbGapMax * (1 + slack),
+      // кончики пальцев двух кистей не касаются (иначе «домик»): входит в условие «расстояние»
+      tips: Math.min(d2(L.pts[8], R.pts[8]), d2(L.pts[12], R.pts[12])) / S, tipsLim: on ? cfg.orbTipsApartOff : cfg.orbTipsApart,
+      dy: Math.abs(cL.y - cR.y) / Math.max(1e-6, gapPx), dyLim: on ? cfg.orbDyOff : cfg.orbDyOn,
+    };
+  }
+
+  // checks(nowMs) → { t, ok, shield, spark, burst, parry, orb }: по каждому жесту { id, hand, present, recognized,
+  // items: [{ key, value 0..1, ok, hint, landmarks, hand, transient }] }. value = 1 ⇔ ok; ok:null — не оценить.
+  function checks(nowMs) {
+    const t = fin(nowMs) ? nowMs : (st.lastObsT ?? 0);
+    const fresh = st.lastObsT !== null && t - st.lastObsT <= cfg.staleMs;
+    const vis = (H) => !!(fresh && H.present && H.feat && H.landmarks && H.lastSeen !== null && st.lastObsT - H.lastSeen <= CHECK_SEEN_MS);
+    const W = CHECK_WINDOW_MS, K = st.chk, C = st.conj;
+    const L = st.hands.left, R = st.hands.right;
+    const item = (key, hand, ok, value, hint, landmarks, transient) => ({
+      key, value: ok === true ? 1 : ok === null ? 0 : Math.round(Math.min(0.99, clamp(num0(value), 0, 1)) * 100) / 100,
+      ok, hint, landmarks, hand, transient: !!transient,
+    });
+    // vals[key] = { ok, value, hint?, hand? }; нет записи — не оценить (кисти нет: кадр — ✗ «кистей не видно»)
+    const block = (id, present, recognized, vals) => {
+      const sp = CHECK_SPEC[id];
+      return {
+        id, hand: sp.hand, present, recognized: !!recognized,
+        items: sp.items.map(([key, hint, lm, tr]) => {
+          const v = vals && vals[key];
+          if (v) return item(key, v.hand || sp.hand, v.ok, v.value, v.hint !== undefined ? v.hint : hint, lm, tr);
+          if (!present && (key === 'frame' || key === 'both')) return item(key, sp.hand, false, 0, 'hands_missing', lm, tr);
+          return item(key, sp.hand, null, 0, hint, lm, tr);
+        }),
+      };
+    };
+    const who = (okL, okR) => (okL === okR ? 'both' : okL ? 'right' : 'left');
+    // кадр и размер — как в updateCoach (hand_edge, hand_far)
+    const frameV = (H) => {
+      let m = Infinity;
+      for (const p of H.landmarks) m = Math.min(m, p.x, 1 - p.x, p.y, 1 - p.y);
+      return { ok: !(m < cfg.hintEdge), value: upTo(m, cfg.hintEdge, 0) };
+    };
+    const nearV = (H) => ({ ok: !(H.scale > 0 && H.scale < cfg.hintFarScale), value: upTo(H.scale, cfg.hintFarScale, 0) });
+    // ладонь к камере — как palmFacing в updateHand
+    const facingV = (H) => ({ ok: H.palmFacing === 'camera', value: upTo(-H.cross * (H.side === 'right' ? 1 : -1), cfg.palmSideRatio, 0) });
+    const snapV = (S, win) => {
+      const s = S.snap && t - S.snap.t <= W ? S.snap : null;
+      if (!s) return { ok: false, value: 0 };
+      return { ok: s.ms <= win, value: s.ms <= win ? 1 : fin(s.ms) ? 1 - (s.ms - win) / (2 * win) : 0 };
+    };
+    const fns = {
+      // «OK»: classify (с тем же гистерезисом — пока «OK» держится, пороги удержания)
+      ok() {
+        if (!vis(R)) return block('ok', false, false, null);
+        const f = R.feat, was = R.rawShape === 'pinch';
+        const lim = was ? cfg.pinchOff : cfg.pinchOn;
+        const oth = cfg.okOthersReach - (was ? 0.05 : 0), lo = [oth, oth - 0.04, oth - 0.1];
+        const drop = cfg.okIndexDrop - (was ? 0.04 : 0);
+        return block('ok', true, ready(R, t) && R.shape === 'pinch', {
+          ring: { ok: f.pinch < lim, value: downTo(f.pinch, lim, lim * 2.2) },
+          others: { ok: f.reach[1] >= lo[0] && f.reach[2] >= lo[1] && f.reach[3] >= lo[2], value: Math.min(upTo(f.reach[1], lo[0], 1), upTo(f.reach[2], lo[1], 1), upTo(f.reach[3], lo[2], 1)) },
+          index: { ok: f.reach[0] <= f.reach[1] - drop, value: upTo(f.reach[1] - f.reach[0], drop, 0) },
+          frame: frameV(R), near: nearV(R),
+        });
+      },
+      // щит: updateShield (раскрытая ладонь к камере + толчок, принятый распознавателем)
+      shield() {
+        if (!vis(L)) return block('shield', false, false, null);
+        const f = L.feat, e = L.extended;
+        const busy = C.on || !!C.pending || t < C.quietUntil;
+        const ratio = moveMode === 'steer' ? cfg.shieldPushRatioSteer : cfg.shieldPushRatio;
+        const pC = f.bends[3] > cfg.bendCurled || f.reach[3] < cfg.reachCurled;
+        return block('shield', true, st.shield.on && !busy && ready(L, t), {
+          open: { ok: L.rawShape === 'open', value: ((e[1] ? 1 : 0) + (e[2] ? 1 : 0) + (e[3] ? 1 : 0) + (e[4] || !pC ? 1 : 0)) / 4 },
+          facing: facingV(L),
+          push: { ok: st.shield.on || (fin(L.pushAt) && t - L.pushAt <= W), value: upTo(peakGet(K.push, t), ratio, 1) },
+          frame: frameV(L), near: nearV(L),
+        });
+      },
+      // «Искра»: updateSpark («заряд» → выпрямлен только указательный)
+      spark() {
+        if (!vis(R)) return block('spark', false, false, null);
+        const f = R.feat, lim = (extra) => cfg.sparkCurl + extra;
+        return block('spark', true, t - K.sparkAt <= W, {
+          load: t - K.loadOkAt <= W && K.flickMissAt > K.loadOkAt
+            ? { ok: false, value: 0.5 }   // заряд был, но щелчок не успел за sparkFlickMs
+            : { ok: t - K.loadOkAt <= W, value: peakGet(K.load, t) },
+          index: { ok: f.reach[0] > cfg.sparkExtend, value: upTo(f.reach[0], cfg.sparkExtend, 0.9) },
+          middle: { ok: !(f.reach[1] > cfg.sparkExtend), value: downTo(f.reach[1], cfg.sparkExtend, 1.45) },
+          rest: { ok: f.reach[2] < lim(0.06) && f.reach[3] < lim(0.1), value: Math.min(downTo(f.reach[2], lim(0.06), 1.45), downTo(f.reach[3], lim(0.1), 1.45)) },
+          frame: frameV(R), near: nearV(R),
+        });
+      },
+      // выброс: updateCharge + tryBurst (кулак, заряд ≥ minCharge, раскрыть за releaseWindowMs)
+      burst() {
+        if (!vis(R)) return block('burst', false, false, null);
+        const S = K.right, ch = peakGet(S.charge, t);
+        return block('burst', true, t - K.burstAt <= W, {
+          fist: { ok: R.fistStableAt !== null || t - S.fistAt <= W, value: peakGet(S.curl, t) },
+          charge: { ok: ch >= cfg.minCharge, value: upTo(ch, cfg.minCharge, 0) },
+          snap: snapV(S, cfg.releaseWindowMs),
+          frame: frameV(R), near: nearV(R),
+        });
+      },
+      // парирование: tryBurst (кулак ≥ parryFistMs → ладонь к камере за parryWindowMs)
+      parry() {
+        if (!vis(L)) return block('parry', false, false, null);
+        const S = K.left, held = peakGet(S.held, t);
+        return block('parry', true, t - K.parryAt <= W, {
+          fist: { ok: held >= cfg.parryFistMs, value: upTo(held, cfg.parryFistMs, 0) },
+          facing: facingV(L),
+          snap: snapV(S, cfg.parryWindowMs),
+          frame: frameV(L),
+        });
+      },
+      // СФЕРА: evalConjure (без раннего выхода) — обе раскрыты, ладони друг к другу, одна высота, расстояние
+      orb() {
+        const vl = vis(L), vr = vis(R);
+        const recognized = fresh && C.on && C.kind === 'orb';
+        if (!vl || !vr || !L.pts || !R.pts || !L.scale || !R.scale) {
+          return block('orb', false, recognized, { both: { ok: false, value: (vl ? 0.5 : 0) + (vr ? 0.5 : 0), hand: vl === vr ? 'both' : vl ? 'right' : 'left' } });
+        }
+        const cur = C.on ? C.kind : C.pending ? C.pending.kind : null;
+        const m = orbMetrics(L, R, cur === 'orb');
+        return block('orb', true, recognized, {
+          both: { ok: true, value: 1 },
+          open: { ok: m.openL && m.openR, value: Math.min(m.openVL, m.openVR), hand: who(m.openL, m.openR) },
+          facing: { ok: m.okL && m.okR, value: Math.min(m.valL, m.valR), hand: who(m.okL, m.okR) },
+          level: { ok: m.dy <= m.dyLim, value: downTo(m.dy, m.dyLim, 1) },
+          // слишком близко (или кончики пальцев касаются) — подсказки-кода нет; слишком широко — orb_far
+          gap: m.gap < m.gMin || m.tips < m.tipsLim
+            ? { ok: false, value: Math.min(upTo(m.gap, m.gMin, 0), upTo(m.tips, m.tipsLim, 0)), hint: null }
+            : { ok: m.gap <= m.gMax, value: downTo(m.gap, m.gMax, m.gMax * 2) },
+        });
+      },
+    };
+    const out = { t: st.lastObsT };
+    for (const id of CHECK_GESTURES) {
+      try { out[id] = fns[id](); } catch (e) { out[id] = block(id, false, false, null); }
+    }
+    return out;
   }
 
   function handState(H, t) {
@@ -1728,8 +1976,9 @@ export function createHandGestures(configPatch = {}) {
       conjure: { on: st.conj.on, kind: st.conj.kind, pending: st.conj.pending ? st.conj.pending.kind : null, size: Math.round(st.conj.size * 100) / 100, charge: Math.round(st.conj.charge * 100) / 100, eval: st.conj.lastEval },
       counters: { ...st.counters },
       hints: { ...st.coach.counts },
+      checks: checks(st.lastObsT),   // [ОШИБКА] прогресс условий жестов (тренажёр техники)
     };
   }
 
-  return { push, read, peek, configure, reset: () => reset(), getDebug };
+  return { push, read, peek, configure, reset: () => reset(), getDebug, checks };
 }

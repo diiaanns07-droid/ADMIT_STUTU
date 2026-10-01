@@ -40,6 +40,17 @@ export const PUSHUP_FAULTS = Object.freeze({
 
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+// [ОШИБКА] прогресс условий техники (тренажёр): условия, коды подсказок PUSHUP_FAULTS и точки позы, куда смотреть
+const downTo = (x, lim, hi) => clamp((hi - x) / Math.max(1e-9, hi - lim), 0, 1);   // меньше — лучше: hi → 0, lim → 1
+const FRAME_IDS = [11, 12, 15, 16];
+const CHECK_ITEMS = Object.freeze([   // [key, код по умолчанию, точки позы 0..32]
+  ['frame', null, Object.freeze([11, 12, 15, 16])],
+  ['depth', 'shallow', Object.freeze([11, 12, 13, 14])],
+  ['hands', 'hands', Object.freeze([15, 16])],
+  ['line', 'sag', Object.freeze([11, 12, 23, 24, 25, 26])],
+  ['tempo', 'fast', Object.freeze([11, 12])],
+]);
+const JUDGED_MS = 5000;   // итог повтора «только что был» столько после него
 
 export function createPushupCounter(userCfg) {
   const cfg = { ...DEFAULT_PUSHUP_CONFIG, ...(userCfg && typeof userCfg === 'object' ? userCfg : {}) };
@@ -49,6 +60,9 @@ export function createPushupCounter(userCfg) {
       reps: 0, state: 'noPose', top: 0, lastT: null, lastSeen: null, upSince: null,
       repStart: null, repMin: 1, wrist0: null, maxSlip: 0, n: 0, elbow: null, message: 'Встаньте в упор лёжа: плечи и кисти в кадре',
       lastRep: null, pending: [], rejected: 0, shallow: 0, lineMax: 0, lineMin: 0, line: null, faults: {},
+      lastHint: null,   // [ОШИБКА] { code, text, tMs } — при каждом незасчитанном повторе (как у приседаний)
+      // [ОШИБКА] только для показа (решения не читают): кадр, линия тела в повторе, итог прошлого повтора
+      chk: { seen: false, vis: 0, lineSeen: false, last: null },
     };
   }
   reset();
@@ -97,6 +111,8 @@ export function createPushupCounter(userCfg) {
     const L = Array.isArray(obs.landmarks) ? obs.landmarks : null;
     const ax = fin(obs.frameW) && fin(obs.frameH) && obs.frameH > 0 ? obs.frameW / obs.frameH : 4 / 3;
     const m = L ? measure(L, ax) : null;
+    s.chk.seen = !!m;
+    s.chk.vis = L ? FRAME_IDS.filter((i) => vis(L[i])).length / FRAME_IDS.length : 0;
     if (!m) {
       if (s.lastSeen === null || t - s.lastSeen > cfg.lostMs) {
         if (s.state !== 'noPose') { s.repStart = null; s.upSince = null; }
@@ -129,12 +145,16 @@ export function createPushupCounter(userCfg) {
     if (s.state === 'up') {
       if (n < cfg.upLevel) {
         // начало повтора: запомнить, где стоят кисти
-        if (s.repStart === null) { s.repStart = t; s.repMin = n; s.wrist0 = { x: m.wx, y: m.wy }; s.lineMax = 0; s.lineMin = 0; }
+        if (s.repStart === null) { s.repStart = t; s.repMin = n; s.wrist0 = { x: m.wx, y: m.wy }; s.lineMax = 0; s.lineMin = 0; s.chk.lineSeen = false; }
         s.repMin = Math.min(s.repMin, n);
         if (n <= cfg.downLevel || elbowDown) setState('down');
       } else if (s.repStart !== null) {
         // вернулся наверх, не дойдя до низа
-        if (s.repMin <= cfg.shallowLevel) { s.shallow++; s.faults.shallow = (s.faults.shallow || 0) + 1; s.lastRep = { tMs: t, ok: false, reason: 'shallow' }; s.message = PUSHUP_FAULTS.shallow; }
+        if (s.repMin <= cfg.shallowLevel) {
+          s.shallow++; s.faults.shallow = (s.faults.shallow || 0) + 1; s.lastRep = { tMs: t, ok: false, reason: 'shallow' }; s.message = PUSHUP_FAULTS.shallow;
+          s.lastHint = { code: 'shallow', text: PUSHUP_FAULTS.shallow, tMs: t };
+          noteRepEnd(t, false, null, s.maxSlip);
+        }
         s.repStart = null;
       }
     } else if (s.state === 'down') {
@@ -148,6 +168,7 @@ export function createPushupCounter(userCfg) {
         else if (s.maxSlip > cfg.wristSlip || slip > cfg.wristSlip) reason = 'hands';
         else if (s.lineMax > cfg.sagDev) reason = 'sag';
         else if (s.lineMin < -cfg.pikeDev) reason = 'pike';
+        noteRepEnd(t, true, dur, Math.max(s.maxSlip || 0, slip));
         if (!reason) {
           s.reps++;
           s.pending.push({ tMs: t, rep: s.reps, depth: +(1 - s.repMin).toFixed(3), ms: Math.round(dur) });
@@ -158,6 +179,7 @@ export function createPushupCounter(userCfg) {
           s.faults[reason] = (s.faults[reason] || 0) + 1;
           s.lastRep = { tMs: t, ok: false, reason };
           s.message = PUSHUP_FAULTS[reason];
+          s.lastHint = { code: reason, text: PUSHUP_FAULTS[reason], tMs: t };
         }
         s.repStart = null; s.maxSlip = 0;
         setState('up');
@@ -166,10 +188,51 @@ export function createPushupCounter(userCfg) {
     }
     // линия тела во время повтора (сглаживаем: берём экстремумы только устойчивого сигнала)
     s.line = m.line === null ? null : s.line === null ? m.line : s.line + (m.line - s.line) * 0.35;
-    if (s.repStart !== null && s.line !== null) { s.lineMax = Math.max(s.lineMax, s.line); s.lineMin = Math.min(s.lineMin, s.line); }
+    if (s.repStart !== null && s.line !== null) { s.lineMax = Math.max(s.lineMax, s.line); s.lineMin = Math.min(s.lineMin, s.line); s.chk.lineSeen = true; }
     // кисти в упоре: следим за сдвигом во время повтора
     if (s.repStart !== null && s.wrist0) s.maxSlip = Math.max(s.maxSlip || 0, Math.hypot(m.wx - s.wrist0.x, m.wy - s.wrist0.y) / s.top);
     if (s.repStart !== null && t - s.repStart > cfg.maxRepMs * 1.5) { s.repStart = null; s.maxSlip = 0; setState('up'); }
+  }
+
+  // [ОШИБКА] итог повтора для checks (каждое условие отдельно, пороги — те же, что у решения): держится
+  // до следующего повтора. deep — дошёл до низа; dur — длительность (null — повтор оборван «мелко»).
+  function noteRepEnd(t, deep, dur, slip) {
+    s.chk.last = { tMs: t, deep, repMin: s.repMin, dur, slip, lineSeen: s.chk.lineSeen, lineMax: s.lineMax, lineMin: s.lineMin };
+  }
+
+  // [ОШИБКА] прогресс условий техники для тренажёра: { items: [{ key, value, ok, hint, landmarks }], judged }.
+  // Во время повтора — живые значения, после — итог последнего повтора; ok:null — в этом ракурсе/фазе не оценивается.
+  function checks() {
+    const inRep = s.repStart !== null, last = s.chk.last, C = s.chk;
+    const depthOf = (n) => clamp((1 - n) / (1 - cfg.downLevel), 0, 1);
+    const v = { frame: { ok: C.seen && s.state !== 'noPose', value: C.seen ? 1 : C.vis } };
+    const lineV = (seen, mx, mn) => {
+      if (!seen) return { ok: null, value: 0 };
+      const sag = mx > cfg.sagDev, pike = mn < -cfg.pikeDev;
+      return { ok: !sag && !pike, value: Math.min(downTo(mx, cfg.sagDev, 2 * cfg.sagDev), downTo(-mn, cfg.pikeDev, 2 * cfg.pikeDev)), hint: sag ? 'sag' : pike ? 'pike' : mx >= -mn ? 'sag' : 'pike' };
+    };
+    const slipV = (slip) => ({ ok: !(slip > cfg.wristSlip), value: downTo(slip, cfg.wristSlip, 2 * cfg.wristSlip) });
+    if (inRep) {
+      const dur = fin(s.lastT) ? s.lastT - s.repStart : 0;
+      v.depth = s.state === 'down' ? { ok: true, value: 1 } : { ok: null, value: depthOf(Math.min(s.repMin, s.n)) };
+      v.hands = slipV(s.maxSlip || 0);
+      v.line = lineV(C.lineSeen, s.lineMax, s.lineMin);
+      v.tempo = dur > cfg.maxRepMs ? { ok: false, value: downTo(dur, cfg.maxRepMs, 2 * cfg.maxRepMs), hint: 'slow' } : { ok: null, value: 0 };
+    } else if (last) {
+      v.depth = last.deep ? { ok: true, value: 1 } : { ok: false, value: depthOf(last.repMin) };
+      v.hands = slipV(last.slip || 0);
+      v.line = lineV(last.lineSeen, last.lineMax, last.lineMin);
+      const d = last.dur;
+      v.tempo = !fin(d) ? { ok: null, value: 0 }
+        : d < cfg.minRepMs ? { ok: false, value: d / cfg.minRepMs, hint: 'fast' }
+          : d > cfg.maxRepMs ? { ok: false, value: downTo(d, cfg.maxRepMs, 2 * cfg.maxRepMs), hint: 'slow' } : { ok: true, value: 1 };
+    } else for (const k of ['depth', 'hands', 'line', 'tempo']) v[k] = { ok: null, value: 0 };
+    const items = CHECK_ITEMS.map(([key, hint, landmarks]) => {
+      const e = v[key];
+      const val = e.ok === true ? 1 : clamp(fin(e.value) ? e.value : 0, 0, e.ok === false ? 0.99 : 1);
+      return { key, value: Math.round(val * 100) / 100, ok: e.ok, hint: e.hint !== undefined ? e.hint : hint, landmarks };
+    });
+    return { items, judged: inRep || !!(last && s.lastT - last.tMs <= JUDGED_MS) };
   }
 
   function read() {
@@ -180,6 +243,8 @@ export function createPushupCounter(userCfg) {
       elbow: s.elbow === null ? null : Math.round(s.elbow),
       lastRep: s.lastRep, rejected: s.rejected, shallow: s.shallow,
       line: s.line === null ? null : +s.line.toFixed(3), faults: { ...s.faults },
+      lastHint: s.lastHint,
+      checks: checks(),   // [ОШИБКА] прогресс условий техники (тренажёр)
     };
   }
   // Новые засчитанные повторы с прошлого вызова (для начисления очков).
