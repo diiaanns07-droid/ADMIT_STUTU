@@ -193,7 +193,7 @@ void main() {
     if ( h1 > 0.3 ) d = min( d, seg( q, vec2( -0.42, 0.72 - h2 * 0.5 ), vec2( 0.42, 0.1 - h2 * 0.6 ) ) );
     if ( h3 > 0.45 ) d = min( d, seg( q, vec2( -0.38, -0.25 + h1 * 0.4 ), vec2( 0.38, -0.25 + h1 * 0.4 ) ) );
     if ( h2 > 0.62 ) d = min( d, abs( length( q - vec2( 0.0, 0.42 - h3 * 0.7 ) ) - 0.2 ) );
-    float g = 1.0 - smoothstep( 0.06, 0.06 + aa / 0.085 * 1.5, d );
+    float g = 1.0 - smoothstep( 0.045, 0.045 + aa / 0.085 * 1.5, d );
     g *= step( r, 0.86 ) * step( 0.66, r );
     float lit = 0.3 + 0.7 * smoothstep( h1 * 0.85, h1 * 0.85 + 0.12, uFury );
     I += g * lit * 0.5; H += g * lit * ( 0.08 + 0.35 * uReady );
@@ -260,12 +260,19 @@ varying vec2 vXZ;
 void main() {
   float vAng = atan( vXZ.y, vXZ.x );
   float F = 1.0 - abs( dot( normalize( vN ), normalize( vV ) ) );
+  // у самого силуэта конуса гасим: иначе края читаются стеклянной трубой
+  float side = smoothstep( 0.15, 0.55, F ) * ( 1.0 - smoothstep( 0.8, 0.99, F ) );
   float y = vY;
   float ph = fract( y * 1.8 - uTime * 0.5 );
   float ring = smoothstep( 0.0, 0.03, ph ) * ( 1.0 - smoothstep( 0.03, 0.11, ph ) );
-  float wisp = pow( 0.5 + 0.5 * sin( vAng * 7.0 + sin( vAng * 3.0 - uTime * 0.7 ) * 1.6 + y * 5.0 - uTime * 2.2 ), 8.0 );
+  // струйки: короткие светлые штрихи разбросаны по углу и бегут вверх, у каждой своя фаза
+  float ga = vAng / 6.2831853 * 22.0;                     // 22 дорожек по кругу, без шва ±π
+  float hsh = fract( sin( mod( floor( ga ), 22.0 ) * 91.7 + 1.3 ) * 4375.85 );
+  float lane = 1.0 - smoothstep( 0.0, 0.09, abs( fract( ga ) - 0.5 - ( hsh - 0.5 ) * 0.6 ) );
+  float run = fract( y * 1.3 - uTime * ( 0.7 + 0.5 * hsh ) + hsh );
+  float wisp = lane * smoothstep( 0.0, 0.25, run ) * ( 1.0 - smoothstep( 0.3, 0.42, run ) );
   float env = smoothstep( 0.0, 0.1, y ) * ( 1.0 - smoothstep( 0.45, 1.0, y ) );
-  float I = ( ring * ( 0.35 + 0.65 * F ) * 0.9 + wisp * F * F * 0.55 ) * env * uK;
+  float I = ( ring * ( 0.3 + 0.7 * side ) * 0.85 + wisp * side * 0.45 ) * env * uK;
   if ( I < 0.003 ) discard;
   vec3 col = mix( uC1, uC2, ring * 0.6 ) * ( 1.0 + ring );
   gl_FragColor = vec4( col, clamp( I, 0.0, 1.0 ) );
