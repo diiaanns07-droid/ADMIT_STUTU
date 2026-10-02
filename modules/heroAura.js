@@ -29,6 +29,7 @@ import { createFootprints, createDashBurst } from './heroTrail.js';
 
 const VERT = /* glsl */`
 uniform float uTime;
+uniform float uTF;          // «время ярости»: ∫(1 + 0.65·ярость) dt — скорость растёт без скачка фазы
 uniform float uSize;
 uniform float uH;
 uniform float uStyle;
@@ -48,7 +49,7 @@ void main() {
   float a = 1.0;
   vMix = aSeed.w;
   if (uStyle < 0.5) {                      // ember: подъём от земли, закрутка, угасание наверху
-    float life = fract(aSeed.y + t * (0.16 + 0.12 * aSeed.z) * (1.0 + 0.7 * uFury));
+    float life = fract(aSeed.y + uTF * (0.16 + 0.12 * aSeed.z));
     float ang = aSeed.x * TAU + t * 0.5 + life * 2.4;
     float r = 0.28 + 0.26 * aSeed.z + 0.08 * sin(t * 1.3 + aSeed.w * 9.0);
     p = vec3(cos(ang) * r, life * uH * 1.05, sin(ang) * r);
@@ -56,7 +57,7 @@ void main() {
     a *= 0.6 + 0.4 * sin(t * 9.0 + aSeed.w * 30.0);
   } else if (uStyle < 1.5) {               // frost: кристаллы на двух наклонных орбитах
     float orbit = step(0.5, aSeed.w);
-    float ang = aSeed.x * TAU + t * (0.55 + 0.25 * aSeed.z) * (orbit > 0.5 ? -1.0 : 1.0) * (1.0 + 0.6 * uFury);
+    float ang = aSeed.x * TAU + uTF * (0.55 + 0.25 * aSeed.z) * (orbit > 0.5 ? -1.0 : 1.0);
     float r = 0.5 + 0.12 * aSeed.z;
     vec3 q = vec3(cos(ang) * r, 0.0, sin(ang) * r);
     float tilt = orbit > 0.5 ? 0.45 : -0.35;
@@ -64,7 +65,7 @@ void main() {
     p = q + vec3(0.0, uH * (0.55 + 0.1 * orbit) + 0.05 * sin(t * 1.7 + aSeed.y * 6.0), 0.0);
     a = 0.65 + 0.35 * sin(t * 4.0 + aSeed.y * 20.0);
   } else if (uStyle < 2.5) {               // wind: дрейф по спирали, мерцание светлячков
-    float ang = aSeed.x * TAU + t * (0.35 + 0.3 * aSeed.z) * (1.0 + 0.6 * uFury);
+    float ang = aSeed.x * TAU + uTF * (0.35 + 0.3 * aSeed.z);
     float h = fract(aSeed.y + t * 0.05 * (aSeed.z - 0.4));
     float r = 0.45 + 0.35 * aSeed.w + 0.1 * sin(t * 0.8 + aSeed.y * 7.0);
     p = vec3(cos(ang) * r, 0.15 + h * uH * 1.0, sin(ang) * r);
@@ -139,6 +140,7 @@ void main() {
 }`;
 const RUNE_FRAG = /* glsl */`
 uniform float uTime;
+uniform float uSpin;        // фаза вращения (копится на CPU: скорость от ярости без скачков)
 uniform float uK;
 uniform float uFury;
 uniform float uReady;
@@ -168,7 +170,7 @@ void main() {
   float aw = aa / max( r, 0.05 );                     // и в радианах — без шва atan
   float a = atan( p.y, p.x ) - uYaw;                  // мировой угол
   float t = uTime;
-  float spin = t * ( 0.1 + 0.3 * uFury + 0.25 * uReady );
+  float spin = uSpin;
   float I = 0.0, H = 0.0;
   // тонкие кольца: внешний ободок, внутренний к поясу знаков, круг гексаграммы и малое
   I += band( r, 0.97, 0.005, aa ) * 0.5 + band( r, 0.895, 0.0035, aa ) * 0.32;
@@ -351,7 +353,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
   const c1 = new THREE.Color(fx.color || 0xffffff), c2 = new THREE.Color(fx.color2 || fx.color || 0xffffff);
   const lowC = new THREE.Color(RED), goldC = new THREE.Color(GOLD);
   const U = {
-    uTime: { value: 0 }, uSize: { value: style === 1 ? 0.2 : style === 3 ? 0.15 : style === 0 ? 0.13 : 0.12 }, uH: { value: height },
+    uTime: { value: 0 }, uTF: { value: 0 }, uSize: { value: style === 1 ? 0.2 : style === 3 ? 0.15 : style === 0 ? 0.13 : 0.12 }, uH: { value: height },
     uStyle: { value: style }, uK: { value: 1 }, uFury: { value: 0 }, uFlash: { value: 0 },
     uHandW: { value: new THREE.Vector2() }, uHandL: { value: new THREE.Vector3() }, uHandR: { value: new THREE.Vector3() },
     uColor: { value: c1.clone() }, uColor2: { value: c2.clone() }, uLowC: { value: lowC }, uLow: { value: 0 },
@@ -409,7 +411,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
   const hM = height * (parent.scale ? parent.scale.x : 1);   // рост в метрах (корень не масштабирован)
   const runeGeo = new THREE.PlaneGeometry(2, 2); runeGeo.rotateX(-Math.PI / 2);
   const RNU = {
-    uTime: { value: 0 }, uK: { value: 0 }, uFury: { value: 0 }, uReady: { value: 0 }, uFlash: { value: 0 }, uCharge: { value: 0 },
+    uTime: { value: 0 }, uSpin: { value: 0 }, uK: { value: 0 }, uFury: { value: 0 }, uReady: { value: 0 }, uFlash: { value: 0 }, uCharge: { value: 0 },
     uYaw: { value: 0 }, uStateK: { value: 0 }, uLow: { value: 0 },
     uC1: { value: c1.clone() }, uC2: { value: c2.clone() }, uStateC: { value: goldC.clone() }, uLowC: { value: lowC },
   };
@@ -520,7 +522,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     if (cur && cur.ghost && cur.ghost.setQuality && ghostQ !== tier) { ghostQ = tier; try { cur.ghost.setQuality(tier); } catch (e) { /* ignore */ } }
     const P = snap && snap.player;
     st.menu = !P;
-    if (!P) { st.battle = false; st.dashing = false; st.chL = st.chR = 0; st.guard = 0; return; }
+    if (!P) { st.battle = false; st.dead = false; st.victory = false; st.dashing = false; st.chL = st.chR = 0; st.guard = 0; return; }
     const status = snap.status || 'playing';
     st.dead = status === 'defeat' || P.action === 'dead' || !!P.dead;
     st.victory = status === 'victory';
@@ -609,6 +611,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     RU.heroAuraUnderK.value = st.vis * (0.22 + 0.55 * st.fz + 0.9 * fl + 0.4 * ch) * alive;
 
     // частицы ауры
+    U.uTF.value = (U.uTF.value + dt * (1 + 0.65 * st.fz)) % 3600;
     U.uFury.value = st.fz; U.uFlash.value = st.flash; U.uLow.value = Math.min(0.8, hb * 0.9);
     U.uK.value = kExt * (1 + 0.8 * st.fz + 1.6 * fl + 0.3 * st.rdy) * alive;
     g.setDrawRange(0, nOf(Q.pts + (Q.ptsMax - Q.pts) * st.fz));
@@ -618,6 +621,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     const rk = st.vis * (0.75 + 0.5 * st.fz + 0.25 * ch) * alive;
     rune.visible = lod < 2 && rk > 0.01;
     if (rune.visible) {
+      RNU.uSpin.value = (RNU.uSpin.value + dt * (0.1 + 0.3 * st.fz + 0.25 * st.rdy)) % (Math.PI * 10);   // период 5·2π: знаки, засечки и гексаграмма без шва
       RNU.uK.value = rk; RNU.uFury.value = st.fz; RNU.uReady.value = st.rdy; RNU.uFlash.value = st.flash; RNU.uCharge.value = ch;
       RNU.uYaw.value = rootYaw; RNU.uLow.value = Math.min(1, hb * 1.2);
       RNU.uStateK.value = st.gd * (1 + 0.8 * st.pop);

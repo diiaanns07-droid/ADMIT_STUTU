@@ -143,6 +143,9 @@ assert.ok(byName('hero-aura-waves') && byName('hero-footprints'), 'high: вол�
 snap.status = 'defeat'; step(snap, [], 60);
 assert.equal(aura.state().rune, false, 'смерть — руна погасла');
 assert.ok(aura.state().rimK < 0.05, 'смерть — кромка погасла');
+// после поражения — снова меню: витрина с кромкой и искрами, не «мёртвая»
+step(null, [], 60);
+assert.ok(aura.state().rimK > 0.4, `меню после поражения — кромка вернулась: ${aura.state().rimK}`);
 
 aura.dispose();
 assert.equal(aura.rune.parent, null, 'dispose: руна снята');
