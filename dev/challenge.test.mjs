@@ -48,12 +48,13 @@ test('бонус точности растёт с числом жестов (о�
   eq(scoreChallenge({ accuracy: null, gestures: 10 }).parts.find((p) => p.id === 'accuracy').points, 0, 'без жестов — 0');
 });
 test('победа: бонус и секунды в запасе', () => {
-  const s = scoreChallenge({ damage: 700, victory: true, timeLeft: 17.6 });
+  const s = scoreChallenge({ damage: 700, maxCombo: 40, accuracy: 85, gestures: 20, victory: true, timeLeft: 17.6 });
   const v = s.parts.find((p) => p.id === 'victory');
   ok(v, 'строка победы');
   eq(v.points, SCORE.victory + 17 * SCORE.perSecondLeft);
-  ok(s.total >= RANKS[0].min, `победа над Регентом за минуту — ранг S (${s.total})`);
+  ok(s.total >= RANKS[0].min, `победа над Регентом с запасом — ранг S (${s.total})`);
   eq(s.rank, 'S');
+  eq(scoreChallenge({ damage: 700, maxCombo: 20, accuracy: 70, gestures: 20, victory: true, timeLeft: 1 }).rank, 'A', 'победа на последней секунде — A');
 });
 test('пороги рангов S/A/B/C/D и мусор на входе', () => {
   for (const r of RANKS) { eq(rankOf(r.min), r.id, `ровно ${r.min}`); if (r.min > 0) ok(rankOf(r.min - 1) !== r.id, `${r.min - 1} ниже ${r.id}`); }
@@ -257,6 +258,51 @@ test('мозг испытания включается и выключается
   brain.useChallenge(false); eq(brain.challenge, false);
   ok(typeof brain.update === 'function' && typeof brain.reset === 'function');
 });
+// Минута настоящего боя, как в main.js: мозг испытания, «Лёгкая» сложность, автоход «Новичка», подсчёт по событиям
+function realMinute(uptime) {
+  config.settings = { ...config.defaultSettings };
+  const brain = createChallengeBrain(createBossBrain, config);
+  brain.useChallenge(true);
+  const combat = createCombat({ config, bossBrain: brain });
+  combat.setDifficulty(CHALLENGE.difficulty);
+  combat.reset();
+  const session = createChallengeSession(), tally = createTally();
+  session.arm();
+  let snap = combat.getSnapshot(), now = 0, hits = 0, frozenSteps = 0;
+  tally.reset(snap);
+  session.begin(now, snap);
+  for (let f = 0; f < 120 * 60; f++) {
+    now += DT * 1000;
+    if (session.frozen(now)) frozenSteps++;
+    else {
+      const inp = { ...idle(), source: 'cv', tMs: now, autoWalk: true, gestureMode: 'novice' };
+      const ph = snap.time % 3;
+      inp.attack = ph < uptime * 3; inp.shield = !inp.attack && ph > 2.4;
+      combat.update(DT, inp);
+    }
+    const ev = combat.drainEvents();
+    hits += ev.filter((e) => e.type === 'boss_hit').length;
+    snap = combat.getSnapshot();
+    tally.add(ev, snap.time);
+    if (snap.status !== 'playing') { session.end(snap.status, snap); break; }
+    if (session.frame(now, snap) === 'timeup') break;
+  }
+  const r = buildResult({ tally, snap, coach: { accuracy: 85, good: 20, mistakes: 4, groups: [] }, session, kind: 'challenge' });
+  return { r, snap, hits, frozenSteps };
+}
+test('настоящий бой: отсчёт стоит, минута по времени боя, очки и ранг от игры', () => {
+  const weak = realMinute(0.2), strong = realMinute(0.6);
+  ok(weak.frozenSteps >= (CHALLENGE.countdownMs / 1000) * 60 - 2, `отсчёт 3 с бой стоит (${weak.frozenSteps} шагов)`);
+  eq(weak.r.outcome, 'timeup', 'слабая игра — время вышло');
+  ok(Math.abs(weak.snap.time - CHALLENGE.seconds) < 0.05, `ровно минута боя (${weak.snap.time.toFixed(2)} с)`);
+  ok(weak.r.damage > 0 && weak.r.maxCombo > 3, `урон ${weak.r.damage}, серия ${weak.r.maxCombo}`);
+  eq(strong.r.outcome, 'victory', 'сильная игра — Регент повержен до конца минуты');
+  ok(strong.r.timeLeft > 5, `секунды в запасе: ${strong.r.timeLeft.toFixed(1)}`);
+  ok(strong.r.score > weak.r.score, 'сильнее — больше очков');
+  ok(RANKS.findIndex((x) => x.id === strong.r.rank) < RANKS.findIndex((x) => x.id === weak.r.rank), `ранги ${strong.r.rank} > ${weak.r.rank}`);
+  eq(strong.r.parts.find((p) => p.id === 'damage').points, strong.r.damage * SCORE.damage, 'урон из снимка');
+  ok(strong.hits > 20, 'попаданий много');
+});
 test('фазы: 3-2-1 → бой 60 с (по времени боя) → «ВРЕМЯ ВЫШЛО» → итоги', () => {
   const s = createChallengeSession();
   eq(s.phase, 'off'); eq(s.active, false);
@@ -291,7 +337,7 @@ test('победа раньше конца минуты: секунды в за�
   eq(r.outcome, 'victory'); ok(r.won);
   eq(Math.round(r.elapsed), 42);
   eq(r.parts.find((p) => p.id === 'victory').points, SCORE.victory + 17 * SCORE.perSecondLeft);
-  eq(r.rank, 'S');
+  eq(r.rank, rankOf(r.score));
 });
 test('итог обычного боя (для постера) — без таймера и зала', () => {
   const t = createTally(); t.reset({ time: 0, stats: { damageDealt: 0 } });

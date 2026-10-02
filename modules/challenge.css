@@ -638,3 +638,8 @@
   .ao-menu__chal-main { font-size: 1.02rem; }
   .ao-menu__chal-badge { width: 1.8rem; height: 1.8rem; font-size: 0.78rem; }
 }
+/* совсем невысокое окно: кнопка встаёт в ряд с «Тренажёром техники», рекорд дня — на экране итогов */
+@media (max-height: 720px) {
+  .ao-menu__chal { flex: 0 1 auto; min-height: 2.4rem; padding: 0.2rem 0.8rem 0.2rem 0.45rem; }
+  .ao-menu__chal-best { display: none; }
+}

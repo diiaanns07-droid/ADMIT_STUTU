@@ -238,7 +238,6 @@ const POSE_LINKS = [
   [11, 13], [13, 15], [15, 17], [15, 19], [15, 21], [17, 19], // рука (точка 11 — левое плечо в кадре)
   [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [18, 20],
   [23, 25], [25, 27], [24, 26], [26, 28],                 // ноги, если видны
-  [0, 2], [0, 5], [9, 10],                                // голова
 ];
 const HAND_LINKS = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]];
 
@@ -317,8 +316,8 @@ function drawSkeleton(ctx, sk, box) {
   ctx.strokeStyle = 'rgba(196,162,101,0.55)'; ctx.lineWidth = 1; roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 10); ctx.stroke();
   ctx.fillStyle = GOLD_HI; ctx.font = `700 13px ${SANS}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   ctx.fillText('МОЙ УДАР', x + 14, y + 12);
-  ctx.fillStyle = MUTED; ctx.font = `12px ${SANS}`;
-  ctx.fillText('скелет в момент последнего удара · без видео', x + 14, y + 30);
+  fitFont(ctx, 'скелет в момент последнего удара · без видео', 400, 12, SANS, w - 28);
+  ctx.fillStyle = MUTED; ctx.fillText('скелет в момент последнего удара · без видео', x + 14, y + 30);
   // все точки → общий прямоугольник → вписать в рамку
   const pts = [];
   const ok = (p) => isObj(p) && fin(p.x) && fin(p.y);
@@ -365,10 +364,23 @@ function drawSkeleton(ctx, sk, box) {
       for (const [a, b] of HAND_LINKS) line(hd[a], hd[b], col, pass === 0 ? 4 : 2.2);
     }
   }
+  // голова — круг у носа, шея — к середине плеч
+  if (pose && ok(pose[0]) && ok(pose[11]) && ok(pose[12])) {
+    const [nx, ny] = P(pose[0]), [ax, ay] = P(pose[11]), [bx, by] = P(pose[12]);
+    const r = Math.max(8, Math.hypot(bx - ax, by - ay) * 0.3);
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    for (const pass of [0, 1]) {
+      ctx.shadowColor = pass === 0 ? 'rgba(255,190,120,0.9)' : 'rgba(0,0,0,0)'; ctx.shadowBlur = pass === 0 ? 14 : 0;
+      ctx.strokeStyle = PARCH; ctx.lineWidth = pass === 0 ? 7 : 4;
+      ctx.beginPath(); ctx.arc(nx, ny - r * 0.25, r, 0, Math.PI * 2); ctx.stroke();
+      const dx = mx - nx, dy = my - (ny - r * 0.25), l = Math.hypot(dx, dy) || 1;
+      ctx.beginPath(); ctx.moveTo(nx + (dx / l) * r, ny - r * 0.25 + (dy / l) * r); ctx.lineTo(mx, my); ctx.stroke();
+    }
+  }
   ctx.shadowBlur = 0;
   // суставы
   ctx.fillStyle = '#fff6e0';
-  if (pose) for (const i of [0, 11, 12, 13, 14, 15, 16, 23, 24]) { const p = pose[i]; if (ok(p)) { const [px, py] = P(p); ctx.beginPath(); ctx.arc(px, py, i === 0 ? 7 : 4, 0, Math.PI * 2); ctx.fill(); } }
+  if (pose) for (const i of [11, 12, 13, 14, 15, 16, 23, 24]) { const p = pose[i]; if (ok(p)) { const [px, py] = P(p); ctx.beginPath(); ctx.arc(px, py, i === 0 ? 7 : 4, 0, Math.PI * 2); ctx.fill(); } }
   for (const hd of hands) for (const i of [4, 8, 12, 16, 20]) { const p = hd[i]; if (ok(p)) { const [px, py] = P(p); ctx.beginPath(); ctx.arc(px, py, 2.6, 0, Math.PI * 2); ctx.fill(); } }
   ctx.restore();
 }
@@ -429,8 +441,9 @@ export function drawPoster(ctx, data) {
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = GOLD; ctx.font = `600 44px ${NUM}`;
     ctx.fillText('ASHEN OATH', PX, 92);
-    ctx.fillStyle = MUTED; ctx.font = `600 15px ${SANS}`;
-    ctx.fillText(d.kind === 'challenge' ? 'ИСПЫТАНИЕ · 60 С · КАМЕРА ВМЕСТО ДЖОЙСТИКА' : 'БОЙ С РЕГЕНТОМ · КАМЕРА ВМЕСТО ДЖОЙСТИКА', PX + 2, 120);
+    const kick = d.kind === 'challenge' ? 'ИСПЫТАНИЕ · 60 С · КАМЕРА ВМЕСТО ДЖОЙСТИКА' : 'БОЙ С РЕГЕНТОМ · КАМЕРА ВМЕСТО ДЖОЙСТИКА';
+    fitFont(ctx, kick, 600, 15, SANS, W - 46 - PX - 2);
+    ctx.fillStyle = MUTED; ctx.fillText(kick, PX + 2, 120);
     ctx.strokeStyle = 'rgba(196,162,101,0.5)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(PX, 138.5); ctx.lineTo(W - 46, 138.5); ctx.stroke();
   });
@@ -453,14 +466,15 @@ export function drawPoster(ctx, data) {
     const sx = cx + r + 26;
     fitFont(ctx, fmt(d.score), 700, 62, NUM, W - 46 - sx);
     ctx.fillStyle = PARCH; ctx.fillText(fmt(d.score), sx, cy + 14);
-    ctx.fillStyle = MUTED; ctx.font = `600 16px ${SANS}`;
-    ctx.fillText(`очков · ранг ${rank}${d.rankTitle ? ` · ${d.rankTitle}` : ''}`, sx + 2, cy + 42);
+    const sub = `очков · ранг ${rank}${d.rankTitle ? ` · ${d.rankTitle}` : ''}`;
+    fitFont(ctx, sub, 600, 16, SANS, W - 46 - sx - 2);
+    ctx.fillStyle = MUTED; ctx.fillText(sub, sx + 2, cy + 42);
     let who = '';
     if (d.isRecord) who = 'НОВЫЙ РЕКОРД ДНЯ';
     else if (fin(d.place) && d.place > 0) who = `${d.place}-е место дня${fin(d.total) ? ` из ${d.total}` : ''}`;
     const nm = d.name ? String(d.name) : '';
     const line = [nm, who].filter(Boolean).join(' · ');
-    if (line) { ctx.fillStyle = d.isRecord ? '#ffd36b' : GOLD_HI; ctx.font = `700 19px ${SANS}`; ctx.fillText(line, sx + 2, cy - 52); }
+    if (line) { fitFont(ctx, line, 700, 19, SANS, W - 46 - sx - 2); ctx.fillStyle = d.isRecord ? '#ffd36b' : GOLD_HI; ctx.fillText(line, sx + 2, cy - 52); }
   });
   // строки статистики
   safe(() => {
@@ -488,12 +502,22 @@ export function drawPoster(ctx, data) {
     const M = qrMatrix(url, 'M');
     const qs = 124, qx = W - 46 - qs, qy = H - 40 - qs;
     drawQr(ctx, M, qx, qy, qs);
-    ctx.fillStyle = PARCH; ctx.font = `400 24px ${CAPS}`; ctx.textAlign = 'left';
-    ctx.fillText('Сыграй сам — побей мой рекорд', PX, qy + 34);
-    ctx.fillStyle = GOLD_HI; ctx.font = `600 15px ${SANS}`;
-    ctx.fillText(url.replace(/^https?:\/\//, '').replace(/\/$/, ''), PX, qy + 62);
-    ctx.fillStyle = MUTED; ctx.font = `14px ${SANS}`;
-    ctx.fillText(`${dateText(d.date)} · хакатон ADMIT · Motion`, PX, qy + 88);
+    const tw = qx - 18 - PX;   // подпись — слева от QR
+    ctx.textAlign = 'left';
+    ctx.fillStyle = PARCH; fitFont(ctx, 'Сыграй сам —', 400, 26, CAPS, tw);
+    ctx.fillText('Сыграй сам —', PX, qy + 26);
+    fitFont(ctx, 'побей мой рекорд', 400, 26, CAPS, tw);
+    ctx.fillText('побей мой рекорд', PX, qy + 54);
+    // адрес — в две строки: сайт и путь
+    const shown = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const cut = shown.indexOf('/');
+    const host = cut > 0 ? shown.slice(0, cut) : shown, path = cut > 0 ? shown.slice(cut) : '';
+    ctx.fillStyle = GOLD_HI;
+    fitFont(ctx, host, 600, 16, SANS, tw); ctx.fillText(host, PX, qy + 80);
+    if (path) { fitFont(ctx, path, 600, 16, SANS, tw); ctx.fillText(path, PX, qy + 100); }
+    const when = `${dateText(d.date)} · хакатон ADMIT`;
+    fitFont(ctx, when, 400, 13, SANS, tw);
+    ctx.fillStyle = MUTED; ctx.fillText(when, PX, qy + 122);
   });
   safe(() => frame(ctx, W, H));
   ctx.restore();

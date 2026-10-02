@@ -28,7 +28,8 @@ export const CHALLENGE = Object.freeze({
   timeUpMs: 1800,          // «ВРЕМЯ ВЫШЛО» поверх застывшего боя, потом — итоги
 });
 
-// Очки. Типичная первая попытка — 3–6 тыс., победа над Регентом за минуту — от 10 тыс. (ранг S).
+// Очки. Неуверенная первая попытка — 2–4 тыс. (C), уверенная — 4–7 тыс. (B), почти победа — от 7 тыс. (A),
+// победа над Регентом с запасом времени — от 12 тыс. (S). Пороги сверены прогоном настоящего боя (dev/challenge.test.mjs).
 export const SCORE = Object.freeze({
   damage: 10,              // за единицу урона по Регенту
   combo: 30,               // за каждое попадание лучшей серии
@@ -42,8 +43,8 @@ export const SCORE = Object.freeze({
 });
 
 export const RANKS = Object.freeze([
-  Object.freeze({ id: 'S', min: 10000, title: 'Легенда арены' }),
-  Object.freeze({ id: 'A', min: 6500, title: 'Мастер клятвы' }),
+  Object.freeze({ id: 'S', min: 12000, title: 'Легенда арены' }),
+  Object.freeze({ id: 'A', min: 7000, title: 'Мастер клятвы' }),
   Object.freeze({ id: 'B', min: 4000, title: 'Страж' }),
   Object.freeze({ id: 'C', min: 2000, title: 'Ученик' }),
   Object.freeze({ id: 'D', min: 0, title: 'Новобранец' }),
@@ -493,10 +494,11 @@ export function createChallengeScreen(h) {
   const place = el('p', { class: 'ao-chal__place' });
   const parts = el('ul', { class: 'ao-chal__parts' });
   const next = el('p', { class: 'ao-chal__next' });
-  const again = btn('Ещё раз', () => invoke('onChallenge', { from: 'challenge' }), { variant: 'primary', size: 'xl' });
+  // набранное, но не подтверждённое имя записывается и при уходе с экрана
+  const again = btn('Ещё раз', () => { flushName(); invoke('onChallenge', { from: 'challenge' }); }, { variant: 'primary', size: 'xl' });
   again.node.classList.add('ao-chal__again');
   const save = btn('Сохранить картинку', () => invoke('onPosterSave', { from: 'challenge' }), { variant: 'secondary' });
-  const exit = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
+  const exit = btn('В меню', () => { flushName(); invoke('onExit'); }, { variant: 'quiet' });
   const posterImg = el('img', { class: 'ao-chal__posterimg', alt: 'Постер победы: ранг, очки, лучший жест и скелет в момент последнего удара' });
   const poster = el('button', { type: 'button', class: 'ao-chal__poster', 'aria-label': 'Сохранить постер картинкой (PNG)', title: 'Сохранить картинку' }, posterImg);
   listen(poster, 'click', () => invoke('onPosterSave', { from: 'challenge' }));
@@ -538,6 +540,7 @@ export function createChallengeScreen(h) {
     invoke('onChallengeName', { id: cur.id, name: s });
     h.announce(`Записано: ${s}`);
   }
+  function flushName() { if (cur.id && !cur.named && sanitizeName(nameIn.value)) submitName(); }
   listen(nameIn, 'input', () => setName(nameIn.value));
   listen(nameIn, 'keydown', (e) => {
     e.stopPropagation();   // буквы имени — не горячие клавиши игры (P, M, Tab)
