@@ -449,6 +449,8 @@ function resetFight() {
   combat.reset();              // сбрасывает и bossBrain
   world.reset();
   effects.reset();
+  if (bossFinale) bossFinale.reset();   // [W3-КИНО] осколки и кинокамера прошлого боя
+  if (cinema) cinema.reset();           // [W3-КИНО] отложенные импульсы прошлого боя
   if (handVisuals) { try { handVisuals.reset(); } catch (e) { /* [HAND] */ } }
   if (handZone) handZone.reset(); // [HAND]
   debugInput.clear();
@@ -459,8 +461,6 @@ function resetFight() {
   app.lostTime = 0;
   app.outroAt = 0;             // [FEEL] финал и замедление прошлого боя не переходят в новый
   timeFx.slowUntil = 0; timeFx.stopUntil = 0;
-  if (bossFinale) bossFinale.reset();   // [W3-КИНО] осколки и кинокамера прошлого боя
-  if (cinema) cinema.reset();           // [W3-КИНО] отложенные импульсы прошлого боя
 }
 
 // [ASHEN_V2] состояние камеры из снимка: вне арены — камера исследования, в арене — lock-on.

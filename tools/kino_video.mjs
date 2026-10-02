@@ -112,6 +112,7 @@ try {
   await page.keyboard.down('KeyW');
   await page.waitForFunction(() => window.__ASHEN__.snapshot().player.encounter === 'engaged', null, { timeout: 240000 }).catch(() => {});
   await page.keyboard.up('KeyW');
+  await page.keyboard.press('Tab');   // список жестов слева скрыт — в кадре сцена
   await page.evaluate(() => window.__kinoVirtual(true));
   for (let i = 0; i < 45; i++) await step(false);   // герой остановился, камера легла
   await shot('1_phase1');
@@ -122,13 +123,13 @@ try {
   let s = await state();
   for (let i = 0; i < 8 * FPS && s.stage !== 2; i++) { await step(); if (i % 3 === 0) s = await state(); }
   let roarShot = false, boltShot = false, bolts0 = s.bolts;
-  // 2. сцена перехода и гроза: до первой молнии (но не меньше 4,5 с)
+  // 2. сцена перехода и гроза: гроза набирает вес, две молнии (не дольше 8 с)
   for (let i = 0; i < 8 * FPS; i++) {
     await step();
     if (!roarShot && i === Math.round(0.75 * FPS)) { roarShot = true; await shot('2_phase2_roar'); }
     s = await state();
-    if (!boltShot && s.bolts > bolts0) { boltShot = true; await step(); await shot('3_phase2_bolt'); }
-    if (i >= 4.5 * FPS && boltShot && i % FPS === 0) break;
+    if (s.bolts > bolts0 + (boltShot ? 1 : 0)) { await step(); await shot(boltShot ? '3b_phase2_bolt' : '3_phase2_bolt'); boltShot = true; }
+    if (i >= 5 * FPS && s.bolts >= bolts0 + 2) { for (let j = 0; j < 12; j++) await step(); break; }
   }
   await shot('4_phase2_storm');
   // 3. добить: руна 1, если не хватило — выброс
