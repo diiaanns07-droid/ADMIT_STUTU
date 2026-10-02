@@ -59,10 +59,10 @@ function recordStats(poses, exercise) {
   const r1 = (v) => (v === null ? null : +v.toFixed(1));
   const dt = { mean: r1(mean), sd: r1(sd), min: r1(quantile(s, 0)), median: r1(quantile(s, 0.5)), p95: r1(quantile(s, 0.95)), max: r1(quantile(s, 1)), gaps: d.filter((x) => x > GAP_MS).length };
   let noPoseFrames = 0;
-  for (const p of poses) if (!p.landmarks.some(Boolean)) noPoseFrames++;
+  for (const p of poses) if (!p.landmarks || !p.landmarks.some(Boolean)) noPoseFrames++;
   const visibility = VIS_POINTS[exercise].map((i) => {
     let sum = 0, good = 0;
-    for (const p of poses) { const v = p.landmarks[i] ? p.landmarks[i].visibility : 0; sum += v; if (v >= 0.5) good++; }
+    for (const p of poses) { const v = p.landmarks && p.landmarks[i] ? p.landmarks[i].visibility : 0; sum += v; if (v >= 0.5) good++; }
     const share = n ? good / n : 0;
     return { i, name: POINT_NAMES[i], mean: n ? +(sum / n).toFixed(3) : 0, share: +share.toFixed(3), low: share < 0.5 };
   });
