@@ -501,16 +501,18 @@ const LAVA_FRAG = /* glsl */`
   // [W4-УДАР] трещины брони вспыхивают в точке удара (и в фазе 1): kinoHit[i].xyz — точка (мир), .w — накал;
   // kinoHitC[i].rgb — цвет (линейный), .a — радиус пятна, м. Нет ударов — kinoHitK = 0, цикл не считается.
   if ( kinoHitK > 0.0 ) {
-    float kinoM = smoothstep( 0.2, 0.8, emissiveColor.r ) + sqrt( emissiveColor.r ) * 0.3;
+    float kinoM = smoothstep( 0.2, 0.8, emissiveColor.r ) + sqrt( emissiveColor.r ) * 0.45;
     vec3 kinoAcc = vec3( 0.0 );
     for ( int i = 0; i < 3; i ++ ) {
       vec4 kh = kinoHit[ i ];
       if ( kh.w > 0.001 ) {
         float kd = distance( vKinoLavaPos, kh.xyz ) / max( kinoHitC[ i ].a, 0.05 );
-        kinoAcc += kinoHitC[ i ].rgb * ( kh.w * exp( - kd * kd * 2.2 ) );
+        float kg = kh.w * exp( - kd * kd * 2.2 );
+        // сильный накал — сердцевина трещин добела
+        kinoAcc += mix( kinoHitC[ i ].rgb, vec3( 1.0, 0.94, 0.82 ), clamp( kg - 0.8, 0.0, 1.0 ) * 0.6 ) * kg;
       }
     }
-    totalEmissiveRadiance += kinoAcc * kinoM * 5.0;
+    totalEmissiveRadiance += kinoAcc * kinoM * 8.0;
   }
 #endif`;
 

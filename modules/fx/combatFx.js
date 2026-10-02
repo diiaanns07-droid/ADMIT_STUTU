@@ -357,7 +357,7 @@ export function register(fx) {
     p.copy(S.pos).add(_q);
     const strength = clamp(num(d.prevented, num(d.amount, 20)) / 30, 0.35, 1);
     S.flash = 1; if (S.open < 0.5) S.open = 0.5;
-    S.dmg = Math.min(1, S.dmg + 0.22 + 0.3 * strength);   // [W4-УДАР] износ
+    S.dmg = Math.min(1, S.dmg + 0.12 + 0.16 * strength);   // [W4-УДАР] износ
     if (S.h && typeof S.h.hit === 'function') { try { S.h.hit({ point: { x: p.x, y: p.y, z: p.z }, strength }); } catch (e) { /* ignore */ } }
     kit.flash(p, { color: P.core, size: [0.14, 0.8], dur: 0.1, intensity: 4, sprite: 'star', pull: 0.2, rival: remote });
     kit.flash(p, { color: P.hot, size: [0.1, 1.3], dur: 0.26, intensity: 1.8, sprite: 'ring', pull: 0.15, rival: remote });

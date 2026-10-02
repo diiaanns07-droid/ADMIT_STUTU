@@ -188,21 +188,21 @@ void main() {
   }
   vec3 col = uCol, hot = uHot;
   float E = edge * (0.3 + 0.9 * fl + 0.6 * pulse) + corner * 0.6; // [VFX] тоньше и прозрачнее: щит не закрывает героя
-  E *= 1.0 + min(ring, 1.5) * 0.9;                                  // [W4-УДАР] звон
+  E *= 1.0 + min(ring, 1.2) * 0.55;                                 // [W4-УДАР] звон
   vec3 Lc = col * (fill + eg * 0.16) + mix(col, hot, 0.4) * E + hot * pop * (0.2 + edge * 1.4);
   Lc += hot * (cellHit * (0.12 + edge * 1.5) + rip * (0.3 + edge * 1.1));
 #if SQ > 0
   // [W4-УДАР] накопленный урон: надтреснутые ячейки — ломаная трещина поперёк ячейки и мерцающие рёбра
   if (uDmg > 0.01) {
     float hk = fxH2(hc.zw * 1.37 + uSeed + 4.1);
-    float st = 1.0 - smoothstep(uDmg * 0.8 - 0.05, uDmg * 0.8, hk);
+    float st = 1.0 - smoothstep(uDmg * 0.5 - 0.04, uDmg * 0.5, hk);
     if (st > 0.0) {
       float a = hk * 40.0;
       vec2 ca = vec2(cos(a), sin(a));
       float zz = (fxH1(floor(dot(hc.xy, vec2(-ca.y, ca.x)) * 9.0) + hk * 17.0) - 0.5) * 0.05;
-      float cl = ln(abs(dot(hc.xy, ca) + zz) * uCell, 0.004) * (1.0 - smoothstep(0.35, 0.5, length(hc.xy)));
-      float fk = 0.65 + 0.35 * sin(t * (9.0 + 7.0 * hk) + hk * 30.0);
-      Lc += hot * st * (cl * 1.8 + edge * 0.9 * fk) + col * st * 0.05;
+      float cl = ln(abs(dot(hc.xy, ca) + zz) * uCell, 0.0035) * (1.0 - smoothstep(0.35, 0.5, length(hc.xy)));
+      float fk = 0.6 + 0.4 * sin(t * (9.0 + 7.0 * hk) + hk * 30.0);
+      Lc += hot * st * (cl * 1.6 + edge * 0.45 * fk) + col * st * 0.03;
     }
   }
 #endif
@@ -476,7 +476,7 @@ export function createHexShield(deps) {
       // от точки пролома по сфере (касательная) + наружу + вверх
       const dx = ux - mx, dy = uy - my, dl = Math.sqrt(dx * dx + dy * dy) || 1;
       const tx = (s.xx * dx + s.yx * dy) / dl, ty = (s.xy * dx + s.yy * dy) / dl, tz = (s.xz * dx + s.yz * dy) / dl;
-      const sp = 1.6 + Math.random() * (2.2 + 3.2 * strength), tg = 0.8 + Math.random() * 2.2 * strength;
+      const sp = 1.2 + Math.random() * (1.6 + 2.4 * strength), tg = 0.6 + Math.random() * 1.6 * strength;
       const vx = nx * sp + tx * tg, vy = ny * sp + ty * tg + 0.8 + Math.random() * 1.6, vz = nz * sp + tz * tg;
       let ax = Math.random() - 0.5, ay = Math.random() - 0.5, az = Math.random() - 0.5;
       const al = len3(ax, ay, az) || 1; ax /= al; ay /= al; az /= al;
@@ -569,9 +569,13 @@ export function createHexShield(deps) {
       // [W4-УДАР] осколки: выгрузка только записанных ячеек, меш виден, пока жив хоть один
       shardMat.uniforms.uTime.value = time;
       if (shardHi >= 0) {
+        // диапазоны копятся до рендера (three сам очищает их после выгрузки) — как в kit.js
         for (const k in SH_ATTR) {
           const at = SH_ATTR[k];
-          if (at.clearUpdateRanges) { at.clearUpdateRanges(); at.addUpdateRange(shardLo * 4, (shardHi - shardLo + 1) * 4); }
+          if (at.addUpdateRange) {
+            if (at.updateRanges && at.updateRanges.length > 12) { at.clearUpdateRanges(); at.addUpdateRange(0, SHARD_MAX * 4); }
+            else at.addUpdateRange(shardLo * 4, (shardHi - shardLo + 1) * 4);
+          }
           at.needsUpdate = true;
         }
         shardLo = Infinity; shardHi = -1;

@@ -271,7 +271,7 @@ export function register(fx) {
   const fGlint = { ramp: 'whiteHold', size: [0.1, 2.6], dur: 0.16, intensity: 4.4, sprite: 'streak', pull: 0.8, rival: false, delay: 0, rot: 0, curve: 0.35 };
   const eFin = { at: null, count: 90, speed: [5, 16], life: [0.4, 1.1], size: [0.08, 0.015], ramp: 'gold', intensity: 3.4, sprite: 'spark', stretch: 0.04, gravity: 6, drag: 1.2, ground: 0, essential: true, rival: false };
   const eFinEmb = { at: null, radius: 1.2, count: 40, dir: { x: 0, y: 1, z: 0 }, cone: 0.9, speed: [0.4, 1.8], life: [1.2, 2.4], size: [0.06, 0.01], ramp: 'ember', intensity: 2.6, sprite: 'ember', turb: 0.6, gravity: -0.4, drag: 0.8, delay: 0.25, essential: false, rival: false };
-  const kFin = { color: 0xffe6b8, intensity: 1.4, range: 18, dur: 0.9, attack: 0.03 };
+  const kFin = { color: 0xffe6b8, intensity: 1.0, range: 16, dur: 0.8, attack: 0.03 };
   let ringT = -1;   // кольцо по земле — не чаще раза в 0,3 с (очереди, тики «Дельты»)
   // точка на земле у Регента со стороны удара: из центра (bossAim) — к герою на 1,2 м
   function groundSpot(out, p, dir) {
@@ -322,12 +322,12 @@ export function register(fx) {
       ringT = kit.clock;
       if (fx.shock) {
         ringO.r0 = 0.3; ringO.r1 = (fin ? 9 : 2.4 + 2.6 * k + (crit ? 0.8 : 0)) * sf; ringO.dur = fin ? 0.7 : 0.38 + 0.14 * k;
-        ringO.color = P.mid; ringO.hot = P.core; ringO.intensity = fin ? 2.4 : 1.5 + 0.6 * k; ringO.thickness = fin ? 0.3 : 0.16;
+        ringO.color = P.mid; ringO.hot = fin ? P.hot : P.core; ringO.intensity = fin ? 1.3 : 1.4 + 0.5 * k; ringO.thickness = fin ? 0.3 : 0.16;
         ringO.dustAmount = fin ? 2 : 1 + 0.6 * k; ringO.distort = lo ? 0 : 0.7; ringO.wall = lo ? 0 : undefined; ringO.rival = rv;
         try { fx.shock.ring(ringO); } catch (e) { /* ignore */ }
         if (fin) {
-          kit.after(0.08, () => { if (!fx.shock) return; ringO.r0 = 0.2; ringO.r1 = 5 * sf; ringO.dur = 0.5; ringO.intensity = 2; ringO.thickness = 0.24; try { fx.shock.ring(ringO); } catch (e) { /* ignore */ } });
-          if (!lo) { _h.copy(p); sphO.r1 = 4.2 * sf; sphO.color = P.hot; sphO.hot = P.core; sphO.rival = rv; try { fx.shock.sphere(sphO); } catch (e) { /* ignore */ } }
+          kit.after(0.08, () => { if (!fx.shock) return; ringO.r0 = 0.2; ringO.r1 = 5 * sf; ringO.dur = 0.5; ringO.intensity = 1.1; ringO.thickness = 0.24; try { fx.shock.ring(ringO); } catch (e) { /* ignore */ } });
+          if (!lo) { _h.copy(p); sphO.r1 = 4.2 * sf; sphO.intensity = 0.8; sphO.color = P.hot; sphO.hot = P.core; sphO.rival = rv; try { fx.shock.sphere(sphO); } catch (e) { /* ignore */ } }
         }
       }
       eDust.radius = fin ? 1.2 : 0.5; eDust.radial = (fin ? 6 : 2.6 + 2 * k); eDust.count = fin ? 26 : 8 + 8 * k; eDust.size[1] = fin ? 1.6 : 0.9 + 0.5 * k;
@@ -339,12 +339,13 @@ export function register(fx) {
     if (fx.decals) {
       const q = qName(), cap = HIT_DECALS[q];
       decO.cap = cap; decO.rival = rv; decO.color = P.mid; decO.hot = P.core; decO.rot = undefined;
-      decO.kind = fin ? 'crater' : amount >= HIT_TIER.cine || crit ? 'crack' : 'scorch';
-      decO.radius = fin ? 2.6 : 0.9 + 0.8 * k; decO.life = fin ? 10 : 5 + 2 * k; decO.intensity = fin ? 1.6 : 1.1 + 0.4 * k; decO.merge = 0.6;
+      // добивание — широкие светящиеся трещины (у «кратера» раскалённый центр слепит в bloom и мокром полу)
+      decO.kind = fin || amount >= HIT_TIER.cine || crit ? 'crack' : 'scorch';
+      decO.radius = fin ? 3.0 : 0.9 + 0.8 * k; decO.life = fin ? 10 : 5 + 2 * k; decO.intensity = fin ? 1.2 : 1.0 + 0.4 * k; decO.merge = 0.6;
       try { fx.decals.spawn(decO); } catch (e) { /* ignore */ }
       if (!lo || fin) {
-        decO.kind = 'pool'; decO.radius = fin ? 3.4 : 1.2 + 0.9 * k; decO.life = fin ? 6 : 2.6 + 1.2 * k; decO.intensity = fin ? 1.8 : 1.2 + 0.5 * k; decO.merge = 0.8;
-        decO.color = P.hot; decO.hot = P.core;
+        decO.kind = 'pool'; decO.radius = fin ? 3.2 : 1.2 + 0.9 * k; decO.life = fin ? 6 : 2.6 + 1.2 * k; decO.intensity = fin ? 0.8 : 0.7 + 0.35 * k; decO.merge = 0.8;
+        decO.color = P.mid; decO.hot = P.hot;
         try { fx.decals.spawn(decO); } catch (e) { /* ignore */ }
       }
     }
@@ -352,13 +353,13 @@ export function register(fx) {
     if (fin) {
       eFin.at = p; eFin.ramp = R ? 'rival' : ramp === 'whiteHold' ? 'gold' : ramp; eFin.ground = _g.y; eFin.rival = R;
       eFin.count = 90; emitB(eFin);
-      eFin.count = 40; eFin.ramp = R ? 'rival' : 'white'; emitB(eFin);
+      eFin.count = 24; eFin.ramp = R ? 'rival' : 'white'; emitB(eFin);
       eShard.at = p; eShard.dir = null; eShard.cone = Math.PI; eShard.count = 26; eShard.speed[0] = 3; eShard.speed[1] = 9; eShard.ramp = R ? 'rival' : 'ember'; eShard.ground = _g.y; eShard.rival = R;
       emitB(eShard); eShard.cone = 1.0; eShard.speed[0] = 2.5;
       eFinEmb.at = p; eFinEmb.rival = R; emitB(eFinEmb);
-      fStar.ramp = 'whiteHold'; fStar.size[0] = 0.4; fStar.size[1] = 4.2 * sf; fStar.dur = 0.2; fStar.intensity = 4.6; fStar.sprite = 'star'; fStar.pull = 0.9; fStar.rival = R; fStar.delay = 0;
+      fStar.ramp = 'whiteHold'; fStar.size[0] = 0.4; fStar.size[1] = 2.4 * sf; fStar.dur = 0.16; fStar.intensity = 3.6; fStar.sprite = 'star'; fStar.pull = 0.9; fStar.rival = R; fStar.delay = 0;
       kit.flash(p, fStar);
-      fGlow.ramp = R ? 'rival' : ramp; fGlow.size[0] = 0.8; fGlow.size[1] = 6 * sf; fGlow.dur = 0.55; fGlow.intensity = 2.2; fGlow.pull = 0.9; fGlow.rival = R; fGlow.delay = 0;
+      fGlow.ramp = R ? 'rival' : ramp; fGlow.size[0] = 0.8; fGlow.size[1] = 4 * sf; fGlow.dur = 0.45; fGlow.intensity = 1.6; fGlow.pull = 0.9; fGlow.rival = R; fGlow.delay = 0;
       kit.flash(p, fGlow);
       kFin.color = R ? ELEMENTS.rival.hot : 0xffe6b8; kit.light(p, kFin);
       kit.shake(0.25); kit.hitstop(90);
@@ -441,7 +442,7 @@ export function register(fx) {
     }
     const p = fx.evPos(ev, _p) || fx.target(_p, R);
     const sigil = src === 'sigil' && (d.sigil === 'gate' || d.sigil === 'pillar') ? d.sigil : '';
-    const s = fin ? 1 : strength(amount);
+    const s = fin ? Math.max(0.55, strength(amount)) : strength(amount);   // добивание: базовый слой средний, главное — impact()
     // направление: от героя (или соперника) к точке
     fx.anchor('chest', _c, R);
     _dir.subVectors(p, _c); if (_dir.lengthSq() > 1e-6) _dir.normalize(); else _dir.set(0, 0, -1);

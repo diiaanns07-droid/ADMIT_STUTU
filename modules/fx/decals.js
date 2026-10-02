@@ -321,10 +321,10 @@ void main() {
     float n2 = fxNoise2(pp * 5.0 + vec2(uNow * 0.35, -uNow * 0.25) + sd);
     float rip = pow(0.5 + 0.5 * sin(rr * 19.0 - age * 7.0 + n * 3.0), 6.0) * m * exp(-age * 1.6);
     float rim = fxBand(edge, 0.72, 0.03, 0.12) * (0.5 + 0.5 * n2);
-    e = (glow * (m * m * (0.35 + 0.4 * n2)) + mix(glow, hot, 0.6) * (rim * 0.8 + rip * 0.9)) * (I * cool);
-    e += hot * (exp(-rr * rr * 7.0) * I * 1.4 * exp(-age * 2.4));
-    sa = m * 0.1 * cool;
-    sc = glow * 0.04;
+    e = (glow * (m * m * (0.16 + 0.22 * n2)) + mix(glow, hot, 0.5) * (rim * 0.42 + rip * 0.4)) * (I * cool);
+    e += hot * (exp(-rr * rr * 9.0) * I * 0.55 * exp(-age * 3.0));
+    sa = m * 0.08 * cool;
+    sc = glow * 0.03;
   }
   sa = clamp(sa, 0.0, 1.0) * fade;
   vec3 col = sc * sa + e * fade;
