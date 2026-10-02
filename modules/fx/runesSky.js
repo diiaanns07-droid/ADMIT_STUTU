@@ -88,13 +88,14 @@ export function register(fx) {
   /** [W4-ЗАКЛИНАНИЯ] сигнал: яркий росчерк от знака (без руны в воздухе — от ладони) в разлом за ts — видно, откуда открылось небо. */
   function signal(from, to, P, R, ramp, ts, line) {
     _v.subVectors(to, from).multiplyScalar(1 / ts);
-    eSig.rival = R; eSig.at = from; eSig.vel = _v; eSig.life = ts + 0.02;
+    const k = line ? 0.6 : 1;   // из ладони (у камеры) — тоньше
+    eSig.rival = R; eSig.at = from; eSig.vel = _v; eSig.life = ts;   // гаснет ровно у разлома, без перелёта
     // белое ядро → тёплый ореол → росчерк по скорости
-    eSig.sprite = 'glow'; eSig.ramp = 'whiteHold'; eSig.color = undefined; eSig.size[0] = eSig.size[1] = 0.55; eSig.stretch = 0; eSig.intensity = 3;
+    eSig.sprite = 'glow'; eSig.ramp = 'whiteHold'; eSig.color = undefined; eSig.size[0] = eSig.size[1] = 0.55 * k; eSig.stretch = 0; eSig.intensity = 3;
     kit.emit(eSig);
-    eSig.ramp = ramp; eSig.color = P.hot; eSig.size[0] = eSig.size[1] = 1.3; eSig.intensity = 2.2;
+    eSig.ramp = ramp; eSig.color = P.hot; eSig.size[0] = eSig.size[1] = 1.3 * k; eSig.intensity = 2.2;
     kit.emit(eSig);
-    eSig.sprite = 'streak'; eSig.color = undefined; eSig.size[0] = eSig.size[1] = 0.42; eSig.stretch = 0.006; eSig.intensity = 3;
+    eSig.sprite = 'streak'; eSig.color = undefined; eSig.size[0] = eSig.size[1] = 0.42 * k; eSig.stretch = 0.006; eSig.intensity = 3;
     kit.emit(eSig);
     eSig.at = null; eSig.vel = null;
     // без руны в воздухе — искры по линии (у руны в воздухе её поток искр к цели рисует airRune)

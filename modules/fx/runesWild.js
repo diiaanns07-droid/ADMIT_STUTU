@@ -142,7 +142,7 @@ export function register(fx) {
       a.set(air.pos.x + c.fwd.x * 0.3, 0, air.pos.z + c.fwd.z * 0.3);
       a.y = fx.groundY(a.x, a.z, c.feet.y);
       air.plan('through', a);
-      tW = launchIn(air, 0.26) + 0.05;
+      tW = launchIn(air, 0.22);           // сдвиг от прежних 0.1 с — не больше 0.12 с
     } else kit.after(0.12, () => muzzle(fx, c.hand, c.dir, 'frost', R, { size: 0.9, count: 18 }));
     const b = new V3().copy(c.targetGround);
     const L = Math.max(1, Math.hypot(b.x - a.x, b.z - a.z));
@@ -167,14 +167,14 @@ export function register(fx) {
   const needles = new Map(); // id → rec
   const nLive = [], nPool = [], fresh = [null, null, null, null, null, null, null, null];
   let tag = 0, nFresh = 0, lastLight = -9;
-  const oHalo = { at: null, vel: null, count: 1, speed: 0, life: 0.065, size: [0.36, 0.26], sizeVar: 0.08, ramp: 'frost', intensity: 1.9, sprite: 'glow', fadeIn: 0.02, essential: true, rival: false };
+  const oHalo = { at: null, vel: null, count: 1, speed: 0, life: 0.065, size: [0.36, 0.26], sizeVar: 0.08, color: 0x7fd8ff, intensity: 1.9, sprite: 'glow', fadeIn: 0.02, essential: true, rival: false };
   const oCore = { at: null, vel: null, count: 1, speed: 0, life: 0.05, size: [0.17, 0.12], sizeVar: 0, ramp: 'whiteHold', intensity: 3, sprite: 'glow', fadeIn: 0.01, essential: true, rival: false };
   const oNeedle = { at: null, vel: null, count: 1, speed: 0, life: [0.04, 0.06], size: [0.17, 0.12], ramp: 'frost', intensity: 3, sprite: 'streak', stretch: 0.03, essential: true, rival: false };
   const oFlake = { at: null, count: 1, radius: 0.1, speed: [0.2, 0.8], life: [0.3, 0.55], size: [0.075, 0.025], ramp: 'frost', intensity: 2.6, sprite: 'flake', spin: [-5, 5], gravity: 1, drag: 2, rival: false };
   const kNeedle = { color: 0xc8f4ff, intensity: 0.6, range: 7, dur: 0.4, attack: 0.1, follow: null };
   const TR_NEEDLE = { style: 'energy', width: 0.14, life: 0.2, intensity: 2.6, maxPoints: 18, head: 1.2 };
   function needleRec() {
-    const n = nPool.pop() || { id: '', tr: null, seen: 0, R: false, pos: new V3(), vel: new V3(), acc: 0, accS: 0, accF: 0, scope: null, follow: null };
+    const n = nPool.pop() || { id: '', tr: null, seen: 0, R: false, hc: 0, pos: new V3(), vel: new V3(), acc: 0, accS: 0, accF: 0, scope: null, follow: null };
     if (!n.follow) n.follow = () => n.pos;
     return n;
   }
@@ -185,7 +185,7 @@ export function register(fx) {
     n.acc += dt * 60;
     if (n.acc >= 1) {
       n.acc = Math.min(1, n.acc - 1);
-      oHalo.at = n.pos; oHalo.vel = n.vel; oHalo.ramp = ramp; oHalo.rival = R; kit.emit(oHalo);
+      oHalo.at = n.pos; oHalo.vel = n.vel; oHalo.color = n.hc; oHalo.rival = R; kit.emit(oHalo);
       oCore.at = n.pos; oCore.vel = n.vel; oCore.rival = R; kit.emit(oCore);
     }
     n.accS += dt * 30;
@@ -211,7 +211,7 @@ export function register(fx) {
         const R = !!pr.remote;
         let n = needles.get(id);
         if (!n) {
-          n = needleRec(); n.id = id; n.R = R; n.acc = 1; n.accS = 1; n.accF = 0;
+          n = needleRec(); n.id = id; n.R = R; n.hc = fx.pal('frost', R ? D_REMOTE : D_LOCAL).mid; n.acc = 1; n.accS = 1; n.accF = 0;
           n.tr = trail(fx, 'frost', R, TR_NEEDLE);
           const W = CAR[R ? 'R' : 'L'];
           n.scope = W && kit.clock - W.t0 < 1.2 ? W.scope : null;
@@ -271,7 +271,7 @@ export function register(fx) {
   const easeS = (x) => x * x * (3 - 2 * x);
   // души: голова (фиолетовый ореол → чёрная сердцевина → светлый ободок) летит с душой (скорость на GPU), тело-перо,
   // росчерк по направлению, искры; выбросы по времени — частиц столько же на 30/60/120 Гц
-  const sHalo = { at: null, vel: null, count: 1, speed: 0, life: 0.085, size: [0.55, 0.42], sizeVar: 0.05, ramp: 'void', intensity: 2.2, sprite: 'glow', fadeIn: 0.02, essential: true, rival: false };
+  const sHalo = { at: null, vel: null, count: 1, speed: 0, life: 0.085, size: [0.55, 0.42], sizeVar: 0.05, color: 0x8c3cf4, intensity: 2.2, sprite: 'glow', fadeIn: 0.02, essential: true, rival: false };
   const sDark = { at: null, vel: null, count: 1, speed: 0, life: 0.085, size: [0.22, 0.17], sizeVar: 0.05, ramp: 'darkcore', intensity: 1, sprite: 'dot', blend: 'alpha', fadeIn: 0.02, essential: true, rival: false };
   const sRim = { at: null, vel: null, count: 1, speed: 0, life: 0.085, size: [0.3, 0.24], sizeVar: 0.05, ramp: 'void', intensity: 2.6, sprite: 'ring', fadeIn: 0.02, essential: true, rival: false };
   const sWisp = { at: null, count: 1, speed: [0.1, 0.4], life: [0.28, 0.42], size: [0.42, 0.13], ramp: 'void', intensity: 2.4, sprite: 'wisp', rot: 0, drag: 2, rival: false, essential: true };
@@ -288,7 +288,7 @@ export function register(fx) {
     S.aH += dt * 26;
     if (S.aH >= 1) {
       S.aH = Math.min(1, S.aH - 1);
-      sHalo.at = pos; sHalo.vel = S.vel; sHalo.ramp = ramp; sHalo.rival = R; kit.emit(sHalo);
+      sHalo.at = pos; sHalo.vel = S.vel; sHalo.color = S.hc; sHalo.rival = R; kit.emit(sHalo);
       if (!R) { sDark.at = pos; sDark.vel = S.vel; kit.emit(sDark); }
       sRim.at = pos; sRim.vel = S.vel; sRim.ramp = ramp; sRim.rival = R; kit.emit(sRim);
     }
@@ -330,7 +330,7 @@ export function register(fx) {
     const from = new V3().copy(c.hand);
     let tLa = 0;
     if (air) { air.plan('through', ctr); from.copy(air.pos); tLa = launchIn(air, 0.26); }
-    const tf = clamp(from.distanceTo(tip0) / 120, 0.05, 0.09);
+    const tf = clamp(from.distanceTo(tip0) / 140, 0.04, 0.08);
     if (!air) tLa = Math.max(0, 0.14 - tf);
     kit.after(tLa, () => {
       kVee.remote = R; kVee.dur = tf;
@@ -380,7 +380,7 @@ export function register(fx) {
           const q = kit.Q.name === 'low' ? 0.6 : 1;
           for (let i = 0; i < 5; i++) {
             const side = (i - 2) * 0.7 + (Math.random() - 0.5) * 0.3;
-            const S = { R, q, first: true, prev: new V3(), vel: new V3(), aH: 1, aW: 0, aS: 0, aP: 0, tr: null };
+            const S = { R, q, hc: P.mid, first: true, prev: new V3(), vel: new V3(), aH: 1, aW: 0, aS: 0, aP: 0, tr: null };
             kit.after(0.05 + i * 0.07, () => {
               fx.anchor('chest', c.chest, R);
               S.tr = kit.Q.name !== 'low' ? trail(fx, 'void', R, TR_SOUL) : null;
