@@ -76,7 +76,7 @@ const log = (...a) => console.log('[poses]', ...a);
 // поза → мгновения снимков (с начала сценария), с
 const STAND_POSES = {
   idle: [4.0], shield: [0.5, 1.75], bolt: [0.2, 0.52], burst: [0.24, 0.5], conjure: [1.2, 2.2], gate: [1.0, 1.9], pillar: [1.0, 1.95],
-  ultimate: [1.2, 2.55], hit: [0.4, 1.9], victory: [0.9, 3.5], defeat: [1.2, 3.0], menu: [2.5, 6.0], menuG: [1.0], walk: [1.0], orb: [1.0, 1.75],
+  ultimate: [1.2, 2.55], hit: [0.4, 1.9], victory: [0.9, 3.5], defeat: [1.2, 3.0], menu: [2.5, 6.0], menuG: [1.0], walk: [1.0], orb: [1.0, 1.75], smile: [0.6],
 };
 async function standPage(hero, q, cam = 'full', size = { width: 960, height: 540 }) {
   const ctx = await browser.newContext({ viewport: size, deviceScaleFactor: 1 });

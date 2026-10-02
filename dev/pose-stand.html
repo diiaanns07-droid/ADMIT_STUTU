@@ -83,6 +83,7 @@ const SCRIPTS = {
   victory: [[0.1, () => { snap.status = 'victory'; }]],
   defeat: [[0.1, () => { snap.status = 'defeat'; P.action = 'dead'; P.hp = 0; }]],
   walk: [[0.0, set({ velocity: { x: 0, z: 1.6 } })]],
+  smile: [[0.2, ev('shield_start')]],   // «Распознано»: успешный жест без позы — только лицо
   orb: [[0.1, set({ handSpell: { phase: 'hold', element: 'fire', power: 0.4 } })], [1.5, set({ handSpell: null })], [1.5, ev('hand_spell_throw', { element: 'fire', dir: { x: 0.3, y: 0.2 } })]],
 };
 function reset() {
@@ -104,7 +105,19 @@ function step(dt) {
   const events = pend; pend = [];
   hm.update(dt, mode === 'menu' ? null : snap, events);
 }
-function render() { renderer.render(scene, camera); }
+// cam=face — камера следует за головой (лицо в кадре и при наклоне головы в позе)
+const camName = qs.get('cam') || 'full';
+const _hp = new THREE.Vector3(), _ff = new THREE.Vector3();
+function render() {
+  const a = hm.getAnchors && hm.getAnchors();
+  if (camName === 'face' && a && a.head && a.head.parent) {
+    a.head.updateWorldMatrix(true, false); a.head.getWorldPosition(_hp);
+    _hp.y -= 0.1;
+    camera.position.set(_hp.x + 0.12, _hp.y + 0.04, _hp.z + 0.92);
+    camera.lookAt(_hp);
+  }
+  renderer.render(scene, camera);
+}
 window.__PS__ = {
   get ready() { return hm.ready; },
   hero: HERO,
