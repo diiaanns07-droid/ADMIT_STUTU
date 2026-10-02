@@ -51,6 +51,7 @@ export const DEFAULT_LAYOUT = Object.freeze({
 const EPS = 1e-9;
 const TWO_PI = Math.PI * 2;
 const ATTACK_KINDS = new Set(['slam', 'orb', 'nova']);
+export const DIFFICULTY_LEVELS = Object.freeze(['easy', 'normal']);   // [FEEL] уровни сложности боя с Регентом
 const BOSS_ACTIONS = new Set(['idle', 'windup', 'attack', 'recover']);
 const MISS = Object.freeze({ hit: false, t: -1 });
 
@@ -245,6 +246,13 @@ export const DEFAULT_COMBAT_CONFIG = deepFreeze({
     turnRate: 2.5,          // рад/с
     hitReactTime: 0.35,     // только от burst, только в idle/recover
   },
+  // [FEEL] сложность боя с Регентом: множители здоровья и урона стража. Уровень выбирает игрок
+  // (settings.difficulty → setDifficulty), здесь по умолчанию 'normal' — прежний баланс без изменений.
+  difficulty: {
+    level: 'normal',        // 'easy' | 'normal'
+    easy: { bossHp: 0.7, bossDamage: 0.7 },
+    normal: { bossHp: 1, bossDamage: 1 },
+  },
   bossAttack: {             // санитарные границы AttackSpec от bossBrain
     minWindup: 0.35,
     maxWindup: 6,
@@ -356,6 +364,9 @@ function normalizeConfig(C) {
   C.encounter.leash = clamp(C.encounter.leash, 0, 100);
   C.encounter.aggroMemory = clamp(C.encounter.aggroMemory, 0, 120);
   C.burst.bothHandsBonus = clamp(C.burst.bothHandsBonus, 0, 3);
+  const df = C.difficulty;   // [FEEL] сложность: множители в разумных пределах, неизвестный уровень — обычная
+  for (const lv of DIFFICULTY_LEVELS) { df[lv].bossHp = clamp(df[lv].bossHp, 0.2, 3); df[lv].bossDamage = clamp(df[lv].bossDamage, 0, 3); }
+  if (!DIFFICULTY_LEVELS.includes(df.level)) df.level = 'normal';
   const bo = C.bolt;
   bo.interval = Math.max(0.05, bo.interval);
   bo.speed = clamp(bo.speed, 1, 120);
@@ -993,7 +1004,8 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       radius: 0,
       windup: clamp(windup, A.minWindup, A.maxWindup),
       remaining: 0, duration: 0,
-      damage: clamp(damage, 0, A.maxDamage),
+      damage: scaleBossDamage(clamp(damage, 0, A.maxDamage)),   // [FEEL] множитель сложности — после санитарного предела
+      baseDamage: clamp(damage, 0, A.maxDamage),                // [FEEL] без сложности: от него — урон отражённой сферы
       blockable: spec.blockable === true,
       speed: 0, dir: null, pathEnd: null, travel: 0,
     };
@@ -1893,7 +1905,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       o.owner = 'player';
       o.reflected = true;
       o.velocity = vec(ax / al * sp, ay / al * sp, az / al * sp);
-      o.damage = Math.round((o.damage || 20) * Q.reflectDamageMul);
+      o.damage = Math.round((o.baseDamage || o.damage || 20) * Q.reflectDamageMul);   // [FEEL] сложность не режет награду за парирование
       o.age = 0;
       o.lifetime = Math.max(o.lifetime || 0, al / sp + 0.5);
       o.passed = false;
@@ -2108,7 +2120,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         id, owner: 'boss', kind: 'orb',
         position: vcopy(t.origin), velocity: v, radius: t.radius,
         age: 0, lifetime: Math.min(C.bossAttack.orbMaxLifetime, t.travel / t.speed + 0.1),
-        damage: t.damage, blockable: t.blockable, attackId: t.id, passed: false,
+        damage: t.damage, baseDamage: t.baseDamage, blockable: t.blockable, attackId: t.id, passed: false,
       });
       emit('boss_projectile', t.origin, {
         attackId: t.id, attackKind: 'orb', projectileId: id, velocity: vcopy(v),
@@ -2346,6 +2358,25 @@ export function createCombat({ config, bossBrain, layout } = {}) {
 
   function getConfig() { return frozenConfig; }
 
+  // [FEEL] сложность боя с Регентом (C.difficulty): здоровье стража и урон его атак.
+  // Здоровье меняется со следующего reset() (или сразу, если бой ещё не начат), урон — с ближайшей атаки.
+  const BOSS_HP0 = C.boss.maxHp;
+  function difficultyMods() { return C.difficulty[C.difficulty.level] || C.difficulty.normal; }
+  function scaleBossDamage(dmg) { const m = difficultyMods().bossDamage; return m === 1 ? dmg : Math.round(dmg * m); }
+  function applyDifficulty() { C.boss.maxHp = Math.max(1, Math.round(BOSS_HP0 * difficultyMods().bossHp)); }
+  function getDifficulty() {
+    const m = difficultyMods();
+    return { level: C.difficulty.level, bossMaxHp: C.boss.maxHp, bossHpMul: m.bossHp, bossDamageMul: m.bossDamage };
+  }
+  function setDifficulty(level) {
+    C.difficulty.level = DIFFICULTY_LEVELS.includes(level) ? level : 'normal';
+    applyDifficulty();
+    const B = st.b;
+    if (st.status === 'playing' && !B.dead && st.stats.damageDealt === 0) B.hp = C.boss.maxHp;
+    return getDifficulty();
+  }
+  applyDifficulty();
+
   // [ASHEN_V2] улучшения героя (core/progression.js → mods): поля пересчитываются от базового
   // конфига, поэтому повторный вызов не накапливает бонусы. Полные HP/энергия остаются полными.
   const BASE = JSON.parse(JSON.stringify(C));
@@ -2426,5 +2457,6 @@ export function createCombat({ config, bossBrain, layout } = {}) {
 
   reset();
   return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig, setSpawn, get hand() { return hand; } /* [HAND] */,
+    setDifficulty, getDifficulty,   // [FEEL]
     attachPvp, setMode, getMode, setOpponent, applyRemoteHit };   // [PVP]
 }

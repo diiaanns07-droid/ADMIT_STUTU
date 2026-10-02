@@ -65,7 +65,7 @@ while (Date.now() - t0 < MINUTES * 60000) {
     outcomes[scr]++;
     await setHeld(new Set());
     await sleep(800);
-    await click('Сразиться снова');
+    await click(scr === 'defeat' ? 'Ещё раз' : 'Сразиться снова');   // [FEEL] на поражении — «Ещё раз»
     await sleep(200);
     continue;
   }

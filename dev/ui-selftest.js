@@ -451,8 +451,8 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     const dSec = section('defeat');
     check('поражение: у стража 42%, есть совет', dSec.textContent.includes('42%') && [...dSec.querySelectorAll('.ao-tip')].some(isVisible));
     reset();
-    btnByText(dSec, 'Сразиться снова').click();
-    check('«Сразиться снова» → onRestart', count('onRestart') === 1);
+    btnByText(dSec, 'Ещё раз').click();   // [FEEL] на поражении кнопка «Ещё раз»
+    check('«Ещё раз» → onRestart', count('onRestart') === 1);
 
     /* 16. Escape */
     reset();

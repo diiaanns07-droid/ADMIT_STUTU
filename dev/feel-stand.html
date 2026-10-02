@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд «Отклик» — DEBUG / НЕ CV</title>
+<link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="../modules/ui.css">
+<style>
+  /* Стили только стенда (префикс fs-), в игру не входят. */
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #101114; }
+  #fs-scene { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  #fs-info { position: fixed; left: 8px; top: 8px; z-index: 30; font: 11px/1.35 "Consolas", monospace; color: #8d97a6; pointer-events: none; white-space: pre; }
+</style>
+</head>
+<body>
+<!-- Стенд отклика на движения: настоящие combat.js + boss.js + cameraRig.js + battleHud.js + ui.js, ввод — бот
+     по сценарию (?scene=…), сцена — простая 2D-заглушка в той же проекции, что у игры (fov камеры из config.js).
+     Сценарии: moves (все приёмы подряд), telegraph (замах Регента), combo, victory, defeat, idle.
+     ?rm=1 — «Уменьшенное движение», ?t=сек — заморозить на этом времени. Управление из теста: window.stand. -->
+<canvas id="fs-scene" aria-hidden="true"></canvas>
+<div id="ao-root" style="position:fixed;inset:0">
+  <canvas id="ao-hud-canvas" aria-hidden="true"></canvas>
+  <div id="ao-ui-root"></div>
+</div>
+<div id="fs-info"></div>
+<script type="module">
+import { config } from '../config.js';
+import { createCombat } from '../modules/combat.js';
+import { createBossBrain } from '../modules/boss.js';
+import { createCameraRig } from '../core/cameraRig.js';
+import { createBattleHud } from '../core/battleHud.js';
+import { createUI } from '../modules/ui.js';
+
+const params = new URLSearchParams(location.search);
+const settings = { ...config.defaultSettings, reducedMotion: params.get('rm') === '1', quality: 'auto' };
+config.settings = settings;
+const seed = Number(params.get('seed')) || 7;
+const combat = createCombat({ config, bossBrain: createBossBrain({ seed }) });
+combat.setDifficulty(params.get('difficulty') || settings.difficulty);
+combat.reset();
+const rig = createCameraRig(config.camera);
+const hud = createBattleHud({ canvas: document.getElementById('ao-hud-canvas') });
+const ui = createUI({ root: document.getElementById('ao-ui-root'), callbacks: {}, options: { showVolume: false, abilityCosts: { bolt: 0, shield: 12, burst: 40 } } });
+const scene = document.getElementById('fs-scene');
+const g = scene.getContext('2d');
+const DT = 1 / 60;
+
+// ---------------------------------------------------------------- проекция как у THREE.PerspectiveCamera
+let cam = { pos: { x: 0, y: 3, z: 11 }, target: { x: 0, y: 2, z: 0 } };
+function basis() {
+  const p = cam.pos, q = cam.target;
+  let fx = q.x - p.x, fy = q.y - p.y, fz = q.z - p.z;
+  const fl = Math.hypot(fx, fy, fz) || 1; fx /= fl; fy /= fl; fz /= fl;
+  let rx = -fz, rz = fx; const rl = Math.hypot(rx, rz) || 1; rx /= rl; rz /= rl;
+  const ux = -rz * fy, uy = rz * fx - rx * fz, uz = rx * fy;
+  return { fx, fy, fz, rx, rz, ux, uy, uz };
+}
+function project(pt) {
+  const w = window.innerWidth, h = window.innerHeight, b = basis();
+  const dx = pt.x - cam.pos.x, dy = pt.y - cam.pos.y, dz = pt.z - cam.pos.z;
+  const zc = dx * b.fx + dy * b.fy + dz * b.fz;
+  const xc = dx * b.rx + dz * b.rz;
+  const yc = dx * b.ux + dy * b.uy + dz * b.uz;
+  const f = 1 / Math.tan((config.camera.fov * Math.PI / 180) / 2);
+  const zz = Math.max(Math.abs(zc), 1e-3);
+  return { x: w / 2 + (xc / zz) * f * (h / 2), y: h / 2 - (yc / zz) * f * (h / 2), behind: zc < 0.1 };
+}
+
+// ---------------------------------------------------------------- сцена-заглушка
+function paint(snap) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5), w = window.innerWidth, h = window.innerHeight;
+  if (scene.width !== Math.round(w * dpr)) { scene.width = Math.round(w * dpr); scene.height = Math.round(h * dpr); }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const sky = g.createLinearGradient(0, 0, 0, h);
+  sky.addColorStop(0, '#26303f'); sky.addColorStop(0.5, '#3a4250'); sky.addColorStop(1, '#1a1b20');
+  g.fillStyle = sky; g.fillRect(0, 0, w, h);
+  // земля арены: кольца и лучи
+  g.strokeStyle = 'rgba(200,190,170,0.16)'; g.lineWidth = 1;
+  for (let r = 2; r <= 14; r += 2) {
+    g.beginPath(); let started = false;
+    for (let i = 0; i <= 64; i++) { const a = i / 64 * Math.PI * 2, q = project({ x: Math.cos(a) * r, y: 0, z: Math.sin(a) * r }); if (q.behind) { started = false; continue; } if (!started) { g.moveTo(q.x, q.y); started = true; } else g.lineTo(q.x, q.y); }
+    g.stroke();
+  }
+  // колонны по кругу
+  for (let i = 0; i < 10; i++) {
+    const a = i / 10 * Math.PI * 2, x = Math.cos(a) * 15, z = Math.sin(a) * 15, b0 = project({ x, y: 0, z }), b1 = project({ x, y: 7, z });
+    if (b0.behind || b1.behind) continue;
+    const ww = Math.max(4, 60 * (b0.y - b1.y) / 400);
+    g.fillStyle = '#20232a'; g.fillRect(b0.x - ww / 2, b1.y, ww, b0.y - b1.y);
+  }
+  const B = snap.boss.position, P = snap.player.position;
+  const body = (pos, hgt, wid, col) => {
+    const a = project({ x: pos.x, y: hgt, z: pos.z }), b = project({ x: pos.x, y: 0, z: pos.z });
+    if (a.behind || b.behind) return;
+    const hh = b.y - a.y, ww = hh * wid;
+    g.fillStyle = col; g.beginPath(); g.moveTo(b.x - ww / 2, b.y); g.lineTo(a.x - ww * 0.3, a.y + hh * 0.1); g.lineTo(a.x, a.y); g.lineTo(a.x + ww * 0.3, a.y + hh * 0.1); g.lineTo(b.x + ww / 2, b.y); g.closePath(); g.fill();
+    return { a, b, hh, ww };
+  };
+  const bb = body(B, 5.6, 0.62, snap.boss.action === 'dead' ? '#3a3633' : '#4d4741');
+  if (bb && snap.boss.action !== 'dead') { g.fillStyle = 'rgba(255,170,90,0.85)'; g.beginPath(); g.arc(bb.a.x, bb.a.y + bb.hh * 0.42, Math.max(3, bb.hh * 0.05), 0, Math.PI * 2); g.fill(); }
+  body(P, 1.85, 0.38, snap.player.shielding ? '#5d7fa8' : '#6b5f52');
+  // снаряды
+  for (const pr of snap.projectiles) { const q = project(pr.position); if (q.behind) continue; g.fillStyle = pr.owner === 'boss' ? '#9fc4ff' : '#ffd08a'; g.beginPath(); g.arc(q.x, q.y, pr.owner === 'boss' ? 9 : 4, 0, Math.PI * 2); g.fill(); }
+  g.fillStyle = 'rgba(255,255,255,0.3)'; g.font = '11px system-ui, sans-serif';
+  g.fillText('Стенд «Отклик»: сцена — заглушка, бой, камера, HUD и интерфейс настоящие. DEBUG / НЕ CV', 12, h - 10);
+}
+
+// ---------------------------------------------------------------- бот и сценарии
+const I = (o = {}) => ({ source: 'cv', valid: true, calibrated: true, tMs: 0, moveX: 0, moveZ: 0, dash: 0, attack: false, shield: false, burst: false, ...o });
+let simT = 0, events = [], lastSnap = combat.getSnapshot(), frozen = false;
+let queue = [];                       // [{at, input}] — разовые импульсы сценария
+let hold = {};                        // удерживаемый ввод
+function smart(s) {
+  const t = s.telegraphs[0], p = s.player.position;
+  if (t && t.kind === 'slam' && Math.hypot(p.x - t.target.x, p.z - t.target.z) < t.radius + 1.2) return I({ moveX: 1 });
+  if (t && (t.kind === 'nova' || t.kind === 'orb') && t.remaining < 0.6) return I({ shield: true });
+  if (s.projectiles.some((pr) => pr.owner === 'boss')) return I({ shield: true });
+  return I({ attack: true });
+}
+let policy = () => I(hold);
+function stepOnce(input) {
+  combat.update(DT, input);
+  const ev = combat.drainEvents();
+  for (const e of ev) events.push(e);
+  simT += DT;
+  lastSnap = combat.getSnapshot();
+}
+const stand = {
+  /** продвинуть бой на sec секунд (ввод — policy + разовые импульсы patch в первом шаге) */
+  advance(sec, patch, opts = {}) {
+    const n = Math.max(1, Math.round(sec / DT));
+    for (let i = 0; i < n; i++) {
+      const base = policy(lastSnap);
+      const input = i === 0 && patch ? { ...base, ...patch } : base;
+      stepOnce(input);
+      if (!opts.noHud) frameHud(DT);
+    }
+    return this.info();
+  },
+  /** ждать условие (снимок) не дольше maxSec */
+  until(fnSrc, maxSec = 30) {
+    const fn = new Function('s', `return (${fnSrc});`);
+    for (let i = 0; i < maxSec / DT; i++) { if (fn(lastSnap)) return true; stepOnce(policy(lastSnap)); frameHud(DT); }
+    return false;
+  },
+  /** перемотка без отрисовки (длинные сценарии): headless-браузер иначе копит тысячи кадров в очереди GPU */
+  skip(fnSrc, maxSec = 240) {
+    const fn = new Function('s', `return (${fnSrc});`);
+    for (let i = 0; i < maxSec / DT; i++) { if (fn(lastSnap)) return true; stepOnce(policy(lastSnap)); events.length = 0; }
+    return false;
+  },
+  setPolicy(name, extra) { policy = name === 'smart' ? smart : name === 'hold' ? () => I({ ...hold, ...(extra || {}) }) : () => I(); hold = extra || {}; },
+  setBossHp(hp) { /* для финала: добить Регента быстрее — урон напрямую недоступен, поэтому ждём ботом */ },
+  info() { const s = lastSnap; return { t: +simT.toFixed(2), status: s.status, bossHp: Math.round(s.boss.hp), bossMax: s.boss.maxHp, hp: Math.round(s.player.hp), combo: s.player.combo, tel: s.telegraphs.map((x) => `${x.kind}:${x.remaining.toFixed(2)}`), action: s.boss.action }; },
+  freeze(on) { frozen = on; },
+  frame(dtR = 1 / 60, ts = 1) { frameHud(dtR, ts); },
+  get snap() { return lastSnap; },
+  get combat() { return combat; },
+  hud, rig,
+};
+window.stand = stand;
+
+let outroLeft = 0;
+function frameHud(dtR, ts = 1) {
+  const s = lastSnap;
+  const c = rig.update(dtR, { player: s.player.position, playerYaw: s.player.yaw, velocity: s.player.velocity, boss: s.boss.position, engaged: s.player.encounter !== 'explore', impulse: { x: 0, y: 0, z: 0 }, reducedMotion: settings.reducedMotion });
+  cam = { pos: c.position, target: c.target };
+  paint(s);
+  const ev = events; events = [];
+  hud.frame({ dtReal: dtR, timeScale: ts, screen: 'playing', snapshot: s, events: ev, input: null, project, viewport: { w: window.innerWidth, h: window.innerHeight }, intro: { active: false, t: 0, duration: 5 }, settings, resumeLeftMs: 0, pois: [], coach: { hint: null, accuracy: NaN, good: 0, mistakes: 0 }, layout: null });
+  ui.update({ screen: 'playing', snapshot: s, tracking: { status: 'ready' }, debug: true, settings, input: null });
+  document.getElementById('fs-info').textContent = JSON.stringify(stand.info());
+}
+
+// сценарии по ?scene=: подготовка до интересного кадра (тест делает скриншот сам)
+const SCENES = {
+  idle() { stand.advance(1.0); },
+  moves() { stand.setPolicy('hold', { attack: true }); stand.advance(3.0); },
+  telegraph() { stand.setPolicy('hold', { attack: true }); stand.until("s.telegraphs.length && s.telegraphs[0].kind === 'slam' && s.telegraphs[0].remaining < 0.75", 40); },
+  combo() { stand.setPolicy('hold', { attack: true }); stand.until('s.player.combo >= 12', 30); },
+  victory() { stand.setPolicy('smart'); stand.skip('s.boss.hp < 60', 240); stand.until("s.status !== 'playing'", 30); },
+  defeat() { stand.setPolicy('hold', { moveZ: 1 }); stand.advance(1.2, null, { noHud: true }); stand.setPolicy('idle'); stand.skip('s.player.hp < 25', 240); stand.until("s.status !== 'playing'", 30); },
+};
+const sc = params.get('scene');
+if (sc && SCENES[sc]) SCENES[sc]();
+else stand.advance(0.5);
+window.standReady = true;
+</script>
+</body>
+</html>

@@ -31,6 +31,7 @@ import { createSquatCounter, topSquatFault, synthSquatPose } from './core/squatC
 import { createHandZone, createHeroBowPose } from './core/handZone.js'; // [HAND] лук и магия рукой
 import { createPerfTuner } from './core/perfTuner.js'; // [PERF] автоподстройка под железо
 import { createPerfHud } from './core/perfHud.js';     // [PERF] F3 — кадры и трекинг
+import { feelOfEvents, FEEL_TIME } from './core/gameFeel.js';     // [FEEL] остановка кадра, замедление, тряска по силе удара
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
 
@@ -63,6 +64,7 @@ function sanitizeSettings(patch, base) {
   if (Number.isFinite(+patch.volume) && patch.volume !== null && patch.volume !== '') out.volume = Math.max(0, Math.min(1, +patch.volume));
   if (Number.isFinite(+patch.sensitivity) && patch.sensitivity !== null && patch.sensitivity !== '') out.sensitivity = Math.max(0.5, Math.min(2, +patch.sensitivity));
   if ('reducedMotion' in patch) out.reducedMotion = !!patch.reducedMotion;
+  if (patch.difficulty === 'easy' || patch.difficulty === 'normal') out.difficulty = patch.difficulty; // [FEEL] сложность боя с Регентом
   if (patch.moveMode === 'steer' || patch.moveMode === 'stick') out.moveMode = patch.moveMode; // [V5] «Руль» / «Джойстик»
   if (typeof patch.hero === 'string' && HEROES[patch.hero]) out.hero = patch.hero;
   // [HERO] C1: шейдинг героев
@@ -169,6 +171,7 @@ const app = {
   onb: { autoEnabled: false, calibP: null, retryAt: 0, okSince: null, restored: false, calibratedAt: 0 },
   autoResume: null,          // { at, badSince } — performance.now() продолжения боя
   gate: { ok: true, reason: '', since: 0, flashUntil: 0 }, // причина недоступности «В бой»/«Продолжить» для кнопок UI
+  outroAt: 0,                // [FEEL] performance.now() исхода боя: экран итогов — после замедленного финала
 };
 
 // [ASHEN_V2] мир создаётся первым: его раскладка (коллайдеры, земля, арена, старт) нужна бою и камере.
@@ -408,6 +411,7 @@ function setScreen(screen) {
 
 function resetFight() {
   applyStartZone();            // [FOREST] место старта
+  if (typeof combat.setDifficulty === 'function') { try { combat.setDifficulty(settings.difficulty); } catch (e) { console.warn('[FEEL] сложность', e); } } // [FEEL] HP и урон Регента
   combat.reset();              // сбрасывает и bossBrain
   world.reset();
   effects.reset();
@@ -419,6 +423,8 @@ function resetFight() {
   lastSnapshot = combat.getSnapshot();
   rig.reset(rigState(lastSnapshot, ZERO));
   app.lostTime = 0;
+  app.outroAt = 0;             // [FEEL] финал и замедление прошлого боя не переходят в новый
+  timeFx.slowUntil = 0; timeFx.stopUntil = 0;
 }
 
 // [ASHEN_V2] состояние камеры из снимка: вне арены — камера исследования, в арене — lock-on.
@@ -429,6 +435,7 @@ function rigState(snap, impulse) {
     engaged: P.encounter !== 'explore', impulse, colliders: worldLayout ? worldLayout.colliders : null,
     groundY: worldLayout ? worldLayout.groundY : null,   // [ASHEN_V3] камера над рельефом большой карты
     steer: P.moveMode === 'steer',                        // [V5] «Руль»: камера держится за спиной героя
+    reducedMotion: !!settings.reducedMotion,              // [FEEL] без тряски камеры
   };
 }
 
@@ -535,6 +542,7 @@ function autoResumeTick(now) {
 
 function pause(reason) {
   if (app.screen !== 'playing') return;
+  if (app.outroAt) return;     // [FEEL] бой уже окончен: замедленный финал не ставится на паузу
   setScreen('paused');
   app.pauseReason = reason || 'user';
   effects.setVolume(0); // петли щита/полёта орбов не звучат всю паузу
@@ -1088,22 +1096,27 @@ function adaptEvents(events) {
 
 // ---------------------------------------------------------------- темп: замедление и стоп-кадр
 // Боевое время масштабируется (combat/world/effects), камера и CV живут в реальном времени.
-const timeFx = { slowUntil: 0, slowScale: 0.3, stopUntil: 0 };
+// [FEEL] правила — core/gameFeel.js (прежние стоп-кадры и замедление идеального рывка сохранены там же):
+// сильные удары по Регенту — остановка кадра 60–90 мс, парирование — замедление 0,3 с, тряска камеры по
+// силе урона. «Уменьшенное движение»: без тряски, остановка кадра короче.
+const timeFx = { slowUntil: 0, slowScale: 0.3, slowMs: 650, stopUntil: 0 };
 function timeEvents(events, now) {
-  for (const e of events) {
-    if (e.type === 'perfect_dodge') timeFx.slowUntil = now + 650;
-    else if (e.type === 'rune_cast' || e.type === 'burst' || e.type === 'boss_phase' || e.type === 'sigil_cast') timeFx.stopUntil = Math.max(timeFx.stopUntil, now + 80);
-    else if (e.type === 'player_hit' && e.data && e.data.amount >= 20) timeFx.stopUntil = Math.max(timeFx.stopUntil, now + 60);
-  }
+  if (!events.length) return;
+  const f = feelOfEvents(events, { reducedMotion: !!settings.reducedMotion });
+  if (f.stopMs > 0) timeFx.stopUntil = Math.max(timeFx.stopUntil, now + f.stopMs);
+  if (f.slowMs > 0 && now + f.slowMs >= timeFx.slowUntil) { timeFx.slowUntil = now + f.slowMs; timeFx.slowMs = f.slowMs; timeFx.slowScale = f.slowScale; }
+  if (f.shake > 0 && typeof rig.shake === 'function') rig.shake(f.shake);
 }
 function timeScale(now) {
   if (now < timeFx.stopUntil) return 0.04;
   if (now < timeFx.slowUntil) {
-    const left = (timeFx.slowUntil - now) / 650;
+    const left = (timeFx.slowUntil - now) / Math.max(1, timeFx.slowMs);
     return timeFx.slowScale + (1 - timeFx.slowScale) * Math.max(0, 1 - left * 1.6); // плавный выход
   }
   return 1;
 }
+// [FEEL] финал боя: последний удар замедлен, HUD пишет «ПОБЕДА» / «РЕГЕНТ УСТОЯЛ», потом — экран итогов.
+const OUTRO = { victoryMs: 1700, defeatMs: 1200, victoryScale: 0.25, defeatScale: 0.45 };
 
 // ---------------------------------------------------------------- [ТВИСТ «ОШИБКА»]
 // Импульсы удачных жестов и коды подсказок из распознавателя → статистика боя.
@@ -1222,7 +1235,7 @@ function frame(now) {
 
   if (app.screen === 'playing') {
     let frozen = false;
-    if (!app.debug) {
+    if (!app.debug && !app.outroAt) {   // [FEEL] в замедленном финале потеря трекинга не ставит паузу
       const vs = visionStatus();
       const bodyHidden = !!(vs && vs.debug && vs.debug.bodyVisible === false);
       // [V3.1] рука, уведённая вперёд/вправо, закрывает плечо — видимость плеч падает. Если кисти
@@ -1237,7 +1250,7 @@ function frame(now) {
       } else app.lostTime = 0;
     }
     if (now < app.resumeAt) frozen = true;
-    if (app.screen === 'playing' && !frozen) trackCoach(input);
+    if (app.screen === 'playing' && !frozen && !app.outroAt) trackCoach(input);   // [FEEL] после исхода жесты не считаются
     if (app.screen === 'playing' && dt > 0 && !frozen) {
       // [ASHEN_V2] стик — в осях камеры: «вперёд на стике» = «вперёд на экране»
       if (Number.isFinite(rig.inputYaw)) input.viewYaw = rig.inputYaw;   // [V3] курс управления без плечевого сдвига
@@ -1256,8 +1269,16 @@ function frame(now) {
     lastSnapshot = combat.getSnapshot();
     events = checkEmbers(lastSnapshot, events);
     events = forestZoneEvents(events, lastSnapshot);   // [FOREST]
-    if (lastSnapshot.status === 'victory') setScreen('victory');
-    else if (lastSnapshot.status === 'defeat') setScreen('defeat');
+    if (lastSnapshot.status === 'victory' || lastSnapshot.status === 'defeat') {
+      // [FEEL] экран итогов — после замедленного финала (в дуэли и при «Уменьшенном движении» — короче)
+      const win = lastSnapshot.status === 'victory';
+      const hold = pvpCtl && pvpCtl.active ? 0 : (win ? OUTRO.victoryMs : OUTRO.defeatMs) * (settings.reducedMotion ? 0.6 : 1);
+      if (!app.outroAt) {
+        app.outroAt = now;
+        if (hold > 0) { timeFx.slowUntil = now + hold; timeFx.slowMs = hold; timeFx.slowScale = win ? OUTRO.victoryScale : OUTRO.defeatScale; }
+      }
+      if (now - app.outroAt >= hold) { app.outroAt = 0; setScreen(win ? 'victory' : 'defeat'); }
+    }
   }
 
   // [ASHEN_V2] тренировка: поза → счётчик отжиманий → очки клятвы
@@ -1309,7 +1330,7 @@ function frame(now) {
   if (effects.setInput) effects.setInput(input); // [VFX] след руны в воздухе, свечение ладоней
   if (heroBowPose) { try { heroBowPose.update(dt, { root: world.hero && world.hero.root, heroModel, snap: lastSnapshot }); } catch (e) { /* [HAND] */ } } // [HAND] поза лука/ладони
   try { effects.update(dt, fxSnap, fxEvents); } catch (e) { console.error('[ASHEN] effects.update', e); } // [NET] fxSnap/fxEvents
-  if (effects.takeHitStop && app.screen === 'playing') { const hs = effects.takeHitStop(); if (hs > 0) timeFx.stopUntil = Math.max(timeFx.stopUntil, now + hs); } // [VFX] хит-стоп по силе удара
+  if (effects.takeHitStop && app.screen === 'playing') { const hs = Math.min(effects.takeHitStop(), settings.reducedMotion ? FEEL_TIME.reducedStopMaxMs : Infinity); if (hs > 0) timeFx.stopUntil = Math.max(timeFx.stopUntil, now + hs); } // [VFX] хит-стоп по силе удара; [FEEL] «Уменьшенное движение» — не дольше 40 мс
   if (handVisuals && effects.linkHandVisuals) effects.linkHandVisuals(handVisuals); // [VFX] стрелы/сгустки/попадания — V6, лук — №6
   if (handVisuals) { try { handVisuals.update(dt, fxSnap, fxEvents, handAnchors()); } catch (e) { /* [HAND] */ } } // [HAND] (fxSnap — со стрелами соперника)
 

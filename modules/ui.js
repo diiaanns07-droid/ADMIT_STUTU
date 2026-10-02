@@ -529,6 +529,7 @@ function normSettings(s) {
     startZone: o.startZone === 'forest' || o.startZone === 'edge' ? o.startZone : 'arena', // [FOREST] место старта; [ONBOARD] 'edge' — у края арены
     gestureMode: o.gestureMode === 'master' ? 'master' : 'novice', // [НОВИЧОК] набор жестов
     autoWalk: o.autoWalk !== false,                                 // [НОВИЧОК] автоход
+    difficulty: o.difficulty === 'normal' ? 'normal' : 'easy', // [FEEL] сложность боя с Регентом
     hero: HERO_OPTIONS.some(([v]) => v === o.hero) ? o.hero : DEFAULT_SETTINGS.hero,
   };
 }
@@ -1264,6 +1265,31 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     return fs;
   }
 
+  // [FEEL] «Сложность»: Лёгкая (Регент на 30% слабее, по умолчанию) / Обычная. Действует со следующего боя.
+  const DIFFICULTY_OPTIONS = [['easy', 'Лёгкая'], ['normal', 'Обычная']];
+  function buildDifficulty(prefix) {
+    const name = `${uid}-${prefix}-difficulty`;
+    const seg = el('div', { class: 'ao-seg' });
+    const fs = el('fieldset', { class: 'ao-field ao-fieldset' }, el('legend', { class: 'ao-field__legend', text: 'Сложность' }), seg);
+    const inputs = [];
+    const TIPS = { easy: 'Для первого боя: у Регента на 30% меньше здоровья и урона', normal: 'Полная сила Регента' };
+    for (const [value, label] of DIFFICULTY_OPTIONS) {
+      const input = el('input', { type: 'radio', name, value, class: 'ao-seg__input' });
+      inputs.push(input);
+      seg.append(el('label', { class: 'ao-seg__opt', title: `${label}: ${TIPS[value]}` }, input, el('span', { class: 'ao-seg__label', text: label })));
+      listen(input, 'change', () => { if (input.checked) invoke('onSettings', { difficulty: value }); });
+    }
+    const ctl = {
+      sync(settings, force) {
+        if (!force && fs.contains(doc.activeElement)) return;
+        for (const i of inputs) { const on = i.value === settings.difficulty; if (i.checked !== on) i.checked = on; }
+      },
+    };
+    listen(fs, 'focusout', (e) => { if (!fs.contains(e.relatedTarget) && state.settings) ctl.sync(state.settings, true); });
+    controls.push(ctl);
+    return fs;
+  }
+
   function buildSettings(keys, prefix) {
     const wrap = el('div', { class: 'ao-settings' });
     for (const key of keys) {
@@ -1291,7 +1317,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
             toRaw: (v) => Math.round(v * 100), fromRaw: (r) => r / 100, format: (v) => `${v.toFixed(2).replace('.', ',')}×`,
           }),
         );
-      } else if (key === 'reducedMotion') wrap.append(buildMotion(prefix));
+      } else if (key === 'difficulty') wrap.append(buildDifficulty(prefix)); // [FEEL]
+      else if (key === 'reducedMotion') {
+        const mo = buildMotion(prefix), prev = wrap.lastElementChild;
+        // [FEEL] в одном ряду со «Сложностью» (меню не растёт по высоте)
+        if (prev && keys[keys.indexOf(key) - 1] === 'difficulty') { const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 22px;align-items:flex-end' }); wrap.replaceChild(row, prev); row.append(prev, mo); }
+        else wrap.append(mo);
+      }
     }
     return wrap;
   }
@@ -1342,7 +1374,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
       el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode'], 'menu')), // [НОВИЧОК] режим жестов — на виду
       buildHeroPick('menu'),
-      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'reducedMotion'], 'menu')),
+      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'difficulty', 'reducedMotion'], 'menu')),
       el('div', { class: 'ao-menu__foot' }, dbg, dbgKeys),
     );
     return {
@@ -2368,7 +2400,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   function resultScreen(kind) {
     const win_ = kind === 'victory';
     const hid = `${uid}-${kind}-h`;
-    const h = heading('h2', hid, win_ ? 'Регент повержен' : 'Вы пали', 'ao-h1');
+    const h = heading('h2', hid, win_ ? 'Регент повержен' : 'Хорошая попытка!', 'ao-h1');
     const summary = el('p', { class: 'ao-lead' });
     const rows = {};
     const stats = el('dl', { class: 'ao-stats' });
@@ -2389,7 +2421,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const tip = el('p', { class: 'ao-tip', hidden: true });
     // [ТВИСТ «ОШИБКА»] самая частая ошибка жеста за бой и как её исправить
     const coachTip = el('p', { class: 'ao-tip ao-tip--coach', hidden: true });
-    const again = btn('Сразиться снова', () => invoke('onRestart'), { variant: 'primary', size: 'lg' });
+    // [FEEL] поражение — дружелюбно: «Ещё раз» сразу, без упрёков
+    const again = btn(win_ ? 'Сразиться снова' : 'Ещё раз', () => invoke('onRestart'), { variant: 'primary', size: 'lg' });
     const oathR = btn('Клятва героя', () => invoke('onOath', { from: kind }));
     const exit = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
     const panel = el(
@@ -2432,14 +2465,17 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         if (win_) {
           const maxHp = Math.max(1, num(p.maxHp, 1));
           setText(rows.remain, `${Math.ceil(clamp(num(p.hp), 0, maxHp))} из ${Math.round(maxHp)}`);
-          setText(summary, num(st.damageTaken) === 0 ? 'Бой без единого пропущенного удара.' : 'Обет исполнен: страж больше не поднимется.');
+          setText(summary, `Победа за ${fmtClock(s.time)}. ${num(st.damageTaken) === 0 ? 'Бой без единого пропущенного удара.' : 'Обет исполнен: страж больше не поднимется.'}`);
           setHidden(tip, true);
         } else {
           const maxHp = Math.max(1e-6, num(b.maxHp, 1));
           const left = clamp(num(b.hp) / maxHp, 0, 1);
           setText(rows.remain, pct(left));
+          // [FEEL] дружелюбный итог: заголовок по прогрессу, совет про «Лёгкую» сложность
+          setText(h, left <= 0.5 ? 'Почти получилось!' : 'Хорошая попытка!');
           let text = `Регент устоял: у него осталось ${pct(left)} здоровья.`;
           if (b.stage === 2) text += ' Вы довели бой до второй стадии.';
+          text += ctx.settings.difficulty === 'normal' ? ' На «Лёгкой» сложности (меню → Настройки) Регент на 30% слабее.' : ' Новый бой — с полным здоровьем.';
           setText(summary, text);
           setText(tip, defeatTip(st, s));
           setHidden(tip, false);
@@ -2749,7 +2785,22 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       return { node, cd, time, name, hint };
     };
     const STATE_WORD = { ready: 'готово', active: 'активно', cooldown: 'перезарядка', low: 'мало энергии', off: 'недоступно' };
+    // [FEEL] вспышка плитки при срабатывании (переход в «активно» или из готовности в перезарядку)
+    // и короткий отблеск, когда перезарядка закончилась. CSS-анимация: «Уменьшенное движение» её гасит.
+    const flashTile = (t, cls) => {
+      for (const c of ['is-flash', 'is-ready']) { t.node.classList.remove(c); cancel(t[c]); t[c] = 0; } // одна вспышка за раз
+      void t.node.offsetWidth; // перезапуск анимации
+      t.node.classList.add(cls);
+      cancel(t[cls]);
+      t[cls] = later(() => t.node.classList.remove(cls), 520);
+    };
     const paintTile = (t, st, cdFrac, timeText) => {
+      const prev = t.state;
+      if (prev && prev !== st) {
+        if ((st === 'active' && prev !== 'active') || (st === 'cooldown' && (prev === 'ready' || prev === 'low'))) flashTile(t, 'is-flash');
+        else if (prev === 'cooldown' && st === 'ready') flashTile(t, 'is-ready');
+      }
+      t.state = st;
       setAttr(t.node, 'data-state', st);
       setStyle(t.node, '--ao-cd', cdFrac.toFixed(3));
       setText(t.time, timeText);
@@ -2921,7 +2972,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   function syncSettings(s) {
-    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}|${s.gestureMode}|${s.autoWalk}`; // [FOREST] + startZone, [НОВИЧОК] + жесты
+    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}|${s.gestureMode}|${s.autoWalk}|${s.difficulty}`; // [FOREST] + startZone, [НОВИЧОК] + жесты, [FEEL] + difficulty
     state.settings = s;
     if (key === state.settingsKey) return;
     state.settingsKey = key;
