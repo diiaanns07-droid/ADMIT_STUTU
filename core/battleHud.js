@@ -1381,6 +1381,10 @@ export function createBattleHud({ canvas } = {}) {
   }
 
   // [FEEL] «×5 КОМБО» крупно справа по центру: число растёт с серией, на ×5/×10/×15… — вспышка и «щелчок».
+  // [W4-UI] цифры Cinzel с градиентом по ступени серии, «КОМБО» капителью, полоска таймера с ромбом;
+  // «щелчок» — масштабом (шрифт и градиент не пересоздаются), строки — только при смене значения.
+  const comboCache = { tier: -1, base: 0, font: '', capFont: '', subFont: '', grad: null, n: -1, text: '', mul: -1, mulText: '' };
+  const COMBO_GRAD = [['#ffffff', '#dfe8f5', '#8e9bb0'], ['#fffaf0', '#f3dca0', '#b08a52'], ['#fffbe6', '#ffd24a', '#c87a10'], ['#ffe6c8', '#ff8a3c', '#b02a14']];
   function drawBigCombo(P, n, dtR, rm) {
     const x = W - 30, y = H * 0.36;
     if (n < comboMilestone) comboMilestone = 0;   // серия обнулилась без combo_break (новый раунд дуэли)
@@ -1388,34 +1392,51 @@ export function createBattleHud({ canvas } = {}) {
     if (n >= 2) {
       const tier = n >= 20 ? 3 : n >= 10 ? 2 : n >= 5 ? 1 : 0;
       const col = tier >= 3 ? EMBER : tier === 2 ? CRIT : tier === 1 ? GOLD_HI : STEEL;
-      const base = clamp(H * (0.07 + 0.012 * tier), 36, 78);
-      const s = rm ? 1 : 1 + Math.min(1.6, combo.pop) * 0.22;
-      const sz = Math.round(base * s);
-      ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
-      ctx.font = `800 ${sz}px ${SANS}`;
-      ctx.lineWidth = Math.max(3, sz * 0.12); ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-      const num_ = `×${n}`;
-      ctx.strokeText(num_, x, y + sz * 0.8);
-      if (tier) {   // подсветка без shadowBlur: комбо рисуется каждый кадр, размытие тени дорогое на слабой графике
-        ctx.globalAlpha *= 0.35; ctx.lineWidth = Math.max(6, sz * 0.22); ctx.strokeStyle = col;
-        ctx.strokeText(num_, x, y + sz * 0.8);
-        ctx.globalAlpha /= 0.35; ctx.lineWidth = Math.max(3, sz * 0.12); ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-        ctx.strokeText(num_, x, y + sz * 0.8);
+      const base = Math.round(clamp(H * (0.07 + 0.012 * tier), 36, 78));
+      const C = comboCache;
+      if (C.tier !== tier || C.base !== base) {
+        C.tier = tier; C.base = base;
+        C.font = `700 ${base}px ${NUM_FONT}`;
+        const ls = Math.round(clamp(base * 0.36, 15, 26));
+        C.ls = ls; C.capFont = `400 ${ls}px ${CAP_FONT}`; C.subFont = `700 ${Math.max(14, Math.round(ls * 0.62))}px ${SANS}`;
+        const g = ctx.createLinearGradient(0, -base * 0.72, 0, base * 0.04), c3 = COMBO_GRAD[tier];
+        g.addColorStop(0, c3[0]); g.addColorStop(0.5, c3[1]); g.addColorStop(1, c3[2]);
+        C.grad = g;
       }
-      ctx.fillStyle = col; ctx.fillText(num_, x, y + sz * 0.8);
-      const ls = Math.round(clamp(base * 0.36, 15, 26));
-      ctx.font = `800 ${ls}px ${SANS}`;
-      ctx.lineWidth = Math.max(2, ls * 0.18);
-      ctx.strokeText('КОМБО', x, y + sz * 0.8 + ls + 4);
-      ctx.fillStyle = col; ctx.fillText('КОМБО', x, y + sz * 0.8 + ls + 4);
-      ctx.font = `700 ${Math.round(ls * 0.62)}px ${SANS}`;
+      if (C.n !== n) { C.n = n; C.text = `×${n}`; }
+      const mul = num(P.comboMultiplier, 1);
+      if (C.mul !== mul) { C.mul = mul; C.mulText = `урон ×${mul.toFixed(2)}`; }
+      const sc = rm ? 1 : 1 + Math.min(1.6, combo.pop) * 0.22;
+      const yb = y + base * 0.8;
+      ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
+      ctx.save();
+      ctx.translate(x, yb); ctx.scale(sc, sc);
+      ctx.font = C.font;
+      if (tier) {   // подсветка без shadowBlur: широкий полупрозрачный контур цвета ступени
+        const a0 = ctx.globalAlpha;
+        ctx.globalAlpha = a0 * 0.32; ctx.lineWidth = Math.max(7, base * 0.26); ctx.strokeStyle = col;
+        ctx.strokeText(C.text, 0, 0);
+        ctx.globalAlpha = a0;
+      }
+      ctx.lineWidth = Math.max(4, base * 0.15); ctx.strokeStyle = 'rgba(6,4,2,0.9)';
+      ctx.strokeText(C.text, 0, 0);
+      ctx.fillStyle = C.grad; ctx.fillText(C.text, 0, 0);
+      ctx.restore();
+      ctx.font = C.capFont;
+      ctx.lineWidth = Math.max(3, C.ls * 0.2); ctx.strokeStyle = 'rgba(6,4,2,0.85)';
+      ctx.strokeText('КОМБО', x, yb + C.ls + 4);
+      ctx.fillStyle = col; ctx.fillText('КОМБО', x, yb + C.ls + 4);
+      ctx.font = C.subFont;
       ctx.fillStyle = STEEL;
-      const yl = y + sz * 0.8 + ls * 1.75 + 6;
-      ctx.lineWidth = 3; ctx.strokeText(`урон ×${num(P.comboMultiplier, 1).toFixed(2)}`, x, yl);
-      ctx.fillText(`урон ×${num(P.comboMultiplier, 1).toFixed(2)}`, x, yl);
-      const frac = clamp(num(P.comboTimer, 0) / 3, 0, 1), bw = 130;
-      ctx.fillStyle = 'rgba(223,232,245,0.22)'; ctx.fillRect(x - bw, yl + 6, bw, 4);
-      ctx.fillStyle = col; ctx.fillRect(x - bw * frac, yl + 6, bw * frac, 4);
+      const yl = yb + C.ls * 1.75 + 6;
+      ctx.lineWidth = 3; ctx.strokeText(C.mulText, x, yl);
+      ctx.fillText(C.mulText, x, yl);
+      // таймер серии: тёмная дорожка в бронзовой кромке, заливка цвета ступени, ромб на конце
+      const frac = clamp(num(P.comboTimer, 0) / 3, 0, 1), bw = 130, by = yl + 7;
+      ctx.fillStyle = 'rgba(8,6,5,0.8)'; ctx.fillRect(x - bw, by, bw, 5);
+      ctx.fillStyle = col; ctx.fillRect(x - bw * frac, by, bw * frac, 5);
+      ctx.strokeStyle = 'rgba(111,85,50,0.95)'; ctx.lineWidth = 1; ctx.strokeRect(x - bw - 0.5, by - 0.5, bw + 1, 6);
+      if (frac > 0.02) capDiamond(x - bw * frac, by + 2.5, 4.5);
       ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.lineJoin = 'miter';
     }
     if (combo.lost > 0.02 && combo.lostN >= 5) {

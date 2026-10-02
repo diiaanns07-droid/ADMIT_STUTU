@@ -5106,3 +5106,49 @@ html[data-ao-q='low'] .ao-hero.is-lowen .ao-bar--energy::before {
 .ao-ui.ao-reduced-motion .ao-ab:not([data-state='ready']):not([data-state='active'])::after {
   opacity: 0;
 }
+
+/* [W4-UI] невысокие окна (ноутбук 1280×720 и 1366×768 с панелями браузера): пауза, ошибка камеры и итоги
+   влезают без прокрутки — плотнее поля настроек, отступы рамки и строки кнопок; шрифт не мельче 14 px */
+@media (max-height: 740px) {
+  html.ao-bdo .ao-frame {
+    padding-top: 0.8rem;
+    padding-bottom: 0.8rem;
+  }
+  html.ao-bdo .ao-actions {
+    margin-top: 0.65rem;
+    padding-top: 0.6rem;
+  }
+  html.ao-bdo .ao-panel--pause .ao-settings {
+    gap: 0.45rem;
+  }
+  html.ao-bdo .ao-panel--pause .ao-field__legend {
+    margin-bottom: 0.2rem;
+  }
+  html.ao-bdo .ao-panel--pause .ao-range {
+    height: 1.15rem;
+  }
+  html.ao-bdo .ao-panel--pause .ao-col--media > .ao-slothost {
+    width: min(100%, calc(30vh * 4 / 3));
+  }
+  html.ao-bdo .ao-panel--pause .ao-debugkeys {
+    margin-top: 0.45rem;
+    line-height: 1.3;
+  }
+  html.ao-bdo .ao-errbox {
+    margin-top: 0.6rem;
+    padding: 0.5rem 0.9rem 0.55rem;
+  }
+  html.ao-bdo .ao-errbox__steps {
+    gap: 0.05rem;
+  }
+}
+@media (max-height: 800px) {
+  html.ao-bdo .ao-panel--pause .ao-settings {
+    gap: 0.55rem;
+  }
+}
+@media (max-height: 700px) {
+  html.ao-bdo .ao-frame {
+    border-image-width: 26px;
+  }
+}
