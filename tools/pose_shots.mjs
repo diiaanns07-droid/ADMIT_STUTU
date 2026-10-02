@@ -219,14 +219,17 @@ async function runBattle(page, onFrame = null, shots = true, list = BATTLE) {
 
 // ---------------------------------------------------------------- видео: витрина всех героев + каст-позы в бою
 async function runVideo(outFile) {
-  const FR = join(argOf('--tmp', tmpdir()), `pose_frames_${process.pid}`);
-  rmSync(FR, { recursive: true, force: true }); mkdirSync(FR, { recursive: true });
-  let n = 0;
+  // --frames-dir DIR --from N: дописать кадры после N в уже снятую папку (например, только бой: --skip-menu)
+  const FR = argOf('--frames-dir', join(argOf('--tmp', tmpdir()), `pose_frames_${process.pid}`));
+  if (!has('--frames-dir')) rmSync(FR, { recursive: true, force: true });
+  mkdirSync(FR, { recursive: true });
+  let n = Number(argOf('--from', '0'));
   const q = QS[0];
-  const { ctx, page } = await gamePage(q, { hero: HEROES[0] }, '&fury=100');
+  const skipMenu = has('--skip-menu');
+  const { ctx, page } = await gamePage(q, { hero: skipMenu ? argOf('--battle-hero', 'dark') : HEROES[0] }, '&fury=100');
   const grab = async () => { n++; await page.screenshot({ path: join(FR, `${String(n).padStart(5, '0')}.jpg`), type: 'jpeg', quality: 90 }); };
   const perHero = Number(argOf('--hero-frames', '36'));
-  for (const hero of HEROES) {
+  for (const hero of skipMenu ? [] : HEROES) {
     await page.evaluate(() => window.__kinoVirtual(false));
     await pickHero(page, hero);
     await page.evaluate(() => window.__kinoVirtual(true));
@@ -274,10 +277,12 @@ async function runPerf() {
     await page.evaluate(() => window.__kinoVirtual(true));
     await vstep(page, 30);
     report[q].gameMenu = await page.evaluate(() => window.__ASHEN__.renderInfo());
-    await page.evaluate(() => window.__kinoVirtual(false));
-    await toBattle(page);
-    await vstep(page, 30);
-    report[q].gameBattle = await page.evaluate(() => window.__ASHEN__.renderInfo());
+    if (!has('--no-battle')) {
+      await page.evaluate(() => window.__kinoVirtual(false));
+      await toBattle(page);
+      await vstep(page, 30);
+      report[q].gameBattle = await page.evaluate(() => window.__ASHEN__.renderInfo());
+    }
     log('perf game', q, JSON.stringify(report[q].gameMenu), JSON.stringify(report[q].gameBattle));
     await ctx.close();
   }
