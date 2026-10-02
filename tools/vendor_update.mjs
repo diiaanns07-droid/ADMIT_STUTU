@@ -39,6 +39,7 @@ export const THREE_ADDONS = [
   'postprocessing/GTAOPass.js',
   'postprocessing/SMAAPass.js',
   'postprocessing/BokehPass.js',
+  'postprocessing/Pass.js',          // [W3-КИНО] core/postfx.js: проход лучей high (Pass, FullScreenQuad)
   'libs/meshopt_decoder.module.js', // [LOAD] сжатые модели героев и деревни (EXT_meshopt_compression)
 ];
 // Только SIMD-сборки: worker берёт module-вариант, запасной режим в главном потоке — обычный.

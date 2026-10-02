@@ -7,6 +7,16 @@
  * Модуль вызывается из world.js: не рендерит кадр, не двигает камеру, не создаёт rAF.
  * Глобальные правки (ShaderChunk тумана, uniform-ы в ShaderLib, scene.environment)
  * возвращаются в исходное состояние в dispose().
+ *
+ * [W3-КИНО] Вторая фаза Регента — гроза над ареной:
+ *   look { red, dawn, dark, zone } — веса фаз для цвета кадра (core/postfx.js setLook), обновляются в update();
+ *   setPhaseBoost(k 0..1) — рывок багрового неба (modules/fx/bossFinale.js), пока фаза 2 не набрала вес сама;
+ *   setStormListener(fn(type, k)) — 'bolt' (сверкнула молния, k — яркость) и 'thunder' (гром дошёл, k — близость);
+ *     звук и отсвет на экране делает main.js;
+ *   storm — состояние для QA.
+ *   Все уровни: небо темнеет и краснеет снизу. medium/high: вихрь туч над ареной с «глазом» вокруг затмения,
+ *   молнии внутри туч с видимым разрядом и гром, низкая дымка у пола (одна InstancedMesh, только во второй фазе).
+ *   low — только цвет. reducedMotion — без молний (как и прежние далёкие вспышки).
  */
 
 const TAU = Math.PI * 2;
@@ -44,6 +54,20 @@ export const FOG = {
   baseY: 0,          // y0 — пол арены
   max: 0.97,
   glow: 1.0,
+};
+
+// [W3-КИНО] Гроза второй фазы: молния раз в gap с (делится на вес грозы), гром через delay с (дальняя — позже
+// и тише), дымка — карточки у пола в кольце арены r ∈ [rMin, rMax] м.
+export const STORM = {
+  gap: [4.5, 5],            // молния: 4,5 + 0..5 с
+  boltK: [0.75, 0.45],      // яркость: 0,75 + 0..0,45
+  boltEl: [0.45, 0.17],     // высота основания тучи (sin угла над горизонтом): над шпилями и стенами арены
+  boltYaw: 70,              // в пределах ±35° от взгляда камеры — в кадре
+  thunderDelay: [0.35, 2.2],// гром: 0,35 + 2,2·дальность с
+  thunderMax: 4,
+  minW: 0.4,                // молнии — когда гроза набрала вес
+  first: 0.9,               // первая молния — через столько с после этого
+  haze: { medium: 12, high: 20, rMin: 3, rMax: 12.5, w: [5, 3.5], h: [1.3, 0.8], k: 0.42 },
 };
 
 // [BDO] Настроение зоны (контракт с №5 [FOREST]): atmosphere.setZoneMood({ weight, sky, fog, sun, exposure }).
@@ -167,8 +191,18 @@ uniform vec3 uFlashDir;
 uniform float uBake;
 uniform vec3 uGround;
 uniform float uSunDisc;
+uniform float uStorm;     // [W3-КИНО] вес грозы 0..1
+uniform float uStormHQ;   // [W3-КИНО] 1 — тучи и разряд (medium/high), 0 — только цвет (low)
+uniform vec3 uStormCol;   // [W3-КИНО] отсвет лавы на брюхе туч
+uniform float uBolt;      // [W3-КИНО] молния грозы сейчас (0 — нет)
+uniform float uBoltSeed;  // [W3-КИНО] форма разряда
 varying vec3 vDir;
 ${NOISE_GLSL}
+float ashFbm4( vec2 p ) {
+  float s = 0.0, a = 0.5;
+  for ( int i = 0; i < 4; i ++ ) { s += a * ashVN( p ); p = p * 2.07 + vec2( 11.3, 5.7 ); a *= 0.5; }
+  return s / 0.9375;
+}
 void main() {
   vec3 d = normalize( vDir );
   float cs = dot( d, uSun );
@@ -193,6 +227,27 @@ void main() {
   col = mix( col, cloudCol, cm * 0.9 );
   float edge = clamp( cm * ( 1.0 - cm ) * 4.0, 0.0, 1.0 );
   col += uCorona * uCoronaI * edge * lit * 0.32;
+
+  // [W3-КИНО] Гроза: на всех уровнях небо темнеет и багровеет снизу; на medium/high — вихрь туч над ареной
+  // (поворот зависит только от радиуса — без шва по азимуту), над затмением — «глаз бури».
+  float sm = 0.0;
+  if ( uStorm > 0.002 ) {
+    float upW = smoothstep( -0.02, 0.25, el );
+    col = mix( col, col * vec3( 0.6, 0.42, 0.42 ) + uStormCol * 0.16 * ( 1.0 - smoothstep( 0.0, 0.5, el ) ), uStorm * 0.75 * upW );
+    if ( uStormHQ > 0.5 ) {
+      vec2 q = d.xz / ( max( el, 0.0 ) + 0.14 );
+      float sw = length( q ) * 0.22 - uTime * 0.035;
+      float swc = cos( sw ), sws = sin( sw );
+      q = mat2( swc, -sws, sws, swc ) * q;
+      float n = ashFbm4( q * 0.42 + vec2( uTime * 0.01, - uTime * 0.006 ) );
+      sm = smoothstep( 0.36, 0.7, n ) * smoothstep( 0.03, 0.2, el );
+      sm *= ( 1.0 - 0.9 * exp( - ( 1.0 - cs ) * 40.0 ) ) * uStorm;
+      float under = 1.0 - smoothstep( 0.05, 0.55, el );
+      vec3 sc = vec3( 0.018, 0.012, 0.014 ) + uStormCol * ( 0.1 + 0.32 * under ) * ( 0.5 + 0.5 * n );
+      sc += uCorona * uCoronaI * pow( max( cs, 0.0 ), 6.0 ) * 0.25;
+      col = mix( col, sc, sm * 0.92 );
+    }
+  }
 
   // Корона: лучи по полярному углу вокруг диска (бесшовно через точку на окружности).
   vec3 t1 = normalize( cross( uSun, vec3( 0.0, 1.0, 0.0 ) ) );
@@ -222,6 +277,20 @@ void main() {
   // Далёкая молния: облако вспыхивает изнутри.
   float fl = uFlash * exp( - ( 1.0 - dot( d, uFlashDir ) ) * 14.0 );
   col += ( cm * 1.6 + 0.2 ) * fl * vec3( 0.55, 0.62, 0.8 );
+  // [W3-КИНО] молния грозы: тучи вспыхивают шире, на medium/high — ломаный разряд от тучи к горизонту
+  if ( uBolt > 0.001 ) {
+    col += ( sm * 1.3 + 0.05 ) * uBolt * exp( - ( 1.0 - dot( d, uFlashDir ) ) * 24.0 ) * vec3( 0.7, 0.68, 0.95 );
+    if ( uStormHQ > 0.5 ) {
+      float baz = atan( d.x, d.z ) - atan( uFlashDir.x, uFlashDir.z );
+      baz = atan( sin( baz ), cos( baz ) );
+      float btop = uFlashDir.y + 0.04;
+      float bh = clamp( ( btop - el ) / max( btop, 0.05 ), 0.0, 1.0 );
+      float jag = ( ashVN( vec2( el * 34.0, uBoltSeed ) ) - 0.5 ) * 0.035 + ( ashVN( vec2( el * 140.0, uBoltSeed + 9.0 ) ) - 0.5 ) * 0.008;
+      float bdx = abs( baz * sqrt( max( 1.0 - el * el, 0.0 ) ) - jag - bh * bh * 0.02 );
+      float bon = step( 0.0, el ) * smoothstep( btop, btop - 0.02, el );
+      col += vec3( 0.85, 0.82, 1.0 ) * uBolt * bon * ( exp( - bdx / 0.0016 ) * 7.0 + exp( - bdx / 0.015 ) * 0.35 ) * ( 0.4 + 0.6 * bh );
+    }
+  }
 
   if ( uBake > 0.5 ) col = mix( col, uGround, smoothstep( 0.0, -0.2, el ) );
   gl_FragColor = vec4( col, 1.0 );
@@ -303,6 +372,49 @@ void main() {
   #include <colorspace_fragment>
 }`;
 
+/* ------------------------- [W3-КИНО] Дымка у пола ------------------------- */
+// Вертикальные карточки (поворот только вокруг Y), низ у пола, мягкие края; вблизи камеры гаснут.
+const HAZE_VERT = /* glsl */`
+attribute float aSeed;
+uniform float uTime;
+varying vec2 vUv;
+varying float vSeed;
+varying float vFade;
+void main() {
+  vUv = uv;
+  vSeed = aSeed;
+  vec3 c = ( modelMatrix * instanceMatrix * vec4( 0.0, 0.0, 0.0, 1.0 ) ).xyz;
+  float sx = length( instanceMatrix[ 0 ].xyz ), sy = length( instanceMatrix[ 1 ].xyz );
+  c.x += sin( uTime * 0.05 + aSeed * 6.2831 ) * 0.8;
+  c.z += cos( uTime * 0.04 + aSeed * 4.0 ) * 0.8;
+  vec3 toCam = cameraPosition - c;
+  vec3 side = normalize( vec3( toCam.z, 0.0, - toCam.x ) + vec3( 1e-4, 0.0, 0.0 ) );
+  vec3 wp = c + side * position.x * sx + vec3( 0.0, position.y * sy, 0.0 );
+  vFade = smoothstep( 1.8, 5.0, length( cameraPosition - wp ) );
+  gl_Position = projectionMatrix * viewMatrix * vec4( wp, 1.0 );
+}`;
+const HAZE_FRAG = /* glsl */`
+uniform float uTime;
+uniform float uHaze;
+uniform float uFlash;
+uniform vec3 uHazeCol;
+uniform vec3 uHazeLow;
+varying vec2 vUv;
+varying float vSeed;
+varying float vFade;
+${NOISE_GLSL}
+void main() {
+  float edge = smoothstep( 0.0, 0.28, vUv.x ) * smoothstep( 1.0, 0.72, vUv.x );
+  float vert = pow( 1.0 - vUv.y, 1.7 ) * smoothstep( 0.0, 0.08, vUv.y );
+  vec2 p = vec2( vUv.x * 2.6 + vSeed * 7.0 + uTime * 0.03, vUv.y * 1.4 - uTime * 0.02 );
+  float n = ashVN( p * 2.0 ) * 0.65 + ashVN( p * 5.1 ) * 0.35;
+  float a = edge * vert * ( 0.45 + 0.75 * n ) * uHaze * vFade;
+  vec3 c = mix( uHazeCol, uHazeLow, pow( 1.0 - vUv.y, 2.0 ) ) + vec3( 0.55, 0.6, 0.8 ) * uFlash * 0.35;
+  gl_FragColor = vec4( c, clamp( a, 0.0, 0.6 ) );
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+
 /* ============================== createAtmosphere ============================== */
 export function createAtmosphere({ THREE, scene, renderer, camera, parent, G, M, T, seed = 7331, reducedMotion = false, quality = 'medium' }) {
   const own = (x, f) => (f ? f(x) : x);
@@ -315,13 +427,19 @@ export function createAtmosphere({ THREE, scene, renderer, camera, parent, G, M,
     corona: col(0xb9c9e6), coronaRed: col(0xff6a4a), coronaDawn: col(0xffe2b8),
     key: col(0xb9c9e6), keyDawn: col(0xffd9a0),
     fogClear: col(0x3e5249),   // [ASHEN_V3] воздух эльфийской деревни: теплее и светлее (setLocalClear)
+    stormGlow: col(0xc8321c), hazeCol: col(0x2a1618), hazeLow: col(0x6a1c12),   // [W3-КИНО] гроза и дымка
   };
   const state = {
     disposed: false, reduced: !!reducedMotion, quality,
     orbit: 0, orbitPrev: null, follow: 0, followTarget: 0,
     red: 0, dawn: 0, dark: 0, flash: 0, flashT: 0, nextFlash: 14 + rnd() * 16, strike: 0, time: 0,
     clear: 0,          // [ASHEN_V3] 0..1 — местное прояснение (эльфийская деревня): туман реже и теплее
+    // [W3-КИНО] гроза второй фазы
+    boost: 0, storm: 0, stormOn: false, bolt: false, boltK: 0, nextBolt: 3, bolts: 0, listener: null,
   };
+  const thunder = [];   // [W3-КИНО] отложенный гром: { t, k } (ячейки создаются один раз)
+  for (let i = 0; i < STORM.thunderMax; i++) thunder.push({ t: -1, k: 0 });
+  const look = { red: 0, dawn: 0, dark: 0, zone: 0 };   // [W3-КИНО] для core/postfx.js setLook
   // [BDO] настроение зоны (setZoneMood): target — куда идём, w — сглаженный вес
   const mood = {
     target: 0, w: 0,
@@ -384,6 +502,7 @@ export function createAtmosphere({ THREE, scene, renderer, camera, parent, G, M,
     uCorona: { value: P.corona.clone() }, uCoronaI: { value: 1 }, uDiscR: { value: deg(ECLIPSE.discRadius) }, uBead: { value: 0 },
     uTime: { value: 0 }, uFlash: { value: 0 }, uFlashDir: { value: new THREE.Vector3(0, 0.2, -1).normalize() },
     uBake: { value: 0 }, uGround: { value: P.ground.clone() }, uSunDisc: { value: 0 },
+    uStorm: { value: 0 }, uStormHQ: { value: 0 }, uStormCol: { value: P.stormGlow.clone() }, uBolt: { value: 0 }, uBoltSeed: { value: 0 },   // [W3-КИНО]
   };
   const skyMat = Mx(new THREE.ShaderMaterial({
     uniforms: skyUniforms, vertexShader: SKY_VERT, fragmentShader: SKY_FRAG,
@@ -471,6 +590,39 @@ export function createAtmosphere({ THREE, scene, renderer, camera, parent, G, M,
     rayMeshes.push(m);
   }
   const raysBaseYaw = deg(ECLIPSE.azimuth - 180);
+
+  /* ---------------------- [W3-КИНО] Дымка у пола (фаза 2) ---------------------- */
+  // Одна InstancedMesh на high-запас карточек; medium рисует первые 12. В фазе 1 и на low скрыта (0 draw calls).
+  const H = STORM.haze;
+  const hazeGeo = new THREE.PlaneGeometry(1, 1);
+  hazeGeo.translate(0, 0.5, 0);
+  const hazeSeed = new Float32Array(H.high);
+  const hazeUniforms = {
+    uTime: skyUniforms.uTime, uHaze: { value: 0 }, uFlash: { value: 0 },
+    uHazeCol: { value: P.hazeCol.clone() }, uHazeLow: { value: P.hazeLow.clone() },
+  };
+  const hazeMat = Mx(new THREE.ShaderMaterial({
+    uniforms: hazeUniforms, vertexShader: HAZE_VERT, fragmentShader: HAZE_FRAG,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
+  }));
+  const haze = new THREE.InstancedMesh(Gx(hazeGeo), hazeMat, H.high);
+  {
+    const hr = mulberry32(seed + 1777), m4 = new THREE.Matrix4(), q0 = new THREE.Quaternion(), pos = new THREE.Vector3(), sc = new THREE.Vector3();
+    for (let i = 0; i < H.high; i++) {
+      const a = (i / H.high) * TAU + hr() * 0.5, r = Math.sqrt(lerp(H.rMin * H.rMin, H.rMax * H.rMax, hr()));
+      pos.set(Math.sin(a) * r, -0.1, Math.cos(a) * r);
+      sc.set(H.w[0] + hr() * H.w[1], H.h[0] + hr() * H.h[1], 1);
+      haze.setMatrixAt(i, m4.compose(pos, q0, sc));
+      hazeSeed[i] = hr();
+    }
+    haze.instanceMatrix.needsUpdate = true;
+  }
+  hazeGeo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(hazeSeed, 1));
+  haze.name = 'storm-haze';
+  haze.frustumCulled = false;
+  haze.renderOrder = 5;
+  haze.visible = false;
+  parent.add(haze);
 
   /* --------------------------- Rim и заполняющий свет --------------------------- */
   const keyView = { x: 0, y: 0, z: 1 };
@@ -609,7 +761,8 @@ varying vec3 vAshWorldPos;`;
     state.red += (redT - state.red) * dampK(0.5, dt);
     state.dawn += (dawnT - state.dawn) * dampK(0.35, dt);
     state.dark += (darkT - state.dark) * dampK(0.6, dt);
-    const cor = skyUniforms.uCorona.value.copy(P.corona).lerp(P.coronaRed, state.red * 0.85).lerp(P.coronaDawn, state.dawn);
+    const red = Math.max(state.red, state.boost);   // [W3-КИНО] рывок сцены перехода (bossFinale) — сразу
+    const cor = skyUniforms.uCorona.value.copy(P.corona).lerp(P.coronaRed, red * 0.85).lerp(P.coronaDawn, state.dawn);
     skyUniforms.uCoronaI.value = (1 + state.dawn * 1.6) * (1 - state.dark * 0.45);
     skyUniforms.uBead.value = state.dawn;
     skyUniforms.uDiscR.value = deg(ECLIPSE.discRadius) * (1 - state.dawn * 0.12);
@@ -619,11 +772,11 @@ varying vec3 vAshWorldPos;`;
     fog.color.copy(fb);
     scene.background && scene.background.isColor && scene.background.copy(fb);
     fogA.w = FOG.density * (1 - state.dawn * 0.5) * (1 - 0.45 * state.clear);
-    fogLow.w = state.red * 0.8 * (1 - state.dawn);
+    fogLow.w = red * 0.8 * (1 - state.dawn);
     skyUniforms.uFogLow.value.w = fogLow.w;
     rayUniforms.uColor.value.copy(cor).multiplyScalar(0.8).lerp(P.key, 0.4);
     rayUniforms.uIntensity.value = 0.085 * (1 + state.dawn * 1.5) * (1 - state.dark * 0.5);
-    rimGroups.boss.p.w = lerp(0.08, 0.35, state.red);
+    rimGroups.boss.p.w = lerp(0.08, 0.35, red);
 
     // [BDO] настроение зоны поверх фаз: небо, туман, ключ, IBL и экспозиция
     mood.w += (mood.target - mood.w) * dampK(state.reduced ? 2.4 : 1.35, dt);
@@ -663,27 +816,83 @@ varying vec3 vAshWorldPos;`;
         skyUniforms.uFlashDir.value.set(Math.sin(a), 0.08 + rnd() * 0.18, Math.cos(a)).normalize();
       }
     }
+    // [W3-КИНО] гроза второй фазы: вес, молнии, гром, дымка
+    const hq = state.quality !== 'low';
+    const stormT = red * (1 - state.dawn) * (1 - 0.5 * state.dark) * (1 - mw);
+    state.storm += (stormT - state.storm) * dampK(0.7, dt);
+    if (state.storm < 1e-3 && stormT === 0) state.storm = 0;
+    skyUniforms.uStorm.value = state.storm;
+    skyUniforms.uStormHQ.value = hq ? 1 : 0;
+    const stormOn = state.storm > STORM.minW;
+    if (stormOn && !state.stormOn) state.nextBolt = Math.min(state.nextBolt, STORM.first);   // первая — вскоре после рёва
+    state.stormOn = stormOn;
+    if (!state.reduced && hq && stormOn && state.flashT === 0) {
+      state.nextBolt -= dt;
+      if (state.nextBolt <= 0) strikeBolt();
+    }
+    for (const th of thunder) {
+      if (th.t < 0) continue;
+      th.t -= dt;
+      if (th.t <= 0) { th.t = -1; tell('thunder', th.k); }
+    }
+
     let fl = 0;
     if (state.flashT > 0) {
       state.flashT += dt;
       const ft = state.flashT;
       fl = Math.exp(-Math.pow((ft - 0.04) / 0.03, 2)) + 0.7 * Math.exp(-Math.pow((ft - 0.13) / 0.035, 2));
-      if (ft > 0.3) state.flashT = 0;
+      if (ft > 0.3) { state.flashT = 0; state.bolt = false; }
     }
-    skyUniforms.uFlash.value = fl * 1.4;
+    skyUniforms.uFlash.value = fl * (state.bolt ? 0.45 : 1.4);   // [W3-КИНО] у грозы свой отсвет туч (uBolt)
+    skyUniforms.uBolt.value = state.bolt ? fl * state.boltK : 0;
+    const hazeK = hq ? state.storm * STORM.haze.k : 0;
+    haze.visible = hazeK > 0.004;
+    hazeUniforms.uHaze.value = hazeK;
+    hazeUniforms.uFlash.value = state.bolt ? fl * state.boltK : 0;
     state.strike *= Math.exp(-dt / 0.06);
-    const keyCol = _keyCol.copy(P.key).lerp(P.coronaRed, state.red * 0.3).lerp(P.keyDawn, state.dawn).lerp(mood.sunColor, mw);
+    look.red = red; look.dawn = state.dawn; look.dark = state.dark; look.zone = mw;
+    const keyCol = _keyCol.copy(P.key).lerp(P.coronaRed, red * 0.3).lerp(P.keyDawn, state.dawn).lerp(mood.sunColor, mw);
     return {
       keyColor: keyCol,
       keyIntensity: 3.0 * (1 + state.dawn) * (1 - state.dark * 0.4) * lerp(1, mood.sunI, mw),
-      skyFlash: fl * 0.25 + state.strike * 0.4,
+      skyFlash: fl * (state.bolt ? 0.25 + 0.15 * state.boltK : 0.25) + state.strike * 0.4,
     };
   }
   const _keyCol = new THREE.Color();
 
+  // [W3-КИНО] молния грозы: перед камерой ±35°, основание тучи 0,45..0,62; гром — по дальности
+  const _cd = new THREE.Vector3();
+  function strikeBolt() {
+    const w = Math.max(0.5, state.storm);
+    state.nextBolt = (STORM.gap[0] + rnd() * STORM.gap[1]) / w;
+    state.flashT = 0.0001;
+    state.bolt = true;
+    state.bolts++;
+    state.boltK = STORM.boltK[0] + rnd() * STORM.boltK[1];
+    let yawC = 0;
+    if (camera) { camera.getWorldDirection(_cd); yawC = Math.atan2(_cd.x, _cd.z); }
+    const a = yawC + (rnd() - 0.5) * deg(STORM.boltYaw);
+    skyUniforms.uFlashDir.value.set(Math.sin(a), STORM.boltEl[0] + rnd() * STORM.boltEl[1], Math.cos(a)).normalize();
+    skyUniforms.uBoltSeed.value = rnd() * 100;
+    const far = rnd();
+    let slot = thunder[0];
+    for (const th of thunder) if (th.t < 0) { slot = th; break; }
+    slot.t = STORM.thunderDelay[0] + far * STORM.thunderDelay[1];
+    slot.k = (1 - 0.55 * far) * Math.min(1, state.boltK);
+    tell('bolt', state.boltK);
+  }
+  function tell(type, k) {
+    if (typeof state.listener !== 'function') return;
+    try { state.listener(type, k); } catch (e) { /* звук и отсвет не роняют небо */ }
+  }
+  // [W3-КИНО] публичное: рывок неба и слушатель грозы
+  function setPhaseBoost(k) { state.boost = clamp(Number.isFinite(+k) ? +k : 0, 0, 1); }
+  function setStormListener(fn) { state.listener = typeof fn === 'function' ? fn : null; }
+
   function setQuality(q) {
     state.quality = q;
     rayMeshes.forEach((m, i) => { m.visible = q === 'low' ? i < 2 : true; });
+    haze.count = q === 'high' ? STORM.haze.high : STORM.haze.medium;   // [W3-КИНО] на low скрыта в update
   }
   function configure(patch = {}) {
     if ('reducedMotion' in patch) state.reduced = !!patch.reducedMotion;
@@ -742,9 +951,11 @@ varying vec3 vAshWorldPos;`;
     if (renderer) renderer.toneMappingExposure = baseExposure;
     ZONE_MOOD_STATE.w = 0;
     if (envRT) envRT.dispose();
-    for (const o of [sky, sea, rays]) if (o.parent) o.parent.remove(o);
-    if (!G) { sky.geometry.dispose(); sea.geometry.dispose(); rayMeshes.forEach((m) => m.geometry.dispose()); }
-    if (!M) { skyMat.dispose(); seaMat.dispose(); rayMat.dispose(); }
+    for (const o of [sky, sea, rays, haze]) if (o.parent) o.parent.remove(o);
+    if (!G) { sky.geometry.dispose(); sea.geometry.dispose(); rayMeshes.forEach((m) => m.geometry.dispose()); hazeGeo.dispose(); }
+    if (!M) { skyMat.dispose(); seaMat.dispose(); rayMat.dispose(); hazeMat.dispose(); }
+    haze.dispose();   // [W3-КИНО] буфер матриц карточек
+    state.listener = null;
   }
 
   setQuality(quality);
@@ -753,5 +964,11 @@ varying vec3 vAshWorldPos;`;
     fogColor: fog.color, useEnv, releaseEnv, patchLit, patchUnlit, flash, update, setQuality, configure, dispose, setLocalClear,
     setZoneMood, get zoneMood() { return mood.w; },  // [BDO]
     get yaw() { return state.follow; },
+    look, setPhaseBoost, setStormListener,   // [W3-КИНО]
+    get storm() {
+      let pending = 0;
+      for (const th of thunder) if (th.t >= 0) pending++;
+      return { w: +state.storm.toFixed(3), boost: state.boost, bolts: state.bolts, nextBolt: +state.nextBolt.toFixed(2), thunder: pending, haze: haze.visible ? haze.count : 0, hq: state.quality !== 'low' };
+    },
   };
 }
