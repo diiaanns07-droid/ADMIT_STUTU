@@ -84,6 +84,7 @@ export const DEFAULT_SQUAT_CONFIG = Object.freeze({
   faultsBlock: true,     // повтор с ошибкой не засчитывается (Мастер)
   cleanBonus: 0,         // доп. очки за чистый повтор
   dropWeight: 0,         // доля оценки по опусканию таза (относительно корпуса) в угле
+  dropLeadDeg: 25,       // оценка по тазу не глубже оценки по бедру больше чем на столько (сдвиг кадра — не присед)
 });
 
 // [W3-SQUAT] Профили: «Мастер» — строгость как раньше; «Новичок» — мягче и без обязательных стоп.
@@ -325,8 +326,10 @@ export function createSquatCounter(userCfg) {
         const q = s.thighRef / s.torsoRef;   // бедро в длинах корпуса (стоя)
         const xRaw = ((hipY - s.hipY0) / s.torsoRef) / q;   // опускание таза в длинах бедра
         dropDeg = dropToThighDeg(ema('drop', xRaw));
-        th = (1 - cfg.dropWeight) * thighDeg + cfg.dropWeight * dropDeg;
-        thR = (1 - cfg.dropWeight) * thighRaw + cfg.dropWeight * dropToThighDeg(xRaw);
+        // таз «опустился», а бедро не согнулось — это сдвиг всего кадра (наклонили крышку ноутбука, качнули стол),
+        // а не присед: вклад таза — не дальше dropLeadDeg от показаний бедра
+        th = (1 - cfg.dropWeight) * thighDeg + cfg.dropWeight * Math.min(dropDeg, thighDeg + cfg.dropLeadDeg);
+        thR = (1 - cfg.dropWeight) * thighRaw + cfg.dropWeight * Math.min(dropToThighDeg(xRaw), thighRaw + cfg.dropLeadDeg);
       } else ema('drop', null);
       kneeDeg = 180 - th;
       kneeRaw = 180 - thR;

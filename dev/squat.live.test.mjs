@@ -76,6 +76,23 @@ test('Новичок: совсем мелко (бёдра 25–40°) — не п
   assert(idle.reps === 0 && idle.attempts === 0, 'переминается без приседаний: ' + fmt(idle));
 });
 
+test('Новичок: наклонили крышку ноутбука туда и обратно (кадр съехал на 6–20%), человек стоит — не повтор', () => {
+  for (const shift of [0.06, 0.12, 0.2]) for (const seed of [1, 2]) {
+    const S = simulateSquatSession({ seed, n: 0, reps: [], standS: 12, tailS: 0, ...TABLE, jitter: 0.02, hz: 15 });
+    const c = createSquatCounter({ mode: 'novice' });
+    const t0 = S.frames[0].tMs;
+    const u = (t) => Math.min(1, Math.max(0, (t - 4000) / 600)) - Math.min(1, Math.max(0, (t - 7000) / 600));
+    let deep = false;
+    for (const f of S.frames) {
+      const k = u(f.tMs - t0);
+      c.push({ ...f, landmarks: f.landmarks.map((p) => (p ? { ...p, y: p.y + shift * k } : null)) });
+      if (c.read().phase === 'bottom') deep = true;
+    }
+    const r = c.read();
+    assert(r.reps === 0 && !deep, `сдвиг ${shift}, seed ${seed}: ${JSON.stringify({ reps: r.reps, attempts: r.attempts, deep })}`);
+  }
+});
+
 // ───────── «Мастер»: строгость как раньше ─────────
 test('Мастер: ноутбук на столе (стопы за кадром) — не считаем, просим «до стоп»', () => {
   const s = session('master', { ...TABLE, jitter: 0.02, hz: 15, reps: 'clean' });
