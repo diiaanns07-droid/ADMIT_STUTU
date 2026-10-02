@@ -1139,6 +1139,7 @@ export function createHeroModel({
       return;
     }
     S.inMenu = false;
+    pose.bowCarry = 0;   // [W4-ПОЗЫ] лук «у плеча» — только на витрине и в победе
     const status = snap.status || 'playing';
     const yaw = root.rotation.y;
     const W = cur.model;

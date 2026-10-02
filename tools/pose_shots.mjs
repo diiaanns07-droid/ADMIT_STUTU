@@ -134,6 +134,15 @@ const vstep = (page, n = 1) => page.evaluate((n) => { for (let i = 0; i < n; i++
 async function pickHero(page, id) {
   await page.evaluate((id) => { const el = document.querySelector(`input.ao-herocard__input[value="${id}"]`); if (el && !el.checked) el.click(); }, id);
   await page.waitForFunction((id) => { const h = window.__ASHEN__.hero(); return h && h.ready && h.hero === id; }, id, { timeout: 180000 });
+  // шейдеры нового героя компилируются параллельно (на программном рендере — десятки секунд): пока число
+  // программ не устоится, кадр может выйти чёрным — ждём по настоящим часам, понемногу рисуя кадры
+  let last = -1, same = 0;
+  for (let i = 0; i < 60 && same < 3; i++) {
+    await page.evaluate(() => { if (window.__kinoStep) window.__kinoStep(1000 / 30); });
+    await sleep(1500);
+    const n = await page.evaluate(() => window.__ASHEN__.programs().length);
+    same = n === last ? same + 1 : 0; last = n;
+  }
 }
 async function runMenu() {
   const frames = Number(argOf('--frames', '150'));
@@ -178,8 +187,18 @@ const BATTLE = [
   ['down', 'KeyG', 40], ['up', 'KeyG', 10], ['shot', 'b_pillar'], ['wait', 40],
   ['tap', 'KeyU', 30], ['shot', 'b_ultimate'], ['wait', 100],
 ];
-async function runBattle(page, onFrame = null, shots = true) {
-  for (const s of BATTLE) {
+// видео: короче (≈ 9 с) — печати первыми (энергия), «Небесный суд» в конце (облёт камеры спереди)
+const VIDEO_BATTLE = [
+  ['down', 'KeyX', 30], ['up', 'KeyX', 26],
+  ['down', 'KeyG', 30], ['up', 'KeyG', 26],
+  ['down', 'KeyK', 24], ['up', 'KeyK', 6],
+  ['down', 'KeyJ', 20], ['up', 'KeyJ', 8],
+  ['tap', 'KeyL', 26],
+  ['down', 'KeyO', 30], ['up', 'KeyO', 16],
+  ['tap', 'KeyU', 70],
+];
+async function runBattle(page, onFrame = null, shots = true, list = BATTLE) {
+  for (const s of list) {
     if (s[0] === 'shot') { if (shots) await page.screenshot({ path: join(OUT, `${TAG}${s[1]}.png`) }); continue; }
     if (s[0] === 'down') await page.keyboard.down(s[1]);
     else if (s[0] === 'up') await page.keyboard.up(s[1]);
@@ -197,7 +216,7 @@ async function runVideo(outFile) {
   const q = QS[0];
   const { ctx, page } = await gamePage(q, { hero: HEROES[0] }, '&fury=100');
   const grab = async () => { n++; await page.screenshot({ path: join(FR, `${String(n).padStart(5, '0')}.jpg`), type: 'jpeg', quality: 90 }); };
-  const perHero = Number(argOf('--hero-frames', '48'));
+  const perHero = Number(argOf('--hero-frames', '36'));
   for (const hero of HEROES) {
     await page.evaluate(() => window.__kinoVirtual(false));
     await pickHero(page, hero);
@@ -210,7 +229,7 @@ async function runVideo(outFile) {
   await pickHero(page, argOf('--battle-hero', 'dark'));
   await toBattle(page);
   for (let i = 0; i < 20; i++) await vstep(page, 1);
-  await runBattle(page, grab, false);
+  await runBattle(page, grab, false, VIDEO_BATTLE);
   log('video battle', n);
   await ctx.close();
   mkdirSync(dirname(outFile), { recursive: true });
