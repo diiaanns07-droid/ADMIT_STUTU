@@ -47,25 +47,18 @@ const STYLES = {
 };
 
 // ---------------------------------------------------------------- атлас прядей (кэш)
-// RGB — яркость волоска (серый), A — покрытие. Столбцы по u: 0 — плотные пряди, 1 — пучки с просветами,
-// 2 — отдельные волоски, 3 — ровный срез на v ≈ 0.93. По v: 0 — корень, 1 — кончик (flipY выключен).
-const atlasData = {};   // N → Uint8Array (рисунок; переживает смену героя)
-const atlasTex = {};    // N → { tex, refs }
+// RGB — яркость волоска (серый, линейная), A — покрытие. Столбцы по u: 0 — плотные пряди, 1 — пучки
+// с просветами, 2 — отдельные волоски, 3 — ровный срез на v ≈ 0.93. По v: 0 — корень, 1 — кончик (flipY
+// выключен). Текстура — прямо с холста, в предумноженной альфе (пиксели с холста не читаются: это сотни мс
+// на главном потоке): фильтрация и мип-уровни без тёмной каймы, шейдер делит цвет на альфу.
+const atlasCanvas = {};   // N → готовый холст (рисунок переживает смену героя)
+const atlasTex = {};      // N → { tex, refs }
 const CUT_V = 0.93;     // где у столбца «ровный срез» кончаются пряди
-function drawAtlas(N) {
-  if (atlasData[N]) return atlasData[N];
-  // уменьшенный атлас — из уже нарисованного большого (рамка 2×2): смена качества в бою (perfTuner) не рисует
-  // атлас заново (~0,2 с на главном потоке)
-  const big = atlasData[N * 2];
-  if (big) {
-    const d = new Uint8Array(N * N * 4), M = N * 2;
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-      const o = (y * N + x) * 4, i0 = (y * 2 * M + x * 2) * 4, i1 = i0 + M * 4;
-      for (let c = 0; c < 4; c++) d[o + c] = (big[i0 + c] + big[i0 + 4 + c] + big[i1 + c] + big[i1 + 4 + c] + 2) >> 2;
-    }
-    atlasData[N] = d;
-    return d;
-  }
+// Рисование разбито на шаги (столбцы атласа, затем выборка пикселей): warmHairAtlas выполняет их в простое
+// главного потока (requestIdleCallback), drawAtlas — дорисовывает оставшиеся сразу, если атлас нужен раньше.
+const atlasJobs = {};   // N → { steps, i }
+function atlasJob(N) {
+  if (atlasJobs[N]) return atlasJobs[N];
   if (typeof document === 'undefined') return null;
   const cv = document.createElement('canvas');
   cv.width = cv.height = N;
@@ -74,17 +67,23 @@ function drawAtlas(N) {
   const k = N / 1024, C = N / 4;
   let sd = 20240611;
   const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
-  g.lineCap = 'round';
-  // волосок: от (x0, y0) до (x1, y1) с плавным изгибом; к кончику (последние tip доли) тоньше и прозрачнее
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  // яркость волоска — в линейном пространстве (текстура без sRGB: предумноженная альфа и sRGB плохо дружат)
+  const lin = (l) => Math.round(Math.pow(Math.min(1, Math.max(0, l)), 2.2) * 255);
+  // волосок: от (x0, y0) до (x1, y1) с плавным изгибом; тело — один путь, к кончику (последние tip доли)
+  // тоньше и прозрачнее — три коротких штриха
   const hair = (x0, y0, x1, y1, w, l, a, sway, tip = 0.3) => {
-    const n = 12, ph = rnd() * 6.28, fr = 0.5 + rnd() * 1.2;
-    let px = x0, py = y0;
-    const v = Math.round(Math.min(1, l) * 255);
-    for (let i = 1; i <= n; i++) {
-      const t = i / n, tm = (i - 0.5) / n;
-      const x = x0 + (x1 - x0) * t + Math.sin(ph + t * fr * 3.1) * sway * Math.min(1, t * 2);
-      const y = y0 + (y1 - y0) * t;
-      const f = tm > 1 - tip ? Math.max(0.08, (1 - tm) / tip) : 1;
+    const n = 12, ph = rnd() * 6.28, fr = 0.5 + rnd() * 1.2, v = lin(l);
+    const at = (t) => [x0 + (x1 - x0) * t + Math.sin(ph + t * fr * 3.1) * sway * Math.min(1, t * 2), y0 + (y1 - y0) * t];
+    const tb = 1 - tip, nb = Math.max(1, Math.round(n * tb));
+    g.strokeStyle = `rgba(${v},${v},${v},${a.toFixed(3)})`; g.lineWidth = Math.max(0.55, w);
+    g.beginPath(); g.moveTo(x0, y0);
+    for (let i = 1; i <= nb; i++) { const [x, y] = at((i / nb) * tb); g.lineTo(x, y); }
+    g.stroke();
+    let [px, py] = at(tb);
+    for (let i = 1; i <= 3; i++) {
+      const t = tb + (tip * i) / 3, f = Math.max(0.08, 1 - (i - 0.5) / 3);
+      const [x, y] = at(t);
       g.strokeStyle = `rgba(${v},${v},${v},${(a * (0.25 + 0.75 * f)).toFixed(3)})`;
       g.lineWidth = Math.max(0.55, w * (0.3 + 0.7 * f));
       g.beginPath(); g.moveTo(px, py); g.lineTo(x, y); g.stroke();
@@ -99,100 +98,112 @@ function drawAtlas(N) {
     for (let x = Math.round(u0 * C); x < Math.round(u1 * C); x += step) {
       const u = (x / C - u0) / (u1 - u0), e = sm(0, edge, u) * sm(1, 1 - edge, u);
       if (rnd() > 0.35 + 0.65 * e) continue;
-      const a = (0.55 + 0.45 * e) * (0.75 + 0.25 * rnd()), y1 = yEnd(u) * N, vv = Math.round(lum * (0.88 + 0.24 * rnd()) * 255);
+      const a = (0.55 + 0.45 * e) * (0.75 + 0.25 * rnd()), y1 = yEnd(u) * N, vv = lin(lum * (0.88 + 0.24 * rnd()));
       const gr = g.createLinearGradient(0, 0, 0, y1);
       gr.addColorStop(0, `rgba(${vv},${vv},${vv},${a})`); gr.addColorStop(0.8, `rgba(${vv},${vv},${vv},${a})`); gr.addColorStop(1, `rgba(${vv},${vv},${vv},0)`);
       g.fillStyle = gr; g.fillRect(c0 + x, 0, step, y1);
     }
   };
-  // 0: плотные пряди (нижний слой, объём)
-  under(0, 0.04, 0.96, () => 0.66 + 0.24 * rnd(), 0.62, 0.3);
-  for (let i = 0; i < 700; i++) {
-    const u = 0.5 + (rnd() - 0.5) * (0.5 + 0.48 * rnd()), x0 = u * C, y1 = N * (0.6 + 0.39 * rnd());
-    hair(x0, -2, x0 + (rnd() - 0.5) * 12 * k, y1, (0.8 + 1.1 * rnd()) * k, 0.55 + 0.4 * rnd(), 0.2 + 0.45 * rnd(), (rnd() - 0.5) * 9 * k, 0.35);
-  }
-  // 1: пучки — 4 широких пучка, у корней сливаются, сужаются только к своим кончикам
-  {
-    const c0 = C;
-    for (let p = 0; p < 4; p++) {
-      const cx = C * (0.14 + 0.24 * p + (rnd() - 0.5) * 0.04), hw = C * (0.16 + 0.03 * rnd());
-      const tipY = 0.74 + 0.24 * rnd(), body = tipY * (0.45 + 0.15 * rnd()), tipX = cx + (rnd() - 0.5) * C * 0.05, cl = 0.85 + 0.3 * rnd();
-      const halfW = (y) => (y < body ? hw : hw * Math.pow(Math.max(0, 1 - (y - body) / (tipY - body)), 0.75));
-      // сердцевина пучка
-      for (let x = -hw; x < hw; x += step) {
-        if (rnd() > 0.85) continue;
-        const ux = x / hw;
-        let yE = body;
-        while (yE < tipY && Math.abs(x) < halfW(yE) * 0.8) yE += 0.004;
-        const vv = Math.round(0.6 * cl * (0.85 + 0.25 * rnd()) * 255), a = 0.85 * (1 - 0.3 * ux * ux);
-        const gr = g.createLinearGradient(0, 0, 0, yE * N);
-        gr.addColorStop(0, `rgba(${vv},${vv},${vv},${a})`); gr.addColorStop(0.85, `rgba(${vv},${vv},${vv},${a})`); gr.addColorStop(1, `rgba(${vv},${vv},${vv},0)`);
-        g.fillStyle = gr; g.fillRect(c0 + cx + x + (tipX - cx) * 0, 0, step, yE * N);
+  const steps = [
+    // 0: плотные пряди (нижний слой, объём)
+    () => {
+      under(0, 0.04, 0.96, () => 0.66 + 0.24 * rnd(), 0.62, 0.3);
+      for (let i = 0; i < 700; i++) {
+        const u = 0.5 + (rnd() - 0.5) * (0.5 + 0.48 * rnd()), x0 = u * C, y1 = N * (0.6 + 0.39 * rnd());
+        hair(x0, -2, x0 + (rnd() - 0.5) * 12 * k, y1, (0.8 + 1.1 * rnd()) * k, 0.55 + 0.4 * rnd(), 0.2 + 0.45 * rnd(), (rnd() - 0.5) * 9 * k, 0.35);
       }
-      // волоски пучка: от корня (по всей ширине) к кончику пучка
-      for (let i = 0; i < 150; i++) {
-        const ux = (rnd() - 0.5) * 2, x0 = cx + ux * hw * 1.05;
-        const len = tipY * (0.7 + 0.32 * rnd()), x1 = tipX + ux * halfW(len) + (rnd() - 0.5) * 3 * k;
-        hair(c0 + x0, -2, c0 + x1, len * N, (0.8 + 1.0 * rnd()) * k, cl * (0.5 + 0.45 * rnd()), 0.35 + 0.45 * rnd(), (rnd() - 0.5) * 8 * k, 0.4);
+    },
+    // 1: пучки — 4 широких пучка, у корней сливаются, сужаются только к своим кончикам
+    () => {
+      const c0 = C;
+      for (let p = 0; p < 4; p++) {
+        const cx = C * (0.14 + 0.24 * p + (rnd() - 0.5) * 0.04), hw = C * (0.16 + 0.03 * rnd());
+        const tipY = 0.74 + 0.24 * rnd(), body = tipY * (0.45 + 0.15 * rnd()), tipX = cx + (rnd() - 0.5) * C * 0.05, cl = 0.85 + 0.3 * rnd();
+        const halfW = (y) => (y < body ? hw : hw * Math.pow(Math.max(0, 1 - (y - body) / (tipY - body)), 0.75));
+        // сердцевина пучка
+        for (let x = -hw; x < hw; x += step) {
+          if (rnd() > 0.85) continue;
+          const ux = x / hw;
+          let yE = body;
+          while (yE < tipY && Math.abs(x) < halfW(yE) * 0.8) yE += 0.004;
+          const vv = lin(0.6 * cl * (0.85 + 0.25 * rnd())), a = 0.85 * (1 - 0.3 * ux * ux);
+          const gr = g.createLinearGradient(0, 0, 0, yE * N);
+          gr.addColorStop(0, `rgba(${vv},${vv},${vv},${a})`); gr.addColorStop(0.85, `rgba(${vv},${vv},${vv},${a})`); gr.addColorStop(1, `rgba(${vv},${vv},${vv},0)`);
+          g.fillStyle = gr; g.fillRect(c0 + cx + x, 0, step, yE * N);
+        }
+        // волоски пучка: от корня (по всей ширине) к кончику пучка
+        for (let i = 0; i < 150; i++) {
+          const ux = (rnd() - 0.5) * 2, x0 = cx + ux * hw * 1.05;
+          const len = tipY * (0.7 + 0.32 * rnd()), x1 = tipX + ux * halfW(len) + (rnd() - 0.5) * 3 * k;
+          hair(c0 + x0, -2, c0 + x1, len * N, (0.8 + 1.0 * rnd()) * k, cl * (0.5 + 0.45 * rnd()), 0.35 + 0.45 * rnd(), (rnd() - 0.5) * 8 * k, 0.4);
+        }
       }
-    }
-    for (let i = 0; i < 30; i++) { const x0 = c0 + C * (0.05 + 0.9 * rnd()); hair(x0, -2, x0 + (rnd() - 0.5) * 24 * k, N * (0.4 + 0.55 * rnd()), (0.7 + 0.6 * rnd()) * k, 0.45 + 0.6 * rnd(), 0.5 + 0.4 * rnd(), 10 * k, 0.5); }
-  }
-  // 2: отдельные волоски и тонкие пучки по 3–6 (выбившиеся пряди)
-  for (let b = 0; b < 12; b++) {
-    const x0 = 2 * C + C * (0.08 + 0.84 * rnd()), x1 = x0 + (rnd() - 0.5) * C * 0.3, len = N * (0.5 + 0.47 * rnd()), sw = (rnd() - 0.5) * 22 * k;
-    const n = 3 + Math.floor(rnd() * 4);
-    for (let i = 0; i < n; i++) hair(x0 + (rnd() - 0.5) * 5 * k, -2, x1 + (rnd() - 0.5) * 7 * k, len * (0.8 + 0.2 * rnd()), (0.9 + 1.3 * rnd()) * k, 0.4 + 0.65 * rnd(), 0.75 + 0.25 * rnd(), sw, 0.45);
-  }
-  // 3: ровный срез на CUT_V (чёлка и боковые пряди «химэ»): почти прямая линия, разброс — в волосок
-  {
-    const c0 = 3 * C;
-    under(c0, 0.03, 0.97, () => CUT_V - 0.004 * rnd(), 0.62, 0.18);
-    for (let i = 0; i < 760; i++) {
-      const u = 0.5 + (rnd() - 0.5) * 0.94, x0 = c0 + u * C;
-      hair(x0, -2, x0 + (rnd() - 0.5) * 3 * k, (CUT_V + 0.006 * (rnd() - 0.5)) * N, (0.8 + 1.1 * rnd()) * k, 0.5 + 0.45 * rnd(), 0.3 + 0.45 * rnd(), (rnd() - 0.5) * 2.5 * k, 0.03);
-    }
-  }
-  const im = g.getImageData(0, 0, N, N), d = im.data;
-  // яркость волосков слегка размыта поперёк (±2 текселя на 1024): пряди мягче, без «шлифованного металла»;
-  // покрытие (альфа) — как нарисовано
-  {
-    const R = Math.max(1, Math.round(2 * k)), row = new Float32Array(N), wgt = new Float32Array(N);
-    for (let y = 0; y < N; y++) {
-      for (let x = 0; x < N; x++) { const i = (y * N + x) * 4, a = d[i + 3] / 255; row[x] = d[i] * a; wgt[x] = a; }
-      for (let x = 0; x < N; x++) {
-        const t0 = Math.floor(x / C) * C;
-        let s = 0, w = 0;
-        for (let dx = -R; dx <= R; dx++) { const xx = Math.min(t0 + C - 1, Math.max(t0, x + dx)); s += row[xx]; w += wgt[xx]; }
-        const i = (y * N + x) * 4;
-        if (w > 1e-3) d[i] = d[i + 1] = d[i + 2] = Math.round(s / w);
+      for (let i = 0; i < 30; i++) { const x0 = c0 + C * (0.05 + 0.9 * rnd()); hair(x0, -2, x0 + (rnd() - 0.5) * 24 * k, N * (0.4 + 0.55 * rnd()), (0.7 + 0.6 * rnd()) * k, 0.45 + 0.6 * rnd(), 0.5 + 0.4 * rnd(), 10 * k, 0.5); }
+    },
+    // 2: отдельные волоски и тонкие пучки по 3–6 (выбившиеся пряди)
+    () => {
+      for (let b = 0; b < 12; b++) {
+        const x0 = 2 * C + C * (0.08 + 0.84 * rnd()), x1 = x0 + (rnd() - 0.5) * C * 0.3, len = N * (0.5 + 0.47 * rnd()), sw = (rnd() - 0.5) * 22 * k;
+        const n = 3 + Math.floor(rnd() * 4);
+        for (let i = 0; i < n; i++) hair(x0 + (rnd() - 0.5) * 5 * k, -2, x1 + (rnd() - 0.5) * 7 * k, len * (0.8 + 0.2 * rnd()), (0.9 + 1.3 * rnd()) * k, 0.4 + 0.65 * rnd(), 0.75 + 0.25 * rnd(), sw, 0.45);
       }
-    }
-  }
-  // прозрачные текселы — серые (а не чёрные): мип-уровни не темнят кромку прядей
-  for (let i = 0; i < d.length; i += 4) {
-    const a = d[i + 3];
-    if (a < 250) { const f = a / 255; const v = d[i] * f + 128 * (1 - f); d[i] = d[i + 1] = d[i + 2] = v; }
-  }
-  atlasData[N] = new Uint8Array(d.buffer.slice(0));
-  return atlasData[N];
+    },
+    // 3: ровный срез на CUT_V (чёлка и боковые пряди «химэ»): почти прямая линия, разброс — в волосок
+    () => {
+      const c0 = 3 * C;
+      under(c0, 0.03, 0.97, () => CUT_V - 0.004 * rnd(), 0.62, 0.18);
+      for (let i = 0; i < 760; i++) {
+        const u = 0.5 + (rnd() - 0.5) * 0.94, x0 = c0 + u * C;
+        hair(x0, -2, x0 + (rnd() - 0.5) * 3 * k, (CUT_V + 0.006 * (rnd() - 0.5)) * N, (0.8 + 1.1 * rnd()) * k, 0.5 + 0.45 * rnd(), 0.3 + 0.45 * rnd(), (rnd() - 0.5) * 2.5 * k, 0.03);
+      }
+    },
+    // готово: холст и есть атлас (без чтения пикселей)
+    () => { atlasCanvas[N] = cv; },
+  ];
+  atlasJobs[N] = { steps, i: 0 };
+  return atlasJobs[N];
 }
-// QA: рисунок атласа (RGBA, N×N) — для стенда и снимков
-export function hairAtlasData(N = 1024) { return drawAtlas(N); }
+function drawAtlas(N) {
+  if (atlasCanvas[N]) return atlasCanvas[N];
+  // рисуется сразу (оставшиеся шаги, если начат в простое): 512² — ~20 мс, 1024² — ~40 мс
+  const job = atlasJob(N);
+  if (!job) return null;
+  while (job.i < job.steps.length) job.steps[job.i++]();
+  delete atlasJobs[N];
+  return atlasCanvas[N] || null;
+}
+// Атлас 1024² — заранее, по шагу в простое главного потока (модуль грузится вместе с оболочкой героя, ещё
+// до одевания): первая героиня одевается без рисования холста. Без requestIdleCallback — ничего не делаем.
+export function warmHairAtlas(N = 1024) {
+  if (atlasCanvas[N] || typeof requestIdleCallback !== 'function') return;
+  const job = atlasJob(N);
+  if (!job) return;
+  const tick = () => {
+    if (atlasCanvas[N] || atlasJobs[N] !== job) return;   // уже дорисовал drawAtlas
+    job.steps[job.i++]();
+    if (job.i < job.steps.length) requestIdleCallback(tick, { timeout: 3000 });
+    else delete atlasJobs[N];
+  };
+  requestIdleCallback(tick, { timeout: 3000 });
+}
+if (typeof window !== 'undefined' && typeof requestIdleCallback === 'function') requestIdleCallback(() => warmHairAtlas(1024), { timeout: 5000 });
+// QA: рисунок атласа (RGBA, N×N, предумноженный) — для стенда и снимков (читает пиксели — только для QA)
+export function hairAtlasData(N = 1024) { const cv = drawAtlas(N); return cv ? cv.getContext('2d').getImageData(0, 0, N, N).data : null; }
 function acquireAtlas(THREE, N) {
   const e = atlasTex[N];
   if (e) { e.refs++; return e.tex; }
-  const data = drawAtlas(N);
+  const cv = drawAtlas(N);
   let tex;
-  if (data) {
-    tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
+  if (cv) {
+    tex = new THREE.CanvasTexture(cv);
+    tex.premultiplyAlpha = true;
     tex.generateMipmaps = true; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
   } else {
-    // без document (node-тесты): белая непрозрачная клетка
-    tex = new THREE.DataTexture(new Uint8Array([200, 200, 200, 255]), 1, 1, THREE.RGBAFormat);
+    // без document (node-тесты) или холста: светлая непрозрачная клетка
+    tex = new THREE.DataTexture(new Uint8Array([140, 140, 140, 255]), 1, 1, THREE.RGBAFormat);
   }
   tex.flipY = false; tex.wrapS = THREE.ClampToEdgeWrapping; tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4; tex.name = 'hair-atlas-' + N;
+  tex.colorSpace = THREE.NoColorSpace; tex.anisotropy = 4; tex.name = 'hair-atlas-' + N;
   tex.needsUpdate = true;
   atlasTex[N] = { tex, refs: 1 };
   return tex;
@@ -273,6 +284,11 @@ function patchAlpha(mat, N, soft, cut) {
   mat.onBeforeCompile = (sh, r) => {
     if (prev) prev.call(mat, sh, r);
     sh.fragmentShader = sh.fragmentShader
+      .replace('#include <map_fragment>', `#include <map_fragment>
+  #ifdef USE_MAP
+  // атлас в предумноженной альфе: цвет волоска — без неё
+  { float hA = max( sampledDiffuseColor.a, 0.004 ); diffuseColor.rgb /= hA; sampledDiffuseColor.rgb /= hA; }
+  #endif`)
       .replace('#include <alphatest_fragment>', `
   #ifdef USE_MAP
   {
