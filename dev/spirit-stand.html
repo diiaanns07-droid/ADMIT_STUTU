@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHEN OATH — [W3-SPIRIT] стенд духа игрока</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #07080b; color: #cfd6e2; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; overflow: hidden; }
+  canvas#gl { display: block; position: fixed; inset: 0; width: 100%; height: 100%; }
+  #hud { position: fixed; left: 8px; top: 8px; padding: 8px 10px; background: rgba(8, 10, 14, 0.72); border: 1px solid #2c3444; border-radius: 6px; max-width: 520px; white-space: pre-wrap; pointer-events: none; }
+  /* слот превью как в ui.css (.ao-camera-slot): видео и холсты — absolute, inset 0, contain */
+  #slot { position: fixed; right: 16px; bottom: 16px; width: 520px; height: 390px; overflow: hidden; border: 1px solid #3a4458; background: #000; }
+  #slot > canvas, #slot > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
+  body.frame-only #slot { left: 50%; top: 50%; right: auto; bottom: auto; transform: translate(-50%, -50%); width: 820px; height: 615px; }
+  body.clean #hud { display: none; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "../vendor/npm/three@0.185.1/build/three.module.min.js", "three/addons/": "../vendor/npm/three@0.185.1/examples/jsm/" } }
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="slot"><canvas id="fakevideo"></canvas><canvas id="ao-overlay"></canvas></div>
+<div id="hud">загрузка…</div>
+<script type="module">
+// Стенд modules/spiritAvatar.js ([W3-SPIRIT]): дух над ареной (камера боя, тёмный силуэт Регента) и дух в превью
+// камеры (свой холст в слоте). Источник — синтетика «Отладки с клавиатуры» или поза/кисти в формате vision
+// (dev/handSynth.mjs: незеркальная поза + кисти показа), чтобы проверить путь камеры и зеркало.
+// URL: view=both|sky|frame  src=synth|vision  q=low|medium|high  post=0 (без постобработки)  present=1
+//      g=idle|shield|attack|burst|charge|sigil|ult|hint|wave  t=<сек> (прогнать до t шагом 1/60, отрисовать, title=READY)
+//      hero=ashen|elf|dark|ranger|archmage  clean=1 (без подписи)
+// Клавиши (как в отладке): K — щит, J — «OK», L — выброс, O — заряд, Z — печать, U — ультимейт, H — «ОШИБКА».
+import * as THREE from 'three';
+import { createSpiritAvatar } from '../modules/spiritAvatar.js';
+import { makeScene, handAt, SHAPES } from './handSynth.mjs';
+
+const Q = new URLSearchParams(location.search);
+const VIEW = Q.get('view') || 'both', SRC = Q.get('src') || 'synth', QUAL = Q.get('q') || 'high', G = Q.get('g') || 'idle';
+const T_END = Q.has('t') ? +Q.get('t') : null;
+if (Q.get('clean') === '1') document.body.classList.add('clean');
+if (VIEW === 'frame') document.body.classList.add('frame-only');
+if (VIEW === 'sky') document.getElementById('slot').style.display = 'none';
+const HEROES = { ashen: { fx: { color: 0xff7a2a, color2: 0xffd08a } }, elf: { fx: { color: 0x9ff4ff, color2: 0xfff3c0 } }, dark: { fx: { color: 0xb58cff, color2: 0x9fe0ff } }, ranger: { fx: { color: 0xc8ff9a, color2: 0xffe08a } }, archmage: { fx: { color: 0x8fd0ff, color2: 0xe8f6ff } } };
+
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1f2a);
+scene.fog = new THREE.Fog(0x1a1f2a, 30, 600);
+const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 1200);
+scene.add(camera);
+// «арена»: пол, кольцо колонн и тёмный силуэт Регента ~7 м (как в бою: герой в 11 м от него)
+scene.add(new THREE.HemisphereLight(0x8899bb, 0x111014, 1.2));
+const floor = new THREE.Mesh(new THREE.CircleGeometry(60, 48), new THREE.MeshStandardMaterial({ color: 0x2a2c33, roughness: 0.9 }));
+floor.rotation.x = -Math.PI / 2; scene.add(floor);
+const dark = new THREE.MeshStandardMaterial({ color: 0x15161b, roughness: 0.7 });
+const regent = new THREE.Group();
+const body = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.8, 5.2, 16), dark); body.position.y = 2.6; regent.add(body);
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 12), dark); head.position.y = 5.8; regent.add(head);
+const halo = new THREE.Mesh(new THREE.TorusGeometry(1.4, 0.08, 8, 40), new THREE.MeshBasicMaterial({ color: 0xffb060 })); halo.position.y = 6.6; regent.add(halo);
+scene.add(regent);
+for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; const c = new THREE.Mesh(new THREE.BoxGeometry(1.2, 9, 1.2), dark); c.position.set(Math.sin(a) * 19, 4.5, Math.cos(a) * 19); scene.add(c); }
+const hero = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 1.1, 4, 10), new THREE.MeshStandardMaterial({ color: 0x40302a })); hero.position.set(0, 0.9, 10.7); scene.add(hero);
+camera.position.set(1.35, 2.75, 15.6); camera.lookAt(0.47, 2.16, 4.3);
+
+// постобработка как в игре (bloom на medium/high)
+let postfx = null;
+if (Q.get('post') !== '0') {
+  try { const m = await import('../core/postfx.js'); postfx = m.createPostFX({ THREE, renderer, scene, camera, quality: QUAL }); } catch (e) { console.warn('postfx', e); postfx = null; }
+}
+
+// фальшивое «видео» в слоте: тёмная комната и размытый силуэт
+const fv = document.getElementById('fakevideo');
+fv.width = 640; fv.height = 480;
+{ const c = fv.getContext('2d'); const g = c.createRadialGradient(320, 220, 40, 320, 240, 420); g.addColorStop(0, '#3a3530'); g.addColorStop(1, '#0d0c0b'); c.fillStyle = g; c.fillRect(0, 0, 640, 480);
+  c.fillStyle = 'rgba(90,80,70,0.55)'; c.beginPath(); c.ellipse(320, 150, 62, 78, 0, 0, Math.PI * 2); c.fill(); c.beginPath(); c.ellipse(320, 420, 190, 170, 0, 0, Math.PI * 2); c.fill(); }
+
+const settings = { quality: QUAL, spiritAvatar: true, reducedMotion: Q.get('rm') === '1', hero: Q.get('hero') || 'ashen' };
+const spirit = createSpiritAvatar({ THREE, scene, camera, renderer, slot: document.getElementById('slot'), overlay: document.getElementById('ao-overlay'), heroes: HEROES, settings });
+window.spirit = spirit;
+
+// ввод: клавиши как в отладке + сценарий g=
+const held = new Set();
+const pulses = new Set();
+addEventListener('keydown', (e) => { if (e.repeat) return; held.add(e.code); pulses.add(e.code); });
+addEventListener('keyup', (e) => held.delete(e.code));
+let conjT = 0, simT = 0;
+function inputAt(t, dt) {
+  const I = { valid: true, source: 'debug', moveX: 0, moveZ: 0, attack: false, shield: false, burst: false, burstHand: null, conjure: null, sigil: null, hint: null };
+  const ph = (k, period, from, to) => { const p = t % period; return p >= from && p < to; };
+  if (G === 'shield' || held.has('KeyK')) I.shield = t > 0.5;
+  if (G === 'attack' || held.has('KeyJ')) I.attack = t > 0.5;
+  if (G === 'charge' || held.has('KeyO')) { conjT += dt; I.conjure = { kind: 'orb', size: 0.5, charge: Math.min(1, conjT / 1.5), heldMs: conjT * 1000 }; } else conjT = 0;
+  if (pulses.has('KeyL') || (G === 'burst' && ph('b', 1.6, 0.8, 0.8 + dt))) { I.burst = true; I.burstHand = 'both'; }
+  if (pulses.has('KeyZ') || (G === 'sigil' && ph('s', 1.6, 0.8, 0.8 + dt))) I.sigil = 'clap';
+  if (pulses.has('KeyU') || (G === 'ult' && ph('u', 3, 0.6, 0.6 + dt))) I.ultimate = true;
+  if (pulses.has('KeyH') || (G === 'hint' && ph('h', 1.6, 0.8, 0.8 + dt))) I.hint = { code: 'burst_short_hold', side: 'right' };
+  pulses.clear();
+  return I;
+}
+
+// источник «vision»: незеркальная поза + кисти в координатах показа (как modules/vision.js)
+const S = makeScene({ cx: 0.5, cy: 0.42, sw: 0.3 });
+function visionAt(t) {
+  const lw = { x: -0.75 + 0.25 * Math.cos(t * 1.4), y: 0.6 + 0.35 * Math.sin(t * 1.4) - (G === 'wave' ? 1.2 : 0) };
+  const rw = { x: 0.8 + 0.15 * Math.sin(t * 0.9), y: 0.4 - 0.5 * Math.max(0, Math.sin(t * 0.7)) };
+  const P = S.pose({ lw, rw });
+  const put = (i, q) => { const a = S.at(q.x, q.y); P[i] = { x: a.cx, y: a.cy, z: 0, visibility: 0.95 }; };
+  put(13, { x: -0.85, y: 0.95 }); put(14, { x: 0.85, y: 0.95 });
+  const names = ['open', 'fist', 'point', 'victory', 'ok'];
+  const shR = names[Math.floor(t / 1.2) % names.length];
+  const l = handAt(S, 'left', lw.x, lw.y - 0.25, 'open'), r = handAt(S, 'right', rw.x, rw.y - 0.25, shR);
+  const disp = (h, shape) => ({ side: h.handedness.toLowerCase(), shape, palmFacing: 'camera', ready: true, landmarks: h.landmarks.map((p) => ({ x: 1 - p.x, y: p.y })) });
+  return { pose: { tMs: performance.now(), frameW: S.frameW, frameH: S.frameH, mirror: true, landmarks: P }, hands: { available: true, left: disp(l, 'open'), right: disp(r, shR) } };
+}
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  if (postfx) postfx.setSize(w, h, renderer.getPixelRatio());
+}
+addEventListener('resize', resize); resize();
+
+const hud = document.getElementById('hud');
+let last = performance.now(), visT = 0, visData = null;
+function step(dt, now) {
+  simT += dt;
+  const I = inputAt(simT, dt);
+  const ctx = { screen: VIEW === 'frame' ? 'tutorial' : 'playing', present: VIEW === 'both' || Q.get('present') === '1', debug: SRC !== 'vision', input: I, events: [], snapshot: { boss: { position: { x: 0, y: 0, z: 0 } }, player: { shielding: !!I.shield } }, hero: settings.hero };
+  if (SRC === 'vision') {
+    visT += dt;
+    if (!visData || visT >= 1 / 30) { visT = 0; visData = visionAt(simT); }   // камера ~30 Гц
+    ctx.pose = visData.pose; ctx.hands = visData.hands; ctx.status = { status: 'ready' };
+  }
+  spirit.frame(dt, now, ctx);
+}
+function draw() { if (postfx && postfx.enabled) postfx.render(1 / 60); else renderer.render(scene, camera); }
+if (T_END !== null) {
+  // детерминированный прогон для снимков: шаг 1/60, затем один кадр
+  let now = 1000;
+  const n = Math.round(T_END * 60);
+  for (let i = 0; i < n; i++) { now += 1000 / 60; step(1 / 60, now); }
+  draw();
+  hud.textContent = JSON.stringify(spirit.info(), null, 1).slice(0, 900);
+  document.title = 'READY';
+} else {
+  (function loop(now) {
+    requestAnimationFrame(loop);
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    step(dt, now); draw();
+    hud.textContent = `view=${VIEW} src=${SRC} q=${QUAL} g=${G}\nK щит · J «OK» · L выброс · O заряд · Z печать · U ультимейт · H «ОШИБКА»\n` + JSON.stringify(spirit.info()).slice(0, 600);
+  })(performance.now());
+}
+</script>
+</body>
+</html>
