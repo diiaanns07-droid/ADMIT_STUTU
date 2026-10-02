@@ -22,7 +22,7 @@
 //   за носками (сбоку); lean — корпус наклонён сильнее leanDeg; heels — пятки оторвались;
 //   fast — повтор короче minRepMs; lockout — не выпрямился наверху; frame — не видно ног.
 // «Мастер» (по умолчанию): засчитывается только чистый повтор (глубина 100° и ни одной ошибки).
-// «Новичок» (SQUAT_PROFILES.novice): глубина ≈ 115–120° (порог 123° — запас на сглаживание), повтор с ошибкой засчитывается (+1 очко и карточка,
+// «Новичок» (SQUAT_PROFILES.novice): глубина ≈ 115–120° (порог 129° — запас на перспективу и сглаживание), с ошибкой — засчитан (+1 очко и карточка,
 // что улучшить), чистый — +2. Неглубокий (не дошёл до глубины) — не повтор.
 //
 // createSquatCounter(cfg?) → { push({tMs, landmarks, frameW, frameH}), read(), drain(), reset(), getDebug() }
@@ -90,8 +90,10 @@ export const DEFAULT_SQUAT_CONFIG = Object.freeze({
 export const SQUAT_PROFILES = Object.freeze({
   master: Object.freeze({ mode: 'master' }),
   novice: Object.freeze({
-    mode: 'novice', downDeg: 123, lockDeg: 155, startDeg: 145, attemptDeg: 138, setupMs: 400,
-    needFeet: false, faultsBlock: false, cleanBonus: 1, dropWeight: 0.4, smoothMs: 80,
+    // порог 129° — по показаниям: у ноутбука на столе (камера выше таза) перспектива завышает угол по бедру
+    // на 8–11°, по тазу — на 4–7° (dev/squatSim.mjs), поэтому таз весит больше, а настоящие 115–120° читаются ≈125°
+    mode: 'novice', downDeg: 129, lockDeg: 155, startDeg: 145, attemptDeg: 138, setupMs: 400,
+    needFeet: false, faultsBlock: false, cleanBonus: 1, dropWeight: 0.7, smoothMs: 80,
   }),
 });
 export function squatConfig(userCfg) {
@@ -306,8 +308,9 @@ export function createSquatCounter(userCfg) {
     const thighRaw = Math.acos(clamp(hRaw, -1, 1)) * DEG;
     let kneeDeg, kneeRaw, dropDeg = null;
     if (!novice) {
-      // «Мастер»: плоский угол (сбоку виден прямо) и оценка по бедру — меньший, как раньше
-      const withAnk = ok.filter((g) => g.ankle);
+      // «Мастер»: плоский угол (сбоку виден прямо) и оценка по бедру — меньший, как раньше. Спереди плоский угол
+      // говорит не о глубине, а о смещении колена вбок, и дрожь его занижает — там только оценка по бедру.
+      const withAnk = view === 'front' ? [] : ok.filter((g) => g.ankle);
       const flatRaw = withAnk.length ? mean(withAnk, flatOf) : null;
       const flat = ema('flat', flatRaw);
       kneeDeg = Math.min(180 - thighDeg, fin(flat) ? flat : 180);
