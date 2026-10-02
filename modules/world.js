@@ -4448,7 +4448,7 @@ float ashPuddle( vec2 xz ) {
     }
     // [W4-ARENA] огни, воздух, пул света; лужицы тепла и блики на полу — uniform-ы его шейдера
     arenaCtx.focus = heroRoot.position; arenaCtx.cam = camera;
-    arenaFx.update(dt, time * (wc.reducedMotion ? 0.6 : 1), arenaCtx);
+    arenaFx.update(dt, arenaCtx);
     if (camera && typeof atmo.setGroundHaze === 'function') {   // [W4-ARENA] лунная дымка у пола — только у арены
       const cd = Math.hypot(camera.position.x, camera.position.z);
       atmo.setGroundHaze((1 - smoothstep(24, 56, cd)) * (1 - (elfVillage ? elfVillage.weight : 0)) * (1 - (brightForest ? brightForest.weight : 0)));

@@ -1,13 +1,14 @@
 // [W4-ARENA] Тесты огней и воздуха арены (modules/arenaFx.js) и лунной дымки у пола (atmosphere.setGroundHaze).
 // node dev/arenaFx.test.mjs
-// Нужен three.js как модуль: `three` из node_modules или путь в ASHEN_THREE
-// (…/three/build/three.module.js). Если three не найден, тест пропускается (код выхода 0).
+// Нужен three.js как модуль: `three` из node_modules, путь в ASHEN_THREE или копия в vendor/ (иначе SKIP).
 
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
 
 let THREE = null;
 try { THREE = await import('three'); } catch (e) {
-  if (process.env.ASHEN_THREE) { try { THREE = await import(pathToFileURL(process.env.ASHEN_THREE).href); } catch (e2) { /* skip */ } }
+  const cands = [process.env.ASHEN_THREE, fileURLToPath(new URL('../vendor/npm/three@0.185.1/build/three.module.min.js', import.meta.url))].filter(Boolean);
+  for (const c of cands) { if (existsSync(c)) { try { THREE = await import(pathToFileURL(c).href); break; } catch (e2) { /* skip */ } } }
 }
 if (!THREE) { console.log('SKIP arenaFx: three.js не найден (npm i three или ASHEN_THREE=…/three.module.js)'); process.exit(0); }
 
@@ -40,7 +41,7 @@ function make(q = 'medium') {
   });
   return { scene, camera, fx, owned };
 }
-const run = (fx, sec, t0, ctx) => { let t = t0; for (let i = 0; i < Math.round(sec * 60); i++) { t += 1 / 60; fx.update(1 / 60, t, ctx); } return t; };
+const run = (fx, sec, ctx) => { for (let i = 0; i < Math.round(sec * 60); i++) fx.update(1 / 60, ctx); };
 const visLights = (scene) => { let n = 0; scene.traverse((o) => { if (o.isPointLight && o.visible) n++; }); return n; };
 
 await test('сцена огней: 12 огней, 3 инстанса + пламя + воздух, свет пула по уровню', async () => {
@@ -65,7 +66,7 @@ await test('уровни качества: частиц и квадов плам
   ok(s.low.air > 0 && s.low.air < s.medium.air && s.medium.air < s.high.air, 'частицы ' + JSON.stringify([s.low.air, s.medium.air, s.high.air]));
   ok(s.low.air <= 120, 'на low воздух почти бесплатен: ' + s.low.air);
   ok(!s.low.smoke && !s.medium.smoke && s.high.smoke, 'дым');
-  ok(s.low.refl === 0 && s.medium.refl === 1, 'штрихи-отражения выключены на low');
+  ok(s.low.tier === 0 && s.medium.tier === 1 && s.high.tier === 2, 'ярусы ' + [s.low.tier, s.medium.tier, s.high.tier]);
   const flames = fx.group.getObjectByName('arena-fire-flames');
   fx.setQuality('low'); const lowIdx = flames.geometry.drawRange.count;
   fx.setQuality('high'); const highIdx = flames.geometry.drawRange.count;
@@ -76,18 +77,20 @@ await test('уровни качества: частиц и квадов плам
 await test('пул света: едет к ближайшим к герою огням плавно, число видимых источников не меняется', async () => {
   const { scene, fx } = make('high');
   const near = { x: FIRES[0].x * 0.8, z: FIRES[0].z * 0.8 };
-  let t = run(fx, 3, 0, { focus: near });
+  run(fx, 3, { focus: near });
   let st = fx.stats();
   ok(st.lit.some(([i, w]) => i === 0 && w > 0.95), 'ближайшая жаровня освещена ' + JSON.stringify(st.lit));
-  ok(fx.uniforms.uAFireA.value[0] < 0.06, 'у освещённого огня «нарисованный» свет пола убран: ' + fx.uniforms.uAFireA.value[0]);
-  ok(fx.uniforms.uAFireA.value[3] === 1 || st.lit.some(([i]) => i === 3), 'у остальных — нарисованный свет');
+  const A = fx.uniforms.uAFireA.value;
+  for (const [i, w] of st.lit) ok(Math.abs(A[i] - (1 - w)) < 0.006, `у освещённого огня ${i} нарисованный свет = 1 − вес источника: ${A[i]}`);
+  const litIdx = new Set(st.lit.map(([i]) => i));
+  ok(st.lit.length === 4 && [...Array(12).keys()].filter((i) => !litIdx.has(i)).every((i) => A[i] === 1), 'у остальных — полный нарисованный свет');
   // герой перешёл на другую сторону: свет переезжает без скачков яркости
   const far = { x: FIRES[2].x * 0.8, z: FIRES[2].z * 0.8 };
   const lights = []; scene.traverse((o) => { if (o.isPointLight) lights.push(o); });
   let prev = lights.map((l) => l.intensity), maxJump = 0;
   const vis0 = visLights(scene);
   for (let i = 0; i < 240; i++) {
-    t += 1 / 60; fx.update(1 / 60, t, { focus: far });
+    fx.update(1 / 60, { focus: far });
     lights.forEach((l, k) => { if (l.visible) maxJump = Math.max(maxJump, Math.abs(l.intensity - prev[k]) / 14); prev[k] = l.intensity; });
     ok(visLights(scene) === vis0, 'видимых источников всегда ' + vis0);
   }
@@ -97,18 +100,49 @@ await test('пул света: едет к ближайшим к герою ог
   fx.dispose();
 });
 
-await test('камера далеко от арены (прогулка) — пламя и воздух не рисуются, свет и блики в ноль', async () => {
-  const { camera, fx } = make('high');
-  let t = run(fx, 1, 0, { focus: { x: 0, z: 8 }, cam: camera });
+await test('вдали от арены огни гаснут плавно: воздух и блики — к 120 м, пламя-ориентир — к 240 м; обратно — видно', async () => {
+  const { scene, camera, fx } = make('high');
+  const ctx = { focus: { x: 0, z: 8 }, cam: camera };
+  run(fx, 1, ctx);
   const flames = fx.group.getObjectByName('arena-fire-flames'), air = fx.group.getObjectByName('arena-air');
+  const lights = []; scene.traverse((o) => { if (o.isPointLight && o.visible) lights.push(o); });
   ok(flames.visible && air.visible, 'у арены видно');
-  camera.position.set(140, 5, 20);
-  t = run(fx, 0.5, t, { focus: { x: 140, z: 20 }, cam: camera });
-  ok(!flames.visible && !air.visible && fx.stats().far, 'далеко — скрыто');
-  ok(fx.uniforms.uAFire.value.slice(0, 12).every((v) => v.w === 0), 'блики на полу погашены');
-  camera.position.set(0, 3, 13);
-  run(fx, 0.2, t, { focus: { x: 0, z: 8 }, cam: camera });
+  // уход по прямой: яркость пламени и бликов не прыгает за кадр
+  let prevW = fx.uniforms.uAFire.value[0].w / 1, prevK = 1, jump = 0;
+  for (let d = 13; d <= 300; d += 1) {
+    camera.position.set(0, 4, d); ctx.focus = { x: 0, z: d - 4 };
+    fx.update(1 / 60, ctx);
+    const st = fx.stats();
+    jump = Math.max(jump, Math.abs(st.kFlame - prevK), Math.abs(st.kNear - (prevW > 0 ? st.kNear : 0)));
+    prevK = st.kFlame;
+    if (d === 108) ok(st.kNear > 0 && st.kNear < 1 && st.kFlame === 1, 'на 108 м блики гаснут, пламя полное ' + JSON.stringify(st));
+    if (d === 140) {
+      ok(!air.visible && st.kNear === 0 && flames.visible && st.kFlame === 1, 'на 140 м: воздуха нет, пламя видно ' + JSON.stringify(st));
+      ok(fx.uniforms.uAFire.value.slice(0, 12).every((v) => v.w === 0) && lights.every((l) => l.intensity === 0), 'блики и свет пула погашены');
+      ok(lights.every((l) => l.visible), 'видимость источников не менялась (без перекомпиляции)');
+    }
+    if (d === 215) ok(st.kFlame > 0 && st.kFlame < 1, 'на 215 м пламя гаснет ' + st.kFlame);
+  }
+  ok(!flames.visible && fx.stats().kFlame === 0, 'за 240 м пламя не рисуется');
+  ok(jump < 0.07, 'без рывков: ' + jump.toFixed(3));
+  camera.position.set(0, 3, 13); ctx.focus = { x: 0, z: 8 };
+  run(fx, 0.2, ctx);
   ok(flames.visible && air.visible, 'вернулись — видно');
+  fx.dispose();
+});
+
+await test('reducedMotion: мерцание втрое слабее, время огня — без скачка при переключении', async () => {
+  const { fx } = make('high');
+  const ctx = { focus: { x: 0, z: 8 } };
+  const span = () => { let lo = 9, hi = 0; for (let i = 0; i < 240; i++) { fx.update(1 / 60, ctx); const w = fx.uniforms.uAFire.value[0].w; lo = Math.min(lo, w); hi = Math.max(hi, w); } return hi - lo; };
+  const full = span();
+  const t0 = fx.stats().time;
+  fx.configure({ reducedMotion: true });
+  fx.update(1 / 60, ctx);
+  const dT = fx.stats().time - t0;
+  ok(dT > 0 && dT < 1 / 60 + 1e-6, 'время продолжается с того же места: +' + dT.toFixed(4));
+  const red = span();
+  ok(red < full * 0.45 && red > 0, `размах мерцания ${full.toFixed(3)} → ${red.toFixed(3)}`);
   fx.dispose();
 });
 
@@ -131,6 +165,14 @@ await test('patchLit: цепляется за прежний onBeforeCompile, к
   const v0 = mat.version;
   fx.setQuality('low');
   ok(mat.customProgramCacheKey() === 'arenaLit:floor0:ashWet' && mat.version > v0, 'low — свой ключ программы, материал помечен');
+  const shLow = { uniforms: {}, vertexShader: THREE.ShaderLib.physical.vertexShader, fragmentShader: THREE.ShaderLib.physical.fragmentShader };
+  mat.onBeforeCompile(shLow, null);
+  ok(shLow.fragmentShader.includes('#define ARENA_TIER 0') && !shLow.fragmentShader.includes('#define ARENA_TIER 1'), 'на low шейдер собирается с ARENA_TIER 0 (штрихи и корона выключены)');
+  ok(/#if ARENA_TIER >= 1[\s\S]*aSpec \+=/.test(shLow.fragmentShader), 'штрихи огней — под #if ARENA_TIER >= 1');
+  fx.setQuality('high');
+  const shHigh = { uniforms: {}, vertexShader: THREE.ShaderLib.physical.vertexShader, fragmentShader: THREE.ShaderLib.physical.fragmentShader };
+  mat.onBeforeCompile(shHigh, null);
+  ok(shHigh.fragmentShader.includes('#define ARENA_TIER 2'), 'на high — ARENA_TIER 2');
   fx.dispose();
 });
 

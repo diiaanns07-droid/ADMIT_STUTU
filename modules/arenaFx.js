@@ -3,7 +3,7 @@
  * Огни и воздух арены Регента, отражения на мокром полу.
  *
  * export function createArenaFx({ THREE, parent, G, M, renderer, fires, ruins, groundY, materials, LI, quality, reducedMotion, seed })
- *   -> { update(dt, time, ctx), setQuality(level, lights?), configure(patch), patchLit(mat, kind), dispose(), stats(), fires }
+ *   -> { update(dt, ctx), setQuality(level, lights?), configure(patch), patchLit(mat, kind), dispose(), stats(), fires }
  *
  *   Жаровни и факелы-столпы — инстансы: подножие (камень), железо (чаша с когтями), угли — 3 вызова отрисовки на все огни.
  *   Живой огонь — процедурный шейдер: пламя, ореол и дым (high) — один вызов на все огни.
@@ -11,6 +11,8 @@
  *     число по уровню качества — drawRange по ярусам, без перестройки буферов.
  *   Свет — общий пул PointLight (low 0, medium 2, high 4: столько же, сколько было у жаровен), едет к ближайшим
  *     к герою огням с плавной передачей; число видимых источников меняется только со сменой качества.
+ *   Вдали огни гаснут плавно: воздух, свет пула и блики на полу — к 120 м, пламя (ориентир арены) — к 240 м.
+ *   reducedMotion: время огня течёт медленнее (своё, без скачка при переключении), мерцание — втрое слабее.
  *   Пол — patchLit(mat): блики огней штрихами (как на мокрой мостовой), лужицы тепла там, где нет настоящего
  *     источника, отсвет кольца рун, отражение короны затмения в лужах. Всё в шейдере пола — новых проходов нет.
  * Модуль ничего не рендерит, камеру не трогает, в кадре не аллоцирует. Материалы и геометрии — через G/M владельца.
@@ -20,6 +22,7 @@ const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
 const normQ = (l) => (l === 'low' || l === 'high' ? l : 'medium');
+const smoothstep = (a, b, v) => { const x = clamp((v - a) / (b - a), 0, 1); return x * x * (3 - 2 * x); };
 function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {
@@ -31,20 +34,22 @@ function mulberry32(seed) {
 }
 
 export const FIRE_MAX = 12;   // столько огней видит шейдер пола (uniform-массивы фиксированной длины)
-// Уровни качества: ярусы частиц (0 — всегда, 1 — medium+, 2 — high), свет пула, штрихи-отражения, дым.
+// Уровни качества: ярус (частицы: 0 — всегда, 1 — medium+, 2 — high; шейдер пола — ARENA_TIER), свет пула, дым.
 export const ARENA_FX_QUALITY = Object.freeze({
-  low: Object.freeze({ tier: 0, lights: 0, refl: 0, smoke: false }),
-  medium: Object.freeze({ tier: 1, lights: 2, refl: 1, smoke: false }),
-  high: Object.freeze({ tier: 2, lights: 4, refl: 1, smoke: true }),
+  low: Object.freeze({ tier: 0, lights: 0, smoke: false }),
+  medium: Object.freeze({ tier: 1, lights: 2, smoke: false }),
+  high: Object.freeze({ tier: 2, lights: 4, smoke: true }),
 });
 // Частицы по ярусам: [ярус 0, +ярус 1, +ярус 2]
 const SPARKS = [3, 4, 5];     // на огонь
 const EMBERS = [40, 80, 120]; // на арену
 const MOTHS = [14, 18, 24];   // у руин
 
-// Мерцание огня — одна формула для шейдера пламени и для света пула (свет «дышит» вместе с языками)
-const flicker = (t, s) => 0.84 + 0.09 * Math.sin(t * 11.3 + s * 6.0) + 0.07 * Math.sin(t * 23.7 + s * 12.6);
-const FLICKER_GLSL = 'float aFlick( float t, float s ) { return 0.84 + 0.09 * sin( t * 11.3 + s * 6.0 ) + 0.07 * sin( t * 23.7 + s * 12.6 ); }';
+// Мерцание огня — одна формула для шейдера пламени и для света пула (свет «дышит» вместе с языками);
+// a — размах (reducedMotion — втрое меньше)
+const flicker = (t, s, a) => 0.84 + (0.09 * Math.sin(t * 11.3 + s * 6.0) + 0.07 * Math.sin(t * 23.7 + s * 12.6)) * a;
+const FLICKER_GLSL = 'float aFlick( float t, float s, float a ) { return 0.84 + ( 0.09 * sin( t * 11.3 + s * 6.0 ) + 0.07 * sin( t * 23.7 + s * 12.6 ) ) * a; }';
+const FLICKER_REDUCED = 0.35;
 
 const NOISE_GLSL = /* glsl */`
 float aH( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
@@ -60,6 +65,7 @@ const FLAME_VERT = /* glsl */`
 attribute vec4 aFire;   // xyz — основание пламени, w — зерно
 attribute vec2 aSize;   // ширина, высота языка
 uniform float uTime;
+uniform float uFlickA;
 varying vec2 vUv;
 varying float vSeed;
 varying float vType;
@@ -72,7 +78,7 @@ void main() {
   vSeed = aFire.w;
   vType = type;
   vUv = vec2( position.x + 0.5, position.y );
-  vFlick = aFlick( uTime, vSeed );
+  vFlick = aFlick( uTime, vSeed, uFlickA );
   vec3 toCam = cameraPosition - c;
   float dist = length( toCam );
   // вблизи камеры огонь занимает пол-экрана — HDR-ядро гасим, иначе bloom заливает угол кадра
@@ -148,6 +154,7 @@ const AIR_VERT = /* glsl */`
 attribute vec4 aA;
 attribute vec4 aB;
 uniform float uTime;
+uniform float uTimeM;   // время движения воздуха (reducedMotion — медленнее, без скачка при переключении)
 uniform float uMotion;
 uniform float uViewH;
 uniform float uWind;
@@ -157,19 +164,19 @@ varying float vKind;
 varying float vFlap;
 void main() {
   float kind = aB.x, s = aA.w;
-  float t = uTime * uMotion;
+  float t = uTimeM;
   vec3 p;
   float size, a;
   vec3 col;
   vFlap = 1.0;
   if ( kind < 0.5 ) {
     // искра: вверх от пламени по спирали, ветер уносит, гаснет к концу жизни
-    float ph = fract( uTime / aB.y + s );
+    float ph = fract( uTimeM / aB.y + s );
     float ang = s * 40.0 + ph * 3.2;
     p = aA.xyz + vec3( sin( ang ) * 0.22 * ph + uWind * ph * ph * 0.7, ph * aB.z, cos( ang * 1.3 ) * 0.22 * ph );
     size = mix( 0.05, 0.014, ph );
     col = mix( vec3( 1.0, 0.72, 0.34 ) * 6.0, vec3( 1.0, 0.24, 0.05 ) * 2.2, ph );
-    a = ( 1.0 - ph ) * smoothstep( 0.0, 0.06, ph ) * ( 0.6 + 0.4 * sin( uTime * 31.0 + s * 90.0 ) );
+    a = ( 1.0 - ph ) * smoothstep( 0.0, 0.06, ph ) * ( 0.6 + 0.4 * uMotion * sin( uTime * 31.0 + s * 90.0 ) );
   } else if ( kind < 1.5 ) {
     // плавающий уголь: медленно всплывает, кружит, тлеет
     float ph = fract( t / aB.y + s );
@@ -189,7 +196,7 @@ void main() {
     float blink = smoothstep( -0.3, 0.95, sin( t * 0.8 + s * 17.0 ) );
     col = mix( vec3( 0.5, 0.88, 1.0 ), vec3( 1.0, 0.84, 0.52 ), step( 0.7, fract( s * 7.31 ) ) ) * ( 1.8 + 3.2 * blink );
     a = 0.3 + 0.7 * blink;
-    vFlap = sin( uTime * 17.0 * uMotion + s * 40.0 );
+    vFlap = sin( uTimeM * 17.0 + s * 40.0 );
   }
   vec4 mv = modelViewMatrix * vec4( p, 1.0 );
   gl_Position = projectionMatrix * mv;
@@ -330,7 +337,7 @@ export function createArenaFx({
   const own = (x, f) => (f ? f(x) : x);
   const Gx = (g) => own(g, G), Mx = (m) => own(m, M);
   const rnd = mulberry32(seed + 4401);
-  const state = { quality: normQ(quality), reduced: !!reducedMotion, disposed: false, far: false, lights: null };
+  const state = { quality: normQ(quality), reduced: !!reducedMotion, disposed: false, far: false, lights: null, t: 0, tm: 0, kNear: 1, kFlame: 1 };
   const group = new THREE.Group();
   group.name = 'arena-fx';
   parent.add(group);
@@ -410,7 +417,7 @@ export function createArenaFx({
 
   /* ---------------------------------- Пламя ---------------------------------- */
   const timeU = { value: 0 };
-  const flameU = { uTime: timeU, uFireK: { value: 1 } };
+  const flameU = { uTime: timeU, uFireK: { value: 1 }, uFlickA: { value: state.reduced ? FLICKER_REDUCED : 1 } };
   const flameMat = Mx(new THREE.ShaderMaterial({
     uniforms: flameU, vertexShader: FLAME_VERT, fragmentShader: FLAME_FRAG,
     transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide,
@@ -449,7 +456,7 @@ export function createArenaFx({
   }
 
   /* ---------------------------------- Воздух ---------------------------------- */
-  const airU = { uTime: timeU, uMotion: { value: state.reduced ? 0.4 : 1 }, uViewH: { value: 720 }, uWind: { value: 0.3 } };
+  const airU = { uTime: timeU, uTimeM: { value: 0 }, uMotion: { value: state.reduced ? 0.4 : 1 }, uViewH: { value: 720 }, uWind: { value: 0.3 } };
   const airMat = Mx(new THREE.ShaderMaterial({
     uniforms: airU, vertexShader: AIR_VERT, fragmentShader: AIR_FRAG,
     transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending,
@@ -545,22 +552,32 @@ export function createArenaFx({
 
   /* ---------------------------------- Кадр ---------------------------------- */
   const _bs = new THREE.Vector2();
-  // ctx: { focus: {x, z} — где герой, cam: камера, fade: 0..1 — общий накал огней (смерть/победа не трогаем) }
-  function update(dt, time, ctx = {}) {
+  // ctx: { focus: {x, z} — где герой, cam: камера, fade: 0..1 — общий накал огней }
+  // Время — своё: огонь и воздух текут с темпом reducedMotion, при переключении фаза не прыгает.
+  function update(dt, ctx = {}) {
     if (state.disposed) return;
-    const t = time;
+    state.t += dt * (state.reduced ? 0.6 : 1);
+    state.tm += dt * (state.reduced ? 0.4 : 1);
+    const t = state.t, fa = state.reduced ? FLICKER_REDUCED : 1;
     timeU.value = t;
+    airU.uTimeM.value = state.tm;
+    flameU.uFlickA.value = fa;
     const cam = ctx.cam || null;
-    // далеко от арены (прогулка по карте) — огни и воздух не рисуются, свет пула гаснет (видимость света не меняем)
-    const far = cam ? Math.hypot(cam.position.x, cam.position.z) > 120 : false;
-    if (far !== state.far) { state.far = far; if (flames) flames.visible = !far; air.visible = !far; }
+    // вдали от арены (прогулка по карте) огни гаснут плавно: воздух, свет пула и блики пола — к 120 м,
+    // пламя — ориентир арены — к 240 м; видимость мешей меняется, только когда вклад уже ноль
+    const cd = cam ? Math.hypot(cam.position.x, cam.position.z) : 0;
+    const kNear = 1 - smoothstep(95, 120, cd), kFlame = 1 - smoothstep(190, 240, cd);
+    state.kNear = kNear; state.kFlame = kFlame;
+    const far = kNear <= 0;
+    if (far !== state.far) { state.far = far; air.visible = !far; }
+    if (flames && flames.visible !== (kFlame > 0)) flames.visible = kFlame > 0;
     if (renderer && renderer.getDrawingBufferSize) airU.uViewH.value = renderer.getDrawingBufferSize(_bs).y || 720;
     airU.uWind.value = (0.28 + 0.12 * Math.sin(t * 0.21)) * (state.reduced ? 0.5 : 1);
     const k = ctx.fade != null ? ctx.fade : 1;
-    flameU.uFireK.value = k;
+    flameU.uFireK.value = k * kFlame;
     for (let i = 0; i < NF; i++) {
       const f = fires[i];
-      fireP[i].w = flicker(t, f.seed) * (f.kind === 'torch' ? 0.62 : 1) * k * (far ? 0 : 1);
+      fireP[i].w = flicker(t, f.seed, fa) * (f.kind === 'torch' ? 0.62 : 1) * k * kNear;
       fireA[i] = 1;
     }
     // пул света: ближайшие к герою огни; передача — затуханием, без рывка
@@ -591,7 +608,7 @@ export function createArenaFx({
         }
         if (sl.idx >= 0) {
           const f = fires[sl.idx];
-          sl.l.intensity = f.light * LI.point * flicker(t, f.seed) * sl.w * k * (far ? 0 : 1);
+          sl.l.intensity = f.light * LI.point * flicker(t, f.seed, fa) * sl.w * k * kNear;
           fireA[sl.idx] = 1 - sl.w;
         } else sl.l.intensity = 0;
       }
@@ -612,14 +629,14 @@ export function createArenaFx({
     slots.forEach((s, i) => { s.l.visible = i < n; if (!s.l.visible) { s.l.intensity = 0; s.idx = -1; s.w = 0; } });
   }
   function configure(patch = {}) {
-    if ('reducedMotion' in patch) { state.reduced = !!patch.reducedMotion; airU.uMotion.value = state.reduced ? 0.4 : 1; }
+    if ('reducedMotion' in patch) { state.reduced = !!patch.reducedMotion; airU.uMotion.value = state.reduced ? 0.4 : 1; flameU.uFlickA.value = state.reduced ? FLICKER_REDUCED : 1; }
   }
   function stats() {
     const Q = ARENA_FX_QUALITY[state.quality];
     return {
       fires: NF, air: airGeo.drawRange.count, lights: slots.filter((s) => s.l.visible).length,
       lit: slots.filter((s) => s.l.visible && s.idx >= 0).map((s) => [s.idx, +s.w.toFixed(2)]),
-      smoke: Q.smoke, refl: Q.refl, far: state.far,
+      smoke: Q.smoke, tier: Q.tier, far: state.far, kNear: +state.kNear.toFixed(3), kFlame: +state.kFlame.toFixed(3), time: +state.t.toFixed(3),
     };
   }
   function dispose() {
