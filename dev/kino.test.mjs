@@ -130,6 +130,59 @@ await test('модульный pulse доходит до живого экзем
   ok(queueShockwave(0.5, 0.5, 1) === false, 'волна без живого postfx — false');
 });
 
+await test('две формы вызова: pulse(kind, strength, pos, opts) и pulse(kind, { x, y, strength, … }) (ультимейт)', async () => {
+  const { post } = makePost();
+  await post.whenReady;
+  const near = (a, b, m) => ok(Math.abs(a - b) < 1e-6, `${m}: ${a} ≠ ${b}`);
+  // форма ультимейта: сила и точка в одном объекте
+  ok(post.pulse('dash', { x: 0.2, y: 0.7, strength: 0.6 }) === true, 'объектная форма принята');
+  let fx = post.info().fx;
+  near(fx.dash, 0.6, 'сила из объекта');
+  near(fx.last.x, 0.2, 'x из объекта'); near(fx.last.y, 0.7, 'y из объекта');
+  // прежняя форма даёт то же самое
+  for (let i = 0; i < 120; i++) post.render(1 / 60);
+  ok(post.pulse('dash', 0.6, { x: 0.2, y: 0.7 }) === true, 'прежняя форма принята');
+  fx = post.info().fx;
+  near(fx.dash, 0.6, 'та же сила'); near(fx.last.x, 0.2, 'тот же x'); near(fx.last.y, 0.7, 'тот же y');
+  // ровно как зовёт ультимейт: вспышка и волна по точке удара
+  const n0 = fx.last.n;
+  ok(post.pulse('flash', { x: 0.31, y: 0.62, strength: 1 }) === true, 'flash ультимейта');
+  fx = post.info().fx;
+  ok(fx.flash > 0.99 && fx.last.kind === 'flash' && fx.last.n === n0 + 1, 'засветка ' + JSON.stringify(fx.last));
+  near(fx.last.x, 0.31, 'точка вспышки x'); near(fx.last.y, 0.62, 'точка вспышки y');
+  // без strength — 1; опции (цвет, hold) из того же объекта; точка в .at
+  for (let i = 0; i < 120; i++) post.render(1 / 60);
+  ok(post.pulse('hurt', { at: [0.1, 0.9] }) === true && post.info().fx.hurt > 0.99, 'сила по умолчанию 1');
+  near(post.info().fx.last.x, 0.1, '.at как точка');
+  ok(post.pulse('bars', { strength: 0.8, hold: 0.2 }) === true, 'кинорамка из объекта');
+  for (let i = 0; i < 12; i++) post.render(1 / 60);
+  ok(post.info().fx.bars > 0.2, 'рамка выезжает ' + post.info().fx.bars);
+  for (let i = 0; i < 120; i++) post.render(1 / 60);
+  ok(post.info().fx.bars < 0.01, 'и уезжает после hold из объекта ' + post.info().fx.bars);
+  // мировая точка в объекте проецируется; за спиной камеры рывок не ставится
+  ok(post.pulse('dash', { x: 0, y: 2, z: 0, strength: 1 }) === true, 'мировая точка перед камерой');
+  ok(Math.abs(post.info().fx.last.x - 0.5) < 0.02, 'проекция в центр ' + post.info().fx.last.x);
+  for (let i = 0; i < 120; i++) post.render(1 / 60);
+  ok(post.pulse('dash', { x: 0, y: 3, z: 30, strength: 1 }) === false, 'за спиной камеры — нет');
+  // модульный pulse пропускает объектную форму как есть
+  ok(pulse('hurt', { strength: 0.7 }) === true, 'модульный pulse');
+  // ultimate: засветка гаснет медленнее обычной (0,5 с против 0,24 с), в том числе из объектной формы
+  for (let i = 0; i < 240; i++) post.render(1 / 60);
+  post.pulse('ultimate', { x: 0.5, y: 0.6, strength: 1 });
+  for (let i = 0; i < 15; i++) post.render(1 / 60);
+  const fUlt = post.info().fx.flash;
+  for (let i = 0; i < 240; i++) post.render(1 / 60);
+  post.pulse('flash', { strength: 1 });
+  for (let i = 0; i < 15; i++) post.render(1 / 60);
+  ok(fUlt > post.info().fx.flash * 1.5, `ult гаснет медленнее: ${fUlt} vs ${post.info().fx.flash}`);
+  // повтор ультимейта и вспышки ультимейта тем же кадром (обе подписки) — засветка не удваивается
+  for (let i = 0; i < 240; i++) post.render(1 / 60);
+  post.pulse('ultimate', 1, { x: 0.5, y: 0.6 });
+  post.pulse('flash', { x: 0.5, y: 0.6, strength: 1 });
+  ok(post.info().fx.flash <= 1.0001, 'засветка ≤ 1: ' + post.info().fx.flash);
+  post.dispose();
+});
+
 await test('мусор на входе не роняет', async () => {
   const { post } = makePost();
   await post.whenReady;
