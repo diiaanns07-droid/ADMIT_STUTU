@@ -9,17 +9,20 @@
 // материалы мира не перекомпилируются, бой не платит ни за что. Текстур нет (шум — в шейдерах), кроме
 // отражения пола на medium/high (≤ 640 px по ширине, low — без прохода: отражение портала аналитическое).
 //
-// Вызовы отрисовки (меню): камень (портал, колонны, ступени, обломки — одна геометрия), вихрь, ореол,
+// Вызовы отрисовки (меню): камень (портал, колонны, помост, обломки — одна геометрия), вихрь, ореол,
 // пол, дымка, частицы — 6; кольцо волны и столп призыва — +1 каждое, только пока видны.
 // medium/high: + отражение — герой и портал (слой REFLECT_LAYER) в малую цель, один раз за кадр.
-// Сцена строится при первом входе в меню и освобождается (dispose), когда меню закрыто дольше 2 с:
-// в бою — ни геометрии, ни программ, ни текстур витрины.
+// Сцена строится сразу при создании (prebuild: шейдеры соберёт общая сборка мира main.js — compileAsync — до первого
+// кадра меню) и освобождается (dispose), когда меню закрыто дольше 2 с: в бою — ни геометрии, ни программ,
+// ни текстур витрины. Возврат в меню: сцена строится заново и прячется, пока renderer.compileAsync не соберёт её
+// программы (без рывка первого кадра; не дольше 3 с).
 //
-// createMenuStage({ THREE, scene, quality, reducedMotion })
+// createMenuStage({ THREE, scene, quality, reducedMotion, prebuild })
 //   → { group, update(dt, view) → bool, setQuality(q), setReducedMotion(b), wave(), setReflect(root), portalWorld(out),
 //       info(), dispose() }
 // view = { w (0..1 видимость), active, heroPos: Vector3, heroYaw, camera, fx: { style, color, color2 },
-//          element (текст стихии), key: Vector3 (мировая позиция ключевого света), appear (0..1), loading (с) }
+//          element (текст стихии), key: Vector3 (мировая позиция ключевого света), appear (0..1), loading (с),
+//          orbit (рад: портал с помостом доворачивается за облётом камеры — не уходит под панель меню) }
 
 export const REFLECT_LAYER = 7;   // слой отражения: герой и портал (камера мира его не включает)
 
@@ -36,8 +39,11 @@ const TIER = {
   high: { parts: 420, rocks: 22, mist: 4, oct: 4, mirror: 640, taps: 5 },
 };
 const MAX_PARTS = 420, MAX_ROCKS = 22, MAX_MIST = 4;
-// портал: центр (местные оси сцены: +Z — вперёд героя, к камере; +X — правее на экране), радиусы
-const PORTAL = { x: -2.1, z: -7.6, rMid: 3.0, thick: 0.56, depth: 0.82, lift: 0.36 };
+// портал: центр (местные оси сцены: +Z — вперёд героя, к камере; +X — правее на экране), радиусы.
+// ≈9,5 м за героем: у края арены (место старта по умолчанию) это свободная полоса между колоннами мира,
+// алтарём и обломками; ближе 8 м — кольцо колонн. Колонны мира стоят перед порталом силуэтами на его свете.
+// Центр кольца — на высоте ≈2,8 м: с камеры витрины он ложится за голову героя (вихрь — ореол за силуэтом).
+const PORTAL = { x: -1.7, z: -9.3, rMid: 2.45, thick: 0.5, depth: 0.78, lift: 0.36 };
 const FLOOR_R = 9.5;
 
 // ---------------------------------------------------------------- GLSL: общий шум и туман
@@ -150,13 +156,13 @@ void main(){
   float s2 = fbm(vec2(tw / 6.2831853 * 5.0, 0.55 / (r + 0.06) - uTime * 0.32), uOct);
   float streak = smoothstep(0.32, 0.86, s2 * 0.62 + s1 * 0.5);
   float core = exp(-r * r * 6.5);
-  vec3 c = mix(uCol * 0.12, uCol * 1.05, streak) * (0.35 + 1.4 * streak);
-  c += mix(uCol, uCol2, 0.7) * core * 2.4;
-  c += uCol * smoothstep(0.84, 0.985, r) * smoothstep(1.0, 0.965, r) * 1.8;
+  vec3 c = mix(uCol * 0.035, uCol * 0.75, streak) * (0.25 + 1.05 * streak);
+  c += mix(uCol, uCol2, 0.7) * core * 1.25;
+  c += uCol * smoothstep(0.84, 0.985, r) * smoothstep(1.0, 0.965, r) * 1.1;
   // искры в глубине
   vec2 sg = vec2(tw * 6.0, 0.4 / (r + 0.05) - uTime * 0.5) * 3.0;
   float spk = step(0.985, h21(floor(sg))) * smoothstep(0.5, 0.0, length(fract(sg) - 0.5));
-  c += uCol2 * spk * 2.0 * (1.0 - core);
+  c += uCol2 * spk * 1.6 * (1.0 - core);
   float alpha = smoothstep(1.0, 0.93, r) * 0.9;
   gl_FragColor = vec4(c * uK * alpha, alpha * uK);
   ${OUT}
@@ -174,7 +180,7 @@ void main(){
   float wide = 0.3 / (1.0 + pow(r * 0.85, 4.0));
   float rays = pow(vn(vec2(a * 7.0, uTime * 0.12)) * vn(vec2(a * 19.0 + 3.0, uTime * 0.17 + 5.0)), 1.5) * 2.4;
   rays *= smoothstep(0.98, 1.25, r) * exp(-(r - 1.0) * 1.15);
-  vec3 c = uCol * (glow * 1.1 + wide + rays) + uCol2 * glow * 0.25;
+  vec3 c = uCol * (glow * 0.5 + wide * 0.4 + rays * 0.45) + uCol2 * glow * 0.12;
   c *= smoothstep(2.05, 1.5, r) * uK;
   gl_FragColor = vec4(c, 0.0);
   ${OUT}
@@ -249,11 +255,11 @@ void main(){
         vec3 H = vP + R * t; float r = length(H - uPortal) / uPortalR;
         float rr = (r - 1.2) * 3.0;
         refl = uCol * smoothstep(1.02, 0.45, r) * 0.9 + mix(uCol, uCol2, 0.7) * exp(-r * r * 5.0) * 1.3 + uCol * exp(-rr * rr) * 0.3;
-        refl *= uPortalI * 0.32;
+        refl *= uPortalI * 0.22;
       }
     }
   }
-  col += refl * gloss * fres;
+  col += refl * gloss * fres * 0.5;
   // руническая волна: кольцо бежит от героя к краю пола, по кольцу — знаки
   if (uWave >= 0.0) {
     float wr = uWave * uWaveR;
@@ -289,7 +295,7 @@ void main(){
   vec2 wind = vec2(uTime * (0.07 + 0.025 * vL), uTime * 0.018);
   float n = fbm(xz * (0.32 + 0.09 * vL) + wind + vL * 7.3, uOct);
   float d = smoothstep(0.42, 0.86, n);
-  float rad = length((xz - vec2(-0.6, -2.4)) / vec2(7.2, 6.4));
+  float rad = length((xz - vec2(-0.8, -3.6)) / vec2(7.2, 7.2));
   float k = d * smoothstep(1.0, 0.5, rad) * (1.0 - vL * 0.2);
   vec2 pp = xz - uPortal.xz;
   vec3 c = uAmbC * 0.55 + uKeyC * 0.5 * exp(-dot(xz, xz) * 0.09) + uCol * 0.85 * exp(-dot(pp, pp) * 0.035);
@@ -418,7 +424,7 @@ void main(){
   ${OUT}
 }`;
 
-export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotion = false } = {}) {
+export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotion = false, prebuild = false } = {}) {
   const root = new THREE.Group();
   root.name = 'menu-stage';
   root.visible = false;
@@ -439,9 +445,15 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
     uPortalI: { value: 2.2 }, uKeyI: { value: 2.0 }, uPortalR: { value: PORTAL.rMid },
     uPortalM: { value: new THREE.Matrix4() }, uPortalInv: { value: new THREE.Matrix4() },
   };
+  // задник (камень и портал) доворачивается вокруг героя за облётом камеры; пол, дымка и частицы — на месте
+  const back = new THREE.Group();
+  back.name = 'menu-stage-back';
+  root.add(back);
   const portalG = new THREE.Group();
   portalG.name = 'menu-stage-portal';
-  root.add(portalG);
+  back.add(portalG);
+  // юниформы камня — в осях задника (U.uPortal/uPortalN — в осях сцены, для пола и дымки)
+  const SU = { uCam: { value: new THREE.Vector3() }, uKey: { value: new THREE.Vector3() }, uPortal: { value: new THREE.Vector3() }, uPortalN: { value: new THREE.Vector3(0, 0, 1) } };
   let stone = null, vortex = null, halo = null, floor = null, mist = null, parts = null, waveFx = null, column = null;
   const owned = [];   // { geometry, material } — освобождаются вместе
   const own = (o) => { owned.push(o); return o; };
@@ -501,46 +513,48 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
       m4.makeTranslation(sx * 2.45, -PORTAL.rMid + 0.9, 0).premultiply(pm);   // стоят на помосте, держат низ кольца
       put(g, m4, 0, rand(), 0);
     }
+    // помост: две ступени-полукруга к герою (+Z оси портала); нижняя уходит на 2,6 м вниз — у края арены и в лесу
+    // земля за героем ниже его ног, помост «вырастает» из неё, а не висит
     for (let k = 0; k < 2; k++) {
-      const r = 3.9 - k * 0.55, h = 0.19;
-      // полукруг ступени — к герою (+Z оси портала), позади кольца не видно
-      const g = jitterGeo(new THREE.CylinderGeometry(r, r + 0.04, h, 40, 1, false, -Math.PI * 0.58, Math.PI * 1.16), 0.025, 11 + k);
-      m4.makeTranslation(PORTAL.x, h * (k + 0.5), PORTAL.z).multiply(new THREE.Matrix4().makeRotationY(portalYaw()));
+      const r = 3.7 - k * 0.55, top = 0.19 * (k + 1), h = k ? 0.19 : 2.8;
+      const g = jitterGeo(new THREE.CylinderGeometry(r, r + (k ? 0.04 : 0.3), h, 40, k ? 1 : 3, false, -Math.PI * 0.6, Math.PI * 1.2), 0.03, 11 + k);
+      m4.makeTranslation(PORTAL.x, top - h / 2, PORTAL.z).multiply(new THREE.Matrix4().makeRotationY(portalYaw()));
       put(g, m4, 0, rand(), 0);
     }
-    // колонны руин: разбитые, с каннелюрами, некоторые наклонены; одна лежит
-    const cols = [[-6.0, -6.3, 4.6, 0.03], [-4.6, -11.0, 6.4, -0.02], [3.5, -6.1, 3.0, 0.06], [5.8, -9.2, 5.6, -0.04], [8.0, -5.2, 1.7, 0.0], [2.4, -12.2, 7.4, 0.02], [-8.6, -9.5, 3.4, 0.08]];
+    // две разбитые колонны по бокам помоста (руины своими силами — у края арены их дополняют колонны мира)
+    const cols = [[-3.75, 0.55, 2.5, 0.04], [3.85, 0.35, 1.45, -0.05]];
     for (let c = 0; c < cols.length; c++) {
-      const [x, z, h, lean] = cols[c];
-      const g = new THREE.CylinderGeometry(0.42, 0.5, h, 12, Math.max(2, Math.round(h * 1.4)), false);
+      const [lx, lz, h, lean] = cols[c];
+      const g = new THREE.CylinderGeometry(0.38, 0.45, h, 12, Math.max(2, Math.round(h * 1.4)), false);
       const p = g.attributes.position;
       for (let j = 0; j < p.count; j++) {
         const px = p.getX(j), py = p.getY(j), pz = p.getZ(j);
         const a = Math.atan2(pz, px);
         const flute = 1 - 0.06 * Math.max(0, Math.cos(a * 12));
         let yy = py;
-        if (py > h / 2 - 1e-3) yy += (Math.sin(a * 3 + c * 2.1) * 0.5 + 0.5) * 0.55 * (c % 2 ? 1 : 0.6) - 0.25;   // сломанный верх
+        if (py > h / 2 - 1e-3) yy += (Math.sin(a * 3 + c * 2.1) * 0.5 + 0.5) * 0.5 - 0.22;   // сломанный верх
         p.setXYZ(j, px * flute, yy, pz * flute);
       }
       const jg = jitterGeo(g, 0.03, 20 + c);
-      m4.makeTranslation(x, h / 2, z).multiply(new THREE.Matrix4().makeRotationZ(lean)).multiply(new THREE.Matrix4().makeRotationY(rand() * TAU));
+      // в осях портала: x — вдоль кольца, z — к герою; низ — на верхней ступени
+      m4.makeTranslation(lx, -PORTAL.rMid + h / 2, lz).premultiply(pm).multiply(new THREE.Matrix4().makeRotationZ(lean)).multiply(new THREE.Matrix4().makeRotationY(rand() * TAU));
       put(jg, m4, 0, rand(), 0);
-      // капитель или база
-      const b = jitterGeo(new THREE.BoxGeometry(1.25, 0.32, 1.25), 0.03, 40 + c);
-      m4.makeTranslation(x, 0.16, z).multiply(new THREE.Matrix4().makeRotationY(rand()));
+      const b = jitterGeo(new THREE.BoxGeometry(1.1, 0.3, 1.1), 0.03, 40 + c);
+      m4.makeTranslation(lx, -PORTAL.rMid + 0.15, lz).premultiply(pm).multiply(new THREE.Matrix4().makeRotationY(rand()));
       put(b, m4, 0, rand(), 0);
     }
-    {
-      const g = jitterGeo(new THREE.CylinderGeometry(0.44, 0.48, 3.2, 12, 4), 0.03, 60);
-      m4.makeTranslation(4.6, 0.4, -3.9).multiply(new THREE.Matrix4().makeRotationY(0.9)).multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2 - 0.05));
+    // выпавшие блоки кольца лежат на ступенях справа
+    for (let r = 0; r < 2; r++) {
+      const g = jitterGeo(new THREE.BoxGeometry(0.85, 0.5, 0.75), 0.04, 50 + r);
+      m4.makeTranslation(1.9 + r * 0.9, -PORTAL.rMid + 0.24 - r * 0.19, 1.2 + r * 0.7).premultiply(pm).multiply(new THREE.Matrix4().makeRotationY(0.5 + r)).multiply(new THREE.Matrix4().makeRotationZ(0.2 - r * 0.35));
       put(g, m4, 0, rand(), 0);
     }
-    // обломки у подножия
-    for (let r = 0; r < 9; r++) {
-      const s = 0.18 + rand() * 0.35;
+    // обломки у подножия помоста (перед ним, к герою)
+    for (let r = 0; r < 6; r++) {
+      const s = 0.14 + rand() * 0.24;
       const g = jitterGeo(new THREE.BoxGeometry(s * 1.6, s, s * 1.2), s * 0.18, 70 + r);
-      const ang = rand() * TAU, rad = 4.2 + rand() * 2.0;
-      m4.makeTranslation(PORTAL.x + Math.cos(ang) * rad, s * 0.4, PORTAL.z + Math.sin(ang) * rad * 0.7 + 1.0).multiply(new THREE.Matrix4().makeRotationY(rand() * TAU));
+      const ang = (rand() - 0.5) * 2.4, rad = 3.9 + rand() * 0.9;
+      m4.makeTranslation(Math.sin(ang) * rad, -PORTAL.rMid - PORTAL.lift + s * 0.35, Math.cos(ang) * rad).premultiply(pm).multiply(new THREE.Matrix4().makeRotationY(rand() * TAU));
       put(g, m4, 0, rand(), 0);
     }
     const base = P.length / 3;
@@ -549,7 +563,7 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
     for (let r = 0; r < MAX_ROCKS; r++) {
       const s = 0.09 + rand() * 0.24;
       const g = jitterGeo(new THREE.IcosahedronGeometry(s, 0), s * 0.22, 90 + r);
-      const ang = (r / MAX_ROCKS) * TAU + rand() * 0.25, rad = PORTAL.rMid + 0.75 + rand() * 1.4;
+      const ang = (r / MAX_ROCKS) * TAU + rand() * 0.25, rad = PORTAL.rMid + 0.7 + rand() * 1.2;
       m4.makeTranslation(Math.cos(ang) * rad, Math.sin(ang) * rad, (rand() - 0.5) * 1.2).premultiply(pm);
       rockVerts = g.attributes.position.count;
       put(g, m4, 2, rand(), rand());
@@ -574,7 +588,7 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
   const additive = { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending };
 
   // ---------------------------------------------------------------- отражение пола (medium/high)
-  const M = { rt: null, w: 0, h: 0, frame: -1, cam: null, on: false, dummy: null, lightsAt: -1e9 };
+  const M = { rt: null, w: 0, h: 0, frame: -1, cam: null, on: false, dummy: null, lightsAt: -1e9, renderer: null };
   const mv = {
     texM: new THREE.Matrix4(), bias: new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1),
     rp: new THREE.Vector3(), cp: new THREE.Vector3(), nrm: new THREE.Vector3(), rot: new THREE.Matrix4(), view: new THREE.Vector3(),
@@ -673,11 +687,12 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
     const rand = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
     portalMatrix(U.uPortalM.value);
     U.uPortalInv.value.copy(U.uPortalM.value).invert();
-    U.uPortal.value.setFromMatrixPosition(U.uPortalM.value);
-    U.uPortalN.value.set(0, 0, 1).transformDirection(U.uPortalM.value);
+    SU.uPortal.value.setFromMatrixPosition(U.uPortalM.value);
+    SU.uPortalN.value.set(0, 0, 1).transformDirection(U.uPortalM.value);
+    U.uPortal.value.copy(SU.uPortal.value); U.uPortalN.value.copy(SU.uPortalN.value);
     // камень
     const sg = buildStone(rand);
-    stone = new THREE.Mesh(sg, mat(STONE_VERT, STONE_FRAG, { uRune: { value: 1 } }));
+    stone = new THREE.Mesh(sg, mat(STONE_VERT, STONE_FRAG, { uRune: { value: 1 }, ...SU }));
     stone.name = 'menu-stage-stone';
     stone.frustumCulled = false;
     own(stone);
@@ -709,15 +724,15 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
     floor.name = 'menu-stage-floor';
     floor.position.y = 0.012;
     floor.renderOrder = -1;
-    floor.onBeforeRender = (renderer, sc, camera) => { try { renderMirror(renderer, sc, camera); } catch (e) { M.on = false; freeMirror(); console.warn('[W4-ВИТРИНА] отражение отключено', e && e.message); } };
+    floor.onBeforeRender = (renderer, sc, camera) => { M.renderer = renderer; try { renderMirror(renderer, sc, camera); } catch (e) { M.on = false; freeMirror(); console.warn('[W4-ВИТРИНА] отражение отключено', e && e.message); } };
     own(floor);
     // дымка: слои над полом (обрезка по уровню — drawRange)
     {
       const P = [], L = [];
       for (let l = 0; l < MAX_MIST; l++) {
-        const g = new THREE.PlaneGeometry(15, 13, 1, 1).toNonIndexed();
+        const g = new THREE.PlaneGeometry(15, 15, 1, 1).toNonIndexed();
         g.rotateX(-Math.PI / 2);
-        g.translate(-0.6, 0.06 + l * 0.2, -2.4);
+        g.translate(-0.8, 0.06 + l * 0.2, -3.6);
         const p = g.attributes.position;
         for (let i = 0; i < p.count; i++) { P.push(p.getX(i), p.getY(i), p.getZ(i)); L.push(l); }
         g.dispose();
@@ -740,7 +755,7 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
       pg.setAttribute('aS', new THREE.Float32BufferAttribute(A, 4));
       parts = new THREE.Points(pg, mat(PART_VERT, PART_FRAG, {
         uK: { value: 1 }, uPx: { value: 600 }, uKindA: { value: 0 }, uKindB: { value: 1 }, uMixB: { value: 0.4 }, uSummon: { value: 0 },
-        uBox: { value: new THREE.Vector3(7.5, 3.3, 6.2) }, uBoxC: { value: new THREE.Vector3(-1.0, 3.2, -2.6) }, uSummonC: { value: new THREE.Vector3(0, 0.05, 0) },
+        uBox: { value: new THREE.Vector3(7.5, 3.3, 6.8) }, uBoxC: { value: new THREE.Vector3(-1.0, 3.2, -3.6) }, uSummonC: { value: new THREE.Vector3(0, 0.05, 0) },
       }, premul));
       parts.name = 'menu-stage-particles';
       parts.renderOrder = 4;
@@ -767,7 +782,8 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
     column.visible = false;
     column.scale.set(0.95, 4.2, 0.95);
     own(column);
-    root.add(stone, floor, mist, parts, waveFx, column);
+    back.add(stone);
+    root.add(floor, mist, parts, waveFx, column);
     // отражаются герой и портал (камень, вихрь, ореол)
     for (const o of [stone, vortex, halo]) o.layers.enable(REFLECT_LAYER);
     applyTier();
@@ -836,6 +852,7 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
   }
 
   const _cam = new THREE.Vector3(), _key = new THREE.Vector3();
+  const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   function update(dt, view) {
     const w = view && view.w > 0 ? view.w : 0;
     if (w <= 0.01) {
@@ -844,7 +861,17 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
       return false;
     }
     S.hiddenFor = 0;
-    if (!S.built) build();
+    if (!S.built) {
+      build();
+      // программы сцены — в потоках драйвера, пока сцена скрыта (KHR_parallel_shader_compile); без рывка кадра
+      const r = M.renderer;
+      if (r && typeof r.compileAsync === 'function' && view.camera) {
+        S.compiling = nowMs();
+        r.compileAsync(root, view.camera, scene).then(() => { S.compiling = 0; }, () => { S.compiling = 0; });
+      }
+    }
+    if (S.compiling && nowMs() - S.compiling < 3000) { root.visible = false; return false; }
+    S.compiling = 0;
     root.visible = true;
     S.frame++;
     S.t += dt * (S.reduced ? 0.35 : 1);
@@ -865,10 +892,21 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
     U.uK.value = w;
     parts.material.uniforms.uK.value = w * S.fade;
     // камера и ключ — в оси сцены
-    if (view.camera) { _cam.copy(view.camera.position); root.worldToLocal(_cam); U.uCam.value.copy(_cam); }
-    if (view.key) { _key.copy(view.key); root.worldToLocal(_key); U.uKey.value.copy(_key); }
+    // задник за облётом: портал в осях сцены — для пола (отражение) и дымки
+    back.rotation.y = Number.isFinite(view.orbit) ? view.orbit : 0;
+    back.updateMatrixWorld();
+    U.uPortal.value.copy(SU.uPortal.value).applyMatrix4(back.matrix);
+    U.uPortalN.value.copy(SU.uPortalN.value).transformDirection(back.matrix);
+    if (view.camera) {
+      _cam.copy(view.camera.position); root.worldToLocal(_cam); U.uCam.value.copy(_cam);
+      _cam.copy(view.camera.position); back.worldToLocal(_cam); SU.uCam.value.copy(_cam);
+    }
+    if (view.key) {
+      _key.copy(view.key); root.worldToLocal(_key); U.uKey.value.copy(_key);
+      _key.copy(view.key); back.worldToLocal(_key); SU.uKey.value.copy(_key);
+    }
     const ap = view.appear || 0;
-    U.uPortalI.value = (2.0 + 0.25 * Math.sin(S.t * 0.9)) * (1 + 0.6 * ap * ap);
+    U.uPortalI.value = (1.15 + 0.12 * Math.sin(S.t * 0.9)) * (1 + 0.6 * ap * ap);
     U.uKeyI.value = 1.8;
     if (view.fogColor) U.uFogC.value.copy(view.fogColor);
     // руническая волна (1,4 с) и кольцо света
@@ -900,19 +938,22 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
     return {
       built: S.built, visible: root.visible, quality: S.q, element: S.elem, wave: +S.wave.toFixed(2), summon: +S.summon.toFixed(2),
       particles: T.parts, rocks: T.rocks, mist: T.mist, mirror: M.rt ? [M.w, M.h] : null, lights: 0,
-      meshes: S.built ? owned.filter((o) => o.visible !== false && (o.parent === root || o.parent === portalG)).length : 0,
+      meshes: S.built ? owned.filter((o) => o.visible !== false && !!o.parent).length : 0,
     };
   }
 
   // центр портала в мировых осях (контровой свет героя — с его стороны)
   function portalWorld(out) {
     out.set(PORTAL.x, PORTAL.lift + PORTAL.rMid, PORTAL.z);
-    return root.localToWorld(out);
+    return back.localToWorld(out);
   }
+
+  if (prebuild) { try { build(); } catch (e) { console.warn('[W4-ВИТРИНА] сцена витрины не собралась', e); release(); } }
 
   function dispose() {
     release();
     if (M.cam) M.cam = null;
+    M.renderer = null;
     if (root.parent) root.parent.remove(root);
   }
 

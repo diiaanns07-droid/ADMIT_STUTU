@@ -29,7 +29,7 @@ const finite = (arr) => { for (let i = 0; i < arr.length; i++) if (!Number.isFin
   const st = createMenuStage({ THREE, scene, quality: 'low' });
   assert.equal(st.group.parent, scene, 'группа сцены в сцене');
   assert.equal(st.group.visible, false, 'до меню сцена скрыта');
-  assert.equal(st.info().built, false, 'до меню ничего не построено');
+  assert.equal(st.info().built, false, 'до меню ничего не построено (без prebuild)');
   const heroPos = new THREE.Vector3(3, 0, -4), key = new THREE.Vector3(4, 2.7, -2);
   const fx = { style: 'ember', color: 0xff7a2a, color2: 0xffd08a };
   const view = { w: 1, active: true, heroPos, heroYaw: 0.4, camera, fx, element: 'Пепел и пламя', key, appear: 0, loading: 0 };
@@ -133,9 +133,8 @@ const finite = (arr) => { for (let i = 0; i < arr.length; i++) if (!Number.isFin
   const settings = { quality: 'medium', reducedMotion: false };
   const sc = createHeroShowcase({ THREE, scene, heroRoot, heroModel: hm, getPostfx: () => pf, settings, dom: null });
   const step = (n, active = true) => { for (let i = 0; i < n; i++) sc.update(1 / 30, active, camera); };
-  step(1);
-  await new Promise((r) => setTimeout(r, 50));   // сцена грузится динамическим import()
-  step(5);
+  assert.ok(sc.stage && sc.stage.built, 'сцена витрины собрана сразу (шейдеры — общей сборкой мира)');
+  step(6);
   assert.ok(sc.stage && sc.stage.built, 'витрина подключила сцену');
   assert.deepEqual(calls.sig, ['ashen'], 'первый герой — поза-«визитка»');
   assert.equal(calls.pulse.length, 0, 'первый показ — без импульсов экрана');

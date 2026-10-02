@@ -29,6 +29,8 @@
 //   → { update(dt, active, camera) → true, если камера выставлена витриной; get weight; get stage; dispose() }
 // Свет включается только в меню (active) и плавно гаснет при выходе в бой; тени витрина не бросает.
 
+import { createMenuStage } from './menuStage.js';   // [W4-ВИТРИНА] сцена витрины — сразу, до общей сборки шейдеров
+
 // [W4-ВИТРИНА] иконки стихий (по id героя: у эльфийки стиль частиц «wind», а стихия — гроза)
 const ELEMENT_ICON = {
   // пламя
@@ -244,18 +246,12 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     if (typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 2000 }); else setTimeout(go, 0);
   }
 
-  // [W4-ВИТРИНА] сцена витрины: модуль грузится при первом входе в меню; ошибка — витрина без сцены
-  let stage = null, stageReq = false, reflectKey = '';
+  // [W4-ВИТРИНА] сцена витрины: строится сразу (main.js собирает шейдеры сцены после создания витрины — её
+  // программы соберутся вместе с миром, первый кадр меню без рывка); ошибка — витрина без сцены
+  let stage = null, reflectKey = '';
+  try { stage = createMenuStage({ THREE, scene, quality: settings.quality, reducedMotion: !!settings.reducedMotion, prebuild: true }); } catch (e) { console.warn('[W4-ВИТРИНА] сцена витрины', e); stage = null; }
   function stageTick(dt, active, camera, w, fxc, zc) {
-    if (!stage) {
-      if (active && !stageReq) {
-        stageReq = true;
-        import('./menuStage.js').then((m) => {
-          try { stage = m.createMenuStage({ THREE, scene, quality: settings.quality, reducedMotion: !!settings.reducedMotion }); } catch (e) { console.warn('[W4-ВИТРИНА] сцена витрины', e); }
-        }).catch((e) => console.warn('[W4-ВИТРИНА] menuStage.js', e && e.message));
-      }
-      return;
-    }
+    if (!stage) return;
     try {
       if (stage.quality !== settings.quality) stage.setQuality(settings.quality);
       stage.setReducedMotion(!!settings.reducedMotion);
@@ -267,11 +263,11 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       V.w = w; V.active = active; V.heroPos = heroRoot.position; V.heroYaw = heroRoot.rotation.y; V.camera = camera;
       V.fx = fxc; V.element = H ? H.element : ''; V.key = key.position;
       V.appear = S.ap || 0;
-      V.loading = S.loadT; V.fogColor = scene.fog && scene.fog.color ? scene.fog.color : null; V.zoom = zc;
+      V.loading = S.loadT; V.fogColor = scene.fog && scene.fog.color ? scene.fog.color : null; V.zoom = zc; V.orbit = S.orbit || 0;
       stage.update(dt, V);
     } catch (e) { console.warn('[W4-ВИТРИНА] сцена витрины отключена', e); try { stage.dispose(); } catch (err) { /* ignore */ } stage = null; }
   }
-  const V = { w: 0, active: false, heroPos: null, heroYaw: 0, camera: null, fx: null, element: '', key: null, appear: 0, loading: 0, fogColor: null, zoom: 0 };
+  const V = { w: 0, active: false, heroPos: null, heroYaw: 0, camera: null, fx: null, element: '', key: null, appear: 0, loading: 0, fogColor: null, zoom: 0, orbit: 0 };
 
   function place(zc) {
     const hp = heroRoot.position, yaw = heroRoot.rotation.y;
@@ -418,7 +414,7 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       if (HL && HL.heroKeyColor.value) { HL.heroKeyColor.value.multiplyScalar(0.9); HL.heroRimColor.value.multiplyScalar(0.9); HL.heroFillColor.value.multiplyScalar(0.9); }
       return false;
     }
-    // облёт: дуга ±32° перед героем, дистанция «по пояс», герой справа от панели меню
+    // облёт: дуга перед героем, дистанция «по пояс», герой справа от панели меню
     const reduced = !!settings.reducedMotion;
     S.angle += dt * (reduced ? 0.03 : 0.11);
     // приближение/поворот: инерция поворота, через 8 с без касания — обратно к облёту
@@ -437,7 +433,10 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       if (!U.faceOk || _face.distanceToSquared(_ft) > 1) { _face.copy(_ft); U.faceOk = true; }
       else _face.lerp(_ft, 1 - Math.exp(-4 * dt));
     } else if (!U.faceOk) _face.set(hp.x, hp.y + 1.58, hp.z);
-    const yaw = heroRoot.rotation.y + (0.18 + 0.56 * Math.sin(S.angle)) * (1 - 0.6 * zc) + U.yaw;
+    // [W4-ВИТРИНА] дуга облёта ±20° (было ±32°): портал за спиной героя доворачивается на половину дуги
+    const orbit = 0.36 * Math.sin(S.angle) * (1 - 0.6 * zc);
+    S.orbit = orbit * 0.55;
+    const yaw = heroRoot.rotation.y + 0.18 * (1 - 0.6 * zc) + orbit + U.yaw;
     // [W4-ВИТРИНА] подлёт при входе в меню: дальше и выше, плавно к облёту
     const ik = S.intro > 0 ? S.intro * S.intro * (3 - 2 * S.intro) : 0;
     const dist = ((2.8 + 0.18 * Math.sin(S.angle * 0.7)) * (1 - zc) + 0.64 * zc) * (1 + 0.55 * ik);
@@ -461,10 +460,10 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       HL.heroRimDir.value.copy(_portal).sub(c).normalize().setY(0).normalize().multiplyScalar(0.85);
       HL.heroRimDir.value.y = 0.45;
       HL.heroRimDir.value.normalize().transformDirection(camera.matrixWorldInverse);
-      HL.heroKeyColor.value.copy(_keyC).multiplyScalar(1.5 * w * q * (1 + 0.3 * zc) * (1 + 0.25 * ap * ap));   // портретный ключ сбоку — чуть ярче
+      HL.heroKeyColor.value.copy(_keyC).multiplyScalar(1.75 * w * q * (1 + 0.3 * zc) * (1 + 0.25 * ap * ap));   // портретный ключ сбоку — чуть ярче
       if (fxc) _elemC.set(fxc.color).lerp(_rimC, 0.18); else _elemC.copy(_rimC);
       HL.heroRimColor.value.copy(_elemC).multiplyScalar(1.9 * w * (1 + 1.2 * ap * ap));
-      HL.heroFillColor.value.copy(_fillC).multiplyScalar(0.34 * w);
+      HL.heroFillColor.value.copy(_fillC).multiplyScalar(0.42 * w);
     }
     const pf = getPostfx && getPostfx();
     if (pf && typeof pf.setBloomK === 'function') { const bk = 1 - 0.6 * zc; if (Math.abs(bk - (S.bloomK ?? 1)) > 0.01) { S.bloomK = bk; try { pf.setBloomK(bk); } catch (e) { /* ignore */ } } }

@@ -103,7 +103,7 @@ try {
   await page.evaluate(() => window.__mVirtual(true));
   const step = async (save) => {
     await page.evaluate((ms) => window.__mStep(ms), 1000 / FPS);
-    if (save && VIDEO) { n++; await page.screenshot({ path: join(FRAMES, `${String(n).padStart(5, '0')}.jpg`), type: 'jpeg', quality: 90 }); }
+    if (save && VIDEO) { n++; await page.screenshot({ path: join(FRAMES, `${String(n).padStart(5, '0')}.jpg`), type: 'jpeg', quality: 90, timeout: 300000 }); }
   };
   const steps = async (sec, save) => { for (let i = 0; i < Math.round(sec * FPS); i++) await step(save); };
   // выбор героя — как игрок: клик по карточке
@@ -125,7 +125,7 @@ try {
     const ok = await waitHero(id, false);
     await steps(SETTLE, false);
     const p = join(OUT, `${TAG}_${Q}_${String(k + 1).padStart(2, '0')}_${id}.jpg`);
-    await page.screenshot({ path: p, type: 'jpeg', quality: 90 });
+    await page.screenshot({ path: p, type: 'jpeg', quality: 90, timeout: 300000 });
     report.heroes[id] = { ready: ok, ...(await info()) };
     console.error('[menu_shots]', Q, id, JSON.stringify(report.heroes[id].r));
   }
@@ -151,7 +151,7 @@ try {
     await page.waitForFunction(() => window.__ASHEN__.screen === 'playing', null, { timeout: 240000 }).catch(() => {});
     await page.evaluate(() => window.__mVirtual(true));
     await steps(2.0, false);
-    await page.screenshot({ path: join(OUT, `${TAG}_${Q}_battle.jpg`), type: 'jpeg', quality: 88 });
+    await page.screenshot({ path: join(OUT, `${TAG}_${Q}_battle.jpg`), type: 'jpeg', quality: 88, timeout: 300000 });
     report.battle = await info();
     console.error('[menu_shots] бой', JSON.stringify(report.battle.r));
   }
