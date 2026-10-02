@@ -185,10 +185,22 @@ async function gameBudget() {
       await page.waitForFunction(() => !!window.__ASHEN__, null, { timeout: 180000 });
       await page.waitForFunction(() => { const a = __ASHEN__.worldAssets(); return a && a.pending === 0; }, null, { timeout: 180000 }).catch(() => {});
       await page.waitForFunction(() => { const h = __ASHEN__.hero(); return h && h.ready; }, null, { timeout: 240000 }).catch(() => errs.push('hero not ready'));
-      await frames(20);
+      await frames(60);
       rec.menu = await page.evaluate(() => __ASHEN__.renderInfo());
       rec.menuHero = await page.evaluate(() => { const h = __ASHEN__.hero(); return h ? { gear: h.gear, gearMs: h.gearMs } : null; });
       await page.screenshot({ path: join(OUT, `game_${hero}_${q}_menu.jpg`), type: 'jpeg', quality: 88, timeout: 180000 });
+      // витрина крупно: колесо над героем (лицо и причёска), затем перетаскиванием — разворот спиной
+      if (!argv.includes('--nozoom')) {
+        await page.mouse.move(1280 * 0.66, 720 * 0.45);
+        for (let i = 0; i < 4; i++) { await page.mouse.wheel(0, -300); await frames(2); }
+        await frames(70);
+        await page.screenshot({ path: join(OUT, `game_${hero}_${q}_zoom.jpg`), type: 'jpeg', quality: 90, timeout: 180000 });
+        await page.mouse.down();
+        for (let i = 1; i <= 14; i++) { await page.mouse.move(1280 * 0.66 + i * 1280 * 0.035, 720 * 0.45); await frames(1); }
+        await page.mouse.up();
+        await frames(40);
+        await page.screenshot({ path: join(OUT, `game_${hero}_${q}_zoom_turn.jpg`), type: 'jpeg', quality: 90, timeout: 180000 });
+      }
       const click = (label) => page.evaluate((l) => { const b = [...document.querySelectorAll('button')].find((x) => x.offsetParent !== null && x.textContent.trim() === l); if (b) b.click(); return !!b; }, label);
       await click('Отладка с клавиатуры'); await sleep(150);
       await click('Играть'); await sleep(250);

@@ -141,6 +141,21 @@ function drawAtlas(N) {
     }
   }
   const im = g.getImageData(0, 0, N, N), d = im.data;
+  // яркость волосков слегка размыта поперёк (±2 текселя на 1024): пряди мягче, без «шлифованного металла»;
+  // покрытие (альфа) — как нарисовано
+  {
+    const R = Math.max(1, Math.round(2 * k)), row = new Float32Array(N), wgt = new Float32Array(N);
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) { const i = (y * N + x) * 4, a = d[i + 3] / 255; row[x] = d[i] * a; wgt[x] = a; }
+      for (let x = 0; x < N; x++) {
+        const t0 = Math.floor(x / C) * C;
+        let s = 0, w = 0;
+        for (let dx = -R; dx <= R; dx++) { const xx = Math.min(t0 + C - 1, Math.max(t0, x + dx)); s += row[xx]; w += wgt[xx]; }
+        const i = (y * N + x) * 4;
+        if (w > 1e-3) d[i] = d[i + 1] = d[i + 2] = Math.round(s / w);
+      }
+    }
+  }
   // прозрачные текселы — серые (а не чёрные): мип-уровни не темнят кромку прядей
   for (let i = 0; i < d.length; i += 4) {
     const a = d[i + 3];
@@ -392,7 +407,7 @@ export function buildHair(THREE, ctx) {
   const polY = (yHead) => Math.acos(Math.max(-0.97, Math.min(0.97, (yHead - cy) / ry)));   // полярный угол высоты (оси головы)
   const polFront = polY(browY + 0.058);                 // линия роста надо лбом
   // линия роста: |az| 0 — затылок … π — лоб (кусочно-линейно); уши — открыты
-  const HL = [[0, 2.34], [0.55, 2.26], [1.0, 2.08], [1.25, 1.62], [1.45, 1.42], [1.75, 1.42], [1.95, 1.66], [2.08, 1.66], [2.28, 1.28], [2.62, polFront + 0.06], [Math.PI, polFront]];
+  const HL = [[0, 2.45], [0.55, 2.36], [1.0, 2.14], [1.25, 1.62], [1.45, 1.42], [1.75, 1.42], [1.95, 1.66], [2.08, 1.66], [2.28, 1.28], [2.62, polFront + 0.06], [Math.PI, polFront]];
   const hairPol = (az) => {
     const a = Math.abs(Math.atan2(Math.sin(az), Math.cos(az)));
     for (let i = 1; i < HL.length; i++) if (a <= HL[i][0]) { const t = (a - HL[i - 1][0]) / (HL[i][0] - HL[i - 1][0]); return HL[i - 1][1] + (HL[i][1] - HL[i - 1][1]) * t; }
