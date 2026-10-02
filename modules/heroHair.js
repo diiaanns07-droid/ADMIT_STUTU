@@ -434,7 +434,8 @@ export function buildHair(THREE, ctx) {
   };
   const S = (az, pol, lift = 0, out = V3()) => onScalp(dirOf(az, pol), lift, out);
   const polY = (yHead) => Math.acos(Math.max(-0.97, Math.min(0.97, (yHead - cy) / ry)));   // полярный угол высоты (оси головы)
-  const polFront = polY(browY + 0.058);                 // линия роста надо лбом
+  // линия роста надо лбом; у гладкой причёски с открытым лбом — чуть ниже (лоб не «высокий»)
+  const polFront = polY(browY + (styleId === 'ponytail' ? 0.05 : 0.058));
   // линия роста: |az| 0 — затылок … π — лоб (кусочно-линейно); уши — открыты
   const HL = [[0, 2.45], [0.55, 2.36], [1.0, 2.14], [1.25, 1.62], [1.45, 1.42], [1.75, 1.42], [1.95, 1.66], [2.08, 1.66], [2.28, 1.28], [2.62, polFront + 0.06], [Math.PI, polFront]];
   const hairPol = (az) => {
@@ -707,9 +708,10 @@ export function buildHair(THREE, ctx) {
         // касательная — от полюса (направление пряди)
         T.copy(P).multiplyScalar(-Math.sin(de)).addScaledVector(E1, Math.cos(de) * Math.cos(th)).addScaledVector(E2, Math.cos(de) * Math.sin(th)).normalize();
         const sh = (o.tone ?? 0.62) * (0.85 + 0.15 * f);
-        const a = f < 0.9 ? 1 : 1 - (f - 0.9) / 0.1 * (o.edge ?? 0.5);
-        // плотная подложка атласа — до v ≈ 0.5, дальше кончики: у линии роста — только последние 10 %
-        const vv = f < 0.9 ? 0.04 + 0.42 * (f / 0.9) : 0.46 + 0.4 * ((f - 0.9) / 0.1);
+        // плотная подложка атласа — до v ≈ 0.5, дальше кончики: у линии роста — только последняя доля tip
+        const tf = 1 - (o.tip ?? 0.1);
+        const a = f < tf ? 1 : 1 - (f - tf) / (1 - tf) * (o.edge ?? 0.5);
+        const vv = f < tf ? 0.04 + 0.42 * (f / tf) : 0.46 + 0.4 * ((f - tf) / (1 - tf));
         vtx(p, d, (0.3 + 0.4 * tri) * 0.25, vv, [sh, sh, sh], a, [chestW(p), 0, rr(), 0], T);
       }
     }
@@ -871,7 +873,8 @@ export function buildHair(THREE, ctx) {
 
   function buildPonytail() {
     const tieDir = dirOf(0, 0.62);
-    shell(tieDir, 0.0035, 40, 10, { tone: 0.58, rep: 9 });
+    // открытый лоб: кромка оболочки узкая и плотная — без серой полосы «редеющих» волос
+    shell(tieDir, 0.0035, 40, 12, { tone: 0.58, rep: 9, tip: 0.05, over: 0.035, edge: 0.6 });
     const tie = onScalp(tieDir, 0.012);
     // пряди от линии роста к узлу хвоста (гладко зачёсаны назад), кончики атласа — у линии роста
     const P = tieDir.clone(), E1 = V3().crossVectors(P, UP).normalize(), E2 = V3().crossVectors(P, E1);
@@ -884,11 +887,11 @@ export function buildHair(THREE, ctx) {
         const dirAt = (de) => d.copy(P).multiplyScalar(Math.cos(de)).addScaledVector(E1, Math.sin(de) * Math.cos(th)).addScaledVector(E2, Math.sin(de) * Math.sin(th));
         for (let it = 0; it < 20; it++) { const mid = (lo + hi) / 2; const a = angOf(dirAt(mid)); if (a.pol < hairPol(a.az)) lo = mid; else hi = mid; }
         const lift = 0.004 + layer * 0.0035;
-        const start = onScalp(dirAt(lo + 0.03).clone(), lift);
+        const start = onScalp(dirAt(lo + 0.012).clone(), lift);
         const pts = walk(start, tie, 0.016, lift, 40);
         pts.forEach((p, i) => { const t = i / Math.max(1, pts.length - 1); p.addScaledVector(out(p, V3()), 0.005 * t * t); });
         const front = Math.cos(th) < 0 ? 1 : 0;
-        card(pts.reverse(), { tile: layer ? 1 : 0, w0: 0.03, w1: 0.05 + 0.01 * front, tone: (layer ? 1 : 0.85) * (0.95 + 0.1 * rr()), flexK: 0, chest: 0, bulge: 0.2, v0: 0.04, vLin: true, v1: layer ? 0.7 : 0.84, rootDark: 0.9, alpha: (t) => (t > 0.85 ? 1 - (t - 0.85) * 3 : 1) });
+        card(pts.reverse(), { tile: layer ? 1 : 0, w0: 0.03, w1: 0.05 + 0.01 * front, tone: (layer ? 1 : 0.85) * (0.95 + 0.1 * rr()), flexK: 0, chest: 0, bulge: 0.2, v0: 0.04, vLin: true, v1: layer ? 0.62 : 0.72, rootDark: 0.9, alpha: (t) => (t > 0.93 ? 1 - (t - 0.93) * 6 : 1) });
       }
     }
     // хвост: от узла чуть вверх-назад, затем вниз по спине; коса из трёх прядей, кисточка на конце
