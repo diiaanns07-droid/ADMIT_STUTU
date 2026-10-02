@@ -9,7 +9,8 @@
 <style>
   /* [W4-UI] Стенд боевого HUD без WebGL: фальшивая 2D-сцена + настоящие ui.js (полосы, умения) и battleHud.js
      (числа урона, криты, лечение, «Ярость клятвы»). Сценарий повторяется каждые 8 с.
-     Параметры: ?q=low|medium|high  &rm=1 (уменьшенное движение)  &bdo=0 (прежний вид)  &cheat=1 (шпаргалка видна) */
+     Параметры: ?q=low|medium|high  &rm=1 (уменьшенное движение)  &bdo=0 (прежний вид)  &cheat=1 (шпаргалка видна)
+     &outro=1|2 — финал «ПОБЕДА» / «РЕГЕНТ УСТОЯЛ» в конце круга */
   #ao-canvas { background: #0d0f14; }
 </style>
 </head>
@@ -80,6 +81,8 @@ const SCRIPT = [
   [5.0, () => [ev('boss_hit', { amount: 212, source: 'rune', charged: true, combo: 15 })]],
   [6.2, () => { snap.player.furyReady = true; snap.player.fury = 100; return [ev('ultimate_ready', {})]; }],
 ];
+// &outro=1 — в конце круга финал «ПОБЕДА» (&outro=2 — «РЕГЕНТ УСТОЯЛ»)
+if (q.get('outro')) SCRIPT.push([6.9, () => [ev(q.get('outro') === '2' ? 'defeat' : 'victory', { time: 102.3 })]]);
 const ui = createUI({ root: document.getElementById('ao-ui-root'), callbacks: {}, options: { keyboardPause: false, showVolume: false, abilityCosts: { bolt: 4, shield: 10, burst: 25 } } });
 const hud = createBattleHud({ canvas: document.getElementById('ao-hud-canvas') });
 let t = 0, last = performance.now(), loopT = 0, fired = 0;
@@ -93,6 +96,7 @@ function frame(now) {
   if (loopT >= 8) {   // новый круг сценария
     loopT = 0; fired = 0; snap.player.hp = 74; snap.player.energy = 58; snap.player.fury = 35; snap.player.furyReady = false; snap.boss.hp = 720;
     snap.cooldowns.burstRemaining = 0; snap.cooldowns.dashRemaining = 0;
+    hud.reset();   // как новый бой в игре: без «+N» за восстановленное здоровье
   }
   const events = [];
   while (fired < SCRIPT.length && SCRIPT[fired][0] <= loopT) { events.push(...SCRIPT[fired][1]()); fired++; }

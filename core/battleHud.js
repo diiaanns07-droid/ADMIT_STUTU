@@ -1129,6 +1129,9 @@ export function createBattleHud({ canvas } = {}) {
   }
   // [FEEL] финал боя поверх замедленного последнего удара (main.js держит экран боя ~1,5 с)
   function fmtClock(sec) { const v = Math.max(0, Math.round(num(sec, 0))); return `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}`; }
+  // [W4-UI] титр капителью Forum с градиентом (золото — победа, сталь — поражение), завитки по бокам;
+  // «щелчок» — масштабом, поэтому шрифт, градиент и строки создаются один раз на бой.
+  const outroCache = { kind: '', h: 0, time: -1, pct: -1, font: '', subFont: '', grad: null, sub: '', sz: 0, ss: 0, tw: 0 };
   function drawOutro(dtR, rm) {
     if (!outro.kind) return;
     outro.t += dtR;
@@ -1136,24 +1139,47 @@ export function createBattleHud({ canvas } = {}) {
     const kIn = clamp(T / 0.35, 0, 1);
     ctx.globalAlpha = clamp(T / 0.3, 0, 1) * 0.55;
     vignette(win ? 'rgba(10,8,2,' : 'rgba(6,8,14,', '0.85', 0.25);
-    ctx.globalAlpha = kIn;
-    const sz = Math.round(clamp(H * (win ? 0.14 : 0.1), 48, 128) * (rm ? 1 : 1 + 0.35 * (1 - kIn) * (1 - kIn)));
-    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
-    ctx.font = `700 ${sz}px ${SERIF}`;
     const title = win ? 'ПОБЕДА' : 'РЕГЕНТ УСТОЯЛ';
-    ctx.lineWidth = Math.max(4, sz * 0.08); ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-    ctx.strokeText(title, W / 2, H * 0.42);
-    if (!rm && win) { ctx.shadowColor = CRIT; ctx.shadowBlur = sz * 0.4; }
-    ctx.fillStyle = win ? CRIT : STEEL; ctx.fillText(title, W / 2, H * 0.42);
-    ctx.shadowBlur = 0;
-    const ss = Math.round(clamp(H * 0.036, 18, 32));
-    ctx.font = `800 ${ss}px ${SANS}`;
-    const sub = win ? `Регент повержен · время боя ${fmtClock(outro.time)}`
-      : outro.bossPct <= 50 ? `у Регента осталось ${outro.bossPct}% — ещё попытка, и он падёт`
-        : `у Регента осталось ${outro.bossPct}% — ещё попытка: щит и рывок спасают от ударов`;
+    const C = outroCache;
+    if (C.kind !== outro.kind || C.h !== H || C.time !== outro.time || C.pct !== outro.bossPct) {   // раз на бой (или при смене размера окна)
+      C.kind = outro.kind; C.h = H; C.time = outro.time; C.pct = outro.bossPct;
+      C.sz = Math.round(clamp(H * (win ? 0.15 : 0.11), 50, 136));
+      C.ss = Math.round(clamp(H * 0.034, 18, 30));
+      C.font = `400 ${C.sz}px ${CAP_FONT}`;
+      C.subFont = `700 ${C.ss}px ${SANS}`;
+      const g = ctx.createLinearGradient(0, -C.sz * 0.72, 0, C.sz * 0.05);
+      if (win) { g.addColorStop(0, '#fffbe6'); g.addColorStop(0.45, '#ffd76a'); g.addColorStop(1, '#b8740e'); } else { g.addColorStop(0, '#ffffff'); g.addColorStop(0.5, '#cfd8e6'); g.addColorStop(1, '#6f7c92'); }
+      C.grad = g;
+      C.sub = win ? `Регент повержен · время боя ${fmtClock(outro.time)}`
+        : outro.bossPct <= 50 ? `у Регента осталось ${outro.bossPct}% — ещё попытка, и он падёт`
+          : `у Регента осталось ${outro.bossPct}% — ещё попытка: щит и рывок спасают от ударов`;
+      ctx.font = C.font; C.tw = num(ctx.measureText(title).width, C.sz * title.length * 0.6);
+    }
+    const sz = C.sz, cy = H * 0.42, sc = rm ? 1 : 1 + 0.35 * (1 - kIn) * (1 - kIn);
+    ctx.globalAlpha = kIn;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
+    ctx.save();
+    ctx.translate(W / 2, cy); ctx.scale(sc, sc);
+    ctx.font = C.font;
+    ctx.lineWidth = Math.max(4, sz * 0.07); ctx.strokeStyle = 'rgba(8,5,2,0.85)';
+    if (!rm && win && quality !== 'low') { ctx.shadowColor = 'rgba(255,190,70,0.9)'; ctx.shadowBlur = sz * 0.35; }
+    ctx.strokeText(title, 0, 0);
+    ctx.shadowBlur = 0; ctx.shadowColor = 'rgba(0,0,0,0)';
+    ctx.fillStyle = C.grad; ctx.fillText(title, 0, 0);
+    ctx.restore();
+    // завитки: золотые линии с ромбами по бокам титра, вытягиваются за 0,5 с
+    const ext = clamp((T - 0.15) / 0.5, 0, 1), half = C.tw / 2 + sz * 0.3, len = Math.min(W * 0.16, 220) * (rm ? 1 : 1 - (1 - ext) * (1 - ext));
+    if (len > 2) {
+      const ly = cy - sz * 0.32, col = win ? GOLD : '#9aa6b8';
+      ctx.globalAlpha = kIn * 0.9; ctx.fillStyle = col;
+      ctx.fillRect(W / 2 - half - len, ly - 1, len, 2); ctx.fillRect(W / 2 + half, ly - 1, len, 2);
+      capDiamond(W / 2 - half - len, ly, 6); capDiamond(W / 2 + half + len, ly, 6);
+    }
+    ctx.font = C.subFont;
     ctx.globalAlpha = clamp((T - 0.25) / 0.3, 0, 1);
-    ctx.lineWidth = 4; ctx.strokeText(sub, W / 2, H * 0.42 + ss * 1.8);
-    ctx.fillStyle = win ? GOLD_HI : STEEL; ctx.fillText(sub, W / 2, H * 0.42 + ss * 1.8);
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(8,5,2,0.8)'; ctx.strokeText(C.sub, W / 2, cy + C.ss * 1.8);
+    ctx.fillStyle = win ? GOLD_HI : STEEL; ctx.fillText(C.sub, W / 2, cy + C.ss * 1.8);
     ctx.globalAlpha = 1; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.lineJoin = 'miter';
   }
 
