@@ -10,41 +10,42 @@ export const SFX_DIR = 'assets/sfx/';
 // частые звуки (выстрел, искра, попадания, шаги) — тише;
 // cat — категория лимита голосов; lim — сколько голосов категории одновременно; pitch — случайный разброс
 // высоты, ± полутоны; vol — разброс громкости, ± дБ; rev — посыл в ревербацию; gap — не чаще раза в gap с;
-// ui — интерфейсный звук: без панорамы и расстояния; loop — петля (щит, эмбиент).
+// ui — интерфейсный звук: без панорамы и расстояния; loop — петля (щит, эмбиент), len — её точная длина, с:
+// в файле после неё ещё 0,1 с (декодер Vorbis в Chromium дописывает паддинг — по loopEnd он не слышен).
 export const SFX = {
-  step:        { v: 4, gain: 0.61, cat: 'step', lim: 2, pitch: 1.5, vol: 2, rev: 0.02, gap: 0.12 },
+  step:        { v: 4, gain: 0.43, cat: 'step', lim: 2, pitch: 1.5, vol: 2, rev: 0.02, gap: 0.12 },
   dash:        { v: 2, gain: 0.47, cat: 'dash', lim: 2, pitch: 1, vol: 1, rev: 0.1 },
-  slash:       { v: 3, gain: 0.53, cat: 'slash', lim: 2, pitch: 1, vol: 1, rev: 0.1 },
+  slash:       { v: 3, gain: 0.54, cat: 'slash', lim: 2, pitch: 1, vol: 1, rev: 0.1 },
   shot:        { v: 3, gain: 0.61, cat: 'shot', lim: 3, pitch: 0.8, vol: 1.5, rev: 0.1, gap: 0.04 },
   spark:       { v: 3, gain: 0.79, cat: 'spark', lim: 3, pitch: 1.5, vol: 1.5, rev: 0.06, gap: 0.03 },
-  burst:       { v: 1, gain: 1.04, cat: 'burst', lim: 1, pitch: 0.4, rev: 0.25 },
+  burst:       { v: 1, gain: 0.93, cat: 'burst', lim: 1, pitch: 0.4, rev: 0.25 },
   shield_up:   { v: 1, gain: 0.34, cat: 'shield', lim: 1, pitch: 0.3, rev: 0.2 },
   shield_down: { v: 1, gain: 0.25, cat: 'shield', lim: 1, pitch: 0.3, rev: 0.12 },
-  shield_loop: { v: 1, gain: 0.13, cat: 'shieldHum', lim: 1, loop: true, rev: 0.1 },
-  block:       { v: 2, gain: 0.73, cat: 'block', lim: 2, pitch: 0.8, vol: 1, rev: 0.15 },
+  shield_loop: { v: 1, gain: 0.07, cat: 'shieldHum', lim: 1, loop: true, len: 4.0, rev: 0.1 },
+  block:       { v: 2, gain: 0.74, cat: 'block', lim: 2, pitch: 0.8, vol: 1, rev: 0.15 },
   parry:       { v: 2, gain: 0.67, cat: 'block', lim: 2, pitch: 0.6, vol: 1, rev: 0.2, gap: 0.08 },
-  perfect:     { v: 1, gain: 0.35, cat: 'cue', lim: 1, pitch: 0.3, rev: 0.25 },
-  boss_hit:    { v: 3, gain: 0.5, cat: 'hit', lim: 3, pitch: 1.2, vol: 1.5, rev: 0.12, gap: 0.05 },
-  player_hit:  { v: 2, gain: 0.89, cat: 'hurt', lim: 2, pitch: 0.8, vol: 1, rev: 0.1 },
-  rune_fire:   { v: 1, gain: 0.65, cat: 'rune', lim: 2, pitch: 0.3, rev: 0.25 },
+  perfect:     { v: 1, gain: 0.38, cat: 'cue', lim: 1, pitch: 0.3, rev: 0.25 },
+  boss_hit:    { v: 3, gain: 0.46, cat: 'hit', lim: 3, pitch: 1.2, vol: 1.5, rev: 0.12, gap: 0.05 },
+  player_hit:  { v: 2, gain: 0.48, cat: 'hurt', lim: 2, pitch: 0.8, vol: 1, rev: 0.1 },
+  rune_fire:   { v: 1, gain: 0.54, cat: 'rune', lim: 2, pitch: 0.3, rev: 0.25 },
   rune_storm:  { v: 1, gain: 0.93, cat: 'rune', lim: 2, pitch: 0.3, rev: 0.25 },
-  rune_light:  { v: 1, gain: 0.31, cat: 'rune', lim: 2, pitch: 0.2, rev: 0.3 },
-  rune_star:   { v: 1, gain: 0.28, cat: 'rune', lim: 2, pitch: 0.3, rev: 0.3 },
+  rune_light:  { v: 1, gain: 0.3, cat: 'rune', lim: 2, pitch: 0.2, rev: 0.3 },
+  rune_star:   { v: 1, gain: 0.34, cat: 'rune', lim: 2, pitch: 0.3, rev: 0.3 },
   rune_wind:   { v: 1, gain: 0.32, cat: 'rune', lim: 2, pitch: 0.3, rev: 0.25 },
-  rune_shadow: { v: 1, gain: 1.2, cat: 'rune', lim: 2, pitch: 0.3, rev: 0.25 },
-  ui_ok:       { v: 1, gain: 0.21, cat: 'ui', lim: 2, ui: true, gap: 0.12 },
+  rune_shadow: { v: 1, gain: 0.57, cat: 'rune', lim: 2, pitch: 0.3, rev: 0.25 },
+  ui_ok:       { v: 1, gain: 0.23, cat: 'ui', lim: 2, ui: true, gap: 0.12 },
   ui_error:    { v: 1, gain: 0.6, cat: 'ui', lim: 2, ui: true, gap: 0.25 },
-  victory:     { v: 1, gain: 0.99, cat: 'outcome', lim: 1, ui: true },
-  defeat:      { v: 1, gain: 0.65, cat: 'outcome', lim: 1, ui: true },
-  ambient:     { v: 1, gain: 0.5, loop: true },
+  victory:     { v: 1, gain: 0.56, cat: 'outcome', lim: 1, ui: true },
+  defeat:      { v: 1, gain: 0.46, cat: 'outcome', lim: 1, ui: true },
+  ambient:     { v: 1, gain: 0.5, loop: true, len: 24.0 },
   // Регент: замах — нарастание с «моментом удара» на hit секунд (стартует со сдвигом под длительность замаха)
   windup_slam: { v: 1, gain: 0.38, cat: 'windup', lim: 2, pitch: 0.4, rev: 0.15, hit: 2.0 },
   windup_orb:  { v: 1, gain: 0.5, cat: 'windup', lim: 2, pitch: 0.4, rev: 0.15, hit: 2.0 },
   windup_nova: { v: 1, gain: 0.49, cat: 'windup', lim: 2, pitch: 0.3, rev: 0.2, hit: 2.0 },
   boss_slam:   { v: 2, gain: 0.9, cat: 'heavy', lim: 2, pitch: 0.8, vol: 1, rev: 0.25 },
-  boss_nova:   { v: 1, gain: 0.83, cat: 'heavy', lim: 2, pitch: 0.5, rev: 0.25 },
+  boss_nova:   { v: 1, gain: 0.79, cat: 'heavy', lim: 2, pitch: 0.5, rev: 0.25 },
   orb_launch:  { v: 2, gain: 0.43, cat: 'launch', lim: 2, pitch: 1, vol: 1, rev: 0.15 },
-  orb_hit:     { v: 2, gain: 0.63, cat: 'impact', lim: 3, pitch: 1, vol: 1, rev: 0.15, gap: 0.05 },
+  orb_hit:     { v: 2, gain: 0.64, cat: 'impact', lim: 3, pitch: 1, vol: 1, rev: 0.15, gap: 0.05 },
   boss_phase:  { v: 1, gain: 1.05, cat: 'phase', lim: 1, pitch: 0.2, rev: 0.3 },
 };
 
@@ -132,12 +133,12 @@ export function sfxForEvent(type, d) {
     case 'perfect_dodge': return [['perfect']];
     case 'rune_cast': return [[RUNE_SFX[d.rune] || 'rune_star']];
     case 'sigil_cast': return [[SIGIL_SFX[d.sigil] || 'rune_star']];
-    case 'ember_lit': return [['burst', { gain: 0.55, rate: 1.15 }]];
+    case 'ember_lit': return [['rune_fire', { gain: 0.8 }]]; // «бабах» выброса — только у выброса
     case 'bow_release': return d.rain ? [['rune_star', { gain: 0.8 }]] : [['shot', { rate: d.charged ? 1.15 : 1.35, gain: d.charged ? 0.85 : 0.65 }]];
     case 'hand_spell_form': return [['conjureStart']];
     case 'hand_spell_cancel': return [['fizzle']];
     case 'hand_spell_throw': return [['throw', { size: d.twoHand ? 0.8 : 0.45, power: n01(d.power, 0.5), prism: false }]];
-    case 'hand_spell_hit': return [['burst', { gain: 0.35 + 0.25 * n01(d.power, 0.5), rate: 1.3 }]];
+    case 'hand_spell_hit': return [['orb_hit', { gain: 0.6 + 0.4 * n01(d.power, 0.5), rate: 1.15 }]]; // удар даёт boss_hit, это — хлопок сгустка
     case 'boss_windup': return [['windup', { kind: d.attackKind || d.kind || 'slam', dur: typeof d.windup === 'number' ? d.windup : d.duration }]];
     case 'boss_impact': {
       const k = d.attackKind || d.kind || 'slam';
@@ -148,7 +149,9 @@ export function sfxForEvent(type, d) {
     case 'boss_phase': return [['phase']];
     case 'victory': return [['victory']];
     case 'defeat': return [['defeat']];
-    case 'pvp_round': return d.phase === 'match_end' ? [[d.winner === 'me' ? 'victory' : 'defeat']] : null; // в дуэли нет victory/defeat
+    case 'pvp_round': // в дуэли нет victory/defeat; ничья (winner null) — без фанфар
+      if (d.phase !== 'match_end' || (d.winner !== 'me' && d.winner !== 'opponent')) return null;
+      return [[d.winner === 'me' ? 'victory' : 'defeat']];
     default: return null;
   }
 }

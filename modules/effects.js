@@ -1313,13 +1313,19 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
   const sfxDirector = audioCfg.director !== false;
   const stepper = createStepper();
   const _sfxP = new V3();
+  let matchEndPlayed = false;
   // [SFX] звук события боя — один на действие, независимо от того, какой слой (V6 или старый) рисует эффект
   function playEventSfx(type, ev, d) {
     const list = sfxForEvent(type, d);
     if (!list) return;
     const remote = d && d.remote === true;
     const p = hasVec(ev.position) ? _sfxP.set(ev.position.x, ev.position.y, ev.position.z) : chestOf(_sfxP);
-    if (type === 'victory' || type === 'defeat') { audio.stopLoops(); audio.duck(0.5, 3); }
+    if (type === 'pvp_round') {
+      // дуэль: фанфары исхода — один раз за матч (второй match_end приходит при взаимной технической победе)
+      if (d.phase === 'countdown') matchEndPlayed = false;
+      if (d.phase === 'match_end') { if (matchEndPlayed) return; matchEndPlayed = true; }
+    }
+    if (type === 'victory' || type === 'defeat' || (type === 'pvp_round' && d.phase === 'match_end')) { audio.stopLoops(); audio.duck(0.5, 3); }
     for (const [name, param] of list) {
       let pr = param;
       if (name === 'dash') {
@@ -1330,8 +1336,9 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
         else if (hasVec(dd)) sign = dd.x * fi.right.x + dd.z * fi.right.z >= 0 ? 1 : -1;
         pr = { sign: remote ? 0 : sign };
       }
-      if (remote && pr && typeof pr === 'object') pr = { ...pr, gain: num(pr.gain, 1) * 0.8 };
-      else if (remote && pr === undefined) pr = { gain: 0.8 };
+      // соперник тише своего героя; синтезу (у него свои параметры) объект громкости не передаём
+      if (remote && SFX[name] && pr && typeof pr === 'object') pr = { ...pr, gain: num(pr.gain, 1) * 0.8 };
+      else if (remote && SFX[name] && pr === undefined) pr = { gain: 0.8 };
       audio.play(name, p, pr);
     }
   }
@@ -3532,6 +3539,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
 const DIRECTOR_NAMES = new Set([
   'cast', 'boltImpact', 'orbImpact', 'orbLaunch', 'block', 'playerHit', 'bossHit', 'windup', 'slam', 'nova', 'phase',
   'burst', 'dash', 'victory', 'defeat', 'throw', 'sphereImpact', 'prismImpact', 'shieldUp',
+  'conjureStart', 'fizzle', // сгусток в ладони (hand_spell_form/cancel); сотворение двумя руками звучит по снимку через play()
 ]);
 
 function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices, warnOnce, samples = null, director = false }) {
@@ -3552,7 +3560,7 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
   const ambientSources = [];
   const voices = [];
   const loops = new Map();
-  const AMB_LEVEL = 0.2;
+  const AMB_LEVEL = 0.3; // [SFX] ветер над плато слышен между ударами, но тише любого действия
   const LIMITS = {
     cast: 3, impact: 4, launch: 2, block: 2, dash: 2, windup: 2, heavy: 2, hit: 3,
     phase: 1, burst: 1, outcome: 1, shield: 2, orbLoop: 2, shieldHum: 1,
@@ -3634,10 +3642,11 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
     // [SFX] записанная петля ветра над плато (24 с, бесшовная) вместо синтеза
     const amb = bank && bank.get('ambient');
     if (amb) {
-      ambSrc = ctx.createBufferSource(); ambSrc.buffer = amb; ambSrc.loop = true;
+      const al = SFX.ambient.len && SFX.ambient.len < amb.duration ? SFX.ambient.len : amb.duration;
+      ambSrc = ctx.createBufferSource(); ambSrc.buffer = amb; ambSrc.loop = true; ambSrc.loopStart = 0; ambSrc.loopEnd = al;
       ambGain = ctx.createGain(); ambGain.gain.value = SFX.ambient.gain;
       ambSrc.connect(ambGain); ambGain.connect(ambBus);
-      ambSrc.start(t, Math.random() * amb.duration);
+      ambSrc.start(t, Math.random() * al);
       ambBus.gain.setValueAtTime(0, t);
       ambBus.gain.linearRampToValueAtTime(AMB_LEVEL, t + 2.5);
       return;
@@ -4263,7 +4272,9 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
     }
     const fn = S[name] || S[SFX_SYNTH_FALLBACK[name]];
     if (!fn) return;
-    try { fn(pos, SFX[name] ? undefined : param); } catch (err) { warnOnce('sfx:' + name, 'ошибка синтеза звука', name, err); }
+    // параметры режиссёра → сигнатура рецепта: у рывка — знак стороны, у прочих сэмплов синтезу параметры не нужны
+    const sp = name === 'dash' && param && isNum(param.sign) ? param.sign : (SFX[name] ? undefined : param);
+    try { fn(pos, sp); } catch (err) { warnOnce('sfx:' + name, 'ошибка синтеза звука', name, err); }
   }
   // [SFX] Звук из визуального обработчика события: при включённом режиссёре такие звуки даёт sfxForEvent.
   function fx(name, pos, param) {
@@ -4277,10 +4288,11 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
     const v = voice(s.cat || 'cue', pos, s.gain, s.rev || 0, 1e6, true, { lim: s.lim });
     if (!v) return null;
     const t = ctx.currentTime;
-    const src = ctx.createBufferSource(); src.buffer = b; src.loop = true;
+    const ln = s.len && s.len < b.duration ? s.len : b.duration; // без паддинга декодера в конце
+    const src = ctx.createBufferSource(); src.buffer = b; src.loop = true; src.loopStart = 0; src.loopEnd = ln;
     const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + 0.18);
     src.connect(g); g.connect(v.out); v.nodes.push(g); addSource(v, src);
-    src.start(t, Math.random() * b.duration);
+    src.start(t, Math.random() * ln);
     return v;
   }
   // Петля живёт, пока её подтверждают каждый кадр; вызов идемпотентен.

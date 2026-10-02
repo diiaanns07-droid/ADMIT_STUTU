@@ -33,6 +33,9 @@ check('синтез найден в effects.js', SYNTH.size >= 20 && SYNTH.has('
   check('assets/sfx ≤ 1,5 МБ', total <= 1.5 * 1024 * 1024, `${(total / 1024).toFixed(0)} КБ, файлов ${files.length}`);
   const ogg = files.every((f) => !existsSync(join(ROOT, f.url)) || readFileSync(join(ROOT, f.url)).subarray(0, 4).toString() === 'OggS');
   check('файлы — Ogg', ogg);
+  // петли: точная длина len меньше файла (после неё 0,1 с запаса под паддинг декодера)
+  const loopsBad = Object.entries(SFX).filter(([k, v]) => v.loop && !(v.len > 0)).map(([k]) => k);
+  check('у петель задана точная длина', loopsBad.length === 0, loopsBad.join(','));
   const bad = Object.entries(SFX).filter(([, s]) => !(s.gain > 0 && s.gain <= 1.2) || (s.pitch || 0) > 3 || (s.lim !== undefined && s.lim < 1));
   check('громкость/высота/лимиты в разумных пределах', bad.length === 0, bad.map(([k]) => k).join(','));
 }
@@ -95,6 +98,8 @@ check('синтез найден в effects.js', SYNTH.size >= 20 && SYNTH.has('
   check('оберег: block без второго звука ward_end', sfxForEvent('ward_end', { reason: 'absorbed' }) === null);
   check('горение по Регенту не спамит', sfxForEvent('boss_hit', { amount: 3, source: 'burn', dot: true }) === null);
   check('снаряд в пол — тихий треск', one('projectile_impact', { owner: 'player', kind: 'bolt', result: 'floor' }) === 'spark');
+  check('«бабах» выброса — только у выброса (сгусток, уголь — свои звуки)', one('hand_spell_hit', { power: 1 }) !== 'burst' && one('ember_lit', {}) !== 'burst');
+  check('дуэль: ничья — без фанфар', sfxForEvent('pvp_round', { phase: 'match_end', winner: null }) === null);
   check('дуэль: исход матча — фанфары', one('pvp_round', { phase: 'match_end', winner: 'me' }) === 'victory' && one('pvp_round', { phase: 'match_end', winner: 'opponent' }) === 'defeat' && sfxForEvent('pvp_round', { phase: 'fight' }) === null);
 }
 

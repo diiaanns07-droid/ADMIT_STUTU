@@ -51,11 +51,16 @@ function brass(sec, f, r, { amp = 1, open = 2600, attack = 0.04, release = 0.4, 
   return mul(biquad(out, 'lowpass', fc, 0.9), mul(e, amp));
 }
 // Колокольчик/кристалл: почти гармонические моды, мягкая атака без щелчка.
+// Колокольчик/кристалл: стеклянные (негармонические) моды и короткий удар — звон, а не «пищалка» из синусов.
 function bell(sec, f, r, { amp = 1, bright = 1, decay = 1 } = {}) {
   const n = len(sec);
-  const x = modal(n, f, [[1, 1, 0.9 * decay], [2.0, 0.45 * bright, 0.5 * decay], [3.01, 0.25 * bright, 0.32 * decay], [4.1, 0.14 * bright, 0.2 * decay], [5.43, 0.08 * bright, 0.12 * decay]], r, 0.001);
+  const x = modal(n, f, [[1, 1, 0.9 * decay], [2.0, 0.3 * bright, 0.45 * decay], [2.76, 0.35 * bright, 0.3 * decay], [5.4, 0.18 * bright, 0.12 * decay], [8.93, 0.08 * bright, 0.05 * decay]], r, 0.001);
+  add(x, mul(hp(noise(n, 'white', r), 4000), perc(n, 0.0003, 0.003, 0.5 * bright)));
   return mul(x, curve(n, [[0, 0], [0.003, amp], [sec * 0.6, amp], [sec, 0, 'sin']])); // хвост гаснет, а не обрывается
 }
+// Петля для loop=true: после конца — копия первых 0,1 с. Vorbis при декодировании в Chromium дописывает
+// хвост-паддинг; в игре петля идёт по loopEnd = SFX[...].len, и паддинг за ним не слышен.
+function loopTail(x) { const t = x.slice(0, len(0.1)), out = new Float32Array(x.length + t.length); out.set(x); out.set(t, x.length); return out; }
 
 // ================================================================== рецепты
 // Каждый рецепт: (r, i) => Float32Array; i — номер варианта (повторы звучат по-разному).
@@ -65,9 +70,10 @@ const R = {};
 R.step = (r) => {
   const n = len(0.2), x = new Float32Array(n);
   add(x, mul(lp(noise(n, 'brown', r), r.range(260, 380), 0.9), perc(n, 0.002, 0.022, 1.0)));
-  add(x, mul(bp(noise(n, 'white', r), r.range(1800, 2600), 0.7), perc(n, 0.001, 0.010, 0.22)));
-  add(x, grains(n, r, { count: 6, t0: 0.004, t1: 0.06, f0: 2500, f1: 6000, q: 1.5, amp: [0.05, 0.16] }));
-  add(x, mul(osc(n, sweep(n, r.range(95, 115), 55, 0.05), 'sine'), perc(n, 0.002, 0.03, 0.35)));
+  add(x, mul(bp(noise(n, 'white', r), r.range(1800, 2600), 0.7), perc(n, 0.001, 0.010, 0.45)));
+  add(x, mul(bp(noise(n, 'pink', r), r.range(600, 900), 0.9), perc(n, 0.001, 0.018, 1.2)));  // слышно на ноутбуке
+  add(x, grains(n, r, { count: 6, t0: 0.004, t1: 0.06, f0: 2500, f1: 6000, q: 1.5, amp: [0.1, 0.3] }));
+  add(x, mul(osc(n, sweep(n, r.range(150, 170), 90, 0.05), 'sine'), perc(n, 0.002, 0.03, 0.12)));
   return trim(x, -50);
 };
 
@@ -87,10 +93,10 @@ R.dash = (r) => {
 // ---- рассечение: резкий свист клинка + металлический «шинг» + мягкий удар воздуха.
 R.slash = (r) => {
   const n = len(0.6), x = new Float32Array(n);
-  const fc = curve(n, [[0, 1200], [0.06, r.range(4200, 5200), 'exp'], [0.2, 1600, 'exp']]);
+  const fc = curve(n, [[0, 1200], [0.06, r.range(2600, 3200), 'exp'], [0.2, 1600, 'exp']]);
   const e = curve(n, [[0, 0], [0.05, 1, 'sin'], [0.2, 0, 'sin']]);
-  add(x, mul(biquad(noise(n, 'white', r), 'bandpass', fc, 2.2), mul(e, 1.6)));
-  add(x, mul(biquad(noise(n, 'pink', r), 'bandpass', curve(n, [[0, 300], [0.07, 900, 'exp'], [0.2, 300, 'exp']]), 1), mul(e, 1.1)));
+  add(x, mul(biquad(noise(n, 'pink', r), 'bandpass', fc, 1.6), mul(e, 2.2)));
+  add(x, mul(biquad(noise(n, 'pink', r), 'bandpass', curve(n, [[0, 300], [0.07, 1400, 'exp'], [0.2, 300, 'exp']]), 1), mul(e, 1.6)));
   const ring = modal(n, r.range(2300, 2700), [[1, 1, 0.22], [1.48, 0.6, 0.16], [2.13, 0.35, 0.1], [2.9, 0.2, 0.07]], r);
   add(x, mul(ring, curve(n, [[0, 0], [0.045, 0], [0.05, 0.05]])));
   return trim(normalize(reverb(x, { room: 0.6, wet: 0.14, tail: 0.35 }), -1), -55);
@@ -122,26 +128,27 @@ R.spark = (r) => {
 
 // ---- выброс: «фьюю» (свист, втягивание) → БАХ (саб + сатурация + обломки) → хвост в зале.
 R.burst = (r) => {
-  const n = len(2.6), x = new Float32Array(n), T0 = 0.14;
-  // свист-подсос перед ударом
-  const wf = curve(n, [[0, 500], [T0, 2300, 'exp'], [T0 + 0.9, 600, 'exp']]);
-  const we = curve(n, [[0, 0], [T0 - 0.01, 1, 'exp'], [T0 + 0.02, 0.5], [T0 + 0.9, 0, 'sin']]);
-  add(x, mul(biquad(noise(n, 'pink', r), 'bandpass', wf, 3), mul(we, 1.6)));
-  add(x, mul(osc(n, wf, 'sine'), mul(we, 0.05)));
+  // удар — сразу (на кадре события вспышка и тряска), свист «фьюю» вспыхивает с ударом и падает после него
+  const n = len(2.6), x = new Float32Array(n), T0 = 0.025;
+  const wf = curve(n, [[0, 900], [T0, 2600, 'exp'], [T0 + 0.9, 600, 'exp']]);
+  const we = curve(n, [[0, 0], [T0, 1, 'sin'], [T0 + 0.06, 0.8], [T0 + 0.9, 0, 'sin']]);
+  add(x, mul(biquad(noise(n, 'pink', r), 'bandpass', wf, 1.6), mul(we, 5)));
+  add(x, mul(osc(n, wf, 'sine'), mul(we, 0.1)));
   // удар: саб с падением высоты, через сатурацию (гармоники слышны и на ноутбуке)
   const boom = new Float32Array(n);
-  add(boom, mul(osc(len(1.4), sweep(len(1.4), 110, 34, 0.55), 'sine'), perc(len(1.4), 0.003, 0.32, 1)), 1, T0);
-  add(x, drive(boom, 3.2), 0.9);
+  add(boom, mul(osc(len(1.4), sweep(len(1.4), 150, 45, 0.5), 'sine'), perc(len(1.4), 0.003, 0.3, 1)), 1, T0);
+  add(x, drive(boom, 3.2), 0.6);
   add(x, mul(biquad(noise(n, 'brown', r), 'lowpass', curve(n, [[0, 1600], [T0, 1600], [T0 + 0.5, 180, 'exp']]), 0.8), curve(n, [[0, 0], [T0, 0], [T0 + 0.003, 1.1], [T0 + 0.6, 0.02, 'exp'], [2.6, 0]])), 1);
   add(x, mul(hp(noise(n, 'white', r), 1800), curve(n, [[0, 0], [T0, 0], [T0 + 0.001, 0.9], [T0 + 0.05, 0.01, 'exp'], [T0 + 0.06, 0]])));
   // «мясо» удара в полосе, которую играют динамики ноутбука: плотный шум 250–1200 Гц и рычащая пила
-  add(x, mul(bp(noise(n, 'pink', r), 520, 0.7), curve(n, [[0, 0], [T0, 0], [T0 + 0.002, 2.2], [T0 + 0.4, 0.01, 'exp'], [2.6, 0]])));
+  add(x, mul(bp(noise(n, 'pink', r), 520, 0.7), curve(n, [[0, 0], [T0, 0], [T0 + 0.004, 3.5], [T0 + 0.5, 0.02, 'exp'], [2.6, 0]])));
   const body = new Float32Array(n);
   add(body, mul(osc(len(1.0), sweep(len(1.0), 95, 42, 0.45), 'saw'), perc(len(1.0), 0.002, 0.22, 1)), 1, T0);
   add(x, lp(drive(body, 3), 1400), 0.55);
   // обломки и угли
   add(x, grains(n, r, { count: 30, t0: T0 + 0.05, t1: T0 + 1.2, f0: 1500, f1: 5500, q: 1.6, amp: [0.04, 0.16] }));
-  return trim(normalize(reverb(drive(x, 1.6), { room: 0.88, damp: 0.4, wet: 0.32, tail: 1.6, pre: 0.02 }), -1), -60, 0.1);
+  // «склейка» сухого микса: плотнее и громче на ноутбуке
+  return trim(normalize(reverb(drive(normalize(hp(x, 35), 0), 2.5), { room: 0.88, damp: 0.4, wet: 0.32, tail: 1.6, pre: 0.02 }), -1), -60, 0.1);
 };
 
 // ---- щит поднят: «гул и звон» — шорох вверх, низкий гул и кристаллический звон.
@@ -158,13 +165,13 @@ R.shield_up = (r) => {
 // ---- гул удерживаемого щита: бесшовная петля 4 с (биения двух близких тонов + тихая «искристость»).
 R.shield_loop = (r) => {
   const n = len(4.5), x = new Float32Array(n);
-  add(x, osc(n, 110, 'sine'), 0.5); add(x, osc(n, 110.5, 'sine'), 0.5);
-  add(x, osc(n, 220, 'tri'), 0.12); add(x, osc(n, 329.6, 'sine'), 0.06);
+  add(x, osc(n, 220, 'sine'), 0.5); add(x, osc(n, 220.5, 'sine'), 0.5); add(x, osc(n, 110, 'sine'), 0.15);
+  add(x, osc(n, 330, 'tri'), 0.18); add(x, osc(n, 440.4, 'sine'), 0.12);
   const am = curve(n, [[0, 0.6], [1.1, 1, 'sin'], [2.25, 0.6, 'sin'], [3.4, 1, 'sin'], [4.5, 0.6, 'sin']]);
-  const sh = mul(bp(noise(n, 'pink', r), 1250, 3), am);
-  const out = drive(mul(x, 0.8), 1.3);
-  add(out, sh, 0.25);
-  return normalize(loopify(out, 0.5), -3);
+  const sh = mul(bp(noise(n, 'pink', r), 1250, 1.2), am);
+  const out = drive(mul(x, 0.8), 2.0);
+  add(out, sh, 2.5);
+  return loopTail(normalize(loopify(out, 0.5), -3));
 };
 // ---- щит опущен: шорох вниз и угасающий звон.
 R.shield_down = (r) => {
@@ -200,9 +207,9 @@ R.parry = (r) => {
 R.boss_hit = (r) => {
   const n = len(0.6), x = new Float32Array(n);
   add(x, mul(hp(noise(n, 'white', r), 1500), perc(n, 0.0005, 0.006, 0.7)));
-  add(x, mul(lp(noise(n, 'brown', r), r.range(800, 1000)), perc(n, 0.001, 0.05, 1.1)));
-  add(x, mul(drive(osc(n, sweep(n, r.range(150, 175), 70, 0.12), 'sine'), 2.2), perc(n, 0.002, 0.06, 0.7)));
-  add(x, grains(n, r, { count: 16, t0: 0.003, t1: 0.09, f0: 1400, f1: 4200, q: 1.8, amp: [0.15, 0.45] }));
+  add(x, mul(bp(noise(n, 'pink', r), r.range(650, 800), 0.9), perc(n, 0.001, 0.05, 3.0)));
+  add(x, mul(drive(osc(n, sweep(n, r.range(240, 280), 110, 0.12), 'sine'), 2.2), perc(n, 0.002, 0.06, 0.35)));
+  add(x, grains(n, r, { count: 16, t0: 0.003, t1: 0.09, f0: 900, f1: 3500, q: 1.8, amp: [0.3, 0.9] }));
   add(x, mul(bp(noise(n, 'white', r), 3200, 1.5), curve(n, [[0, 0], [0.02, 0.18], [0.3, 0.001, 'exp']])));
   add(x, mul(bp(noise(n, 'pink', r), r.range(700, 900), 1), perc(n, 0.001, 0.045, 1.4)));     // каменный «чок»
   add(x, mul(modal(n, r.range(360, 420), [[1, 1, 0.07], [2.3, 0.5, 0.05], [3.7, 0.3, 0.03]], r, 0.01), 0.35));
@@ -211,11 +218,11 @@ R.boss_hit = (r) => {
 // ---- удар Регента по герою: тяжёлый глухой удар, дребезг доспеха, хруст.
 R.player_hit = (r) => {
   const n = len(0.8), x = new Float32Array(n);
-  add(x, mul(drive(osc(n, sweep(n, r.range(95, 110), 40, 0.16), 'sine'), 2.8), perc(n, 0.003, 0.13, 1)));
-  add(x, mul(lp(noise(n, 'brown', r), 520), perc(n, 0.002, 0.1, 1.1)));
+  add(x, mul(drive(osc(n, sweep(n, r.range(150, 170), 60, 0.16), 'sine'), 2.8), perc(n, 0.003, 0.11, 0.6)));
+  add(x, mul(bp(noise(n, 'pink', r), 600, 0.8), perc(n, 0.002, 0.08, 2.4)));
   add(x, mul(bp(noise(n, 'white', r), 1200, 1), perc(n, 0.001, 0.025, 0.5)));
-  add(x, mul(modal(n, r.range(290, 330), [[1, 1, 0.16], [2.4, 0.7, 0.12], [3.9, 0.5, 0.08], [5.6, 0.3, 0.05]], r, 0.01), 0.25));
-  add(x, grains(n, r, { count: 8, t0: 0.01, t1: 0.12, f0: 1200, f1: 3500, q: 1.5, amp: [0.1, 0.3] }));
+  add(x, mul(modal(n, r.range(290, 330), [[1, 1, 0.16], [2.4, 0.7, 0.12], [3.9, 0.5, 0.08], [5.6, 0.3, 0.05]], r, 0.01), 0.5));
+  add(x, grains(n, r, { count: 8, t0: 0.01, t1: 0.12, f0: 1200, f1: 3500, q: 1.5, amp: [0.2, 0.6] }));
   add(x, mul(bp(noise(n, 'pink', r), 600, 0.9), perc(n, 0.002, 0.07, 1.5)));                   // «хрясь» в середине
   return trim(normalize(reverb(drive(x, 1.4), { room: 0.6, wet: 0.14, tail: 0.5 }), -1), -55);
 };
@@ -225,7 +232,6 @@ R.ui_ok = (r) => {
   const n = len(1.0), x = new Float32Array(n);
   add(x, bell(1.0, hz('E6'), r, { bright: 0.5, decay: 0.7 }), 0.7);
   add(x, bell(0.9, hz('B6'), r, { bright: 0.45, decay: 0.75 }), 0.55, 0.075);
-  add(x, mul(osc(n, hz('E5'), 'sine'), curve(n, [[0, 0], [0.01, 0.12], [0.7, 0.001, 'exp']])));
   return trim(normalize(reverb(x, { room: 0.6, wet: 0.18, tail: 0.5 }), -1), -60, 0.08);
 };
 // ---- обучение: «ОШИБКА» — мягкий низкий деревянный «тук», без верхов и без звона.
@@ -242,12 +248,12 @@ R.ui_error = (r) => {
 R.victory = (r) => {
   const n = len(3.6), x = new Float32Array(n);
   const hits = [[0, ['D4', 'A4'], 0.16], [0.17, ['F#4', 'D5'], 0.16], [0.34, ['A4', 'F#5'], 0.16]];
-  for (const [t, notes, d] of hits) for (const nm of notes) add(x, brass(d + 0.12, hz(nm), r, { amp: 0.32, open: 3200, release: 0.1 }), 1, t);
+  for (const [t, notes, d] of hits) for (const nm of notes) add(x, brass(d + 0.12, hz(nm), r, { amp: 0.5, open: 3200, release: 0.1 }), 1, t);
   for (const nm of ['D3', 'A3', 'D4', 'F#4', 'A4', 'D5']) add(x, brass(2.6, hz(nm), r, { amp: nm === 'D3' ? 0.34 : 0.22, open: 2800, attack: 0.06, release: 1.6, vib: 0.004 }), 1, 0.52);
   const timp = new Float32Array(len(1.6));
-  add(timp, mul(osc(timp.length, sweep(timp.length, 120, 73, 0.15), 'sine'), perc(timp.length, 0.003, 0.4, 1)));
+  add(timp, mul(osc(timp.length, sweep(timp.length, 150, 98, 0.15), 'sine'), perc(timp.length, 0.003, 0.4, 1)));
   add(timp, mul(lp(noise(timp.length, 'brown', r), 400), perc(timp.length, 0.002, 0.08, 0.7)));
-  add(x, drive(timp, 1.8), 0.7, 0.5);
+  add(x, drive(timp, 1.8), 0.3, 0.5);
   add(x, mul(hp(noise(n, 'white', r), 5000), curve(n, [[0, 0], [0.5, 0], [0.52, 0.12], [3.0, 0.001, 'exp']])));
   return trim(normalize(reverb(x, { room: 0.85, wet: 0.25, tail: 1.4, pre: 0.025 }), -1), -60, 0.2);
 };
@@ -255,10 +261,10 @@ R.victory = (r) => {
 R.defeat = (r) => {
   const n = len(3.6), x = new Float32Array(n);
   const steps = [[0, 'A4', 0.32], [0.34, 'F4', 0.32], [0.68, 'D4', 0.4]];
-  for (const [t, nm, d] of steps) add(x, brass(d + 0.1, hz(nm), r, { amp: 0.34, open: 1600, release: 0.12 }), 1, t);
+  for (const [t, nm, d] of steps) add(x, brass(d + 0.1, hz(nm), r, { amp: 0.48, open: 1800, release: 0.12 }), 1, t);
   for (const nm of ['D3', 'A3', 'D4', 'F4']) add(x, brass(2.4, hz(nm), r, { amp: 0.24, open: 1100, attack: 0.12, release: 1.6 }), 1, 1.08);
   const g = modal(len(3), 98, [[1, 1, 1.6], [1.47, 0.5, 1.1], [2.09, 0.35, 0.7], [2.56, 0.2, 0.5], [3.3, 0.12, 0.3]], r, 0.004);
-  add(x, drive(mul(g, curve(g.length, [[0, 0], [0.01, 0.5], [3, 0.5]])), 1.4), 0.5, 1.08);
+  add(x, drive(mul(g, curve(g.length, [[0, 0], [0.01, 0.5], [3, 0.5]])), 1.4), 0.25, 1.08);
   return trim(normalize(lp(reverb(x, { room: 0.88, wet: 0.28, tail: 1.4, pre: 0.03 }), 5000), -1), -60, 0.2);
 };
 
@@ -269,16 +275,16 @@ R.ambient = (r) => {
   const ph1 = r() * 6.28, ph2 = r() * 6.28, ph3 = r() * 6.28;
   for (let i = 0; i < n; i++) {
     const t = i / SR;
-    wfc[i] = 430 + 170 * Math.sin(2 * Math.PI * t / 13 + ph1) + 70 * Math.sin(2 * Math.PI * t / 5.2 + ph2);
+    wfc[i] = 750 + 250 * Math.sin(2 * Math.PI * t / 13 + ph1) + 90 * Math.sin(2 * Math.PI * t / 5.2 + ph2);
     wam[i] = 0.55 + 0.3 * Math.sin(2 * Math.PI * t / 8.6 + ph3) + 0.15 * Math.sin(2 * Math.PI * t / 3.1 + ph1);
   }
   add(x, mul(biquad(noise(n, 'pink', r), 'bandpass', wfc, 0.7), wam), 1.4);
   add(x, mul(hp(noise(n, 'white', r), 4500), mul(wam, 0.025)));
   const drone = new Float32Array(n);
   add(drone, osc(n, 55, 'sine'), 0.5); add(drone, osc(n, 82.6, 'tri'), 0.18); add(drone, osc(n, 110.3, 'sine'), 0.1);
-  add(x, lp(drive(drone, 1.5), 260), 0.35);
+  add(x, lp(drive(drone, 1.5), 260), 0.12);
   add(x, grains(n, r, { count: 40, t0: 0, t1: 25.5, f0: 2000, f1: 6000, q: 2, dur: [0.002, 0.006], amp: [0.02, 0.09] }));
-  return normalize(loopify(x, 2), -6);
+  return loopTail(normalize(loopify(x, 2), -6));
 };
 
 // ---- идеальный рывок: «замедление времени» — встречный шорох, стеклянный блеск, низкое «вуум».
@@ -311,7 +317,7 @@ R.rune_fire = (r) => {
   add(x, mul(lp(noise(n, 'brown', r), 1300), mul(flick, curve(n, [[0, 0], [0.12, 1.1], [1.6, 0.001, 'exp']]))));
   for (const nm of ['D3', 'A3', 'D4', 'F#4', 'A4']) add(x, brass(1.7, hz(nm), r, { amp: 0.16, open: 2200, attack: 0.05, release: 1.0 }), 1, 0.06);
   add(x, grains(n, r, { count: 26, t0: 0.05, t1: 1.4, f0: 2000, f1: 6500, q: 2, amp: [0.04, 0.14] }));
-  add(x, mul(drive(osc(n, sweep(n, 120, 50, 0.3), 'sine'), 2), perc(n, 0.004, 0.18, 0.6)), 1);
+  add(x, mul(drive(osc(n, sweep(n, 160, 70, 0.3), 'sine'), 2), perc(n, 0.004, 0.18, 0.3)), 1);
   return trim(normalize(reverb(x, { room: 0.8, wet: 0.25, tail: 1.0 }), -1), -60, 0.1);
 };
 R.rune_storm = (r) => {
@@ -354,8 +360,8 @@ R.rune_shadow = (r) => {
   const n = len(1.9), x = new Float32Array(n);
   // обратный «вдох» (нарастающий шум) → глухой удар → тёмный минор с шёпотом
   add(x, mul(biquad(noise(n, 'pink', r), 'bandpass', curve(n, [[0, 400], [0.3, 1800, 'exp']]), 1.3), curve(n, [[0, 0], [0.29, 1.3, 'exp'], [0.31, 0], [1.9, 0]])));
-  add(x, mul(drive(osc(n, sweep(n, 110, 42, 0.4), 'sine'), 2.4), curve(n, [[0, 0], [0.3, 0], [0.305, 0.9], [1.1, 0.001, 'exp']])));
-  for (const nm of ['D3', 'F3', 'A3', 'C#4']) add(x, brass(1.5, hz(nm), r, { amp: 0.15, open: 1700, attack: 0.08, release: 0.9 }), 1, 0.3);
+  add(x, mul(drive(osc(n, sweep(n, 160, 55, 0.4), 'sine'), 2.4), curve(n, [[0, 0], [0.3, 0], [0.305, 0.35], [1.1, 0.001, 'exp']])));
+  for (const nm of ['D3', 'F3', 'A3', 'C#4']) add(x, brass(1.5, hz(nm), r, { amp: 0.22, open: 1800, attack: 0.08, release: 0.9 }), 1, 0.3);
   const wh = mul(bp(noise(n, 'white', r), 2800, 2), curve(n, [[0, 0], [0.35, 0], [0.6, 0.18, 'sin'], [1.7, 0, 'sin']]));
   const am = new Float32Array(n); for (let i = 0; i < n; i++) am[i] = 0.5 + 0.5 * Math.sin(2 * Math.PI * 6.5 * i / SR);
   add(x, mul(wh, am));

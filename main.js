@@ -385,11 +385,14 @@ function pause(reason) {
 const AUDIO_ON = !(config.audio && config.audio.enabled === false);
 const gameVolume = () => (AUDIO_ON && !settings.muted ? settings.volume : 0);
 function unlockAudio() { if (!AUDIO_ON) return; try { effects.unlockAudio().catch(() => {}); } catch (e) { /* ignore */ } }
-// [SFX] Громкость по экрану: на паузе боевые звуки и петли молчат, но проба громкости слышна;
-// на любом другом экране звук возвращается (раньше выход из паузы в меню оставлял игру без звука).
+// [SFX] Громкость по экрану: пока бой приостановлен (пауза, «Клятва героя»/«Тренировка» из паузы, переподключение
+// камеры посреди боя), боевые звуки и петли молчат — снимок боя заморожен, и щит/орбы иначе гудели бы без конца;
+// проба громкости и интерфейс слышны. На остальных экранах звук возвращается (раньше выход из паузы в меню
+// оставлял игру без звука).
 function screenAudio(screen) {
   try {
-    if (effects && typeof effects.setAudioPaused === 'function') { effects.setAudioPaused(screen === 'paused'); effects.setVolume(gameVolume()); }
+    const suspended = screen === 'paused' || (screen !== 'playing' && (app.resumableFight || app.nav.includes('paused')));
+    if (effects && typeof effects.setAudioPaused === 'function') { effects.setAudioPaused(suspended); effects.setVolume(gameVolume()); }
     else effects.setVolume(screen === 'paused' ? 0 : gameVolume());
     if (screen === 'tutorial') sfxCues.reset();
   } catch (e) { /* до инициализации звука */ }
