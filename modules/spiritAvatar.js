@@ -22,8 +22,13 @@
 //   Трекинг потерян — плавно гаснет. Интро, меню, итоги — скрыт.
 // Реакции: распознанный жест — вспышка и кольцо на нужной руке цветом стихии героя; подсказка «ОШИБКА» —
 // короткая красная вспышка на этой руке; щит — купол в ладони; заряд ладонями (player.sigilCharge; пока
-// его нет — сфера/призма двумя руками) — сфера и молнии между ладонями; ультимейт (событие ult*/руки
-// вверх ~0,5 с) — дух поднимает руки и вспыхивает.
+// его нет — сфера/призма двумя руками) — сфера и молнии между ладонями, а ось растяжения (player.sigilAxis:
+// 'h' — «Врата бури», 'v' — «Столп небес») — щель света между ладонями; каст (событие 'sigil_cast') —
+// вспышка и щель во весь размах. Ультимейт «Небесный суд»: 'ultimate_ready' — нимб зовёт «руки вверх»,
+// 'ultimate_start' — дух поднимает руки и вспыхивает (держит их, пока идёт сцена), 'ultimate_strike' —
+// удар, 'ultimate_end' — выдох; без шкалы ультимейта — по рукам вверх ~0,5 с. Над ареной дух всегда дальше
+// и героя, и Регента — облёт камеры его не ставит между камерой и героем; во время сцены он приглушён.
+// «Уменьшенное движение» — без шлейфа, мерцания молний и пульсаций.
 // Качество 'low' — линии и точки стандартных материалов, без шлейфа (3 вызова отрисовки).
 // В «Отладке с клавиатуры» дух двигают синтетические руки (модель кисти как в dev/handSynth.mjs):
 // пальцы «считают» 1–5, клавиши J/K/L/O/P/U/I/F/Z… показывают жесты.
@@ -545,9 +550,12 @@ function createRig(THREE, name) {
   }
 
   // молнии заряда между ладонями — общие для обоих видов (стандартные линии)
-  const ARC_N = 3, ARC_SEG = 10;
+  // [W3-MAGIC] + щель света по оси растяжения ладоней — прямые лучи в той же геометрии (вызов отрисовки тот же)
+  const ARC_N = 3, ARC_SEG = 10, SLIT_N = 5;
+  const SLIT_OFF = [-0.032, -0.016, 0, 0.016, 0.032], SLIT_E = [0.35, 0.75, 1.5, 0.75, 0.35];
+  const ARC_V = (ARC_N * ARC_SEG + SLIT_N) * 2;
   const aGeo = own(new THREE.BufferGeometry());
-  aGeo.setAttribute('position', attr(ARC_N * ARC_SEG * 2, 3)); aGeo.setAttribute('color', attr(ARC_N * ARC_SEG * 2, 3));
+  aGeo.setAttribute('position', attr(ARC_V, 3)); aGeo.setAttribute('color', attr(ARC_V, 3));
   const aMat = M(new THREE.LineBasicMaterial({ name: 'spirit-arcs', vertexColors: true, ...ADD }));
   const arcs = new THREE.LineSegments(aGeo, aMat); arcs.frustumCulled = false; arcs.visible = false; arcs.renderOrder = 8;
   root.add(arcs);
@@ -622,14 +630,18 @@ function createRig(THREE, name) {
     // голова и заряд
     const oc = f.oCol.array, ha = A[J.HEAD] * v.headK;
     _a.set(P[J.HEAD * 3], P[J.HEAD * 3 + 1], P[J.HEAD * 3 + 2]); _q.identity();
-    const hr = st.headR * 0.86 * (1 + 0.04 * Math.sin(st.time * 2.1));
+    const hr = st.headR * 0.86 * (1 + (st.rm ? 0 : 0.04 * Math.sin(st.time * 2.1)));
     if (ha < 0.004) f.orbs.setMatrixAt(0, ZERO_M); else { _s.set(hr, hr, hr); _m.compose(_a, _q, _s); f.orbs.setMatrixAt(0, _m); }
     oc[0] = GC[0] * ha; oc[1] = GC[1] * ha; oc[2] = GC[2] * ha;
     const ch = st.charge;
     if (ch < 0.02) f.orbs.setMatrixAt(1, ZERO_M);
     else {
-      const cr = (0.07 + 0.3 * ch + 0.03 * Math.sin(st.time * 11)) * v.handK;
-      _a.set(pC[0], pC[1], pC[2]); _s.set(cr, cr, cr); _m.compose(_a, _q, _s); f.orbs.setMatrixAt(1, _m);
+      const cr = (0.07 + 0.3 * ch + (st.rm ? 0 : 0.03 * Math.sin(st.time * 11))) * v.handK;
+      // [W3-MAGIC] ось растяжения — сфера сплющивается в щель света (по горизонтали или по вертикали)
+      const ax = Math.max(st.axisH, st.axisV), sh = st.axisH >= st.axisV ? 1 : 0;
+      const long = cr * (1 + 2.4 * ax), thin = cr * Math.max(0.22, 1 - 0.75 * ax);
+      if (sh) _s.set(long, thin, thin); else _s.set(thin, long, thin);
+      _a.set(pC[0], pC[1], pC[2]); _m.compose(_a, _q, _s); f.orbs.setMatrixAt(1, _m);
     }
     const cc = st.colElem2;
     oc[3] = cc[0] * ch * 2.2; oc[4] = cc[1] * ch * 2.2; oc[5] = cc[2] * ch * 2.2;
@@ -658,7 +670,7 @@ function createRig(THREE, name) {
     // кольца
     const rp = f.rGeo.attributes.position.array, rc = f.rGeo.attributes.aColor.array, rs = f.rGeo.attributes.aSize.array;
     // нимб: кольцо над головой, к зрителю чуть наклонено; вспыхивает в ультимейт
-    const halo = A[J.HEAD] * (0.55 + 1.4 * st.ult + 0.6 * st.up + st.ready * (0.7 + 0.5 * Math.sin(st.time * 6))) * Math.max(v.headK, 0.7);
+    const halo = A[J.HEAD] * (0.55 + 1.4 * st.ult + 0.6 * st.up + st.ready * (0.7 + (st.rm ? 0.25 : 0.5 * Math.sin(st.time * 6)))) * Math.max(v.headK, 0.7);
     if (halo < 0.004) f.halo.setMatrixAt(0, ZERO_M);
     else {
       const hr2 = st.headR * (0.78 + 0.25 * st.ult);
@@ -674,7 +686,7 @@ function createRig(THREE, name) {
     for (let i = 0; i < RINGS; i++) {
       const R = st.rings[i], o = i + 1;
       if (!R.on) { rs[o] = 0; rc[o * 3] = rc[o * 3 + 1] = rc[o * 3 + 2] = 0; continue; }
-      const pp = R.side === 0 ? pL : R.side === 1 ? pR : null;
+      const pp = R.side === 0 ? pL : R.side === 1 ? pR : R.side === 2 ? pC : null;   // 2 — между ладонями ([W3-MAGIC])
       rp[o * 3] = pp ? pp[0] : R.x; rp[o * 3 + 1] = pp ? pp[1] : R.y; rp[o * 3 + 2] = (pp ? pp[2] : R.z) - 0.05;
       const k = R.t / R.dur, fade = (1 - k) * (1 - k);
       rs[o] = (R.s0 + (R.s1 - R.s0) * Math.sqrt(k)) * (pp ? v.handK : 1);
@@ -780,13 +792,31 @@ function createRig(THREE, name) {
 
   function writeArcs(st, v) {
     const on = st.charge > 0.05 && st.arcSeed > 0;
-    arcs.visible = on;
-    if (!on) return;
+    const axW = Math.max(st.axisH, st.axisV) * Math.min(1, st.charge * 3), slitW = Math.max(axW, st.slit);
+    arcs.visible = on || slitW > 0.02;
+    if (!arcs.visible) return;
     const ap = aGeo.attributes.position.array, ac = aGeo.attributes.color.array;
-    const L = st.chargeBoth ? pL : pC, R = st.chargeBoth ? pR : pC, cc = st.colElem2;
+    const cc = st.colElem2;
+    let o = 0;
+    // щель света: 5 параллельных лучей через центр между ладонями; каст — во весь размах и гаснет
+    if (slitW > 0.02) {
+      const hz = st.axisH + st.axisV > 0.02 ? st.axisH / (st.axisH + st.axisV) : st.slitH;   // 1 — по горизонтали
+      const ux = hz, uy = 1 - hz, ul = Math.hypot(ux, uy) || 1, dx = ux / ul, dy = uy / ul;
+      const half = (0.22 + 0.75 * st.charge * axW + 1.9 * st.slit) * v.handK;
+      const jit = st.rm ? 0 : ((st.arcSeed % 97) / 97 - 0.5) * 0.012;
+      for (let i = 0; i < SLIT_N; i++) {
+        const off = (SLIT_OFF[i] + (i === 2 ? 0 : jit)) * v.handK * (1 + 1.5 * st.slit), e = SLIT_E[i] * slitW * v.alpha * (1 + st.slit);
+        const cx = pC[0] - dy * off, cy = pC[1] + dx * off, cz = pC[2] - 0.02;
+        const hl = half * (i === 2 ? 1 : 0.82);
+        ap[o] = cx - dx * hl; ap[o + 1] = cy - dy * hl; ap[o + 2] = cz; ac[o] = cc[0] * e; ac[o + 1] = cc[1] * e; ac[o + 2] = cc[2] * e; o += 3;
+        ap[o] = cx + dx * hl; ap[o + 1] = cy + dy * hl; ap[o + 2] = cz; ac[o] = cc[0] * e; ac[o + 1] = cc[1] * e; ac[o + 2] = cc[2] * e; o += 3;
+      }
+    }
+    if (!on) { upload(aGeo.attributes.position, o); upload(aGeo.attributes.color, o); aGeo.setDrawRange(0, o / 3); return; }
+    const L = st.chargeBoth ? pL : pC, R = st.chargeBoth ? pR : pC;
     const dx = R[0] - L[0], dy = R[1] - L[1], len = Math.max(0.25, Math.hypot(dx, dy));
     const nx = -dy / len, ny = dx / len;
-    let seed = st.arcSeed, o = 0;
+    let seed = st.arcSeed;
     for (let a = 0; a < ARC_N; a++) {
       let px = L[0], py = L[1], pz = L[2];
       for (let i = 1; i <= ARC_SEG; i++) {
@@ -802,6 +832,7 @@ function createRig(THREE, name) {
       }
     }
     upload(aGeo.attributes.position, o); upload(aGeo.attributes.color, o);
+    aGeo.setDrawRange(0, o / 3);
   }
 
   function dispose() {
@@ -859,6 +890,8 @@ export function createSpiritAvatar(opts = {}) {
     shield: 0, shieldPop: 1, shieldHit: 0, charge: 0, chargePos: new Float32Array(3),
     palmL: new Float32Array(3), palmR: new Float32Array(3), chargeBoth: false,
     ult: 0, up: 0, ready: 0, arcSeed: 1, viewAlpha: 1,
+    axisH: 0, axisV: 0, slit: 0, slitH: 1,     // [W3-MAGIC] ось растяжения ладоней и вспышка каста (slitH: 1 — по горизонтали, 0 — по вертикали)
+    cine: 0,                                    // [W3-ULT] идёт сцена «Небесного суда» (0..1)
     rings: Array.from({ length: RINGS }, () => ({ on: false, side: 0, t: 0, dur: 0.6, s0: 0.2, s1: 1.4, x: 0, y: 0, z: 0, r: 0, g: 0, b: 0 })),
     trail: new Float32Array(NT * NS_MAX * 3), trailA: new Float32Array(NT), trailHead: 0, trailN: 0, trailFill: 0, trailAcc: 0,
   };
@@ -866,7 +899,7 @@ export function createSpiritAvatar(opts = {}) {
   let presence = 0;                        // трекинг есть (0..1, с плавным угасанием)
   let skyA = 0, frameA = 0;                // видимость духа над ареной и в кадре
   const edge = { attack: false, shield: false, conjure: false, hintCode: null, hintSide: null };
-  let upLatch = false, ultCool = 0, chargeT = 0, arcT = 0;
+  let upLatch = false, ultCool = 0, chargeT = 0, arcT = 0, slitCool = 0;
   const elemCache = { hero: null };
   let quality = 'medium';
   let enabled = true, disposed = false, warnAt = 0, warm = 3;
@@ -1038,7 +1071,7 @@ export function createSpiritAvatar(opts = {}) {
   function createSynth() {
     const mk = (x, y) => ({ x, y, z: 0, ang: 0, curls: [0, 0, 0, 0], thumbIn: 0, pinch: 0, away: false });
     const cur = [mk(-0.62, -0.42), mk(0.62, -0.32)], tgt = [mk(-0.62, -0.42), mk(0.62, -0.32)];
-    const tm = { burst: -9, burstBoth: false, sigil: -9, spark: -9, slash: -9, parry: -9, dash: -9, dashX: 0, ult: -9, t: 0 };
+    const tm = { burst: -9, burstBoth: false, sigil: -9, spark: -9, slash: -9, parry: -9, dash: -9, dashX: 0, ult: -9, stretch: -9, stretchH: true, t: 0 };
     const COUNT = [[1, 1, 1, 1, 1], [0, 1, 1, 1, 1], [0, 0, 1, 1, 1], [0, 0, 0, 1, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 0]];
     function setShape(h, c0, c1, c2, c3, thumbIn, pinch = 0) { h.curls[0] = c0; h.curls[1] = c1; h.curls[2] = c2; h.curls[3] = c3; h.thumbIn = thumbIn; h.pinch = pinch; }
     function step(dt, input) {
@@ -1058,7 +1091,8 @@ export function createSpiritAvatar(opts = {}) {
       if (I.attack) { R.x = 0.48; R.y = -0.08; R.z = -0.45; R.ang = -0.2; setShape(R, 0.45, 0, 0, 0, 0, 1); }
       if ((I.charge || 0) > 0.05) setShape(R, 1, 1, 1, 1, 1);
       if (I.burst) { tm.burst = t; tm.burstBoth = I.burstHand === 'both'; }
-      if (I.sigil) tm.sigil = t;
+      if (I.sigil === 'gate' || I.sigil === 'pillar') { tm.stretch = t; tm.stretchH = I.sigil === 'gate'; }   // [W3-MAGIC] растянуть ладони
+      else if (I.sigil) tm.sigil = t;
       if (I.spark) tm.spark = t;
       if (I.slash) tm.slash = t;
       if (I.parry) tm.parry = t;
@@ -1081,6 +1115,15 @@ export function createSpiritAvatar(opts = {}) {
         R.x = 0.24 + 0.1 * c; R.y = -0.18; R.z = -0.5; R.ang = 0.55; setShape(R, 0.3, 0.3, 0.3, 0.3, 0.2);
       }
       if (sSigil < 0.45) { const k = Math.sin((sSigil / 0.45) * Math.PI); L.x += (-0.06 - L.x) * k; R.x += (0.06 - R.x) * k; L.y = R.y = -0.08; L.ang = -0.2; R.ang = 0.2; setShape(L, 0, 0, 0, 0, 0); setShape(R, 0, 0, 0, 0, 0); }
+      // [W3-MAGIC] заряд ладонями (X/G): ладони сомкнуты перед грудью; каст — растянуть в стороны или вверх-вниз
+      const sc = clamp(+I.sigilCharge || 0, 0, 1), sStr = t - tm.stretch;
+      if (sc > 0.02) { L.x = -0.075; R.x = 0.075; L.y = R.y = -0.12; L.z = R.z = -0.45; L.ang = -0.25; R.ang = 0.25; setShape(L, 0, 0, 0, 0, 0); setShape(R, 0, 0, 0, 0, 0); }
+      if (sStr < 0.7) {
+        const k = Math.min(1, sStr / 0.22);
+        setShape(L, 0, 0, 0, 0, 0); setShape(R, 0, 0, 0, 0, 0); L.z = R.z = -0.4;
+        if (tm.stretchH) { L.x = -0.075 - 0.85 * k; R.x = 0.075 + 0.85 * k; L.y = R.y = -0.12; L.ang = -0.25; R.ang = 0.25; }
+        else { L.x = -0.09; R.x = 0.09; L.y = -0.12 - 0.5 * k; R.y = -0.12 + 0.75 * k; L.ang = -0.1; R.ang = 0.1; }
+      }
       if (sUlt < 1.6) { L.x = -0.6; L.y = 1.95; L.ang = 0.12; R.x = 0.6; R.y = 1.95; R.ang = -0.12; setShape(L, 0, 0, 0, 0, 0); setShape(R, 0, 0, 0, 0, 0); }
       // плавно к цели (как живая рука), затем — кисти и локти
       const k = 1 - Math.exp(-dt / 0.085);
@@ -1130,6 +1173,14 @@ export function createSpiritAvatar(opts = {}) {
     for (const r of st.rings) { if (!r.on) { R = r; break; } if (r.t / r.dur > R.t / R.dur) R = r; }
     R.on = true; R.side = side; R.t = 0; R.dur = dur; R.s0 = s0; R.s1 = s1; R.r = col[0] * 1.1; R.g = col[1] * 1.1; R.b = col[2] * 1.1;
   }
+  // [W3-MAGIC] каст «магии ладонями»: щель света во весь размах по оси растяжения
+  function castSlit(axis) {
+    if (slitCool > 0) return;                 // импульс ввода и событие боя приходят в соседних кадрах — одна вспышка
+    slitCool = 0.35;
+    st.slit = 1; st.slitH = axis === 'v' ? 0 : 1;
+    flashHand(2);
+    ring(2, 0.7, 0.3, 2.6, st.colElem2);
+  }
   function triggerUlt() {
     if (ultCool > 0) return;
     ultCool = 1.2; st.ult = 1;
@@ -1150,7 +1201,8 @@ export function createSpiritAvatar(opts = {}) {
       if (I.spark || I.slash || I.rune || (I.bow && I.bow.release) || (I.handSpell && I.handSpell.phase === 'throw')) flashHand(1);
       if (I.parry || I.dashDir || I.dash) flashHand(0);
       if (I.burst) flashHand(I.burstHand === 'both' ? 2 : 1);
-      if (I.sigil || I.throw) flashHand(2);
+      if (I.sigil === 'gate' || I.sigil === 'pillar') castSlit(I.sigil === 'gate' ? 'h' : 'v');   // [W3-MAGIC] «Врата бури» / «Столп небес»
+      else if (I.sigil || I.throw) flashHand(2);
       // «ОШИБКА»: короткая красная вспышка на руке, к которой относится подсказка
       const h = I.hint && I.hint.code ? I.hint : null;
       if (h && (h.code !== edge.hintCode || h.side !== edge.hintSide)) flashHand(h.side === 'left' ? 0 : h.side === 'right' ? 1 : 2, true);
@@ -1163,12 +1215,17 @@ export function createSpiritAvatar(opts = {}) {
       if (ty === 'block') st.shieldHit = 1;
       else if (ty === 'ultimate_start' || ty === 'ultimate' || ty === 'victory') triggerUlt();
       else if (ty === 'ultimate_strike') { st.ult = 1; ring(3, 1.0, 0.5, 3.6, st.colElem2); }
+      else if (ty === 'ultimate_ready') { st.ready = 1; ring(3, 0.8, 0.4, 2.0, st.colElem2); }   // [W3-ULT] шкала полна — нимб зовёт
+      else if (ty === 'ultimate_end') { st.ult = Math.min(st.ult, 0.5); ring(3, 0.9, 0.5, 1.7, st.colElem); }   // [W3-ULT] выдох: руки опускаются
+      else if (ty === 'sigil_cast') { const sg = e.data && e.data.sigil; if (sg === 'gate' || sg === 'pillar') castSlit(sg === 'gate' ? 'h' : 'v'); else flashHand(2); }   // [W3-MAGIC]
       else if (ty === 'perfect_dodge') flashHand(0);
     }
     // шкала ультимейта есть (player.fury) — полная: нимб пульсирует «руки вверх!»; идёт сцена — руки духа подняты
     const furySys = !!(pl && fin(pl.fury));
     st.ready = approach(st.ready, pl && pl.furyReady ? 1 : 0, dt, 0.2, 0.3);
-    if (snap && snap.ultimate && snap.ultimate.active) st.ult = Math.max(st.ult, 0.75);
+    const cineOn = !!(snap && snap.ultimate && snap.ultimate.active);
+    if (cineOn) st.ult = Math.max(st.ult, 0.75);
+    st.cine = approach(st.cine, cineOn ? 1 : 0, dt, 0.25, 0.6);
     // руки вверх ~0,5 с — дух поднимает руки и светится; без шкалы ультимейта — ещё и вспыхивает
     const headY = P[J.HEAD * 3 + 1];
     const handsUp = presence > 0.5 && jA[J.LW] > 0.6 && jA[J.RW] > 0.6 && P[J.LW * 3 + 1] > headY + 0.1 && P[J.RW * 3 + 1] > headY + 0.1;
@@ -1192,9 +1249,17 @@ export function createSpiritAvatar(opts = {}) {
     if (I && I.conjure) ch = Math.max(ch, 0.25 + 0.75 * clamp(+I.conjure.charge || 0, 0, 1));
     if (pl && pl.conjure) ch = Math.max(ch, 0.25 + 0.75 * clamp(+pl.conjure.charge || 0, 0, 1));
     st.charge = approach(st.charge, clamp(ch, 0, 1), dt, 0.1, 0.3);
+    // [W3-MAGIC] ось растяжения: 'h' — щель по горизонтали («Врата бури»), 'v' — по вертикали («Столп небес»)
+    const axOf = (o) => (o && (o.sigilAxis === 'h' || o.sigilAxis === 'v') ? o.sigilAxis : null);
+    const ax = axOf(pl) || axOf(I);
+    st.axisH = approach(st.axisH, ax === 'h' ? 1 : 0, dt, 0.08, 0.25);
+    st.axisV = approach(st.axisV, ax === 'v' ? 1 : 0, dt, 0.08, 0.25);
+    if (ax) st.slitH = ax === 'h' ? 1 : 0;
+    st.slit = Math.max(0, st.slit - dt / 0.6);
+    slitCool = Math.max(0, slitCool - dt);
     for (let s = 0; s < 2; s++) st.flash[s] = Math.max(0, st.flash[s] * Math.exp(-dt * (st.rm ? 6 : 3.2)) - dt * 0.05);
     arcT -= dt;
-    if (arcT <= 0) { arcT = 0.055; st.arcSeed = 1 + ((st.arcSeed * 48271) % 2147483646); }
+    if (arcT <= 0 && !st.rm) { arcT = 0.055; st.arcSeed = 1 + ((st.arcSeed * 48271) % 2147483646); }   // «Уменьшенное движение» — молнии не мерцают
   }
 
   // ------------------------------------------------------------ кадр
@@ -1260,7 +1325,7 @@ export function createSpiritAvatar(opts = {}) {
       if (!R.on) continue;
       R.t += dt;
       if (R.t >= R.dur) { R.on = false; continue; }
-      const p = R.side === 0 ? st.palmL : R.side === 1 ? st.palmR : null;
+      const p = R.side === 0 ? st.palmL : R.side === 1 ? st.palmR : R.side === 2 ? st.chargePos : null;
       if (p) { R.x = p[0]; R.y = p[1]; R.z = p[2] - 0.05; }
       else { R.x = P[J.NECK * 3]; R.y = P[J.NECK * 3 + 1] + 0.2; R.z = P[J.NECK * 3 + 2]; }
     }
@@ -1274,7 +1339,7 @@ export function createSpiritAvatar(opts = {}) {
     frameA = approach(frameA, wantFrame ? 1 : 0, dt, 0.25, 0.25);
     const flare = 1 + 0.55 * st.ult + 0.25 * st.up;
     // над ареной
-    const skyAlpha = skyA * presence * (present ? 0.85 : 0.55) * flare;
+    const skyAlpha = skyA * presence * (present ? 0.85 : 0.55) * flare * (1 - 0.45 * st.cine);   // [W3-ULT] в сцене — приглушён
     skyDt = dt;
     if (warm > 0) { warm--; sky.root.visible = true; placeSky(ctx, present); writeRig(sky, 0, skyView); }
     else if (skyAlpha > 0.003) { sky.root.visible = true; placeSky(ctx, present); writeRig(sky, skyAlpha, skyView); }
@@ -1330,14 +1395,15 @@ export function createSpiritAvatar(opts = {}) {
   function placeSky(ctx, present) {
     if (!camera) return;
     const fov = (camera.fov || 58) * Math.PI / 180, tanH = Math.tan(fov / 2), aspect = camera.aspect || 16 / 9;
-    let dBoss = 14;
+    // [W3-ULT] дальше и Регента, и героя: в бою камера за героем, а облёт «Небесного суда» может встать перед ним —
+    // дух всё равно позади обоих (и тест глубины прячет его за ними), между камерой и героем он не встаёт
+    let dFar = 14;
     const snap = ctx.snapshot;
-    const bp = snap && snap.boss && snap.boss.position;
-    if (bp && fin(bp.x) && fin(bp.z)) {
-      camera.getWorldPosition(_v);
-      dBoss = Math.hypot(bp.x - _v.x, (bp.y || 0) + 3 - _v.y, bp.z - _v.z);
-    }
-    const D = clamp(dBoss + 9, 20, 46);
+    camera.getWorldPosition(_v);
+    const bp = snap && snap.boss && snap.boss.position, hp = snap && snap.player && snap.player.position;
+    if (bp && fin(bp.x) && fin(bp.z)) dFar = Math.hypot(bp.x - _v.x, (bp.y || 0) + 3 - _v.y, bp.z - _v.z);
+    if (hp && fin(hp.x) && fin(hp.z)) dFar = Math.max(dFar, Math.hypot(hp.x - _v.x, (hp.y || 0) + 1.2 - _v.y, hp.z - _v.z));
+    const D = clamp(dFar + 9, 20, 60);
     const scale = SPIRIT_SW * (D / 20) * (present ? 0.85 : 1);
     // верх духа (голова или поднятые кисти) — не выше 0,9 высоты кадра: руки вверх — дух опускается
     let top = P[J.HEAD * 3 + 1] + 0.45;
@@ -1467,6 +1533,8 @@ export function createSpiritAvatar(opts = {}) {
         joints: { leftShoulder: j(J.LS), rightShoulder: j(J.RS), leftElbow: j(J.LE), rightElbow: j(J.RE), leftWrist: j(J.LW), rightWrist: j(J.RW), head: j(J.HEAD), leftIndexTip: j(J.HL + 8), rightIndexTip: j(J.HR + 8) },
         flash: [+st.flash[0].toFixed(3), +st.flash[1].toFixed(3)], shield: +st.shield.toFixed(3), charge: +st.charge.toFixed(3),
         ult: +st.ult.toFixed(3), up: +st.up.toFixed(3), ready: +st.ready.toFixed(3), rings: st.rings.filter((r) => r.on).length, trail: st.trailN,
+        axis: st.axisH > 0.5 ? 'h' : st.axisV > 0.5 ? 'v' : null, slit: +st.slit.toFixed(3), slitH: st.slitH, cine: +st.cine.toFixed(3), arcSeed: st.arcSeed,   // [W3-MAGIC] [W3-ULT]
+        skyDepth: +(-sky.root.position.z).toFixed(2),
         tier: sky.tier, elem: [+st.colElem[0].toFixed(3), +st.colElem[1].toFixed(3), +st.colElem[2].toFixed(3)],
         flashColor: [Array.from(st.flashCol[0], (v) => +v.toFixed(3)), Array.from(st.flashCol[1], (v) => +v.toFixed(3))],
       };
