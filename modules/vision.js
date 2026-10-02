@@ -1285,6 +1285,7 @@ export async function createVision(options = {}) {
         video: { w: video.videoWidth || 0, h: video.videoHeight || 0 },
         cameraFps: r1(cameraFps()),          // [PERF] реальная частота камеры
         poseModel: poseModelName(),          // [PERF] lite | full
+        poseSwitching: switching,            // [W3-SQUAT] модель позы пересоздаётся (≈1 с без кадров)
         captureMaxWidth: cfg.captureMaxWidth,
         cameraFallback: perf.camFallback,
         mediaPipe: { version: mpResolved.version, versionMismatch: mpResolved.versionMismatch },

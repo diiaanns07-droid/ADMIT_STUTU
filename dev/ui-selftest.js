@@ -50,13 +50,14 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
   const calls = [];
   const names = ['onEnableCamera', 'onCalibrate', 'onStart', 'onPause', 'onResume', 'onRestart', 'onSettings', 'onDebug', 'onExit', 'onOath', 'onTraining', 'onBuyUpgrade', 'onBack', 'onNet', 'onTechnique'];
   const callbacks = {};
-  for (const n of names) {
+  for (const n of names.concat(['onChallenge', 'onChallengeName', 'onPosterSave'])) { // [W3-CHALLENGE] + испытание и постер
     callbacks[n] = (arg) => {
       calls.push({ name: n, arg });
       if (n === 'onCalibrate') return Promise.resolve(true);
       return undefined;
     };
   }
+  callbacks.onPoseRecord = (arg) => { calls.push({ name: 'onPoseRecord', arg }); };   // [W3-SQUAT] «Сохранить запись позы»
   const count = (n) => calls.filter((c) => c.name === n).length;
   const last = (n) => {
     const l = calls.filter((c) => c.name === n);
