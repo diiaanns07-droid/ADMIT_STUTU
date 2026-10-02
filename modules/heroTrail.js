@@ -8,6 +8,14 @@
 // export: createTrail(THREE, { color, n, sub, life, hot }) →
 //   { mesh, push(a, b, speed, glow, dt), reset(), setVisible(on), dispose() }
 //   a — точка навершия, b — точка древка (мир), speed — скорость навершия относительно тела (м/с).
+//
+// [W4-АУРА] «Следы» героя — тоже здесь (их создаёт и ведёт modules/heroAura.js, только medium/high):
+// export: createFootprints(THREE, { color, color2, count, life }) — светящиеся отпечатки шагов на бегу:
+//   ОДИН InstancedMesh (1 вызов отрисовки, пока жив хоть один след), возраст считает шейдер по uTime —
+//   в кадре на CPU ничего, запись только в момент шага. → { mesh, stamp(x,y,z,yaw,side,k,t), update(t), setColor, dispose }
+// export: createDashBurst(THREE, { color, color2, count }) — пыль из-под ног и искры стихии на рывке:
+//   ОДНИ Points из кольцевого пула (1 вызов, пока есть живые частицы), баллистика — в вершинном шейдере.
+//   → { points, emit(kind, x,y,z, dx,dz, t, k), update(t), setColor, dispose }   kind: 'dash' | 'stop' | 'step'
 
 const VERT = /* glsl */`
 attribute vec3 aT;          // x — возраст (0 новый … 1 погас), y — поперёк (0 древко … 1 навершие), z — яркость замера
@@ -27,9 +35,15 @@ void main() {
   float body = smoothstep( 0.15, 0.9, a ) * ( 1.0 - smoothstep( 0.97, 1.0, a ) );
   float core = exp( - pow( ( a - 0.9 ) * 12.0, 2.0 ) );
   float streak = 0.72 + 0.28 * sin( a * 38.0 + age * 9.0 );
+  // [W4-АУРА] старый край ленты рвётся на волокна (а не тает ровной полосой) и редкие блёстки в теле
+  float fib = 0.5 + 0.5 * sin( a * 61.0 + sin( a * 17.0 ) * 3.0 );
+  body *= 1.0 - smoothstep( 0.35, 1.0, age ) * ( 0.65 + 0.35 * fib );
+  vec2 gc = floor( vec2( a * 22.0, age * 26.0 ) );
+  float glint = step( 0.955, fract( sin( dot( gc, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ) ) * ( 1.0 - age ) * body;
   // обычное смешивание (видно и на светлом небе/лесе): яркость — в прозрачность, цвет — HDR, нить ярче
-  float I = body * 0.85 * streak + core * uHot * 0.8;
+  float I = body * 0.85 * streak + core * uHot * 0.8 + glint * 0.9;
   vec3 col = uColor * ( 0.6 + 1.0 * core );   // тело ниже 1 — цвет стихии не выгорает тонмаппингом в жёлтый/белый
+  col = mix( col, uColor * 0.6 + vec3( 0.55 ), core * 0.3 + glint * 0.6 );   // нить и блёстки — к белому
   // к старому краю — холоднее и прозрачнее
   col = mix( col, col * vec3( 0.7, 0.8, 1.2 ), age );
   gl_FragColor = vec4( col, clamp( fade * I, 0.0, 1.0 ) );
@@ -107,5 +121,216 @@ export function createTrail(THREE, { color = 0x9d7bff, n = 18, sub = 3, life = 0
     setVisible(on) { if (!on) reset(); },
     get lit() { return lit; },
     dispose() { if (mesh.parent) mesh.parent.remove(mesh); geo.dispose(); mat.dispose(); },
+  };
+}
+
+// ---------------------------------------------------------------- [W4-АУРА] отпечатки шагов
+// Подошва — две слитые эллипсы (пятка и носок), светится кромкой цвета стихии и тлеет внутри; в момент шага —
+// короткая вспышка цвета color2. Левая/правая — зеркало в шейдере (масштаб −1 перевернул бы грани).
+const PRINT_VERT = /* glsl */`
+attribute vec3 aPr;          // x — время шага (с, часы heroTimeU), y — сторона (−1 левая, +1 правая), z — сила
+uniform float uTime;
+uniform float uLife;
+varying vec2 vUv;
+varying float vAge;
+varying float vSec;
+varying float vK;
+void main() {
+  vAge = ( uTime - aPr.x ) / uLife;
+  vSec = uTime - aPr.x;
+  vK = aPr.z;
+  // носок — к +v (развёртка плоскости повёрнута к −Z, поэтому v перевёрнута), сторона — зеркало по u
+  vUv = vec2( ( uv.x * 2.0 - 1.0 ) * aPr.y, 1.0 - uv.y * 2.0 );
+  if ( vAge < 0.0 || vAge > 1.0 ) { gl_Position = vec4( 2.0, 2.0, 2.0, 1.0 ); return; }   // погасший — вне кадра
+  gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4( position, 1.0 );
+}`;
+const PRINT_FRAG = /* glsl */`
+uniform vec3 uC1;
+uniform vec3 uC2;
+varying vec2 vUv;
+varying float vAge;
+varying float vSec;
+varying float vK;
+float ell( vec2 p, vec2 c, vec2 r ) { return length( ( p - c ) / r ) - 1.0; }
+void main() {
+  vec2 p = vUv;
+  float dh = ell( p, vec2( 0.0, -0.56 ), vec2( 0.5, 0.36 ) );
+  float db = ell( p, vec2( 0.08, 0.24 ), vec2( 0.62, 0.6 ) );
+  float h = clamp( 0.5 + 0.5 * ( db - dh ) / 0.35, 0.0, 1.0 );
+  float d = mix( db, dh, h ) - 0.35 * h * ( 1.0 - h );   // плавное слияние пятки и носка
+  if ( d > 0.45 ) discard;
+  float edge = exp( - abs( d ) * 9.0 );
+  float fill = smoothstep( 0.05, -0.5, d ) * 0.32;
+  float life = 1.0 - vAge;
+  float flash = exp( - vSec * 9.0 );
+  float I = ( edge * 0.85 + fill ) * life * life * vK;
+  vec3 col = mix( uC1, uC2, flash * 0.8 + edge * 0.15 ) * ( 1.0 + 2.2 * flash );
+  gl_FragColor = vec4( col, clamp( I * ( 1.0 + flash ), 0.0, 1.0 ) );
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+
+export function createFootprints(THREE, { color = 0x9ff4ff, color2 = 0xffffff, count = 14, life = 1.8, size = 1 } = {}) {
+  const n = Math.max(2, count | 0);
+  const geo = new THREE.PlaneGeometry(0.15 * size, 0.3 * size);
+  geo.rotateX(-Math.PI / 2);
+  const pr = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) pr[i * 3] = -1e4;            // все пустые: «давно погасли»
+  geo.setAttribute('aPr', new THREE.InstancedBufferAttribute(pr, 3).setUsage(THREE.DynamicDrawUsage));
+  const U = { uTime: { value: 0 }, uLife: { value: life }, uC1: { value: new THREE.Color(color) }, uC2: { value: new THREE.Color(color2) } };
+  const mat = new THREE.ShaderMaterial({
+    name: 'hero-footprint', uniforms: U, vertexShader: PRINT_VERT, fragmentShader: PRINT_FRAG,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  });
+  const mesh = new THREE.InstancedMesh(geo, mat, n);
+  mesh.name = 'hero-footprints'; mesh.frustumCulled = false; mesh.castShadow = false; mesh.receiveShadow = false;
+  mesh.matrixAutoUpdate = false; mesh.userData.noShadow = true; mesh.renderOrder = 2;
+  const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1), _y = new THREE.Vector3(0, 1, 0);
+  for (let i = 0; i < n; i++) mesh.setMatrixAt(i, _m.identity());
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  let next = 0, lastT = -1e4;
+  mesh.visible = false;
+  return {
+    mesh,
+    // t — часы шейдера (те же, что идут в update); k — сила отпечатка 0…1
+    stamp(x, y, z, yaw, side, k = 1, t = U.uTime.value) {
+      _q.setFromAxisAngle(_y, yaw); _p.set(x, y, z);
+      mesh.setMatrixAt(next, _m.compose(_p, _q, _s));
+      pr[next * 3] = t; pr[next * 3 + 1] = side < 0 ? -1 : 1; pr[next * 3 + 2] = Math.max(0, Math.min(1.5, k));
+      next = (next + 1) % n;
+      mesh.instanceMatrix.needsUpdate = true; geo.attributes.aPr.needsUpdate = true;
+      lastT = t; mesh.visible = true;
+    },
+    update(t) { U.uTime.value = t; if (mesh.visible && t - lastT > life) mesh.visible = false; },
+    setColor(c1, c2) { U.uC1.value.set(c1); if (c2 !== undefined) U.uC2.value.set(c2); },
+    get alive() { return mesh.visible; },
+    dispose() { if (mesh.parent) mesh.parent.remove(mesh); geo.dispose(); mat.dispose(); if (mesh.dispose) mesh.dispose(); },
+  };
+}
+
+// ---------------------------------------------------------------- [W4-АУРА] пыль и искры рывка
+// Пыль — мягкие облачка (премультиплицированная альфа: чуть закрывает фон, не светится), искры — яркие точки
+// стихии (та же формула с альфой 0 — складываются, как аддитив). Один материал, один вызов.
+const BURST_VERT = /* glsl */`
+attribute vec3 aV;           // начальная скорость, м/с (мир)
+attribute vec4 aB;           // x — рождение (с), y — жизнь (с), z — вид (0 пыль, 1 искра), w — случайное 0…1
+uniform float uTime;
+uniform float uPx;           // пикселей на метр на расстоянии 1 м (высота вьюпорта / 2·tan(fov/2))
+varying float vU;
+varying float vKind;
+varying float vSeed;
+void main() {
+  float age = uTime - aB.x;
+  float u = age / max( aB.y, 1e-3 );
+  vU = u; vKind = aB.z; vSeed = aB.w;
+  if ( u < 0.0 || u > 1.0 ) { gl_Position = vec4( 2.0, 2.0, 2.0, 1.0 ); gl_PointSize = 0.0; return; }
+  float spark = step( 0.5, aB.z );
+  float dr = mix( 4.2, 2.6, spark );                       // сопротивление воздуха: пыль вязнет быстрее
+  float tau = ( 1.0 - exp( - dr * age ) ) / dr;
+  vec3 p = position + aV * tau;
+  p.y += mix( 0.32 * age, - 3.4 * age * age, spark );      // пыль всплывает, искры падают
+  p.y = max( p.y, position.y - 0.02 );
+  vec4 mv = modelViewMatrix * vec4( p, 1.0 );
+  gl_Position = projectionMatrix * mv;
+  float sz = mix( 0.16 + 0.5 * sqrt( u ), 0.06 * ( 1.0 - 0.6 * u ), spark ) * ( 0.75 + 0.5 * aB.w );
+  gl_PointSize = clamp( sz * uPx / max( 0.3, - mv.z ), 1.0, 90.0 );
+}`;
+const BURST_FRAG = /* glsl */`
+uniform vec3 uC1;
+uniform vec3 uC2;
+uniform vec3 uDust;
+varying float vU;
+varying float vKind;
+varying float vSeed;
+void main() {
+  vec2 c = gl_PointCoord - 0.5;
+  float d = length( c );
+  if ( d > 0.5 ) discard;
+  float a;
+  vec3 col;
+  if ( vKind > 0.5 ) {
+    float core = smoothstep( 0.5, 0.0, d );
+    core *= core;
+    col = mix( uC2, uC1, vU ) * ( 1.4 + 2.4 * core * core );
+    a = core * ( 1.0 - vU );
+  } else {
+    // клуб пыли: мягкий край, «рыхлость» по углу, подсвечен стихией у героя
+    float ang = atan( c.y, c.x );
+    float lump = 0.82 + 0.18 * sin( ang * 5.0 + vSeed * 30.0 );
+    float soft = smoothstep( 0.5 * lump, 0.06, d );
+    a = soft * 0.34 * ( 1.0 - vU ) * ( 1.0 - vU ) * smoothstep( 0.0, 0.06, vU );
+    col = mix( uDust, uC1 * 0.5, 0.18 + 0.22 * vSeed * ( 1.0 - vU ) );
+  }
+  gl_FragColor = vec4( col, a );
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  gl_FragColor = vec4( gl_FragColor.rgb * a, vKind > 0.5 ? 0.0 : a );   // премультипликация после цвета экрана
+}`;
+
+export function createDashBurst(THREE, { color = 0x9ff4ff, color2 = 0xffffff, count = 48, dust = 0x3a3430 } = {}) {
+  const n = Math.max(8, count | 0);
+  const geo = new THREE.BufferGeometry();
+  const P0 = new Float32Array(n * 3), V = new Float32Array(n * 3), B = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) { B[i * 4] = -1e4; B[i * 4 + 1] = 1; }
+  geo.setAttribute('position', new THREE.BufferAttribute(P0, 3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('aV', new THREE.BufferAttribute(V, 3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('aB', new THREE.BufferAttribute(B, 4).setUsage(THREE.DynamicDrawUsage));
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e5);
+  const U = {
+    uTime: { value: 0 }, uPx: { value: 600 },
+    uC1: { value: new THREE.Color(color) }, uC2: { value: new THREE.Color(color2) }, uDust: { value: new THREE.Color(dust) },
+  };
+  const mat = new THREE.ShaderMaterial({
+    name: 'hero-dash-burst', uniforms: U, vertexShader: BURST_VERT, fragmentShader: BURST_FRAG,
+    transparent: true, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendEquation: THREE.AddEquation,
+  });
+  const pts = new THREE.Points(geo, mat);
+  pts.name = 'hero-dash-burst'; pts.frustumCulled = false; pts.matrixAutoUpdate = false; pts.renderOrder = 4; pts.visible = false;
+  // размер точки в пикселях — по вьюпорту и углу обзора камеры этого кадра (без выделений)
+  const _vp = new THREE.Vector4();
+  pts.onBeforeRender = (renderer, scene, camera) => {
+    renderer.getCurrentViewport(_vp);
+    const fov = camera && camera.isPerspectiveCamera ? camera.fov : 50;
+    U.uPx.value = _vp.w / (2 * Math.tan((fov * Math.PI) / 360));
+  };
+  let next = 0, until = -1e4, seed = 7331;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  function put(x, y, z, vx, vy, vz, t, life, kind) {
+    const i = next; next = (next + 1) % n;
+    P0[i * 3] = x; P0[i * 3 + 1] = y; P0[i * 3 + 2] = z;
+    V[i * 3] = vx; V[i * 3 + 1] = vy; V[i * 3 + 2] = vz;
+    B[i * 4] = t; B[i * 4 + 1] = life; B[i * 4 + 2] = kind; B[i * 4 + 3] = rnd();
+    if (t + life > until) until = t + life;
+  }
+  // kind: 'dash' — старт рывка (пыль назад и в стороны, искры назад), 'stop' — торможение (пыль вперёд), 'step' — шаг
+  function emit(kind, x, y, z, dx, dz, t = U.uTime.value, k = 1) {
+    const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+    const nd = kind === 'dash' ? Math.round(16 * k) : kind === 'stop' ? Math.round(9 * k) : 2;
+    const ns = kind === 'dash' ? Math.round(14 * k) : kind === 'stop' ? Math.round(4 * k) : 0;
+    const back = kind === 'stop' ? -1 : 1;   // пыль на старте летит назад, на торможении — по ходу
+    for (let i = 0; i < nd; i++) {
+      const a = rnd() * Math.PI * 2, r = 0.05 + 0.2 * rnd(), ox = Math.cos(a), oz = Math.sin(a);
+      const sp = kind === 'step' ? 0.35 + 0.5 * rnd() : 1.0 + 1.9 * rnd(), rad = kind === 'step' ? 0.5 : 0.6 + 1.1 * rnd();
+      put(x + ox * r, y + 0.04, z + oz * r,
+        -dx * sp * back + ox * rad, 0.15 + 0.45 * rnd(), -dz * sp * back + oz * rad,
+        t + (kind === 'dash' ? 0.03 * rnd() : 0), kind === 'step' ? 0.45 + 0.2 * rnd() : 0.7 + 0.45 * rnd(), 0);
+    }
+    for (let i = 0; i < ns; i++) {
+      const h = 0.12 + 1.0 * rnd(), lat = (rnd() - 0.5) * 2;
+      const sp = 2.4 + 3.4 * rnd();
+      put(x + (rnd() - 0.5) * 0.3, y + h, z + (rnd() - 0.5) * 0.3,
+        -dx * sp * back - dz * lat * 1.4, 0.4 + 2.2 * rnd(), -dz * sp * back + dx * lat * 1.4,
+        t + 0.05 * rnd(), 0.32 + 0.3 * rnd(), 1);
+    }
+    geo.attributes.position.needsUpdate = true; geo.attributes.aV.needsUpdate = true; geo.attributes.aB.needsUpdate = true;
+    pts.visible = true;
+  }
+  return {
+    points: pts, emit,
+    update(t) { U.uTime.value = t; if (pts.visible && t > until + 0.05) pts.visible = false; },
+    setColor(c1, c2) { U.uC1.value.set(c1); if (c2 !== undefined) U.uC2.value.set(c2); },
+    get alive() { return pts.visible; },
+    dispose() { if (pts.parent) pts.parent.remove(pts); geo.dispose(); mat.dispose(); },
   };
 }
