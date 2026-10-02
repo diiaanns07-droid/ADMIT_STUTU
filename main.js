@@ -38,6 +38,16 @@ import { createTechniqueTrainer } from './modules/techniqueTrainer.js'; // [ТВ
 import { createHandCursor } from './core/handCursor.js'; // [W3-CURSOR] курсор-кисть вместо мыши
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
+// [W3-CURSOR] MediaPipe в главном потоке (запасной путь, если worker не прошёл самопроверку) пишет служебные строки glog
+// уровней I/W («W1002 … gl_context.cc:1118] OpenGL error checking is disabled») — не сбои игры; в консоль их не пускаем.
+// Тот же фильтр — в modules/vision-worker.js. Ошибки (E/F) и все остальные сообщения проходят как раньше.
+{
+  const GLOG_NOISE = /^[IW]\d{4} \d\d:\d\d:\d\d\.\d+\s+\d+\s+[\w.-]+:\d+\]/;
+  for (const k of ['log', 'info', 'warn']) {
+    const orig = console[k];
+    if (typeof orig === 'function') console[k] = (...a) => { if (typeof a[0] === 'string' && GLOG_NOISE.test(a[0])) return; orig.apply(console, a); };
+  }
+}
 
 function fatal(msg, err) {
   console.error('[ASHEN]', msg, err || '');

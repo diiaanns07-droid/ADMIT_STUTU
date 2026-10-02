@@ -6,7 +6,7 @@
 //
 // Вход — те же точки кистей, что у игры: vision.getHands() (координаты ПОКАЗА 0..1, x уже зеркален,
 // right — правая рука самого игрока) и vision.getPose() (плечи — рамка досягаемости руки).
-// Палец ходит в рамке у правого плеча (≈1,7 × 1,1 ширины плеч), рамка растягивается на весь экран:
+// Палец ходит в рамке у правого плеча (≈1,6 × 1,1 ширины плеч), рамка растягивается на весь экран:
 // маленькое движение кисти — курсор через весь экран. Рука ниже рамки (опущена, лежит на столе) —
 // курсора нет, случайных кликов нет.
 //
@@ -29,7 +29,8 @@ export const CURSOR_DEFAULTS = Object.freeze({
   pinchLookbackMs: 120,    // цель — та, что была под кольцом чуть раньше (палец сдвигается при щепоти)
   pinchFreezeMs: 250,      // столько после щепоти кольцо стоит на месте (кончик пальца уезжает), потом снова следует
   // рамка досягаемости в ширинах плеч (ось x — от правого плеча наружу, y — от линии плеч вверх)
-  boxLeft: 0.55, boxRight: 1.15, boxUp: 0.9, boxDown: 0.2,
+  // наружу — не дальше ~1 ширины плеч: у края кадра MediaPipe теряет кисть
+  boxLeft: 0.65, boxRight: 0.95, boxUp: 0.9, boxDown: 0.2,
   outX: 0.12, outUp: 0.15, outDown: 0.1,   // палец чуть за рамкой — курсор у края; дальше — курсора нет
   boxTauMs: 600,           // сглаживание рамки (плечи дрожат меньше кисти, но дрожат)
   // без позы — рамка в долях кадра
@@ -231,19 +232,21 @@ const CLICKABLE = 'button, [role="button"], a[href], summary, label, [data-hand-
 const STYLE_ID = 'ao-hc-style';
 const CSS = `
 .ao-hc{position:fixed;inset:0;pointer-events:none;z-index:2147483000;overflow:hidden}
-.ao-hc__ring{position:absolute;left:0;top:0;width:64px;height:64px;margin:-32px 0 0 -32px;opacity:0;transition:opacity .16s ease-out;will-change:transform,opacity}
+.ao-hc__ring{position:absolute;left:0;top:0;width:80px;height:80px;margin:-40px 0 0 -40px;opacity:0;transition:opacity .16s ease-out;will-change:transform,opacity}
 .ao-hc.is-on .ao-hc__ring{opacity:1}
 .ao-hc__ring svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;transform:rotate(-90deg)}
-.ao-hc__glow{fill:rgba(255,190,96,.10);stroke:rgba(255,214,150,.95);stroke-width:2.5;filter:drop-shadow(0 0 6px rgba(255,170,60,.9)) drop-shadow(0 0 16px rgba(255,140,40,.55));transition:r .15s ease-out,stroke .15s}
-.ao-hc__fill{fill:none;stroke:#ffd27a;stroke-width:6;stroke-linecap:round;filter:drop-shadow(0 0 5px rgba(255,190,80,.95))}
-.ao-hc__dot{position:absolute;left:50%;top:50%;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:#fff3d6;box-shadow:0 0 8px 2px rgba(255,190,90,.95)}
+.ao-hc__track{fill:none;stroke:rgba(8,6,4,.62);stroke-width:11}
+.ao-hc__glow{fill:rgba(255,190,96,.12);stroke:#ffe3a8;stroke-width:2.5;filter:drop-shadow(0 0 1.5px rgba(0,0,0,.95)) drop-shadow(0 0 7px rgba(255,170,60,.9)) drop-shadow(0 0 18px rgba(255,140,40,.5));transition:stroke .15s}
+.ao-hc__fill{fill:none;stroke:#ffd27a;stroke-width:7;stroke-linecap:round;filter:drop-shadow(0 0 5px rgba(255,190,80,.95))}
+.ao-hc__dot{position:absolute;left:50%;top:50%;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:#fff3d6;border:1.5px solid rgba(20,12,4,.8);box-shadow:0 0 8px 2px rgba(255,190,90,.95)}
 .ao-hc.is-target .ao-hc__glow{stroke:#fff1c9;fill:rgba(255,200,110,.18)}
 .ao-hc.is-disabled .ao-hc__glow{stroke:rgba(170,176,188,.85);fill:rgba(120,126,138,.12);filter:none}
 .ao-hc.is-pinched .ao-hc__dot{transform:scale(1.8)}
-.ao-hc__burst{position:absolute;left:0;top:0;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;border:3px solid #ffd27a;opacity:0;box-shadow:0 0 18px rgba(255,180,70,.9)}
+.ao-hc__burst{position:absolute;left:0;top:0;width:80px;height:80px;margin:-40px 0 0 -40px;border-radius:50%;border:3px solid #ffd27a;opacity:0;box-shadow:0 0 18px rgba(255,180,70,.9)}
 .ao-hc__burst.is-go{animation:ao-hc-burst .42s ease-out}
 @keyframes ao-hc-burst{0%{opacity:.95;transform:var(--ao-hc-at) scale(.6)}100%{opacity:0;transform:var(--ao-hc-at) scale(2.1)}}
-.ao-hc__tip{position:absolute;left:0;top:0;margin:40px 0 0 -130px;width:260px;text-align:center;font:600 15px/1.3 "Segoe UI",system-ui,sans-serif;color:#fff3dc;text-shadow:0 1px 3px #000,0 0 10px rgba(0,0,0,.8);opacity:0;transition:opacity .3s}
+.ao-hc__tip{position:absolute;left:0;top:0;margin:48px 0 0 -170px;width:340px;text-align:center;font:600 15px/1.3 "Segoe UI",system-ui,sans-serif;color:#fff3dc;text-shadow:0 1px 3px #000,0 0 10px rgba(0,0,0,.8);opacity:0;transition:opacity .3s}
+.ao-hc__tip b{display:block;font-weight:700}.ao-hc__tip span{display:block;font-weight:500;font-size:13px;color:#e8d9bb}
 .ao-hc.is-on.is-tip .ao-hc__tip{opacity:1}
 .ao-hc-hover{outline:3px solid rgba(255,214,140,.98)!important;outline-offset:3px!important;box-shadow:0 0 0 6px rgba(255,180,80,.22),0 0 26px 4px rgba(255,170,60,.55)!important;transition:outline-color .12s,box-shadow .12s}
 .ao-hc-press{animation:ao-hc-press .32s ease-out}
@@ -257,7 +260,7 @@ export function createHandCursor(opts = {}) {
   const win = opts.win || (typeof window !== 'undefined' ? window : null);
   if (!doc || !win) throw new Error('handCursor: нужен DOM');
   const core = createCursorCore(opts.core || {});
-  const R_RING = 26, CIRC = 2 * Math.PI * R_RING;
+  const R_RING = 32, CIRC = 2 * Math.PI * R_RING;
 
   if (!doc.getElementById(STYLE_ID)) {
     const s = doc.createElement('style');
@@ -271,13 +274,13 @@ export function createHandCursor(opts = {}) {
   const ring = doc.createElement('div');
   ring.className = 'ao-hc__ring';
   const svg = doc.createElementNS(NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 64 64');
-  const glow = doc.createElementNS(NS, 'circle');
-  glow.setAttribute('class', 'ao-hc__glow'); glow.setAttribute('cx', '32'); glow.setAttribute('cy', '32'); glow.setAttribute('r', String(R_RING - 6));
-  const fillC = doc.createElementNS(NS, 'circle');
-  fillC.setAttribute('class', 'ao-hc__fill'); fillC.setAttribute('cx', '32'); fillC.setAttribute('cy', '32'); fillC.setAttribute('r', String(R_RING));
+  svg.setAttribute('viewBox', '0 0 80 80');
+  const circle = (cls, r) => { const c = doc.createElementNS(NS, 'circle'); c.setAttribute('class', cls); c.setAttribute('cx', '40'); c.setAttribute('cy', '40'); c.setAttribute('r', String(r)); return c; };
+  const track = circle('ao-hc__track', R_RING);              // тёмная подложка — кольцо видно и на золотой кнопке
+  const glow = circle('ao-hc__glow', R_RING - 8);
+  const fillC = circle('ao-hc__fill', R_RING);
   fillC.setAttribute('stroke-dasharray', CIRC.toFixed(2)); fillC.setAttribute('stroke-dashoffset', CIRC.toFixed(2));
-  svg.append(glow, fillC);
+  svg.append(track, glow, fillC);
   const dot = doc.createElement('i');
   dot.className = 'ao-hc__dot';
   ring.append(svg, dot);
@@ -285,7 +288,10 @@ export function createHandCursor(opts = {}) {
   burst.className = 'ao-hc__burst';
   const tip = doc.createElement('div');
   tip.className = 'ao-hc__tip';
-  tip.textContent = 'Задержите палец на кнопке — или сведите большой и указательный';
+  const tipMain = doc.createElement('b'), tipSub = doc.createElement('span');
+  tipMain.textContent = 'Задержите палец на кнопке';
+  tipSub.textContent = 'или сведите большой и указательный';
+  tip.append(tipMain, tipSub);
   layer.append(burst, ring, tip);
   doc.body.appendChild(layer);
 
