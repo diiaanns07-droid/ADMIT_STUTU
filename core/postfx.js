@@ -166,9 +166,9 @@ void main() {
   col *= mix(vec3(1.0), uVigTint, uVignette * smoothstep(0.42, 1.02, r));
   // ранение: края в кровь, середина почти не тронута
   if (uHurt > 0.001) {
-    float he = smoothstep(0.22, 1.0, r);
+    float he = 0.18 + 0.82 * smoothstep(0.3, 1.0, r);   // середина чуть краснеет, края — в кровь
     float l2 = dot(col, W);
-    col = mix(col, vec3(l2 * 1.15 + 0.07, l2 * 0.16, l2 * 0.14), clamp(uHurt * he * 0.9, 0.0, 1.0));
+    col = mix(col, vec3(l2 * 1.15 + 0.07, l2 * 0.16, l2 * 0.14), clamp(uHurt * he * 0.85, 0.0, 1.0));
   }
   // засветка (screen-смешение к цвету вспышки)
   col = vec3(1.0) - (vec3(1.0) - col) * (vec3(1.0) - uFlash.rgb * uFlash.a);
@@ -238,7 +238,7 @@ void main() {
   c = c * (1.0 - k) + uTint.rgb * k; a = 1.0 - (1.0 - a) * (1.0 - k);
   k = uVignette * smoothstep(0.42, 1.02, r) * 0.85;    // виньетка с оттенком края
   c = c * (1.0 - k) + uVigTint * 0.12 * k; a = 1.0 - (1.0 - a) * (1.0 - k);
-  k = clamp(uHurt * smoothstep(0.22, 1.0, r) * 0.7, 0.0, 1.0);   // ранение
+  k = clamp(uHurt * (0.12 + 0.88 * smoothstep(0.3, 1.0, r)) * 0.7, 0.0, 1.0);   // ранение
   c = c * (1.0 - k) + vec3(0.36, 0.0, 0.01) * k; a = 1.0 - (1.0 - a) * (1.0 - k);
   k = uFlash.a;                                        // засветка
   c = c * (1.0 - k) + uFlash.rgb * k; a = 1.0 - (1.0 - a) * (1.0 - k);
@@ -265,7 +265,7 @@ const GRADE = { grain: 0.036, vignette: 0.45, ca: 0.0, contrast: 0.16, sat: 1.04
 const LOOK = {
   base: { shadow: GRADE.shadowTint, high: GRADE.highTint, sat: GRADE.sat, contrast: GRADE.contrast, vignette: GRADE.vignette, vig: [0, 0, 0], rays: [1.0, 0.84, 0.62], ca: 0, tint: [0, 0, 0], tintA: 0 },
   p1: { shadow: [-0.026, 0.004, 0.052], high: [0.052, 0.03, -0.034], sat: 1.08, contrast: 0.24, vignette: 0.52, vig: [0.0, 0.01, 0.04], rays: [1.0, 0.82, 0.52], ca: 0.0015, tint: [0.03, 0.06, 0.16], tintA: 0.06 },
-  p2: { shadow: [0.046, -0.014, -0.006], high: [0.064, 0.006, -0.042], sat: 1.12, contrast: 0.3, vignette: 0.66, vig: [0.42, 0.02, 0.02], rays: [1.0, 0.36, 0.22], ca: 0.004, tint: [0.3, 0.02, 0.02], tintA: 0.1 },
+  p2: { shadow: [0.066, -0.016, -0.012], high: [0.07, 0.004, -0.05], sat: 1.14, contrast: 0.3, vignette: 0.68, vig: [0.5, 0.03, 0.02], rays: [1.0, 0.36, 0.22], ca: 0.004, tint: [0.32, 0.02, 0.02], tintA: 0.12 },
   dawn: { shadow: [0.0, 0.006, 0.022], high: [0.062, 0.04, 0.0], sat: 1.1, contrast: 0.16, vignette: 0.34, vig: [0.12, 0.07, 0.0], rays: [1.0, 0.9, 0.68], ca: 0, tint: [0.3, 0.2, 0.06], tintA: 0.05 },
   dark: { shadow: [-0.012, 0.0, 0.03], high: [0.0, -0.004, 0.004], sat: 0.6, contrast: 0.2, vignette: 0.7, vig: [0, 0, 0], rays: [0.8, 0.85, 0.95], ca: 0, tint: [0.02, 0.03, 0.06], tintA: 0.1 },
 };
@@ -600,7 +600,7 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
     const hq = !!(P.rays && P.rays.enabled);
     U.uRaysHQ.value = hq && U.uSunVis.value > 0.002 ? 1 : 0;
     U.uRays.value = hq ? RAYS_HQ.strength : RAYS.strength;
-    if (P.bloom) P.bloom.strength = BLOOM.strength * S.bloomK * (1 + Math.min(1, S.flash) * 1.4);
+    if (P.bloom) P.bloom.strength = BLOOM.strength * S.bloomK * (1 + Math.min(1, S.flash) * 0.6);
   }
 
   // [W3-КИНО] наложение для low: создаётся при первой нужде, рисуется только если есть что рисовать

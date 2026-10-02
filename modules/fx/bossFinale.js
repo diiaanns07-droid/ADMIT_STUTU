@@ -41,7 +41,7 @@ function mulberry32(seed) {
 // Тайминги (секунды настенного времени) и счёт частиц по уровням качества.
 export const FINALE = {
   phase: { dur: 1.5, slow: 0.22, slowIn: 0.12, slowOut: 1.05, roarAt: 0.5, sweep: [0.08, 0.95], bars: 1.25, push: 0.12 },
-  death: { overload: 0.5, shatterAt: 0.55, bars: 2.4, orbitSpeed: 0.2, orbitIn: 0.7 },
+  death: { overload: 0.38, shatterAt: 0.42, bars: 2.4, orbitSpeed: 0.2, orbitIn: 0.7 },
   q: {
     low: { shards: 48, embers: 120 },
     medium: { shards: 120, embers: 320 },
@@ -256,7 +256,7 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     D.t += dtR;
     if (!D.shattered) {
       // перегрев: трещины добела, вне затухания смерти
-      setLava(1, 0.8 + 3.4 * sstep(0, F.overload, D.t));
+      setLava(1, 0.8 + 2.2 * sstep(0, F.overload, D.t));
       if (D.t >= F.shatterAt) shatter(snap);
     }
   }
@@ -275,7 +275,7 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     pillar.position.set(_core.x, _core.y + 4, _core.z);
     pillar.visible = true;
     st.burstT = 0;
-    pulse('flash', 1, _core, { color: 0xfff0c8, dur: 0.6 });
+    pulse('flash', 0.7, _core, { color: 0xfff0c8, dur: 0.45 });
     pulse('shockwave', 1, _core);
     pulse('dash', 0.8, _core);
     skyStrike(1);
@@ -425,11 +425,11 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     const t = st.burstT;
     const grow = 1 - Math.exp(-t * 7);
     const fade = Math.exp(-Math.max(0, t - 0.08) * 2.4);
-    burst.scale.setScalar(1.5 + grow * 11);
-    burstMat.color.setRGB(3.2 * fade, 2.6 * fade, 1.7 * fade);
-    pillar.scale.set(1.2 + grow * 1.4, 4 + grow * 22, 1);
-    const pf = Math.exp(-Math.max(0, t - 0.15) * 1.6);
-    pillarMat.color.setRGB(2.4 * pf, 2.0 * pf, 1.3 * pf);
+    burst.scale.setScalar(1.2 + grow * 6.5);
+    burstMat.color.setRGB(1.7 * fade, 1.3 * fade, 0.8 * fade);
+    pillar.scale.set(0.9 + grow * 0.8, 4 + grow * 20, 1);
+    const pf = Math.exp(-Math.max(0, t - 0.15) * 1.4);
+    pillarMat.color.setRGB(1.5 * pf, 1.25 * pf, 0.85 * pf);
     if (fade < 0.01 && pf < 0.01) { burst.visible = false; pillar.visible = false; }
   }
 
