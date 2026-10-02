@@ -326,8 +326,8 @@ const COUNT = { ember: 64, frost: 22, wind: 36, storm: 30 };
 // доли частиц: база и максимум при полной ярости; что рисуется на каждом уровне
 const QUAL = {
   low: { pts: 0.4, ptsMax: 0.6, hq: false, waves: false, prints: 0, burst: 0 },
-  medium: { pts: 1, ptsMax: 1.5, hq: true, waves: true, prints: 12, burst: 72 },   // рывок: старт + след + торможение ≈ 70 частиц
-  high: { pts: 1.3, ptsMax: 2, hq: true, waves: true, prints: 18, burst: 96 },
+  medium: { pts: 1, ptsMax: 1.5, hq: true, waves: true, prints: 12, burst: 96 },   // рывок: старт + след + торможение ≈ 73 частицы + хвост прошлого
+  high: { pts: 1.3, ptsMax: 2, hq: true, waves: true, prints: 18, burst: 128 },
 };
 const tierOf = (q) => (q === 'low' || q === 'high' ? q : 'medium');
 const clamp01 = (v) => (v > 0 ? (v < 1 ? v : 1) : 0);
@@ -479,6 +479,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     vis: 0, fz: 0, rdy: 0, sL: 0, sR: 0, gd: 0, lw: 0, flash: 0, pop: 0, dead01: 0,
     dashQ: false, dashX: 0, dashZ: 1, stopQ: false, wasDash: false, lastDash: -1, trailT: -1,
   };
+  let lastSnapT = null;   // время боя прошлого снимка: пошло назад — новый бой (рестарт с паузы минует меню)
   let kExt = 1, lod = 0, lastT = null, ticked = false, disposed = false, ghostQ = null, remoteHero = false;
   let anchorsRef = null, feet = null, rootYaw = 0;
   const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _r = new THREE.Vector3(), _hL = new THREE.Vector3(), _hR = new THREE.Vector3();
@@ -531,6 +532,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     const P = snap && snap.player;
     st.menu = !P;
     if (!P) { st.battle = false; st.dead = false; st.victory = false; st.dashing = false; st.wasDash = false; st.chL = st.chR = 0; st.guard = 0; return; }
+    if (fin(snap.time)) { if (lastSnapT !== null && snap.time < lastSnapT) { st.wasDash = false; st.trailT = -1; } lastSnapT = snap.time; }
     const status = snap.status || 'playing';
     st.dead = status === 'defeat' || P.action === 'dead' || !!P.dead;
     st.victory = status === 'victory';
