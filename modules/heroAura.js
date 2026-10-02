@@ -597,8 +597,8 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     U.uHandW.value.set(haveHands ? st.sL : 0, haveHands ? st.sR : 0);
 
     // контровой rim: стихия; ярость и вспышка — ярче и горячее; смерть — гаснет
-    const rimBase = !ticked || st.menu ? 0.55 : 0.8;
-    RU.heroAuraRimK.value = (rimBase + 0.85 * st.fz + 0.45 * st.rdy * (0.5 + 0.5 * Math.sin(t * 5)) + 2.2 * fl + 0.35 * ch) * alive;
+    const rimBase = !ticked || st.menu ? 0.5 : 0.7;
+    RU.heroAuraRimK.value = (rimBase + 0.65 * st.fz + 0.4 * st.rdy * (0.5 + 0.5 * Math.sin(t * 5)) + 2.2 * fl + 0.35 * ch) * alive;
     RU.heroAuraRimC.value.copy(c1).lerp(c2, Math.min(0.6, 0.2 * st.fz + 0.4 * st.flash));
     // состояние: оберег/щит — золото (с «хлопком» при включении), мало HP — красное сердцебиение
     if (st.gd > 0.01) { RU.heroAuraStateC.value.copy(goldC); RU.heroAuraStateK.value = st.gd * (1.15 + 0.9 * st.pop) * alive; }
