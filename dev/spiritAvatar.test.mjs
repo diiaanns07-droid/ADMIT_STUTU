@@ -179,13 +179,16 @@ test('реакции: жест правой — вспышка цветом ст
   assert.ok(sp.info().charge < 0.1, 'заряд погас');
   run(sp, 0.6, () => ({ ...ctxOf({ x: -0.3, y: 0.3 }, { x: 0.3, y: 0.3 }), input: { valid: true, conjure: { kind: 'orb', charge: 0.6 } } }));
   assert.ok(sp.info().charge > 0.5, `сфера ${sp.info().charge}`);
-  // ультимейт — событие ult* (агент №6)
-  run(sp, 1.5, () => ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }));
-  sp.frame(DT, (T += 16), { ...ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }), events: [{ id: 'u1', type: 'ultimate_cast', position: { x: 0, y: 0, z: 0 } }] });
+  // ультимейт «Небесный суд»: шкала полна — нимб пульсирует; ultimate_start — вспышка (руки духа вверх)
+  run(sp, 1.5, () => ({ ...ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }), snapshot: { player: { fury: 100, furyReady: true } } }));
+  assert.ok(sp.info().ready > 0.9 && sp.info().ult < 0.05, `готов ${sp.info().ready}`);
+  sp.frame(DT, (T += 16), { ...ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }), snapshot: { player: { fury: 0 } }, events: [{ id: 'u1', type: 'ultimate_start', position: { x: 0, y: 0, z: 0 } }] });
   assert.ok(sp.info().ult > 0.9, `ульт ${sp.info().ult}`);
+  run(sp, 2.5, () => ({ ...ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }), snapshot: { player: { fury: 0 }, ultimate: { active: true, t: 1 } } }));
+  assert.ok(sp.info().ult >= 0.7, `сцена ультимейта: руки подняты ${sp.info().ult}`);
 });
 
-test('руки вверх ~0,5 с: дух поднимает руки и вспыхивает (без события ультимейта)', () => {
+test('руки вверх ~0,5 с: дух поднимает руки и вспыхивает (без шкалы ультимейта); со шкалой — только светится', () => {
   run(sp, 2.5, () => ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }));
   assert.ok(sp.info().ult < 0.05);
   run(sp, 0.9, () => ctxOf({ x: -0.6, y: -2.4 }, { x: 0.6, y: -2.4 }, { le: { x: -0.8, y: -1.2 }, re: { x: 0.8, y: -1.2 } }));
@@ -193,6 +196,10 @@ test('руки вверх ~0,5 с: дух поднимает руки и всп�
   assert.ok(inf.up > 0.9, `руки вверх ${inf.up}`);
   assert.ok(inf.ult > 0.3, `вспышка ${inf.ult}`);
   assert.ok(inf.joints.leftWrist.y > inf.joints.head.y && inf.joints.rightWrist.y > inf.joints.head.y, 'кисти выше головы');
+  // со шкалой ультимейта (агент №6) вспышку даёт только ultimate_start — отказ боя не выглядит успехом
+  run(sp, 2.5, () => ({ ...ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }), snapshot: { player: { fury: 10 } } }));
+  run(sp, 0.9, () => ({ ...ctxOf({ x: -0.6, y: -2.4 }, { x: 0.6, y: -2.4 }, { le: { x: -0.8, y: -1.2 }, re: { x: 0.8, y: -1.2 } }), snapshot: { player: { fury: 10 } } }));
+  assert.ok(sp.info().up > 0.9 && sp.info().ult < 0.05, `со шкалой: up ${sp.info().up}, ult ${sp.info().ult}`);
 });
 
 test('«Дух игрока» выключен — гаснет и не рисуется; включён — возвращается', () => {

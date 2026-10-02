@@ -27,7 +27,7 @@
 // камеры (свой холст в слоте). Источник — синтетика «Отладки с клавиатуры» или поза/кисти в формате vision
 // (dev/handSynth.mjs: незеркальная поза + кисти показа), чтобы проверить путь камеры и зеркало.
 // URL: view=both|sky|frame  src=synth|vision  q=low|medium|high  post=0 (без постобработки)  present=1
-//      g=idle|shield|attack|burst|charge|sigil|ult|hint|wave  t=<сек> (прогнать до t шагом 1/60, отрисовать, title=READY)
+//      g=idle|shield|attack|burst|charge|sigil|ult|hint|wave|demo (сценарий 15 с для видео)  t=<сек> (прогнать до t шагом 1/60, отрисовать, title=READY)
 //      hero=ashen|elf|dark|ranger|archmage  clean=1 (без подписи)
 // Клавиши (как в отладке): K — щит, J — «OK», L — выброс, O — заряд, Z — печать, U — ультимейт, H — «ОШИБКА».
 import * as THREE from 'three';
@@ -90,6 +90,16 @@ let conjT = 0, simT = 0;
 function inputAt(t, dt) {
   const I = { valid: true, source: 'debug', moveX: 0, moveZ: 0, attack: false, shield: false, burst: false, burstHand: null, conjure: null, sigil: null, hint: null };
   const ph = (k, period, from, to) => { const p = t % period; return p >= from && p < to; };
+  // g=demo — сценарий для видео: счёт пальцев, щит, выброс, заряд, печать, «ОШИБКА», ультимейт
+  if (G === 'demo') {
+    const d = t % 15;
+    I.shield = d > 4.2 && d < 6;
+    if (d >= 6.6 && d < 6.6 + dt) { I.burst = true; I.burstHand = 'right'; }
+    if (d > 7.4 && d < 9.4) { conjT += dt; I.conjure = { kind: 'orb', size: 0.5, charge: Math.min(1, conjT / 1.5), heldMs: conjT * 1000 }; } else if (d >= 9.4) conjT = 0;
+    if (d >= 9.8 && d < 9.8 + dt) I.sigil = 'clap';
+    if (d >= 10.6 && d < 10.6 + dt) I.hint = { code: 'burst_short_hold', side: 'right' };
+    if (d >= 11.6 && d < 11.6 + dt) I.ultimate = true;
+  }
   if (G === 'shield' || held.has('KeyK')) I.shield = t > 0.5;
   if (G === 'attack' || held.has('KeyJ')) I.attack = t > 0.5;
   if (G === 'charge' || held.has('KeyO')) { conjT += dt; I.conjure = { kind: 'orb', size: 0.5, charge: Math.min(1, conjT / 1.5), heldMs: conjT * 1000 }; } else conjT = 0;
@@ -128,7 +138,7 @@ let last = performance.now(), visT = 0, visData = null;
 function step(dt, now) {
   simT += dt;
   const I = inputAt(simT, dt);
-  const ctx = { screen: VIEW === 'frame' ? 'tutorial' : 'playing', present: VIEW === 'both' || Q.get('present') === '1', debug: SRC !== 'vision', input: I, events: [], snapshot: { boss: { position: { x: 0, y: 0, z: 0 } }, player: { shielding: !!I.shield } }, hero: settings.hero };
+  const ctx = { screen: VIEW === 'frame' ? 'tutorial' : 'playing', present: VIEW === 'both' || Q.get('present') === '1', debug: SRC !== 'vision', input: I, events: I.ultimate ? [{ id: 'u', type: 'ultimate_start', position: { x: 0, y: 0, z: 0 } }] : [], snapshot: { boss: { position: { x: 0, y: 0, z: 0 } }, player: { shielding: !!I.shield } }, hero: settings.hero };
   if (SRC === 'vision') {
     visT += dt;
     if (!visData || visT >= 1 / 30) { visT = 0; visData = visionAt(simT); }   // камера ~30 Гц

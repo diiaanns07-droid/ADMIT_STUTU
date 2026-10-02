@@ -1453,12 +1453,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         if (prev && keys[keys.indexOf(key) - 1] === 'difficulty') { const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 22px;align-items:flex-end' }); wrap.replaceChild(row, prev); row.append(prev, mo); }
         else wrap.append(mo);
       }
-      else if (key === 'spiritAvatar') { // [W3-SPIRIT] в одном ряду с «Уменьшенным движением» (меню не растёт по высоте)
+      else if (key === 'spiritAvatar') { // [W3-SPIRIT] в строке «Жесты: Новичок | Мастер ☑ Автоход» (меню не растёт по высоте)
         const sp = buildSpirit(prefix), prev = wrap.lastElementChild;
-        if (prev && keys[keys.indexOf(key) - 1] === 'reducedMotion') {
-          if (prev.style && prev.style.display === 'flex') prev.append(sp);
-          else { const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 22px;align-items:flex-end' }); wrap.replaceChild(row, prev); row.append(prev, sp); }
-        } else wrap.append(sp);
+        const row = prev && keys[keys.indexOf(key) - 1] === 'gestureMode' ? prev.querySelector('div[style*="flex"]') : null;
+        if (row) { sp.style.margin = '0'; row.append(sp); } else wrap.append(sp);
       }
     }
     return wrap;
@@ -1514,9 +1512,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       title,
       el('p', { class: 'ao-subtitle', text: 'Бой с Регентом Нимба' }),
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
-      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, techBtn.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode'], 'menu')), // [НОВИЧОК] режим жестов — на виду
+      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, techBtn.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode', 'spiritAvatar'], 'menu')), // [НОВИЧОК] режим жестов — на виду; [W3-SPIRIT] «Дух игрока»
       buildHeroPick('menu'),
-      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'difficulty', 'reducedMotion', 'spiritAvatar'], 'menu')),
+      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'difficulty', 'reducedMotion'], 'menu')),
       el('div', { class: 'ao-menu__foot' }, el('div', { class: 'ao-menu__toggles' }, dbg, presentBtn), dbgKeys),
     );
     return {
@@ -2477,7 +2475,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         'div',
         { class: 'ao-cols' },
         el('div', { class: 'ao-col ao-col--media' }, host, status.node, hint, bookWrap),
-        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['gestureMode', 'moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion', 'spiritAvatar'], 'pause')),
+        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['gestureMode', 'spiritAvatar', 'moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
       ),
       dbgKeys,
       el('div', { class: 'ao-actions' }, resume.node, recal.node, restart.node, oathP.node, el('span', { class: 'ao-spacer' }), exit.node),

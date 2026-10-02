@@ -658,7 +658,7 @@ function createRig(THREE, name) {
     // кольца
     const rp = f.rGeo.attributes.position.array, rc = f.rGeo.attributes.aColor.array, rs = f.rGeo.attributes.aSize.array;
     // нимб: кольцо над головой, к зрителю чуть наклонено; вспыхивает в ультимейт
-    const halo = A[J.HEAD] * (0.55 + 1.4 * st.ult + 0.6 * st.up) * Math.max(v.headK, 0.7);
+    const halo = A[J.HEAD] * (0.55 + 1.4 * st.ult + 0.6 * st.up + st.ready * (0.7 + 0.5 * Math.sin(st.time * 6))) * Math.max(v.headK, 0.7);
     if (halo < 0.004) f.halo.setMatrixAt(0, ZERO_M);
     else {
       const hr2 = st.headR * (0.78 + 0.25 * st.ult);
@@ -666,7 +666,9 @@ function createRig(THREE, name) {
       _e.set(v.haloTilt, 0, 0.04 * Math.sin(st.time * 0.9)); _q.setFromEuler(_e); _s.set(hr2, hr2, hr2);
       _m.compose(_a, _q, _s); f.halo.setMatrixAt(0, _m);
     }
-    f.hCol.array[0] = GC[0] * halo * 1.3; f.hCol.array[1] = GC[1] * halo * 1.3; f.hCol.array[2] = GC[2] * halo * 1.3;
+    // готовый ультимейт — нимб цвета стихии героя
+    const hc = st.ready, e2 = st.colElem2;
+    f.hCol.array[0] = (GC[0] + (e2[0] * 1.6 - GC[0]) * hc) * halo * 1.3; f.hCol.array[1] = (GC[1] + (e2[1] * 1.6 - GC[1]) * hc) * halo * 1.3; f.hCol.array[2] = (GC[2] + (e2[2] * 1.6 - GC[2]) * hc) * halo * 1.3;
     f.halo.instanceMatrix.needsUpdate = true; f.hCol.needsUpdate = true;
     rs[0] = 0; rc[0] = rc[1] = rc[2] = 0;
     for (let i = 0; i < RINGS; i++) {
@@ -856,7 +858,7 @@ export function createSpiritAvatar(opts = {}) {
     flash: new Float32Array(2), flashCol: [new Float32Array([1, 1, 1]), new Float32Array([1, 1, 1])],
     shield: 0, shieldPop: 1, shieldHit: 0, charge: 0, chargePos: new Float32Array(3),
     palmL: new Float32Array(3), palmR: new Float32Array(3), chargeBoth: false,
-    ult: 0, up: 0, arcSeed: 1, viewAlpha: 1,
+    ult: 0, up: 0, ready: 0, arcSeed: 1, viewAlpha: 1,
     rings: Array.from({ length: RINGS }, () => ({ on: false, side: 0, t: 0, dur: 0.6, s0: 0.2, s1: 1.4, x: 0, y: 0, z: 0, r: 0, g: 0, b: 0 })),
     trail: new Float32Array(NT * NS_MAX * 3), trailA: new Float32Array(NT), trailHead: 0, trailN: 0, trailFill: 0, trailAcc: 0,
   };
@@ -1153,22 +1155,25 @@ export function createSpiritAvatar(opts = {}) {
       const h = I.hint && I.hint.code ? I.hint : null;
       if (h && (h.code !== edge.hintCode || h.side !== edge.hintSide)) flashHand(h.side === 'left' ? 0 : h.side === 'right' ? 1 : 2, true);
       edge.hintCode = h ? h.code : null; edge.hintSide = h ? h.side : null;
-      if (I.ultimate || I.ult) triggerUlt();
     } else { edge.attack = false; edge.shield = false; edge.conjure = false; }
-    // события боя: удар по щиту, ультимейт (агент №6 — любое событие ult*), победа
+    // события боя: удар по щиту, ультимейт «Небесный суд» (ultimate_start — сцена, ultimate_strike — удар), победа
     if (ev) for (const e of ev) {
       const ty = e && e.type;
       if (!ty) continue;
       if (ty === 'block') st.shieldHit = 1;
-      else if (ty === 'victory' || ty.startsWith('ult')) triggerUlt();
+      else if (ty === 'ultimate_start' || ty === 'ultimate' || ty === 'victory') triggerUlt();
+      else if (ty === 'ultimate_strike') { st.ult = 1; ring(3, 1.0, 0.5, 3.6, st.colElem2); }
       else if (ty === 'perfect_dodge') flashHand(0);
     }
-    if (pl && (pl.ultimate === true || (pl.ultimate && pl.ultimate.active))) triggerUlt();
-    // руки вверх ~0,5 с — дух вспыхивает (и без события ультимейта)
+    // шкала ультимейта есть (player.fury) — полная: нимб пульсирует «руки вверх!»; идёт сцена — руки духа подняты
+    const furySys = !!(pl && fin(pl.fury));
+    st.ready = approach(st.ready, pl && pl.furyReady ? 1 : 0, dt, 0.2, 0.3);
+    if (snap && snap.ultimate && snap.ultimate.active) st.ult = Math.max(st.ult, 0.75);
+    // руки вверх ~0,5 с — дух поднимает руки и светится; без шкалы ультимейта — ещё и вспыхивает
     const headY = P[J.HEAD * 3 + 1];
     const handsUp = presence > 0.5 && jA[J.LW] > 0.6 && jA[J.RW] > 0.6 && P[J.LW * 3 + 1] > headY + 0.1 && P[J.RW * 3 + 1] > headY + 0.1;
     st.up = clamp(st.up + (handsUp ? dt / 0.5 : -dt / 0.25), 0, 1);   // ~0,5 с удержания
-    if (st.up >= 1 && !upLatch) { upLatch = true; triggerUlt(); }
+    if (st.up >= 1 && !upLatch) { upLatch = true; if (!furySys) triggerUlt(); }
     if (st.up < 0.3) upLatch = false;
     ultCool = Math.max(0, ultCool - dt);
     st.ult = Math.max(0, st.ult - dt / 1.6);
@@ -1461,7 +1466,7 @@ export function createSpiritAvatar(opts = {}) {
         skyVisible: sky.root.visible, frameCanvas: !!fr, fingers: { left: fl, right: fr2 },
         joints: { leftShoulder: j(J.LS), rightShoulder: j(J.RS), leftElbow: j(J.LE), rightElbow: j(J.RE), leftWrist: j(J.LW), rightWrist: j(J.RW), head: j(J.HEAD), leftIndexTip: j(J.HL + 8), rightIndexTip: j(J.HR + 8) },
         flash: [+st.flash[0].toFixed(3), +st.flash[1].toFixed(3)], shield: +st.shield.toFixed(3), charge: +st.charge.toFixed(3),
-        ult: +st.ult.toFixed(3), up: +st.up.toFixed(3), rings: st.rings.filter((r) => r.on).length, trail: st.trailN,
+        ult: +st.ult.toFixed(3), up: +st.up.toFixed(3), ready: +st.ready.toFixed(3), rings: st.rings.filter((r) => r.on).length, trail: st.trailN,
         tier: sky.tier, elem: [+st.colElem[0].toFixed(3), +st.colElem[1].toFixed(3), +st.colElem[2].toFixed(3)],
         flashColor: [Array.from(st.flashCol[0], (v) => +v.toFixed(3)), Array.from(st.flashCol[1], (v) => +v.toFixed(3))],
       };
