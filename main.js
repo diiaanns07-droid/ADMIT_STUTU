@@ -1599,7 +1599,7 @@ function frame(now) {
     } catch (e) { console.warn('[PERF] подстройка', e); }
   }
   try { precompileTick(); } catch (e) { /* ignore */ }
-  if (perfHud && perfHud.visible) { try { perfHud.update(now, { perf: perfTuner ? perfTuner.state() : null, tracking: vision ? visionStatus() : null, screen: app.screen, extra: squatHudLines() }); } catch (e) { /* ignore */ } }
+  if (perfHud && perfHud.visible) { try { perfHud.update(now, { perf: perfTuner ? perfTuner.state() : null, tracking: vision ? visionStatus() : null, screen: app.screen, extra: squatHudLines }); } catch (e) { /* ignore */ } }
 }
 
 applySettings();

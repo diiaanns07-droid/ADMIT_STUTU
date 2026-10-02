@@ -88,7 +88,9 @@ export function createPerfHud({ root, storage } = {}) {
         if (cls === 'bad') lines.push('Совет: закройте тяжёлые вкладки/программы; добавьте света на лицо и руки');
       }
       if (p && p.log && p.log.length) lines.push('', 'Подстройка: ' + p.log.slice(-3).map((l) => l.text).join(' · '));
-      if (data && Array.isArray(data.extra) && data.extra.length) lines.push('', ...data.extra);   // [W3-SQUAT] строки экрана (приседания)
+      // [W3-SQUAT] строки экрана (приседания): массив или функция — она зовётся только при обновлении панели (раз в 250 мс)
+      const extra = data && (typeof data.extra === 'function' ? data.extra() : data.extra);
+      if (Array.isArray(extra) && extra.length) lines.push('', ...extra);
       el.textContent = lines.join('\n');
     },
     dispose() {
