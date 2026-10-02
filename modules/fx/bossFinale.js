@@ -180,7 +180,7 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     boost: 0,        // удержание багрового неба во 2-й фазе
     pvp: false,
     seen: new Set(), seenQ: [],
-    shardsLive: false, embersLive: 0,
+    shardsLive: false, embersLive: 0, burstLive: false,
   };
   const _v = new V3(), _w = new V3(), _core = new V3(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
   const _m = new THREE.Matrix4(), _e = new THREE.Euler(), _c = new THREE.Color();
@@ -271,7 +271,7 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     setLava(null, 0);
     // взрыв света
     burst.position.copy(_core);
-    burst.visible = true;
+    burst.visible = true; st.burstLive = true;
     pillar.position.set(_core.x, _core.y + 4, _core.z);
     pillar.visible = true;
     st.burstT = 0;
@@ -420,7 +420,7 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     if (!alive) { st.embersLive = 0; embers.visible = false; emberGeo.setDrawRange(0, 0); }
   }
   function updateBurst(dtR) {
-    if (!burst.visible) return;
+    if (!st.burstLive) return;   // прогревочные спрайты (warmTick) сюда не попадают
     st.burstT += dtR;
     const t = st.burstT;
     const grow = 1 - Math.exp(-t * 9);
@@ -430,18 +430,18 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     pillar.scale.set(0.6 + grow * 0.6, 4 + grow * 18, 1);
     const pf = Math.exp(-Math.max(0, t - 0.12) * 2.2);
     pillarMat.color.setRGB(1.1 * pf, 0.9 * pf, 0.6 * pf);
-    if (fade < 0.01 && pf < 0.01) { burst.visible = false; pillar.visible = false; }
+    if (fade < 0.01 && pf < 0.01) { burst.visible = false; pillar.visible = false; st.burstLive = false; }
   }
 
   // ---------------------------------------------------------------- прогрев шейдеров
   // Программы собираются при первом рисовании в том конвейере, где идёт бой (композер HalfFloat на medium/high,
   // канвас на low): 2 кадра рисуем по одному осколку и угольку далеко под ареной и чёрные спрайты. Повтор —
   // при смене уровня качества (меняется вариант программы). Пока идёт сцена — не трогаем.
-  const warm = { frames: 0, q: null };
-  function warmTick() {
-    const q = qName();
-    if (q !== warm.q) { warm.q = q; warm.frames = 2; }
-    if (warm.frames <= 0 || st.death || st.shardsLive || st.embersLive) return;
+  const warm = { frames: 0, key: '' };
+  function warmTick(screen) {
+    const key = qName() + (screen === 'menu' ? ':m' : ':g');   // меню → игра: postfx мог догрузиться, вариант другой
+    if (key !== warm.key) { warm.key = key; warm.frames = 2; }
+    if (warm.frames <= 0 || st.death || st.shardsLive || st.embersLive || st.burstLive) return;
     warm.frames--;
     if (warm.frames > 0) {
       _m.makeTranslation(0, -500, 0);
@@ -451,7 +451,7 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
       ePos[0] = 0; ePos[1] = -500; ePos[2] = 0; eCol[0] = eCol[1] = eCol[2] = 0;
       emberGeo.attributes.position.needsUpdate = true; emberGeo.attributes.color.needsUpdate = true;
       emberGeo.setDrawRange(0, 1); embers.visible = true;
-      for (const sp of [burst, pillar]) { sp.visible = true; sp.frustumCulled = false; sp.scale.setScalar(0.001); }
+      for (const sp of [burst, pillar]) { sp.visible = true; sp.frustumCulled = false; sp.scale.setScalar(0.001); sp.position.set(0, -500, 0); }
       burstMat.color.setRGB(0, 0, 0); pillarMat.color.setRGB(0, 0, 0);
     } else {
       shards.count = 0; shards.visible = false;
@@ -466,8 +466,8 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     const d = isNum(dt) ? clamp(dt, 0, 0.1) : 0;
     const dR = isNum(dtReal) ? clamp(dtReal, 0, 0.1) : d;
     st.clock += d;
-    warmTick();
-    if (screen === 'menu') { if (st.phase || st.death || st.boost || st.shardsLive || shards.count) reset(); return; }   // осколки не лежат за витриной меню
+    warmTick(screen);
+    if (screen === 'menu') { if (st.phase || st.death || st.boost || st.shardsLive || st.embersLive || st.burstLive) reset(); return; }   // осколки не лежат за витриной меню
     st.pvp = !!(snap && snap.mode === 'pvp');
     if (st.pvp) { if (st.phase || st.death || st.boost) reset(); return; }
     // новый бой: Регент жив и снова на первой стадии — всё вернуть
@@ -562,7 +562,7 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     setLava(null, 0);
     shards.count = 0; shards.visible = false; st.shardsLive = false;
     st.embersLive = 0; embers.visible = false; emberGeo.setDrawRange(0, 0);
-    burst.visible = false; pillar.visible = false;
+    burst.visible = false; pillar.visible = false; st.burstLive = false;
   }
 
   function dispose() {

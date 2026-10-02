@@ -489,6 +489,19 @@ await test('гибель Регента: перегрев → осколки и 
   // осколки падают и остывают, но остаются лежать
   for (let t = 0; t < 8; t += 1 / 60) fin.update(1 / 60, 1 / 60, sv, []);
   ok(fin.debug().shards > 0, 'осколки лежат');
+  // прогрев шейдеров: в меню рисуется 1 осколок далеко под ареной (сброс меню его не отменяет),
+  // смена качества посреди боя не зажигает спрайты взрыва
+  const fwScene = new THREE.Scene();
+  const fw = createBossFinale({ THREE, scene: fwScene, world: makeWorld().world, quality: 'medium' });
+  fw.update(1 / 60, 1 / 60, snapOf(), [], 'menu');
+  ok(fw.debug().shards === 1, 'прогрев в меню: ' + fw.debug().shards);
+  fw.update(1 / 60, 1 / 60, snapOf(), [], 'menu');
+  ok(fw.debug().shards === 0, 'после прогрева скрыто');
+  fw.update(1 / 60, 1 / 60, snapOf(), [], 'playing');
+  ok(fw.debug().shards === 1, 'повтор прогрева при входе в игру');
+  const spr = fwScene.getObjectByName('boss-finale-burst');
+  ok(spr && spr.position.y < -100 && spr.material.color.r === 0, 'прогревочный спрайт — чёрный и под ареной');
+  fw.dispose();
   // выход в меню после победы — осколки убраны
   fin.update(1 / 60, 1 / 60, sv, [], 'menu');
   ok(fin.debug().shards === 0 && fin.debug().death === null, 'меню убирает финал');
