@@ -253,9 +253,6 @@ export const DEFAULT_VISION_CONFIG = Object.freeze({
   workerFrameTimeoutMs: 2500,
   delegate: 'GPU',         // 'GPU' (с откатом на CPU) | 'CPU'
   maxInferenceHz: 30,
-  // [PERF] поза считается на каждом N-м кадре распознавания, кисти — на каждом (core/visionPlan.js: main.js ставит
-  // 2–3 на слабой видеокарте по измеренной цене кадра). Без кистей и во время калибровки поза — на каждом кадре.
-  poseEvery: 1,
   fallbackMaxHz: 15,       // главный поток: не чаще
   fallbackMaxLoad: 0.35,   // главный поток: inference занимает не больше этой доли времени
   captureMaxWidth: 640,
@@ -1225,11 +1222,9 @@ export async function createVision(options = {}) {
     mode: null, rvfcId: null, pollId: null, watchdogId: null, frameIntervalMs: 33.3,
     lastKey: undefined, busy: false, busySince: 0, dirty: false, dirtyKey: undefined,
     seq: 0, inflightSeq: null, lastRvfcT: 0, pollFrames: -1, pollFramesT: 0, rvfcStarved: false,
-    poseTick: 0,   // [PERF] счётчик кадров для poseEvery
   };
   const perf = {
-    arrivals: [], hz: 0, inferMs: null, handsMs: null, latencyMs: null, results: 0,   // inferMs — поза, handsMs — кисти (EMA)
-    poseArrivals: [], poseHz: 0, poseResults: 0,                                      // [PERF] кадры, где считалась поза
+    arrivals: [], hz: 0, inferMs: null, latencyMs: null, results: 0,
     skippedBusy: 0, skippedRate: 0, errors: 0, consecutiveErrors: 0, captureErrors: 0,
     lastInferT: -Infinity, minIntervalMs: 0,
     camArrivals: [], camFallback: null, handsFrames: 0, // [PERF]
@@ -1277,9 +1272,6 @@ export async function createVision(options = {}) {
         stand: standDet.getDebug(),   // [СТОЯ]
         inferenceHz: arr.length >= 2 ? r1(perf.hz) : null,
         inferMs: r1(perf.inferMs),
-        handsMs: r1(perf.handsMs),          // [PERF] отдельно: время модели кистей за кадр
-        poseEvery: cfg.poseEvery,           // [PERF] поза на каждом N-м кадре
-        poseHz: perf.poseArrivals.length >= 2 ? r1(perf.poseHz) : null,
         latencyMs: r1(perf.latencyMs),
         results: perf.results,
         skippedBusy: perf.skippedBusy,
@@ -1759,16 +1751,6 @@ export async function createVision(options = {}) {
     return { resizeWidth: cap, resizeHeight: Math.max(1, Math.round((h * cap) / w)), resizeQuality: 'low' };
   }
 
-  // [PERF] считать ли позу в этом кадре: каждый poseEvery-й; без кистей и во время калибровки — всегда
-  function wantPose() {
-    const n = Math.max(1, Math.round(finite(cfg.poseEvery) ? cfg.poseEvery : 1));
-    if (n <= 1 || !cfg.hands || !handsStatus.ready) { loop.poseTick = 0; return true; }
-    const c = interp.calibrationStatus();
-    if (c && !c.result) { loop.poseTick = 0; return true; }
-    loop.poseTick = (loop.poseTick + 1) % n;
-    return loop.poseTick === 1;   // 1, 0 | 1, 2, 0 … — поза на первом кадре каждой серии из n
-  }
-
   // Не более одного кадра в работе и ноль в очереди: пока worker занят, новые кадры
   // только помечаются (dirty); по готовности берётся самый свежий кадр видео.
   async function captureToWorker(e) {
@@ -1779,7 +1761,6 @@ export async function createVision(options = {}) {
     loop.inflightSeq = seq;
     const tMs = nowMs();
     perf.lastInferT = tMs;
-    const pose = wantPose();
     const w = video.videoWidth;
     const h = video.videoHeight;
     let bmp = null;
@@ -1797,7 +1778,7 @@ export async function createVision(options = {}) {
       return;
     }
     try {
-      e.worker.postMessage({ type: 'frame', seq, tMs, w, h, bitmap: bmp, pose }, [bmp]);
+      e.worker.postMessage({ type: 'frame', seq, tMs, w, h, bitmap: bmp }, [bmp]);
     } catch (err) {
       try { bmp.close(); } catch { /* ignore */ }
       loop.inflightSeq = null; loop.busy = false;
@@ -1818,7 +1799,7 @@ export async function createVision(options = {}) {
       if (perf.consecutiveErrors >= 3) { switchToMainFallback(`повторные ошибки в worker: ${m.message || ''}`); return; }
     } else {
       perf.consecutiveErrors = 0;
-      if (running) handleResult(m.tMs, m.landmarks ? unpackCompactLandmarks(m.landmarks) : null, m.w, m.h, m.inferMs, unpackHands(m.hands, m.handsMeta), m.handsMs, m.poseSkipped === true);
+      if (running) handleResult(m.tMs, m.landmarks ? unpackCompactLandmarks(m.landmarks) : null, m.w, m.h, m.inferMs, unpackHands(m.hands, m.handsMeta));
     }
     if (running && loop.dirty && nowMs() - perf.lastInferT >= perf.minIntervalMs) {
       loop.lastKey = loop.dirtyKey;
@@ -1834,34 +1815,27 @@ export async function createVision(options = {}) {
     const t0 = nowMs();
     let res = null;
     let lms = null;
-    const pose = wantPose() || !e.hands;   // [PERF] кадр только для кистей — позу пропускаем
-    if (pose) {
-      try {
-        res = e.landmarker.detectForVideo(video, ts);
-        const p = res && res.landmarks ? res.landmarks[0] : null;
-        lms = p ? copyLandmarks(p) : null;
-        perf.consecutiveErrors = 0;
-      } catch (err) {
-        perf.errors++;
-        perf.consecutiveErrors++;
-        if (perf.consecutiveErrors >= 5) fail('model-failed', 'Сбой распознавания позы. Обновите страницу.', err);
-        return;
-      } finally {
-        try { if (res && typeof res.close === 'function') res.close(); } catch { /* ignore */ }
-      }
+    try {
+      res = e.landmarker.detectForVideo(video, ts);
+      const pose = res && res.landmarks ? res.landmarks[0] : null;
+      lms = pose ? copyLandmarks(pose) : null;
+      perf.consecutiveErrors = 0;
+    } catch (err) {
+      perf.errors++;
+      perf.consecutiveErrors++;
+      if (perf.consecutiveErrors >= 5) fail('model-failed', 'Сбой распознавания позы. Обновите страницу.', err);
+      return;
+    } finally {
+      try { if (res && typeof res.close === 'function') res.close(); } catch { /* ignore */ }
     }
-    const poseMs = pose ? nowMs() - t0 : null;
     let hands = [];
-    let handsMs = null;
     if (e.hands) {
       let hr = null;
-      const h0 = nowMs();
       try { hr = e.hands.detectForVideo(video, ts); hands = handsFromResult(hr); }
       catch { /* кадр без рук */ }
       finally { try { if (hr && typeof hr.close === 'function') hr.close(); } catch { /* ignore */ } }
-      handsMs = nowMs() - h0;
     }
-    handleResult(now, lms, video.videoWidth, video.videoHeight, poseMs, hands, handsMs, !pose);
+    handleResult(now, lms, video.videoWidth, video.videoHeight, nowMs() - t0, hands);
   }
 
   function handsFromResult(res) {
@@ -1895,36 +1869,21 @@ export async function createVision(options = {}) {
     return out;
   }
 
-  // poseSkipped — [PERF] кадр только для кистей: поза в нём не считалась, интерпретатор позы и детектор «стоя»
-  // этот кадр не видят (их окна времени идут по кадрам позы), кисти получают последнюю известную позу.
-  function handleResult(tMs, lms, w, h, inferMs, hands, handsMs = null, poseSkipped = false) {
+  function handleResult(tMs, lms, w, h, inferMs, hands) {
     const arrived = nowMs();
     perf.results++;
     perf.arrivals.push(arrived);
     if (perf.arrivals.length > 16) perf.arrivals.shift();
     const a = perf.arrivals;
     if (a.length >= 2 && a[a.length - 1] > a[0]) perf.hz = ((a.length - 1) * 1000) / (a[a.length - 1] - a[0]);
-    if (!poseSkipped) {
-      perf.poseResults++;
-      perf.poseArrivals.push(arrived);
-      if (perf.poseArrivals.length > 16) perf.poseArrivals.shift();
-      const pa = perf.poseArrivals;
-      if (pa.length >= 2 && pa[pa.length - 1] > pa[0]) perf.poseHz = ((pa.length - 1) * 1000) / (pa[pa.length - 1] - pa[0]);
-    }
     if (finite(inferMs)) perf.inferMs = emaValue(perf.inferMs, inferMs, 0.15);
-    if (finite(handsMs)) perf.handsMs = emaValue(perf.handsMs, handsMs, 0.15);
     perf.latencyMs = emaValue(perf.latencyMs, arrived - tMs, 0.15);
     updateMinInterval();
     // [PERF] кадр с уверенной кистью: закрытые руками плечи не считаются потерей трекинга
     if (Array.isArray(hands) && hands.some((hd) => hd && Array.isArray(hd.landmarks) && hd.landmarks.length && !(finite(hd.score) && hd.score < 0.5))) interp.noteHands(tMs);
-    let standing = standDet.standing;
-    if (poseSkipped) {
-      lms = lastPose && lastPose.frameW === w && lastPose.frameH === h ? lastPose.landmarks : null;
-    } else {
-      interp.pushObservation({ tMs, frameW: w, frameH: h, landmarks: lms });
-      standing = standDet.update(lms, tMs, h > 0 ? w / h : 4 / 3);   // [СТОЯ]
-      lastPose = { tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, landmarks: lms };
-    }
+    interp.pushObservation({ tMs, frameW: w, frameH: h, landmarks: lms });
+    const standing = standDet.update(lms, tMs, h > 0 ? w / h : 4 / 3);   // [СТОЯ]
+    lastPose = { tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, landmarks: lms };
     if (cfg.hands) {
       const wr = (i) => (lms && lms[i] ? { x: lms[i].x, y: lms[i].y, visibility: lms[i].visibility } : null);
       // [V3.1] середина плеч — только из надёжно видимых плеч: рука, уведённая вперёд/вправо,
@@ -1947,7 +1906,7 @@ export async function createVision(options = {}) {
       if (handTap) { try { handTap({ tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, hands: Array.isArray(hands) ? hands : [], poseWrists: { left: wr(15), right: wr(16) }, bodyCenter: body, shoulderWidth: sw, pose: lms }); } catch (e) { /* [HAND] */ } }
     }
     processCalibration(arrived);
-    if (cfg.overlay && !poseSkipped) drawOverlay(lms);
+    if (cfg.overlay) drawOverlay(lms);
     updateTrackingStatus(arrived);
   }
 

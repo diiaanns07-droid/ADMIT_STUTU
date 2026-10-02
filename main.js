@@ -32,7 +32,6 @@ import { createPoseRecorder } from './core/poseRecorder.js'; // [W3-SQUAT] за�
 import { createHandZone, createHeroBowPose } from './core/handZone.js'; // [HAND] лук и магия рукой
 import { createPerfTuner } from './core/perfTuner.js'; // [PERF] автоподстройка под железо
 import { createPerfHud } from './core/perfHud.js';     // [PERF] F3 — кадры и трекинг
-import { createPosePlanner } from './core/visionPlan.js'; // [PERF] поза реже на слабой видеокарте
 import { createHybridTip } from './core/hybridTip.js';    // [PERF] подсказка: Chrome на встроенной видеокарте
 import { feelOfEvents, FEEL_TIME } from './core/gameFeel.js';     // [FEEL] остановка кадра, замедление, тряска по силе удара
 import { CHALLENGE, createChallengeBrain, createChallengeSession, createChallengeHud, createTally, createHall, buildResult } from './modules/challenge.js'; // [W3-CHALLENGE]
@@ -854,8 +853,7 @@ function visionProfile() {
 // [PERF] распознавание → автоподстройке (рендер уступает GPU, если MediaPipe не успевает за камерой);
 // точная модель позы не держит частоту — переход на быструю (сейчас, если не в бою, и в следующие запуски).
 const perfVis = { t: 0, slowSince: null, wantLite: false, switched: false };
-// [PERF] поза реже кистей на слабой видеокарте (core/visionPlan.js) и подсказка про гибридный ноутбук (core/hybridTip.js)
-const posePlan = createPosePlanner();
+// [PERF] подсказка про гибридный ноутбук (core/hybridTip.js); распознавание — как в версии друга, поза на каждом кадре
 let hybridTip = null;
 try { hybridTip = createHybridTip({ root: document.body }); } catch (e) { hybridTip = null; }
 function perfVisionTick(now) {
@@ -869,9 +867,6 @@ function perfVisionTick(now) {
     return;
   }
   perfTuner.setVision({ hz: d.inferenceHz, cameraFps: d.cameraFps, inferMs: d.inferMs });
-  // поза на каждом 2-м/3-м кадре, если поза + кисти не укладываются в кадр камеры; на тренировке — всегда каждый кадр
-  const every = posePlan.update(now, { screen: app.screen, inferMs: d.inferMs, handsMs: d.handsMs, gpuClass: perfTuner.hardware.gpuClass, handsReady: !!(s.hands && s.hands.ready) });
-  if (every !== d.poseEvery) { vision.configure({ poseEvery: every }); console.info(`[perf] поза на каждом ${every}-м кадре (${posePlan.state().reason})`); }
   if (hybridTip) hybridTip.update(now, { gpuClass: perfTuner.hardware.gpuClass, hz: d.inferenceHz, cameraFps: d.cameraFps, screen: app.screen });
   const slow = !trainPose.active && d.poseModel === 'full' && Number.isFinite(d.inferenceHz) && Number.isFinite(d.cameraFps) && d.cameraFps >= 20 && d.inferenceHz < 16;
   if (slow) { if (perfVis.slowSince === null) perfVis.slowSince = now; if (now - perfVis.slowSince > 6000) perfVis.wantLite = true; }

@@ -998,42 +998,6 @@ test('B06 worker: кадр до готовности, сбой detect, кадр 
   ok(r && r.msg.landmarks === null && r.transfer.length === 0 && b2.closed, 'поза не найдена');
 }));
 
-// [PERF] поддельный HandLandmarker: кадр только для кистей (pose:false) на слабой видеокарте
-const FAKE_HANDS_SRC = FAKE_MP_SRC + `
-export const HandLandmarker = {
-  async createFromOptions(fileset, opts) {
-    const h = H(); h.calls.push({ fn: 'createHands', delegate: opts.baseOptions.delegate, opts });
-    const inst = { closed: false,
-      detectForVideo(src, ts) { h.handCalls = (h.handCalls || 0) + 1; h.handTs = ts; return { landmarks: [], worldLandmarks: [], handedness: [], close() {} }; },
-      close() { inst.closed = true; } };
-    return inst;
-  },
-};`;
-const FAKE_MP_HANDS_URL = 'data:text/javascript;base64,' + Buffer.from(FAKE_HANDS_SRC).toString('base64');
-
-test('B07 worker: кадр только для кистей (pose:false) — поза не считается, poseSkipped, кисти считаются, метки растут', () => withWorkerGlobals(async () => {
-  const h = resetFakeMP();
-  const sc = await loadWorkerScope();
-  sc.ModuleFactory = () => ({});   // initHands не импортирует загрузчик WASM повторно
-  sc.send(initMsg({ mp: { ...FAKE_MP, moduleUrl: FAKE_MP_HANDS_URL }, hands: { modelUrl: 'https://fake.invalid/hand_landmarker.task', numHands: 2 } }));
-  const ready = (await waitMsg(sc, 'ready')).msg;
-  eq(ready.handsReady, true, 'кисти готовы');
-  const n0 = h.detectCalls, h0 = h.handCalls || 0;
-  sc.send({ type: 'frame', seq: 1, tMs: 1000, w: 640, h: 480, bitmap: fakeBitmap('frame') });
-  const r1 = sc.outbox.find((o) => o.msg.type === 'result' && o.msg.seq === 1).msg;
-  eq(r1.poseSkipped, false, 'без флага — поза считается'); ok(r1.landmarks instanceof Float32Array, 'поза есть'); eq(h.detectCalls, n0 + 1); eq(h.handCalls, h0 + 1);
-  sc.send({ type: 'frame', seq: 2, tMs: 1033, w: 640, h: 480, bitmap: fakeBitmap('frame'), pose: false });
-  const r2 = sc.outbox.find((o) => o.msg.type === 'result' && o.msg.seq === 2).msg;
-  eq(r2.poseSkipped, true, 'поза пропущена'); eq(r2.landmarks, null); eq(r2.inferMs, null, 'время позы не сообщается');
-  eq(h.detectCalls, n0 + 1, 'detect позы не звался'); eq(h.handCalls, h0 + 2, 'кисти считались'); ok(typeof r2.handsMs === 'number', 'время кистей есть');
-  eq(h.handTs, 1033, 'метка времени кистей — от кадра');
-  sc.send({ type: 'frame', seq: 3, tMs: 1066, w: 640, h: 480, bitmap: fakeBitmap('frame'), pose: true });
-  const r3 = sc.outbox.find((o) => o.msg.type === 'result' && o.msg.seq === 3).msg;
-  eq(r3.poseSkipped, false); eq(h.detectCalls, n0 + 2); eq(h.tsList[h.tsList.length - 1], 1066, 'метки времени позы растут и через пропуск');
-  ok(gfx.bitmaps.filter((b) => b.tag === 'frame').every((b) => b.closed), 'bitmap закрыты');
-  sc.send({ type: 'close' });
-}));
-
 // ═══════════ C. оболочка createVision с поддельными камерой, видео, часами ═══════════
 // Поддельные: performance.now (управляемые часы), navigator.mediaDevices, <video> с
 // requestVideoFrameCallback, MediaPipe, Worker (исполняет настоящий vision-worker.js в этом
