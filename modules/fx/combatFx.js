@@ -8,6 +8,15 @@
 //  - появление героя: столб света сверху, рунический круг, угольки, «сборка» тела из искр (~1.2 с);
 //    гибель: тело рассыпается пеплом и угольками, тускнеющий круг, душа-огонёк уходит вверх.
 // Слои поверх старых эффектов (return без true), кроме событий, которые старый код рисует не там (remote) или не знает.
+// [W4-УДАР] удар Регента по герою и щит:
+//  - попадание по герою: красный ореол-вспышка вокруг героя и кольцо искр по телу, пыль из-под ног (герой
+//    отброшен), маленькое кольцо по земле, след-трещина под ногами (декаль tag 'hit'), красный свет (не на low);
+//  - блок: шестигранный щит звенит (дрожь рёбер — shieldHex), трещины копятся (damage = износ щита: удары +
+//    расход энергии), искры отскакивают веером по кромке, пыль у ног — героя сдвинуло;
+//  - пролом (слэм сквозь щит — player_hit.shieldPierced; блок, исчерпавший энергию; PvP shield_break):
+//    щит осыпается от точки удара, шестигранные пластины-осколки разлетаются (shieldHex.shatter; на low —
+//    частицы), вспышка, рывок экрана; щит снова раскрывается через ~0,5 с, если его всё ещё держат.
+// Частицы ударов и блоков — через жёсткий пул fx.shared.hitPool (hitFx.js).
 
 import { clamp, easeOut, TAU, isNum, hasVec } from './common.js';
 
@@ -36,6 +45,11 @@ export function register(fx) {
   const shock = (kind, o) => { if (fx.shock && typeof fx.shock[kind] === 'function') { try { fx.shock[kind](o); } catch (e) { /* ignore */ } } };
   const distort = (p, s) => { if (typeof kit.distort === 'function') { try { kit.distort(p, s); } catch (e) { /* ignore */ } } };
   const audio = (n, p, x) => { if (fx.legacy && typeof fx.legacy.audio === 'function') { try { fx.legacy.audio(n, p, x); } catch (e) { /* ignore */ } } };
+  // [W4-УДАР] частицы ударов — через жёсткий пул hitFx (нет его — как раньше)
+  const emitB = (o) => (fx.shared.hitPool ? fx.shared.hitPool.emit(o) : kit.emit(o));
+  const pulse = (kind, k, pos) => (typeof fx.shared.hitPulse === 'function' ? fx.shared.hitPulse(kind, k, pos) : false);
+  const lowQ = () => !!(kit.Q && kit.Q.name === 'low');
+  const decalCap = () => (kit.Q && kit.Q.name === 'low' ? 2 : kit.Q && kit.Q.name === 'high' ? 8 : 5);
 
   // ================================================================== 1) МАТЕРИАЛЫ УДАРА
   // s — сила 0..1; dir — направление разлёта (к атакующему/камере, с подъёмом); gy — земля.
@@ -43,13 +57,13 @@ export function register(fx) {
     kit.flash(p, { color: 0xeef8ff, size: [0.14, 0.5 + 0.6 * s], dur: 0.08, intensity: 4.2, sprite: 'star', pull: 0.5 });
     kit.flash(p, { color: 0x9fd2ff, size: [0.3, 0.9 + 1.0 * s], dur: 0.2, intensity: 1.7, sprite: 'glow', pull: 0.5 });
     // бело-голубые искры (раскалённая бронза/фарфор)
-    kit.emit({ at: p, dir, cone: 0.95, count: 12 + 22 * s, speed: [4, 8 + 6 * s], life: [0.16, 0.42], size: [0.055, 0.01], ramp: 'storm', intensity: 3.4, sprite: 'spark', stretch: 0.032, gravity: 7, drag: 1.6, ground: gy + 0.02, essential: true });
+    emitB({ at: p, dir, cone: 0.95, count: 12 + 22 * s, speed: [4, 8 + 6 * s], life: [0.16, 0.42], size: [0.055, 0.01], ramp: 'storm', intensity: 3.4, sprite: 'spark', stretch: 0.032, gravity: 7, drag: 1.6, ground: gy + 0.02, essential: true });
     // сколы камня (обычное смешивание, падают)
-    kit.emit({ at: p, dir, cone: 1.0, count: 6 + 12 * s, speed: [2, 4.5 + 2.5 * s], life: [0.55, 1.0], size: [0.075, 0.06], sizeVar: 0.5, ramp: 'stone', blend: 'alpha', intensity: 1.1, sprite: 'debris', gravity: 9.8, drag: 0.5, spin: [-9, 9], ground: gy + 0.03, essential: true });
+    emitB({ at: p, dir, cone: 1.0, count: 6 + 12 * s, speed: [2, 4.5 + 2.5 * s], life: [0.55, 1.0], size: [0.075, 0.06], sizeVar: 0.5, ramp: 'stone', blend: 'alpha', intensity: 1.1, sprite: 'debris', gravity: 9.8, drag: 0.5, spin: [-9, 9], ground: gy + 0.03, essential: true });
     // осколки фарфоровой маски — несколько светлых чешуек
-    kit.emit({ at: p, dir, cone: 0.8, count: 2 + 4 * s, speed: [2.5, 5], life: [0.5, 0.9], size: [0.06, 0.05], ramp: 'stone', color: 0xd8d4cc, blend: 'alpha', intensity: 1.2, sprite: 'shard', gravity: 9, drag: 0.6, spin: [-12, 12], ground: gy + 0.03 });
+    emitB({ at: p, dir, cone: 0.8, count: 2 + 4 * s, speed: [2.5, 5], life: [0.5, 0.9], size: [0.06, 0.05], ramp: 'stone', color: 0xd8d4cc, blend: 'alpha', intensity: 1.2, sprite: 'shard', gravity: 9, drag: 0.6, spin: [-12, 12], ground: gy + 0.03 });
     // пороховая пыль
-    kit.emit({ at: p, radius: 0.12, dir, cone: 1.3, count: 4 + 6 * s, speed: [0.4, 1.3], life: [0.7, 1.3], size: [0.3, 0.85 + 0.6 * s], ramp: 'dust', blend: 'alpha', alpha: 0.75, intensity: 1, sprite: 'smoke', drag: 2.2, gravity: 0.25, turb: 0.4, spin: [-0.8, 0.8] });
+    emitB({ at: p, radius: 0.12, dir, cone: 1.3, count: 4 + 6 * s, speed: [0.4, 1.3], life: [0.7, 1.3], size: [0.3, 0.85 + 0.6 * s], ramp: 'dust', blend: 'alpha', alpha: 0.75, intensity: 1, sprite: 'smoke', drag: 2.2, gravity: 0.25, turb: 0.4, spin: [-0.8, 0.8] });
     if (s > 0.3) kit.light(p, { color: 0xbfe2ff, intensity: 0.4 + 0.8 * s, range: 8, dur: 0.22, attack: 0.05 });
   }
   // плоть: brand = цвет «угольков» тела жертвы (свой — ember, соперник — фиолетовый)
@@ -57,11 +71,11 @@ export function register(fx) {
     kit.flash(p, { color: rivalBody ? RIV.hot : 0xff9a5a, size: [0.2, 0.6 + 0.5 * s], dur: 0.12, intensity: 2.4, sprite: 'glow', pull: 0.7, rival: rivalBody });
     kit.flash(p, { color: 0xfff0e0, size: [0.08, 0.32 + 0.3 * s], dur: 0.07, intensity: 3.4, sprite: 'star', pull: 0.75 });
     // тёмно-красные брызги — капли-штрихи, падают
-    kit.emit({ at: p, dir, cone: 0.55, count: 8 + 12 * s, speed: [2, 4.5 + 2 * s], life: [0.3, 0.55], size: [0.045, 0.025], ramp: 'blood', blend: 'alpha', intensity: 0.85, sprite: 'spark', stretch: 0.018, gravity: 9, drag: 1.2, ground: gy + 0.01, essential: true });
+    emitB({ at: p, dir, cone: 0.55, count: 8 + 12 * s, speed: [2, 4.5 + 2 * s], life: [0.3, 0.55], size: [0.045, 0.025], ramp: 'blood', blend: 'alpha', intensity: 0.85, sprite: 'spark', stretch: 0.018, gravity: 9, drag: 1.2, ground: gy + 0.01, essential: true });
     // морось
-    kit.emit({ at: p, dir, cone: 0.6, count: 2 + 3 * s, speed: [0.6, 1.4], life: [0.25, 0.45], size: [0.12, 0.36], ramp: 'blood', blend: 'alpha', alpha: 0.5, intensity: 0.7, sprite: 'smoke', drag: 3 });
+    emitB({ at: p, dir, cone: 0.6, count: 2 + 3 * s, speed: [0.6, 1.4], life: [0.25, 0.45], size: [0.12, 0.36], ramp: 'blood', blend: 'alpha', alpha: 0.5, intensity: 0.7, sprite: 'smoke', drag: 3 });
     // искры-угольки
-    kit.emit({ at: p, dir, cone: 0.9, count: 8 + 10 * s, speed: [2, 6], life: [0.2, 0.5], size: [0.05, 0.01], ramp: rivalBody ? 'rival' : 'ember', intensity: 3, sprite: 'spark', stretch: 0.03, gravity: 4, drag: 2, rival: rivalBody, essential: true });
+    emitB({ at: p, dir, cone: 0.9, count: 8 + 10 * s, speed: [2, 6], life: [0.2, 0.5], size: [0.05, 0.01], ramp: rivalBody ? 'rival' : 'ember', intensity: 3, sprite: 'spark', stretch: 0.03, gravity: 4, drag: 2, rival: rivalBody, essential: true });
   }
   function hitWood(p, dir, s, gy) {
     kit.flash(p, { color: 0xffe2b0, size: [0.1, 0.5], dur: 0.08, intensity: 2.6, sprite: 'star', pull: 0.4 });
@@ -119,6 +133,32 @@ export function register(fx) {
     }
   });
 
+  // ------------------------------------------------------------ [W4-УДАР] удар по нашему герою: ореол, пыль, след
+  const HURT = 0xff2a18, HURT_HOT = 0xff8a5a;
+  const fAura = { color: HURT, size: [0.6, 2.4], dur: 0.24, intensity: 2.0, sprite: 'glow', pull: 0.25, rival: false, curve: 0.5 };
+  const fAuraRing = { color: HURT_HOT, size: [0.4, 2.6], dur: 0.26, intensity: 1.8, sprite: 'ring', pull: 0.25, rival: false, curve: 0.5 };
+  const eAura = { at: null, shape: 'shell', radius: 0.55, radial: 2.6, count: 18, speed: [0, 0.3], life: [0.18, 0.36], size: [0.06, 0.012], ramp: 'blood', intensity: 2.6, sprite: 'spark', stretch: 0.025, drag: 3, essential: false, rival: false };
+  const eKick = { at: new V3(), shape: 'ring', radius: 0.25, normal: UP, dir: UP, cone: 0.6, radial: 2.4, count: 10, speed: [0.3, 0.9], life: [0.6, 1.1], size: [0.3, 0.9], ramp: 'dust', blend: 'alpha', alpha: 0.7, intensity: 1, sprite: 'smoke', drag: 2.6, gravity: -0.1, turb: 0.3, spin: [-0.6, 0.6], essential: false, rival: false };
+  const eGrit = { at: new V3(), dir: new V3(), cone: 0.7, count: 6, speed: [1.5, 3.5], life: [0.4, 0.75], size: [0.05, 0.04], sizeVar: 0.5, ramp: 'stone', blend: 'alpha', intensity: 0.9, sprite: 'debris', gravity: 9.8, drag: 0.6, spin: [-9, 9], ground: 0, essential: false, rival: false };
+  const ringHurt = { pos: new V3(), r0: 0.2, r1: 1.8, dur: 0.34, color: HURT, hot: HURT_HOT, intensity: 1.5, thickness: 0.16, dustAmount: 1.3, distort: 0.4, wall: 0.25, rival: 0 };
+  const decHurt = { pos: new V3(), radius: 0.8, kind: 'crack', life: 4.5, color: 0xd8442a, hot: HURT_HOT, intensity: 1.1, rival: 0, tag: 'hit', cap: 4, merge: 0.7 };
+  const kHurt = { color: 0xff4a2a, intensity: 0.7, range: 6, dur: 0.3, attack: 0.04 };
+  function heroHurt(p, dir, s, feet) {
+    const lo = lowQ();
+    fAura.size[1] = 2.0 + 0.8 * s; kit.flash(p, fAura);
+    if (!lo) { fAuraRing.size[1] = 2.2 + 0.9 * s; kit.flash(p, fAuraRing); }
+    eAura.at = p; eAura.count = 14 + 12 * s; emitB(eAura);
+    // пыль из-под ног и мелкий щебень — по направлению отброса
+    eKick.at.set(feet.x, feet.y + 0.06, feet.z); eKick.count = 8 + 8 * s; eKick.radial = 2 + 1.5 * s; emitB(eKick);
+    eGrit.at.copy(eKick.at); eGrit.dir.set(dir.x, 0.9, dir.z); eGrit.ground = feet.y + 0.02; eGrit.count = 4 + 5 * s; emitB(eGrit);
+    if (fx.shock && !lo) { ringHurt.pos.set(feet.x, feet.y + 0.04, feet.z); ringHurt.r1 = 1.5 + 0.8 * s; try { fx.shock.ring(ringHurt); } catch (e) { /* ignore */ } }
+    if (fx.decals) {
+      decHurt.pos.set(feet.x - dir.x * 0.25, feet.y, feet.z - dir.z * 0.25); decHurt.radius = 0.6 + 0.4 * s; decHurt.cap = decalCap();
+      try { fx.decals.spawn(decHurt); } catch (e) { /* ignore */ }
+    }
+    kHurt.intensity = 0.5 + 0.5 * s; kit.light(p, kHurt);
+  }
+
   // ------------------------------------------------------------ player_hit: наш герой (или соперник) получил удар
   function fleshHit(ev, d, victimRemote) {
     const p = fx.evPos(ev, _p) || fx.anchor('chest', _p, victimRemote);
@@ -139,6 +179,9 @@ export function register(fx) {
     hitFlesh(p, _d, s, gy, victimRemote);
     const spell = isSpellSrc(d);
     if (!victimRemote) {
+      _u.set(_c1.x, gy, _c1.z);
+      heroHurt(p, _d, s, _u);   // [W4-УДАР]
+      if (d.shieldPierced) breakShield(SH[0], p, 1, 'pierce');   // слэм сквозь щит — пролом
       // старый onPlayerHit даёт 0.32 + толчок; цель 0.25..0.5
       const want = 0.25 + 0.25 * s;
       if (want > 0.325) kit.shake(want - 0.32);
@@ -186,8 +229,9 @@ export function register(fx) {
   // ================================================================== 3) ЩИТ
   const SH_R = 1.0, SH_FWD = 0.85;
   function mkShield(side) {
-    const S = { side, h: null, open: 0, on: false, flash: 0, acc: 0, pos: new V3(), f: new V3(), r: new V3() };
-    S.st = { pos: S.pos, normal: S.f, radius: SH_R, open: 0, yaw: 0, intensity: 1 };
+    // [W4-УДАР] dmg — износ от ударов (гаснет), broken — сек до нового раскрытия после пролома, breakT — когда пролом
+    const S = { side, h: null, open: 0, on: false, flash: 0, acc: 0, pos: new V3(), f: new V3(), r: new V3(), dmg: 0, broken: 0, breakT: -9 };
+    S.st = { pos: S.pos, normal: S.f, radius: SH_R, open: 0, yaw: 0, intensity: 1, damage: 0 };
     return S;
   }
   const SH = [mkShield(0), mkShield(1)];
@@ -209,12 +253,20 @@ export function register(fx) {
     shock('haze', { pos: S.pos, radius: 0.9, height: 0.4, dur: 0.35, strength: 0.5 });
   }
   function shieldTick(S, who, dt, alive) {
-    const want = !!(who && who.shielding === true && alive);
+    // [W4-УДАР] после пролома щит закрыт ~0,5 с (ячейки осыпаются при прежнем раскрытии), потом проломленный
+    // меш освобождается, и щит раскрывается заново, если его всё ещё держат
+    if (dt > 0 && S.broken > 0) {
+      S.broken = Math.max(0, S.broken - dt);
+      if (S.broken <= 0 && S.h && S.h.broken) { try { S.h.dispose(); } catch (e) { /* ignore */ } S.h = null; S.open = 0; }
+    }
+    const want = !!(who && who.shielding === true && alive) && S.broken <= 0;
     if (want && !S.on) shieldOpenFx(S);
     S.on = want;
     if (dt > 0) {
-      S.open = want ? Math.min(1, S.open + dt / 0.14) : Math.max(0, S.open - dt / 0.2);
+      const hold = S.broken > 0 && !!S.h && S.h.broken;
+      S.open = want ? Math.min(1, S.open + dt / 0.14) : hold ? S.open : Math.max(0, S.open - dt / 0.2);
       S.flash = Math.max(0, S.flash - dt * 4);
+      S.dmg = Math.max(0, S.dmg - dt * 0.22);
     }
     if (S.open <= 0 && !want) {
       if (S.h) { try { if (S.h.dispose) S.h.dispose(); } catch (e) { /* ignore */ } S.h = null; }
@@ -230,10 +282,13 @@ export function register(fx) {
       const st = S.st;
       st.radius = SH_R * (0.55 + 0.45 * Math.max(e, S.flash * 0.8));
       st.open = e; st.yaw = Math.atan2(S.f.x, S.f.z); st.intensity = 0.6 + 0.8 * S.flash;
+      // [W4-УДАР] износ: удары + расход энергии (пустеющий щит весь в трещинах)
+      const en = who && isNum(who.energy) && isNum(who.maxEnergy) && who.maxEnergy > 0 ? 1 - who.energy / who.maxEnergy : 0;
+      st.damage = clamp(Math.max(S.dmg, en * 0.75), 0, 1);
       try { S.h.setState(st); } catch (err) { /* ignore */ }
     }
     // искры, бегущие по кромке (≤ ~35/с)
-    if (S.open > 0.6 && dt > 0) {
+    if (S.open > 0.6 && dt > 0 && S.broken <= 0) {
       S.acc += dt * 34;
       const R = SH_R * (0.55 + 0.45 * e) * 0.97;
       while (S.acc >= 1) {
@@ -249,6 +304,45 @@ export function register(fx) {
   }
   // блок: попадание в щит — трещины, искры, отдача
   const emCrack = { at: null, dir: new V3(), cone: 0.04, count: 2, speed: [3.5, 6], life: [0.08, 0.15], size: [0.05, 0.02], ramp: 'gold', intensity: 3.6, sprite: 'streak', stretch: 0.06, drag: 14, essential: true, rival: false };
+  // [W4-УДАР] звон: искры бегут по кромке щита; пыль у ног — героя сдвинуло; пролом — осколки и вспышка
+  const emChime = { at: new V3(), shape: 'ring', normal: new V3(), radius: 0.9, count: 22, tangent: 3.2, radial: 0.6, speed: [0, 0.2], life: [0.18, 0.32], size: [0.05, 0.01], ramp: 'gold', intensity: 3.0, sprite: 'spark', stretch: 0.02, drag: 2.5, essential: false, rival: false };
+  const emSlide = { at: new V3(), radius: 0.15, dir: new V3(), cone: 0.7, count: 8, speed: [0.6, 1.6], life: [0.5, 0.9], size: [0.22, 0.7], ramp: 'dust', blend: 'alpha', alpha: 0.6, intensity: 1, sprite: 'smoke', drag: 2.8, gravity: -0.1, turb: 0.3, spin: [-0.6, 0.6], essential: false, rival: false };
+  const emShard = { at: null, dir: new V3(), cone: 1.2, count: 18, speed: [2.5, 7], life: [0.5, 1.0], size: [0.09, 0.05], sizeVar: 0.5, ramp: 'gold', intensity: 2.8, sprite: 'shard', gravity: 7, drag: 0.9, spin: [-14, 14], ground: -1e4, essential: true, rival: false };
+  const emShardDust = { at: null, radius: 0.4, count: 14, speed: [0.2, 0.9], life: [0.5, 0.9], size: [0.06, 0.01], ramp: 'gold', intensity: 2.6, sprite: 'flake', spin: [-3, 3], drag: 1.5, gravity: 1.2, essential: false, rival: false };
+  const decSlide = { pos: new V3(), radius: 0.7, kind: 'scorch', life: 4, color: 0xe8a14a, hot: 0xffd28a, intensity: 0.8, rival: 0, tag: 'hit', cap: 4, merge: 0.7 };
+  const shatO = { point: null, strength: 1, ground: 0 };
+  const _sp = new V3();
+  // пролом щита: why — 'pierce' (удар сквозь щит), 'drain' (блок исчерпал энергию), 'pvp', 'fizzle' (иссяк сам)
+  function breakShield(S, at, strength, why) {
+    if (kit.clock - S.breakT < 0.25) return;   // блок и shield_end одного удара — один пролом
+    S.breakT = kit.clock;
+    const remote = S.side === 1, P = remote ? RIV : GOLD, ramp = remote ? 'rival' : 'gold';
+    shieldFrame(S);
+    const p = at && hasVec(at) ? _sp.set(at.x, at.y, at.z) : _sp.copy(S.pos);
+    const soft = why === 'fizzle';
+    const k = soft ? 0.35 : clamp(strength, 0.4, 1);
+    const feetY = fx.anchor('feet', _c1, remote).y;
+    // сам щит: ячейки осыпаются, пластины разлетаются (на low пластин нет — больше частиц)
+    let plates = false;
+    if (S.h && typeof S.h.shatter === 'function' && S.open > 0.05) {
+      shatO.point = p; shatO.strength = k; shatO.ground = feetY;
+      try { S.h.shatter(shatO); plates = !lowQ(); } catch (e) { plates = false; }
+    }
+    S.broken = soft ? 0.35 : 0.55; S.flash = 1; S.dmg = 0;
+    emShard.at = p; emShard.dir.copy(S.f); emShard.ramp = ramp; emShard.rival = remote; emShard.ground = feetY + 0.02;
+    emShard.count = (plates ? 8 : 22) * (0.5 + 0.5 * k); emShard.speed[1] = 4 + 4 * k;
+    emitB(emShard);
+    emShardDust.at = p; emShardDust.ramp = ramp; emShardDust.rival = remote; emShardDust.count = 8 + 10 * k; emitB(emShardDust);
+    if (!soft) {
+      kit.flash(p, { color: P.core, size: [0.3, 1.6 + 0.6 * k], dur: 0.14, intensity: 4.4, sprite: 'star', pull: 0.25, rival: remote });
+      kit.flash(p, { color: P.hot, size: [0.3, 2.4], dur: 0.3, intensity: 1.8, sprite: 'ring', pull: 0.2, rival: remote, curve: 0.5 });
+      kit.light(p, { color: P.hot, intensity: 0.9, range: 7, dur: 0.35, attack: 0.03 });
+      emitB({ at: p, dir: S.f, cone: 1.3, count: 18 + 16 * k, speed: [3, 8], life: [0.2, 0.5], size: [0.06, 0.012], ramp, intensity: 3.2, sprite: 'spark', stretch: 0.035, gravity: 5, drag: 1.8, rival: remote, essential: true });
+      distort(p, 0.5);
+      if (!remote) { pulse('punch', 0.45 * k, p); kit.shake(0.1 * k); }
+      kit.hitstop(30 + 20 * k);
+    }
+  }
   fx.on('block', (ev, d) => {
     const remote = fx.isRemote(d);
     const S = SH[remote ? 1 : 0], P = remote ? RIV : GOLD, ramp = remote ? 'rival' : 'gold';
@@ -263,6 +357,7 @@ export function register(fx) {
     p.copy(S.pos).add(_q);
     const strength = clamp(num(d.prevented, num(d.amount, 20)) / 30, 0.35, 1);
     S.flash = 1; if (S.open < 0.5) S.open = 0.5;
+    S.dmg = Math.min(1, S.dmg + 0.22 + 0.3 * strength);   // [W4-УДАР] износ
     if (S.h && typeof S.h.hit === 'function') { try { S.h.hit({ point: { x: p.x, y: p.y, z: p.z }, strength }); } catch (e) { /* ignore */ } }
     kit.flash(p, { color: P.core, size: [0.14, 0.8], dur: 0.1, intensity: 4, sprite: 'star', pull: 0.2, rival: remote });
     kit.flash(p, { color: P.hot, size: [0.1, 1.3], dur: 0.26, intensity: 1.8, sprite: 'ring', pull: 0.15, rival: remote });
@@ -277,6 +372,17 @@ export function register(fx) {
     // искры отскакивают от щита к атакующему
     kit.emit({ at: p, dir: S.f, cone: 1.1, count: 8 + 14 * strength, speed: [2.5, 6], life: [0.2, 0.45], size: [0.05, 0.01], ramp, intensity: 3, sprite: 'spark', stretch: 0.03, gravity: 5, drag: 2, rival: remote, essential: true });
     kit.emit({ at: p, radius: 0.1, count: 6, speed: [0.3, 1], life: [0.3, 0.6], size: [0.04, 0.01], ramp: remote ? 'rival' : 'time', intensity: 2.2, sprite: 'dot', drag: 2, rival: remote });
+    // [W4-УДАР] звон по кромке, пыль у ног (героя сдвинуло ударом), след ног на земле
+    emChime.at.copy(S.pos); emChime.normal.copy(S.f); emChime.radius = R * 0.95; emChime.ramp = ramp; emChime.rival = remote;
+    emChime.count = 14 + 14 * strength; emitB(emChime);
+    const fy = fx.anchor('feet', _c1, remote);
+    emSlide.at.set(fy.x, groundAt(fy, fy.y) + 0.06, fy.z); emSlide.dir.set(-S.f.x, 0.35, -S.f.z); emSlide.count = 5 + 6 * strength; emitB(emSlide);
+    if (fx.decals && !remote && strength > 0.5) {
+      decSlide.pos.set(fy.x, emSlide.at.y - 0.06, fy.z); decSlide.cap = decalCap();
+      try { fx.decals.spawn(decSlide); } catch (e) { /* ignore */ }
+    }
+    // блок исчерпал энергию — щит проломлен
+    if (isNum(d.energyAfter) && d.energyAfter <= 0 && !d.ward && !d.bastion) breakShield(S, p, strength, 'drain');
     kit.hitstop(20);
     if (remote) {
       // старый onBlock рисует по НАШЕМУ щиту — для соперника рисуем сами
@@ -287,6 +393,10 @@ export function register(fx) {
     }
     // свой: старый onBlock даёт вспышку, толчок 0.03 и тряску 0.08
   });
+
+  // [W4-УДАР] щит иссяк сам (без удара) — тихое осыпание; PvP: соперник проломил наш щит
+  fx.on('shield_end', (ev, d) => { if (d && d.reason === 'depleted') breakShield(SH[0], null, 0.3, 'fizzle'); }, (d) => !fx.isRemote(d));
+  fx.on('shield_break', (ev, d) => { breakShield(SH[0], fx.evPos(ev, _q), 1, 'pvp'); }, (d) => !fx.isRemote(d));
 
   // ================================================================== 4) ПАРИРОВАНИЕ И ИДЕАЛЬНОЕ УКЛОНЕНИЕ
   fx.on('parry', (ev, d) => {

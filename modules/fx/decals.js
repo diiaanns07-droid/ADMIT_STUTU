@@ -1,12 +1,15 @@
 // ASHEN OATH — modules/fx/decals.js. Владелец: №7 [VFX].
-// Декали на земле V6: ожоги, кратеры метеоров, иней, трещины, цветы исцеления, пятна пустоты, руны, лепестки.
+// Декали на земле V6: ожоги, кратеры метеоров, иней, трещины, цветы исцеления, пятна пустоты, руны, лепестки,
+// [W4-УДАР] «лужи света» (pool) — мягкое растекающееся свечение стихии под ударом, плавно остывает.
 //  - ВСЕ декали — ОДИН draw call: InstancedBufferGeometry (плоский квад на декаль), атрибуты экземпляра
 //    (позиция+радиус, вид/рождение/жизнь/поворот, цвета, rival, seed) пишутся только при спавне/смерти,
 //    возраст считается в шейдере от uNow → в обычном кадре на GPU уходит лишь один uniform;
 //  - узор каждого вида процедурный (value noise / fbm ≤ 4 октав, без текстур); тёмное пятно —
 //    премультиплицированная альфа (vec4(col*a, a)), свечение — аддитив в том же выходе (альфа 0);
 //  - всё угасает на последних 30% жизни; свечение остывает быстрее тёмного пятна;
-//  - polygonOffset(-4, -4) против z-fighting с полом, renderOrder 2 (под остальными эффектами).
+//  - polygonOffset(-4, -4) против z-fighting с полом, renderOrder 2 (под остальными эффектами);
+//  - [W4-УДАР] следы ударов: spawn({ tag, cap, merge }) — не больше cap живых декалей с этим tag (лишняя
+//    старая не исчезает, а гаснет за KILL_FADE); merge — рядом уже есть свежая такая же: она ярче, новой нет.
 // Координаты — в пространстве root (в игре root без трансформации = мир), декаль лежит на pos.y + 0.03.
 import { FX_OUT, FX_RIVAL, FX_NOISE, premulBlend, hexLin, ELEMENTS } from './glsl.js';
 
@@ -14,7 +17,7 @@ const POOL = 24;           // размер буферов экземпляров
 const HANDLES = 96;
 const EXT = 1.12;          // квад шире радиуса — место под неровный край и ореол
 const KILL_FADE = 0.45;    // сек угасания при kill(true)
-const KINDS = Object.freeze({ scorch: 0, crater: 1, frost: 2, crack: 3, heal: 4, void: 5, rune: 6, petals: 7 });
+const KINDS = Object.freeze({ scorch: 0, crater: 1, frost: 2, crack: 3, heal: 4, void: 5, rune: 6, petals: 7, pool: 8 });
 const KDEF = Object.freeze([
   Object.freeze({ color: ELEMENTS.fire.mid, hot: ELEMENTS.fire.core }),
   Object.freeze({ color: ELEMENTS.fire.mid, hot: ELEMENTS.fire.core }),
@@ -24,6 +27,7 @@ const KDEF = Object.freeze([
   Object.freeze({ color: ELEMENTS.void.mid, hot: ELEMENTS.void.hot }),
   Object.freeze({ color: ELEMENTS.gold.mid, hot: ELEMENTS.gold.hot }),
   Object.freeze({ color: ELEMENTS.heal.mid, hot: ELEMENTS.heal.hot }),
+  Object.freeze({ color: ELEMENTS.gold.mid, hot: ELEMENTS.gold.core }),   // [W4-УДАР] pool
 ]);
 const QUALITY = Object.freeze({
   low: Object.freeze({ cap: 8, hq: 0 }),
@@ -276,7 +280,7 @@ void main() {
     sa = 0.35 * (1.0 - smoothstep(0.88, 1.0, r)) * (0.7 + 0.3 * n) * smoothstep(0.0, 0.4, age) + L * 0.6;
     sc = vec3(0.012, 0.009, 0.007);
     e = mix(glow, hot, 0.45 + 0.4 * exp(-age / 1.5)) * (L * I * gF * fl * 1.2);
-  } else {
+  } else if (kind < 7.5) {
     // ---- petals: рассыпанные лепестки (исцеление), два слоя ячеек
     float pulse = 0.85 + 0.15 * sin(uNow * 2.0 + sd);
     vec3 pcol = vec3(0.0);
@@ -305,6 +309,22 @@ void main() {
     }
     e = e * (I * 0.8 * pulse) + glow * ((1.0 - smoothstep(0.2, 1.0, r)) * 0.05 * I);
     sc = pcol;
+  } else {
+    // ---- [W4-УДАР] pool: лужа света — растекается за ~0,25 с, рваный край, бегущая рябь, горячее ядро;
+    //      свет остывает по экспоненте всю жизнь (не «держится и гаснет»), тёмного пятна почти нет
+    vec2 pp = p / mix(0.45, 1.0, smoothstep(0.0, 0.25, age));
+    float rr = length(pp);
+    float n = FBM(pp * 1.7 + sd);
+    float edge = rr + (n - 0.47) * 0.5;
+    float m = 1.0 - smoothstep(0.3, 0.92, edge);
+    float cool = exp(-vB.z * 2.6);                                   // за жизнь — до ~7%, дальше общий fade
+    float n2 = fxNoise2(pp * 5.0 + vec2(uNow * 0.35, -uNow * 0.25) + sd);
+    float rip = pow(0.5 + 0.5 * sin(rr * 19.0 - age * 7.0 + n * 3.0), 6.0) * m * exp(-age * 1.6);
+    float rim = fxBand(edge, 0.72, 0.03, 0.12) * (0.5 + 0.5 * n2);
+    e = (glow * (m * m * (0.35 + 0.4 * n2)) + mix(glow, hot, 0.6) * (rim * 0.8 + rip * 0.9)) * (I * cool);
+    e += hot * (exp(-rr * rr * 7.0) * I * 1.4 * exp(-age * 2.4));
+    sa = m * 0.1 * cool;
+    sc = glow * 0.04;
   }
   sa = clamp(sa, 0.0, 1.0) * fade;
   vec3 col = sc * sa + e * fade;
@@ -316,8 +336,9 @@ void main() {
 
 /**
  * createDecals({ THREE, root }) → { spawn(opts) → handle, update(dt, clock), setQuality, clear, dispose, stats }
- * opts: { pos:{x,y,z}, radius:1.5, kind:'scorch'|'frost'|'crack'|'crater'|'heal'|'void'|'rune'|'petals',
- *         life:8, rot:(случайно), color, hot, intensity:1.6, rival:0 }
+ * opts: { pos:{x,y,z}, radius:1.5, kind:'scorch'|'frost'|'crack'|'crater'|'heal'|'void'|'rune'|'petals'|'pool',
+ *         life:8, rot:(случайно), color, hot, intensity:1.6, rival:0,
+ *         tag, cap, merge }   // [W4-УДАР] tag — группа следов, cap — не больше живых в группе, merge — доля радиуса
  * handle: { alive, kill(fade=true), setIntensity(v) }
  */
 export function createDecals(deps) {
@@ -357,7 +378,7 @@ export function createDecals(deps) {
   const slots = [];
   for (let i = 0; i < POOL; i++) {
     slots.push({ i, active: false, gen: 0, kind: 0, x: 0, y: 0, z: 0, r: 1.5, birth: 0, life: 8, rot: 0,
-      col: [0, 0, 0], hot: [0, 0, 0], I: 1.6, rival: 0, seed: 0, killT: -1 });
+      col: [0, 0, 0], hot: [0, 0, 0], I: 1.6, rival: 0, seed: 0, killT: -1, tag: '' });
   }
   const order = new Int16Array(POOL);
 
@@ -400,11 +421,34 @@ export function createDecals(deps) {
     return null;
   }
 
+  // [W4-УДАР] группа следов: свежая такая же рядом (merge) — ярче и без новой; сверх cap — старейшая гаснет
+  function tagged(tag, kind, o) {
+    const merge = num(o.merge, 0), cap = Math.floor(num(o.cap, 0));
+    let n = 0, old = null;
+    for (let i = 0; i < POOL; i++) {
+      const s = slots[i];
+      if (!s.active || s.tag !== tag || s.killT >= 0) continue;
+      if (merge > 0 && s.kind === kind && tNow - s.birth < s.life * 0.5) {
+        const dx = s.x - o.pos.x, dz = s.z - o.pos.z, rr = merge * Math.max(s.r, num(o.radius, 1.5));
+        if (dx * dx + dz * dz < rr * rr && Math.abs(s.y - o.pos.y) < 0.6) {
+          s.I = Math.min(2.4, Math.max(s.I, clamp(num(o.intensity, 1.6), 0, 50) * 0.8) * 1.12); dirty = true;
+          return handleFor(s);
+        }
+      }
+      n++;
+      if (!old || s.birth < old.birth) old = s;
+    }
+    if (cap > 0 && n >= cap && old) { old.killT = tNow; dirty = true; }
+    return null;
+  }
+
   function spawn(opts) {
     if (disposed) return DEAD;
     const o = opts && typeof opts === 'object' ? opts : {};
     if (!hasVec(o.pos)) return DEAD;
     const kind = KINDS[o.kind] !== undefined ? KINDS[o.kind] : 0;
+    const tag = typeof o.tag === 'string' ? o.tag : '';
+    if (tag) { const m = tagged(tag, kind, o); if (m) return m; }
     const s = takeSlot();
     if (!s) return DEAD;
     const df = KDEF[kind];
@@ -423,6 +467,7 @@ export function createDecals(deps) {
     s.rival = clamp(num(o.rival, 0), 0, 1);
     s.seed = (rnd * 7919.37) % 1;
     s.killT = -1;
+    s.tag = tag;
     dirty = true;
     return handleFor(s);
   }

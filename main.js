@@ -238,6 +238,7 @@ try {
   if (effects.setHeroGhosts) effects.setHeroGhosts(() => !!(heroModel && heroModel.afterimages)); // [HERO] V7.2 свои остаточные образы рывка
   // [VFX] PvP: заклинания соперника — от рук его модели (net/session.js → modules/remotePlayer.js getAnchors)
   if (effects.setRemoteAnchors) effects.setRemoteAnchors(() => (netSession && netSession.remote && typeof netSession.remote.getAnchors === 'function' ? netSession.remote.getAnchors() : null));
+  if (effects.v6 && effects.v6.fx && world && world.bossFx) effects.v6.fx.shared.bossFx = world.bossFx;   // [W4-УДАР] трещины брони у точки удара (fx/hitFx.js)
 } catch (e) { console.warn('[ASHEN] effects V6 hooks', e); }
 const debugInput = createDebugInput(window);
 // Постобработка (core/postfx.js) грузится динамически: до готовности и при любой ошибке — обычный render().
