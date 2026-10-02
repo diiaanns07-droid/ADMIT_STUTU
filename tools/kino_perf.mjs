@@ -98,10 +98,12 @@ try {
     await page.waitForFunction(() => !!window.__ASHEN__, null, { timeout: 120000 });
     await page.waitForFunction(() => { const a = window.__ASHEN__.worldAssets(); return !a || a.pending === 0; }, null, { timeout: 120000 }).catch(() => {});
     await sleep(1500);
-    await page.locator('.ao-toggle', { hasText: 'Отладка с клавиатуры' }).click();
-    await btn('Играть').click(); await sleep(300);
-    await btn('Продолжить без камеры').click(); await sleep(500);
-    await btn('В бой').click();
+    // на программном рендере меню high первые ~минуту подвисает на компиляции шейдеров — клики ждут дольше
+    const CLICK = { timeout: 180000 };
+    await page.locator('.ao-toggle', { hasText: 'Отладка с клавиатуры' }).click(CLICK);
+    await btn('Играть').click(CLICK); await sleep(300);
+    await btn('Продолжить без камеры').click(CLICK); await sleep(500);
+    await btn('В бой').click(CLICK);
     await page.waitForFunction(() => window.__ASHEN__.screen === 'playing', null, { timeout: 240000 });
     await page.keyboard.down('KeyW');
     await page.waitForFunction(() => window.__ASHEN__.snapshot().player.encounter === 'engaged', null, { timeout: 180000 }).catch(() => {});

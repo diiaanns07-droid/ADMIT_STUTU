@@ -1647,7 +1647,8 @@ function timeScale(now) {
 }
 // [FEEL] финал боя: последний удар замедлен, HUD пишет «ПОБЕДА» / «РЕГЕНТ УСТОЯЛ», потом — экран итогов.
 const OUTRO = { victoryMs: 1700, defeatMs: 1200, victoryScale: 0.25, defeatScale: 0.45 };
-OUTRO.victoryMs = 2600;   // [W3-КИНО] гибель Регента (modules/fx/bossFinale.js): перегрев 0,55 с, осколки, облёт камеры
+// [W3-КИНО] гибель Регента (modules/fx/bossFinale.js: перегрев, осколки, облёт камеры) — 2,6 с, только если модуль жив
+Object.defineProperty(OUTRO, 'victoryMs', { get: () => (bossFinale ? 2600 : 1700) });
 
 // ---------------------------------------------------------------- [W3-ULT] «Небесный суд»
 // Полная шкала «Ярость клятвы» (combat) → жест «обе руки над головой 0,8 с» по позе камеры (core/ultimate.js)
@@ -2020,7 +2021,7 @@ function frame(now) {
   if (effects.setInput) effects.setInput(input); // [VFX] след руны в воздухе, свечение ладоней
   if (heroBowPose) { try { heroBowPose.update(dt, { root: world.hero && world.hero.root, heroModel, snap: lastSnapshot }); } catch (e) { /* [HAND] */ } } // [HAND] поза лука/ладони
   try { effects.update(dt, fxSnap, fxEvents); } catch (e) { console.error('[ASHEN] effects.update', e); } // [NET] fxSnap/fxEvents
-  if (bossFinale) { try { bossFinale.update(dt, dtReal, lastSnapshot, events); } catch (e) { console.warn('[W3-КИНО] финал', e); bossFinale = null; } }   // [W3-КИНО]
+  if (bossFinale) { try { bossFinale.update(dt, dtReal, lastSnapshot, events, app.screen); } catch (e) { console.warn('[W3-КИНО] финал', e); bossFinale = null; } }   // [W3-КИНО]
   if (effects.takeHitStop && app.screen === 'playing') { const hs = Math.min(effects.takeHitStop(), settings.reducedMotion ? FEEL_TIME.reducedStopMaxMs : Infinity); if (hs > 0) timeFx.stopUntil = Math.max(timeFx.stopUntil, now + hs); } // [VFX] хит-стоп по силе удара; [FEEL] «Уменьшенное движение» — не дольше 40 мс
   if (handVisuals && effects.linkHandVisuals) effects.linkHandVisuals(handVisuals); // [VFX] стрелы/сгустки/попадания — V6, лук — №6
   if (handVisuals) { try { handVisuals.update(dt, fxSnap, fxEvents, handAnchors()); } catch (e) { /* [HAND] */ } } // [HAND] (fxSnap — со стрелами соперника)

@@ -418,6 +418,10 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
       quad.render(r);
       r.setRenderTarget(prev);
     };
+    pass.warm = (r) => {
+      const prev = r.getRenderTarget();
+      try { r.setRenderTarget(rt); quad.render(r); } finally { r.setRenderTarget(prev); }
+    };
     pass.dispose = () => { rt.dispose(); mat.dispose(); quad.dispose(); };
     return pass;
   }
@@ -467,6 +471,7 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
           composer.insertPass(rays, composer.passes.indexOf(gtao) + 1);
           P.rays = rays;
           P.grade.uniforms.tRays.value = rays.rt.texture;
+          rays.warm(renderer);   // шейдер компилируется сейчас, а не когда корона впервые войдёт в кадр
         } catch (e) { console.warn('[postfx] лучи high недоступны:', e); }
         P.gtao = gtao; P.smaa = smaa;
         S.highReady = true;
@@ -552,9 +557,10 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
   const active = () => S.ready && !S.failed && !S.disposed && !!composer && S.tier !== 'low';
 
   // [W3-КИНО] затухание импульсов и цвет фаз — в реальном времени, на любом уровне
+  const LOOK_V3 = ['shadow', 'high', 'vig', 'rays', 'tint'], LOOK_F = ['sat', 'contrast', 'vignette', 'ca', 'tintA'];
   function lerpLook(out, a, b, t) {
-    for (const k of ['shadow', 'high', 'vig', 'rays', 'tint']) { const o = out[k], x = a[k], y = b[k]; o[0] = x[0] + (y[0] - x[0]) * t; o[1] = x[1] + (y[1] - x[1]) * t; o[2] = x[2] + (y[2] - x[2]) * t; }
-    for (const k of ['sat', 'contrast', 'vignette', 'ca', 'tintA']) out[k] = a[k] + (b[k] - a[k]) * t;
+    for (let i = 0; i < LOOK_V3.length; i++) { const k = LOOK_V3[i], o = out[k], x = a[k], y = b[k]; o[0] = x[0] + (y[0] - x[0]) * t; o[1] = x[1] + (y[1] - x[1]) * t; o[2] = x[2] + (y[2] - x[2]) * t; }
+    for (let i = 0; i < LOOK_F.length; i++) { const k = LOOK_F[i]; out[k] = a[k] + (b[k] - a[k]) * t; }
   }
   function tick(d) {
     S.clock += d;
@@ -774,9 +780,9 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
       default: return false;
     }
   }
+  const n01 = (v) => clamp01(Number.isFinite(+v) ? +v : 0);
   function setLook(look) {
-    const L = S.lookIn;
-    const n = (v) => clamp01(Number.isFinite(+v) ? +v : 0);
+    const L = S.lookIn, n = n01;
     if (!look || typeof look !== 'object') { L.red = 0; L.dawn = 0; L.dark = 0; L.zone = 0; return; }
     L.red = n(look.red); L.dawn = n(look.dawn); L.dark = n(look.dark); L.zone = n(look.zone);
   }
