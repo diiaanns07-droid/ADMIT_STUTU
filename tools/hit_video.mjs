@@ -5,8 +5,9 @@
 // Как tools/kino_video.mjs: программный рендер в облаке даёт < 1 кадра/с, поэтому часы страницы (performance.now
 // и requestAnimationFrame) подменяются, игра шагает ровно на 1/fps с, каждый кадр снимается скриншотом и
 // склеивается ffmpeg. «Отладка с клавиатуры» → бой без камеры → W до арены; дальше сценарий клавишами:
-// J — очередь болтов (слабые), I — рассечение, 1 — огненное копьё, L — выброс (сильные), K — щит (блок удара
-// Регента), в конце — добивающий удар (HP Регента на «Лёгкой» подменяется в ответе config.js).
+// J — очередь болтов (слабые), K — щит, пока энергии много (блок или удар сквозь щит), I — рассечение,
+// 1 — огненное копьё, L — выброс (сильные), в конце — добивающий удар (HP Регента на «Лёгкой» подменяется
+// в ответе config.js). Math.random страницы — с зерном: «до» и «после» идут одинаково.
 // --root — папка игры (по умолчанию эта): тем же скриптом снимается чистый main (git worktree add … origin/main).
 
 import { spawn, execSync, execFileSync } from 'node:child_process';
@@ -30,7 +31,7 @@ const LABEL = argOf('--label', 'after');
 const OUT = resolve(argOf('--out', join(HERE, `docs/video/hits_${LABEL}.mp4`)));
 const SHOTS = resolve(argOf('--shots', join(HERE, 'docs/screenshots/hits')));
 const NO_VIDEO = has('--no-video') || BUDGET;
-const BOSS_HP = argOf('--boss-hp', '0.3');
+const BOSS_HP = argOf('--boss-hp', '0.34');
 const FRAMES = join(argOf('--tmp', tmpdir()), `hit_frames_${process.pid}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -146,7 +147,7 @@ async function run(quality) {
       const r = await info();
       for (const k of Object.keys(peak)) if (r[k] > peak[k]) peak[k] = r[k];
     }
-    if (save) { n++; await page.screenshot({ path: join(frames, `${String(n).padStart(5, '0')}.jpg`), type: 'jpeg', quality: 92 }); }
+    if (save) { n++; await page.screenshot({ path: join(frames, `${String(n).padStart(5, '0')}.jpg`), type: 'jpeg', quality: 92, timeout: 240000 }); }
   };
   const steps = async (sec) => { for (let i = 0, m = Math.round(sec * FPS); i < m; i++) await step(); };
   const state = () => page.evaluate(() => {
@@ -155,7 +156,7 @@ async function run(quality) {
   });
   const shot = async (name) => {
     const p = join(SHOTS, `${name}_${LABEL}_${quality}.jpg`);
-    await page.screenshot({ path: p, type: 'jpeg', quality: 88 });
+    await page.screenshot({ path: p, type: 'jpeg', quality: 88, timeout: 240000 });
     marks.push({ name, frame: n });
   };
   const fxStats = () => page.evaluate(() => { try { const l = window.__ASHEN__.fxLayer(); return l ? l.stats() : null; } catch (e) { return null; } });
@@ -165,42 +166,47 @@ async function run(quality) {
   await shot('0_idle');
   // 1. очередь болтов — слабые попадания
   await page.keyboard.down('KeyJ');
-  for (let i = 0; i < Math.round(1.4 * FPS); i++) { await step(); if (i === Math.round(0.9 * FPS)) await shot('1_bolts'); }
+  for (let i = 0; i < Math.round(1.2 * FPS); i++) { await step(); if (i === Math.round(0.9 * FPS)) await shot('1_bolts'); }
   await page.keyboard.up('KeyJ');
-  await steps(0.3);
-  // 2. рассечение
-  await page.keyboard.press('KeyI');
-  for (let i = 0; i < Math.round(0.9 * FPS); i++) { await step(); if (i === 7) await shot('2_slash'); }
-  // 3. огненное копьё — сильный удар
-  await page.keyboard.press('Digit1');
-  for (let i = 0; i < Math.round(1.6 * FPS); i++) { await step(); if (i === 16) await shot('3_rune'); }
-  // 4. щит: держим K, пока Регент не ударит (не дольше 5 с)
+  // 2. щит, пока энергии много: держим K, пока Регент не ударит (блок или удар сквозь щит), не дольше 4 с
   await page.keyboard.down('KeyK');
-  let s = await state();
   let blockShot = false;
-  const blk0 = (await evCount('block')) + (await evCount('player_hit'));
-  for (let i = 0; i < Math.round(5 * FPS); i++) {
+  const hit0 = (await evCount('block')) + (await evCount('player_hit'));
+  for (let i = 0; i < Math.round(4 * FPS); i++) {
     await step();
-    if (i % 2 === 0 && !blockShot && (await evCount('block')) + (await evCount('player_hit')) > blk0) {
-      blockShot = true; await step(); await step(); await shot('4_block');
-      for (let j = 0; j < 14; j++) await step();
+    if (i % 2 === 0 && !blockShot && (await evCount('block')) + (await evCount('player_hit')) > hit0) {
+      blockShot = true; await step(); await shot('2_block');
+      for (let j = 0; j < 8; j++) await step();
+      await shot('2_block_after');
       break;
     }
   }
   await page.keyboard.up('KeyK');
-  await steps(0.3);
+  await steps(0.4);
+  // 3. рассечение
+  await page.keyboard.press('KeyI');
+  for (let i = 0; i < Math.round(0.9 * FPS); i++) { await step(); if (i === 7) await shot('3_slash'); }
+  // 4. огненное копьё — сильный удар
+  await page.keyboard.press('Digit1');
+  for (let i = 0; i < Math.round(1.4 * FPS); i++) { await step(); if (i === 16) await shot('4_rune'); }
+  await steps(0.5);   // энергия на выброс
   // 5. выброс обеими руками — сильный удар, волна по земле
   await page.keyboard.press('KeyL');
-  for (let i = 0; i < Math.round(1.4 * FPS); i++) { await step(); if (i === 6) await shot('5_burst'); }
+  for (let i = 0; i < Math.round(1.3 * FPS); i++) { await step(); if (i === 6) await shot('5_burst'); }
   await shot('6_trail');
-  // 6. добивающий: копьё, если не хватило — выброс и болты
-  s = await state();
+  // 6. добивающий: огонь, копьё, выброс — пока Регент не падёт (не дольше 4 с)
+  let s = await state();
+  await page.keyboard.down('KeyJ');
   await page.keyboard.press('Digit1');
-  for (let i = 0; i < Math.round(3 * FPS) && s.st === 'playing'; i++) {
+  let finShot = false;
+  for (let i = 0; i < Math.round(4 * FPS) && s.st === 'playing'; i++) {
     await step(); if (i % 3 === 0) s = await state();
-    if (i === Math.round(1.6 * FPS) && s.st === 'playing') await page.keyboard.press('KeyL');
+    if (i === Math.round(1.2 * FPS) && s.st === 'playing') await page.keyboard.press('KeyL');
+    if (i === Math.round(2.4 * FPS) && s.st === 'playing') await page.keyboard.press('Digit1');
   }
-  for (let i = 0; i < Math.round(1.2 * FPS); i++) { await step(); if (i === 4) await shot('7_finisher'); }
+  await page.keyboard.up('KeyJ');
+  for (let i = 0; i < Math.round(1.4 * FPS); i++) { await step(); if (i === 3) { await shot('7_finisher'); finShot = true; } if (i === 14) await shot('7_finisher_b'); }
+  void finShot;
   const fin = await state();
   const fx = await fxStats();
   const evs = await page.evaluate(() => window.__hitEv || {});
