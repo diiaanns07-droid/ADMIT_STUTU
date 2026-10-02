@@ -49,9 +49,8 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
 
   const calls = [];
   const names = ['onEnableCamera', 'onCalibrate', 'onStart', 'onPause', 'onResume', 'onRestart', 'onSettings', 'onDebug', 'onExit', 'onOath', 'onTraining', 'onBuyUpgrade', 'onBack', 'onNet'];
-  names.push('onChallenge', 'onChallengeName', 'onPosterSave'); // [W3-CHALLENGE] испытание и постер
   const callbacks = {};
-  for (const n of names) {
+  for (const n of names.concat(['onChallenge', 'onChallengeName', 'onPosterSave'])) { // [W3-CHALLENGE] + испытание и постер
     callbacks[n] = (arg) => {
       calls.push({ name: n, arg });
       if (n === 'onCalibrate') return Promise.resolve(true);
