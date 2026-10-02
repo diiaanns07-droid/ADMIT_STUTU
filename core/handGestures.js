@@ -29,6 +29,18 @@ import { createSteerStick } from './steerStick.js';
 
 export const HAND_GESTURES_VERSION = 'ASHEN_V3-hands-6';
 
+// [НОВИЧОК] Профили жестов. «Мастер» — все детекторы (как раньше). «Новичок» — только базовые:
+// ход и поворот левой рукой, щит (толчок ладонью), рывок (дёрг левой), «OK» — снаряды,
+// кулак → выброс, сфера двумя руками и её бросок. Остальные детекторы не работают вовсе, поэтому
+// не перехватывают позы базовых жестов (щепоть «Искры» у кулака, перо руны у «OK», «кулак → ладонь»
+// левой как парирование, хлопок/врата у сферы) и не сыплют подсказками о жестах, которых нет.
+export const GESTURE_PROFILES = Object.freeze({
+  novice: Object.freeze(['steer', 'shield', 'dash', 'attack', 'burst', 'orb', 'throw']),
+  master: Object.freeze(['steer', 'shield', 'dash', 'attack', 'burst', 'orb', 'throw', 'rune', 'spark', 'slash', 'parry', 'prism', 'sigil', 'twin']),
+});
+// Подсказки «ОШИБКА» о выключенных в «Новичке» жестах
+const NOVICE_MUTED_HINTS = /^(rune_|spark_|slash_|parry_|prism_|gate_|frame_)/;
+
 export const DEFAULT_HAND_CONFIG = Object.freeze({
   // надёжность
   staleMs: 350,            // наблюдение старше — удержания отпускаются
@@ -55,6 +67,16 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   // удержание формы до признания, мс
   hold: Object.freeze({ pinch: 70, point: 110, fist: 120, open: 90, victory: 120, unknown: 220 }),
   palmSideRatio: 0.18,     // |векторное произведение| / ладонь² меньше — ладонь «ребром»
+  palmSideHyst: 0.03,      // [ЩИТ НЕ МИГАЕТ] гистерезис стороны ладони: к камере → ребро ниже (порог − столько), ребро → к камере выше (порог + столько)
+  // [ЩИТ НЕ МИГАЕТ] One-Euro для точек кисти, по которым распознаётся ФОРМА (пальцы, сторона ладони). Позиции и
+  // скорости (руль, рывок, взмах, толчок) считаются по сырым точкам — без задержки. Кисть стоит — сглаживание
+  // сильное (шум точек не «мигает» формой); пальцы движутся — частота среза растёт, задержки почти нет.
+  shapeFilter: 1,          // 0 — выключить
+  shapeMinCutoffHz: 2,
+  shapeBeta: 0.5,          // Гц на (ладонь/с)
+  shapeDCutoffHz: 1,
+  shapeAlphaMax: 0.6,      // [НИЗКАЯ ЧАСТОТА] у неподвижной кисти новый кадр весит не больше этого (на 8 Гц срез ниже: кадров мало, шум тот же)
+  shapeFilterResetMs: 250, // кисть пропадала дольше — фильтр начинается заново
   // заряд и выброс
   chargeMs: 1100,
   minCharge: 0.3,
@@ -108,6 +130,22 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   shieldRetractShare: 0.5, //   …или ушла назад больше чем на эту долю толчка (от пика) — что больше…
   shieldRetractMs: 200,    //   …в сумме столько (шум кадров копилку не обнуляет) — щит опускается
   shieldScaleTauMs: 50,    // сглаживание размера кисти (оценка по точкам шумит на ~3–5 % от кадра к кадру)
+  shieldJitRef: 0.035,     // [СТОЯ] обычное дрожание размера кисти сидя (|ln| соседних кадров)
+  shieldJitTauMs: 1500,
+  shieldJitDead: 1.25,     //   до стольких «обычных шумов» пороги и сглаживание не меняются
+  shieldNoiseMax: 2.5,     //   шум выше обычного во столько раз (не больше) — размер сглаживается во столько раз дольше
+  // [НИЗКАЯ ЧАСТОТА] На 6–10 Гц толчок ладонью (≈0,2 с) — это 1–2 кадра. Окна щита считаются по реальному
+  // интервалу кадров: в окне толчка должно оставаться хотя бы столько кадров (иначе «размер до толчка»
+  // выпадает из окна раньше, чем набран подтверждающий второй кадр)
+  shieldPushWindowFrames: 3,
+  shieldDriftPerSec: 0.4, // за удлинённое окно толчка ладонь успевает «подъехать» к камере (≈±10 % с периодом 2–3 с): порог выше на столько в секунду удлинения
+  shieldGapPushMs: 600,    // кисть пропала из трекинга на весь толчок (смаз) и вернулась не позже — сравниваем с последним кадром до пропуска
+  // [ЩИТ НЕ МИГАЕТ] удержание: «ладонь убрана» судится по сглаженному размеру и по пику, который медленно
+  // спадает (один шумный кадр-максимум не поднимает планку навсегда); опускание — по времени, но не меньше кадров
+  shieldHoldTauMs: 60,     // сглаживание размера кисти при поднятом щите
+  shieldPeakTauMs: 2000,   // пик размера спадает к текущему с такой постоянной времени
+  shieldRetractFrames: 2.5, // «убрал ладонь» — не меньше стольких интервалов кадров подряд
+  shieldDropFrames: 1.6,   // ладонь отвернулась/сжалась — не меньше стольких интервалов кадров
   // парирование (левая): стабильный кулак → раскрытая ладонь к камере
   parryWindowMs: 150,      // от выхода из кулака до ладони к камере (V3.1: 220 → 150)
   parryFistMs: 250,        // [V3.1] кулак держался хотя бы столько (не «перехват» руки при ведении)
@@ -220,6 +258,12 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   hintEdge: 0.015,         // точка кисти ближе к краю кадра (доля) — «у края»
   hintEdgeMs: 700,
   hintFarScale: 0.05,      // размер ладони в высотах кадра меньше — «слишком далеко»
+  hintFarStandK: 0.7,      // [СТОЯ] игрок стоит дальше от камеры нарочно: «далеко» — только если кисть ещё мельче (×столько)
+  // [СТОЯ] Пороги в долях кадра (скорость и длина взмаха, броска рывком, размер руны) рассчитаны на сидящего
+  // в ~1 м (ширина плеч ≈ 0.3 высоты кадра). Игрок дальше (стоит) — те же движения в кадре мельче: пороги
+  // умножаются на (ширина плеч / swRef), но не меньше unitKMin; ближе обычного — без изменений.
+  swRef: 0.3,
+  unitKMin: 0.45,
   hintFarMs: 1500,
   hintMissingMs: 2500,     // запястья позы видны, а кистей нет столько — «кистей не видно»
   hintRingSlack: 1.6,      // «кольцо почти замкнуто»: pinchOn ≤ pinch < pinchOn × slack
@@ -611,6 +655,28 @@ function handScale(I, world) {
   return Math.max(1e-6, s);
 }
 
+// [ЩИТ НЕ МИГАЕТ] One-Euro по точкам (каждая точка — своя скорость в ладонях в секунду). F — состояние,
+// pts — точки, unit — размер ладони в тех же единицах. Возвращает сглаженную копию.
+function euroPoints(F, pts, t, unit, cfg) {
+  const fresh = !F.p || F.p.length !== pts.length || !(t > F.t) || t - F.t > cfg.shapeFilterResetMs;
+  if (fresh) {
+    F.p = pts.map((q) => ({ x: q.x, y: q.y, z: q.z })); F.v = new Array(pts.length).fill(0); F.t = t;
+    return F.p.map((q) => ({ ...q }));
+  }
+  const dt = (t - F.t) / 1000, u = Math.max(1e-6, unit);
+  const ad = 1 - Math.exp(-2 * Math.PI * cfg.shapeDCutoffHz * dt);
+  const fcMin = Math.min(cfg.shapeMinCutoffHz, -Math.log(1 - cfg.shapeAlphaMax) / (2 * Math.PI * dt));
+  for (let i = 0; i < pts.length; i++) {
+    const q = pts[i], p = F.p[i];
+    const sp = Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z) / dt / u;
+    F.v[i] += (sp - F.v[i]) * ad;
+    const a = 1 - Math.exp(-2 * Math.PI * (fcMin + cfg.shapeBeta * F.v[i]) * dt);
+    p.x += (q.x - p.x) * a; p.y += (q.y - p.y) * a; p.z += (q.z - p.z) * a;
+  }
+  F.t = t;
+  return F.p.map((q) => ({ ...q }));
+}
+
 function classify(f, prev, cfg) {
   // Выпрямленность с гистерезисом относительно прошлого кадра.
   const ext = f.bends.map((b, i) => {
@@ -650,6 +716,10 @@ export function createHandGestures(configPatch = {}) {
   const steer = createSteerStick(configPatch && configPatch.steer);
   let moveMode = configPatch && configPatch.moveMode === 'steer' ? 'steer' : 'stick';
   const mover = () => (moveMode === 'steer' ? steer : stick);
+  // [НОВИЧОК] профиль жестов: 'master' (по умолчанию модуля — всё как раньше) или 'novice'
+  let profile = configPatch && configPatch.profile === 'novice' ? 'novice' : 'master';
+  let enabled = new Set(GESTURE_PROFILES[profile]);
+  const on = (g) => enabled.has(g);
   // «насколько левая рука сейчас рулит» — для гейтов щита, парирования, чар: у джойстика — длина
   // выхода; у руля — только поворот (подъём руки для шага сам по себе щит и чары не запрещает)
   const steering = (so) => (!so || !so.engaged ? 0 : so.mode === 'steer' ? Math.abs(so.turn || 0) : Math.hypot(so.x, so.z));
@@ -673,7 +743,7 @@ export function createHandGestures(configPatch = {}) {
   function reset() {
     st = {
       hands: { left: newHand('left'), right: newHand('right') },
-      lastObsT: null, frameDt: 33, mirror: true, aspect: 4 / 3,
+      lastObsT: null, frameDt: 33, mirror: true, aspect: 4 / 3, standing: false, unitK: 1,
       pulses: { burst: null, rune: null, runeFizzle: null, dash: null, throw: null, dashDir: null, parry: null, spark: null, slash: null, sigil: null, hint: null },
       coach: { until: {}, gapUntil: -Infinity, near: {}, counts: {}, noHandsSince: null },
       sig: { hist: [], togetherSince: null, primedUntil: -Infinity, frameSince: null, frameFired: false, blockedUntil: -Infinity },
@@ -736,14 +806,26 @@ export function createHandGestures(configPatch = {}) {
         const side = H.side;
         Object.assign(H, newHand(side));
       }
-      if (H.present) { H.rel.length = 0; }
+      // [НИЗКАЯ ЧАСТОТА] короткий пропуск (кадр-другой посреди взмаха — смаз) историю взмаха не стирает:
+      // скорость всё равно считается по реальному времени между кадрами
+      if (H.present && H.rel.length && t - H.rel[H.rel.length - 1].t > Math.max(cfg.swipeWindowMs, 2.5 * st.frameDt)) { H.rel.length = 0; }
       return;
     }
     if (!H.present) { H.present = true; H.firstSeen = t; }
     H.lastSeen = t;
     const f = handFeatures(data.img, data.world, st.aspect, cfg);
-    H.feat = f;
-    const c = classify(f, H, cfg);
+    // [ЩИТ НЕ МИГАЕТ] форма — по сглаженным точкам (One-Euro), позиции и размер — по сырым (f)
+    let fs = f;
+    if (cfg.shapeFilter > 0) {
+      const E = H.euro || (H.euro = { img: {}, world: {} });
+      const I = data.img, palmImg = Math.hypot((I[9].x - I[0].x) * st.aspect, I[9].y - I[0].y);
+      const img = euroPoints(E.img, data.img, t, palmImg, cfg);
+      const world = data.world ? euroPoints(E.world, data.world, t, dist(data.world[0], data.world[9]), cfg) : null;
+      fs = handFeatures(img, world, st.aspect, cfg);
+      fs.I = f.I; fs.scale = f.scale; fs.n3 = f.n3; fs.palm2d = f.palm2d;
+    }
+    H.feat = fs;
+    const c = classify(fs, H, cfg);
     H.rawShape = c.shape;
     H.extended = c.extended;
     H.pinchLevel = c.pinchLevel;
@@ -751,8 +833,10 @@ export function createHandGestures(configPatch = {}) {
     // палец/ладонь. Правая кисть ладонью к камере: указательный правее мизинца в незеркальном
     // кадре → cross < 0 (y вниз). Левая — наоборот.
     const s = H.side === 'right' ? 1 : -1;
-    H.cross = f.cross;
-    H.palmFacing = Math.abs(f.cross) < cfg.palmSideRatio ? 'side' : (f.cross * s < 0 ? 'camera' : 'away');
+    H.cross = fs.cross;
+    // [ЩИТ НЕ МИГАЕТ] гистерезис: ладонь у границы «ребро / к камере» не переключается от шума точек
+    const sideLim = cfg.palmSideRatio + (H.palmFacing === 'side' ? cfg.palmSideHyst : H.palmFacing === 'unknown' ? 0 : -cfg.palmSideHyst);
+    H.palmFacing = Math.abs(fs.cross) < sideLim ? 'side' : (fs.cross * s < 0 ? 'camera' : 'away');
     // для двуручных чар: точки кадра с поправкой на соотношение сторон, масштаб, нормаль ладони
     H.pts = f.I;
     H.scale = f.scale;
@@ -772,7 +856,7 @@ export function createHandGestures(configPatch = {}) {
     const bc = isObj(bodyCenter) && fin(bodyCenter.x) ? disp(bodyCenter) : null;
     const relX = (H.center.x - (bc ? bc.x : 0)) * st.aspect;
     H.rel.push({ t, x: relX });
-    while (H.rel.length > 24 || (H.rel.length && t - H.rel[0].t > cfg.swipeWindowMs * 2)) H.rel.shift();
+    while (H.rel.length > 24 || (H.rel.length && t - H.rel[0].t > Math.max(cfg.swipeWindowMs * 2, 3 * st.frameDt))) H.rel.shift();
     // толчок к камере: кисть растёт в кадре быстрее плеч (наклон всем корпусом не считается),
     // центр ладони почти не сдвигается в плоскости кадра (иначе это ведение джойстика/подъём руки).
     // Пока кисть не «готова» (только что появилась, часто обрезана краем) — история не копится.
@@ -790,7 +874,10 @@ export function createHandGestures(configPatch = {}) {
       const gap = H.lastScaleT === undefined ? Infinity : t - H.lastScaleT;
       // после пропуска кадров — обычный шаг фильтра на один кадр (пропуск не несёт данных; иначе первый
       // же шумный кадр после провала целиком попадал в «размер»); кисть потеряна насовсем — с нуля
-      const a = gap > lostGrace() ? 1 : 1 - Math.exp(-Math.min(gap, Math.max(50, 1.5 * st.frameDt)) / cfg.shieldScaleTauMs);
+      // [СТОЯ] шумная (мелкая) кисть — размер сглаживается дольше
+      const noiseK = clamp((H.jit ?? cfg.shieldJitRef) / (cfg.shieldJitRef * cfg.shieldJitDead), 1, cfg.shieldNoiseMax);
+      H.noiseK = noiseK;
+      const a = gap > lostGrace() ? 1 : 1 - Math.exp(-Math.min(gap, Math.max(50, 1.5 * st.frameDt)) / (cfg.shieldScaleTauMs * noiseK));
       H.scaleF = H.scaleF === undefined || a === 1 ? f.scale : H.scaleF + (f.scale - H.scaleF) * a;
       H.spanF = H.spanF === undefined || a === 1 ? span : H.spanF + (span - H.spanF) * a;
       // насколько ладонь смотрит в камеру (|z| нормали по world-точкам): поворот ладони к камере тоже
@@ -801,6 +888,16 @@ export function createHandGestures(configPatch = {}) {
       // без сглаживания (после пропуска кадров фильтр ещё «помнит» старое), но медиана трёх последних
       // кадров — один выброс трекинга (кисть на кадр «выросла»/«сжалась») её не сдвигает
       if (a === 1 || !H.spanRaw) H.spanRaw = [];
+      // [СТОЯ] дрожание размера кисти от кадра к кадру (|ln| отношения соседних кадров, сглажено ~1,5 с): у мелкой
+      // кисти (игрок стоит дальше от камеры) шум точек MediaPipe в пикселях тот же — относительный больше
+      const prevRaw = H.spanRaw.length ? H.spanRaw[H.spanRaw.length - 1] : null;
+      // медиана за shieldJitTauMs: кадры самого толчка (резкий рост) оценку шума не сдвигают
+      if (prevRaw && gap <= Math.max(60, 1.6 * st.frameDt)) {
+        const B = H.jitBuf || (H.jitBuf = []);
+        B.push({ t, j: Math.abs(Math.log(span / prevRaw)) });
+        while (B.length > 60 || (B.length && t - B[0].t > cfg.shieldJitTauMs)) B.shift();
+        if (B.length >= 8) { const q = B.map((e) => e.j).sort((x, y) => x - y); H.jit = q[q.length >> 1]; }
+      }
       H.spanRaw.push(span); if (H.spanRaw.length > 3) H.spanRaw.shift();
       const med = H.spanRaw.length < 3 ? span : [...H.spanRaw].sort((p, q) => p - q)[1];
       H.spanNow = med; H.spanNowN = sw ? med / sw : null;
@@ -809,12 +906,18 @@ export function createHandGestures(configPatch = {}) {
     if (!ready(H, t)) { H.scaleHist.length = 0; H.pushRun = 0; }
     else {
       const pcx = (data.img[0].x + data.img[9].x) / 2 * st.aspect, pcy = (data.img[0].y + data.img[9].y) / 2;
+      // [НИЗКАЯ ЧАСТОТА] последний кадр перед пропуском кисти (толчок мог целиком прийтись на пропуск)
+      const last = H.scaleHist[H.scaleHist.length - 1];
+      const preGap = last && t - last.t > Math.max(90, 1.6 * st.frameDt) && t - last.t <= cfg.shieldGapPushMs ? { ...last } : null;
       H.scaleHist.push({ t, s: H.scaleF, p: H.spanF, nz: H.nzF, sw, x: pcx, y: pcy });
-      const pm = moveMode === 'steer' ? cfg.shieldPushMsSteer : cfg.shieldPushMs;
+      // [НИЗКАЯ ЧАСТОТА] окно толчка — не меньше shieldPushWindowFrames интервалов кадров
+      const pm0 = moveMode === 'steer' ? cfg.shieldPushMsSteer : cfg.shieldPushMs;
+      const pm = Math.max(pm0, cfg.shieldPushWindowFrames * st.frameDt);
       while (H.scaleHist.length > 30 || (H.scaleHist.length && t - H.scaleHist[0].t > pm + 60)) H.scaleHist.shift();
       const hs = H.scaleHist, n = hs.length, b = hs[0];
       let pushing = false, base = 0, baseNz = null, baseT0 = t;
-      const ratio = moveMode === 'steer' ? cfg.shieldPushRatioSteer : cfg.shieldPushRatio;
+      // [НИЗКАЯ ЧАСТОТА] окно длиннее обычного — порог выше на возможный медленный дрейф ладони за добавочное время
+      const ratio = (moveMode === 'steer' ? cfg.shieldPushRatioSteer : cfg.shieldPushRatio) + cfg.shieldDriftPerSec * (pm - pm0) / 1000;
       if (n >= 3 && t - b.t >= pm * 0.5 && b.s > 1e-6 && b.p > 1e-6) {
         // размер образца в масштабе текущих плеч (наклон всем корпусом не считается);
         // база — минимум в окне (откуда толчок начался): рука перед толчком могла чуть отъехать назад
@@ -828,8 +931,11 @@ export function createHandGestures(configPatch = {}) {
         base = minP;
         baseNz = hs[minI].nz; baseT0 = hs[minI].t;
         const turned = H.nzF !== null && baseNz !== null ? Math.abs(H.nzF - baseNz) : 0;
-        const cur = (H.spanF + hs[n - 2].p * k(hs[n - 2])) / 2;
-        const scaleUp = (H.scaleF + hs[n - 2].s * k(hs[n - 2])) / 2 / minS;
+        // среднее с прошлым кадром гасит одиночный шумный кадр; на низкой частоте прошлый кадр — уже середина
+        // толчка (кадр 100–170 мс), и шум гасит требование двух кадров подряд (shieldPushFrames)
+        const lowRate = st.frameDt >= 55;
+        const cur = lowRate ? H.spanF : (H.spanF + hs[n - 2].p * k(hs[n - 2])) / 2;
+        const scaleUp = (lowRate ? H.scaleF : (H.scaleF + hs[n - 2].s * k(hs[n - 2])) / 2) / minS;
         const shift = Math.hypot(pcx - b.x, pcy - b.y) / Math.max(1e-4, f.scale);
         // толчок — быстрый: где-то в окне размах вырос на долю shieldPushFastShare порога за ~shieldPushFastMs.
         // Медленный дрейф руки к камере (≈3 % за такое время) так не может, сколько бы ни набежало за окно
@@ -841,6 +947,20 @@ export function createHandGestures(configPatch = {}) {
         pushing = base > 1e-6 && cur / base >= ratio && fast >= 1 + (ratio - 1) * cfg.shieldPushFastShare && scaleUp >= cfg.shieldPushScaleCheck
           && shift < cfg.shieldPushShift && turned < cfg.shieldPushTurnMax;
         H.pushDbg = { span: cur / Math.max(1e-6, base), fast, scale: scaleUp, shift, turned };
+      }
+      // [НИЗКАЯ ЧАСТОТА] кисть вернулась после пропуска уже у камеры — на том же месте, не развёрнутой, заметно
+      // крупнее последнего кадра до пропуска (с запасом к порогу, без проверки скорости — кадров в пропуске нет).
+      // Это начало толчка; второй кадр подтвердит его через закреплённую точку (ниже), как обычно
+      if (!pushing && preGap && H.pushRun === 0 && preGap.p > 1e-6 && preGap.s > 1e-6) {
+        const k = sw && preGap.sw ? sw / preGap.sw : 1;
+        const spanNowRaw = H.spanRaw[H.spanRaw.length - 1];
+        const grown = spanNowRaw / (preGap.p * k);   // сглаженный размер после пропуска ещё «помнит» старое — берём кадр
+        const scaleUp = H.scaleF / (preGap.s * k);
+        const shift = Math.hypot(pcx - preGap.x, pcy - preGap.y) / Math.max(1e-4, f.scale);
+        const turned = H.nzF !== null && preGap.nz !== null ? Math.abs(H.nzF - preGap.nz) : 0;
+        if (grown >= ratio + cfg.shieldPushPinMargin && scaleUp >= cfg.shieldPushScaleCheck && shift < cfg.shieldPushShift && turned < cfg.shieldPushTurnMax) {
+          pushing = true; base = preGap.p * k; baseNz = preGap.nz; baseT0 = preGap.t;
+        }
       }
       // толчок уже начался (кадр подтверждения ещё не набран), а кисть на миг пропала из трекинга:
       // за пропуск окно «уезжает» внутрь толчка — досчитываем его от закреплённой точки старта
@@ -914,6 +1034,7 @@ export function createHandGestures(configPatch = {}) {
     }
     if (oL) {
       if (charged(L) && stillCharging(R) && t - L.releasedAt < cfg.pairWindowMs) return; // ждём правую
+      if (!on('parry')) { L.releasedAt = null; return; }   // [НОВИЧОК] левая одна «кулак → ладонь» не парирует
       // подсказки парирования — только если левая явно толкнула к камере (а не просто расслабила кулак)
       const meant = t - L.pushAt <= 500;
       if (L.palmFacing === 'camera') {
@@ -971,7 +1092,7 @@ export function createHandGestures(configPatch = {}) {
         if (S.badSince === null) S.badSince = t;
         // кисть видна, но не ладонь к камере — опускаем быстро; кисть просто пропала из трекинга — ждём дольше
         const seenWrong = L.present && L.lastSeen === t;
-        if (busy || t - S.badSince >= (seenWrong ? cfg.shieldDropMs : Math.max(cfg.shieldLostMs, lostGrace()))) { S.on = false; S.badSince = null; S.base = null; S.baseRaw = null; S.back = 0; }
+        if (busy || t - S.badSince >= (seenWrong ? Math.max(cfg.shieldDropMs, cfg.shieldDropFrames * st.frameDt) : Math.max(cfg.shieldLostMs, lostGrace()))) { S.on = false; S.badSince = null; S.base = null; S.baseRaw = null; S.back = 0; S.lvl = null; }
       }
       return;
     }
@@ -982,15 +1103,23 @@ export function createHandGestures(configPatch = {}) {
       // иначе в «Руле» случайный щит держался бы, пока рука ведёт героя (ладонь и так к камере)
       // размер — в ширинах плеч; плеч не видно (ладонь закрыла плечо) — в кадре
       const norm = S.base !== null && L.scaleN !== null;
-      const cur = norm ? L.scaleN : S.baseRaw !== null && fin(L.spanF) ? L.spanF : null;
-      if (cur !== null) {
+      const raw = norm ? L.scaleN : S.baseRaw !== null && fin(L.spanF) ? L.spanF : null;
+      if (raw !== null) {
         const base = norm ? S.base : S.baseRaw;
-        if (norm) S.peak = Math.max(S.peak || 0, cur); else S.peakRaw = Math.max(S.peakRaw || 0, cur);
+        // [ЩИТ НЕ МИГАЕТ] сглаженный размер (по реальному времени) и пик, который медленно спадает к нему
+        const dtR = S.lastT === null ? 0 : Math.max(0, t - S.lastT);
+        if (S.lvl == null || S.lvlNorm !== norm) { S.lvl = raw; S.lvlNorm = norm; }
+        else S.lvl += (raw - S.lvl) * (1 - Math.exp(-dtR / cfg.shieldHoldTauMs));
+        const cur = S.lvl;
+        const decay = 1 - Math.exp(-dtR / cfg.shieldPeakTauMs);
+        if (norm) S.peak = Math.max(cur, (S.peak || cur) + (cur - (S.peak || cur)) * decay);
+        else S.peakRaw = Math.max(cur, (S.peakRaw || cur) + (cur - (S.peakRaw || cur)) * decay);
         const peak = norm ? S.peak : S.peakRaw;
         const thr = Math.max(base * (1 + cfg.shieldRetract), peak - (peak - base) * cfg.shieldRetractShare);
-        const dt = S.lastT === null ? 0 : Math.min(100, t - S.lastT);
+        // копилка «ладонь убрана» — в реальном времени (кадр на 8 Гц весит 125 мс), но не меньше shieldRetractFrames кадров
+        const dt = Math.min(Math.max(100, 1.5 * st.frameDt), dtR);
         S.back = cur < thr ? S.back + dt : Math.max(0, S.back - dt);
-        if (S.back >= cfg.shieldRetractMs) { S.on = false; S.back = 0; S.base = null; S.baseRaw = null; L.pushAt = -Infinity; }
+        if (S.back >= Math.max(cfg.shieldRetractMs, cfg.shieldRetractFrames * st.frameDt)) { S.on = false; S.back = 0; S.base = null; S.baseRaw = null; S.lvl = null; L.pushAt = -Infinity; }
       }
       S.lastT = t;
       return;
@@ -1016,7 +1145,7 @@ export function createHandGestures(configPatch = {}) {
     if (fresh && (justRaised || mag >= cfg.shieldStickStart || !stillForward)) L.pushAt = -Infinity;
     const pushed = fresh && mag < cfg.shieldStickStart && confirmed && !justRaised && stillForward;
     if (pushed || (cfg.shieldHoldMs > 0 && still && t - S.openSince >= cfg.shieldHoldMs)) {
-      S.on = true; S.back = 0; S.lastT = t;
+      S.on = true; S.back = 0; S.lastT = t; S.lvl = null;
       S.base = pushed ? L.pushBase : null; S.peak = L.scaleN;
       S.baseRaw = pushed && fin(L.pushBaseRaw) ? L.pushBaseRaw : null; S.peakRaw = fin(L.spanF) ? L.spanF : null;
     }
@@ -1037,6 +1166,7 @@ export function createHandGestures(configPatch = {}) {
 
   // ───────── [ТВИСТ «ОШИБКА»] подсказки ─────────
   function hint(code, t, data, cooldownMs) {
+    if (profile === 'novice' && NOVICE_MUTED_HINTS.test(code)) return;   // [НОВИЧОК] о выключенных жестах молчим
     const C = st.coach;
     if (t < C.gapUntil || t < (C.until[code] ?? -Infinity)) return;
     C.until[code] = t + (fin(cooldownMs) ? cooldownMs : cfg.hintCooldownMs);
@@ -1065,7 +1195,8 @@ export function createHandGestures(configPatch = {}) {
       const e = cfg.hintEdge;
       const edge = seen && H.landmarks.some((p) => p.x < e || p.x > 1 - e || p.y < e || p.y > 1 - e);
       if (sustained(`edge_${H.side}`, edge, t, cfg.hintEdgeMs)) hint('hand_edge', t, { side: H.side });
-      if (sustained(`far_${H.side}`, seen && H.scale > 0 && H.scale < cfg.hintFarScale, t, cfg.hintFarMs)) hint('hand_far', t, { side: H.side });
+      const farLim = cfg.hintFarScale * (st.standing ? cfg.hintFarStandK : 1);
+      if (sustained(`far_${H.side}`, seen && H.scale > 0 && H.scale < farLim, t, cfg.hintFarMs)) hint(st.standing ? 'hand_far_stand' : 'hand_far', t, { side: H.side });
     }
     const busy = C.on || !!C.pending || !!st.stroke;
     // «OK» правой: кольцо почти замкнуто при выпрямленных остальных — или замкнуто, но остальные согнуты
@@ -1128,7 +1259,7 @@ export function createHandGestures(configPatch = {}) {
       const last = s.pts[s.pts.length - 1];
       const d = Math.hypot(p.x - last.x, p.y - last.y);
       const dtS = Math.max(1e-3, (t - last.t) / 1000);
-      if (d > 0.004) {
+      if (d > 0.004 * st.unitK) {
         s.pts.push(p); s.len += d;
         if (s.pts.length > 256) s.pts.splice(1, 1);
       }
@@ -1138,15 +1269,15 @@ export function createHandGestures(configPatch = {}) {
       for (let i = s.pts.length - 1; i >= 0; i--) {
         const q = s.pts[i];
         if (t - q.t > cfg.runeStillWindowMs) break;
-        if (Math.hypot(p.x - q.x, p.y - q.y) > cfg.runeStillDist) { moved = true; break; }
+        if (Math.hypot(p.x - q.x, p.y - q.y) > cfg.runeStillDist * st.unitK) { moved = true; break; }
       }
-      if (d > 0.004 && d / dtS > cfg.runeStillSpeed * 4) moved = true;   // быстрый рывок кончика — тоже движение
+      if (d > 0.004 * st.unitK && d / dtS > cfg.runeStillSpeed * 4 * st.unitK) moved = true;   // быстрый рывок кончика — тоже движение
       if (moved) s.lastMove = t;
       st.trail = s.pts.slice(-96).map((q) => ({ x: q.x / st.aspect, y: q.y }));
       st.trailUntil = t + cfg.trailKeepMs;
-      const bbox = strokeSize(s.pts);
+      const bbox = strokeSize(s.pts) / st.unitK;   // [СТОЯ] в «сидячих» долях кадра
       // [ОШИБКА] мелкий, но явно нарисованный штрих тоже завершается на остановке — чтобы подсказать «крупнее»
-      const smallDone = bbox >= cfg.runeMinSize * 0.45 && s.len >= cfg.runeMinSize && t - s.t0 >= 600;
+      const smallDone = bbox >= cfg.runeMinSize * 0.45 && s.len / st.unitK >= cfg.runeMinSize && t - s.t0 >= 600;
       if (s.len > 0 && (bbox >= cfg.runeMinSize || smallDone) && t - s.lastMove >= cfg.runeEndStillMs) finishStroke(t, 'still');
       else if (t - s.t0 > cfg.runeMaxStrokeMs) finishStroke(t, 'too-long');
     } else {
@@ -1166,11 +1297,11 @@ export function createHandGestures(configPatch = {}) {
     st.stroke = null;
     if (!s) return;
     const dur = t - s.t0;
-    const size = strokeSize(s.pts);
+    const size = strokeSize(s.pts) / st.unitK;   // [СТОЯ] в «сидячих» долях кадра
     if (dur < cfg.runeMinStrokeMs || size < cfg.runeMinSize || s.pts.length < 10) {
       st.lastRecognition = { rune: null, reason: 'too-small', why, size };
       // [ОШИБКА] штрих явно начат (не просто мелькнул указательный): мелко или слишком быстро
-      if (size >= cfg.runeMinSize * 0.45 && size < cfg.runeMinSize && dur >= 350 && s.len > cfg.runeMinSize * 0.8) hint('rune_small', t, { side: 'right' });
+      if (size >= cfg.runeMinSize * 0.45 && size < cfg.runeMinSize && dur >= 350 && s.len / st.unitK > cfg.runeMinSize * 0.8) hint('rune_small', t, { side: 'right' });
       else if (size >= cfg.runeMinSize && dur < cfg.runeMinStrokeMs) hint('rune_fast', t, { side: 'right' });
       return;
     }
@@ -1206,13 +1337,18 @@ export function createHandGestures(configPatch = {}) {
 
   function updateSwipe(t) {
     const R = st.hands.right;
-    if (!R.present || !ready(R, t) || st.stroke || st.conj.on || st.conj.pending || R.rawShape !== 'open' || R.rel.length < 3) { if (!R.present) st.swipe.armed = true; return; }
+    // [НИЗКАЯ ЧАСТОТА] окно взмаха — не короче ~1,2 интервала кадров; на 6–10 Гц хватает двух кадров истории
+    const lowRate = st.frameDt >= 55;
+    const win = Math.max(cfg.swipeWindowMs, 1.2 * st.frameDt);
+    if (!R.present || !ready(R, t) || st.stroke || st.conj.on || st.conj.pending || R.rawShape !== 'open' || R.rel.length < (lowRate ? 2 : 3)) { if (!R.present) st.swipe.armed = true; return; }
     const last = R.rel[R.rel.length - 1];
+    if (last.t !== t) return;   // кисть в этом кадре не видна — взмах по старым точкам не судим
     let first = R.rel[0];
-    for (const e of R.rel) { if (last.t - e.t <= cfg.swipeWindowMs) { first = e; break; } }
+    for (const e of R.rel) { if (last.t - e.t <= win) { first = e; break; } }
     const span = (last.t - first.t) / 1000;
     if (span < 0.05) return;
-    const travel = last.x - first.x;
+    // [СТОЯ] скорость и длина — в «сидячих» долях кадра (делим на масштаб плеч)
+    const travel = (last.x - first.x) / st.unitK;
     const speed = travel / span;
     if (!st.swipe.armed) {
       if (Math.abs(speed) < cfg.swipeRearmSpeed && t >= st.swipe.until) st.swipe.armed = true;
@@ -1262,7 +1398,7 @@ export function createHandGestures(configPatch = {}) {
     const gap = gapPx / S;
     const info = { gap: Math.round(gap * 100) / 100 };
     // ПРИЗМА: кончики больших вместе, кончики указательных вместе, между ними окно
-    {
+    if (enabled.has('prism')) {   // [НОВИЧОК] в «Новичке» призмы нет — только сфера
       const on = cur === 'prism';
       const thumbs = d2(L.pts[4], R.pts[4]) / S, index = d2(L.pts[8], R.pts[8]) / S;
       const win = d2(mid(L.pts[8], R.pts[8]), mid(L.pts[4], R.pts[4])) / S;
@@ -1559,7 +1695,7 @@ export function createHandGestures(configPatch = {}) {
     const fb = olderThan(cfg.flingWindowMs) || h[0];
     const span = (now.t - fb.t) / 1000;
     if (span >= 0.05) {
-      const dx = now.rel.x - fb.rel.x, dy = now.rel.y - fb.rel.y;
+      const dx = (now.rel.x - fb.rel.x) / st.unitK, dy = (now.rel.y - fb.rel.y) / st.unitK;   // [СТОЯ] в «сидячих» долях кадра
       const travel = Math.hypot(dx, dy);
       const speed = travel / span;
       if (travel >= cfg.flingMinTravel && speed >= cfg.flingSpeed && dy / Math.max(1e-6, travel) < cfg.flingDownCos) {
@@ -1574,12 +1710,15 @@ export function createHandGestures(configPatch = {}) {
       if (!isObj(obs) || !fin(obs.tMs)) { st.counters.badObs++; return; }
       const t = obs.tMs;
       if (st.lastObsT !== null && t <= st.lastObsT) return; // старые/повторные метки не обрабатываются
-      if (st.lastObsT !== null) st.frameDt += (clamp(t - st.lastObsT, 15, 120) - st.frameDt) * 0.1; // [V6] интервал кадров камеры
+      if (st.lastObsT !== null) st.frameDt += (clamp(t - st.lastObsT, 15, 200) - st.frameDt) * 0.1; // [V6] интервал кадров камеры ([НИЗКАЯ ЧАСТОТА] до 5 Гц)
       st.lastObsT = t;
       st.counters.obs++;
       st.mirror = obs.mirror !== false;
       if (fin(obs.frameW) && fin(obs.frameH) && obs.frameH > 0) st.aspect = obs.frameW / obs.frameH;
       st.obsSw = fin(obs.shoulderWidth) && obs.shoulderWidth > 0 ? obs.shoulderWidth : null;
+      // [СТОЯ] поза «стоит» (modules/vision.js: бёдра видны, колени ниже бёдер) и масштаб порогов в долях кадра
+      st.standing = obs.standing === true;
+      if (st.obsSw) st.unitK = clamp(st.obsSw / cfg.swRef, cfg.unitKMin, 1);
       const list = [];
       for (const h of Array.isArray(obs.hands) ? obs.hands.slice(0, 2) : []) {
         if (!isObj(h)) continue;
@@ -1595,12 +1734,13 @@ export function createHandGestures(configPatch = {}) {
       updateCharge(st.hands.left, t);
       updateCharge(st.hands.right, t);
       tryBurst(t);
-      updateStroke(t);
-      updateSwipe(t);
+      // [НОВИЧОК] выключенные детекторы не считаются вовсе (и не держат «занятость» рук)
+      if (on('rune')) updateStroke(t); else if (st.stroke) { st.stroke = null; st.tipF = null; }
+      if (on('slash')) updateSwipe(t);
       updateConjure(t, obs);
-      updateSigils(t);
-      updateTwin(t);
-      updateSpark(t);
+      if (on('sigil')) updateSigils(t); else { st.sig.hist.length = 0; st.sig.togetherSince = null; st.sig.frameSince = null; }
+      if (on('twin')) updateTwin(t); else st.twin = null;
+      if (on('spark')) updateSpark(t);
       // левая рука — джойстик: центр ладони в кадре (с аспектом) относительно середины плеч
       const L = st.hands.left;
       const seen = L.present && L.lastSeen === t && L.pts && L.scale;
@@ -1615,7 +1755,7 @@ export function createHandGestures(configPatch = {}) {
       const dsh = mover().takeDash();
       if (dsh) firePulse('dashDir', t, { x: dsh.x, z: dsh.z, speed: dsh.speed });
       updateShield(t);
-      checkSlowSwipe(t);
+      if (on('slash')) checkSlowSwipe(t);
       updateCoach(t, obs);
     } catch (e) {
       st.counters.badObs++;
@@ -1705,6 +1845,13 @@ export function createHandGestures(configPatch = {}) {
       moveMode = patch.moveMode;
       mover().reset();   // новая схема начинает с чистого листа (без старой хватки/подъёма)
     }
+    if (patch && (patch.profile === 'novice' || patch.profile === 'master') && patch.profile !== profile) {
+      profile = patch.profile;
+      enabled = new Set(GESTURE_PROFILES[profile]);
+      // начатые выключенными детекторами жесты гаснут молча
+      st.stroke = null; st.tipF = null; st.trail = []; st.twin = null;
+      if (!on('prism') && (st.conj.kind === 'prism' || (st.conj.pending && st.conj.pending.kind === 'prism'))) Object.assign(st.conj, { on: false, kind: null, pending: null, size: 0, charge: 0 });
+    }
   }
 
   function getDebug() {
@@ -1716,6 +1863,7 @@ export function createHandGestures(configPatch = {}) {
       thumbSpread: H.feat ? Math.round(H.feat.thumbSpread * 100) / 100 : null,
       pinch: H.feat ? Math.round(H.feat.pinch * 100) / 100 : null,
       charge: Math.round(H.charge * 100) / 100,
+      jit: H.jit != null ? Math.round(H.jit * 1000) / 1000 : null,
       push: H.pushDbg ? { span: Math.round(H.pushDbg.span * 100) / 100, fast: Math.round(H.pushDbg.fast * 100) / 100, scale: Math.round(H.pushDbg.scale * 100) / 100, shift: Math.round(H.pushDbg.shift * 100) / 100, turned: Math.round(H.pushDbg.turned * 100) / 100 } : null,
     });
     return {
@@ -1723,7 +1871,7 @@ export function createHandGestures(configPatch = {}) {
       left: h(st.hands.left), right: h(st.hands.right),
       stroke: st.stroke ? { points: st.stroke.pts.length, ms: st.lastObsT - st.stroke.t0 } : null,
       lastRecognition: st.lastRecognition,
-      moveMode,
+      moveMode, profile, standing: st.standing, unitK: Math.round(st.unitK * 100) / 100,
       stick: mover().getDebug(),
       conjure: { on: st.conj.on, kind: st.conj.kind, pending: st.conj.pending ? st.conj.pending.kind : null, size: Math.round(st.conj.size * 100) / 100, charge: Math.round(st.conj.charge * 100) / 100, eval: st.conj.lastEval },
       counters: { ...st.counters },

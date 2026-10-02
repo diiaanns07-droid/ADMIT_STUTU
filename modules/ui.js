@@ -353,6 +353,34 @@ TUTORIAL.push({
   svg: svgWrap(palmFlameFigure()),
 });
 
+/* [НОВИЧОК] В «Новичке» карточки обучения — только про базовые жесты; лук и магия рукой скрыты.
+   Поле novice — тексты для «Новичка», novice.auto — для «Новичка» с «Автоходом» (герой идёт сам). */
+{
+  const T = Object.fromEntries(TUTORIAL.map((it) => [it.key, it]));
+  T.strafe.novice = { auto: {
+    title: 'Герой идёт сам',
+    gesture: '«Автоход» ведёт героя к Регенту и вокруг него. Вам — только сражаться.',
+    effect: 'Левая рука свободна для щита и рывка. Вести героя рукой — выключите «Автоход» в меню.',
+  } };
+  T.hands.novice = {
+    title: 'Огонь и щит',
+    gesture: 'Правая: «OK» — кольцо из большого и указательного — снаряды. Левая: толкните раскрытую ладонь к камере — щит.',
+    effect: 'Щит держится, пока ладонь впереди. Уберите ладонь назад — щит опущен.',
+  };
+  T.both.novice = {
+    title: 'Кулак — выброс',
+    gesture: 'Сожмите правый кулак, подержите секунду и резко раскройте.',
+    effect: 'Взрыв энергии по Регенту. Чем дольше держали кулак, тем сильнее.',
+  };
+  T.conjure.novice = {
+    title: 'Сфера двумя руками',
+    gesture: 'Ладони друг к другу, будто держите мяч. Потом толкните обе ладони к камере.',
+    effect: 'Сфера летит в Регента. Чем дольше лепили, тем сильнее.',
+  };
+  T.bow.masterOnly = true;
+  T.handMagic.masterOnly = true;
+}
+
 /* Карта видимых точек для калибровки (вид со спины, как в пиктограммах). */
 const BODY_MAP_SVG =
   '<svg class="ao-bodymap__svg" viewBox="0 0 100 84" fill="none" stroke-linecap="round" stroke-linejoin="round" ' +
@@ -380,6 +408,8 @@ function normSettings(s) {
     sensitivity: isNum(o.sensitivity) ? clamp(o.sensitivity, 0.5, 2) : DEFAULT_SETTINGS.sensitivity,
     moveMode: o.moveMode === 'stick' ? 'stick' : 'steer', // [V5] по умолчанию «Руль»
     startZone: o.startZone === 'forest' ? 'forest' : 'arena', // [FOREST] место старта
+    gestureMode: o.gestureMode === 'master' ? 'master' : 'novice', // [НОВИЧОК] набор жестов
+    autoWalk: o.autoWalk !== false,                                 // [НОВИЧОК] автоход
     hero: HERO_OPTIONS.some(([v]) => v === o.hero) ? o.hero : DEFAULT_SETTINGS.hero,
   };
 }
@@ -1036,6 +1066,45 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     return fs;
   }
 
+  // [НОВИЧОК] «Жесты»: Новичок (только базовые) / Мастер (все) + «Автоход» — на виду, рядом с «Начать»
+  const GESTURE_OPTIONS = [['novice', 'Новичок'], ['master', 'Мастер']];
+  function buildGestureMode(prefix) {
+    const name = `${uid}-${prefix}-gesturemode`;
+    const seg = el('div', { class: 'ao-seg' });
+    const hintId = `${name}-hint`;
+    const hint = el('div', { class: 'ao-field__hint', id: hintId });
+    const TIPS = {
+      novice: 'Только базовые жесты: щит, рывок, «OK», кулак → выброс, сфера',
+      master: 'Все жесты: ещё руны, «Искра», рассечение, парирование, печати, лук, магия рукой',
+    };
+    const autoId = `${name}-auto`;
+    const auto = el('input', { type: 'checkbox', id: autoId, class: 'ao-check__input' });
+    const autoLabel = el('label', { class: 'ao-check', for: autoId, title: 'Герой сам идёт к Регенту и обходит его по кругу — вы только сражаетесь, левая рука свободна для щита и рывка' }, auto, el('span', { text: 'Автоход' }));
+    const fs = el('fieldset', { class: 'ao-field ao-fieldset', 'aria-describedby': hintId },
+      el('legend', { class: 'ao-field__legend', text: 'Жесты' }),
+      el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center' }, seg, autoLabel), hint);
+    const inputs = [];
+    for (const [value, label] of GESTURE_OPTIONS) {
+      const input = el('input', { type: 'radio', name, value, class: 'ao-seg__input' });
+      inputs.push(input);
+      seg.append(el('label', { class: 'ao-seg__opt', title: TIPS[value] }, input, el('span', { class: 'ao-seg__label', text: label })));
+      listen(input, 'change', () => { if (input.checked) invoke('onSettings', { gestureMode: value }); });
+    }
+    listen(auto, 'change', () => invoke('onSettings', { autoWalk: auto.checked }));
+    const ctl = {
+      sync(settings, force) {
+        const m = settings.gestureMode === 'master' ? 'master' : 'novice';
+        setText(hint, `${TIPS[m]}${settings.autoWalk !== false ? '. Автоход ведёт героя к Регенту и вокруг него.' : '.'}`);
+        if (!force && fs.contains(doc.activeElement)) return;
+        for (const i of inputs) { const on = i.value === m; if (i.checked !== on) i.checked = on; }
+        if (auto.checked !== (settings.autoWalk !== false)) auto.checked = settings.autoWalk !== false;
+      },
+    };
+    listen(fs, 'focusout', (e) => { if (!fs.contains(e.relatedTarget) && state.settings) ctl.sync(state.settings, true); });
+    controls.push(ctl);
+    return fs;
+  }
+
   // [FOREST] «Место старта»: Пепельное плато (у арены) / Сияющий лес (у врат леса)
   const ZONE_OPTIONS = [['arena', 'Пепельное плато'], ['forest', 'Сияющий лес']];
   function buildStartZone(prefix) {
@@ -1067,6 +1136,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     for (const key of keys) {
       if (key === 'quality') wrap.append(buildQuality(prefix));
       else if (key === 'moveMode') wrap.append(buildMoveMode(prefix));
+      else if (key === 'gestureMode') wrap.append(buildGestureMode(prefix));   // [НОВИЧОК]
       else if (key === 'startZone') { // [FOREST] в одном ряду с «Управлением движением» (меню 1366×650 не растёт)
         const zs = buildStartZone(prefix), prev = wrap.lastElementChild;
         if (prev && keys[keys.indexOf(key) - 1] === 'moveMode') { const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 16px;align-items:flex-end' }); wrap.replaceChild(row, prev); row.append(prev, zs); }
@@ -1135,7 +1205,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       title,
       el('p', { class: 'ao-subtitle', text: 'Бой с Регентом Нимба' }),
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
-      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts, netBtn.node /* [NET] */), el('p', { class: 'ao-note', text: 'Играется сидя. Нужны веб-камера, Chrome или Edge и устойчивый стул.' })),
+      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts, netBtn.node /* [NET] */), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode'], 'menu')), // [НОВИЧОК] режим жестов — на виду
       buildHeroPick('menu'),
       el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'reducedMotion'], 'menu')),
       el('div', { class: 'ao-menu__foot' }, dbg, dbgKeys),
@@ -1466,6 +1536,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const host = el('div', { class: 'ao-slothost' });
     const status = statusLine();
     const ready = el('p', { class: 'ao-msg' });
+    // [НОВИЧОК] подзаголовок — под режим жестов и автоход
+    const LEADS = {
+      master: 'Левая рука ведёт героя, обе руки колдуют — всё сидя и без большой амплитуды.',
+      novice: 'Левая рука ведёт героя, руки сражаются — пять базовых жестов, сидя или стоя.',
+      auto: 'Герой идёт сам — вы только сражаетесь: щит, рывок, снаряды, выброс и сфера.',
+    };
+    const lead = el('p', { class: 'ao-lead', text: LEADS.master });
     // [ТВИСТ «ОШИБКА»] почти-правильный жест на обучении: что не так и как исправить
     const coachHead = el('span', { class: 'ao-tut-coach__head' });
     const coachText = el('span', { class: 'ao-tut-coach__text' });
@@ -1476,7 +1553,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const panel = el(
       'div',
       { class: 'ao-panel ao-panel--tutorial ao-frame' },
-      el('div', { class: 'ao-head' }, h, el('p', { class: 'ao-lead', text: 'Левая рука ведёт героя, обе руки колдуют — всё сидя и без большой амплитуды.' })),
+      el('div', { class: 'ao-head' }, h, lead),
       grid,
       el(
         'div',
@@ -1522,14 +1599,21 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         else text = 'Камера ещё не готова.';
         setText(ready, text);
         // [V5] тексты карточки движения — под выбранную схему («Руль» / «Джойстик»)
+        // [НОВИЧОК] и под режим жестов: в «Новичке» — тексты базовых жестов, лук и магия рукой скрыты
         const moveMode = ctx.settings && ctx.settings.moveMode === 'stick' ? 'stick' : 'steer';
+        const novice = !(ctx.settings && ctx.settings.gestureMode === 'master');
+        const autoWalk = !(ctx.settings && ctx.settings.autoWalk === false);
+        const mkey = `${moveMode}|${novice}|${autoWalk}`;
         for (const c of Object.values(cards)) {
-          if (!c.item.stick || c.mode === moveMode) continue;
-          c.mode = moveMode;
-          const v = moveMode === 'stick' ? { ...c.item, ...c.item.stick } : c.item;
+          if (c.mode === mkey) continue;
+          c.mode = mkey;
+          setHidden(c.card, novice && !!c.item.masterOnly);
+          let v = moveMode === 'stick' && c.item.stick ? { ...c.item, ...c.item.stick } : c.item;
+          if (novice && c.item.novice) v = { ...v, ...c.item.novice, ...(autoWalk && c.item.novice.auto ? c.item.novice.auto : {}) };
           setText(c.titleEl, v.title); setText(c.gestEl, v.gesture); setText(c.effEl, v.effect);
           c.figEl.innerHTML = v.svg; // только статические строки этого модуля
         }
+        setText(lead, !novice ? LEADS.master : autoWalk ? LEADS.auto : LEADS.novice);
 
         const inp = ctx.input;
         const liveCv = !!inp && inp.source === 'cv' && !ctx.debug;
@@ -1643,7 +1727,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         'div',
         { class: 'ao-cols' },
         el('div', { class: 'ao-col ao-col--media' }, host, status.node, hint),
-        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
+        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['gestureMode', 'moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
       ),
       dbgKeys,
       el('div', { class: 'ao-actions' }, resume.node, recal.node, restart.node, oathP.node, el('span', { class: 'ao-spacer' }), exit.node),
@@ -2248,7 +2332,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   function syncSettings(s) {
-    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}`; // [FOREST] + startZone
+    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}|${s.gestureMode}|${s.autoWalk}`; // [FOREST] + startZone, [НОВИЧОК] + жесты
     state.settings = s;
     if (key === state.settingsKey) return;
     state.settingsKey = key;

@@ -96,6 +96,18 @@ export const DEFAULT_STICK_CONFIG = Object.freeze({
   glitchJumpS: 0.8,
   glitchSpeedS: 24,
   glitchMaxGapMs: 250,
+  // [НИЗКАЯ ЧАСТОТА] На слабом ноутбуке распознавание идёт 6–10 раз в секунду (кадр 100–170 мс): дёрг
+  // целиком укладывается в 1–2 кадра. Окна и скорости «щелчка» (B) считаются по реальному интервалу кадров.
+  // Уровень A (дёрг без возврата) на редких кадрах не отличить от резкого руления — его пороги прежние
+  // (окно 120 мс), поэтому на 6–10 Гц рывок — это «дёрнуть и вернуть», как и учит обучение.
+  lowRateDtMs: 55,         // кадр длиннее — «низкая частота» (меньше ≈18 Гц)
+  windowFrames: 1.2,       // окно выхода «щелчка» не короче стольких интервалов кадров…
+  flickWindowFrames: 2.2,  //   …а на низкой частоте — до стольких (кадр разгона + кадр снаружи)
+  lowRateSpeedK: 0.85,     // скорость выхода «щелчка» на низкой частоте × столько (скорость между редкими кадрами занижена)
+  // «Щелчок», где рука снаружи всего один кадр, засчитывается на низкой частоте, если запястье ПОЗЫ
+  // (отдельная модель, сбой модели кисти его не двигает) ушло туда же хотя бы на эту долю хода кисти
+  wristConfirm: 0.5,
+  preSteadyShare: 0.35,    // на низкой частоте кадр до дёрга уже захватывает его начало: «спокойно» — медленнее этой доли скорости дёрга
 });
 
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -114,7 +126,7 @@ export function createLeftStick(configPatch = {}, hooks = {}) {
   let s;
   function reset() {
     s = {
-      lastT: null, procT: null, gateRef: null, suspect: null, lastSeen: null, mirror: true,
+      lastT: null, procT: null, gateRef: null, suspect: null, lastSeen: null, mirror: true, frameDt: 33,
       filt: null, filtV: 0,            // отфильтрованная позиция (отн. плеч) и её скорость (S/с)
       S: 0.1, rest: true,
       engaged: false, anchor: null, grabY: null, // центр (отн. плеч); высота точки хватки
@@ -171,6 +183,8 @@ export function createLeftStick(configPatch = {}, hooks = {}) {
     if (!obs || !fin(obs.t)) return;
     const t = obs.t;
     if (s.lastT !== null && t <= s.lastT) return;
+    // [НИЗКАЯ ЧАСТОТА] типичный интервал кадров камеры (EMA; выбросы — клампом)
+    if (s.lastT !== null) s.frameDt += (clamp(t - s.lastT, 15, 200) - s.frameDt) * 0.15;
     s.lastT = t;
     if (!(cfg.glitchGate > 0)) { process(obs); return; }
     const h = obs.hand && fin(obs.hand.x) && fin(obs.hand.y) ? obs.hand : null;
@@ -230,7 +244,9 @@ export function createLeftStick(configPatch = {}, hooks = {}) {
       // кисть пропала. Внизу кадра или на быстром движении вниз — это «опустил руку»: сразу покой.
       const exiting = s.lastHandY !== null && (s.lastHandY > cfg.exitBottomY || s.lastVy > cfg.exitDownSpeed);
       if (s.engaged && exiting && s.lastHandT !== null && t - s.lastHandT < cfg.lostResetMs) {
-        if (s.source !== 'exit') { s.counters.exits++; enterRest(); s.rest = true; }
+        // [НИЗКАЯ ЧАСТОТА] в «Руле» (freeDash) начатый «щелчок» не сбрасывается: на 6–10 Гц после дёрга вверх
+        // кисть часто пропадает на кадр, уже возвращаясь вниз, — это не «опустил руку» (стоп решает руль)
+        if (s.source !== 'exit') { const F = cfg.freeDash > 0 ? s.flick : null; s.counters.exits++; enterRest(); s.rest = true; s.flick = F; }
         s.source = 'exit'; s.handDisp = null;
         return;
       }
@@ -268,7 +284,9 @@ export function createLeftStick(configPatch = {}, hooks = {}) {
       const v = Math.hypot(rel.x - prevRaw.x, rel.y - prevRaw.y) / S / Math.max(1e-3, (t - prevRaw.t) / 1000);
       if (v > cfg.glitchSpeed) { s.hist.length = 0; s.flick = null; s.counters.glitches++; }
     }
-    s.hist.push({ t, x: rel.x, y: rel.y });
+    // запястье позы — в той же системе (отн. плеч): подтверждение дёрга на низкой частоте
+    const wrel = wr && s.source === 'hand' ? { x: wr.x - ref.x, y: wr.y - ref.y } : null;
+    s.hist.push({ t, x: rel.x, y: rel.y, wx: wrel ? wrel.x : null, wy: wrel ? wrel.y : null });
     while (s.hist.length > 48 || (s.hist.length && t - s.hist[0].t > 600)) s.hist.shift();
     // вертикальная скорость кисти в кадре (для «опустил руку»)
     if (s.source === 'hand') {
@@ -394,6 +412,10 @@ export function createLeftStick(configPatch = {}, hooks = {}) {
   function detectDash(t, S, allowed) {
     const n = s.hist.length;
     const instV = (i) => { const a = s.hist[i - 1], c = s.hist[i]; return Math.hypot(c.x - a.x, c.y - a.y) / S / Math.max(1e-3, (c.t - a.t) / 1000); };
+    // [НИЗКАЯ ЧАСТОТА] окно и скорость «щелчка» — по реальному времени между кадрами
+    const low = clamp((s.frameDt - 40) / Math.max(1, cfg.lowRateDtMs - 40), 0, 1);
+    const lowRate = s.frameDt >= cfg.lowRateDtMs;
+    const winB = Math.max(cfg.flickWindowMs, (lowRate ? cfg.flickWindowFrames : cfg.windowFrames) * s.frameDt);
     const vNow = n >= 2 ? instV(n - 1) : 0;
     if (!s.dashArmed) {
       if (vNow < cfg.dashRearmSpeed) {
@@ -406,16 +428,20 @@ export function createLeftStick(configPatch = {}, hooks = {}) {
     const now = s.hist[n - 1];
     // рука перед началом дёрга стояла спокойно: пронос через центр при развороте — не дёрг.
     // Прошлое неизвестно (история только что сброшена сбоем или сменой источника) — тоже не дёрг.
-    const steadyBefore = (i) => {
+    // [НИЗКАЯ ЧАСТОТА] между редкими кадрами кадр «до дёрга» часто уже захватывает его разгон: тогда спокойствие
+    // меряется относительно скорости самого дёрга (v) — пронос руки при развороте идёт с одной скоростью, дёрг разгоняется
+    const steadyBefore = (i, v = 0) => {
       const p = s.hist[i];
       for (let j = i - 1; j >= 0; j--) {
         const q = s.hist[j];
-        if (p.t - q.t >= cfg.dashPreMs) return Math.hypot(p.x - q.x, p.y - q.y) / S / ((p.t - q.t) / 1000) < cfg.dashPreSteady;
+        if (p.t - q.t >= cfg.dashPreMs) return Math.hypot(p.x - q.x, p.y - q.y) / S / ((p.t - q.t) / 1000) < Math.max(cfg.dashPreSteady, lowRate ? cfg.preSteadyShare * v : 0);
       }
       return false;
     };
 
     // уровень B: идёт кандидат «щелчка» — ждём возврата
+    // [НИЗКАЯ ЧАСТОТА] срок кандидата проверяется до возврата: после долгого пропуска кадров «возврат» — уже другое движение
+    if (s.flick && t - s.flick.t0 > cfg.flickReturnMs + (winB - cfg.flickWindowMs) + s.frameDt * low) s.flick = null;
     if (s.flick) {
       const F = s.flick;
       const proj = ((now.x - F.x0) * F.ux + (now.y - F.y0) * F.uy) / S;
@@ -423,8 +449,9 @@ export function createLeftStick(configPatch = {}, hooks = {}) {
       if (proj >= 0.6 * F.d) F.outN++;
       // рука пробыла «снаружи» хотя бы flickMinOutFrames кадров: выброс трекинга (кисть на один кадр
       // прыгнула и вернулась) щелчком не считается
-      if (F.peak - proj >= cfg.flickReturnFrac * F.d && F.peak >= F.d * 0.9 && F.outN >= cfg.flickMinOutFrames) { fireDash(t, F.ux, F.uy, F.v, F.t0, 'B'); return; }
-      if (t - F.t0 > cfg.flickReturnMs) s.flick = null;          // возврата нет — это было ведение
+      // на низкой частоте рука снаружи бывает один кадр: тогда нужен «свидетель» — запястье позы ушло туда же
+      const outOk = F.outN >= cfg.flickMinOutFrames || (lowRate && F.wristOk);
+      if (F.peak - proj >= cfg.flickReturnFrac * F.d && F.peak >= F.d * 0.9 && outOk) { fireDash(t, F.ux, F.uy, F.v, F.t0, 'B'); return; }
     }
 
     // уровень A и начало «щелчка»: ищем хорду от точки возле центра (все точки окна)
@@ -432,23 +459,29 @@ export function createLeftStick(configPatch = {}, hooks = {}) {
     for (let i = n - 2; i >= 0; i--) {
       const p = s.hist[i];
       const span = now.t - p.t;
-      if (span > cfg.flickWindowMs) break;
+      if (span > winB) break;
       if (span < cfg.dashMinSpanMs) continue;
-      if (!steadyBefore(i)) continue;
       const dx = (now.x - p.x) / S, dy = (now.y - p.y) / S;
       const d = Math.hypot(dx, dy);
       if (d < cfg.flickTravel) continue;
       const v = d / (span / 1000);
+      // уровень A — только от спокойной руки (строго); кандидат «щелчка» на низкой частоте — мягче (его подтвердит возврат)
+      const strict = steadyBefore(i);
+      if (!strict && !(lowRate && steadyBefore(i, v))) continue;
       let path = 0, peak = 0;
       for (let j = i + 1; j < n; j++) { path += Math.hypot(s.hist[j].x - s.hist[j - 1].x, s.hist[j].y - s.hist[j - 1].y) / S; peak = Math.max(peak, instV(j)); }
       if (path / d > cfg.dashStraightness) continue;
       const ux = dx / d, uy = dy / d;
-      if (span <= cfg.dashWindowMs && d >= cfg.dashTravel && v >= cfg.dashSpeed && peak >= cfg.dashPeakSpeed && uy < cfg.dashDownMax
+      if (strict && span <= cfg.dashWindowMs && d >= cfg.dashTravel && v >= cfg.dashSpeed && peak >= cfg.dashPeakSpeed && uy < cfg.dashDownMax
         && (!hooks.acceptA || hooks.acceptA({ x: s.mirror ? -ux : ux, z: -uy, t0: p.t, t }) !== false)) {
         fireDash(t, ux, uy, v, p.t, 'A');
         return;
       }
-      if (v >= cfg.flickSpeed && (!cand || d > cand.d)) cand = { t0: p.t, x0: p.x, y0: p.y, ux, uy, d, v, peak: d, outN: 1 };
+      if (v >= cfg.flickSpeed * (1 - (1 - cfg.lowRateSpeedK) * low) && (!cand || d > cand.d)) {
+        // запястье позы за то же время сдвинулось в сторону дёрга (сбой модели кисти его не двигает)
+        const wOk = p.wx !== null && now.wx !== null && ((now.wx - p.wx) * ux + (now.wy - p.wy) * uy) / S >= cfg.wristConfirm * d;
+        cand = { t0: p.t, x0: p.x, y0: p.y, ux, uy, d, v, peak: d, outN: 1, wristOk: wOk };
+      }
     }
     if (cand && !s.flick) s.flick = cand;
   }
