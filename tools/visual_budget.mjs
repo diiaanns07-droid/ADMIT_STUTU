@@ -32,7 +32,10 @@ const ROOT = resolve(A.of('--root', HERE));
 const QS = A.of('--quality', QUALITIES.join(',')).split(',').filter((q) => QUALITIES.includes(q));
 const SIZE = A.of('--size', '480x270').split('x').map(Number);
 const ONLY = (A.of('--only', '') || '').split(',').filter(Boolean);
-const OUT = resolve(A.of('--out', join(HERE, 'docs', 'visual-budget')));
+// Таблица репозитория (docs/visual-budget.*) пишется только полным прогоном этой папки; частичный
+// (--only, --quick, не все уровни, --root) без --out — во временную папку, чтобы не затереть базу
+const PARTIAL = !!(A.of('--only', '') || A.has('--quick') || A.has('--quality') || A.has('--root'));
+const OUT = resolve(A.of('--out', PARTIAL ? join(tmpdir(), `visual-budget-${process.pid}`) : join(HERE, 'docs', 'visual-budget')));
 const PART = A.of('--part', '');           // внутреннее: дочерний процесс пишет JSON уровня сюда
 const JOBS = Math.max(1, +A.of('--jobs', '1'));
 const SEED = +A.of('--seed', '20261002');
@@ -287,7 +290,10 @@ async function runLevels(levels) {
   const browser = await launchBrowser(chromium, chromiumPath(A.of('--browser')));
   const out = {};
   try {
-    for (const q of levels) out[q] = await measureQuality(browser, server, q);
+    // уровень, упавший с ошибкой, не обрывает остальные: в таблице — замечание, --check и тест его увидят
+    for (const q of levels) {
+      try { out[q] = await measureQuality(browser, server, q); } catch (e) { log(`${q}: ошибка ${e && e.message}`); out[q] = { __notes: [`уровень ${q}: ошибка прогона: ${String(e && e.message).slice(0, 200)}`] }; }
+    }
   } finally {
     await browser.close().catch(() => {});
     server.kill();
