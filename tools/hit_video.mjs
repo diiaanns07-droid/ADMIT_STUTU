@@ -5,9 +5,10 @@
 // Как tools/kino_video.mjs: программный рендер в облаке даёт < 1 кадра/с, поэтому часы страницы (performance.now
 // и requestAnimationFrame) подменяются, игра шагает ровно на 1/fps с, каждый кадр снимается скриншотом и
 // склеивается ffmpeg. «Отладка с клавиатуры» → бой без камеры → W до арены; дальше сценарий клавишами:
-// J — очередь болтов (слабые), K — щит, пока энергии много (блок или удар сквозь щит), I — рассечение,
-// 1 — огненное копьё, L — выброс (сильные), в конце — добивающий удар (HP Регента на «Лёгкой» подменяется
-// в ответе config.js). Math.random страницы — с зерном: «до» и «после» идут одинаково.
+// J — очередь болтов (слабые), 1 — огненное копьё, K — щит (блок или удар сквозь щит), W + I — подойти и рассечь,
+// L — выброс (сильные), в конце — добивающий удар. Для темпа ролика HP Регента на «Лёгкой» (config.js) и
+// восстановление энергии (combat.js) подменяются в ответе сервера; Math.random страницы — с зерном: «до» и
+// «после» идут одинаково. По умолчанию HUD скрыт (виден только бой и эффекты), --hud — оставить.
 // --root — папка игры (по умолчанию эта): тем же скриптом снимается чистый main (git worktree add … origin/main).
 
 import { spawn, execSync, execFileSync } from 'node:child_process';
@@ -32,6 +33,7 @@ const OUT = resolve(argOf('--out', join(HERE, `docs/video/hits_${LABEL}.mp4`)));
 const SHOTS = resolve(argOf('--shots', join(HERE, 'docs/screenshots/hits')));
 const NO_VIDEO = has('--no-video') || BUDGET;
 const BOSS_HP = argOf('--boss-hp', '0.34');
+const KEEP_HUD = has('--hud');   // по умолчанию кадр чистый: HUD и подсказки скрыты, видны только эффекты
 const FRAMES = join(argOf('--tmp', tmpdir()), `hit_frames_${process.pid}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -109,6 +111,12 @@ async function run(quality) {
       .replace(/easy:\s*\{\s*bossHp:\s*0\.7/, 'easy: { bossHp: ' + BOSS_HP);
     return route.fulfill({ response: r, body, headers: { ...r.headers(), 'content-type': 'text/javascript' } });
   });
+  // энергия восстанавливается быстрее (20 → 45 ед./с): сценарий укладывается в 15 с без «нет энергии»
+  await ctx.route(/\/modules\/combat\.js(\?.*)?$/, async (route) => {
+    const r = await route.fetch();
+    const body = (await r.text()).replace(/energyRegen:\s*20,/, 'energyRegen: 45,');
+    return route.fulfill({ response: r, body, headers: { ...r.headers(), 'content-type': 'text/javascript' } });
+  });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e && e.message)));
@@ -129,6 +137,7 @@ async function run(quality) {
   await page.waitForFunction(() => window.__ASHEN__.snapshot().player.encounter === 'engaged', null, { timeout: 240000 }).catch(() => {});
   await page.keyboard.up('KeyW');
   await page.keyboard.press('Tab');   // список жестов слева скрыт — в кадре сцена
+  if (!KEEP_HUD) await page.addStyleTag({ content: '#ao-hud-canvas, #ao-ui-root, #ao-media-holder { visibility: hidden !important; }' });
   await page.evaluate(() => {
     window.__hitSeed(20261002); window.__hitVirtual(true);
     // счётчик событий слоя эффектов (блок, пролом, попадания) — для сценария и отчёта
@@ -168,27 +177,30 @@ async function run(quality) {
   await page.keyboard.down('KeyJ');
   for (let i = 0; i < Math.round(1.2 * FPS); i++) { await step(); if (i === Math.round(0.9 * FPS)) await shot('1_bolts'); }
   await page.keyboard.up('KeyJ');
-  // 2. щит, пока энергии много: держим K, пока Регент не ударит (блок или удар сквозь щит), не дольше 4 с
+  // 2. огненное копьё — сильный удар
+  await page.keyboard.press('Digit1');
+  for (let i = 0; i < Math.round(1.4 * FPS); i++) { await step(); if (i === 16) await shot('2_rune'); }
+  // 3. щит: держим K, пока Регент не ударит (блок или удар сквозь щит), не дольше 4 с
   await page.keyboard.down('KeyK');
   let blockShot = false;
   const hit0 = (await evCount('block')) + (await evCount('player_hit'));
   for (let i = 0; i < Math.round(4 * FPS); i++) {
     await step();
     if (i % 2 === 0 && !blockShot && (await evCount('block')) + (await evCount('player_hit')) > hit0) {
-      blockShot = true; await step(); await shot('2_block');
+      blockShot = true; await step(); await shot('3_block');
       for (let j = 0; j < 8; j++) await step();
-      await shot('2_block_after');
+      await shot('3_block_after');
       break;
     }
   }
   await page.keyboard.up('KeyK');
-  await steps(0.4);
-  // 3. рассечение
+  await steps(0.2);
+  // 4. подойти на дальность рассечения (4,5 м; бег 5,5 м/с) и рассечь
+  await page.keyboard.down('KeyW');
+  for (let i = 0; i < Math.round(1.1 * FPS); i++) await step();
+  await page.keyboard.up('KeyW');
   await page.keyboard.press('KeyI');
-  for (let i = 0; i < Math.round(0.9 * FPS); i++) { await step(); if (i === 7) await shot('3_slash'); }
-  // 4. огненное копьё — сильный удар
-  await page.keyboard.press('Digit1');
-  for (let i = 0; i < Math.round(1.4 * FPS); i++) { await step(); if (i === 16) await shot('4_rune'); }
+  for (let i = 0; i < Math.round(0.9 * FPS); i++) { await step(); if (i === 7) await shot('4_slash'); }
   await steps(0.5);   // энергия на выброс
   // 5. выброс обеими руками — сильный удар, волна по земле
   await page.keyboard.press('KeyL');

@@ -341,8 +341,10 @@ export function register(fx) {
     emitB(emShard);
     emShardDust.at = p; emShardDust.ramp = ramp; emShardDust.rival = remote; emShardDust.count = 8 + 10 * k; emitB(emShardDust);
     if (!soft) {
-      kit.flash(p, { color: P.core, size: [0.3, 1.6 + 0.6 * k], dur: 0.14, intensity: 4.4, sprite: 'star', pull: 0.25, rival: remote });
-      kit.flash(p, { color: P.hot, size: [0.3, 2.4], dur: 0.3, intensity: 1.8, sprite: 'ring', pull: 0.2, rival: remote, curve: 0.5 });
+      // слэм сквозь щит и так вспыхивает (удар Регента + ранение) — вспышка пролома скромнее, главное — пластины
+      const pk = why === 'pierce' ? 0.7 : 1;
+      kit.flash(p, { color: P.core, size: [0.25, (1.2 + 0.5 * k) * pk], dur: 0.12, intensity: 3.4 * pk, sprite: 'star', pull: 0.25, rival: remote });
+      kit.flash(p, { color: P.hot, size: [0.3, 2.2], dur: 0.3, intensity: 1.5, sprite: 'ring', pull: 0.2, rival: remote, curve: 0.5 });
       kit.light(p, { color: P.hot, intensity: 0.9, range: 7, dur: 0.35, attack: 0.03 });
       emitB({ at: p, dir: S.f, cone: 1.3, count: 18 + 16 * k, speed: [3, 8], life: [0.2, 0.5], size: [0.06, 0.012], ramp, intensity: 3.2, sprite: 'spark', stretch: 0.035, gravity: 5, drag: 1.8, rival: remote, essential: true });
       distort(p, 0.5);
