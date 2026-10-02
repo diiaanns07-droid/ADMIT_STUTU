@@ -259,66 +259,74 @@ function strokeOf(rune) {
 }
 const _ae = { at: null, count: 1, speed: [0.2, 1.2], life: [0.18, 0.34], size: [0.07, 0.015], ramp: 'gold', intensity: 3, sprite: 'spark', drag: 2.5, rival: false, essential: false, dir: null, cone: Math.PI, stretch: 0 };
 const _ap = { x: 0, y: 0, z: 0 };
+const _gs = { to: null, travelAt: 0, travelDur: 0.14, shrink: 0.3 };
 
 /**
  * Руна в воздухе: символ крупно вспыхивает перед героем (знак glyph «bare» без колец, лицом к камере, белое ядро
- * линий + цвет стихии, вспышка и искры по штрихам), держится hold с и «становится» заклинанием:
- *   mode 'through' — летит к цели вслед за снарядом и сжимается (снаряд «прошивает» знак);
- *   mode 'absorb'  — втягивается в героя (to: точка); 'up' — уходит вверх к цели (молния с неба).
- * c — caster(); o: { pos, to, hold:0.22, travel:0.14, radius:0.95, mode:'through', burst:true }.
- * Возвращает { pos, glyph, at } — pos можно использовать как точку, через которую пройдёт снаряд.
+ * линий + цвет стихии, вспышка и искры по штрихам), держится hold с и «становится» заклинанием — в момент launchAt
+ * знак рассыпается искрами и улетает (mode):
+ *   'through' — к цели (снаряд вылетает из знака и «прошивает» его), 'absorb' — втягивается в точку to (в героя),
+ *   'up' — уходит вверх (молния с неба). Хореография руны в своём обработчике rune_cast вызывает air.plan(mode, to)
+ *   и выпускает заклинание из air.pos в момент air.launchAt (часы kit); без plan — 'through' к цели.
+ * c — caster(); o: { pos, hold:0.22, travel:0.14, radius:0.95, mode, to, glyph:true, burst:true, write:0.09, intensity }.
+ * Возвращает air: { rune, el, remote, pos, radius, t0, launchAt, hold, mode, to, glyph, plan(mode, to), released }.
  */
 export function airRune(fx, c, rune, el, o) {
   o = o || {};
   const V3 = fx.THREE.Vector3, kit = fx.kit;
   const remote = c.remote, P = fx.pal(el, { remote });
   const R = (isNum(o.radius) ? o.radius : 0.95) * (fx.reduced && fx.reduced() ? 0.85 : 1);
-  // перед героем: на линии рука → цель, чуть выше головы героя — не закрыт его спиной с камеры за плечом
-  const pos = o.pos ? new V3().copy(o.pos) : new V3(
-    c.chest.x + c.fwd.x * 1.7, c.chest.y + 0.62, c.chest.z + c.fwd.z * 1.7);
+  // перед героем: на линии к цели, выше плеча — с камеры за спиной знак не закрыт героем
+  const pos = o.pos ? new V3().copy(o.pos) : new V3(c.chest.x + c.fwd.x * 1.7, c.chest.y + 0.62, c.chest.z + c.fwd.z * 1.7);
   const hold = isNum(o.hold) ? o.hold : 0.22, travel = isNum(o.travel) ? o.travel : 0.14;
-  const mode = o.mode || 'through';
-  let to = o.to;
-  if (!to) {
-    if (mode === 'absorb') to = c.chest;
-    else if (mode === 'up') to = { x: pos.x + c.fwd.x * 1.5, y: pos.y + 3.2, z: pos.z + c.fwd.z * 1.5 };
-    else to = { x: pos.x + (c.target.x - pos.x) * 0.35, y: pos.y + (c.target.y - pos.y) * 0.35, z: pos.z + (c.target.z - pos.z) * 0.35 };
+  const air = {
+    rune, el, remote, pos, radius: R, t0: kit.clock, launchAt: kit.clock + hold, hold,
+    mode: o.mode || 'through', to: new V3(), glyph: null, released: false,
+    plan(mode, to) {
+      if (air.released) return air;
+      if (typeof mode === 'string') air.mode = mode;
+      if (to && isNum(to.x)) air.to.set(to.x, to.y, to.z); else defaultTo();
+      return air;
+    },
+  };
+  function defaultTo() {
+    if (air.mode === 'absorb') air.to.copy(c.chest);
+    else if (air.mode === 'up') air.to.set(pos.x + c.fwd.x * 1.5, pos.y + 3.2, pos.z + c.fwd.z * 1.5);
+    else air.to.set(pos.x + (c.target.x - pos.x) * 0.35, pos.y + (c.target.y - pos.y) * 0.35, pos.z + (c.target.z - pos.z) * 0.35);
   }
-  const dark = el === 'void' && !remote;
-  let h = null;
+  if (o.to && isNum(o.to.x)) air.to.set(o.to.x, o.to.y, o.to.z); else defaultTo();
   const g = fx.glyph;
-  if (g) {
+  if (g && o.glyph !== false) {
     try {
-      h = g.spawn({
+      air.glyph = g.spawn({
         pos, billboard: true, radius: R, symbol: rune, symbolScale: 0.8, style: 'bare', color: P.mid, hot: P.core,
-        intensity: 2.8, symbolGlow: 2.6, write: isNum(o.write) ? o.write : 0.09, flare: 1, pop: 0.35, unfold: 0.12,
-        dur: hold + travel + 0.06, fade: 0.08, spin: 0, rival: remote ? 1 : 0, dark,
-        to, travelAt: hold, travelDur: travel, shrink: mode === 'absorb' ? 0.12 : 0.3,
+        intensity: isNum(o.intensity) ? o.intensity : 2.8, symbolGlow: 2.6, write: isNum(o.write) ? o.write : 0.09, flare: 1, pop: 0.35, unfold: 0.12,
+        dur: hold + travel + 0.1, fade: 0.08, spin: 0, rival: remote ? 1 : 0, dark: el === 'void' && !remote,
       });
-    } catch (e) { h = null; }
+    } catch (e) { air.glyph = null; }
   }
-  // вспышка-ореол за знаком (bloom) и искры по штрихам символа
+  const gen = air.glyph ? air.glyph.gen : -1;
+  // вспышка-ореол за знаком (bloom)
   _hf.rival = !!remote; _hf.fadeIn = 0.03; _hf.curve = 0.5; _hf.rot = 0;
   _hf.color = P.hot; _hf.size[0] = R * 0.8; _hf.size[1] = R * 2.4; _hf.dur = 0.26; _hf.intensity = 2.2; _hf.sprite = 'glow'; _hf.pull = 0.2;
   kit.flash(pos, _hf);
   _hf.color = P.core; _hf.size[0] = R * 0.3; _hf.size[1] = R * 1.3; _hf.dur = 0.12; _hf.intensity = 3.6; _hf.sprite = 'star'; _hf.pull = 0.25;
   kit.flash(pos, _hf);
-  if (!h) {
+  if (!air.glyph && o.glyph !== false) {
     // без подсистемы знаков — руна-спрайт атласа
     _hf.color = P.mid; _hf.size[0] = R * 1.6; _hf.size[1] = R * 1.9; _hf.dur = hold + travel; _hf.intensity = 3; _hf.sprite = 'rune'; _hf.pull = 0.2;
     kit.flash(pos, _hf);
   }
-  const pts = strokeOf(rune);
-  if (pts && o.burst !== false) {
-    // базис знака — как у billboard-глифа: вправо/вверх камеры
+  // искры по штрихам символа — знак «вспыхивает»
+  const pts = o.burst === false ? null : strokeOf(rune);
+  if (pts) {
     const cam = kit.camera;
     let ux = 1, uy = 0, uz = 0, vx = 0, vy = 1, vz = 0;
     if (cam && cam.matrixWorld) { const e = cam.matrixWorld.elements; ux = e[0]; uy = e[1]; uz = e[2]; vx = e[4]; vy = e[5]; vz = e[6]; }
     const side = 0.8 * 1.3 * R;
-    const ramp = rampOf(el, remote);
-    _ae.ramp = ramp; _ae.rival = !!remote; _ae.at = _ap; _ae.count = 1;
-    const step = kit.Q && kit.Q.name === 'low' ? 2 : 1;
-    for (let i = 0; i < pts.length; i += step) {
+    _ae.ramp = rampOf(el, remote); _ae.rival = !!remote; _ae.at = _ap; _ae.count = 1;
+    const st = kit.Q && kit.Q.name === 'low' ? 2 : 1;
+    for (let i = 0; i < pts.length; i += st) {
       const q = pts[i], lx = (q.x - 0.5) * side, ly = (0.5 - q.y) * side;
       _ap.x = pos.x + ux * lx + vx * ly; _ap.y = pos.y + uy * lx + vy * ly; _ap.z = pos.z + uz * lx + vz * ly;
       _ae.sprite = i & 1 ? 'spark' : 'glow'; _ae.size[0] = i & 1 ? 0.07 : 0.16; _ae.intensity = i & 1 ? 3 : 2;
@@ -326,15 +334,20 @@ export function airRune(fx, c, rune, el, o) {
     }
     _ae.at = null;
   }
-  // превращение: знак рассыпается искрами к цели заклинания
-  const ramp2 = rampOf(el, remote);
-  const toV = new V3(to.x, to.y, to.z);
+  // превращение в момент выпуска: знак рассыпается искрами к цели заклинания и улетает за ними
   kit.after(hold, () => {
-    kit.emit({ at: pos, to: toV, shape: 'line', count: 16, speed: [0.3, 1.2], life: [0.12, 0.24], size: [0.08, 0.015], ramp: ramp2, intensity: 3, sprite: 'spark', drag: 3, rival: remote, essential: true });
+    air.released = true;
+    const h = air.glyph;
+    if (h && h.alive && h.gen === gen) {
+      _gs.to = air.to; _gs.travelAt = undefined; _gs.travelDur = travel; _gs.shrink = air.mode === 'absorb' ? 0.12 : 0.3;
+      try { h.set(_gs); h.flare(1); } catch (e) { /* без полёта */ }
+      _gs.to = null;
+    }
+    kit.emit({ at: pos, to: air.to, shape: 'line', count: 16, speed: [0.3, 1.2], life: [0.12, 0.24], size: [0.08, 0.015], ramp: rampOf(el, remote), intensity: 3, sprite: 'spark', drag: 3, rival: remote, essential: true });
     _hf.rival = !!remote; _hf.color = P.core; _hf.size[0] = R * 0.25; _hf.size[1] = R * 1.1; _hf.dur = 0.12; _hf.intensity = 3.8; _hf.sprite = 'star'; _hf.pull = 0.25; _hf.rot = 0; _hf.fadeIn = 0.02; _hf.curve = 0.45;
     kit.flash(pos, _hf);
   });
-  return { pos, glyph: h, at: hold, to: toV };
+  return air;
 }
 
 // ---------------------------------------------------------------------- комета (снаряд в полёте)

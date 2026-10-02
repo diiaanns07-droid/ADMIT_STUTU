@@ -610,6 +610,14 @@ export function createGlyphs(deps) {
         if (isNum(o.spin)) s.spin = clamp(o.spin, -40, 40);
         if (hasVec(o.normal)) setBasis(s, o.normal, hasVec(o.up) ? o.up : s.up);
         if (o.symbol !== undefined) { const si = symIndex(o.symbol); if (si !== s.sym) { s.sym = si; s.writeT0 = s.age; } }
+        // [W4-ЗАКЛИНАНИЯ] полёт-превращение, назначенный позже (руна в воздухе «становится» заклинанием)
+        if (hasVec(o.to)) {
+          s.hasTo = true; s.travelOn = false; s.toX = o.to.x; s.toY = o.to.y; s.toZ = o.to.z;
+          s.travelAt = isNum(o.travelAt) ? clamp(o.travelAt, 0, 60) : s.age;
+          if (isNum(o.travelDur)) s.travelDur = clamp(o.travelDur, 0.02, 10);
+          if (isNum(o.shrink)) s.shrink = clamp(o.shrink, 0.02, 1);
+          if (s.dur !== Infinity) s.dur = Math.max(s.dur, s.travelAt + s.travelDur + 0.04);
+        }
       } catch (e) { /* no-op */ }
       return s;
     };
