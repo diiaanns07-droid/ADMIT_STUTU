@@ -2908,3 +2908,38 @@ body:has(> .nl-badge:not([hidden])) .ao-cheat,
 body:has(> .nl-badge:not([hidden])) .ao-cheat-pill {
   top: 112px;
 }
+/* ---- [ПРОЕКТОР] режим презентации: узкие раскладки — по ширине игровой области (60 % окна), а не окна */
+@media (max-width: 1180px) {
+  html.ao-present .ao-cols,
+  html.ao-present .ao-panel--calib .ao-cols,
+  html.ao-present .ao-panel--pause .ao-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* меню: колонка у левого края игровой области, пустые места колонки пропускают мышь к витрине героя */
+html.ao-present .ao-screen--menu {
+  padding-left: var(--ao-pad);
+}
+html.ao-present .ao-panel--menu {
+  pointer-events: none;
+}
+html.ao-present .ao-panel--menu :is(button, input, label, select, a, [tabindex]) {
+  pointer-events: auto;
+}
+/* оверлеи, прибитые к левому краю окна (значок дуэли net/session.js, панель F3 core/perfHud.js), — в игровую область */
+html.ao-present .nl-badge {
+  left: calc(40% + 16px);
+}
+html.ao-present .ao-perfhud {
+  left: calc(40% + 12px) !important;
+  max-width: min(560px, calc(60vw - 24px)) !important;
+}
+/* обучение в окне уже 1180 px и ниже 960 px (проектор 1024×768): карточки без пиктограмм — шире текст, меньше строк */
+@media (max-width: 1179px) and (max-height: 960px) {
+  .ao-tut-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ao-tut-fig {
+    display: none;
+  }
+}
