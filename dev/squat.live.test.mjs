@@ -3,7 +3,7 @@
 // помехи (переминается, отходит, машет руками). «Новичок» такие повторы считает, «Мастер» — строг как раньше.
 // node dev/squat.live.test.mjs. Синтетика, не реальная камера.
 import { createSquatCounter, synthSquatPose, SQUAT_HINTS, SQUAT_FRAME_TIPS } from '../core/squatCounter.js';
-import { simulateSquatSession, makeRng } from './squatSim.mjs';
+import { simulateSquatSession, makeRng, synthPoseAt } from './squatSim.mjs';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -93,6 +93,79 @@ test('Новичок: наклонили крышку ноутбука туда 
   }
 });
 
+// [W3-SQUAT] сценарии из ревью: сменил место, пружинки внизу, застыл в полуприседе, наклон у камеры на уровне груди
+const mj = (u) => { const x = Math.max(0, Math.min(1, u)); return x * x * x * (10 - 15 * x + 6 * x * x); };
+// стоит на d0, подходит к ноутбуку на d1, стоит, возвращается; затем squats настоящих приседаний (бедро thighDeg)
+function walkSession(mode, cam, d0, d1, squats, thighDeg = 90, seed = 1) {
+  const c = createSquatCounter({ mode });
+  const rng = makeRng(seed), hz = 15, ev = [];
+  let t = 1000;
+  const f = (d, th) => { c.push({ tMs: t, frameW: 640, frameH: 480, landmarks: synthPoseAt({ thighDeg: th, distanceM: d }, cam, { jitter: 0.015, wobble: 0.003, outlierRate: 0.003 }, rng.fork(Math.round(t))) }); ev.push(...c.drain()); t += 1000 / hz; };
+  const hold = (sec, d, th = 0) => { for (let i = 0; i < sec * hz; i++) f(d, th); };
+  hold(3, d0);
+  for (let k = 0; k < 2; k++) {
+    for (let i = 0; i < 1.5 * hz; i++) f(d0 + (d1 - d0) * mj(i / (1.5 * hz)), 0);
+    hold(1, d1);
+    for (let i = 0; i < 1.5 * hz; i++) f(d1 + (d0 - d1) * mj(i / (1.5 * hz)), 0);
+    hold(1.5, d0);   // вернулся и встал: после смены места счётчик заново учит «стоя» (подготовка ~0,5 с)
+  }
+  const walked = c.read().reps;
+  for (let r = 0; r < squats; r++) {
+    for (let i = 0; i < 1.2 * hz; i++) f(d0, thighDeg * mj(i / (1.2 * hz)));
+    hold(0.2, d0, thighDeg);
+    for (let i = 0; i < hz; i++) f(d0, thighDeg * (1 - mj(i / hz)));
+    hold(0.8, d0);
+  }
+  return { walked, r: c.read(), ev };
+}
+
+test('подошёл к ноутбуку и вернулся (камера на полу и низко): ни одного ложного повтора, потом приседания чистые', () => {
+  for (const [name, cam] of [['пол', { heightM: 0.3, pitchDeg: 10 }], ['низко', { heightM: 0.6, pitchDeg: 0 }]]) {
+    for (const [d0, d1] of [[3, 2], [3.5, 2.2], [3, 1.8], [2, 3.5]]) for (const mode of ['novice', 'master']) {
+      const w = walkSession(mode, cam, d0, d1, 0);
+      assert(w.walked === 0 && w.r.points === 0, `${name} ${d0}→${d1} ${mode}: без приседаний засчитано ${w.walked}`);
+      if (d0 < d1) continue;
+      const s = walkSession(mode, cam, d0, d1, 5);
+      assert(s.r.reps === 5 && s.r.clean === 5 && !s.r.faults.lockout, `${name} ${d0}→${d1} ${mode}: после ходьбы ${JSON.stringify({ reps: s.r.reps, clean: s.r.clean, faults: s.r.faults })}`);
+    }
+  }
+});
+
+test('Новичок: «пружинки» внизу без вставания — не повторы; встал — засчитан', () => {
+  const S = simulateSquatSession({ seed: 3, n: 0, reps: [], standS: 2, tailS: 0, ...TABLE, jitter: 0.02, hz: 15 });
+  const c = createSquatCounter({ mode: 'novice' });
+  for (const f of S.frames) c.push(f);
+  let t = S.frames[S.frames.length - 1].tMs + 66;
+  const rng = makeRng('pulse'), cam = { heightM: TABLE.cameraHeightM, pitchDeg: TABLE.cameraPitchDeg };
+  const f = (th) => { c.push({ tMs: t, frameW: 640, frameH: 480, landmarks: synthPoseAt({ thighDeg: th, distanceM: TABLE.distanceM }, cam, { jitter: 0.015 }, rng.fork(Math.round(t))) }); t += 66; };
+  for (let i = 0; i < 15; i++) f(80 * mj(i / 15));
+  for (let k = 0; k < 8; k++) { for (let i = 0; i < 8; i++) f(80 - 30 * Math.sin(Math.PI * i / 8)); }
+  for (let i = 0; i < 15; i++) f(80 * (1 - mj(i / 15)));
+  for (let i = 0; i < 15; i++) f(0);
+  const r = c.read();
+  assert(r.reps === 1 && r.points <= 2, '8 пружинок и вставание: ' + JSON.stringify({ reps: r.reps, attempts: r.attempts, points: r.points, faults: r.faults }));
+});
+
+test('застыл в неглубоком приседе на 2,5 с — попытка с подсказкой «глубже», а не молчаливый сброс', () => {
+  for (const [mode, k] of [['novice', 0.47], ['master', 0.74]]) {   // ≈135° и ≈110° по бедру
+    const c = createSquatCounter({ mode });
+    let t = 1000;
+    const f = (kk) => { c.push({ tMs: t, frameW: 640, frameH: 480, landmarks: synthSquatPose(kk, 'front') }); t += 66; };
+    for (let i = 0; i < 25; i++) f(0);
+    for (let i = 0; i < 15; i++) f(k * mj(i / 15));
+    for (let i = 0; i < 40; i++) f(k);
+    const r = c.read();
+    assert(r.attempts === 1 && r.reps === 0 && r.lastHint && r.lastHint.code === 'shallow', `${mode}: ${JSON.stringify({ attempts: r.attempts, hint: r.lastHint, phase: r.phase })}`);
+  }
+});
+
+test('Новичок: камера на уровне груди, крышка вертикально — естественный наклон корпуса не ошибка', () => {
+  for (const h of [1.0, 1.1, 1.2]) {
+    const s = session('novice', { cameraHeightM: h, cameraPitchDeg: 0, distanceM: 2.7, jitter: 0.02, hz: 15, reps: 'clean' });
+    assert(s.reps === s.truth && (s.faults.lean || 0) <= 2, `камера ${h} м: ${fmt(s)}`);
+  }
+});
+
 // ───────── «Мастер»: строгость как раньше ─────────
 test('Мастер: ноутбук на столе (стопы за кадром) — не считаем, просим «до стоп»', () => {
   const s = session('master', { ...TABLE, jitter: 0.02, hz: 15, reps: 'clean' });
@@ -175,6 +248,16 @@ test('подготовка: стол — «вижу до колен ✓» и с�
   assert(low.status === 'ok' && low.full && low.ready && low.tip.code === 'ok' && /целиком ✓/.test(low.statusText), 'низко: ' + JSON.stringify(low));
   const close = look('novice', { cameraHeightM: 1.0, cameraPitchDeg: 8, distanceM: 1.1, jitter: 0.015 });
   assert(['stepBack', 'tiltUp'].includes(close.tip.code), 'вплотную: ' + JSON.stringify(close.tip));
+  // колени у нижнего края и ниже — «до колен ✓» не показываем; «вижу ✓» — только после 0,5 с подряд
+  const kneesOut = createSquatCounter({ mode: 'novice' });
+  let tt = 1000;
+  for (let i = 0; i < 30; i++) { const L = synthSquatPose(0, 'front'); for (const j of [25, 26, 27, 28, 29, 30, 31, 32]) L[j] = { ...L[j], visibility: 0.1 }; kneesOut.push({ tMs: tt, frameW: 640, frameH: 480, landmarks: L }); tt += 33; }
+  assert(kneesOut.read().framing.status === null && !kneesOut.read().framing.upper, 'колени не видны: ' + JSON.stringify(kneesOut.read().framing.status));
+  const quick = createSquatCounter({ mode: 'novice' });
+  for (let i = 0; i < 10; i++) quick.push({ tMs: 1000 + i * 33, frameW: 640, frameH: 480, landmarks: synthSquatPose(0, 'front') });
+  assert(quick.read().framing.status === 'ok' && !quick.read().framing.ready, '0,3 с — ещё «проверяю»');
+  for (let i = 10; i < 20; i++) quick.push({ tMs: 1000 + i * 33, frameW: 640, frameH: 480, landmarks: synthSquatPose(0, 'front') });
+  assert(quick.read().framing.ready, '0,6 с — «вижу ✓»');
   const empty = createSquatCounter({ mode: 'novice' });
   empty.push({ tMs: 1000, frameW: 640, frameH: 480, landmarks: new Array(33).fill(null) });
   assert(empty.read().framing.tip.code === 'noPerson', 'пусто: ' + JSON.stringify(empty.read().framing.tip));

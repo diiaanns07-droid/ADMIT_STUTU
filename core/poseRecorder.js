@@ -11,7 +11,8 @@
 //
 // Формат (version 1): { version, kind: 'ashen-pose', createdAt, dropped, …meta, frames: [
 //   { t, w, h, m (mirror 0/1), lm: { "<индекс 0..32>": [x, y, z, vis] } } ] } — только непустые точки;
-// x, y, z — до 1e-4, vis — до 1e-3. Кадр без точек (поза потеряна) тоже пишется: по нему счётчик видит потерю.
+// x, y, z — до 1e-4, vis — до 1e-3. Поза потеряна (landmarks: null) — кадр с lm: null: при разборе счётчик видит то же,
+// что вживую (потерю, без сброса фильтров точек).
 
 export const POSE_RECORDING_VERSION = 1;
 
@@ -33,9 +34,11 @@ function packPoint(p) {
 /** Сжать позу vision.getPose() ({ tMs, frameW, frameH, mirror, landmarks[33] }) в кадр записи; мусор → null. */
 export function packPose(pose) {
   if (!pose || typeof pose !== 'object' || !fin(pose.tMs)) return null;
-  const lm = {};
+  // поза потеряна (vision отдаёт landmarks: null) — пишется lm: null: счётчик вживую видит null, а не 33 пустых точки,
+  // и фильтры точек не сбрасываются — разбор записи даёт тот же счёт, что игра
   const L = Array.isArray(pose.landmarks) ? pose.landmarks : null;
-  if (L) for (let i = 0; i < Math.min(N, L.length); i++) { const a = packPoint(L[i]); if (a) lm[i] = a; }
+  let lm = null;
+  if (L) { lm = {}; for (let i = 0; i < Math.min(N, L.length); i++) { const a = packPoint(L[i]); if (a) lm[i] = a; } }
   return {
     t: Math.round(pose.tMs * 10) / 10,
     w: fin(pose.frameW) && pose.frameW > 0 ? pose.frameW : 640, h: fin(pose.frameH) && pose.frameH > 0 ? pose.frameH : 480,
@@ -46,6 +49,7 @@ export function packPose(pose) {
 /** Кадр записи → поза, как её отдаёт vision.getPose(): landmarks — 33 элемента, null где точки нет. */
 export function unpackPoseFrame(f) {
   if (!f || typeof f !== 'object' || !fin(f.t)) return null;
+  if (f.lm === null) return { tMs: f.t, frameW: fin(f.w) ? f.w : 640, frameH: fin(f.h) ? f.h : 480, mirror: f.m !== 0, landmarks: null };
   const landmarks = new Array(N).fill(null);
   const lm = f.lm && typeof f.lm === 'object' ? f.lm : {};
   for (const k of Object.keys(lm)) {
@@ -58,6 +62,7 @@ export function unpackPoseFrame(f) {
 
 // в памяти точки — Float32Array [индекс, x, y, z, vis, …] (15 точек — 300 байт); в файл — обычные числа
 function compact(f) {
+  if (f.lm === null) return { t: f.t, w: f.w, h: f.h, m: f.m, a: null };
   const ks = Object.keys(f.lm);
   const a = new Float32Array(ks.length * STRIDE);
   for (let j = 0; j < ks.length; j++) {
@@ -67,6 +72,7 @@ function compact(f) {
   return { t: f.t, w: f.w, h: f.h, m: f.m, a };
 }
 function expand(c) {
+  if (c.a === null) return { t: c.t, w: c.w, h: c.h, m: c.m, lm: null };
   const lm = {};
   for (let o = 0; o < c.a.length; o += STRIDE) lm[c.a[o]] = [r4(c.a[o + 1]), r4(c.a[o + 2]), r4(c.a[o + 3]), r3(c.a[o + 4])];
   return { t: c.t, w: c.w, h: c.h, m: c.m, lm };

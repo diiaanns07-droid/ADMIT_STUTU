@@ -2272,9 +2272,11 @@ export async function createVision(options = {}) {
   async function setPoseModel(url) {
     if (!url || disposed) return false;
     if (cfg.mediaPipe && cfg.mediaPipe.modelUrl === url) return true;
-    cfg = mergeVisionConfig(cfg, { mediaPipe: { ...(cfg.mediaPipe || {}), modelUrl: url } });
+    if (switching) return false; // [W3-SQUAT] сначала: иначе новый URL записан, а движок остался прежним
+    const prevUrl = cfg.mediaPipe && cfg.mediaPipe.modelUrl;
+    const withUrl = (u) => mergeVisionConfig(cfg, { mediaPipe: { ...(cfg.mediaPipe || {}), modelUrl: u } });
+    cfg = withUrl(url);
     if (!engine && !enginePromise) return true; // движок ещё не создан — возьмёт новый URL
-    if (switching) return false;
     switching = true;
     try {
       if (!engine && enginePromise) { try { await enginePromise; } catch { /* пересоздадим ниже */ } }
@@ -2285,6 +2287,15 @@ export async function createVision(options = {}) {
       await ensureEngine();
       return true;
     } catch (err) {
+      // [W3-SQUAT] новая модель не создалась (нет файла офлайн, мало памяти) — прежняя, а не «Обновите страницу»
+      if (prevUrl && !disposed) {
+        try {
+          console.warn('[vision] модель позы не сменилась, возвращаю прежнюю:', (err && err.message) || err);
+          cfg = withUrl(prevUrl); engine = null; enginePromise = null;
+          await ensureEngine();
+          return false;
+        } catch (e2) { err = e2; }
+      }
       if (running) fail('model-failed', 'Не удалось сменить модель распознавания позы. Обновите страницу.', err);
       return false;
     } finally {

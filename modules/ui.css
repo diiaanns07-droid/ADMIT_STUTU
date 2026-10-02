@@ -3544,6 +3544,31 @@
 .ao-reduced-motion .ao-train__good.is-gold {
   animation: none;
 }
+/* [W3-SQUAT] невысокое окно (ноутбук 1280×720): пояснение режима — во всплывающей подсказке, подготовка и итог плотнее */
+@media (max-height: 740px) {
+  .ao-train__modehint {
+    display: none;
+  }
+  .ao-train__mode {
+    margin-bottom: 0.35rem;
+  }
+  .ao-train__prep {
+    padding: 0.35rem 0.6rem;
+    gap: 0.6rem;
+  }
+  .ao-sil {
+    width: 3.4rem;
+  }
+  .ao-train__summary {
+    padding: 0.35rem 0.6rem;
+  }
+  .ao-train__sumhead {
+    display: none;
+  }
+  .ao-col--media > .ao-train__summary {
+    margin-top: 0.2rem;
+  }
+}
 @media (max-width: 760px) {
   .ao-oath__head {
     flex-direction: column;

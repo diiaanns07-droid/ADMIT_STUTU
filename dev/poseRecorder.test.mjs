@@ -77,7 +77,7 @@ test('упаковка → JSON → распаковка: время, кадр, 
   assert(u.mirror === false && u.frameW === 640 && u.frameH === 480 && u.landmarks.every((p) => p === null), 'зеркало выкл., размер по умолчанию');
 });
 
-test('мусор не бросает: нефинитные точки пропускаются, поза без точек — пустой кадр (потеря позы)', () => {
+test('мусор не бросает: нефинитные точки пропускаются, поза потеряна — lm: null', () => {
   const r = createPoseRecorder();
   for (const x of [null, undefined, 5, 'x', {}, { tMs: NaN }, { tMs: Infinity, landmarks: [] }, [1, 2]]) assert(r.add(x) === false, 'мусор записан: ' + JSON.stringify(x));
   assert(r.size() === 0, 'мусор не пишется');
@@ -85,7 +85,8 @@ test('мусор не бросает: нефинитные точки пропу
   assert(r.add({ tMs: 10, landmarks: L }) && r.add({ tMs: 20, landmarks: 'x' }) && r.add({ tMs: 30, landmarks: null }), 'кадры с валидным временем');
   const fr = r.snapshot().frames;
   assert(fr.length === 3 && JSON.stringify(fr[0].lm) === '{"5":[0.1,0.2,0,1]}', 'осталась одна точка (z → 0, vis → 1): ' + JSON.stringify(fr[0].lm));
-  assert(Object.keys(fr[1].lm).length === 0 && Object.keys(fr[2].lm).length === 0, 'кадры без точек');
+  assert(fr[1].lm === null && fr[2].lm === null, 'поза потеряна — lm: null');
+  assert(unpackPoseFrame(fr[2]).landmarks === null, 'распаковка: landmarks null, как у vision.getPose() при потере');
   assert(unpackPoseFrame(null) === null && unpackPoseFrame({ t: 'x' }) === null, 'распаковка мусора → null');
   const u = unpackPoseFrame({ t: 1, lm: { 40: [0.1, 0.1], '-1': [0.1, 0.1], 3: [NaN, 1], 4: 'x', 5: [0.3, 0.4] } });
   assert(u.landmarks.length === 33 && u.landmarks.filter(Boolean).length === 1 && u.landmarks[5].visibility === 1, 'чужие индексы и мусор в точках');
@@ -181,6 +182,29 @@ test('разбор записи даёт то же, что счётчик вжи
   assert(reps.length === liveReps.length && reps.every((e, i) => Math.abs(e.tMs - liveReps[i].tMs) <= 0.05 && Math.abs((e.minKnee ?? 0) - (liveReps[i].minKnee ?? 0)) <= 1), 'события');
 });
 
+// [W3-SQUAT] эквивалентность и там, где разбор нужнее всего: поза пропадает, кадр не 4:3, «Новичок» и --cfg
+test('разбор = вживую: потери позы, кадр 1280×720, «Новичок»; --cfg меняет результат', async () => {
+  const { simulateSquatSession } = await import('./squatSim.mjs');
+  let diff = 0, total = 0, cfgChanged = 0;
+  for (let seed = 1; seed <= 12; seed++) {
+    const S = simulateSquatSession({ seed, n: 5, reps: 'novice', poseLossRate: 0.08, hz: 15, frameW: 1280, frameH: 720, cameraHeightM: 1.0, cameraPitchDeg: 8, distanceM: 2.7 });
+    const rec = createPoseRecorder({ maxFrames: 100000 });
+    const live = createSquatCounter({ mode: 'novice' });
+    for (const f of S.frames) {
+      const pose = Math.floor(f.tMs / 700) % 9 === 4 ? { ...f, landmarks: null } : f;   // ~0,7 с из 6 с — поза потеряна
+      rec.add(pose); live.push({ tMs: pose.tMs, landmarks: pose.landmarks, frameW: pose.frameW, frameH: pose.frameH });
+    }
+    const recJson = loadPoseRecording(JSON.stringify(rec.snapshot()));
+    const r = replayPose(recJson, { mode: 'novice' }).summary;
+    total++;
+    if (r.reps !== live.read().reps || r.attempts !== live.read().attempts) diff++;
+    const r2 = replayPose(recJson, { mode: 'novice', cfg: { downDeg: 80 } }).summary;
+    if (r2.reps !== r.reps) cfgChanged++;
+  }
+  assert(diff === 0, `разбор разошёлся с игрой в ${diff} из ${total} сессий`);
+  assert(cfgChanged > 0, '--cfg (downDeg 80) должен менять счёт хотя бы в одной сессии');
+});
+
 test('лодыжки почти не видны — видно в разборе; неглубокие приседы — незасчитанные попытки с причинами', () => {
   const low = replayPose(synthSession({ ankleVis: 0.2 }).rec.snapshot()).summary;
   assert(low.visibility.filter((v) => v.low).map((v) => v.i).join() === '27,28', 'низкая видимость ' + JSON.stringify(low.visibility));
@@ -231,7 +255,7 @@ test('CLI: запись со стандартного ввода — код 0 и
 
 let pass = 0;
 for (const t of tests) {
-  try { t.fn(); pass++; console.log('PASS ', t.name); } catch (e) { console.log('FAIL ', t.name, '\n      →', e.message); }
+  try { await t.fn(); pass++; console.log('PASS ', t.name); } catch (e) { console.log('FAIL ', t.name, '\n      →', e.message); }
 }
 console.log(`${pass}/${tests.length} passed (синтетика, не реальная камера)`);
 if (pass !== tests.length) process.exitCode = 1;

@@ -291,6 +291,7 @@ function resetTraining() {
   train.reps = 0; train.lastPoseT = -1; train.lastRepAt = -1e9; train.sim.k = 0; train.sim.t = 0; train.sim.keys.clear();
   train.hintRef = null; train.hintAt = -1e9;
   train.clean = 0; train.points = 0; train.lastRep = null;   // [W3-SQUAT]
+  poseRec.clear();   // [W3-SQUAT] запись позы — только текущий подход (смена режима, упражнения, вход на экран)
 }
 // [W3-SQUAT] приседания у живой камеры. Профиль счётчика — по режиму жестов: «Новичок» — глубина ≈115–120°, лодыжки
 // не обязательны, повтор с ошибкой +1 очко и карточка, чистый +2; «Мастер» — как раньше (100°, только чистые, до стоп).
@@ -311,30 +312,54 @@ function savePoseRecording() {
   flashRecNote(`Сохранено: последние ${Math.round((rec.frames[rec.frames.length - 1].t - rec.frames[0].t) / 1000)} с позы → ${a.download}`);
 }
 // Страховка: точная модель на слабой видеокарте медленнее 6 Гц дольше 8 с (камера ≥ 20 к/с) — до конца сессии быстрая.
-// Счётчику приседаний хватает и 6 Гц (dev/squatSim.mjs), поэтому порог низкий.
-const trainPose = { active: false, prevUrl: null, slowSince: null, slow: false };
-function trainPoseTick() {
-  if (!vision || typeof vision.setPoseModel !== 'function' || !DEPS.mediaPipe.modelFullUrl) return;
+// Счётчику приседаний хватает и 6 Гц (dev/squatSim.mjs), поэтому порог низкий. Файл точной модели (9 МБ) сначала
+// докачивается в фоне (service worker кладёт его в офлайн-кэш), и только потом движок пересобирается (≈1 с без кадров):
+// офлайн без файла или если модель не создалась — тренировка остаётся на быстрой, камера не падает.
+const trainPose = { active: false, prevUrl: null, slowSince: null, slow: false, failed: false, ready: false, fetching: false, fetchAt: -1e9 };
+const POSE_URL = { lite: DEPS.mediaPipe.modelUrl, full: DEPS.mediaPipe.modelFullUrl };
+function trainPoseTarget() {
   // ?trainpose=full|lite — модель на тренировке вручную (QA: проверить смену и на программном рендере)
   const forced = PERF_Q.get('trainpose') || (PERF_Q.get('pose') === 'lite' ? 'lite' : null);
-  if (trainPose.active && trainPose.prevUrl && forced !== 'full') {
-    const d = visionStatus().debug, now = performance.now();
-    const slow = d && d.poseModel === 'full' && !d.poseSwitching && Number.isFinite(d.inferenceHz) && Number.isFinite(d.cameraFps) && d.cameraFps >= 20 && d.inferenceHz < 6;
+  if (forced === 'lite' || forced === 'full') return forced;
+  if (trainPose.slow || trainPose.failed) return 'lite';
+  return !perfTuner || perfTuner.trainingPoseModel() === 'full' ? 'full' : 'lite';
+}
+function prefetchFullPose(now) {
+  if (trainPose.ready || trainPose.fetching || now - trainPose.fetchAt < 30000) return;
+  trainPose.fetching = true; trainPose.fetchAt = now;
+  (async () => {
+    try {
+      if (typeof caches !== 'undefined' && await caches.match(POSE_URL.full)) { trainPose.ready = true; return; }
+      const r = await fetch(POSE_URL.full);
+      if (r.ok) { await r.arrayBuffer(); trainPose.ready = true; }
+    } catch (e) { /* офлайн и нет в кэше — повтор через 30 с, пока — быстрая модель */ }
+    finally { trainPose.fetching = false; }
+  })();
+}
+function trainPoseTick() {
+  if (!vision || typeof vision.setPoseModel !== 'function' || !POSE_URL.full) return;
+  const vs = visionStatus(), d = vs.debug || null, now = performance.now();
+  // смена уже идёт — ждём: иначе vision запомнит новый адрес, а движок останется прежним
+  if (d && d.poseSwitching) return;
+  const cur = d ? d.poseModel : null;
+  if (trainPose.active && cur === 'full' && trainPose.prevUrl && PERF_Q.get('trainpose') !== 'full') {
+    const slow = Number.isFinite(d.inferenceHz) && Number.isFinite(d.cameraFps) && d.cameraFps >= 20 && d.inferenceHz < 6;
     trainPose.slowSince = slow ? (trainPose.slowSince ?? now) : null;
     if (slow && now - trainPose.slowSince > 8000) { trainPose.slow = true; console.warn(`[W3-SQUAT] точная модель позы на тренировке не успевает (${d.inferenceHz} Гц) — быстрая`); }
   }
-  const want = app.screen === 'training' && !app.debug && !trainPose.slow && forced !== 'lite' && (forced === 'full' || !perfTuner || perfTuner.trainingPoseModel() === 'full');
-  if (want && !trainPose.active) {
-    const vs = visionStatus(), d = vs.debug;
+  if (app.screen === 'training' && !app.debug) {
+    const target = trainPoseTarget();
+    if ((cur !== 'lite' && cur !== 'full') || cur === target) return;
     // не во время запуска камеры и загрузки модели: смена пересоздаёт движок, start() держит прежний
-    if ((d && d.poseSwitching) || !(vs.status === 'ready' || vs.status === 'lost' || vs.status === 'idle')) return;
-    trainPose.active = true;
-    trainPose.prevUrl = d && d.poseModel === 'full' ? null : DEPS.mediaPipe.modelUrl;
-    if (trainPose.prevUrl) vision.setPoseModel(DEPS.mediaPipe.modelFullUrl).catch(() => {});
-  } else if (!want && trainPose.active) {
+    if (!(vs.status === 'ready' || vs.status === 'lost' || vs.status === 'idle')) return;
+    if (target === 'full' && !trainPose.ready) { prefetchFullPose(now); return; }
+    if (!trainPose.active) { trainPose.active = true; trainPose.prevUrl = POSE_URL[cur]; }
+    vision.setPoseModel(POSE_URL[target]).then((ok) => { if (!ok && target === 'full') trainPose.failed = true; }, () => { if (target === 'full') trainPose.failed = true; });
+  } else if (trainPose.active) {
     trainPose.active = false; trainPose.slowSince = null;
-    if (trainPose.prevUrl) vision.setPoseModel(trainPose.prevUrl).catch(() => {});
+    const back = trainPose.prevUrl;
     trainPose.prevUrl = null;
+    if (back && POSE_URL[cur] !== back) vision.setPoseModel(back).catch(() => {});
   }
 }
 // [ASHEN_V2] DEBUG-приседания: S или ↓ (держать) — вниз, отпустить — вверх; Shift — быстро;
@@ -348,7 +373,7 @@ function simSquatFrame(now, dt) {
   const K = train.sim.keys, sim = train.sim;
   const down = K.has('KeyS') || K.has('ArrowDown');
   const rate = K.has('ShiftLeft') || K.has('ShiftRight') ? 4 : 1;       // глубина в секунду
-  const floor = K.has('KeyB') ? 0.25 : 0;
+  const floor = K.has('KeyB') ? 0.35 : 0;   // [W3-SQUAT] ≈147° — не выпрямился и для «Новичка» (стоя ≥ 155°)
   const target = down ? 1 : floor;
   const step = rate * Math.min(0.5, dt);   // [W3-SQUAT] по времени: и при 2–5 кадрах/с (слабая машина) присед доходит до низа
   sim.k = sim.k < target ? Math.min(target, sim.k + step) : Math.max(target, sim.k - step);
