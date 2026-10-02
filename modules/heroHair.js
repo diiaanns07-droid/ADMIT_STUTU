@@ -737,10 +737,11 @@ export function buildHair(THREE, ctx) {
         const u = (k + (layer ? 0.5 : 0.15)) / NP, pol = polFront * (1 - u) + 0.12;
         const lift = 0.0045 + layer * 0.0045;
         const root = S(Math.PI, pol, lift - 0.002).addScaledVector(LEFT, s * (0.005 + 0.003 * layer));
-        const pts = walk(root, S(s * (0.95 + 0.3 * (1 - u)), 1.3, lift), 0.018, lift, 30);
+        const pts = walk(root, S(s * (0.75 + 0.3 * (1 - u)), 1.32, lift), 0.018, lift, 30);
         const nW = pts.length;   // путь по коже — прибит, дальше свободно
         extend(pts, Math.max(0.12, L * (0.82 + 0.16 * rr()) - arcLen(pts)), 0.025, null);
-        drape(pts, nW, 0.006 + layer * 0.007, back, 110, 0.35);
+        // тянуть назад и к середине спины: пряди ложатся за плечи, а не «крыльями» на руки
+        drape(pts, nW, 0.006 + layer * 0.007, V3().copy(back).addScaledVector(LEFT, -s * 0.6), 110, 0.35);
         card(pts, { tile: layer ? 1 : 0, w0: 0.03, w1: layer ? 0.05 : 0.06, tone: (layer ? 1 : 0.86) * (0.97 + 0.06 * rr()), flexLen: 0.5, bulge: 0.2, alpha: rootFade });
       }
     }
@@ -748,12 +749,12 @@ export function buildHair(THREE, ctx) {
     for (const layer of [0, 1]) {
       const NC = layer ? 11 : 10;
       for (let k = 0; k < NC; k++) {
-        const az = (k / (NC - 1) - 0.5) * 3.3 + (layer ? 0.12 : 0), lift = 0.004 + layer * 0.0045;
+        const az = (k / (NC - 1) - 0.5) * 2.7 + (layer ? 0.1 : 0), lift = 0.004 + layer * 0.0045;
         const root = S(az * 0.25, 0.2 + 0.05 * rr(), lift - 0.002);
         const pts = walk(root, S(az, Math.min(1.75, hairPol(az) - 0.1), lift), 0.018, lift, 30);
         const nW = pts.length;
         extend(pts, Math.max(0.15, L * (0.86 + 0.14 * rr()) * (1 - 0.1 * Math.abs(az) / 1.65) - arcLen(pts)), 0.025, null);
-        drape(pts, nW, 0.006 + layer * 0.007, back, 110, 0.35);
+        drape(pts, nW, 0.006 + layer * 0.007, V3().copy(back).addScaledVector(LEFT, -Math.sign(az) * 0.4 * Math.min(1, Math.abs(az))), 110, 0.35);
         card(pts, { tile: layer ? 1 : 0, w0: 0.03, w1: layer ? 0.06 : 0.075, tone: (layer ? 1 : 0.84) * (0.97 + 0.06 * rr()), flexLen: 0.5, bulge: 0.2, alpha: rootFade });
       }
     }
@@ -1137,7 +1138,7 @@ export function buildHair(THREE, ctx) {
       if (_acc.length() > 60) _acc.setLength(60);
       SPR.vPrev.lerp(_w, Math.min(1, dt * 18));
       // встречный поток: пряди отстают от движения (бег, рывок); вверх-вниз — слабее
-      _tgt.copy(SPR.vPrev).multiplyScalar(-0.022 * gain); _tgt.y *= 0.4;
+      _tgt.copy(SPR.vPrev).multiplyScalar(-0.017 * gain); _tgt.y *= 0.4;
       if (_tgt.length() > MAXL) _tgt.setLength(MAXL);
       // угловая скорость головы (рад/с): пряди запаздывают при повороте
       _dq.copy(_hq).multiply(_hq2.copy(SPR.qPrev).invert());
