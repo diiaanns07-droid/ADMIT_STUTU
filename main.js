@@ -225,6 +225,7 @@ try {
   configureHeroes({ atmosphere: world && world.atmosphere, shading: settings.heroShading, quality: settings.quality, camera });
   if (world && world.hero) heroModel = createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, markers: world.hero.markers, atmosphere: world.atmosphere, shading: settings.heroShading, quality: settings.quality, hero: settings.hero, baseUrl: new URL('./assets/quaternius/', import.meta.url).href }); // [HERO] markers/atmosphere/shading
 } catch (e) { console.warn('[ASHEN] heroModel', e); }
+if (settings.reducedMotion) import('./modules/heroGear.js').then((m) => m.configureGear({ reducedMotion: true })).catch(() => {}); // [W4-НАРЯДЫ] ткань нарядов спокойнее
 // [HERO] витрина героя в меню: кинематографичный свет и облёт (modules/heroShowcase.js); ошибка — прежняя камера меню
 let heroShowcase = null;
 if (heroModel && world && world.hero) import('./modules/heroShowcase.js').then((m) => { try { heroShowcase = m.createHeroShowcase({ THREE, scene, heroRoot: world.hero.root, heroModel, getPostfx: () => postfx, settings, dom: canvas }); } catch (e) { console.warn('[HERO] витрина', e); } }).catch((e) => console.warn('[HERO] heroShowcase.js', e && e.message));
@@ -993,6 +994,7 @@ const callbacks = {
     applySettings();
     if (motionChanged && typeof world.configure === 'function') world.configure({ reducedMotion: settings.reducedMotion });
     if (motionChanged && postfx) { try { postfx.setReducedMotion(!!settings.reducedMotion); } catch (e) { /* ignore */ } }
+    if (motionChanged) import('./modules/heroGear.js').then((m) => m.configureGear({ reducedMotion: !!settings.reducedMotion })).catch(() => {}); // [W4-НАРЯДЫ]
     saveSettings(settings);
     renderUI();
     if (volumeMoved || (patch && patch.muted === false)) previewVolume();
