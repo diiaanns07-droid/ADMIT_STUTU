@@ -1,0 +1,245 @@
+{
+ "label": "before",
+ "quality": "high",
+ "size": "1280x720",
+ "seed": 20261002,
+ "generatedAt": "2026-10-02T20:16:33Z",
+ "shots": [
+  {
+   "file": "01_menu_ashen_game.jpg",
+   "id": "menu_ashen_game",
+   "caption": "ashen · меню"
+  },
+  {
+   "file": "02_menu_ashen_front.jpg",
+   "id": "menu_ashen_front",
+   "caption": "ashen · анфас"
+  },
+  {
+   "file": "03_menu_ashen_three_quarter.jpg",
+   "id": "menu_ashen_three_quarter",
+   "caption": "ashen · 3/4"
+  },
+  {
+   "file": "04_menu_ashen_face.jpg",
+   "id": "menu_ashen_face",
+   "caption": "ashen · лицо"
+  },
+  {
+   "file": "05_menu_elf_game.jpg",
+   "id": "menu_elf_game",
+   "caption": "elf · меню"
+  },
+  {
+   "file": "06_menu_elf_front.jpg",
+   "id": "menu_elf_front",
+   "caption": "elf · анфас"
+  },
+  {
+   "file": "07_menu_elf_three_quarter.jpg",
+   "id": "menu_elf_three_quarter",
+   "caption": "elf · 3/4"
+  },
+  {
+   "file": "08_menu_elf_face.jpg",
+   "id": "menu_elf_face",
+   "caption": "elf · лицо"
+  },
+  {
+   "file": "09_menu_dark_game.jpg",
+   "id": "menu_dark_game",
+   "caption": "dark · меню"
+  },
+  {
+   "file": "10_menu_dark_front.jpg",
+   "id": "menu_dark_front",
+   "caption": "dark · анфас"
+  },
+  {
+   "file": "11_menu_dark_three_quarter.jpg",
+   "id": "menu_dark_three_quarter",
+   "caption": "dark · 3/4"
+  },
+  {
+   "file": "12_menu_dark_face.jpg",
+   "id": "menu_dark_face",
+   "caption": "dark · лицо"
+  },
+  {
+   "file": "13_menu_ranger_game.jpg",
+   "id": "menu_ranger_game",
+   "caption": "ranger · меню"
+  },
+  {
+   "file": "14_menu_ranger_front.jpg",
+   "id": "menu_ranger_front",
+   "caption": "ranger · анфас"
+  },
+  {
+   "file": "15_menu_ranger_three_quarter.jpg",
+   "id": "menu_ranger_three_quarter",
+   "caption": "ranger · 3/4"
+  },
+  {
+   "file": "16_menu_ranger_face.jpg",
+   "id": "menu_ranger_face",
+   "caption": "ranger · лицо"
+  },
+  {
+   "file": "17_menu_archmage_game.jpg",
+   "id": "menu_archmage_game",
+   "caption": "archmage · меню"
+  },
+  {
+   "file": "18_menu_archmage_front.jpg",
+   "id": "menu_archmage_front",
+   "caption": "archmage · анфас"
+  },
+  {
+   "file": "19_menu_archmage_three_quarter.jpg",
+   "id": "menu_archmage_three_quarter",
+   "caption": "archmage · 3/4"
+  },
+  {
+   "file": "20_menu_archmage_face.jpg",
+   "id": "menu_archmage_face",
+   "caption": "archmage · лицо"
+  },
+  {
+   "file": "21_battle_wide.jpg",
+   "id": "battle_wide",
+   "caption": "бой · общий план"
+  },
+  {
+   "file": "22_battle_overview.jpg",
+   "id": "battle_overview",
+   "caption": "бой · обзор арены"
+  },
+  {
+   "file": "23_spell_fire.jpg",
+   "id": "spell_fire",
+   "caption": "J — огонь (удержание)"
+  },
+  {
+   "file": "24_spell_burst.jpg",
+   "id": "spell_burst",
+   "caption": "L — выброс"
+  },
+  {
+   "file": "25_spell_orb_charge.jpg",
+   "id": "spell_orb_charge",
+   "caption": "O — сфера: слепить и бросить · заряд"
+  },
+  {
+   "file": "26_spell_orb.jpg",
+   "id": "spell_orb",
+   "caption": "O — сфера: слепить и бросить"
+  },
+  {
+   "file": "27_spell_gate.jpg",
+   "id": "spell_gate",
+   "caption": "X — «Врата бури»"
+  },
+  {
+   "file": "28_spell_pillar.jpg",
+   "id": "spell_pillar",
+   "caption": "G — «Столп небес»"
+  },
+  {
+   "file": "29_spell_spark.jpg",
+   "id": "spell_spark",
+   "caption": "U — «Искра»"
+  },
+  {
+   "file": "30_spell_rune_ignis.jpg",
+   "id": "spell_rune_ignis",
+   "caption": "1 — руна «огненное копьё»"
+  },
+  {
+   "file": "31_spell_rune_fulgur.jpg",
+   "id": "spell_rune_fulgur",
+   "caption": "2 — руна «молния»"
+  },
+  {
+   "file": "32_spell_rune_orbis.jpg",
+   "id": "spell_rune_orbis",
+   "caption": "3 — руна «оберег»"
+  },
+  {
+   "file": "33_spell_rune_stella.jpg",
+   "id": "spell_rune_stella",
+   "caption": "4 — руна «звездопад»"
+  },
+  {
+   "file": "34_spell_rune_spira.jpg",
+   "id": "spell_rune_spira",
+   "caption": "5 — руна «вихрь»"
+  },
+  {
+   "file": "35_spell_rune_lemnis.jpg",
+   "id": "spell_rune_lemnis",
+   "caption": "6 — руна «вечность»"
+  },
+  {
+   "file": "36_spell_rune_caret.jpg",
+   "id": "spell_rune_caret",
+   "caption": "7 — руна «залп игл»"
+  },
+  {
+   "file": "37_spell_rune_vee.jpg",
+   "id": "spell_rune_vee",
+   "caption": "8 — руна «жатва»"
+  },
+  {
+   "file": "38_spell_rune_clepsydra.jpg",
+   "id": "spell_rune_clepsydra",
+   "caption": "9 — руна «время»"
+  },
+  {
+   "file": "39_spell_rune_alpha.jpg",
+   "id": "spell_rune_alpha",
+   "caption": "0 — руна «начало»"
+  },
+  {
+   "file": "40_boss_strike_p1.jpg",
+   "id": "boss_strike_p1",
+   "caption": "удар Регента · фаза 1"
+  },
+  {
+   "file": "41_phase2_roar.jpg",
+   "id": "phase2_roar",
+   "caption": "Регент · переход в фазу 2"
+  },
+  {
+   "file": "42_phase2_storm.jpg",
+   "id": "phase2_storm",
+   "caption": "фаза 2 · гроза"
+  },
+  {
+   "file": "43_boss_strike_p2.jpg",
+   "id": "boss_strike_p2",
+   "caption": "удар Регента · фаза 2"
+  },
+  {
+   "file": "44_ult_call.jpg",
+   "id": "ult_call",
+   "caption": "«Небесный суд» · зов"
+  },
+  {
+   "file": "45_ult_strike.jpg",
+   "id": "ult_strike",
+   "caption": "«Небесный суд» · удар"
+  },
+  {
+   "file": "46_boss_death.jpg",
+   "id": "boss_death",
+   "caption": "гибель Регента"
+  },
+  {
+   "file": "47_boss_death_orbit.jpg",
+   "id": "boss_death_orbit",
+   "caption": "гибель · облёт"
+  }
+ ],
+ "errors": []
+}
