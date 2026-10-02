@@ -75,4 +75,75 @@ assert.ok(finite(cl.hem.geometry.attributes.position.array), 'кант коне�
 }
 cl.dispose();
 assert.equal(cl.mesh.parent, null); assert.equal(cl.hem.parent, null);
+
+// [W4-НАРЯДЫ] лепестки: разрезы снимают связи через промежуток — края соседних лепестков расходятся,
+// а внутри лепестка ткань держит ширину; выпуклость (cup) и сплайн без перехода через разрез — без NaN
+{
+  root.position.set(0, 0, 0); root.rotation.set(0, 0, 0); root.updateMatrixWorld(true);
+  const pc = 12, pr = 10, prest = new Float32Array(pc * pr * 3);
+  for (let j = 0; j < pr; j++) for (let i = 0; i < pc; i++) {
+    const t = j / (pr - 1), ph = 1.6 - (i / (pc - 1)) * 1.4;   // бок таза: азимут 1.6 → 0.2
+    const r = 0.17 + 0.03 * t;
+    prest.set([Math.sin(ph) * r, 1.05 - t * 0.45, Math.cos(ph) * r], (j * pc + i) * 3);
+  }
+  const pet = createCloth(THREE, {
+    cols: pc, rows: pr, rest: prest, anchor: hips, parent: root, colliders, material: mat, name: 'petals',
+    plane: 'none', cling: 3, pleats: 0, pleatDepth: 0, cup: 0.012, slits: { gaps: [3, 7], from: 3 }, hips, back: { lim: 0.03, h: 0.3 },
+    fwd: (out) => out.set(0, 0, 1).applyQuaternion(root.quaternion), floor: () => 0,
+  });
+  let maxGap = 0, maxIn = 0;
+  const d = (P, a, b) => Math.hypot(P[a * 3] - P[b * 3], P[a * 3 + 1] - P[b * 3 + 1], P[a * 3 + 2] - P[b * 3 + 2]);
+  const r0 = (a, b) => Math.hypot(prest[a * 3] - prest[b * 3], prest[a * 3 + 1] - prest[b * 3 + 1], prest[a * 3 + 2] - prest[b * 3 + 2]);
+  for (let f = 0; f < 420; f++) {
+    const dt = 1 / 60;
+    if (f > 30 && f < 200) root.position.z += 5 * dt;            // бег
+    if (f >= 200 && f < 260) root.rotation.y += 4 * dt;          // разворот: лепестки разлетаются
+    kneeL.position.z = 0.02 + 0.14 * Math.sin(f * 0.3); kneeR.position.z = 0.02 - 0.14 * Math.sin(f * 0.3);
+    root.updateMatrixWorld(true);
+    pet.update(dt, 0);
+    const P = pet.particles;
+    assert.ok(finite(P), `лепестки: частицы конечны (кадр ${f})`);
+    const j = pr - 1;
+    // край лепестка у разреза 3|4 и внутри лепестка 1|2 (нижний ряд)
+    maxGap = Math.max(maxGap, d(P, j * pc + 3, j * pc + 4) / r0(j * pc + 3, j * pc + 4));
+    maxIn = Math.max(maxIn, d(P, j * pc + 1, j * pc + 2) / r0(j * pc + 1, j * pc + 2));
+  }
+  assert.ok(finite(pet.mesh.geometry.attributes.position.array), 'лепестки: сетка отрисовки конечна');
+  assert.ok(maxIn < 1.25, `внутри лепестка ткань держит ширину (растяжение ×${maxIn.toFixed(2)})`);
+  assert.ok(maxGap > maxIn + 0.15, `через разрез лепестки расходятся (×${maxGap.toFixed(2)} против ×${maxIn.toFixed(2)})`);
+  pet.dispose();
+}
+
+// [W4-НАРЯДЫ] движение: на бегу плащ отдувает назад сильнее, чем в покое; рывок — всплеск; «Уменьшенное
+// движение» — спокойнее (меньше отдув и трепет, без всплеска)
+{
+  const runCape = (calmK) => {
+    root.position.set(0, 0, 0); root.rotation.set(0, 0, 0); root.updateMatrixWorld(true);
+    const cc = 9, cr2 = 12, crest = new Float32Array(cc * cr2 * 3);
+    for (let j = 0; j < cr2; j++) for (let i = 0; i < cc; i++) crest.set([(i / (cc - 1) - 0.5) * 0.45, 1.45 - (j / (cr2 - 1)) * 0.9, -0.2 - 0.03 * (j / (cr2 - 1))], (j * cc + i) * 3);
+    const cape = createCloth(THREE, { cols: cc, rows: cr2, rest: crest, anchor: hips, parent: root, colliders, material: mat, plane: 'back', hips, back: { lim: 0.03, h: 0.4 }, fwd: (out) => out.set(0, 0, 1).applyQuaternion(root.quaternion), floor: () => 0 });
+    cape.setMotion(calmK);
+    const behind = () => { const P = cape.particles, hp = hips.getWorldPosition(new THREE.Vector3()); let s2 = 0; for (let i = 0; i < cc; i++) s2 += hp.z - P[((cr2 - 1) * cc + i) * 3 + 2]; return s2 / cc; };
+    let rest0 = 0, run = 0, burstMax = 0, flutVar = 0, prevB = null;
+    for (let f = 0; f < 360; f++) {
+      const dt = 1 / 60;
+      if (f >= 120 && f < 260) root.position.z += 5 * dt;
+      if (f >= 262 && f < 272) root.position.z += 11 * dt;          // рывок 11 м/с
+      root.updateMatrixWorld(true);
+      cape.update(dt, 0);
+      if (f === 118) rest0 = behind();
+      if (f > 200 && f < 258) { const b = behind(); run += b / 57; if (prevB !== null) flutVar += Math.abs(b - prevB); prevB = b; }   // трепет — сумма скачков подола
+      burstMax = Math.max(burstMax, cape.motion.burst);
+      assert.ok(finite(cape.particles), `плащ: частицы конечны (кадр ${f})`);
+    }
+    cape.dispose();
+    return { rest0, run, burstMax, flutVar };
+  };
+  const full = runCape(1), calm = runCape(0.4);
+  assert.ok(full.run > full.rest0 + 0.05, `на бегу плащ отдувает назад (${full.rest0.toFixed(3)} → ${full.run.toFixed(3)} м)`);
+  assert.ok(full.burstMax > 0.5, `рывок даёт всплеск (${full.burstMax.toFixed(2)})`);
+  assert.equal(calm.burstMax, 0, '«Уменьшенное движение»: без всплеска');
+  assert.ok(calm.run < full.run, `«Уменьшенное движение»: отдув меньше (${calm.run.toFixed(3)} < ${full.run.toFixed(3)} м)`);
+  assert.ok(calm.flutVar < full.flutVar, `«Уменьшенное движение»: трепет меньше (${calm.flutVar.toFixed(3)} < ${full.flutVar.toFixed(3)})`);
+}
 console.log('heroCloth.test: ok');
