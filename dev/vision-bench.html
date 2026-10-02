@@ -56,8 +56,10 @@ try {
   }
   const S = window.__VB__.samples;
   const st = vision.getStatus();
+  let gpu = null;
+  try { const gl = document.createElement('canvas').getContext('webgl2'); const ext = gl && gl.getExtension('WEBGL_debug_renderer_info'); gpu = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : null; } catch (e) { gpu = null; }
   window.__VB__.summary = {
-    delegate: st.delegate, handsDelegate: st.hands && st.hands.delegate, mode: st.mode, handsReady: !!(st.hands && st.hands.ready),
+    gpu, delegate: st.delegate, handsDelegate: st.hands && st.hands.delegate, mode: st.mode, handsReady: !!(st.hands && st.hands.ready),
     poseModel: st.debug && st.debug.poseModel, video: st.debug && st.debug.video, captureMaxWidth: cfg.captureMaxWidth, startMs: Math.round(tStart),
     hz: med(S.map((x) => x.hz)), inferMs: med(S.map((x) => x.inferMs)), handsMs: med(S.map((x) => x.handsMs)), latencyMs: med(S.map((x) => x.latencyMs)), camFps: med(S.map((x) => x.camFps)),
     results: S.length ? S[S.length - 1].results - S[0].results : 0, sec: SEC, fallback: st.debug && st.debug.workerFallbackReason,
@@ -65,7 +67,7 @@ try {
   say(JSON.stringify(window.__VB__.summary, null, 1));
   vision.stop();
 } catch (e) {
-  window.__VB__.error = String((e && (e.code || e.message)) || e);
+  window.__VB__.error = `${(e && e.code) || ''} ${(e && e.message) || e}${e && e.cause ? ' ← ' + (e.cause.name || '') + ' ' + (e.cause.message || '') : ''}`.trim();
   say('ОШИБКА: ' + window.__VB__.error);
 }
 window.__VB__.done = true;

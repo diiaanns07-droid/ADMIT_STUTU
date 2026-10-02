@@ -3,7 +3,7 @@
 //
 // node tools/perf_bench.mjs [--gpu amd|nvidia|both] [--browser PATH] [--root DIR] [--label NAME] [--out DIR]
 //                           [--sec 20] [--size 1280x720] [--port 8793] [--phases load,warm,switch,vision,fight,fightcam,vbench]
-//                           [--vbench GPU,CPU] [--vbwidth 640,480] [--vbextra "poseEvery=2"]
+//                           [--vbench GPU,CPU] [--vbwidth 640,480] [--vbextra "poseEvery=2"] [--query cursor=0] [--video cam.y4m]
 //
 // Браузер: по умолчанию Microsoft Edge (тот же Chromium): без флагов headless Edge на гибридном ноутбуке
 // рендерит на встроенной видеокарте, с --force_high_performance_gpu — на дискретной. (Для Chrome на этой
@@ -41,6 +41,12 @@ const PHASES = argOf('--phases', 'load,warm,switch,vision,fight,fightcam,vbench'
 const VB_DELEGATES = argOf('--vbench', 'GPU,CPU').split(',').filter(Boolean);
 const VB_WIDTHS = argOf('--vbwidth', '640').split(',').map(Number);
 const VB_EXTRA = argOf('--vbextra', '');
+// добавка к адресу игры во всех фазах, например cursor=0: в меню камера для курсора-кисти не включается
+// (с поддельным разрешением камеры она стартует сама и грузит MediaPipe во время появления героя)
+const QUERY = argOf('--query', 'cursor=0');
+// --video FILE.y4m — поток поддельной камеры из файла (640×480, 30 к/с — как настоящая веб-камера; без него встроенная
+// поддельная камера Chromium даёт 20 к/с, а на встроенной AMD в Edge — кадры 2×2). Файл делает make_y4m.py (см. README замера).
+const VIDEO = argOf('--video', '');
 const BROWSER = [argOf('--browser'), 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
   'C:/Program Files/Google/Chrome/Application/chrome.exe'].filter(Boolean).find((p) => existsSync(p));
 if (!BROWSER) { console.error('браузер не найден'); process.exit(1); }
@@ -180,6 +186,7 @@ async function launch(gpu) {
     '--disable-extensions', `--window-size=${W},${H}`, '--hide-scrollbars', '--use-angle=d3d11', '--ignore-gpu-blocklist', '--enable-gpu',
     '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'];
   if (gpu === 'nvidia') flags.push('--force_high_performance_gpu');
+  if (VIDEO) flags.push(`--use-file-for-fake-video-capture=${resolve(VIDEO)}`);
   const proc = spawn(BROWSER, [...flags, 'about:blank'], { stdio: 'ignore' });
   let list = null;
   for (let i = 0; i < 80 && !list; i++) { await sleep(200); try { list = await (await fetch(`http://127.0.0.1:${dbg}/json/list`)).json(); } catch (e) { /* ждём */ } }
@@ -192,7 +199,8 @@ async function launch(gpu) {
 
 async function openGame(page, query = '') {
   page.log.length = 0;
-  await page.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/${query}` });
+  const q = [QUERY, query.replace(/^\?/, '')].filter(Boolean).join('&');
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/${q ? '?' + q : ''}` });
   if (!(await page.waitFor('!!window.__ASHEN__', 40000))) throw new Error('игра не загрузилась');
 }
 
@@ -208,13 +216,14 @@ async function phaseLoad(page, name) {
   const r = await page.eval(`({ bootMs: window.__aoBootMs, firstAshen: __bench.firstAshen, heroReadyAt: __bench.heroReadyAt, heroId: __bench.heroReadyId, timing: __bench.heroTiming,
     procFrames: __bench.procFrames, procFirst: __bench.procFirst, procLast: __bench.procLast, hero: __ASHEN__.hero(), perf: __ASHEN__.perf(), render: __ASHEN__.renderInfo(),
     long: { ms: Math.round(__bench.longMs), max: Math.round(__bench.longMax), n: __bench.longN }, res: __benchRes(), postGapMax: __bench.postGapMax,
+    tracking: (() => { try { const t = __ASHEN__.tracking; return t ? t.status + (t.mode ? '/' + t.mode : '') : null; } catch (e) { return null; } })(),
     assets: __ASHEN__.worldAssets() && { pending: __ASHEN__.worldAssets().pending } })`);
   return {
     phase: name, ok: !!ready, wallMs: Date.now() - t0, bootMs: r.bootMs, firstAshenMs: r1(r.firstAshen), heroReadyMs: r1(r.heroReadyAt), heroId: r.heroId,
     heroAfterBootMs: r1(r.heroReadyAt !== null && r.firstAshen !== null ? r.heroReadyAt - r.firstAshen : null),
     timing: r.timing, procFrames: r.procFrames, procVisibleMs: r1(r.procFirst !== null ? r.procLast - r.procFirst : null),
     gpu: r.perf && r.perf.gpu, gpuClass: r.perf && r.perf.gpuClass, tier: r.perf && r.perf.tier, scale: r.perf && r.perf.scale, capFps: r.perf && r.perf.capFps, poseModel: r.perf && r.perf.poseModel,
-    programs: r.render && r.render.programs, longTasks: r.long, resources: r.res, postReadyGapMs: r1(r.postGapMax), errors: page.errors(),
+    programs: r.render && r.render.programs, longTasks: r.long, resources: r.res, postReadyGapMs: r1(r.postGapMax), tracking: r.tracking, errors: page.errors(),
   };
 }
 
@@ -245,15 +254,20 @@ async function phaseVision(page) {
   const r = await page.eval(`__benchRun(${SEC})`, SEC * 1000 + 30000);
   const s = summarizeRun(r);
   await page.shot('vision_menu');
-  return { phase: 'vision', ok: !!ok, visionStartMs, ...s, errors: page.errors() };
+  const tr = await page.eval('(() => { const t = __ASHEN__.tracking; return t ? { status: t.status, message: t.message, error: t.error, fallback: t.debug && t.debug.workerFallbackReason } : null; })()');
+  return { phase: 'vision', ok: !!ok, visionStartMs, ...s, tracking: tr, errors: page.errors() };
 }
 
 async function enterFight(page) {
-  await page.click('Отладка с клавиатуры'); await sleep(150);
-  await page.click('Играть'); await sleep(250);
-  await page.click('Продолжить без камеры (демо)'); await sleep(400);
-  await page.click('В бой'); await sleep(300);
-  if (!(await page.waitFor(`__ASHEN__.screen === 'playing'`, 15000))) throw new Error('бой не начался');
+  const clicks = [];
+  clicks.push(await page.click('Отладка с клавиатуры')); await sleep(150);
+  clicks.push(await page.click('Играть')); await sleep(250);
+  clicks.push(await page.click('Продолжить без камеры (демо)')); await sleep(400);
+  clicks.push(await page.click('В бой')); await sleep(300);
+  if (!(await page.waitFor(`__ASHEN__.screen === 'playing'`, 15000))) {
+    const scr = await page.eval('({ screen: __ASHEN__.screen, buttons: [...document.querySelectorAll("button")].filter((b) => b.offsetParent !== null).map((b) => b.textContent.trim()).slice(0, 12) })');
+    throw new Error(`бой не начался: клики ${clicks.join(',')}; экран ${scr.screen}; кнопки: ${scr.buttons.join(' | ')}`);
+  }
   await sleep(800);
   await page.key('KeyW', 'keyDown');
   await page.waitFor(`__ASHEN__.snapshot() && __ASHEN__.snapshot().player.encounter === 'engaged'`, 12000);
@@ -276,9 +290,9 @@ async function fightScript(page, sec) {
 
 async function phaseFight(page, name, query) {
   await openGame(page, query);
-  let vs = null;
-  if (query) vs = !!(await waitVision(page));
   await enterFight(page);
+  let vs = null;
+  if (query) { vs = !!(await waitVision(page)); await sleep(3000); }   // ?benchcam=fight: камера включается в бою — ждём MediaPipe и прогрев
   await sleep(1500);
   const runP = page.eval(`__benchRun(${SEC})`, SEC * 1000 + 30000);
   await fightScript(page, SEC);
@@ -289,18 +303,14 @@ async function phaseFight(page, name, query) {
   return { phase: name, visionOk: vs, ...s, snap, errors: page.errors() };
 }
 
-async function phaseVbench(page) {
-  const out = [];
-  if (!existsSync(join(ROOT, 'dev', 'vision-bench.html'))) return [{ note: 'нет dev/vision-bench.html в этой версии' }];
-  for (const d of VB_DELEGATES) for (const w of VB_WIDTHS) {
-    page.log.length = 0;
-    const q = `?delegate=${d}&width=${w}&sec=12${VB_EXTRA ? '&' + VB_EXTRA : ''}`;
-    await page.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/dev/vision-bench.html${q}` });
-    const ok = await page.waitFor('window.__VB__ && __VB__.done', 120000, 500);
-    const r = await page.eval('({ s: __VB__.summary, e: __VB__.error })');
-    out.push({ delegate: d, width: w, extra: VB_EXTRA || null, ok: !!ok && !r.e, error: r.e, ...(r.s || {}), errors: page.errors() });
-  }
-  return out;
+async function vbenchOne(page, d, w) {
+  if (!existsSync(join(ROOT, 'dev', 'vision-bench.html'))) return { note: 'нет dev/vision-bench.html в этой версии' };
+  page.log.length = 0;
+  const q = `?delegate=${d}&width=${w}&sec=12${VB_EXTRA ? '&' + VB_EXTRA : ''}`;
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/dev/vision-bench.html${q}` });
+  const ok = await page.waitFor('window.__VB__ && __VB__.done', 120000, 500);
+  const r = await page.eval('({ s: __VB__.summary, e: __VB__.error })');
+  return { delegate: d, width: w, extra: VB_EXTRA || null, ok: !!ok && !r.e, error: r.e, ...(r.s || {}), errors: page.errors() };
 }
 
 // ── главное ──
@@ -310,26 +320,38 @@ try {
   for (const gpu of GPUS) {
     const R = { renderer: null };
     results.gpus[gpu] = R;
-    const { proc, page, profile } = await launch(gpu);
-    try {
-      if (PHASES.includes('load')) R.load = await phaseLoad(page, 'load');
-      if (PHASES.includes('warm')) R.warm = await phaseLoad(page, 'warm');
-      R.renderer = (R.load || R.warm || {}).gpu || null;
-      if (PHASES.includes('switch')) R.switch = await phaseSwitch(page);
-      if (PHASES.includes('vision')) R.vision = await phaseVision(page);
-      if (PHASES.includes('fight')) R.fight = await phaseFight(page, 'fight', '');
-      if (PHASES.includes('fightcam')) R.fightcam = await phaseFight(page, 'fightcam', '?benchcam=1');
-      if (PHASES.includes('vbench')) R.vbench = await phaseVbench(page);
-      if (!R.renderer) { try { await openGame(page); R.renderer = await page.eval('__ASHEN__.perf() && __ASHEN__.perf().gpu'); } catch (e) { /* ignore */ } }
-    } catch (e) {
-      R.error = String(e && e.message || e);
-      console.error(`[${gpu}] ОШИБКА:`, R.error);
-      await page.shot(`${gpu}_error`);
-    } finally {
-      try { page.ws.close(); } catch (e) { /* ignore */ }
-      proc.kill();
-      await sleep(800);
-      try { rmSync(profile, { recursive: true, force: true }); } catch (e) { /* занят */ }
+    // Фазы с камерой — каждая в своём запуске браузера: поддельная камера headless после ухода со страницы,
+    // где она была открыта, следующему getUserMedia отвечает «нет устройства».
+    const groups = [];
+    const dry = PHASES.filter((p) => ['load', 'warm', 'switch', 'fight'].includes(p));
+    if (dry.length) groups.push(dry);
+    for (const p of PHASES) if (p === 'vision' || p === 'fightcam') groups.push([p]);
+    if (PHASES.includes('vbench')) for (const d of VB_DELEGATES) for (const w of VB_WIDTHS) groups.push([`vbench:${d}:${w}`]);
+    for (const group of groups) {
+      const { proc, page, profile } = await launch(gpu);
+      let gameOpen = false;
+      try {
+        for (const ph of group) {
+          if (ph === 'load') { R.load = await phaseLoad(page, 'load'); gameOpen = true; }
+          else if (ph === 'warm') { R.warm = await phaseLoad(page, 'warm'); gameOpen = true; }
+          else if (ph === 'switch') { if (!gameOpen) { await openGame(page); await page.waitFor('__bench.heroReadyAt !== null', 30000, 50); gameOpen = true; } R.switch = await phaseSwitch(page); }
+          else if (ph === 'fight') { R.fight = await phaseFight(page, 'fight', ''); gameOpen = true; }
+          else if (ph === 'vision') { R.vision = await phaseVision(page); gameOpen = true; }
+          else if (ph === 'fightcam') { R.fightcam = await phaseFight(page, 'fightcam', '?benchcam=fight'); gameOpen = true; }
+          else if (ph.startsWith('vbench:')) { const [, d, w] = ph.split(':'); (R.vbench ||= []).push(await vbenchOne(page, d, +w)); gameOpen = false; }
+          if (!R.renderer && gameOpen) { try { R.renderer = await page.eval('__ASHEN__.perf() && __ASHEN__.perf().gpu'); } catch (e) { /* ignore */ } }
+          if (!R.renderer && R.vbench && R.vbench[0] && R.vbench[0].gpu) R.renderer = R.vbench[0].gpu;
+        }
+      } catch (e) {
+        R.error = String(e && e.message || e);
+        console.error(`[${gpu}] ОШИБКА (${group.join(',')}):`, R.error);
+        await page.shot(`${gpu}_error_${group[0].replace(/[^a-z0-9]/gi, '_')}`);
+      } finally {
+        try { page.ws.close(); } catch (e) { /* ignore */ }
+        proc.kill();
+        await sleep(800);
+        try { rmSync(profile, { recursive: true, force: true }); } catch (e) { /* занят */ }
+      }
     }
     console.log(`\n=== ${gpu}: ${R.renderer} ===`);
     const line = (k, v) => console.log(`${k.padEnd(10)} ${v}`);
@@ -338,7 +360,7 @@ try {
       const tm = L.timing || {};
       line(ph, `герой «${L.heroId}» готов через ${L.heroReadyMs} мс от старта страницы (boot ${L.bootMs} мс, после __ASHEN__ ${L.heroAfterBootMs} мс); процедурный виден ${L.procFrames} кадров / ${L.procVisibleMs} мс; ` +
         `этапы: fetch ${r1(tm.fetch)} · parse ${r1(tm.parse)} · prep ${r1(tm.prep)} · clips ${r1(tm.clips)} · setup ${r1(tm.setup)} · dress ${r1(tm.dress)} · ready ${r1(tm.ready)}; tier ${L.tier} scale ${L.scale} pose ${L.poseModel}; ` +
-        `долгие задачи ${L.longTasks ? L.longTasks.ms + ' мс (макс ' + L.longTasks.max + ', n=' + L.longTasks.n + ')' : '—'}; разрыв кадров после появления ${L.postReadyGapMs} мс; ошибок ${L.errors.length}`);
+        `долгие задачи ${L.longTasks ? L.longTasks.ms + ' мс (макс ' + L.longTasks.max + ', n=' + L.longTasks.n + ')' : '—'}; разрыв кадров после появления ${L.postReadyGapMs} мс; камера ${L.tracking}; ошибок ${L.errors.length}`);
       if (L.resources) line('  сеть', L.resources.filter((x) => /glb|task$|wasm$/.test(x.f)).map((x) => `${x.f} ${x.start}→${x.end} (${x.ms} мс, ${x.kb} КБ)`).join(' · '));
     }
     if (R.switch) for (const s of R.switch) line('switch', `${s.hero}: ${s.readyMs ?? s.wallMs} мс (fetch ${r1(s.timing && s.timing.fetch)} · parse ${r1(s.timing && s.timing.parse)} · clips ${r1(s.timing && s.timing.clips)} · dress ${r1(s.timing && s.timing.dress)}), процедурный ${s.procFrames} кадров`);

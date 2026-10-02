@@ -150,9 +150,12 @@ renderer.shadowMap.type = THREE.PCFShadowMap;
 // ?uncapped=1 — без предела кадров (замеры QA), ?pose=lite|full — модель позы вручную.
 const PERF_Q = new URLSearchParams(location.search);
 const UNCAPPED = PERF_Q.get('uncapped') === '1';
-// [PERF] ?benchcam=1 — замер tools/perf_bench.mjs: камера (в headless — поддельная) работает и в «Отладке с клавиатуры»,
-// чтобы мерить бой и MediaPipe на одной видеокарте одновременно. Ввод остаётся клавиатурным.
-const BENCH_CAM = PERF_Q.get('benchcam') === '1';
+// [PERF] ?benchcam=1 — замер tools/perf_bench.mjs: камера (в headless — поддельная) работает с самого старта и не
+// выключается в «Отладке с клавиатуры», чтобы мерить бой и MediaPipe на одной видеокарте одновременно; ?benchcam=fight —
+// включается при входе в бой (экран камеры с живой камерой в отладке не пропускает дальше). Ввод остаётся клавиатурным.
+const BENCH_CAM = PERF_Q.get('benchcam') === '1' || PERF_Q.get('benchcam') === 'fight';
+const BENCH_CAM_AT_BOOT = PERF_Q.get('benchcam') === '1';
+let benchCamStarted = false;
 // [ONBOARD] быстрый вход: «Играть» → камера с автокалибровкой → обучение → бой у края арены.
 // ?demo — для живой презентации: без меню, сразу камера → бой; ?classic=1 — прежний поток экранов с кнопками.
 const DEMO = PERF_Q.has('demo') && PERF_Q.get('demo') !== '0';
@@ -1915,6 +1918,7 @@ function frame(now) {
   const ts = app.screen === 'playing' ? (pvpCtl && pvpCtl.active ? pvpCtl.timeScale(now) : timeScale(now)) : 1; // [PVP] в дуэли без стоп-кадров
   const dt = dtReal * ts * (bossFinale && app.screen === 'playing' ? bossFinale.timeScale() : 1);   // [W3-КИНО] сцена перехода в фазу 2
 
+  if (BENCH_CAM && !benchCamStarted && app.screen === 'playing') benchCamStart();   // [PERF] ?benchcam=fight
   const input = readInput();
   // [HAND] лук и магия рукой → input.bow / input.handSpell; конфликтующие жесты гасятся (C2)
   if (handZone) { try { handZone.apply(input, now, { debug: app.debug, playing: app.screen === 'playing', enabled: handCombatOn() }); } catch (e) { console.warn('[HAND] apply', e); } }
@@ -2154,7 +2158,12 @@ if (settings.startZone !== 'arena') { try { resetFight(); } catch (e) { console.
 // [ONBOARD] ?demo — живая презентация: без меню сразу экран камеры (камера и калибровка — сами), затем бой
 if (DEMO && !CHALLENGE_Q) { setScreen('camera'); app.onb.autoEnabled = true; enableCamera(); }
 // [PERF] ?benchcam=1 — камера работает с самого старта и не выключается в отладке (замер боя вместе с MediaPipe)
-if (BENCH_CAM) ensureVision().then((v) => v.start()).catch((e) => console.warn('[PERF] benchcam: камера не запустилась', e && (e.code || e.message)));
+function benchCamStart() {
+  if (benchCamStarted) return;
+  benchCamStarted = true;
+  ensureVision().then((v) => v.start()).catch((e) => console.warn('[PERF] benchcam: камера не запустилась', e && (e.code || e.message)));
+}
+if (BENCH_CAM_AT_BOOT) benchCamStart();
 if (CHALLENGE_Q) callbacks.onChallenge({ from: 'url' });   // [W3-CHALLENGE] ?challenge — сразу испытание
 renderUI();
 // [LOAD] шейдеры мира собираются до первого кадра (compileAsync + KHR_parallel_shader_compile): пока драйвер линкует
