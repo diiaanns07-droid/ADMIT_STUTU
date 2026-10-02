@@ -237,7 +237,7 @@ const CSS = `
 .ao-hc__ring{position:absolute;left:0;top:0;width:80px;height:80px;margin:-40px 0 0 -40px;opacity:0;transition:opacity .16s ease-out;will-change:transform,opacity}
 .ao-hc.is-on .ao-hc__ring{opacity:1}
 .ao-hc__ring svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;transform:rotate(-90deg)}
-.ao-hc__track{fill:none;stroke:rgba(8,6,4,.62);stroke-width:11}
+.ao-hc__track{fill:none;stroke:rgba(8,6,4,.45);stroke-width:10}
 .ao-hc__glow{fill:rgba(255,190,96,.12);stroke:#ffe3a8;stroke-width:2.5;filter:drop-shadow(0 0 1.5px rgba(0,0,0,.95)) drop-shadow(0 0 7px rgba(255,170,60,.9)) drop-shadow(0 0 18px rgba(255,140,40,.5));transition:stroke .15s}
 .ao-hc__fill{fill:none;stroke:#ffd27a;stroke-width:7;stroke-linecap:round;filter:drop-shadow(0 0 5px rgba(255,190,80,.95))}
 .ao-hc__dot{position:absolute;left:50%;top:50%;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:#fff3d6;border:1.5px solid rgba(20,12,4,.8);box-shadow:0 0 8px 2px rgba(255,190,90,.95)}
