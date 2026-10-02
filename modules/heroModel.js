@@ -358,9 +358,12 @@ export function createHeroModel({
   // [LOAD] шейдеры модели собираются до показа (renderer.compileAsync + KHR_parallel_shader_compile: главный поток
   // свободен, пока драйвер линкует программы). Иначе первый кадр с героем — рывок на сотни мс на слабой видеокарте.
   // compile() собирает материалы обходом всех узлов (не только видимых), поэтому модель остаётся скрытой.
+  // Без KHR_parallel_shader_compile (программный рендер, старые драйверы) — как PARALLEL_COMPILE в main.js: compileAsync
+  // там предупреждает в консоли и компилирует синхронно, поэтому шейдеры героя собираются по-старому, при первом показе.
   async function precompile(obj) {
     const R = defaults.renderer, cam = defaults.camera;
     if (!R || typeof R.compileAsync !== 'function' || !cam) return;
+    try { if (!(R.extensions && R.extensions.has('KHR_parallel_shader_compile'))) return; } catch (e) { return; }
     let sc = root;
     while (sc && !sc.isScene && sc.parent) sc = sc.parent;
     if (!sc || !sc.isScene) return;
