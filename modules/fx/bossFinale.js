@@ -212,7 +212,7 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     st.phase = { t: 0, roared: false };
     bossCore(snap, _core);
     pulse('bars', 1, null, { hold: FINALE.phase.bars });
-    pulse('flash', 0.4, _core, { color: 0xff4a2a, dur: 0.3 });
+    pulse('flash', 0.28, _core, { color: 0xff4a2a, dur: 0.3 });
     quake(0.35);
     setLava(0, 0.5);
   }
@@ -222,7 +222,7 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     const t = P.t;
     // лава бежит от ядра по броне, накал с горбом в момент рёва
     const front = sstep(F.sweep[0], F.sweep[1], t);
-    const heat = 0.6 + 2.6 * Math.exp(-Math.pow((t - F.roarAt - 0.1) / 0.35, 2));
+    const heat = 0.6 + 1.3 * Math.exp(-Math.pow((t - F.roarAt - 0.1) / 0.35, 2));
     setLava(front, heat * (1 - sstep(1.2, F.dur, t)) + 0.6 * sstep(1.2, F.dur, t));
     // небо багровеет рывком и остаётся (atmosphere.red догонит позже)
     st.boost = Math.max(st.boost, sstep(0.05, 0.7, t));
@@ -232,7 +232,7 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
       bossCore(snap, _core);
       say('boss_nova');                                    // рёв — поверх авто-звука boss_phase
       pulse('shockwave', 1, _core);
-      pulse('flash', 0.55, _core, { color: 0xff3a1e, dur: 0.38 });
+      pulse('flash', 0.38, _core, { color: 0xff3a1e, dur: 0.34 });
       pulse('punch', 0.6, _core);
       skyStrike(1);
       quake(0.6);
@@ -246,7 +246,7 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     st.death = { t: 0, shattered: false };
     bossCore(snap, _core);
     pulse('bars', 1, null, { hold: FINALE.death.bars });
-    pulse('flash', 0.35, _core, { color: 0xffd28a, dur: 0.3 });
+    pulse('flash', 0.2, _core, { color: 0xffd28a, dur: 0.25 });
     // орбита камеры — вокруг места гибели
     const b = snap && snap.boss && snap.boss.position;
     st.orbit.cx = b ? b.x : 0; st.orbit.cz = b ? b.z : 0; st.orbit.ok = false;
@@ -275,7 +275,7 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     pillar.position.set(_core.x, _core.y + 4, _core.z);
     pillar.visible = true;
     st.burstT = 0;
-    pulse('flash', 0.7, _core, { color: 0xfff0c8, dur: 0.45 });
+    pulse('flash', 0.55, _core, { color: 0xfff0c8, dur: 0.22 });   // короткий удар светом — дальше видны осколки
     pulse('shockwave', 1, _core);
     pulse('dash', 0.8, _core);
     skyStrike(1);
@@ -423,13 +423,13 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     if (!burst.visible) return;
     st.burstT += dtR;
     const t = st.burstT;
-    const grow = 1 - Math.exp(-t * 7);
-    const fade = Math.exp(-Math.max(0, t - 0.08) * 2.4);
-    burst.scale.setScalar(1.2 + grow * 6.5);
-    burstMat.color.setRGB(1.7 * fade, 1.3 * fade, 0.8 * fade);
-    pillar.scale.set(0.9 + grow * 0.8, 4 + grow * 20, 1);
-    const pf = Math.exp(-Math.max(0, t - 0.15) * 1.4);
-    pillarMat.color.setRGB(1.5 * pf, 1.25 * pf, 0.85 * pf);
+    const grow = 1 - Math.exp(-t * 9);
+    const fade = Math.exp(-Math.max(0, t - 0.06) * 4.2);
+    burst.scale.setScalar(1.0 + grow * 4.5);
+    burstMat.color.setRGB(1.3 * fade, 0.95 * fade, 0.55 * fade);
+    pillar.scale.set(0.6 + grow * 0.6, 4 + grow * 18, 1);
+    const pf = Math.exp(-Math.max(0, t - 0.12) * 2.2);
+    pillarMat.color.setRGB(1.1 * pf, 0.9 * pf, 0.6 * pf);
     if (fade < 0.01 && pf < 0.01) { burst.visible = false; pillar.visible = false; }
   }
 
