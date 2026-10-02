@@ -125,7 +125,7 @@ async function gamePage(q, extra = {}, query = '') {
   const page = await ctx.newPage();
   page.setDefaultTimeout(240000);
   page.on('pageerror', (e) => log('pageerror', e && e.message));
-  await page.goto(`${base}/?uncapped=1${query}`);
+  await page.goto(`${base}/?uncapped=1${query}${argOf('--query', '')}`);
   await page.waitForFunction(() => !!window.__ASHEN__, null, { timeout: 180000 });
   await page.waitForFunction(() => { const a = window.__ASHEN__.worldAssets(); return !a || a.pending === 0; }, null, { timeout: 180000 }).catch(() => {});
   return { ctx, page };
@@ -154,7 +154,7 @@ async function runMenu() {
       await page.evaluate(() => window.__kinoVirtual(true));
       await vstep(page, frames);
       await page.screenshot({ path: join(OUT, `${TAG}menu_${hero}.png`) });
-      log('menu', q, hero);
+      log('menu', q, hero, has('--dump') ? JSON.stringify(await page.evaluate(() => { const h = window.__ASHEN__.hero(); return { act: h.act, hold: h.hold, lod: h.lod, pose: h.pose, poses: h.poses, face: h.face, sc: window.__ASHEN__.heroShowcase() }; })) : '');
     }
     await ctx.close();
   }

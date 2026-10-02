@@ -426,7 +426,7 @@ export function createHeroModel({
       await dressUp(token);
       if (S.disposed || token !== S.token) return;
       // [W4-ПОЗЫ] кости лица — после оболочки (волосы подогнаны по весам головы) и до первого снимка образов рывка
-      try { cur.face = rigFace(THREE, vrm, { mouth: true }); } catch (e) { cur.face = null; console.warn('[HERO] мимика', e && e.message); }
+      try { cur.face = POSES_OFF || FACE_OFF ? null : rigFace(THREE, vrm, { mouth: true }); } catch (e) { cur.face = null; console.warn('[HERO] мимика', e && e.message); }
       bindPoses();
       showProcedural(false);
       for (const n of LOCO) if (full[n]) { full[n].play(); full[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); if (lower[n]) { lower[n].play(); lower[n].setEffectiveWeight(0); } }
@@ -720,7 +720,10 @@ export function createHeroModel({
   }
 
   // ---------------------------------------------------------------- [W4-ПОЗЫ] слой поз (modules/heroPoses.js)
-  const posesOn = () => !!(S.ready && cur && S.lod < 2);
+  // QA: ?poses=0 — без слоя поз (клипы как раньше), ?face=0 — без костей лица
+  const QS = typeof location !== 'undefined' && location.search ? location.search : '';
+  const POSES_OFF = /[?&]poses=0/.test(QS), FACE_OFF = /[?&]face=0/.test(QS);
+  const posesOn = () => !POSES_OFF && !!(S.ready && cur && S.lod < 2);
   const _gripP = new THREE.Vector3(), _tipP = new THREE.Vector3();
   function bindPoses() {
     if (!cur) return;

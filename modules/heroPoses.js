@@ -268,7 +268,9 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
   const _p = V(), _s = V(), _a = V(), _b = V(), _c = V(), _d = V(), _m = V(), _t = V(), _u = V(), _w = V(), _o = V(), _o2 = V();
   const footW = [V(), V()], footQ = [Q(), Q()], kneeW = [V(), V()], hipW = [V(), V()];
   const _ia = V(), _ib = V(), _ic = V(), _id = V(), _im = V(), _it = V(), _iu = V(), _iw = V();   // только для ik2
-  const out = new Float32Array(N), act = new Float32Array(N), idle = new Float32Array(N), prev = new Float32Array(N), tmp = new Float32Array(N), tmp2 = new Float32Array(N);
+  // aout — смесь слоя действий (перекрёст только по нему: иначе смещения покоя в первом кадре удвоились бы),
+  // out — итог кадра (действие + покой + вздрагивание)
+  const out = new Float32Array(N), aout = new Float32Array(N), act = new Float32Array(N), idle = new Float32Array(N), prev = new Float32Array(N);
   const st = {
     q: quality, hero: heroId, female, stance,
     a: null, at: 0, fade: 1, fadeDur: 0.15, prevSet: false,   // текущее действие, его время, перекрёст
@@ -294,7 +296,7 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
   // def: { id, keys | live(t, ctx, out), dur, hold (держится, пока hold(ctx)), enter, exit, loopFrom }
   function start(def, opt = {}) {
     if (st.a && st.a.def === def && opt.restart === false) return;
-    prev.set(out);                // перекрёст: от того, что сейчас на теле
+    prev.set(aout);               // перекрёст: от того, что сейчас играет слой действий
     for (let i = 0; i < N; i++) if (!Number.isFinite(prev[i])) prev[i] = 0;
     st.prevSet = true;
     st.a = { def, opt };
@@ -304,7 +306,7 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
   }
   function stop(exit = 0.2) {
     if (!st.a) return;
-    prev.set(out);
+    prev.set(aout);
     st.a = null; st.fade = 0; st.fadeDur = exit;
   }
   const ACTIONS = {
@@ -315,7 +317,12 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
         v[AL + 3] -= 0.12 * b; v[I.HZ] -= 0.04 * b; v[I.CP] -= 0.08 * b; v[I.EP] -= 0.06 * b;
         v[AL + 2] += 0.012 * Math.sin(t * 2.1);
       } },
-    ok: { id: 'ok', enter: 0.16, exit: 0.2, dur: 0.5, keys: [[0, POSES.okPrep], [0.1, POSES.okPrep], [0.22, POSES.okStrike, 'out2'], [0.4, POSES.okStrike], [0.5, POSES.okStrike]] },
+    ok: { id: 'ok', enter: 0.16, exit: 0.2, dur: 0.5, keys: [[0, POSES.okPrep], [0.1, POSES.okPrep], [0.22, POSES.okStrike, 'out2'], [0.4, POSES.okStrike], [0.5, POSES.okStrike]],
+      live(t, c, v) {
+        // щелчок залпа: кисть чуть вверх и назад и снова в цель (0,18 с)
+        const f = st.flick || 0;
+        if (f > 0) { const k = Math.sin(Math.PI * f); v[AR + 2] += 0.05 * k; v[AR + 3] -= 0.06 * k; v[AR + 8] += 0.5 * k; st.flick = Math.max(0, f - c.dt / 0.18); }
+      } },
     burst: { id: 'burst', enter: 0.18, exit: 0.25, dur: 0.95, keys: [[0, POSES.burstWind], [0.16, POSES.burstWind, 'io'], [0.38, POSES.burstOpen, 'out2'], [0.75, POSES.burstOpen], [0.95, POSES.burstOpen]] },
     conjure: { id: 'conjure', enter: 0.16, exit: 0.2, keys: [[0, POSES.sculpt]], hold: true,
       live(t, c, v) {
@@ -443,7 +450,8 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
         case 'player_cast':
           if (d.ability === 'bolt') {
             // залп: повтор жеста — с удара (без замаха), если прошлый ещё идёт
-            if (st.a && st.a.def === ACTIONS.ok && st.at < 0.5) st.at = Math.min(st.at, 0.1); else start(ACTIONS.ok);
+            // залп: рука уже вытянута — новый снаряд щелчком кисти, без возврата к плечу
+            if (st.a && st.a.def === ACTIONS.ok && st.at < 0.5) { st.flick = 1; if (st.at > 0.26) st.at = 0.26; } else start(ACTIONS.ok);
             st.exert = Math.min(1, st.exert + 0.06);
           } else if (d.ability === 'throw') { start(ACTIONS.sphereThrow); st.exert = Math.min(1, st.exert + 0.3); recognized(); }
           else if (d.ability === 'spark' || d.ability === 'slash' || d.ability === 'rune') recognized();
@@ -503,7 +511,8 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
       if (def.live) def.live(st.at, ctx0, act);
     } else act.set(ZERO);
     st.fade = Math.min(1, st.fade + dt / Math.max(0.04, st.fadeDur));
-    mix(out, prev, act, smooth01(st.fade));
+    mix(aout, prev, act, smooth01(st.fade));
+    out.set(aout);
     void c;
   }
 
@@ -528,7 +537,10 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     idle[I.FRZ] = 0.07 * freeR * f; idle[I.FRX] = 0.01 * freeR; idle[I.FRYW] = -0.32 * freeR * f; idle[I.FRY] = lift * (st.wsTo > 0 ? 1 : 0.3);
     // рука на поясе у героинь (в покое дольше 1,2 с; не когда руки ведёт зеркало игрока)
     st.hipT = still > 0.9 && !c.menu && !st.a && out[I.ACT] < 0.05 && c.mirrorW < 0.3 && c.bowW < 0.1 && c.spellW < 0.1 ? (st.hipT || 0) + dt : 0;
-    const hip = smooth01(((st.hipT || 0) - 1.2) / 0.8);
+    // рука ложится за 0,8 с после 1,2 с покоя, уходит за 0,15 с (вместе с перекрёстом действия — без рывка)
+    const hipWant = st.hipT > 1.2 ? 1 : 0;
+    st.hipW = clamp((st.hipW || 0) + clamp(hipWant - (st.hipW || 0), -dt / 0.15, dt / 0.8), 0, 1);
+    const hip = smooth01(st.hipW);
     // у стража и архимага — «рука у оружия»: левая ложится на древко посоха выше правой (руки — в arms)
     st.staffRest = !st.female && c.staffR ? hip : 0;
     if (hip > 0 && st.female) {
@@ -628,7 +640,7 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     if (hipsMove) {
       const legs = rigLegs;
       for (let i = 0; i < 2; i++) {
-        const [u, l, f] = legs[i];
+        const u = legs[i][0], l = legs[i][1], f = legs[i][2];
         u.updateWorldMatrix(true, false); l.updateWorldMatrix(false, false); f.updateWorldMatrix(false, false);
         getPos(f, footW[i]); getPos(l, kneeW[i]); getPos(u, hipW[i]);
         f.matrixWorld.decompose(_p, footQ[i], _s);
@@ -645,7 +657,7 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
       B.hips.updateWorldMatrix(true, false);
       // ноги: стопа — на месте клипа плюс шаг свободной ноги (оси героя), колено — туда же, куда смотрело
       for (let i = 0; i < 2; i++) {
-        const [u, l, f] = legs[i];
+        const u = legs[i][0], l = legs[i][1], f = legs[i][2];
         const ox = i ? I.FRX : I.FLX;
         _o.set(out[ox], out[ox + 1], out[ox + 2]).multiplyScalar((rig.height || 1.75) / 1.75).applyQuaternion(_qm);
         _t.copy(footW[i]).addScaledVector(_o, legW);

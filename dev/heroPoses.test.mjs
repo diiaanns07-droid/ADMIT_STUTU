@@ -101,17 +101,17 @@ const finite = (H) => Object.values(H.B).every((b) => [b.quaternion.x, b.quatern
   // переходы без рывков (перекрёст ≥ 0,12 с): щит → выброс → «Врата бури» → покой; на кадре смены действия
   // кисть проходит лишь малую долю пути
   const track = [];
-  let maxJump = 0, maxSwitch = 0, prevAct = '';
+  let maxJump = 0, maxSwitch = 0, prevAct = '', maxHip = 0, maxHipSwitch = 0;
   const run = (sec, c, evAt = null) => {
     for (let i = 0; i < Math.round(sec * 60); i++) {
       const ev = evAt && i === 0 ? evAt : [];
-      const pL = wp(H.B.leftHand), pR = wp(H.B.rightHand);
+      const pL = wp(H.B.leftHand), pR = wp(H.B.rightHand), pH = wp(H.B.hips);
       frame(H, poses, 1 / 60, c, ev);
       const dL = wp(H.B.leftHand).distanceTo(pL), dR = wp(H.B.rightHand).distanceTo(pR);
-      const d = Math.max(dL, dR);
-      maxJump = Math.max(maxJump, d);
+      const d = Math.max(dL, dR), dH = wp(H.B.hips).distanceTo(pH);
+      maxJump = Math.max(maxJump, d); maxHip = Math.max(maxHip, dH);
       const a = poses.active;
-      if (a !== prevAct) { maxSwitch = Math.max(maxSwitch, d); track.push(a); prevAct = a; }
+      if (a !== prevAct) { maxSwitch = Math.max(maxSwitch, d); maxHipSwitch = Math.max(maxHipSwitch, dH); track.push(a); prevAct = a; }
     }
   };
   const cs = ctx({ P: { action: 'shield', shielding: true } });
@@ -138,6 +138,7 @@ const finite = (H) => Object.values(H.B).every((b) => [b.quaternion.x, b.quatern
   assert.equal(poses.active, '', 'после печати — покой');
   assert.ok(track.includes('burst') && track.includes('gate'));
   assert.ok(maxSwitch < 0.05, `смена действия без рывка (${maxSwitch.toFixed(3)} м за кадр)`);
+  assert.ok(maxHipSwitch < 0.006 && maxHip < 0.03, `таз без скачков (смена ${maxHipSwitch.toFixed(4)}, кадр ${maxHip.toFixed(4)} м)`);
   assert.ok(maxJump < 0.16, `нет скачков кисти (${maxJump.toFixed(3)} м за кадр)`);
 
   // «Столп небес» (после заряда): правая — над головой, левая — к земле
@@ -150,6 +151,11 @@ const finite = (H) => Object.values(H.B).every((b) => [b.quaternion.x, b.quatern
   run(0.18, ctx({ P: { action: 'cast' } }), [{ type: 'player_cast', data: { ability: 'bolt' } }]);
   assert.equal(poses.active, 'ok');
   assert.ok(wp(H.B.rightHand).z - wp(H.B.rightUpperArm).z > 0.75 * armLen, '«OK»: кисть вперёд');
+  // залп (снаряд каждые 0,3 с): рука остаётся вытянутой — щелчок кистью, без возврата к плечу
+  for (let k = 0; k < 4; k++) {
+    run(0.3, ctx({ P: { action: 'cast' } }), [{ type: 'player_cast', data: { ability: 'bolt' } }]);
+    assert.ok(wp(H.B.rightHand).z - wp(H.B.rightUpperArm).z > 0.7 * armLen, `залп ${k}: рука вытянута`);
+  }
   // «Небесный суд»: руки к небу (время — по сцене боя)
   const ult = { active: true, t: 0, duration: 3.6, strikeAt: 2.3, struck: false };
   const cu = ctx({ P: { action: 'cast' }, snap: { status: 'playing', ultimate: ult } });
