@@ -179,7 +179,8 @@ export function createFxV6(deps) {
     // [W4-ЗАКЛИНАНИЯ] сцена эффекта: всё, что нарисует событие (и его акторы), — одна сцена с приоритетом свежести
     const prevScope = kit.currentScope;
     const sk = scopeKey(type, d);
-    if (sk !== null) kit.scope(sk);
+    // очередь «OK»-снарядов и искр — одна сцена со свежестью от начала очереди; удары и касты — «молодеют»
+    if (sk !== null) kit.scope(sk, undefined, !(sk === 'bolt' || sk === 'spark' || sk === 'r:bolt' || sk === 'r:spark'));
     for (let i = 0; i < list.length; i++) {
       const h = list[i];
       try {

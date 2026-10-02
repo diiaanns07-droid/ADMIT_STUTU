@@ -617,8 +617,11 @@ export function createFxKit(deps) {
     for (let i = 0; i < SCOPE_N; i++) { const x = scopes[i]; if (x !== s && x.until > clock && x.seq > s.seq) newer++; }
     return SHARE[Math.min(newer, SHARE.length - 1)];
   }
-  /** Открыть сцену эффекта (ключ — одна сцена на очередь однотипных) и сделать её текущей. hold — сколько жить без акторов. */
-  function scope(key, hold) {
+  /**
+   * Открыть сцену эффекта (ключ — одна сцена на очередь однотипных) и сделать её текущей. hold — сколько жить без акторов.
+   * renew:false — живая сцена с тем же ключом не «молодеет» (очередь снарядов: свежесть — от начала очереди).
+   */
+  function scope(key, hold, renew) {
     const k = typeof key === 'string' ? key : '';
     let s = null;
     if (k) for (let i = 0; i < SCOPE_N; i++) { const x = scopes[i]; if (x.key === k && x.until > clock) { s = x; break; } }
@@ -628,7 +631,8 @@ export function createFxKit(deps) {
       s.until = -1;
     }
     const wasNew = !(s.until > clock);
-    s.key = k; s.seq = ++scopeSeq; s.born = clock; s.until = Math.max(s.until, clock + num(hold, SCOPE_HOLD));
+    if (wasNew || renew !== false) { s.seq = ++scopeSeq; s.born = clock; }
+    s.key = k; s.until = Math.max(s.until, clock + num(hold, SCOPE_HOLD));
     if (wasNew) shareFrame = -1;
     curScope = s;
     return s;

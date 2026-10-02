@@ -167,8 +167,10 @@ if (process.env.SPELLFX_BASE) { console.log(JSON.stringify(peaks)); process.exit
   const nNew = count(d, false), nOld = count(a, false), nOldE = count(a, true);
   ok(nOld < nNew * 0.6, `старая сцена получает меньше частиц (${nOld} против ${nNew})`);
   ok(nOldE >= nNew * 0.5, `essential в старой сцене не ниже ~60% (${nOldE})`);
-  // повтор ключа: одна сцена «молодеет», а не плодит новые
+  // повтор ключа: одна сцена «молодеет», а не плодит новые; очередь (renew:false) — свежесть от начала
   const before = kit.stats().scopes;
+  kit.scope('t:b', undefined, false); kit.enterScope(null);
+  ok(kit.stats().scopes === before && kit.scopeShare(b) < 1, 'очередь: тот же ключ — та же сцена, не молодеет');
   kit.scope('t:a'); kit.enterScope(null);
   ok(kit.stats().scopes === before && kit.scopeShare(a) === 1, 'тот же ключ — та же сцена, снова новейшая');
   // акторы наследуют сцену создателя
