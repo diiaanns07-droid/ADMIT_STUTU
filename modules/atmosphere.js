@@ -17,6 +17,11 @@
  *   Все уровни: небо темнеет и краснеет снизу. medium/high: вихрь туч над ареной с «глазом» вокруг затмения,
  *   молнии внутри туч с видимым разрядом и гром, низкая дымка у пола (одна InstancedMesh, только во второй фазе).
  *   low — только цвет. reducedMotion — без молний (как и прежние далёкие вспышки).
+ *
+ * [W4-ARENA] setGroundHaze(k 0..1) — лёгкая лунная дымка у пола арены в спокойной фазе: те же карточки, что у грозы
+ *   (одна InstancedMesh, только medium/high), цвет переходит в багровый, когда гроза набирает вес.
+ *   skyU — uniform-ы неба (затмение и корона) для отражений в лужах и подсветки гребней гор (только чтение).
+ *   В небе — протуберанцы у кромки диска, длинные стримеры короны, редкие звёзды в разрывах туч.
  */
 
 const TAU = Math.PI * 2;
@@ -67,7 +72,7 @@ export const STORM = {
   thunderMax: 4,
   minW: 0.4,                // молнии — когда гроза набрала вес
   first: 0.9,               // первая молния — через столько с после этого
-  haze: { medium: 12, high: 20, rMin: 3, rMax: 12.5, w: [5, 3.5], h: [1.3, 0.8], k: 0.42 },
+  haze: { medium: 12, high: 20, rMin: 3, rMax: 12.5, w: [5, 3.5], h: [1.3, 0.8], k: 0.42, calm: 0.17 },   // [W4-ARENA] calm — дымка фазы 1
 };
 
 // [BDO] Настроение зоны (контракт с №5 [FOREST]): atmosphere.setZoneMood({ weight, sky, fog, sun, exposure }).
@@ -270,6 +275,15 @@ void main() {
   float disc = 1.0 - smoothstep( uDiscR - 0.0016, uDiscR, ang );
   col = mix( col, mix( vec3( 0.0035, 0.0045, 0.0065 ), uCorona * uCoronaI * 6.0 + vec3( 2.2, 2.0, 1.7 ), uSunDisc ), disc );
   col += uCorona * uCoronaI * exp( - abs( rimD ) / 0.0024 ) * 3.2;
+  // [W4-ARENA] протуберанцы — розовые языки над кромкой диска; длинные тонкие стримеры короны (бесшовно по кругу)
+  if ( ang < uDiscR + 0.5 ) {
+    vec2 pc = vec2( cos( pa ), sin( pa ) );
+    float pr = pow( ashVN( pc * 3.1 + 1.7 ), 5.0 ) * 1.5 + pow( ashVN( pc * 8.3 + 5.1 ), 9.0 ) * 1.1;
+    float prH = 0.0012 + 0.0055 * pr;
+    col += vec3( 1.0, 0.34, 0.42 ) * uCoronaI * ( 1.0 - uSunDisc ) * pr * step( 0.0, rimD ) * exp( - rimD / prH ) * 2.4;
+    float st = pow( ashVN( cp * 6.5 + 13.0 ), 7.0 );
+    col += uCorona * uCoronaI * st * outside * exp( - max( rimD, 0.0 ) / 0.24 ) * 0.14 * ( 1.0 - cm * 0.7 );
+  }
   float beadA = pa - 2.35;
   beadA = atan( sin( beadA ), cos( beadA ) );
   col += vec3( 1.0, 0.97, 0.92 ) * uBead * exp( - beadA * beadA / 0.018 ) * exp( - abs( rimD ) / 0.006 ) * 9.0;
@@ -292,6 +306,18 @@ void main() {
     }
   }
 
+  // [W4-ARENA] редкие звёзды в разрывах туч, высоко над горизонтом (не в грозу, не в светлом небе леса)
+  if ( el > 0.22 && uBake < 0.5 ) {
+    vec2 sp = d.xz / ( el + 0.3 ) * 120.0;
+    vec2 cell = floor( sp );
+    float sh = ashH12( cell );
+    if ( sh > 0.982 ) {
+      vec2 sf = fract( sp ) - 0.5 - ( vec2( ashH12( cell + 3.1 ), ashH12( cell + 7.7 ) ) - 0.5 ) * 0.5;
+      float tw = 0.75 + 0.25 * sin( uTime * ( 1.5 + sh * 3.0 ) + sh * 90.0 );
+      col += vec3( 0.78, 0.85, 1.0 ) * exp( - dot( sf, sf ) * 55.0 ) * ( sh - 0.982 ) * 75.0 * tw
+        * ( 1.0 - cm ) * smoothstep( 0.22, 0.5, el ) * ( 1.0 - uSunDisc ) * ( 1.0 - uStorm );
+    }
+  }
   if ( uBake > 0.5 ) col = mix( col, uGround, smoothstep( 0.0, -0.2, el ) );
   gl_FragColor = vec4( col, 1.0 );
   #include <tonemapping_fragment>
@@ -428,6 +454,7 @@ export function createAtmosphere({ THREE, scene, renderer, camera, parent, G, M,
     key: col(0xb9c9e6), keyDawn: col(0xffd9a0),
     fogClear: col(0x3e5249),   // [ASHEN_V3] воздух эльфийской деревни: теплее и светлее (setLocalClear)
     stormGlow: col(0xc8321c), hazeCol: col(0x2a1618), hazeLow: col(0x6a1c12),   // [W3-КИНО] гроза и дымка
+    hazeCalm: col(0x2c3646), hazeCalmLow: col(0x3c4a5e),   // [W4-ARENA] лунная дымка спокойной фазы
   };
   const state = {
     disposed: false, reduced: !!reducedMotion, quality,
@@ -436,6 +463,7 @@ export function createAtmosphere({ THREE, scene, renderer, camera, parent, G, M,
     clear: 0,          // [ASHEN_V3] 0..1 — местное прояснение (эльфийская деревня): туман реже и теплее
     // [W3-КИНО] гроза второй фазы
     boost: 0, storm: 0, stormOn: false, bolt: false, boltK: 0, nextBolt: 3, bolts: 0, listener: null,
+    calm: 0,           // [W4-ARENA] вес лунной дымки у пола (setGroundHaze)
   };
   const thunder = [];   // [W3-КИНО] отложенный гром: { t, k } (ячейки создаются один раз)
   for (let i = 0; i < STORM.thunderMax; i++) thunder.push({ t: -1, k: 0 });
@@ -845,9 +873,16 @@ varying vec3 vAshWorldPos;`;
     }
     skyUniforms.uFlash.value = fl * (state.bolt ? 0.45 : 1.4);   // [W3-КИНО] у грозы свой отсвет туч (uBolt)
     skyUniforms.uBolt.value = state.bolt ? fl * state.boltK : 0;
-    const hazeK = hq ? state.storm * STORM.haze.k : 0;
+    const stormHaze = hq ? state.storm * STORM.haze.k : 0;
+    const calmHaze = hq ? state.calm * STORM.haze.calm * (1 - state.dawn * 0.6) * (1 - mw) : 0;   // [W4-ARENA] лунная дымка фазы 1
+    const hazeK = Math.max(stormHaze, calmHaze);
     haze.visible = hazeK > 0.004;
     hazeUniforms.uHaze.value = hazeK;
+    if (haze.visible) {   // [W4-ARENA] цвет: спокойная — серо-синяя, гроза — багровая
+      const sw = clamp(stormHaze / Math.max(hazeK, 1e-4), 0, 1);
+      hazeUniforms.uHazeCol.value.copy(P.hazeCalm).lerp(P.hazeCol, sw);
+      hazeUniforms.uHazeLow.value.copy(P.hazeCalmLow).lerp(P.hazeLow, sw);
+    }
     hazeUniforms.uFlash.value = state.bolt ? fl * state.boltK : 0;
     state.strike *= Math.exp(-dt / 0.06);
     look.red = red; look.dawn = state.dawn; look.dark = state.dark; look.zone = mw;
@@ -888,6 +923,8 @@ varying vec3 vAshWorldPos;`;
   // [W3-КИНО] публичное: рывок неба и слушатель грозы
   function setPhaseBoost(k) { state.boost = clamp(Number.isFinite(+k) ? +k : 0, 0, 1); }
   function setStormListener(fn) { state.listener = typeof fn === 'function' ? fn : null; }
+  // [W4-ARENA] лунная дымка у пола арены: 0 — нет (по умолчанию), 1 — полная; world зовёт каждый кадр по близости камеры
+  function setGroundHaze(k) { state.calm = clamp(Number.isFinite(+k) ? +k : 0, 0, 1); }
 
   function setQuality(q) {
     state.quality = q;
@@ -965,6 +1002,8 @@ varying vec3 vAshWorldPos;`;
     setZoneMood, get zoneMood() { return mood.w; },  // [BDO]
     get yaw() { return state.follow; },
     look, setPhaseBoost, setStormListener,   // [W3-КИНО]
+    setGroundHaze,   // [W4-ARENA]
+    skyU: Object.freeze({ uSun: skyUniforms.uSun, uCorona: skyUniforms.uCorona, uCoronaI: skyUniforms.uCoronaI, uDiscR: skyUniforms.uDiscR }),   // [W4-ARENA] только чтение
     get storm() {
       let pending = 0;
       for (const th of thunder) if (th.t >= 0) pending++;
