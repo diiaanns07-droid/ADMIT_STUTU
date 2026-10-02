@@ -152,13 +152,10 @@ export function register(fx) {
       eShard.at = p; eShard.dir = _n; eShard.count = (2 + 8 * s) * m; eShard.speed[1] = 4.5 + 3 * s; eShard.ramp = R ? 'rival' : (ramp === 'storm' || ramp === 'reset' ? 'storm' : 'ember'); eShard.ground = gy + 0.03; eShard.rival = R;
       kit.emit(eShard);
     }
-    // печати: особенно мощно
+    // печати: свою вспышку, кольцо и свет удара рисуют sigilGate/sigilPillar (по таймеру) — здесь только
+    // осколки, искры и трещины, иначе удар засвечивается в белое
     if (sigil === 'gate' || sigil === 'pillar') {
       const pil = sigil === 'pillar';
-      fStar.ramp = 'whiteHold'; fStar.size[0] = 0.5; fStar.size[1] = 3.2 * sf; fStar.dur = 0.2; fStar.intensity = 4.6; fStar.pull = 0.9; fStar.delay = 0.03;
-      kit.flash(p, fStar);
-      fRing.ramp = pil ? 'gold' : 'fire'; fRing.size[0] = 0.4; fRing.size[1] = 4.2 * sf; fRing.dur = 0.45; fRing.intensity = 2.2; fRing.delay = 0.08;
-      kit.flash(p, fRing);
       if (pil) {
         // вертикальный штрих света сквозь точку удара
         fGlow.ramp = 'gold'; fGlow.sprite = 'streak'; fGlow.size[0] = 1.2; fGlow.size[1] = 3.4 * sf; fGlow.dur = 0.32; fGlow.intensity = 1.6; fGlow.delay = 0;
@@ -262,15 +259,15 @@ export function register(fx) {
       else if (rune === 'vee') delay = 0.31;
       mul = rune === 'stella' ? 0.8 : 1.05;
     } else if (src === 'sigil') {
-      if (sigil === 'gate') { ramp = R ? 'rival' : 'fire'; mul = 1.5; }
-      else if (sigil === 'pillar') { ramp = R ? 'rival' : 'gold'; mul = 1.5; }
+      if (sigil === 'gate') { ramp = R ? 'rival' : 'fire'; mul = 0.8; }
+      else if (sigil === 'pillar') { ramp = R ? 'rival' : 'gold'; mul = 0.8; }
       else if (d.sigil === 'delta') ramp = R ? 'rival' : 'void';
       else ramp = R ? 'rival' : 'storm';
     }
     if (pvp) delay = 0;
     if (delay > 0) { deferHit(delay, p, _dir, s, ramp, R, mul, sigil, onBoss, amount); return; }
     juicy(p, _dir, s, ramp, R, mul, sigil, onBoss);
-    if (amount >= 40 || sigil) heavy(p, amount, R, sigil);
+    if (amount >= 40 && !sigil) heavy(p, amount, R, sigil);
   });
 
   fx.every((dt, snap) => { crackTick(dt, snap); });
