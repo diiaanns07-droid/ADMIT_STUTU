@@ -24,7 +24,7 @@ import { createUI } from './modules/ui.js';
 import { createVision } from './modules/vision.js';
 import { createTrackingHud } from './core/trackingHud.js';
 import { createBattleHud } from './core/battleHud.js';
-import { createCoachStats, hintInfo } from './core/gestureCoach.js';
+import { createCoachStats, hintInfo, noteHint, getActiveHint, createCoachHistory, compareCoach } from './core/gestureCoach.js';
 import { createProgression } from './core/progression.js';
 import { createPushupCounter } from './core/pushupCounter.js';
 import { createSquatCounter, topSquatFault, synthSquatPose } from './core/squatCounter.js';
@@ -33,6 +33,8 @@ import { createPerfTuner } from './core/perfTuner.js'; // [PERF] автопод�
 import { createPerfHud } from './core/perfHud.js';     // [PERF] F3 — кадры и трекинг
 import { feelOfEvents, FEEL_TIME } from './core/gameFeel.js';     // [FEEL] остановка кадра, замедление, тряска по силе удара
 import { createCueTracker } from './modules/sfx.js';    // [SFX] «✓ Распознано» и «ОШИБКА» на обучении и в бою
+import { createCoachOverlay } from './core/coachOverlay.js'; // [ТВИСТ «ОШИБКА»] подсветка ошибки на превью камеры
+import { createTechniqueTrainer } from './modules/techniqueTrainer.js'; // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
 
@@ -221,6 +223,9 @@ const combatCfg = typeof combat.getConfig === 'function' ? combat.getConfig() : 
 const progression = createProgression();
 const pushups = createPushupCounter();
 const squats = createSquatCounter();
+// [ТВИСТ «ОШИБКА»] «Тренажёр техники»: чек-лист условий жеста вживую (свои счётчики упражнений, очков не даёт)
+const trainer = createTechniqueTrainer();
+let techView = null;
 // exercise: 'pushups' | 'squats'. sim — клавиатурная имитация приседа в DEBUG (без камеры).
 const train = { reps: 0, lastPoseT: -1, lastRepAt: -1e9, exercise: 'pushups', hintRef: null, hintAt: -1e9, sim: { k: 0, t: 0, keys: new Set() } };
 function resetTraining() {
@@ -449,7 +454,7 @@ function startFight() {
   if (pvpCtl && pvpCtl.active && pvpCtl.inMatch) { app.introShown = true; setScreen('playing'); return; } // [PVP] матч идёт: вернуться в бой без сброса
   resetFight();
   battleHud.reset();
-  coachStats.reset();
+  resetCoach();
   app.resumableFight = false;
   app.resumeAt = 0;
   effects.setVolume(gameVolume());
@@ -776,6 +781,7 @@ const callbacks = {
     const on = enabled === undefined ? !app.debug : !!enabled;
     app.debug = on;
     debugInput.setEnabled(on);
+    if (on) trainer.setDemo(true);        // [ТВИСТ «ОШИБКА»] тренажёр без камеры — демо
     if (on && vision) vision.stop();      // в DEBUG камера не используется и выключается
     renderUI();
   },
@@ -794,6 +800,16 @@ const callbacks = {
     resetTraining();
     renderUI();
   },
+  // [ТВИСТ «ОШИБКА»] «Тренажёр техники»: камера включается сразу; в отладке с клавиатуры — демо без камеры
+  onTechnique() {
+    unlockAudio();
+    trainer.reset();
+    trainer.setDemo(app.debug);
+    openSub('technique');
+    if (!app.debug) enableCamera();
+  },
+  onTechniqueGesture(id) { trainer.select(id); renderUI(); },
+  onTechniqueDemo(on) { if (app.debug) return; trainer.setDemo(on); renderUI(); },
   onBuyUpgrade(id) { if (progression.buy(id).ok) renderUI(); },
   onBack() {
     const to = app.nav.pop() || 'menu';
@@ -875,6 +891,11 @@ if (slot) { slot.appendChild(video); slot.appendChild(overlay); }
 // Трекинг-HUD («tracking edit»: рамки, координаты, скелет кистей, след руны) рисует на overlay;
 // собственный overlay vision выключен (config.vision.overlay=false).
 const trackingHud = createTrackingHud({ canvas: overlay });
+// [ТВИСТ «ОШИБКА»] свой слой поверх overlay: точки, которые надо исправить (getActiveHint) и условия тренажёра.
+// COACH_OVERLAY = false — выключить (например, если подсветку рисует сам трекинг-HUD).
+const COACH_OVERLAY = true;
+let coachOverlay = null;
+if (COACH_OVERLAY && slot) { try { coachOverlay = createCoachOverlay({ slot }); } catch (e) { console.warn('[ASHEN] coachOverlay', e); coachOverlay = null; } }
 // [HAND] лук и магия рукой: связка ввода (core/handZone.js), поза героя, оверлей на превью камеры,
 // простые 3D-заглушки (modules/handVisuals.js; их заменит №7 [VFX]). Любая ошибка — игра без них.
 let handZone = null, heroBowPose = null, handFx = null, handVisuals = null;
@@ -911,6 +932,18 @@ import('./modules/handVisuals.js').then((m) => { try { handVisuals = m.createHan
 const battleHud = createBattleHud({ canvas: hudCanvas });
 // [ТВИСТ «ОШИБКА»] удачные жесты и подсказки за бой → точность и частая ошибка на экране итогов
 const coachStats = createCoachStats();
+// итог боя для экрана итогов: точность по жестам, топ-3 ошибок и сравнение с прошлым боем (localStorage)
+let coachHistory = null;
+try { coachHistory = createCoachHistory(window.localStorage); } catch (e) { coachHistory = createCoachHistory(null); }
+const coachEdge = { attack: false, shield: false };   // начало удержания «OK» и щита — удачный жест
+let coachEnd = null;                                   // { ...summary, prev, compare } — замораживается в конце боя
+function finishCoach() {
+  if (coachEnd) return;
+  const s = coachStats.summary();
+  const prev = coachHistory ? coachHistory.push(s, Date.now()) : null;
+  coachEnd = { ...s, prev, compare: compareCoach(s, prev) };
+}
+function resetCoach() { coachStats.reset(); coachEnd = null; coachEdge.attack = false; coachEdge.shield = false; }
 // [PVP] дуэль игрок против игрока (modules/pvp.js, №3): грузится динамически; при ошибке — обычный бой.
 // ?pvp=local — две вкладки одного браузера (DEBUG, клавиатура). Лобби №2: window.__ashenPvp.start(net, {name, hero}).
 let pvpCtl = null;
@@ -919,7 +952,7 @@ import('./modules/pvp.js').then((m) => {
     pvpCtl = m.createPvpController({
       THREE, scene, camera, combat, config, settings, arena: worldLayout && worldLayout.arena,
       host: {
-        startFight() { resetFight(); battleHud.reset(); coachStats.reset(); app.resumableFight = false; app.resumeAt = 0; app.introShown = true; setScreen('playing'); },
+        startFight() { resetFight(); battleHud.reset(); resetCoach(); app.resumableFight = false; app.resumeAt = 0; app.introShown = true; setScreen('playing'); },
         exitToMenu() { callbacks.onExit(); },
         setDebug(on) { callbacks.onDebug(on); },
         isDebug: () => app.debug,
@@ -1026,7 +1059,7 @@ function heroPoseFromInput(input) {
 
 // ---------------------------------------------------------------- трекинг-HUD
 function drawTracking(now, input) {
-  if (app.debug || !vision) { trackingHud.clear(); return; }
+  if (app.debug || !vision) { trackingHud.clear(); drawCoachOverlay(now, null, null); return; }
   // [ПРОЕКТОР] режим рисунка задаёт слот камеры ui.js (data-hud-mode: панель презентации — 'full'), иначе — экран
   const forced = overlay.parentNode && overlay.parentNode.getAttribute ? overlay.parentNode.getAttribute('data-hud-mode') : null;
   const mode = forced === 'full' || forced === 'mini' ? forced : app.screen === 'playing' ? 'mini' : 'full';
@@ -1034,6 +1067,21 @@ function drawTracking(now, input) {
   try { hands = vision.getHands(); pose = vision.getPose(); } catch (e) { /* ignore */ }
   trackingHud.draw(now, { pose, status: visionStatus(), input, settings, mode, hands });
   if (handFx && handZone && handCombatOn()) { try { handFx.draw(now, { ...handZone.overlay(now), pose, settings, mode }); } catch (e) { /* [HAND] оверлей не критичен */ } } // [HAND]
+  drawCoachOverlay(now, hands, pose, mode);
+}
+// [ТВИСТ «ОШИБКА»] подсказка в бою и на обучении — на превью камеры
+function drawCoachOverlay(now, hands, pose, mode) {
+  if (!coachOverlay) return;
+  try {
+    if (app.screen === 'technique' && techView) {
+      // тренажёр: точки условий жеста; в демо — синтетическая кисть/поза вместо камеры
+      const demo = techView.demo;
+      coachOverlay.draw(now, { hands: demo ? techView.synthHands : hands, pose: demo ? techView.synthPose : pose, marks: techView.marks, skeleton: demo, mode: 'full', reducedMotion: settings.reducedMotion });
+      return;
+    }
+    const show = app.screen === 'playing' || app.screen === 'tutorial';
+    coachOverlay.draw(now, { hands, pose, hint: show ? getActiveHint(now) : null, mode: mode || (app.screen === 'playing' ? 'mini' : 'full'), reducedMotion: settings.reducedMotion });
+  } catch (e) { /* не критично */ }
 }
 
 // ---------------------------------------------------------------- UI
@@ -1050,7 +1098,8 @@ function renderUI() {
     pauseReason: app.pauseReason,
     progress: { ...progression.getView(), emberTotal: EMBER_TOTAL },
     training: app.screen === 'training' ? trainingView() : null,
-    coach: app.screen === 'victory' || app.screen === 'defeat' ? coachStats.summary() : null, // [ТВИСТ «ОШИБКА»] итог
+    technique: app.screen === 'technique' ? techView : null,
+    coach: app.screen === 'victory' || app.screen === 'defeat' ? (coachEnd || coachStats.summary()) : null, // [ТВИСТ «ОШИБКА»] итог, сравнение с прошлым боем
     // [ONBOARD] причина на кнопках «В бой»/«Продолжить бой»; отсчёт автопродолжения; калибровка из сохранения
     gate: { ok: app.gate.ok, reason: app.gate.reason },
     autoResumeMs: app.autoResume ? Math.max(0, app.autoResume.at - performance.now()) : null,
@@ -1178,6 +1227,11 @@ function trackCoach(input) {
   if (input.sigil) coachStats.success('sigil');
   if (input.bow && input.bow.release) coachStats.success('bow');                        // [HAND]
   if (input.handSpell && input.handSpell.phase === 'throw') coachStats.success('hand_spell'); // [HAND]
+  // «OK» и щит — удержания: удача — момент, когда жест распознан (а не каждый кадр удержания)
+  const atk = !!input.attack, shd = !!input.shield;
+  if (atk && !coachEdge.attack) coachStats.success('attack');
+  if (shd && !coachEdge.shield) coachStats.success('shield');
+  coachEdge.attack = atk; coachEdge.shield = shd;
   if (input.hint && input.hint.code) coachStats.mistake(input.hint.code);
 }
 function coachView(input) {
@@ -1238,7 +1292,7 @@ function precompileTick() {
   if (hk !== precomp.heroKey) { precomp.heroKey = hk; if (heroModel && heroModel.ready) schedulePrecompile('герой'); }
   if (!precomp.fight && app.screen === 'playing') { precomp.fight = true; schedulePrecompile('бой'); }
 }
-const CALM_SCREENS = new Set(['menu', 'paused', 'camera', 'calibration', 'tutorial', 'oath', 'training', 'victory', 'defeat']);
+const CALM_SCREENS = new Set(['menu', 'paused', 'camera', 'calibration', 'tutorial', 'oath', 'training', 'technique', 'victory', 'defeat']);
 let perfHud = null;
 try { perfHud = createPerfHud({ root: document.body }); } catch (e) { console.warn('[PERF] панель', e); }
 if (perfTuner) perfTuner.onChange((why, st) => {
@@ -1262,7 +1316,7 @@ function frame(now) {
   // [HAND] лук и магия рукой → input.bow / input.handSpell; конфликтующие жесты гасятся (C2)
   if (handZone) { try { handZone.apply(input, now, { debug: app.debug, playing: app.screen === 'playing', enabled: handCombatOn() }); } catch (e) { console.warn('[HAND] apply', e); } }
   // [ТВИСТ «ОШИБКА»] код подсказки → жест и текст исправления (для HUD, обучения и итогов)
-  if (input && input.hint && hintInfo(input.hint.code)) input.hint = { ...input.hint, ...hintInfo(input.hint.code) };
+  if (input && input.hint && hintInfo(input.hint.code)) { input.hint = { ...input.hint, ...hintInfo(input.hint.code) }; noteHint(input.hint, now); }
   if (input && input.hint && (app.screen === 'tutorial' || app.screen === 'playing')) cue(sfxCues.hint(input.hint, now)); // [SFX] мягкий «тук»
   app.lastInput = input;
   let events = NO_EVENTS;
@@ -1317,6 +1371,7 @@ function frame(now) {
     lastSnapshot = combat.getSnapshot();
     events = checkEmbers(lastSnapshot, events);
     events = forestZoneEvents(events, lastSnapshot);   // [FOREST]
+    if (lastSnapshot.status === 'victory' || lastSnapshot.status === 'defeat') finishCoach();   // [ТВИСТ «ОШИБКА»] итог — в историю (один раз; жесты финала уже не считаются)
     if (lastSnapshot.status === 'victory' || lastSnapshot.status === 'defeat') {
       // [FEEL] экран итогов — после замедленного финала (в дуэли и при «Уменьшенном движении» — короче)
       const win = lastSnapshot.status === 'victory';
@@ -1356,6 +1411,22 @@ function frame(now) {
     const got = pushups.drain();
     if (got.length) { train.reps += got.length; train.lastRepAt = now; progression.addPushups(got.length); }
   }
+
+  // [ТВИСТ «ОШИБКА»] тренажёр техники: условия из распознавателя (vision → handGestures.checks), поза — счётчикам
+  if (app.screen === 'technique') {
+    let live = null;
+    // пока камера и модель включаются (несколько секунд) — демо, чтобы твист был виден сразу
+    const vst = vision ? visionStatus().status : 'idle';
+    trainer.setAuto(!app.debug && !(vst === 'ready' || vst === 'lost' || vst === 'calibrating'));
+    if (!app.debug && vision) {
+      try {
+        const vs = visionStatus();
+        const hg = vs && vs.debug && vs.debug.handGestures;
+        live = { checks: hg && hg.checks ? hg.checks : null, hands: vision.getHands(), pose: vision.getPose() };
+      } catch (e) { live = null; }
+    }
+    try { techView = trainer.frame(now, live); } catch (e) { console.warn('[ASHEN] тренажёр', e); techView = null; }
+  } else techView = null;
 
   if (app.screen === 'paused' && !app.debug && vision) {
     const vs = visionStatus();
@@ -1480,6 +1551,8 @@ window.__ASHEN__ = Object.freeze({
   progress: () => progression.getView(),
   pushups: () => pushups.getDebug(),
   coach: () => coachStats.summary(),
+  coachEnd: () => (coachEnd ? JSON.parse(JSON.stringify(coachEnd)) : null), // [ТВИСТ «ОШИБКА»] итог боя со сравнением
+  activeHint: () => { const a = getActiveHint(); return a ? { ...a, pictogram: a.pictogram ? a.pictogram.length : 0 } : null; },
   hero: () => (heroModel ? heroModel.state() : null),
   heroShowcase: () => (heroShowcase ? { weight: heroShowcase.weight, zoom: +heroShowcase.zoom.toFixed(2), lights: heroShowcase.group.children.filter((o) => o.isLight).map((l) => [l.name, +l.intensity.toFixed(1)]) } : null), // [HERO] QA
   heroAnchors: () => { if (!heroModel || !heroModel.getAnchors) return null; const a = heroModel.getAnchors(), v = new THREE.Vector3(); return Object.fromEntries(Object.entries(a).map(([k, o]) => { o.getWorldPosition(v); return [k, { x: +v.x.toFixed(3), y: +v.y.toFixed(3), z: +v.z.toFixed(3), attached: !!o.parent }]; })); }, // [HERO] C5
@@ -1489,6 +1562,7 @@ window.__ASHEN__ = Object.freeze({
   fx: () => { try { return JSON.parse(JSON.stringify(effects.getDebugInfo())); } catch (e) { return null; } }, // [VFX] QA: частицы и слой V6
   heroStep: (dt, snap, events) => { if (heroModel) heroModel.update(dt, snap, events || []); return heroModel ? heroModel.state() : null; }, // QA: шаг анимации без rAF
   squats: () => squats.getDebug(),
+  technique: () => (techView ? JSON.parse(JSON.stringify({ ...techView, synthHands: null, synthPose: null, focus: techView.focus ? { ...techView.focus, pictogram: !!techView.focus.pictogram } : null })) : null), // [ТВИСТ «ОШИБКА»] QA тренажёра
   pvp: () => (pvpCtl ? pvpCtl.debug() : null),   // [PVP] QA: фаза, счёт, статистика дуэли
   zoneMood: (m) => { try { world.atmosphere.setZoneMood(m); return true; } catch (e) { return false; } }, // [BDO] QA: настроение зоны
   heroMax: () => { const c = typeof combat.getEffectiveConfig === 'function' ? combat.getEffectiveConfig() : null; return c ? { hp: c.player.maxHp, energy: c.player.maxEnergy } : null; },

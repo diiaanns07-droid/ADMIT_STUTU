@@ -18,16 +18,20 @@
  *   onSettings(patch)           patch — часть settings, например {volume:0.4}
  *   onDebug(nextEnabled:boolean)
  *   [ASHEN_V2] onOath({from})  onTraining({from})  onBuyUpgrade(id)  onBack()  onExercise('pushups'|'squats')
+ *   [ТВИСТ «ОШИБКА»] onTechnique({from})  onTechniqueGesture(id)  onTechniqueDemo(on); viewModel.technique — вид тренажёра
+ *     (modules/techniqueTrainer.js), viewModel.coach — итог боя { accuracy, groups[], top3[], compare }
  *   viewModel.progress = { points, earned, pushups, squats, embers[], emberTotal, upgrades[{id,name,level,max,cost,canBuy,now,next}] }
  *   viewModel.training = { exercise, reps, total, state, message, depth, lastOk, sinceRepMs,
  *     приседания: attempts, knee, view, lastHint{code,text,tMs}, sinceHintMs, faults{}, formScore, topFault{code,text,count}, debugSim }
  */
 
 import { createTutorialTrainer, TRAINER_STEPS } from '../core/tutorialTrainer.js';
+import { COACH_GROUPS, hintPictogram } from '../core/gestureCoach.js'; // [ТВИСТ «ОШИБКА»] итоги: жесты и пиктограммы
+import { createTechniqueScreen } from './techniqueTrainer.js';            // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
 
 export const API_VERSION = 'ASHEN_V1';
 
-const SCREENS = ['menu', 'camera', 'calibration', 'tutorial', 'playing', 'paused', 'victory', 'defeat', 'error', 'oath', 'training'];
+const SCREENS = ['menu', 'camera', 'calibration', 'tutorial', 'playing', 'paused', 'victory', 'defeat', 'error', 'oath', 'training', 'technique'];
 const TRACK_STATES = ['idle', 'loading', 'permission', 'calibrating', 'ready', 'lost', 'error'];
 const CAMERA_RUNNING = ['ready', 'lost', 'calibrating'];
 const CAMERA_STARTING = ['permission', 'loading'];
@@ -62,6 +66,7 @@ const SCREEN_ANNOUNCE = {
   error: 'Ошибка',
   oath: 'Клятва героя: улучшения',
   training: 'Тренировка клятвы',
+  technique: 'Тренажёр техники',
 };
 
 const DEBUG_KEYS_TEXT =
@@ -872,13 +877,15 @@ function telegraphText(tg) {
   }
 }
 
+// Совет после поражения. Управление — как в подсказках core/gestureCoach.js (shield_push/shield_palm,
+// ok_ring_open/ok_fingers) и на плитках HUD: щит — толчок левой ладонью к камере, снаряд — «OK» правой.
 function defeatTip(stats, snap) {
-  if (num(stats.blocks) === 0) return 'Поднятая левая рука держит щит: он гасит атаки, которые можно блокировать.';
-  if (num(stats.dodges) === 0) return 'Резко дёрните левой рукой в сторону и верните её — рывок: им можно уйти из зоны удара.';
+  if (num(stats.blocks) === 0) return 'Щит: резко толкните раскрытую левую ладонь к камере, ладонью вперёд, и держите её так. Он гасит атаки, которые можно блокировать. Просто поднятая рука щит не ставит.';
+  if (num(stats.dodges) === 0) return 'Рывок: резко дёрните левой рукой в сторону и верните её — так можно уйти из зоны удара.';
   if (snap && snap.boss && snap.boss.stage === 2) {
     return 'После половины здоровья страж усиливается. Следите за замахом и не стойте в зоне удара.';
   }
-  return 'Держите правую руку поднятой между атаками Регента: снаряды летят, пока рука поднята.';
+  return 'Снаряды летят, пока правая рука держит «OK»: кончики большого и указательного сомкнуты в кольцо, остальные три пальца выпрямлены. Стреляйте между атаками Регента.';
 }
 
 /* ================================================================ createUI */
@@ -1464,6 +1471,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const oathBtn = btn('Клятва героя', () => invoke('onOath', { from: 'menu' }), { variant: 'secondary' });
     const netBtn = btn('Онлайн-дуэль', () => invoke('onNet', { from: 'menu' }), { variant: 'secondary' }); // [NET] экран лобби — modules/netLobby.js
     const bookM = localBtn('Книга заклинаний', (e) => openBook(e && e.currentTarget), { iconName: 'book' }); // [ТРЕНАЖЁР] все жесты
+    // [ТВИСТ «ОШИБКА»] тренажёр: чек-лист условий жеста вживую — твист за 20 секунд
+    const techBtn = btn('Тренажёр техники', () => invoke('onTechnique', { from: 'menu' }), { variant: 'secondary' });
+    techBtn.node.classList.add('ao-menu__tech');
     const oathPts = el('span', { class: 'ao-oathpts', hidden: true });
     const dbg = el('button', { type: 'button', class: 'ao-toggle', 'aria-pressed': 'false' }, el('span', { class: 'ao-toggle__track', 'aria-hidden': 'true' }), el('span', { class: 'ao-toggle__label', text: 'Отладка с клавиатуры' }));
     listen(dbg, 'click', () => invoke('onDebug', !state.debug));
@@ -1484,7 +1494,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       title,
       el('p', { class: 'ao-subtitle', text: 'Бой с Регентом Нимба' }),
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
-      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode'], 'menu')), // [НОВИЧОК] режим жестов — на виду
+      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, techBtn.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode'], 'menu')), // [НОВИЧОК] режим жестов — на виду
       buildHeroPick('menu'),
       el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'difficulty', 'reducedMotion'], 'menu')),
       el('div', { class: 'ao-menu__foot' }, el('div', { class: 'ao-menu__toggles' }, dbg, presentBtn), dbgKeys),
@@ -1910,7 +1920,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     // [ТВИСТ «ОШИБКА»] почти-правильный жест на обучении: что не так и как исправить
     const coachHead = el('span', { class: 'ao-tut-coach__head' });
     const coachText = el('span', { class: 'ao-tut-coach__text' });
-    const coach = el('div', { class: 'ao-tut-coach', role: 'status', 'aria-live': 'polite', hidden: true }, coachHead, coachText);
+    const coachPic = el('span', { class: 'ao-tut-coach__pic', 'aria-hidden': 'true' });   // «как сейчас → как надо»
+    const coach = el('div', { class: 'ao-tut-coach', role: 'status', 'aria-live': 'polite', hidden: true }, coachPic, el('span', { class: 'ao-tut-coach__body' }, coachHead, coachText));
+    let coachPicCode = '';
     const start = btn('В бой', () => invoke('onStart', { from: 'tutorial' }), { variant: 'primary', size: 'lg' });
     const recal = btn('Перекалибровать', pressCalibrate);
     const back = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
@@ -1982,6 +1994,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           const side = t.hint.side === 'left' ? ' · левая рука' : t.hint.side === 'right' ? ' · правая рука' : '';
           setText(coachHead, `Ошибка · ${t.hint.gesture}${side}`);
           setText(coachText, t.hint.text);
+          if (t.hint.code !== coachPicCode) { coachPicCode = t.hint.code || ''; coachPic.innerHTML = hintPictogram(coachPicCode, { width: 126, height: 54, labels: true }); }
         }
         if (liveCv && inp.valid) {
           if (inp.moveX <= -STRAFE_SEEN) t.left = true;
@@ -2511,6 +2524,77 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
 
   /* ------------------------------------------------------------- RESULTS */
 
+  // [ТВИСТ «ОШИБКА»] блок «Техника жестов»: общая точность и сравнение с прошлым боем, столбики точности
+  // по каждому жесту, три самые частые ошибки с пиктограммой «как сейчас → как надо» и советом.
+  const LEGACY_RESULT_COACH = false;   // прежние строка «Точность жестов» и строка частой ошибки (выключены)
+  function deltaText(d) {
+    if (!isNum(d) || d === 0) return { text: d === 0 ? '= как в прошлом бою' : '', tone: 'same' };
+    return { text: `${d > 0 ? '▲ +' : '▼ −'}${Math.abs(Math.round(d))}`, tone: d > 0 ? 'up' : 'down' };
+  }
+  function techBlock() {
+    const accNum = el('strong', { class: 'ao-tech__accv', text: '—' });
+    const accDelta = el('span', { class: 'ao-tech__delta' });
+    const accNote = el('span', { class: 'ao-tech__note' });
+    const bars = el('div', { class: 'ao-tech__bars', role: 'list' });
+    const errs = el('ol', { class: 'ao-tech__errs' });
+    const empty = el('p', { class: 'ao-note ao-tech__empty', hidden: true, text: 'В этом бою жесты не распознавались. Отработайте их в «Тренажёре техники» — он показывает, какое условие жеста не выполнено.' });
+    const errsHead = el('h3', { class: 'ao-tech__h', text: 'Что исправить' });
+    const node = el('section', { class: 'ao-tech', 'aria-label': 'Техника жестов' },
+      el('div', { class: 'ao-tech__col' },
+        el('h3', { class: 'ao-tech__h', text: 'Точность жестов' }),
+        el('div', { class: 'ao-tech__acc' }, accNum, el('span', { class: 'ao-tech__accside' }, accDelta, accNote)),
+        bars, empty),
+      el('div', { class: 'ao-tech__col ao-tech__col--errs' }, errsHead, errs));
+    let key = '';
+    return {
+      node,
+      paint(c) {
+        const k = c ? JSON.stringify([c.accuracy, c.good, c.mistakes, c.groups, c.top3 && c.top3.map((e) => [e.code, e.count]), c.compare]) : '';
+        if (k === key) return;
+        key = k;
+        const has = !!c && isNum(c.accuracy);
+        setText(accNum, has ? `${c.accuracy}%` : '—');
+        setClass(accNum, 'is-good', has && c.accuracy >= 75);
+        setClass(accNum, 'is-bad', has && c.accuracy < 50);
+        const cmp = c && c.compare;
+        const d = cmp ? deltaText(cmp.accuracyDelta) : { text: '', tone: 'same' };
+        setText(accDelta, d.text);
+        setAttr(accDelta, 'data-tone', d.tone);
+        setHidden(accDelta, !d.text);
+        setText(accNote, has
+          ? `${c.good} из ${c.good + c.mistakes} жестов без ошибки${cmp ? ` · прошлый бой ${cmp.prevAccuracy}%` : ' · первый бой: сравнение появится в следующем'}`
+          : '');
+        const groups = c && Array.isArray(c.groups) ? c.groups : [];
+        bars.replaceChildren(...groups.slice(0, 7).map((g) => {
+          const gd = cmp && cmp.groups ? deltaText(cmp.groups[g.id]) : { text: '', tone: 'same' };
+          const tone = g.accuracy >= 75 ? 'good' : g.accuracy >= 50 ? 'warn' : 'bad';
+          return el('div', { class: 'ao-gbar', role: 'listitem', 'data-tone': tone, 'aria-label': `${g.title}: ${g.accuracy}%, ${g.good} из ${g.good + g.mistakes}` },
+            el('span', { class: 'ao-gbar__name', text: g.title }),
+            el('span', { class: 'ao-gbar__track', 'aria-hidden': 'true' }, el('span', { class: 'ao-gbar__fill', style: `width:${clamp(g.accuracy, 0, 100)}%` })),
+            el('span', { class: 'ao-gbar__v', text: `${g.accuracy}%` }),
+            el('span', { class: 'ao-gbar__n', text: `${g.good}/${g.good + g.mistakes}` }),
+            el('span', { class: 'ao-gbar__d', 'data-tone': gd.tone, text: gd.tone === 'same' ? '' : gd.text }));
+        }));
+        setHidden(empty, groups.length > 0);
+        const top = c && Array.isArray(c.top3) ? c.top3 : [];
+        setHidden(errsHead, !top.length);
+        errs.replaceChildren(...top.map((e) => {
+          const g = COACH_GROUPS[e.group];
+          return el('li', { class: 'ao-err' },
+            el('div', { class: 'ao-err__pic', 'aria-hidden': 'true', html: hintPictogram(e.code, { width: 150, height: 64, labels: true }) }),
+            el('div', { class: 'ao-err__body' },
+              el('div', { class: 'ao-err__head' },
+                el('strong', { class: 'ao-err__gest', text: e.gesture || (g && g.title) || '' }),
+                el('span', { class: 'ao-err__count', text: `×${e.count}` })),
+              el('p', { class: 'ao-err__fix', text: e.fix || '' }),
+              el('p', { class: 'ao-err__text', text: e.text || '' })));
+        }));
+        if (!top.length && has) errs.replaceChildren(el('li', { class: 'ao-err ao-err--clean' }, el('p', { class: 'ao-err__fix', text: 'Ошибок не было — чистая техника!' })));
+        setHidden(errs, !top.length && !has);
+      },
+    };
+  }
+
   function resultScreen(kind) {
     const win_ = kind === 'victory';
     const hid = `${uid}-${kind}-h`;
@@ -2529,26 +2613,31 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     ];
     for (const [key, label] of ROWS) {
       const dd = el('dd', { class: 'ao-stat__v', text: '—' });
-      stats.append(el('div', { class: 'ao-stat' }, el('dt', { class: 'ao-stat__k', text: label }), dd));
+      const row = el('div', { class: 'ao-stat' }, el('dt', { class: 'ao-stat__k', text: label }), dd);
+      if (key === 'accuracy' && !LEGACY_RESULT_COACH) row.hidden = true;   // точность — в блоке «Техника жестов»
+      stats.append(row);
       rows[key] = dd;
     }
     const tip = el('p', { class: 'ao-tip', hidden: true });
-    // [ТВИСТ «ОШИБКА»] самая частая ошибка жеста за бой и как её исправить
+    // [ТВИСТ «ОШИБКА»] прежняя строка «самая частая ошибка» (LEGACY_RESULT_COACH) и новый блок техники
     const coachTip = el('p', { class: 'ao-tip ao-tip--coach', hidden: true });
+    const tech = techBlock();
     // [FEEL] поражение — дружелюбно: «Ещё раз» сразу, без упрёков
     const again = btn(win_ ? 'Сразиться снова' : 'Ещё раз', () => invoke('onRestart'), { variant: 'primary', size: 'lg' });
+    const techR = btn('Тренажёр техники', () => invoke('onTechnique', { from: kind }));
     const oathR = btn('Клятва героя', () => invoke('onOath', { from: kind }));
     const exit = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
     const panel = el(
       'div',
-      { class: `ao-panel ao-panel--result ao-panel--${kind} ao-frame` },
+      { class: `ao-panel ao-panel--result ao-panel--${kind} ao-frame ao-has-tech` },
       el('div', { class: 'ao-result__mark', html: ICONS.sigil, 'aria-hidden': 'true' }),
       h,
       summary,
       stats,
+      tech.node,
       coachTip,
       tip,
-      el('div', { class: 'ao-actions ao-actions--center' }, again.node, oathR.node, exit.node),
+      el('div', { class: 'ao-actions ao-actions--center' }, again.node, techR.node, oathR.node, exit.node),
     );
     return {
       section: screenSection(kind, panel, hid),
@@ -2556,6 +2645,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       focus: () => again.node,
       update(ctx) {
         const s = ctx.snap;
+        tech.paint(ctx.coach);
         if (!s) {
           for (const dd of Object.values(rows)) setText(dd, '—');
           setText(summary, win_ ? 'Бой окончен победой.' : 'Бой окончен.');
@@ -2572,7 +2662,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setText(rows.blocks, fmtInt(st.blocks));
         const c = ctx.coach;
         setText(rows.accuracy, c && Number.isFinite(c.accuracy) ? `${c.accuracy}%  ·  ${c.good} из ${c.good + c.mistakes} жестов без ошибки` : '—');
-        if (c && c.top) {
+        if (LEGACY_RESULT_COACH && c && c.top) {
           setText(coachTip, `Чаще всего не получалось: ${c.top.gesture} (×${c.top.count}). ${c.top.text}.`);
           setHidden(coachTip, false);
         } else setHidden(coachTip, true);
@@ -3255,8 +3345,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
 
   /* ----------------------------------------------------------- assembly */
 
-  const screens = { menu, camera, calibration: calib, tutorial, paused, victory, defeat, error: errorScr, oath, training };
-  const slotHosts = { camera: camera.host, calibration: calib.host, tutorial: tutorial.host, paused: paused.host, playing: hud.dockHost, training: training.host };
+  // [ТВИСТ «ОШИБКА»] «Тренажёр техники» (modules/techniqueTrainer.js): DOM строится помощниками этого модуля
+  const technique = createTechniqueScreen({
+    uid, el, btn, setBtn, listen, heading, screenSection, statusLine, paintStatus, setText, setHidden, setAttr, setClass, setStyle,
+    invoke, announce, pressEnable, describe: (tr) => describeTracking(tr, cfg), cameraStarting: CAMERA_STARTING, debugInfo: DEBUG_INFO,
+  });
+  const screens = { menu, camera, calibration: calib, tutorial, paused, victory, defeat, error: errorScr, oath, training, technique };
+  const slotHosts = { camera: camera.host, calibration: calib.host, tutorial: tutorial.host, paused: paused.host, playing: hud.dockHost, training: training.host, technique: technique.host };
 
   ui.append(backdrop, hud.node, banner);
   for (const scr of Object.values(screens)) ui.append(scr.section);
@@ -3363,6 +3458,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     error: (ctx) => errorScr.update(ctx),
     oath: (ctx) => oath.update(ctx),
     training: (ctx) => training.update(ctx),
+    technique: (ctx) => technique.update(ctx),
   };
 
   function update(viewModel) {
