@@ -10,7 +10,7 @@
   /* [W4-UI] Стенд боевого HUD без WebGL: фальшивая 2D-сцена + настоящие ui.js (полосы, умения) и battleHud.js
      (числа урона, криты, лечение, «Ярость клятвы»). Сценарий повторяется каждые 8 с.
      Параметры: ?q=low|medium|high  &rm=1 (уменьшенное движение)  &bdo=0 (прежний вид)  &cheat=1 (шпаргалка видна)
-     &outro=1|2 — финал «ПОБЕДА» / «РЕГЕНТ УСТОЯЛ» в конце круга */
+     &outro=1|2 — финал «ПОБЕДА» / «РЕГЕНТ УСТОЯЛ» в конце круга; QA-замер: &noult=1 — без шкалы ярости, &quiet=1 — без событий */
   #ao-canvas { background: #0d0f14; }
 </style>
 </head>
@@ -99,7 +99,7 @@ function frame(now) {
     hud.reset();   // как новый бой в игре: без «+N» за восстановленное здоровье
   }
   const events = [];
-  while (fired < SCRIPT.length && SCRIPT[fired][0] <= loopT) { events.push(...SCRIPT[fired][1]()); fired++; }
+  while (!q.get('quiet') && fired < SCRIPT.length && SCRIPT[fired][0] <= loopT) { events.push(...SCRIPT[fired][1]()); fired++; }
   for (const e of events) {
     if (e.type === 'boss_hit') { snap.boss.hp = Math.max(0, snap.boss.hp - e.data.amount); if (!snap.player.furyReady) snap.player.fury = Math.min(99, snap.player.fury + e.data.amount * 0.08); }
     if (e.type === 'player_hit') snap.player.hp = Math.max(1, snap.player.hp - e.data.amount);
@@ -117,7 +117,7 @@ function frame(now) {
     dtReal: dt, timeScale: 1, screen: 'playing', snapshot: snap, events, input: null, project,
     viewport: { w: innerWidth, h: innerHeight }, intro: { active: false, t: 0, duration: 5 },
     settings, resumeLeftMs: 0, pois: [], layout: null, coach: null,
-    ult: { fury: snap.player.fury, furyMax: 100, ready: snap.player.furyReady, gesture: null, debug: false, flash: 0, cine: null },
+    ult: q.get('noult') ? null : { fury: snap.player.fury, furyMax: 100, ready: snap.player.furyReady, gesture: null, debug: false, flash: 0, cine: null },
   });
   const dtHud = realNow() - t0;
   QA.hudMs += dtHud; QA.ms[QA.frames & 4095] = dtHud; QA.frames++;
