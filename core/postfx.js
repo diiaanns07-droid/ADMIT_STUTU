@@ -33,6 +33,7 @@
  *
  * [W3-КИНО] Экранные события боя (публичный API для эффектов, ультимейта, финала):
  *   postfx.pulse(kind, strength = 1, screenPos?, opts?) -> bool (принят ли импульс)
+ *   postfx.pulse(kind, { x, y, z?, strength, color?, dur?, hold? }) — то же одним объектом (форма ультимейта)
  *   import { pulse } from 'core/postfx.js' — то же для всех живых экземпляров (без ссылки на postfx).
  *     kind: 'shockwave' (рябь-искажение кольцом от точки), 'dash' (радиальное размытие рывка),
  *           'punch' (короткий радиальный рывок удара), 'hurt' (красная аберрация и виньетка — героя ранили),
@@ -273,7 +274,7 @@ const LOOK = {
 const PULSE = {
   wave: { dur: 0.8, r1: 0.95, amp: 0.05, width: 0.07, min: 0.15, mergeUv: 0.06, mergeSec: 0.12 },
   punchK: 0.07, dashK: 0.13, dashTau: 0.17, hurtTau: 0.4,
-  flash: { tau: 0.24, minGap: 0.2, reducedK: 0.5 },
+  flash: { tau: 0.24, ultTau: 0.5, minGap: 0.2, reducedK: 0.5 },
   bars: { hold: 1.5, rate: 5 },
 };
 const RAYS_HQ = { scale: 0.5, thresh: 1.05, density: 0.92, decay: 0.965, strength: 1.15 };
@@ -311,6 +312,7 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
     dash: 0, dashC: { x: 0.5, y: 0.5 }, hurt: 0,
     flash: 0, flashTau: PULSE.flash.tau, flashAt: -9, flashC: [1, 0.97, 0.9],
     bars: 0, barsTarget: 0, barsUntil: 0,
+    last: { kind: '', k: 0, x: 0.5, y: 0.5, n: 0 },   // последний принятый импульс (QA)
     lookIn: { red: 0, dawn: 0, dark: 0, zone: 0 }, lookW: 0, raysVis: 0,
     look: { shadow: [0, 0, 0], high: [0, 0, 0], sat: 1, contrast: 0, vignette: 0, vig: [0, 0, 0], rays: [1, 1, 1], ca: 0, tint: [0, 0, 0], tintA: 0 },
   };
@@ -722,13 +724,13 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
     slot.x = p.x; slot.y = p.y; slot.t = 0; slot.s = k;
     return true;
   }
-  function addFlash(k, o) {
+  function addFlash(k, o, tau0 = PULSE.flash.tau) {
     const F = PULSE.flash;
     if (S.clock - S.flashAt < F.minGap) k *= 0.5;   // без стробоскопа
     if (S.reduced) k *= F.reducedK;
     if (k < S.flash) return true;
     S.flash = k; S.flashAt = S.clock;
-    S.flashTau = o && Number.isFinite(+o.dur) && +o.dur > 0 ? +o.dur : F.tau;
+    S.flashTau = o && Number.isFinite(+o.dur) && +o.dur > 0 ? +o.dur : tau0;
     const c = o && o.color;
     if (typeof c === 'number') { S.flashC[0] = ((c >> 16) & 255) / 255; S.flashC[1] = ((c >> 8) & 255) / 255; S.flashC[2] = (c & 255) / 255; }
     else if (Array.isArray(c) && c.length >= 3) { S.flashC[0] = clamp01(+c[0]); S.flashC[1] = clamp01(+c[1]); S.flashC[2] = clamp01(+c[2]); }
@@ -739,15 +741,28 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
     S.barsTarget = clamp01(+k || 0);
     S.barsUntil = S.barsTarget > 0 && hold > 0 ? S.clock + hold : 0;
   }
+  // Вторая форма вызова (ультимейт «Небесный суд»): pulse(kind, { x, y, z?, strength, color, dur, hold }) —
+  // объект вторым аргументом несёт и силу, и точку, и опции; точка может лежать и в .pos/.at. Без копий.
   function pulseFn(kind, strength = 1, pos, opts) {
     if (S.disposed) return false;
     const kd = KINDS[String(kind || '').toLowerCase()];
     if (!kd) return false;
+    if (strength && typeof strength === 'object' && !Array.isArray(strength)) {
+      const a = strength;
+      if (!opts) opts = a;
+      if (!pos) pos = a.pos || a.at || (Number.isFinite(a.x) && Number.isFinite(a.y) ? a : null);
+      strength = a.strength !== undefined ? a.strength : 1;
+    }
     const k = clamp01(Number.isFinite(+strength) ? +strength : 1);
     const o = opts && typeof opts === 'object' ? opts : null;
     if (kd === 'bars') { setCinema(k, o && Number.isFinite(+o.hold) ? +o.hold : PULSE.bars.hold); return true; }
     if (!(k > 0)) return false;
     const p = toUv(pos);
+    const ok = route(kd, k, p, o);
+    if (ok) { const L = S.last; L.kind = kd; L.k = k; L.x = p.x; L.y = p.y; L.n++; }   // QA: info().fx.last
+    return ok;
+  }
+  function route(kd, k, p, o) {
     switch (kd) {
       case 'wave': return addWave(p, k);
       case 'dash':
@@ -758,7 +773,7 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
       case 'hurt': S.hurt = Math.max(S.hurt, k); return true;
       case 'flash': return addFlash(k, o);
       case 'ult':
-        addFlash(k, o || { dur: 0.5 });
+        addFlash(k, o, PULSE.flash.ultTau);
         addWave(p, k);
         if (!S.reduced && p.ok && k * 0.8 >= S.dash) { S.dash = k * 0.8; S.dashC.x = p.x; S.dashC.y = p.y; }
         return true;
@@ -834,7 +849,7 @@ export function createPostFX({ THREE, renderer, scene, camera, quality = 'medium
         tier: S.tier, enabled: active(), ready: S.ready, failed: S.failed, error: S.error, highReady: S.highReady,
         size: [S.w, S.h, S.pr], passes: composer ? composer.passes.filter((p) => p.enabled).map((p) => (p.constructor && p.constructor.name) || '?') : [],
         // [W3-КИНО] QA: импульсы и цвет фаз
-        fx: { waves: S.waves.filter((w) => w.s > 0).length, dash: +S.dash.toFixed(3), hurt: +S.hurt.toFixed(3), flash: +S.flash.toFixed(3), bars: +S.bars.toFixed(3), look: { ...S.lookIn }, lookW: +S.lookW.toFixed(3), raysHQ: !!(P.rays && P.rays.enabled) },
+        fx: { waves: S.waves.filter((w) => w.s > 0).length, dash: +S.dash.toFixed(3), hurt: +S.hurt.toFixed(3), flash: +S.flash.toFixed(3), bars: +S.bars.toFixed(3), look: { ...S.lookIn }, lookW: +S.lookW.toFixed(3), raysHQ: !!(P.rays && P.rays.enabled), last: { ...S.last } },
       };
     },
   };

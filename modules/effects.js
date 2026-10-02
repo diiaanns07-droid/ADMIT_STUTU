@@ -3493,7 +3493,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     unlockAudio: () => (disposed ? Promise.resolve(false) : audio.unlock()),
     setVolume: (value) => { if (!disposed) audio.setVolume(value); },
     // [SFX] интерфейсный звук вне боя: 'ui_ok' («✓ Распознано»), 'ui_error' («ОШИБКА»), проба громкости
-    cue: (name) => { if (!disposed && typeof name === 'string') audio.play(name, null); },
+    cue: (name, param) => { if (!disposed && typeof name === 'string') audio.play(name, null, param); },   // [W3-КИНО] param { gain, rate } — для сэмплов (гром грозы)
     setAudioPaused: (p) => { if (!disposed) audio.setPaused(p); },
     setQuality,
     getCameraImpulse,

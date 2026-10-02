@@ -221,6 +221,24 @@ let bossFinale = null;
 import('./modules/fx/bossFinale.js').then((m) => {
   try { bossFinale = m.createBossFinale({ THREE, scene, world, cue, shake: (k) => rig.shake(k), reducedMotion: () => !!settings.reducedMotion, quality: () => settings.quality }); } catch (e) { console.warn('[W3-КИНО] финал Регента', e); }
 }).catch((e) => console.warn('[W3-КИНО] bossFinale.js не загружен:', e && e.message));
+// [W3-КИНО] события боя → импульсы экрана (core/cinemaFeed.js); гроза второй фазы → гром и отсвет молнии
+let cinema = null;
+import('./core/cinemaFeed.js').then((m) => {
+  try { cinema = m.createCinemaFeed({ pulse: (kind, k, pos, o) => (postfx && typeof postfx.pulse === 'function' ? postfx.pulse(kind, k, pos, o) : false) }); } catch (e) { console.warn('[W3-КИНО] cinemaFeed', e); }
+}).catch((e) => console.warn('[W3-КИНО] cinemaFeed.js не загружен:', e && e.message));
+// Гроза второй фазы (modules/atmosphere.js): гром — низкий раскат на сэмпле удара Регента (тем тише и ниже, чем
+// дальше молния), молния — короткий холодный отсвет на экране. Только в бою; на low и в reducedMotion молний нет.
+const STORM_FLASH = { color: 0xc9d6ff, dur: 0.14 };
+const _thunder = { gain: 0, rate: 1 };
+try {
+  if (world && world.atmosphere && typeof world.atmosphere.setStormListener === 'function') {
+    world.atmosphere.setStormListener((type, k) => {
+      if (app.screen !== 'playing') return;
+      if (type === 'thunder') { _thunder.gain = 0.22 + 0.4 * k; _thunder.rate = 0.5 + 0.12 * k; cue('boss_slam', _thunder); }
+      else if (type === 'bolt' && postfx && typeof postfx.pulse === 'function') postfx.pulse('flash', 0.08 + 0.08 * k, null, STORM_FLASH);
+    });
+  }
+} catch (e) { console.warn('[W3-КИНО] гроза', e); }
 const combatCfg = typeof combat.getConfig === 'function' ? combat.getConfig() : null;
 
 // [ASHEN_V2] прогресс героя: очки клятвы (отжимания, угли на плато) → улучшения боя.
@@ -431,6 +449,8 @@ function resetFight() {
   combat.reset();              // сбрасывает и bossBrain
   world.reset();
   effects.reset();
+  if (bossFinale) bossFinale.reset();   // [W3-КИНО] осколки и кинокамера прошлого боя
+  if (cinema) cinema.reset();           // [W3-КИНО] отложенные импульсы прошлого боя
   if (handVisuals) { try { handVisuals.reset(); } catch (e) { /* [HAND] */ } }
   if (handZone) handZone.reset(); // [HAND]
   debugInput.clear();
@@ -441,7 +461,6 @@ function resetFight() {
   app.lostTime = 0;
   app.outroAt = 0;             // [FEEL] финал и замедление прошлого боя не переходят в новый
   timeFx.slowUntil = 0; timeFx.stopUntil = 0;
-  if (bossFinale) bossFinale.reset();   // [W3-КИНО] осколки и кинокамера прошлого боя
 }
 
 // [ASHEN_V2] состояние камеры из снимка: вне арены — камера исследования, в арене — lock-on.
@@ -581,7 +600,7 @@ function screenAudio(screen) {
   } catch (e) { /* до инициализации звука */ }
 }
 const sfxCues = createCueTracker();
-function cue(name) { if (name && AUDIO_ON && effects && typeof effects.cue === 'function') { try { effects.cue(name); } catch (e) { /* ignore */ } } }
+function cue(name, param) { if (name && AUDIO_ON && effects && typeof effects.cue === 'function') { try { effects.cue(name, param); } catch (e) { /* ignore */ } } }   // [W3-КИНО] param: { gain, rate } — гром
 let previewTimer = 0;
 function previewVolume() { clearTimeout(previewTimer); previewTimer = setTimeout(() => cue('ui_ok'), 120); } // проба после остановки ползунка
 // [SFX] AudioContext разблокируется первым же кликом или клавишей (браузер не даёт звук без жеста игрока)
@@ -1271,21 +1290,12 @@ function feedPostFx(events) {
   }
 }
 
-// [W3-КИНО] экранные события боя → postfx.pulse (волна, рывок, ранение); цвет фаз — из атмосферы
-const _cinPos = { x: 0, y: 0, z: 0 };
+// [W3-КИНО] экранные события боя → postfx.pulse (core/cinemaFeed.js: волна, рывок, ранение, «Врата бури»,
+// «Столп небес», удар ультимейта); цвет фаз — из атмосферы (atmosphere.look)
 function feedCinema(events) {
   const atmo = world && world.atmosphere;
   if (typeof postfx.setLook === 'function') postfx.setLook(atmo && atmo.look ? atmo.look : null);
-  if (!Array.isArray(events) || typeof postfx.pulse !== 'function') return;
-  for (const e of events) {
-    const d = (e && e.data) || {};
-    if (!e || d.remote) continue;
-    if (e.type === 'player_hit') postfx.pulse('hurt', 0.45 + Math.min(0.55, (Number(d.amount) || 10) / 40));
-    else if (e.type === 'perfect_dodge') postfx.pulse('dash', 1);
-    else if (e.type === 'player_dash' && e.position) { _cinPos.x = e.position.x; _cinPos.y = (e.position.y || 0) + 1.2; _cinPos.z = e.position.z; postfx.pulse('dash', 0.6, _cinPos); }
-    else if (e.type === 'boss_impact' && !d.launch && (d.attackKind === 'slam' || d.attackKind === 'nova')) postfx.pulse('shockwave', d.attackKind === 'nova' ? 1 : 0.75, e.position);
-    else if (e.type === 'burst') postfx.pulse('shockwave', 0.5 + 0.5 * Math.min(1, Number(d.power) || 0.5), e.position);
-  }
+  if (cinema) { try { cinema.feed(events, lastSnapshot); } catch (e) { console.warn('[W3-КИНО] cinemaFeed', e); cinema = null; } }
 }
 
 // ---------------------------------------------------------------- главный цикл
@@ -1572,6 +1582,7 @@ window.__ASHEN__ = Object.freeze({
   hands: () => { try { const h = vision && vision.getHands(); return h ? JSON.parse(JSON.stringify({ ...h, left: h.left && { shape: h.left.shape, palmFacing: h.left.palmFacing, charge: h.left.charge }, right: h.right && { shape: h.right.shape, palmFacing: h.right.palmFacing, charge: h.right.charge } })) : null; } catch (e) { return null; } },
   get timeScale() { return timeScale(performance.now()); },
   get postfx() { return postfx ? { enabled: postfx.enabled } : null; },
+  kino: () => { try { return JSON.parse(JSON.stringify({ storm: world.atmosphere.storm, look: world.atmosphere.look, fx: postfx ? postfx.info().fx : null, cinema: cinema ? cinema.debug() : null, finale: bossFinale ? bossFinale.debug() : null })); } catch (e) { return null; } },   // [W3-КИНО] QA: гроза, импульсы, сцены
   get resumeGraceLeft() { return Math.max(0, app.resumeAt - performance.now()); },
   snapshot: () => (lastSnapshot ? JSON.parse(JSON.stringify(lastSnapshot)) : null),
   canvasCount: () => document.querySelectorAll('canvas#ao-canvas').length,

@@ -3567,7 +3567,7 @@ float ashPuddle( vec2 xz ) {
   // (0 — весь круг разом), decay — затухание, 1/с. Занимает свободную или самую угасшую из 4 волн.
   const RUNE_GOLD = new THREE.Color(1.0, 0.64, 0.24), RUNE_AMBER = new THREE.Color(1.0, 0.4, 0.1);
   const RUNE_BLUE = new THREE.Color(0.36, 0.68, 1.0), RUNE_CRIMSON = new THREE.Color(1.0, 0.09, 0.04);
-  const RUNE_DAWN = new THREE.Color(1.0, 0.8, 0.48);
+  const RUNE_DAWN = new THREE.Color(1.0, 0.8, 0.48), RUNE_ICE = new THREE.Color(0.72, 0.88, 1.0);
   function runeFlash(x, z, strength, col, speed = 0.85, decay = 2.4) {
     let slot = 0, best = Infinity;
     for (let i = 0; i < 4; i++) {
@@ -3597,10 +3597,24 @@ float ashPuddle( vec2 xz ) {
         break;
       }
       case 'rune_cast': runeFlash(px, pz, 1.5, d.rune === 'fulgur' ? RUNE_BLUE : d.rune === 'ignis' ? RUNE_AMBER : RUNE_GOLD); spell(); break;
-      case 'sigil_cast': runeFlash(px, pz, 1.4, RUNE_GOLD, 0.7, 1.8); spell(); break;
+      case 'sigil_cast': {
+        // «Врата бури» — янтарная волна быстро бежит по кругу; «Столп небес» — холодный заряд (удар — ниже)
+        const pw = clamp(num(d.power, 0.6), 0, 1);
+        if (d.sigil === 'gate') runeFlash(px, pz, 1.5 + 0.8 * pw, RUNE_AMBER, 1.5, 1.6);
+        else if (d.sigil === 'pillar') runeFlash(px, pz, 0.9 + 0.5 * pw, RUNE_ICE, 0.5, 2.2);
+        else runeFlash(px, pz, 1.4, RUNE_GOLD, 0.7, 1.8);
+        spell();
+        break;
+      }
+      case 'sigil_miss': if (d.sigil === 'pillar') runeFlash(hx, hz, 1.6, RUNE_ICE, 0, 1.6); break;   // столп ударил мимо — круг всё равно отзывается
       case 'burst': runeFlash(px, pz, 2.4, RUNE_DAWN, 1.3, 1.6); break;   // печать уже вспыхнула (sigilFlash = 1)
       case 'player_slash': runeFlash(px, pz, 0.45 + 0.4 * clamp(num(d.power, 0.6), 0, 1), RUNE_GOLD, 1.1, 3.2); break;
-      case 'boss_hit': if (num(d.amount, 0) >= 30) runeFlash(hx, hz, 1.2, RUNE_GOLD, 1.0, 2.2); break;
+      case 'boss_hit':
+        if (d.sigil === 'pillar') runeFlash(hx, hz, 2.6, RUNE_ICE, 0, 1.4);   // удар столпа — весь круг разом
+        else if (d.source === 'ultimate' || d.ultimate) break;               // «Небесный суд» — ниже, по ultimate_strike
+        else if (num(d.amount, 0) >= 30) runeFlash(hx, hz, 1.2, RUNE_GOLD, 1.0, 2.2);
+        break;
+      case 'ultimate_strike': runeFlash(hx, hz, 3.0, RUNE_DAWN, 0, 0.8); break;   // меч из света — круг вспыхивает целиком
       case 'boss_impact': {
         if (d.launch) break;
         const k = normKind(d.attackKind || d.kind);
