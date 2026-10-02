@@ -160,7 +160,7 @@ void main() {
   float d = mix( db, dh, h ) - 0.35 * h * ( 1.0 - h );   // плавное слияние пятки и носка
   if ( d > 0.45 ) discard;
   float edge = exp( - abs( d ) * 9.0 );
-  float fill = smoothstep( 0.05, -0.5, d ) * 0.32;
+  float fill = ( 1.0 - smoothstep( -0.5, 0.05, d ) ) * 0.32;
   float life = 1.0 - vAge;
   float flash = exp( - vSec * 9.0 );
   float halo = exp( - max( d, 0.0 ) * 5.0 ) * 0.22;      // мягкий ореол вокруг подошвы — след виден и издалека
@@ -235,7 +235,7 @@ void main() {
   p.y = max( p.y, position.y - 0.02 );
   vec4 mv = modelViewMatrix * vec4( p, 1.0 );
   gl_Position = projectionMatrix * mv;
-  float sz = mix( 0.16 + 0.5 * sqrt( u ), 0.06 * ( 1.0 - 0.6 * u ), spark ) * ( 0.75 + 0.5 * aB.w );
+  float sz = mix( 0.16 + 0.5 * sqrt( u ), 0.08 * ( 1.0 - 0.5 * u ), spark ) * ( 0.75 + 0.5 * aB.w );
   gl_PointSize = clamp( sz * uPx / max( 0.3, - mv.z ), 1.0, 90.0 );
 }`;
 const BURST_FRAG = /* glsl */`
@@ -252,16 +252,16 @@ void main() {
   float a;
   vec3 col;
   if ( vKind > 0.5 ) {
-    float core = smoothstep( 0.5, 0.0, d );
+    float core = 1.0 - smoothstep( 0.0, 0.5, d );
     core *= core;
-    col = mix( uC2, uC1, vU ) * ( 1.4 + 2.4 * core * core );
+    col = mix( uC2, uC1, vU ) * ( 1.6 + 2.8 * core * core );
     a = core * ( 1.0 - vU );
   } else {
     // клуб пыли: мягкий край, «рыхлость» по углу, подсвечен стихией у героя
-    float ang = atan( c.y, c.x );
+    float ang = atan( c.y, c.x + 1e-5 );                 // +ε: atan(0, 0) в центре точки не определён
     float lump = 0.82 + 0.18 * sin( ang * 5.0 + vSeed * 30.0 );
-    float soft = smoothstep( 0.5 * lump, 0.06, d );
-    a = soft * 0.34 * ( 1.0 - vU ) * ( 1.0 - vU ) * smoothstep( 0.0, 0.06, vU );
+    float soft = 1.0 - smoothstep( 0.06, 0.5 * lump, d );
+    a = soft * 0.4 * ( 1.0 - vU ) * ( 1.0 - vU ) * smoothstep( 0.0, 0.06, vU );
     col = mix( uDust, uC1 * 0.5, 0.18 + 0.22 * vSeed * ( 1.0 - vU ) );
   }
   gl_FragColor = vec4( col, a );
@@ -270,7 +270,7 @@ void main() {
   gl_FragColor = vec4( gl_FragColor.rgb * a, vKind > 0.5 ? 0.0 : a );   // премультипликация после цвета экрана
 }`;
 
-export function createDashBurst(THREE, { color = 0x9ff4ff, color2 = 0xffffff, count = 48, dust = 0x3a3430 } = {}) {
+export function createDashBurst(THREE, { color = 0x9ff4ff, color2 = 0xffffff, count = 48, dust = 0x6e655c } = {}) {
   const n = Math.max(8, count | 0);
   const geo = new THREE.BufferGeometry();
   const P0 = new Float32Array(n * 3), V = new Float32Array(n * 3), B = new Float32Array(n * 4);
@@ -309,18 +309,20 @@ export function createDashBurst(THREE, { color = 0x9ff4ff, color2 = 0xffffff, co
     B[i * 4] = t; B[i * 4 + 1] = life; B[i * 4 + 2] = kind; B[i * 4 + 3] = rnd();
     if (t + life > until) until = t + life;
   }
-  // kind: 'dash' — старт рывка (пыль назад и в стороны, искры назад), 'stop' — торможение (пыль вперёд), 'step' — шаг
+  // kind: 'dash' — старт рывка (пыль назад и в стороны, искры назад), 'trail' — по ходу рывка, 'stop' — торможение
+  // (пыль вперёд), 'step' — шаг
   function emit(kind, x, y, z, dx, dz, t = U.uTime.value, k = 1) {
     const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
     const nd = kind === 'dash' ? Math.round(16 * k) : kind === 'stop' ? Math.round(9 * k) : 2;
-    const ns = kind === 'dash' ? Math.round(14 * k) : kind === 'stop' ? Math.round(4 * k) : 0;
+    const ns = kind === 'dash' ? Math.round(14 * k) : kind === 'stop' ? Math.round(4 * k) : kind === 'trail' ? Math.round(4 * k) : 0;
     const back = kind === 'stop' ? -1 : 1;   // пыль на старте летит назад, на торможении — по ходу
     for (let i = 0; i < nd; i++) {
       const a = rnd() * Math.PI * 2, r = 0.05 + 0.2 * rnd(), ox = Math.cos(a), oz = Math.sin(a);
-      const sp = kind === 'step' ? 0.35 + 0.5 * rnd() : 1.0 + 1.9 * rnd(), rad = kind === 'step' ? 0.5 : 0.6 + 1.1 * rnd();
+      const soft = kind === 'step' || kind === 'trail';
+      const sp = soft ? 0.35 + 0.5 * rnd() : 1.0 + 1.9 * rnd(), rad = soft ? 0.5 : 0.6 + 1.1 * rnd();
       put(x + ox * r, y + 0.04, z + oz * r,
         -dx * sp * back + ox * rad, 0.15 + 0.45 * rnd(), -dz * sp * back + oz * rad,
-        t + (kind === 'dash' ? 0.03 * rnd() : 0), kind === 'step' ? 0.45 + 0.2 * rnd() : 0.7 + 0.45 * rnd(), 0);
+        t + (kind === 'dash' ? 0.03 * rnd() : 0), soft ? 0.45 + 0.25 * rnd() : 0.7 + 0.45 * rnd(), 0);
     }
     for (let i = 0; i < ns; i++) {
       const h = 0.12 + 1.0 * rnd(), lat = (rnd() - 0.5) * 2;

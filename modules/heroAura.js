@@ -168,7 +168,7 @@ void main() {
   if ( r > 1.0 ) discard;
   float aa = fwidth( r ) * 1.5 + 1e-4;              // пиксель в единицах радиуса (сглаживание линий)
   float aw = aa / max( r, 0.05 );                     // и в радианах — без шва atan
-  float a = atan( p.y, p.x ) - uYaw;                  // мировой угол
+  float a = atan( p.y, p.x + 1e-5 ) - uYaw;           // мировой угол (+ε: atan(0, 0) в центре не определён)
   float t = uTime;
   float spin = uSpin;
   float I = 0.0, H = 0.0;
@@ -208,7 +208,7 @@ void main() {
 #endif
   // кольцо ярости между ободками: заполняется от лица героя назад, к камере, обеими сторонами;
   // горячая «голова» на краю, когда полно — всё кольцо горит светлым цветом
-  float af = abs( atan( p.x, p.y ) );
+  float af = abs( atan( p.x, p.y + 1e-5 ) );
   float fa = uFury * PI;
   float fill = 1.0 - smoothstep( fa - 0.012, fa + 0.012, af );
   float fr = band( r, 0.933, 0.013, aa );
@@ -477,7 +477,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     fury: 0, ready: false, chL: 0, chR: 0, guard: 0, hpR: 1, speed: 0, dashing: false,
     // сглаженное (реальное время)
     vis: 0, fz: 0, rdy: 0, sL: 0, sR: 0, gd: 0, lw: 0, flash: 0, pop: 0, dead01: 0,
-    dashQ: false, dashX: 0, dashZ: 1, stopQ: false, wasDash: false, lastDash: -1,
+    dashQ: false, dashX: 0, dashZ: 1, stopQ: false, wasDash: false, lastDash: -1, trailT: -1,
   };
   let kExt = 1, lod = 0, lastT = null, ticked = false, disposed = false, ghostQ = null, remoteHero = false;
   let anchorsRef = null, feet = null, rootYaw = 0;
@@ -649,8 +649,11 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
       if (battle && dt > 0 && lod < 1) stepFeet(t, dt);
       if (burst && (st.dashQ || st.stopQ) && lod < 2) {
         const k = 0.8 + 0.4 * st.fz;
-        if (st.dashQ) burst.emit('dash', _r.x, _r.y, _r.z, st.dashX, st.dashZ, t, k);
+        if (st.dashQ) { burst.emit('dash', _r.x, _r.y, _r.z, st.dashX, st.dashZ, t, k); st.trailT = t; }
         else burst.emit('stop', _r.x, _r.y, _r.z, st.dashX, st.dashZ, t, k);
+      } else if (burst && st.dashing && lod < 1 && t - st.trailT > 0.055) {
+        st.trailT = t;   // по ходу рывка — искры и пыль вдоль пути
+        burst.emit('trail', _r.x, _r.y, _r.z, st.dashX, st.dashZ, t, 0.8 + 0.4 * st.fz);
       }
     }
     st.dashQ = false; st.stopQ = false;
