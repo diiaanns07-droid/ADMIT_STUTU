@@ -375,8 +375,8 @@ kbd { font-family: var(--f-body); font-size: 23px; color: var(--text); border: 1
   </div>
   <div class="err-grid">
     <div class="col" style="gap: 0;">
-      <div class="big43"><span class="num">44</span><p class="body">подсказки рукам: к почти правильным жестам и&nbsp;к&nbsp;положению кистей в&nbsp;кадре</p></div>
-      <p class="rules">+ <b class="gold">8</b> ошибок техники в&nbsp;приседаниях и&nbsp;<b class="gold">6</b> в&nbsp;отжиманиях: всего <b class="gold">58</b> разных подсказок.</p>
+      <div class="big43"><span class="num">49</span><p class="body">подсказки рукам: к почти правильным жестам и&nbsp;к&nbsp;положению кистей в&nbsp;кадре</p></div>
+      <p class="rules">+ <b class="gold">8</b> ошибок техники в&nbsp;приседаниях и&nbsp;<b class="gold">6</b> в&nbsp;отжиманиях: всего <b class="gold">63</b> разных подсказки.</p>
       <p class="rules">Подсказка к&nbsp;жесту&nbsp;— когда он явно начат и&nbsp;не&nbsp;хватает одного условия, одна и&nbsp;та&nbsp;же&nbsp;— не&nbsp;чаще раза в&nbsp;6&nbsp;с. Правильные жесты подсказок не&nbsp;вызывают&nbsp;— это проверяют тесты.</p>
     </div>
     <figure class="pic"><img src="../docs/screenshots/squat_error.jpg" alt="Тренировка: ошибка техники приседания"><figcaption>Тренировка: ошибка техники · снимок на тестовых данных</figcaption></figure>
@@ -385,13 +385,26 @@ kbd { font-family: var(--f-body); font-size: 23px; color: var(--text); border: 1
 </section>
 
 <!-- ============================================================ 7. Цифры -->
+<section class="slide" data-title="Финальная версия">
+  <p class="kicker">Финальная версия</p>
+  <h2>Всё тело — контроллер</h2>
+  <div class="road">
+    <div class="card"><p class="when">Магия ладонями</p><h3>«Врата бури» и «Столп небес»</h3><p class="body">Сомкни ладони и растяни: в стороны — волна огня и молний по земле, вверх-вниз — столп света с неба. Чем дольше держал — тем сильнее.</p></div>
+    <div class="card"><p class="when">Всем телом</p><h3>«Небесный суд»</h3><p class="body">Шкала «Ярость клятвы» полна — обе руки над головой: облёт камеры, меч из света, четверть здоровья Регента.</p></div>
+    <div class="card"><p class="when">Распознавание видно</p><h3>«Дух игрока»</h3><p class="body">Огромный дух из света над ареной повторяет плечи, локти, кисти и все пальцы игрока в реальном времени.</p></div>
+    <div class="card"><p class="when">Для жюри</p><h3>«Испытание · 60 с»</h3><p class="body">Одна минута для всех, ранг S–D, «Зал славы дня» и постер победы картинкой.</p></div>
+    <div class="card"><p class="when">Твист «ОШИБКА»</p><h3>Голос тренера</h3><p class="body">Подсказки звучат вслух: «Сомкни кольцо!», «Подними обе руки!» — их слышит весь зал.</p></div>
+    <div class="card"><p class="when">Камера вместо мыши</p><h3>Курсор-кисть</h3><p class="body">Кнопки меню, паузы и итогов нажимаются указательным пальцем — мышь не нужна от начала до конца.</p></div>
+  </div>
+</section>
+
 <section class="slide" data-title="Цифры">
   <p class="kicker">Цифры · у каждой есть источник</p>
   <h2>Проверено тестами, а не на глаз</h2>
   <div class="stats">
-    <div class="stat"><p class="v">22</p><p class="l">жеста — у каждого своё действие</p><p class="d">31, если считать 10 рун по отдельности</p></div>
-    <div class="stat"><p class="v">58</p><p class="l">подсказок «ОШИБКА»</p><p class="d">44 к жестам рук + 14 к технике приседаний и отжиманий</p></div>
-    <div class="stat"><p class="v">750</p><p class="l">проверок в 43 наборах автотестов</p><p class="d">0 падений; запуск одной командой из README</p></div>
+    <div class="stat"><p class="v">24</p><p class="l">жеста — у каждого своё действие</p><p class="d">33, если считать 10 рун по отдельности</p></div>
+    <div class="stat"><p class="v">63</p><p class="l">подсказки «ОШИБКА»</p><p class="d">49 к жестам рук и тела + 14 к технике приседаний и отжиманий</p></div>
+    <div class="stat"><p class="v">1052</p><p class="l">проверки в 53 наборах автотестов</p><p class="d">0 падений; запуск одной командой из README</p></div>
     <div class="stat"><p class="v">96<small>&nbsp;%</small></p><p class="l">форм кисти распознаны верно на реальных фото</p><p class="d">130 из 135 снимков датасета HaGRID</p></div>
     <div class="stat"><p class="v">6,4<small> мс</small></p><p class="l">MediaPipe: поза + 2 кисти на кадр</p><p class="d">замер команды, RTX 4060 Laptop</p></div>
     <div class="stat"><p class="v">55<small> к/с</small></p><p class="l">бой + распознавание, видеокарта занята на&nbsp;47&nbsp;%</p><p class="d">тот же ноутбук, экран 165&nbsp;Гц: предел кадров кратен частоте экрана (≈60&nbsp;к/с)</p></div>
