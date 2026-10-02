@@ -27,7 +27,8 @@ const VIDEO = argOf('--video', '') ? resolve(argOf('--video')) : '';
 const VIDEO_SEC = +argOf('--video-sec', '15');
 const BATTLE = argv.includes('--battle');
 const ZONE = argOf('--zone', 'edge');
-const SETTLE = +argOf('--settle', '2.2');   // секунд виртуального времени после смены героя до снимка
+const SETTLE = +argOf('--settle', '5');   // секунд виртуального времени после смены героя до снимка (наезд камеры — 4,4 с)
+const SETTLE_FPS = +argOf('--settle-fps', '10');   // без записи шагаем крупнее: SwiftShader рисует кадр секундами
 const FRAMES = join(argOf('--tmp', tmpdir()), `menu_frames_${process.pid}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -101,19 +102,21 @@ try {
   await page.waitForFunction(() => { const h = window.__ASHEN__.hero(); return h && h.ready; }, null, { timeout: 180000 }).catch(() => {});
   await sleep(1500);
   await page.evaluate(() => window.__mVirtual(true));
-  const step = async (save) => {
-    await page.evaluate((ms) => window.__mStep(ms), 1000 / FPS);
+  const step = async (save, fps = FPS) => {
+    await page.evaluate((ms) => window.__mStep(ms), 1000 / fps);
     if (save && VIDEO) { n++; await page.screenshot({ path: join(FRAMES, `${String(n).padStart(5, '0')}.jpg`), type: 'jpeg', quality: 90, timeout: 300000 }); }
   };
-  const steps = async (sec, save) => { for (let i = 0; i < Math.round(sec * FPS); i++) await step(save); };
+  const steps = async (sec, save) => { const f = save ? FPS : SETTLE_FPS; for (let i = 0; i < Math.round(sec * f); i++) await step(save, f); };
   // выбор героя — как игрок: клик по карточке
   const pick = (id) => page.evaluate((v) => { const i = document.querySelector(`.ao-herocard__input[value="${v}"]`); if (i && !i.checked) i.click(); return !!i; }, id);
-  // модель грузится по сети в реальном времени: шагаем кадрами, пока герой не готов
+  // модель грузится в реальном времени (сеть, разбор, оболочка): без записи — ждём, изредка шагая кадром
+  // (кадр SwiftShader отнимает процессор у загрузки); с записью — каждый шаг идёт в ролик (видно призыв)
   const waitHero = async (id, save) => {
     for (let i = 0; i < 2400; i++) {
       const ok = await page.evaluate((v) => { const h = window.__ASHEN__.hero(); return !!(h && h.ready && h.hero === v); }, id);
       if (ok) return true;
-      await step(save); if (!save) await sleep(25);
+      if (save) await step(true);
+      else { await sleep(300); if (i % 8 === 7) await step(false, SETTLE_FPS); }
     }
     return false;
   };
@@ -150,7 +153,7 @@ try {
     await btn('В бой').click().catch(() => {});
     await page.waitForFunction(() => window.__ASHEN__.screen === 'playing', null, { timeout: 240000 }).catch(() => {});
     await page.evaluate(() => window.__mVirtual(true));
-    await steps(2.0, false);
+    await steps(4.0, false);   // витрина гаснет и через 2 с вне меню освобождает сцену
     await page.screenshot({ path: join(OUT, `${TAG}_${Q}_battle.jpg`), type: 'jpeg', quality: 88, timeout: 300000 });
     report.battle = await info();
     console.error('[menu_shots] бой', JSON.stringify(report.battle.r));

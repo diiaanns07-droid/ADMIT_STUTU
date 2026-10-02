@@ -215,7 +215,9 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       op = active ? e : P.shown;
       tx = (1 - e) * 28; ls = (1 - e) * 0.22;
     }
-    op *= 1 - 0.55 * clamp01((zc - 0.8) / 0.2);   // совсем близко к лицу — табличка тише
+    // крупный план (наезд, колесо): герой крупнее и заходит под табличку — она уходит, вернётся с облётом
+    const zf = clamp01((zc - 0.18) / 0.32);
+    op *= 1 - 0.88 * zf * zf * (3 - 2 * zf);
     const so = op.toFixed(3), st = `translate3d(${tx.toFixed(1)}px,0,0)`, sl = `${(0.03 + ls).toFixed(3)}em`;
     if (so !== P.op) { P.op = so; plate.style.opacity = so; }
     if (st !== P.tf) { P.tf = st; plate.style.transform = st; }
@@ -354,7 +356,11 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     group.visible = w > 0.01;
     // [W4-ВИТРИНА] наезд камеры и подлёт — эффективное приближение zc (приближение игрока U.zoom — отдельно)
     if (S.pushT >= 0) { S.pushT += dt; if (S.pushT > 4.4) S.pushT = -1; }
-    const push = S.pushT >= 0 ? pushCurve(S.pushT) : 0;
+    // сглажено: быстрая смена героев (новый наезд, пока не кончился прежний) — без скачка камеры
+    const pushT = S.pushT >= 0 ? pushCurve(S.pushT) : 0;
+    S.push = (S.push || 0) + (pushT - (S.push || 0)) * (1 - Math.exp(-5 * dt));
+    if (S.push < 1e-3 && pushT === 0) S.push = 0;
+    const push = S.push;
     if (S.intro > 0) S.intro = Math.max(0, S.intro - dt / 3.2);
     if (S.ap > 0) S.ap = Math.max(0, S.ap - dt / 1.3);
     if (heroModel && heroModel.setStance) {
@@ -460,7 +466,7 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       HL.heroRimDir.value.copy(_portal).sub(c).normalize().setY(0).normalize().multiplyScalar(0.85);
       HL.heroRimDir.value.y = 0.45;
       HL.heroRimDir.value.normalize().transformDirection(camera.matrixWorldInverse);
-      HL.heroKeyColor.value.copy(_keyC).multiplyScalar(1.75 * w * q * (1 + 0.3 * zc) * (1 + 0.25 * ap * ap));   // портретный ключ сбоку — чуть ярче
+      HL.heroKeyColor.value.copy(_keyC).multiplyScalar(2.0 * w * q * (1 + 0.3 * zc) * (1 + 0.25 * ap * ap));   // портретный ключ сбоку — чуть ярче
       if (fxc) _elemC.set(fxc.color).lerp(_rimC, 0.18); else _elemC.copy(_rimC);
       HL.heroRimColor.value.copy(_elemC).multiplyScalar(1.9 * w * (1 + 1.2 * ap * ap));
       HL.heroFillColor.value.copy(_fillC).multiplyScalar(0.42 * w);

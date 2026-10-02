@@ -43,7 +43,7 @@ const MAX_PARTS = 420, MAX_ROCKS = 22, MAX_MIST = 4;
 // ≈9,5 м за героем: у края арены (место старта по умолчанию) это свободная полоса между колоннами мира,
 // алтарём и обломками; ближе 8 м — кольцо колонн. Колонны мира стоят перед порталом силуэтами на его свете.
 // Центр кольца — на высоте ≈2,8 м: с камеры витрины он ложится за голову героя (вихрь — ореол за силуэтом).
-const PORTAL = { x: -1.7, z: -9.3, rMid: 2.45, thick: 0.5, depth: 0.78, lift: 0.36 };
+const PORTAL = { x: -1.2, z: -9.3, rMid: 2.45, thick: 0.5, depth: 0.78, lift: 0.36 };
 const FLOOR_R = 9.5;
 
 // ---------------------------------------------------------------- GLSL: общий шум и туман
@@ -103,15 +103,15 @@ void main(){
   alb *= 0.72 + 0.28 * smoothstep(0.0, 1.4, vP.y);
   // свет портала (мягкий, спад по расстоянию), тёплый ключ витрины, холодное небо сверху
   vec3 toP = uPortal - vP; float dP = length(toP); vec3 Lp = toP / max(dP, 1e-3);
-  float pl = (max(dot(N, Lp), 0.0) * 0.85 + 0.15) * uPortalI / (1.0 + dP * dP * 0.11);
+  float pl = (max(dot(N, Lp), 0.0) * 0.85 + 0.15) * uPortalI * 2.6 / (1.0 + dP * dP * 0.11);
   vec3 toK = uKey - vP; float dK = length(toK);
   float kl = max(dot(N, toK / max(dK, 1e-3)), 0.0) * uKeyI / (1.0 + dK * dK * 0.05);
   float sky = 0.5 + 0.5 * N.y;
-  vec3 col = alb * (uAmbC * sky + uCol * pl + uKeyC * kl);
+  vec3 col = alb * (uAmbC * sky * 1.7 + uCol * pl + uKeyC * kl);
   // контровой: края камня на фоне портала светятся его цветом
   float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
   float back = max(dot(-V, Lp), 0.0);
-  col += uCol * fres * back * back * uPortalI * 0.3 / (1.0 + dP * 0.3);
+  col += uCol * fres * back * back * uPortalI * 0.6 / (1.0 + dP * 0.3);
   if (vK.x > 0.5 && vK.x < 1.5) {
     // руны по лицевой грани кольца: ячейки по окружности, в каждой — 2–3 черты; бегущий пульс
     vec3 q = (uPortalInv * vec4(vP, 1.0)).xyz; vec3 qn = mat3(uPortalInv) * N;
@@ -128,10 +128,10 @@ void main(){
     g += step(0.6, fract(hsh * 13.7)) * smoothstep(w * 1.2, 0.0, abs((fx - 0.5) - (fy - 0.5) * (fract(hsh * 5.9) > 0.5 ? 1.0 : -1.0))) * step(0.1, fy) * step(fy, 0.9);
     g *= step(0.0, fy) * step(fy, 1.0) * step(0.12, fx) * step(fx, 0.88);
     float pulse = 0.45 + 0.55 * pow(0.5 + 0.5 * sin(uTime * 1.1 - a * 2.0), 3.0);
-    col += mix(uCol, uCol2, 0.35) * g * face * pulse * uRune * 2.2;
+    col += mix(uCol, uCol2, 0.35) * g * face * pulse * uRune * 3.0;
     // внутренняя кромка кольца — отсвет вихря
     float lip = smoothstep(0.35, -0.2, dot(qn.xy, q.xy) / max(r, 1e-3)) * smoothstep(${(PORTAL.rMid - PORTAL.thick * 0.5 + 0.25).toFixed(3)}, ${(PORTAL.rMid - PORTAL.thick * 0.5).toFixed(3)}, r);
-    col += uCol * lip * 0.9 * uPortalI * 0.25;
+    col += uCol * lip * uPortalI * 0.45;
   }
   col = mix(col, uFogC, 1.0 - exp(-uFogD * dist));
   gl_FragColor = vec4(col * uK, 1.0);
