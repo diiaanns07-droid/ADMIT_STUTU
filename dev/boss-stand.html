@@ -58,7 +58,9 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(config.camera.fov, innerWidth / innerHeight, 0.1, 1200);
 scene.add(camera);
 
+const tW0 = performance.now();
 const world = createWorld({ THREE, scene, renderer, camera, config: { world: { ...config.world, quality: Q }, settings } });
+const worldMs = performance.now() - tW0;   // createWorld: процедурные текстуры и геометрия (без компиляции шейдеров)
 world.setQuality(Q);
 let heroModel = null;
 if (P.get('hero') !== '0' && world.hero) {
@@ -121,6 +123,7 @@ const A = {
     emit('boss_hit', { amount, source: 'bolt' }, { x: 0.2, y: 3.4, z: 0.7 });
   },
   phase2() { if (sim.boss.stage === 2) return; sim.boss.stage = 2; sim.boss.hp = Math.min(sim.boss.hp, 490); emit('boss_phase', { stage: 2 }, { x: 0, y: 3, z: 0 }); },
+  victory() { sim.status = 'victory'; sim.boss.hp = 0; sim.boss.action = 'dead'; sim.telegraphs = []; T.phase = null; emit('victory', {}); },
 };
 function stepSim(dt) {
   sim.time += dt;
@@ -148,6 +151,7 @@ const SCN = {
   hit: { t: 2.06, at: [[2.0, 'hit', 40]] },
   stage2: { t: 4.5, at: [[0.3, 'phase2']] },
   stage2slam: { t: 4.4 + WINDUP.slam * 0.88 * 0.85, at: [[0.3, 'phase2'], [4.4, 'windup', 'slam']] },
+  dead: { t: 4.5, at: [[0.3, 'phase2'], [2.0, 'victory']] },
 };
 
 /* ------------------------------ камеры ------------------------------ */
@@ -219,7 +223,7 @@ function bossInfo() {
 }
 function info() {
   const ri = renderer.info;
-  return { quality: Q, cam: camName, calls: ri.render.calls, triangles: ri.render.triangles, textures: ri.memory.textures, geometries: ri.memory.geometries, programs: ri.programs ? ri.programs.length : -1, boss: bossInfo() };
+  return { quality: Q, cam: camName, worldMs: Math.round(worldMs), calls: ri.render.calls, triangles: ri.render.triangles, textures: ri.memory.textures, geometries: ri.memory.geometries, programs: ri.programs ? ri.programs.length : -1, boss: bossInfo() };
 }
 window.__boss = {
   ready: true, THREE, world, renderer, scene, camera, sim: () => sim, A, play, step, render, info, bossInfo,

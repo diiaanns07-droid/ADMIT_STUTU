@@ -526,7 +526,7 @@ void main() {
   float streak = pow( s1 * 0.62 + s2 * 0.38, 3.0 ) * 3.2;
   float cor = fall * ( 0.22 + streak ) * ( 1.0 - disc ) * ( 1.0 - smoothstep( 0.78, 1.0, r ) );
   vec3 col = mix( vec3( 1.0, 0.76, 0.42 ), vec3( 1.0, 0.13, 0.05 ), uE.z );
-  vec3 rgb = col * ( cor * 0.62 + limb * 3.2 ) * uE.y;
+  vec3 rgb = col * ( cor * 0.5 + limb * 2.2 ) * uE.y;
   gl_FragColor = vec4( rgb * uE.w, disc * uE.w );
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -3674,7 +3674,7 @@ float ashPuddle( vec2 xz ) {
       // цвет в вершинах — от тёмного золота у основания до HDR-белого острия (ловит bloom)
       {
         const pos = [], col = [];
-        const base = [0.42, 0.26, 0.09], mid = [1.25, 0.78, 0.32], tip = [3.4, 2.3, 1.05];
+        const base = [0.42, 0.26, 0.09], mid = [1.1, 0.68, 0.28], tip = [2.2, 1.5, 0.7];
         const rnd = mulberry32(wc.seed + 283);
         const push = (p, c) => { pos.push(p[0], p[1], p[2]); col.push(c[0], c[1], c[2]); };
         const NB = 18;
@@ -3875,7 +3875,8 @@ float ashPuddle( vec2 xz ) {
       'sh*': [-0.28, 0, 0.42], 'el*': [-0.95, 0, 0], 'wr*': [0.25, 0, 0], 'th*': [-0.38, 0, 0.2], 'kn*': [0.68, 0, 0], 'an*': [-0.3, 0, -0.2] }),
     slamA: mkPose({ hips: [0, 0, 0], spine: [-0.12, 0, 0], chest: [-0.14, 0, 0], neck: [0.05, 0, 0], head: [0.15, 0, 0], 'sh*': [-2.3, 0, 0.32], 'el*': [-0.85, 0, 0], 'wr*': [-0.3, 0, 0],
       'th*': [-0.08, 0, 0.12], 'kn*': [0.18, 0, 0], 'an*': [-0.1, 0, -0.12] }),
-    slamB: mkPose({ spine: [-0.28, 0, 0], chest: [-0.2, 0, 0], head: [0.2, 0, 0], 'sh*': [-2.85, 0, 0.18], 'el*': [-1.15, 0, 0], 'wr*': [-0.45, 0, 0],
+    // [W4-BOSS] пик замаха: кулаки вверху и в стороны, перед плоскостью нимба (было -2.85/-1.15 — уходили за нимб и не читались)
+    slamB: mkPose({ spine: [-0.28, 0, 0], chest: [-0.2, 0, 0], head: [0.2, 0, 0], 'sh*': [-2.6, 0, 0.42], 'el*': [-0.5, 0, 0], 'wr*': [-0.45, 0, 0],
       'th*': [-0.04, 0, 0.14], 'kn*': [0.1, 0, 0], 'an*': [-0.04, 0, -0.14], off: [0, 0, -0.1] }),
     slamHit: mkPose({ hips: [0.25, 0, 0], spine: [0.55, 0, 0], chest: [0.35, 0, 0], neck: [-0.15, 0, 0], head: [-0.3, 0, 0], 'sh*': [-1.05, 0, 0.14], 'el*': [-0.12, 0, 0], 'wr*': [0.1, 0, 0],
       'th*': [-0.75, 0, 0.26], 'kn*': [1.15, 0, 0], 'an*': [-0.42, 0, -0.26], off: [0, 0, 0.25] }),
@@ -4471,6 +4472,22 @@ float ashPuddle( vec2 xz ) {
   /* ================================ БОСС ================================ */
   const _hp = new THREE.Vector3();
   const _w4Hot = new THREE.Color(), _w4Rune = new THREE.Color();   // [W4-BOSS]
+  // [W4-BOSS] униформы обсидиана одной части тела (кисть, тело, маска): фаза дыхания, прожилки, руны, накал, трещины
+  function setObs(U, ph, vein, rune, hot, crack) {
+    U.w4A.value.set(ph, vein, rune, hot); U.w4B.value.x = crack;
+    U.w4Hot.value.copy(_w4Hot); U.w4Rune.value.copy(_w4Rune);
+  }
+  // [W4-BOSS] ореол кулака: центр — перед кулаком со стороны камеры (кисть его не перекрывает)
+  function fistGlow(sp, mark, f, fade) {
+    sp.material.opacity = clamp(f, 0, 1) * fade;
+    sp.material.color.copy(_w4Hot).multiplyScalar(1.6);
+    sp.scale.setScalar(1.0 + clamp(f, 0, 1.3) * 1.6);
+    if (camera && f > 0.01) {
+      _hp.setFromMatrixPosition(mark.matrixWorld);
+      _v.copy(camera.position).sub(_hp).normalize().multiplyScalar(0.75).add(_hp);
+      sp.position.copy(sp.parent.worldToLocal(_v));
+    }
+  }
   // [W4-BOSS] рой осколков: два наклонных кольца вокруг тела; попадание расталкивает, при гибели — осыпаются на пол
   function updateSwarm(dt, isDead, hitJ, rmK) {
     const sw = B.swarm;
@@ -4677,14 +4694,10 @@ float ashPuddle( vec2 xz ) {
       else _w4Hot.setRGB(1.0, lerp(kind === 'nova' ? 0.24 : 0.4, 0.86, t2), lerp(kind === 'nova' ? 0.07 : 0.13, 0.68, t2));
       _w4Rune.setRGB(1.0, lerp(0.5, 0.08, bs.stageW), lerp(0.16, 0.035, bs.stageW));
       const ph = bs.w4Ph * 1.45;
-      const setObs = (U, v, r, h, c) => {
-        U.w4A.value.set(ph, v, r, h); U.w4B.value.x = c;
-        U.w4Hot.value.copy(_w4Hot); U.w4Rune.value.copy(_w4Rune);
-      };
-      setObs(obsU.L, vein, runeK, tele * (kind === 'slam' ? 2.4 : kind === 'nova' ? 1.1 : 0.3), hitG * 1.7);
-      setObs(obsU.R, vein, runeK, tele * (kind === 'orb' ? 2.6 : kind === 'slam' ? 2.4 : 1.1), hitG * 1.7);
-      setObs(obsU.body, vein * 0.8, runeK * 0.85, tele * (kind === 'nova' ? 2.2 : 0.35), hitG * 1.9);
-      setObs(obsU.mask, vein * 0.7, 0, 0, hitG * 1.3);
+      setObs(obsU.L, ph, vein, runeK, tele * (kind === 'slam' ? 2.4 : kind === 'nova' ? 1.1 : 0.3), hitG * 1.7);
+      setObs(obsU.R, ph, vein, runeK, tele * (kind === 'orb' ? 2.6 : kind === 'slam' ? 2.4 : 1.1), hitG * 1.7);
+      setObs(obsU.body, ph, vein * 0.8, runeK * 0.85, tele * (kind === 'nova' ? 2.2 : 0.35), hitG * 1.9);
+      setObs(obsU.mask, ph, vein * 0.7, 0, 0, hitG * 1.3);
     }
     matBossCore.emissiveIntensity = (lerp(2.2, 3.4, bs.stageW) + pulse * 0.35 + bs.charge * 2.2 + bs.hitFlash + roarG * 2 + (kind === 'nova' ? tele * 3 : 0)) * fade;
     {   // [W4-BOSS] глаза-угли: мерцают, вспыхивают от замаха, попадания и рёва; в фазе 2 — багровее
@@ -4700,20 +4713,9 @@ float ashPuddle( vec2 xz ) {
     matCoreGlow.opacity = clamp((0.34 + 0.12 * bs.stageW + bs.charge * 0.35 + roarG * 0.3 + pulse * 0.04 + (kind === 'nova' ? tele * 0.4 : 0)) * fade, 0, 1);
     B.coreGlow.scale.setScalar(1.25 + bs.charge * (kind === 'nova' ? 1.4 : 0.4) + roarG + (kind === 'nova' ? tele * 0.8 : 0));
     matChestSigil.opacity = clamp((0.35 + 0.3 * bs.stageW + bs.charge * 0.3 + roarG * 0.3) * fade, 0, 1);
-    {   // [W4-BOSS] ореол у кулаков — по тому же накалу (а не по всему замаху): загорается за ~0,6–1 с до удара
-      const fR = tele * (kind === 'orb' ? 1.15 : kind === 'slam' ? 0.95 : 0.35), fL = tele * (kind === 'slam' ? 0.95 : kind === 'nova' ? 0.35 : 0.1);
-      for (const [side, f] of [['R', fR], ['L', fL]]) {
-        const sp2 = B.fistGlow[side];
-        sp2.material.opacity = clamp(f, 0, 1) * fade;
-        sp2.material.color.copy(_w4Hot).multiplyScalar(1.6);
-        sp2.scale.setScalar(1.0 + clamp(f, 0, 1.3) * 1.6);
-        if (camera && f > 0.01) {   // центр ореола — перед кулаком со стороны камеры: кисть его не перекрывает
-          _hp.setFromMatrixPosition(boss.markers['fist' + side].matrixWorld);
-          _v.copy(camera.position).sub(_hp).normalize().multiplyScalar(0.75).add(_hp);
-          sp2.position.copy(sp2.parent.worldToLocal(_v));
-        }
-      }
-    }
+    // [W4-BOSS] ореол у кулаков — по тому же накалу (а не по всему замаху): загорается за ~0,6–1 с до удара
+    fistGlow(B.fistGlow.R, boss.markers.fistR, tele * (kind === 'orb' ? 1.15 : kind === 'slam' ? 0.95 : 0.35), fade);
+    fistGlow(B.fistGlow.L, boss.markers.fistL, tele * (kind === 'slam' ? 0.95 : kind === 'nova' ? 0.35 : 0.1), fade);
     {   // [W4-BOSS] затмение, корона, плащ теней (фаза 2 — гуще, с углями; нова — дым раздувается)
       // свет нимба «стекает» в атакующую руку: при ударе и сфере нимб тускнеет — кулак на его фоне читается;
       // перед новой затмение, наоборот, разгорается вместе с ядром

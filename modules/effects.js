@@ -2798,7 +2798,10 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     const tv = findTele(d, kind, null);
     const dur = clamp(num(d.windup, num(d.duration, tv ? tv.info.duration : 0.9)), 0.3, 2.5);
     const n = Math.round((kind === 'orb' ? 22 : 16) * Q.decor);
-    for (let i = 0; i < n; i++) gatherMote(c, RAW.guardCold, 1.4, 2.6, Math.min(dur, 0.9), 0.07, false);
+    // [W4-BOSS] цвет — как у телеграфа и накала тела Регента: блокируемая сфера — холодный, удар и нова — опасный
+    const blockable = d.blockable !== undefined ? d.blockable === true : (tv ? tv.info.blockable : kind === 'orb');
+    const rgb = blockable ? RAW.guardCold : RAW.dangerRim;
+    for (let i = 0; i < n; i++) gatherMote(c, rgb, 1.4, 2.6, Math.min(dur, 0.9), 0.07, false);
     audio.fx('windup', c, { kind, dur });
   }
 
