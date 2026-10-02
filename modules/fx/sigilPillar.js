@@ -3,7 +3,7 @@
 //
 // Ритм (время боевое, delay = d.delay ‖ 0.45 с — бой бьёт столпом ровно через delay):
 //   t=0       у героя в точке сгустка (fx.shared.sigil.pos) — вертикальный разрыв-вспышка и «нить» света в небо;
-//   0..delay  над целью на 10–12 м закручиваются тучи: тёмное кольцо дыма вращается вокруг вертикальной оси и
+//   0..delay  над целью на 6,5–7,5 м (в кадре камеры за спиной героя) закручиваются тучи: тёмное кольцо дыма вращается вокруг вертикальной оси и
 //             стягивается к центру, внутри разгорается золотое пятно, вниз сыплются искры;
 //   t=delay   столп света (свой меш-цилиндр, аддитивный шейдер: вертикальный градиент + бегущий вниз шум) бьёт
 //             с неба до земли толщиной с Регента; вспышка в ядре, экран, свет, тряска; 3–6 ветвящихся молний
@@ -57,10 +57,10 @@ void main() {
   float base = 1.0 + 0.5 * exp(-hm * 0.9);        // всплеск у земли
   float top = 1.0 - smoothstep(0.72, 1.0, h);     // растворяется в тучах
   float head = exp(-abs(h - lead) * uH * 0.7) * step(0.002, lead + 0.002) * (1.0 - step(0.999, uGrow));
-  vec3 col = uCore * (core * 0.9 + head * 0.8)
-           + uHot * body * str * 0.32
-           + uCol * (0.06 + 0.12 * n2) * body;
-  col *= uI * uFade * m * top * base;
+  vec3 col = uCore * (core * 1.0 + head * 0.8)
+           + uHot * body * str * 0.35
+           + uCol * (0.05 + 0.1 * n2) * body;
+  col *= uI * uFade * m * top * base * (gl_FrontFacing ? 1.0 : 0.5);   // задняя стенка — вполсилы
   gl_FragColor = vec4(col, 0.0);
 ${FX_OUT}
 }
@@ -128,7 +128,7 @@ export function register(fx) {
     life: [0.25, 0.5], size: [0.08, 0.015], ramp: 'gold', intensity: 3, sprite: 'spark', stretch: 0.04, gravity: 7, drag: 2.2,
     ground: 0, essential: true, rival: false };
   // свечение оглушённого Регента: вспышка-ореол и кольцо искр вокруг ядра
-  const flGlow = { ramp: 'gold', size: [2.6, 3.4], curve: 0.6, dur: 0.32, intensity: 1.3, sprite: 'glow', pull: 0.9, fadeIn: 0.35 };
+  const flGlow = { ramp: 'gold', size: [3.0, 4.0], curve: 0.6, dur: 0.32, intensity: 1.3, sprite: 'glow', pull: 0.9, fadeIn: 0.35 };
   const emHalo = { at: null, center: null, shape: 'ring', normal: UP, radius: 1.9, count: 1, speed: [0, 0.12], vel: { x: 0, y: 0.7, z: 0 },
     orbit: 2.3, life: [0.5, 0.85], size: [0.09, 0.02], ramp: 'gold', intensity: 2.6, sprite: 'spark', stretch: 0.02, fadeIn: 0.15,
     essential: true, rival: false };
@@ -232,7 +232,7 @@ export function register(fx) {
     mesh.position.set(ground.x, ground.y - 0.05, ground.z);
     mesh.scale.set(r0, H, r0); mesh.updateMatrix();
     const life = 0.6 + 0.3 * st.power;
-    const I = (0.75 + 0.35 * st.power) * soft() * (R ? 0.7 : 1);
+    const I = (0.5 + 0.25 * st.power) * soft() * (R ? 0.7 : 1);
     const red = fx.reduced();
     p.touch = nowMs(); mesh.visible = true;
     kit.actor({
@@ -247,7 +247,7 @@ export function register(fx) {
         const r = r0 * (1 + 0.22 * punch) * (1 - 0.55 * out);
         mesh.scale.set(r, H, r); mesh.updateMatrix();
         u.uGrow.value = grow; u.uFade.value = (1 - out) * flick;
-        u.uI.value = I * (1 + 0.5 * punch);
+        u.uI.value = I * (1 + 0.4 * punch);
         u.uTime.value = kit.clock;
         p.touch = nowMs(); mesh.visible = true;
         if (!(dt > 0) || grow < 0.6) return;
@@ -368,7 +368,7 @@ export function register(fx) {
       R, rival, P, power, delay, reach, s,
       radius: (1.6 + 0.6 * power) * (R ? 0.6 : 1),
       src: sourcePoint(new V3(), R), tgt, ground,
-      sky: new V3(ground.x, ground.y + (R ? 8.5 : 10.5 + 1.5 * power), ground.z),
+      sky: new V3(ground.x, ground.y + (R ? 6 : 6.6 + 0.8 * power), ground.z),
       accC: 0, accS: 0, accF: 0, accSh: 0, accSp: 0,
     };
     const sg = fx.shared && fx.shared.sigil;
@@ -402,7 +402,7 @@ export function register(fx) {
     glowAccF += dt;
     if (glowAccF >= 0.12) {
       glowAccF = 0;
-      flGlow.intensity = 1.3 * kk;
+      flGlow.intensity = 1.8 * kk;
       kit.flash(_gc, flGlow);
     }
     // кольцо искр вокруг ядра поднимается и вращается
