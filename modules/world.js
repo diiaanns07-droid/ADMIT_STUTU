@@ -1589,9 +1589,9 @@ float ashPuddle( vec2 xz ) {
   }
   // горы — за шпилями мёртвого города (те до 0,74 радиуса неба); высоты — над краем рельефа большой карты
   // (он закрывает горизонт до ~5°): вершины встают на 6–12°
-  ridge(skyR * 0.78, 260, -40, 36, 118, 0x141922, wc.seed + 113, { valley: 1, sharp: 1.25, freq: 7, spike: 70 });
-  ridge(skyR * 0.87, 280, -40, 52, 150, 0x192029, wc.seed + 114, { valley: 0.8, sharp: 1.1, freq: 9, spike: 90 });
-  ridge(skyR * 0.95, 300, -40, 70, 185, 0x1f2632, wc.seed + 112, { valley: 0.6, freq: 6, spike: 110 });
+  ridge(skyR * 0.78, 260, -40, 14, 124, 0x141922, wc.seed + 113, { valley: 1, sharp: 2.4, freq: 7, spike: 70 });
+  ridge(skyR * 0.87, 280, -40, 26, 156, 0x192029, wc.seed + 114, { valley: 0.8, sharp: 2.1, freq: 9, spike: 90 });
+  ridge(skyR * 0.95, 300, -40, 40, 190, 0x1f2632, wc.seed + 112, { valley: 0.6, sharp: 1.8, freq: 6, spike: 110 });
 
   /* --------------------------- Руины: колонны --------------------------- */
   const shaftGeo = (() => {

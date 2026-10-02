@@ -84,7 +84,7 @@ function frame1(dt) {
   placeCam();
   const ev = pending; pending = [];
   world.update(dt, snap(), ev);
-  if (!showHero && world.hero && world.hero.root) world.hero.root.visible = false;
+  if (!showHero && world.hero && world.hero.root) { world.hero.root.visible = false; for (const o of world.hero.extras || []) o.visible = false; }   // плащ — отдельный объект
   if (postfx) {
     const atmo = world.atmosphere;
     if (typeof postfx.setLook === 'function') postfx.setLook(atmo && atmo.look ? atmo.look : null);
