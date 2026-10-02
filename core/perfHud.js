@@ -2,7 +2,7 @@
 // F3 (или ?perf=1 в адресе) — показать/скрыть. Только чтение: кадры рендера, автоподстройка,
 // камера и распознавание. Ничего не отправляет и не пишет кадры.
 //
-// createPerfHud({ root, storage? }) → { update(now, { perf, tracking, screen }), toggle(), get visible, dispose() }
+// createPerfHud({ root, storage? }) → { update(now, { perf, tracking, screen, extra? }), toggle(), get visible, dispose() }
 
 const TIER_RU = { low: 'низкое', medium: 'среднее', high: 'высокое' };
 const CLASS_RU = { discrete: 'дискретная', integrated: 'встроенная', 'integrated-strong': 'встроенная (мощная)', software: 'программный рендер', unknown: 'неизвестная' };
@@ -88,6 +88,7 @@ export function createPerfHud({ root, storage } = {}) {
         if (cls === 'bad') lines.push('Совет: закройте тяжёлые вкладки/программы; добавьте света на лицо и руки');
       }
       if (p && p.log && p.log.length) lines.push('', 'Подстройка: ' + p.log.slice(-3).map((l) => l.text).join(' · '));
+      if (data && Array.isArray(data.extra) && data.extra.length) lines.push('', ...data.extra);   // [W3-SQUAT] строки экрана (приседания)
       el.textContent = lines.join('\n');
     },
     dispose() {

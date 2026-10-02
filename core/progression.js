@@ -5,7 +5,7 @@
 // Никуда не отправляется.
 //
 // createProgression({ storage?, key? }) → {
-//   getView(), addPushups(n), addSquats(n), lightEmber(id), isEmberLit(id), buy(id), mods(), resetAll(), onChange(fn)
+//   getView(), addPushups(n), addSquats(n, bonus?), lightEmber(id), isEmberLit(id), buy(id), mods(), resetAll(), onChange(fn)
 // }
 // mods() — модификаторы для combat.setUpgrades(): аддитивные поля и множители (*Mul).
 
@@ -104,12 +104,12 @@ export function createProgression(opts = {}) {
     changed('pushup');
     return got;
   }
-  // Чистые приседания (с правильной техникой) — тоже очки клятвы.
-  function addSquats(n) {
+  // Засчитанные приседания — тоже очки клятвы. [W3-SQUAT] bonus — доп. очки (в «Новичке» чистый повтор +1).
+  function addSquats(n, bonus = 0) {
     const k = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
     if (!k) return 0;
     st.squats = Math.min(MAX_POINTS, st.squats + k);
-    const got = give(k * SQUAT_POINTS);
+    const got = give(k * SQUAT_POINTS + (Number.isFinite(bonus) ? Math.max(0, Math.floor(bonus)) : 0));
     changed('squat');
     return got;
   }

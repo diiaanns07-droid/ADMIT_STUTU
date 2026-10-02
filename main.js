@@ -28,6 +28,7 @@ import { createCoachStats, hintInfo, noteHint, getActiveHint, createCoachHistory
 import { createProgression } from './core/progression.js';
 import { createPushupCounter } from './core/pushupCounter.js';
 import { createSquatCounter, topSquatFault, synthSquatPose } from './core/squatCounter.js';
+import { createPoseRecorder } from './core/poseRecorder.js'; // [W3-SQUAT] запись позы на тренировке (F8)
 import { createHandZone, createHeroBowPose } from './core/handZone.js'; // [HAND] лук и магия рукой
 import { createPerfTuner } from './core/perfTuner.js'; // [PERF] автоподстройка под железо
 import { createPerfHud } from './core/perfHud.js';     // [PERF] F3 — кадры и трекинг
@@ -222,16 +223,53 @@ const combatCfg = typeof combat.getConfig === 'function' ? combat.getConfig() : 
 // Хранится только в localStorage этого браузера.
 const progression = createProgression();
 const pushups = createPushupCounter();
-const squats = createSquatCounter();
+let squats = createSquatCounter({ mode: squatMode() });   // [W3-SQUAT] профиль — по режиму жестов
 // [ТВИСТ «ОШИБКА»] «Тренажёр техники»: чек-лист условий жеста вживую (свои счётчики упражнений, очков не даёт)
 const trainer = createTechniqueTrainer();
 let techView = null;
 // exercise: 'pushups' | 'squats'. sim — клавиатурная имитация приседа в DEBUG (без камеры).
-const train = { reps: 0, lastPoseT: -1, lastRepAt: -1e9, exercise: 'pushups', hintRef: null, hintAt: -1e9, sim: { k: 0, t: 0, keys: new Set() } };
+const train = { reps: 0, lastPoseT: -1, lastRepAt: -1e9, exercise: 'pushups', hintRef: null, hintAt: -1e9, sim: { k: 0, t: 0, keys: new Set() }, clean: 0, points: 0, lastRep: null };
 function resetTraining() {
+  if (squats.config.mode !== squatMode()) squats = createSquatCounter({ mode: squatMode() });   // [W3-SQUAT]
   pushups.reset(); squats.reset();
   train.reps = 0; train.lastPoseT = -1; train.lastRepAt = -1e9; train.sim.k = 0; train.sim.t = 0; train.sim.keys.clear();
   train.hintRef = null; train.hintAt = -1e9;
+  train.clean = 0; train.points = 0; train.lastRep = null;   // [W3-SQUAT]
+}
+// [W3-SQUAT] приседания у живой камеры. Профиль счётчика — по режиму жестов: «Новичок» — глубина ≈115–120°, лодыжки
+// не обязательны, повтор с ошибкой +1 очко и карточка, чистый +2; «Мастер» — как раньше (100°, только чистые, до стоп).
+// Запись позы на экране тренировки — последние 90 с в памяти, F8 сохраняет файл (разбор: node dev/squat_replay.mjs).
+// Точная модель позы (full) на экране тренировки, если видеокарта не программная (core/perfTuner.js); на выходе — прежняя.
+function squatMode() { return settings.gestureMode === 'master' ? 'master' : 'novice'; }
+const poseRec = createPoseRecorder({ maxFrames: 2700, meta: { source: 'ashen-game' } });
+function savePoseRecording() {
+  const rec = poseRec.snapshot({ note: 'F8', exercise: train.exercise, mode: squatMode(), poseModel: visionStatus().debug ? visionStatus().debug.poseModel : null, debugSim: app.debug });
+  if (!rec.frames.length) { flashRecNote('Запись позы пуста — включите камеру и встаньте в кадр'); return; }
+  poseRec.clear();
+  const blob = new Blob([JSON.stringify(rec)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ashen-pose-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  flashRecNote(`Сохранено: последние ${Math.round((rec.frames[rec.frames.length - 1].t - rec.frames[0].t) / 1000)} с позы → ${a.download}`);
+}
+const trainPose = { active: false, prevUrl: null };
+function trainPoseTick() {
+  if (!vision || typeof vision.setPoseModel !== 'function' || !DEPS.mediaPipe.modelFullUrl) return;
+  const forced = PERF_Q.get('pose');
+  const want = app.screen === 'training' && !app.debug && forced !== 'lite' && (!perfTuner || perfTuner.trainingPoseModel() === 'full');
+  if (want && !trainPose.active) {
+    const d = visionStatus().debug;
+    if (d && d.poseSwitching) return;
+    trainPose.active = true;
+    trainPose.prevUrl = d && d.poseModel === 'full' ? null : DEPS.mediaPipe.modelUrl;
+    if (trainPose.prevUrl) vision.setPoseModel(DEPS.mediaPipe.modelFullUrl).catch(() => {});
+  } else if (!want && trainPose.active) {
+    trainPose.active = false;
+    if (trainPose.prevUrl) vision.setPoseModel(trainPose.prevUrl).catch(() => {});
+    trainPose.prevUrl = null;
+  }
 }
 // [ASHEN_V2] DEBUG-приседания: S или ↓ (держать) — вниз, отпустить — вверх; Shift — быстро;
 // V — колени внутрь, G — колени за носки (вид сбоку), T — наклон корпуса, H — пятки, B — не выпрямляться.
@@ -626,7 +664,7 @@ function perfVisionTick(now) {
   const d = s && s.debug;
   if (!d || !(s.status === 'ready' || s.status === 'calibrating' || s.status === 'lost')) { perfTuner.setVision(null); perfVis.slowSince = null; return; }
   perfTuner.setVision({ hz: d.inferenceHz, cameraFps: d.cameraFps, inferMs: d.inferMs });
-  const slow = d.poseModel === 'full' && Number.isFinite(d.inferenceHz) && Number.isFinite(d.cameraFps) && d.cameraFps >= 20 && d.inferenceHz < 16;
+  const slow = !trainPose.active && d.poseModel === 'full' && Number.isFinite(d.inferenceHz) && Number.isFinite(d.cameraFps) && d.cameraFps >= 20 && d.inferenceHz < 16;
   if (slow) { if (perfVis.slowSince === null) perfVis.slowSince = now; if (now - perfVis.slowSince > 6000) perfVis.wantLite = true; }
   else perfVis.slowSince = null;
   if (perfVis.wantLite && !perfVis.switched && app.screen !== 'playing' && app.screen !== 'intro' && typeof vision.setPoseModel === 'function') {
@@ -809,6 +847,7 @@ const callbacks = {
     if (!app.debug) enableCamera();
   },
   onTechniqueGesture(id) { trainer.select(id); renderUI(); },
+  onPoseRecord() { savePoseRecording(); },   // [W3-SQUAT] «Сохранить запись позы» на экране тренировки
   onTechniqueDemo(on) { if (app.debug) return; trainer.setDemo(on); renderUI(); },
   onBuyUpgrade(id) { if (progression.buy(id).ok) renderUI(); },
   onBack() {
@@ -1107,6 +1146,25 @@ function renderUI() {
       starting: app.screen === 'camera' && app.onb.autoEnabled && !app.error && (!vision || visionStatus().status === 'idle') }, // камера уже запрошена
   });
 }
+// [W3-SQUAT] модель позы и частота распознавания — для подготовки и диагностики
+function squatPoseInfo() {
+  const v = visionStatus(), d = v && v.debug;
+  return { model: d ? d.poseModel : null, switching: !!(d && d.poseSwitching), hz: d ? d.inferenceHz : null, recFrames: poseRec.size(), status: v ? v.status : 'idle' };
+}
+// [W3-SQUAT] F3: строки о приседаниях (на экране тренировки)
+const VIS_RU = [[11, 12, 'плечи'], [23, 24, 'бёдра'], [25, 26, 'колени'], [27, 28, 'лодыжки']];
+function squatHudLines() {
+  if (app.screen !== 'training' || train.exercise !== 'squats') return null;
+  const q = squats.read(), d = q.diag, L = q.lastRep;
+  const f = (v) => (Number.isFinite(v) ? v.toFixed(2) : '—');
+  return [
+    `ПРИСЕДАНИЯ · ${d.mode === 'novice' ? 'Новичок' : 'Мастер'} · ${d.feet === false ? 'без стоп' : d.feet ? 'до стоп' : '—'}`,
+    `Угол колена ${d.knee ?? '—'}° (сырой ${d.kneeRaw ?? '—'}°, бедро ${d.thighDeg ?? '—'}°, таз ${d.dropDeg ?? '—'}°) · глубина ≤ ${d.downDeg}° · фаза: ${d.phaseRu}`,
+    'Видимость Л/П: ' + VIS_RU.map(([a, b, n]) => `${n} ${f(d.vis[a])}/${f(d.vis[b])}`).join(' · '),
+    `Повторов ${q.reps} из ${q.attempts} · чистых ${q.clean}` + (L ? ` · последний: ${L.ok ? (L.clean ? 'чисто' : 'засчитан') : 'не засчитан'}${L.reason ? ' — ' + L.reason : ''} (${L.minKnee}°, ${L.ms} мс)` : ''),
+    `Кадр: ${q.framing.statusText || q.framing.tip.text} · запись позы ${Math.round(poseRec.size() / Math.max(1, d.hz || 30))} с (F8)`,
+  ];
+}
 function trainingView() {
   if (train.exercise === 'squats') {
     const q = squats.read();
@@ -1115,7 +1173,11 @@ function trainingView() {
       depth: q.depth, knee: q.knee, view: q.view, lastOk: q.lastRep ? q.lastRep.ok : null,
       sinceRepMs: performance.now() - train.lastRepAt, lastHint: q.lastHint,
       sinceHintMs: q.lastHint ? performance.now() - train.hintAt : null,
-      faults: q.faults, formScore: q.formScore, topFault: topSquatFault(q.faults),
+      faults: q.faults, formScore: q.formScore, topFault: topSquatFault(q.faults, q.mode),
+      // [W3-SQUAT] режим, очки подхода, последний засчитанный повтор, подготовка (кадр), диагностика, модель позы
+      mode: q.mode, clean: q.clean, points: train.points, downDeg: q.downDeg, feet: q.feet,
+      lastRep: q.lastRep, lastEvent: train.lastRep, framing: q.framing, diag: q.diag,
+      pose: squatPoseInfo(),
     };
   }
   const r = pushups.read();
@@ -1160,7 +1222,7 @@ function flashRecNote(text) {
   document.body.appendChild(n);
   setTimeout(() => n.remove(), 3500);
 }
-window.addEventListener('keydown', (e) => { if (e.code === 'F8' && !e.repeat) { e.preventDefault(); saveRecording(); } });
+window.addEventListener('keydown', (e) => { if (e.code === 'F8' && !e.repeat) { e.preventDefault(); if (app.screen === 'training') savePoseRecording(); else saveRecording(); } }); // [W3-SQUAT] на тренировке — поза
 window.addEventListener('keydown', (e) => {
   if (e.code !== 'Escape' || e.repeat) return;
   if (app.screen === 'playing') { e.preventDefault(); pause('user'); }
@@ -1385,7 +1447,9 @@ function frame(now) {
   }
 
   // [ASHEN_V2] тренировка: поза → счётчик отжиманий → очки клятвы
+  if (app.screen === 'training') { try { trainPoseTick(); } catch (e) { console.warn('[W3-SQUAT] модель позы', e); } } else if (trainPose.active) trainPoseTick();
   if (app.screen === 'training' && train.exercise === 'squats') {
+    if (squats.config.mode !== squatMode()) resetTraining();   // [W3-SQUAT] сменили режим «Новичок»/«Мастер»
     // поза с камеры, в DEBUG — клавиатурная имитация (время — performance.now)
     let pose = null;
     if (app.debug) {
@@ -1396,9 +1460,16 @@ function frame(now) {
     if (pose && pose.tMs !== train.lastPoseT) {
       train.lastPoseT = pose.tMs;
       squats.push({ tMs: pose.tMs, landmarks: pose.landmarks, frameW: pose.frameW, frameH: pose.frameH });
+      poseRec.add(pose);   // [W3-SQUAT] F8 — сохранить для разбора
     }
     const got = squats.drain();
-    if (got.length) { train.reps += got.length; train.lastRepAt = now; progression.addSquats(got.length); }
+    if (got.length) {
+      // [W3-SQUAT] очки события: 1 за повтор, в «Новичке» чистый — 2
+      const pts = got.reduce((a, g) => a + (Number.isFinite(g.points) ? g.points : 1), 0);
+      train.reps += got.length; train.lastRepAt = now; train.points += pts; train.clean += got.filter((g) => g.clean !== false).length;
+      train.lastRep = got[got.length - 1];
+      progression.addSquats(got.length, pts - got.length);
+    }
     const hint = squats.read().lastHint;
     if (hint && hint !== train.hintRef) { train.hintRef = hint; train.hintAt = now; }
   } else if (app.screen === 'training' && vision) {
@@ -1407,6 +1478,7 @@ function frame(now) {
     if (pose && pose.tMs !== train.lastPoseT) {
       train.lastPoseT = pose.tMs;
       pushups.push({ tMs: pose.tMs, landmarks: pose.landmarks, frameW: pose.frameW, frameH: pose.frameH });
+      poseRec.add(pose);   // [W3-SQUAT] запись позы и для отжиманий (F8)
     }
     const got = pushups.drain();
     if (got.length) { train.reps += got.length; train.lastRepAt = now; progression.addPushups(got.length); }
@@ -1517,7 +1589,7 @@ function frame(now) {
     } catch (e) { console.warn('[PERF] подстройка', e); }
   }
   try { precompileTick(); } catch (e) { /* ignore */ }
-  if (perfHud && perfHud.visible) { try { perfHud.update(now, { perf: perfTuner ? perfTuner.state() : null, tracking: vision ? visionStatus() : null, screen: app.screen }); } catch (e) { /* ignore */ } }
+  if (perfHud && perfHud.visible) { try { perfHud.update(now, { perf: perfTuner ? perfTuner.state() : null, tracking: vision ? visionStatus() : null, screen: app.screen, extra: squatHudLines() }); } catch (e) { /* ignore */ } }
 }
 
 applySettings();
