@@ -25,7 +25,7 @@ test('config.visualBudget: пределы для low, medium, high', () => {
   for (const q of QUALITIES) {
     ok(B[q], `нет уровня ${q}`);
     for (const k of KEYS) ok(Number.isFinite(B[q][k]) && B[q][k] >= 0, `${q}.${k} — не число`);
-    if (B[q].menu) for (const k of Object.keys(B[q].menu)) ok(Number.isFinite(B[q].menu[k]), `${q}.menu.${k} — не число`);
+    for (const g of ['menu', 'battle']) if (B[q][g]) for (const k of Object.keys(B[q][g])) ok(Number.isFinite(B[q][g][k]), `${q}.${g}.${k} — не число`);
   }
 });
 

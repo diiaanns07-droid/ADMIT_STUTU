@@ -8,6 +8,7 @@
 //        --compare docs/visual-budget.json — в отчёт таблица «было → стало» против прошлого замера (для PR)
 //   node tools/visual_budget.mjs --suggest [docs/visual-budget.json]  — без прогона: раздел visualBudget для config.js
 //        по замеру (+20%; свет на low — без запаса, тени на low — 0)
+//   node tools/visual_budget.mjs --report [docs/visual-budget.json]   — без прогона: пересобрать .md (новый бюджет)
 //
 // Сценарии. Страница A: меню с каждым героем → бой в «Отладке с клавиатуры» (фаза 1) → каждое заклинание
 // (J, L, O, X, G, U, руны 1–0). Регент на 3000 HP и без урона — бой не кончается, герой не гибнет.
@@ -43,6 +44,8 @@ const QUICK = A.has('--quick');
 const CHECK = A.has('--check');
 const COMPARE = A.of('--compare', '');
 const SUGGEST = A.has('--suggest');
+const REPORT = A.has('--report');
+const fileArg = (flag) => { const v = A.argv[A.argv.indexOf(flag) + 1]; return resolve(v && !v.startsWith('--') ? v : OUT + '.json'); };
 const T0 = Date.now();
 const log = (m) => console.error(`[visual_budget ${((Date.now() - T0) / 1000).toFixed(0)} с] ${m}`);
 const K = QUICK ? 0.5 : 1;                 // длина окон замера
@@ -338,24 +341,37 @@ function suggest(data) {
     const R = data.results[q];
     if (!R) continue;
     const rows = Object.entries(R).filter(([id]) => !id.startsWith('__'));
-    const mx = (key, grp) => Math.max(0, ...rows.filter(([id]) => !grp || SCENARIOS.find((s) => s.id === id)?.group === grp).map(([, r]) => r[key]).filter(Number.isFinite));
+    const inGrp = (id, grp) => { const g = SCENARIOS.find((s) => s.id === id)?.group; return !grp || g === grp || (grp === 'battle' && g === 'boss'); };
+    const mx = (key, grp) => Math.max(0, ...rows.filter(([id]) => inGrp(id, grp)).map(([, r]) => r[key]).filter(Number.isFinite));
     out[q] = {
       calls: up(mx('calls'), 1.2, 10), triangles: up(mx('triangles'), 1.2, 10000),
       lights: mx('lights') + (q === 'low' ? 0 : q === 'medium' ? 1 : 2), shadowLights: q === 'low' ? 0 : mx('shadowLights'),
       textures: up(mx('textures'), 1.2, 5), programs: up(mx('programs'), 1.2, 5), particles: up(mx('particles'), 1.2, 100),
       jsMs: up(mx('jsMs'), 1.5, 5),
       menu: { calls: up(mx('calls', 'menu'), 1.2, 10), triangles: up(mx('triangles', 'menu'), 1.2, 10000) },
+      battle: { calls: up(mx('calls', 'battle'), 1.2, 10), triangles: up(mx('triangles', 'battle'), 1.2, 10000) },
     };
   }
   return out;
 }
+if (REPORT) {
+  const f = fileArg('--report');
+  const prev = JSON.parse(readFileSync(f, 'utf8'));
+  const budget = await loadBudget(HERE);
+  writeFileSync(f.replace(/\.json$/, '.md'), report(prev, budget));
+  const over = checkBudget(prev.results, budget);
+  log(`отчёт ${relative(HERE, f.replace(/\.json$/, '.md'))} пересобран; превышений бюджета: ${over.length}`);
+  for (const o of over) console.error(`  ПРЕВЫШЕНИЕ ${o.quality} · ${o.scene} · ${o.key}: ${o.value} > ${o.limit}`);
+  process.exit(over.length ? 1 : 0);
+}
 if (SUGGEST) {
-  const f = resolve(A.argv[A.argv.indexOf('--suggest') + 1] && !A.argv[A.argv.indexOf('--suggest') + 1].startsWith('--') ? A.argv[A.argv.indexOf('--suggest') + 1] : OUT + '.json');
+  const f = fileArg('--suggest');
   const sg = suggest(JSON.parse(readFileSync(f, 'utf8')));
   console.log('  visualBudget: {');
   for (const [q, b] of Object.entries(sg)) {
-    const { menu, ...rest } = b;
-    console.log(`    ${(q + ':').padEnd(7)} { ${Object.entries(rest).map(([k, v]) => `${k}: ${v}`).join(', ')}, menu: { calls: ${menu.calls}, triangles: ${menu.triangles} } },`);
+    const { menu, battle, ...rest } = b;
+    console.log(`    ${(q + ':').padEnd(7)} { ${Object.entries(rest).map(([k, v]) => `${k}: ${v}`).join(', ')},`);
+    console.log(`              menu: { calls: ${menu.calls}, triangles: ${menu.triangles} }, battle: { calls: ${battle.calls}, triangles: ${battle.triangles} } },`);
   }
   console.log('  },');
   process.exit(0);

@@ -366,8 +366,10 @@ export function checkBudget(results, budget) {
     if (!B) continue;
     for (const [id, r] of Object.entries(results[q])) {
       if (id.startsWith('__')) continue;
+      // пределы уровня, поверх — пределы группы сцены (меню; бой — и для сцен Регента, если у них нет своих)
       const group = SCENARIOS.find((s) => s.id === id)?.group;
-      const lim = { ...B, ...(group && B[group] ? B[group] : {}) };
+      const sub = (group && B[group]) || (group === 'boss' && B.battle) || {};
+      const lim = { ...B, ...sub };
       for (const key of ['calls', 'triangles', 'lights', 'shadowLights', 'textures', 'programs', 'particles', 'jsMs']) {
         if (!Number.isFinite(lim[key]) || !Number.isFinite(r[key])) continue;
         if (r[key] > lim[key]) over.push({ quality: q, scene: id, key, value: r[key], limit: lim[key] });
