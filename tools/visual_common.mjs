@@ -1,10 +1,11 @@
 // [W4-БЮДЖЕТ] Общая часть tools/visual_budget.mjs и tools/visual_gallery.mjs: сервер игры, Chromium,
 // виртуальные часы страницы и «зонд» рендера. Игровой код не меняется — всё снаружи, из Playwright.
 //
-// Часы. До vb.virtual(true) страница живёт как обычно (а ответ config.js подменён: maxDt 0,5 и stallSec 5 —
-// на программном рендере ~1 кадр/с и игра всё равно движется рывками, так быстрее дойти до арены).
-// После — время идёт только по vb.step(): performance.now и requestAnimationFrame подменены, каждый шаг —
-// ровно 1/30 с игрового времени, кадр снимается целиком. Так делали PR №14 и №22 (tools/kino_video.mjs).
+// Часы. До vb.setVirtual(true) страница живёт как обычно (загрузка, меню, облёт перед боем; ответ config.js
+// подменён: maxDt 0,5 и stallSec 5 — на программном рендере ~1 кадр/с, иначе облёт шёл бы минутами).
+// С первого кадра боя время идёт только по vb.step(): performance.now и requestAnimationFrame подменены,
+// замер — ровно 1/30 с игрового времени на кадр (так делали PR №14 и №22, tools/kino_video.mjs), ожидания
+// энергии и урона — «быстрыми» шагами по 0,1 с. Бой одинаков от прогона к прогону.
 //
 // Зонд. THREE.Scene.prototype.onBeforeRender вызывается в начале каждого renderer.render(scene, …) — через
 // него видны renderer игры (холст #ao-canvas), сцена и камера. Из них — renderer.info (вызовы, треугольники,
@@ -78,7 +79,8 @@ function CLOCK(seed) {
   let virt = false, vt = 0, seq = 1;
   let q = new Map();   // id → колбэк (виртуальный режим)
   performance.now = () => (virt ? vt : oNow());
-  window.requestAnimationFrame = (cb) => { if (virt) { const id = seq++; q.set(id, cb); return id; } return oRAF(cb); };
+  // колбэк, отданный настоящему rAF до переключения, при срабатывании в виртуальном режиме встаёт в очередь шага
+  window.requestAnimationFrame = (cb) => { if (virt) { const id = seq++; q.set(id, cb); return id; } return oRAF((t) => { if (virt) q.set(seq++, cb); else cb(t); }); };
   window.cancelAnimationFrame = (id) => { if (!q.delete(id)) oCAF(id); };
   const vb = {
     realNow: oNow,
@@ -97,11 +99,11 @@ function CLOCK(seed) {
       const t0 = oNow();
       for (const cb of qq) { try { cb(vt); } catch (e) { console.error(e); } }
       const js = oNow() - t0;
-      vb.lastJs = js;
+      vb.lastJs = js; vb.lastN = qq.length;   // 0 — кадр игры не шёл (такой шаг в замер не берётся)
       if (!waitPresent) return js;
       return new Promise((res) => oRAF(() => res(js)));
     },
-    lastJs: 0,
+    lastJs: 0, lastN: 0,
   };
   window.__vb = vb;
 }
@@ -153,7 +155,7 @@ function FRAME_STATS() {
     calls: info.render.calls, triangles: info.render.triangles, points: info.render.points, lines: info.render.lines,
     geometries: info.memory.geometries, textures: info.memory.textures,
     programs: info.programs ? info.programs.length : null,
-    lights: 0, shadowLights: 0, lightTypes: {}, particles: 0, pointVerts: 0, instances: 0, sprites: 0,
+    lights: 0, litLights: 0, shadowLights: 0, lightTypes: {}, particles: 0, pointVerts: 0, instances: 0, sprites: 0,
     meshes: 0, scenes: P.frameScenes.size, pixelRatio: r.getPixelRatio(),
   };
   P.frameScenes.clear();
@@ -161,11 +163,12 @@ function FRAME_STATS() {
   if (sc) {
     sc.traverseVisible((o) => {
       if (o.isLight) {
-        if (o.isAmbientLight || o.isHemisphereLight || o.intensity > 0) {
-          out.lights++;
-          const t = o.type; out.lightTypes[t] = (out.lightTypes[t] || 0) + 1;
-          if (o.castShadow && r.shadowMap.enabled) out.shadowLights++;
-        }
+        // three кладёт в шейдеры каждый видимый источник, даже с нулевой яркостью: считаем так же;
+        // litLights — только горящие (яркость > 0)
+        out.lights++;
+        if (o.intensity > 0) out.litLights++;
+        const t = o.type; out.lightTypes[t] = (out.lightTypes[t] || 0) + 1;
+        if (o.castShadow && r.shadowMap.enabled) out.shadowLights++;
         return;
       }
       if (o.isPoints) {
@@ -183,17 +186,20 @@ function FRAME_STATS() {
       }
     });
   }
-  // частицы эффектов (effects.getDebugInfo): пулы свечения/пыли и активные элементы слоя V6
+  // частицы эффектов (effects.getDebugInfo): пул GPU-частиц V6 (kit), старые пулы свечения/пыли,
+  // активные элементы подсистем V6 (руны-глифы, болты, шлейфы, декали, ударные волны, соты щита)
   try {
     const fx = window.__ASHEN__ && window.__ASHEN__.fx ? window.__ASHEN__.fx() : null;
     if (fx && fx.particles) out.fxParticles = (fx.particles.glow || 0) + (fx.particles.dust || 0);
+    if (fx && fx.v6 && fx.v6.kit && Number.isFinite(fx.v6.kit.particles)) out.kitParticles = fx.v6.kit.particles;
     if (fx && fx.v6 && fx.v6.sub) {
       let a = 0;
       for (const k of Object.keys(fx.v6.sub)) { const s = fx.v6.sub[k]; if (s && Number.isFinite(s.active)) a += s.active; }
       out.fxActive = a;
     }
   } catch (e) { /* нет эффектов */ }
-  out.particles = out.pointVerts + out.sprites + (out.fxActive || 0);
+  // частицы = вершины Points (в т. ч. старые пулы effects.js) + спрайты + GPU-частицы V6
+  out.particles = out.pointVerts + out.sprites + (out.kitParticles || 0);
   // состояние боя в кадре: сыграло ли заклинание (действие героя, энергия, HP Регента)
   try {
     const s = window.__ASHEN__.snapshot();
@@ -254,15 +260,33 @@ export async function openGame(browser, server, { size = [1280, 720], settings =
 function makeDriver(page, errors, log) {
   const FPS = 30;
   const virtual = (on) => page.evaluate((v) => window.__vb.setVirtual(v), on);
-  const step = (n = 1) => page.evaluate(async ({ n, ms }) => { let js = 0; for (let i = 0; i < n; i++) js += await window.__vb.step(ms); return js; }, { n, ms: 1000 / FPS });
-  // n кадров с замером каждого: { js, wall, stats }
+  const step = (n = 1, ms = 1000 / FPS) => page.evaluate(async ({ n, ms }) => { let js = 0; for (let i = 0; i < n; i++) js += await window.__vb.step(ms); return js; }, { n, ms });
+  // «быстрые» шаги: 0,1 с игрового времени на кадр (больше бой за кадр не берёт: combat.sim.maxFrameDt) —
+  // ожидание энергии, отката, урона без настоящих часов, одинаково от прогона к прогону
+  const fast = (n = 1) => step(n, 100);
+  // шаги до условия pred(snapshot, __ASHEN__) (не больше max), проверка каждый шаг — внутри страницы
+  const stepUntil = (pred, { max = 300, ms = 1000 / FPS } = {}) => page.evaluate(async ({ src, max, ms }) => {
+    const f = new Function('return (' + src + ')')();
+    for (let i = 0; i < max; i++) {
+      let okv = false;
+      try { okv = !!f(window.__ASHEN__.snapshot(), window.__ASHEN__); } catch (e) { okv = false; }
+      if (okv) return { ok: true, n: i };
+      await window.__vb.step(ms);
+    }
+    return { ok: false, n: max };
+  }, { src: pred.toString(), max, ms });
+  // n кадров с замером каждого: { js, wall, stats }; шаг без кадра игры не считается
   const sample = (n = 1) => page.evaluate(async ({ n, ms }) => {
     const FRAME = window.__vbStats;
+    const P = window.__vb.probe, info = P && P.renderer ? P.renderer.info : null;
+    const programs0 = info && info.programs ? info.programs.length : null, textures0 = info ? info.memory.textures : null;
     const out = [];
-    for (let i = 0; i < n; i++) {
+    for (let i = 0, guard = 0; i < n && guard < n * 3; guard++) {
       const w0 = window.__vb.realNow();
       const js = await window.__vb.step(ms);
-      out.push({ js, wall: window.__vb.realNow() - w0, ...(FRAME() || {}) });
+      if (!window.__vb.lastN) continue;
+      out.push({ js, wall: window.__vb.realNow() - w0, ...(FRAME() || {}), programs0, textures0 });
+      i++;
     }
     return out;
   }, { n, ms: 1000 / FPS });
@@ -296,16 +320,17 @@ function makeDriver(page, errors, log) {
     await btn('В бой').click(CLICK);
     await page.waitForFunction(() => window.__ASHEN__.screen === 'playing', null, { timeout: 300000 });
   }
-  // к Регенту: W в настоящем времени (кадры по 0,5 с), до «engaged»
+  // к Регенту: W «быстрыми» шагами до «engaged» (старт у края арены — Регент обычно уже рядом)
   async function walkToBoss() {
+    await virtual(true);
     const near = await page.evaluate(() => { const s = window.__ASHEN__.snapshot(); return !!(s && s.player.encounter === 'engaged'); });
-    if (near) return;   // старт у края арены: Регент уже рядом
-    await virtual(false);
+    if (near) return;
     await page.keyboard.down('KeyW');
-    await page.waitForFunction(() => { const s = window.__ASHEN__.snapshot(); return s && s.player.encounter === 'engaged'; }, null, { timeout: 300000, polling: 250 }).catch(() => log('не дошли до Регента'));
+    const r = await stepUntil((s) => s && s.player.encounter === 'engaged', { max: 400, ms: 100 });
     await page.keyboard.up('KeyW');
+    if (!r.ok) log('не дошли до Регента');
   }
-  return { virtual, step, sample, snap, screen, setCam, btn, hideUi, heroPose, toBattle, walkToBoss, FPS };
+  return { virtual, step, fast, stepUntil, sample, snap, screen, setCam, btn, hideUi, heroPose, toBattle, walkToBoss, FPS };
 }
 
 // [W4-БЮДЖЕТ] Сценарии замера (tools/visual_budget.mjs) — общие с тестом dev/visualBudget.test.mjs
@@ -357,7 +382,7 @@ export function summarize(frames) {
   const pick = (k) => frames.map((f) => f[k]).filter((v) => Number.isFinite(v));
   const max = (k) => { const a = pick(k); return a.length ? Math.max(...a) : null; };
   const med = (k) => { const a = pick(k).sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : null; };
-  const pct = (k, p) => { const a = pick(k).sort((x, y) => x - y); return a.length ? a[Math.min(a.length - 1, Math.floor(a.length * p))] : null; };
+  const pct = (k, p) => { const a = pick(k).sort((x, y) => x - y); return a.length ? a[Math.max(0, Math.ceil(a.length * p) - 1)] : null; };
   const last = frames[frames.length - 1] || {};
   const r1 = (v) => (v == null ? null : Math.round(v * 10) / 10);
   const types = {};
@@ -366,9 +391,11 @@ export function summarize(frames) {
     frames: frames.length,
     calls: max('calls'), callsMed: med('calls'),
     triangles: max('triangles'), trianglesMed: med('triangles'),
-    textures: max('textures'), geometries: max('geometries'), programs: last.programs ?? max('programs'),
-    lights: max('lights'), shadowLights: max('shadowLights'), lightTypes: types,
-    particles: max('particles'), pointVerts: max('pointVerts'), instances: max('instances'),
+    textures: last.textures ?? max('textures'), geometries: last.geometries ?? max('geometries'), programs: last.programs ?? max('programs'),
+    programsNew: Number.isFinite(last.programs) && Number.isFinite(frames[0] && frames[0].programs0) ? last.programs - frames[0].programs0 : null,
+    texturesNew: Number.isFinite(last.textures) && Number.isFinite(frames[0] && frames[0].textures0) ? last.textures - frames[0].textures0 : null,
+    lights: max('lights'), litLights: max('litLights'), shadowLights: max('shadowLights'), lightTypes: types,
+    particles: max('particles'), kitParticles: max('kitParticles'), pointVerts: max('pointVerts'), instances: max('instances'),
     jsMs: r1(med('js')), jsP95: r1(pct('js', 0.95)), wallMs: r1(med('wall')),
     pixelRatio: last.pixelRatio ?? null,
   };

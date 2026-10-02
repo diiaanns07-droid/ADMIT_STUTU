@@ -41,6 +41,8 @@ test('таблица docs/visual-budget.json есть и снята инстру
   ok(data, 'нет docs/visual-budget.json — запустите node tools/visual_budget.mjs');
   ok(data.tool === 'tools/visual_budget.mjs' && data.results, 'файл не от tools/visual_budget.mjs');
   ok(!data.only || !data.only.length, `таблица снята частично (--only ${data.only}) — для репозитория нужен полный прогон`);
+  ok(!data.quick, 'таблица снята с --quick (окна замера короче) — для репозитория нужен полный прогон');
+  ok(data.root === '.', `таблица снята с другой папки игры (--root ${data.root})`);
 });
 
 test('таблица полная: каждая сцена на каждом уровне', () => {
@@ -57,6 +59,7 @@ test('таблица полная: каждая сцена на каждом у�
 });
 
 test('сцены в пределах бюджета своего уровня', () => {
+  ok(B, 'нет config.visualBudget — сверять не с чем');
   const over = checkBudget(data.results, B);
   ok(!over.length, over.map((o) => `${o.quality} · ${o.scene} · ${o.key}: ${o.value} > ${o.limit}`).join('; '));
 });
@@ -75,9 +78,10 @@ test('сценарии действительно сыграли: заклина
   for (const q of QUALITIES) {
     const R = data.results[q];
     const casts = SCENARIOS.filter((s) => s.group === 'battle' && s.id !== 'battle_phase1');
-    // сработало: герой был в «cast», энергия провалилась или Регент получил урон («начало» энергию возвращает)
+    // сработало: герой был в «cast», энергия провалилась или Регент получил урон; исключение — руна «начало»
+    // (энергию не тратит, а возвращает: при полной шкале следов в снимке может не остаться)
     const idle = casts.filter((s) => R[s.id] && !R[s.id].cast && !(R[s.id].energyUsed > 0) && !(R[s.id].damage > 0)).map((s) => s.id);
-    ok(idle.length <= 1, `${q}: заклинание не сработало: ${idle.join(', ')}`);
+    ok(idle.every((id) => id === 'rune_alpha'), `${q}: заклинание не сработало: ${idle.join(', ')}`);
     ok(R.ult && R.ult.cine === true, `${q}: сцена «Небесного суда» не началась`);
   }
 });
