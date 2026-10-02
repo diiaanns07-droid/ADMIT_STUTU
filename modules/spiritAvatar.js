@@ -532,12 +532,13 @@ function createRig(THREE, name) {
     const idx = [];
     for (let t = 0; t < NT; t++) for (let i = 0; i < NS_MAX - 1; i++) { const v = (t * NS_MAX + i) * 2; idx.push(v, v + 1, v + 2, v + 1, v + 3, v + 2); }
     tGeo.setIndex(idx);
-    const tMat = M(new THREE.ShaderMaterial({ name: 'spirit-trail', uniforms: { uOpacity: U.uOpacity, uScale: U.uScale }, vertexShader: TRAIL_VS, fragmentShader: TRAIL_FS, side: THREE.DoubleSide, ...ADD }));
+    // двусторонние прозрачные three.js рисует в два прохода; при аддитивном смешении порядок не важен — один проход
+    const tMat = M(new THREE.ShaderMaterial({ name: 'spirit-trail', uniforms: { uOpacity: U.uOpacity, uScale: U.uScale }, vertexShader: TRAIL_VS, fragmentShader: TRAIL_FS, side: THREE.DoubleSide, forceSinglePass: true, ...ADD }));
     const trails = new THREE.Mesh(tGeo, tMat); trails.frustumCulled = false; trails.renderOrder = 5;
     // купол щита: полусфера выпуклостью вперёд (−z — к веб-камере игрока)
     const sGeo = own(new THREE.SphereGeometry(1, 28, 10, 0, Math.PI * 2, 0, Math.PI * 0.5));
     sGeo.rotateX(-Math.PI / 2);
-    const sMat = M(new THREE.ShaderMaterial({ name: 'spirit-shield', uniforms: { uColor: { value: new THREE.Color(COL_FALLBACK) }, uAlpha: { value: 0 }, uTime: U.uTime, uHit: { value: 0 } }, vertexShader: SHIELD_VS, fragmentShader: SHIELD_FS, side: THREE.DoubleSide, ...ADD }));
+    const sMat = M(new THREE.ShaderMaterial({ name: 'spirit-shield', uniforms: { uColor: { value: new THREE.Color(COL_FALLBACK) }, uAlpha: { value: 0 }, uTime: U.uTime, uHit: { value: 0 } }, vertexShader: SHIELD_VS, fragmentShader: SHIELD_FS, side: THREE.DoubleSide, forceSinglePass: true, ...ADD }));
     const shield = new THREE.Mesh(sGeo, sMat); shield.frustumCulled = false; shield.visible = false; shield.renderOrder = 8;
     group.add(aura, glow, trails, bones, orbs, halo, joints, rings, shield);
     return { group, bones, bCol, orbs, oCol, halo, hCol, jGeo, auGeo, rGeo, tGeo, trails, shield, sMat };
