@@ -493,7 +493,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
       const f = H.getRawBoneNode(foot) || (H.getNormalizedBoneNode && H.getNormalizedBoneNode(foot));
       if (!f) return null;
       const tt = H.getRawBoneNode(toe) || null;
-      return { f, t: tt, side, planted: true, px: 0, pz: 0, has: false, lastT: -1 };
+      return { f, t: tt, side, planted: true, px: 0, pz: 0, has: false, lastT: -1, sp: 0, ax: 0, az: 0, tx: 0, tz: 0, y: 0 };
     };
     return [mk('leftFoot', 'leftToes', -1), mk('rightFoot', 'rightToes', 1)].filter(Boolean);
   }
@@ -578,7 +578,9 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     U.uTime.value = t; RNU.uTime.value = t; WU.uTime.value = t;
     const battle = ticked && st.battle && !st.menu;
     // сглаживание по реальному времени (стоп-кадр удара не замораживает ауру)
-    st.vis = approach(st.vis, battle ? (st.engaged ? 1 : 0.7) : 0, 3, 2.5, dt);
+    // руна и волны — в схватке (арена, дуэль); в исследовании (и в меню при первом запуске — там тоже есть снимок
+    // боя у врат леса) круга нет: на склонах плоский круг резался бы рельефом
+    st.vis = approach(st.vis, battle && st.engaged ? 1 : 0, 3, 2.5, dt);
     st.fz = approach(st.fz, battle ? st.fury : 0, 2.5, 4, dt);
     st.rdy = approach(st.rdy, battle && st.ready ? 1 : 0, 3, 5, dt);
     st.sL = approach(st.sL, battle ? st.chL : 0, 9, 3.5, dt);
@@ -667,21 +669,30 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
   function stepFeet(t, dt) {
     if (!feet || !feet.length) return;
     const run = st.speed > 3.1 && !st.dashing;
+    // сначала обе стопы: точка подошвы (ниже из щиколотки и носка) и скорость в мире
     for (let i = 0; i < feet.length; i++) {
       const F = feet[i];
       F.f.getWorldPosition(_v);
       if (F.t) F.t.getWorldPosition(_w); else _w.copy(_v);
-      const h = Math.min(_v.y, _w.y) - _r.y;
       const sp = F.has ? Math.hypot(_v.x - F.px, _v.z - F.pz) / dt : 0;
-      F.px = _v.x; F.pz = _v.z; F.has = true;
-      const planted = F.planted ? h < 0.13 && sp < Math.max(1.6, 0.45 * st.speed) : h < 0.085 && sp < Math.max(1.2, 0.3 * st.speed);
+      F.px = _v.x; F.pz = _v.z; F.has = true; F.sp = sp;
+      F.ax = _v.x; F.az = _v.z; F.tx = _w.x; F.tz = _w.z; F.y = Math.min(_v.y, _w.y);
+    }
+    for (let i = 0; i < feet.length; i++) {
+      const F = feet[i], O = feet[feet.length - 1 - i];
+      // стоит та стопа, что ниже другой и почти не движется в мире (на склоне высота корня не годится)
+      const h = F.y - _r.y, lowest = O === F || F.y <= O.y + 0.015;
+      const planted = F.planted
+        ? (h < 0.13 || lowest) && F.sp < Math.max(1.6, 0.45 * st.speed)
+        : (h < 0.085 || lowest) && F.sp < Math.max(1.2, 0.3 * st.speed);
       if (planted && !F.planted && run && t - F.lastT > 0.2 && prints) {
         F.lastT = t;
-        const dx = _w.x - _v.x, dz = _w.z - _v.z;
+        const dx = F.tx - F.ax, dz = F.tz - F.az;
         const yaw = dx * dx + dz * dz > 0.0009 ? Math.atan2(dx, dz) : rootYaw;
-        const cx = (_v.x + _w.x) * 0.5, cz = (_v.z + _w.z) * 0.5;
-        prints.stamp(cx, _r.y + 0.012, cz, yaw, F.side, 0.6 + 0.4 * smooth(3, 7, st.speed) + 0.4 * st.fz, t);
-        if (burst && tier === 'high') burst.emit('step', cx, _r.y, cz, Math.sin(yaw), Math.cos(yaw), t, 1);
+        const cx = (F.ax + F.tx) * 0.5, cz = (F.az + F.tz) * 0.5;
+        const gy = Math.max(_r.y - 0.4, Math.min(_r.y + 0.4, F.y - (F.t ? 0.012 : 0.07)));   // земля под подошвой
+        prints.stamp(cx, gy + 0.012, cz, yaw, F.side, 0.6 + 0.4 * smooth(3, 7, st.speed) + 0.4 * st.fz, t);
+        if (burst && tier === 'high') burst.emit('step', cx, gy, cz, Math.sin(yaw), Math.cos(yaw), t, 1);
       }
       F.planted = planted;
     }

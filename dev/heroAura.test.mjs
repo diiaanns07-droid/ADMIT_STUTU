@@ -63,6 +63,11 @@ step(null, [], 20);
 assert.equal(aura.state().rune, false, 'в меню руны нет');
 assert.equal(cur.ghost.q, 'medium', 'качество передано остаточным образам');
 
+// исследование (и меню при первом запуске — там снимок героя у врат леса): руны нет, кромка есть
+const PX = { position: { x: 0, y: 0, z: 0 }, hp: 100, maxHp: 100, fury: 0, furyMax: 100, encounter: 'explore', speed: 0, velocity: { x: 0, z: 0 } };
+step({ status: 'playing', player: PX }, [], 40);
+assert.equal(aura.state().rune, false, 'в исследовании руны нет');
+assert.ok(aura.state().rimK > 0.5, 'в исследовании кромка есть');
 // бой: руна появляется, ярость растит её и число искр
 const P = { position: { x: 0, y: 0, z: 0 }, hp: 100, maxHp: 100, fury: 0, furyMax: 100, furyReady: false, encounter: 'engaged', speed: 0, velocity: { x: 0, z: 0 } };
 const snap = { status: 'playing', player: P };
