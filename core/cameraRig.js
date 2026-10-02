@@ -23,6 +23,13 @@
 // (cfg.shake.decay в секунду), амплитуда ∝ травма². Трясётся ТОЛЬКО точка взгляда (небольшой поворот
 // камеры, до cfg.shake.maxDeg): позиция, yaw/forward/right и inputYaw не меняются — управление не дёргается,
 // камера не выходит за стены. state.reducedMotion = true («Уменьшенное движение») — тряски нет.
+//
+// [W3-ULT] кинорежим: cinematic(keys, {duration}) — камера идёт по ключевым точкам
+// keys = [{t, pos:{x,y,z}, look:{x,y,z}}] (мировые координаты, t — секунды сцены) сплайном Эрмита
+// (касательные Катмулла–Рома, на концах — плавно). Первая точка — ракурс, с которого начали (камера
+// не прыгает), последние blendOut с — плавный возврат к обычной камере, после duration — обычный режим.
+// Время сцены — state.cineT (main.js синхронизирует с боем), иначе — накопленный dt. Обычная камера
+// (угол lock-on, курс ввода) всё это время считается как всегда — возврат к актуальному ракурсу.
 
 const TAU = Math.PI * 2;
 
@@ -35,6 +42,37 @@ function damp(current, target, sharpness, dt) {
   return current + (target - current) * (1 - Math.exp(-sharpness * dt));
 }
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
+
+// [W3-ULT] кинорежим: точка сплайна по ключам. keys отсортированы по t; out/outLook — куда писать (без аллокаций).
+export function sampleCinematic(keys, t, out, outLook) {
+  const n = keys ? keys.length : 0;
+  if (!n) return false;
+  if (n === 1 || t <= keys[0].t) { copy3(out, keys[0].pos); copy3(outLook, keys[0].look); return true; }
+  if (t >= keys[n - 1].t) { copy3(out, keys[n - 1].pos); copy3(outLook, keys[n - 1].look); return true; }
+  let i = 0;
+  while (i < n - 2 && t > keys[i + 1].t) i++;
+  const k0 = keys[i], k1 = keys[i + 1];
+  const h = Math.max(1e-4, k1.t - k0.t), u = (t - k0.t) / h;
+  const kp = i > 0 ? keys[i - 1] : null, kn = i + 2 < n ? keys[i + 2] : null;
+  hermite3(out, 'pos', kp, k0, k1, kn, u, h);
+  hermite3(outLook, 'look', kp, k0, k1, kn, u, h);
+  return true;
+}
+function copy3(o, v) { o.x = v.x; o.y = v.y; o.z = v.z; }
+// касательная в ключе (м/с): (следующий − предыдущий) / Δt; на концах сплайна — 0 (плавный старт и стоп)
+function tangent(prev, k, next, f, ax) {
+  if (!prev || !next) return 0;
+  return (next[f][ax] - prev[f][ax]) / Math.max(1e-4, next.t - prev.t);
+}
+function hermite3(out, f, kp, k0, k1, kn, u, h) {
+  const u2 = u * u, u3 = u2 * u;
+  const h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
+  for (const ax of AXES) {
+    const m0 = tangent(kp, k0, k1, f, ax) * h, m1 = tangent(k0, k1, kn, f, ax) * h;
+    out[ax] = h00 * k0[f][ax] + h10 * m0 + h01 * k1[f][ax] + h11 * m1;
+  }
+}
+const AXES = ['x', 'y', 'z'];
 
 export function createCameraRig(cfg) {
   const E = {
@@ -58,6 +96,23 @@ export function createCameraRig(cfg) {
     shakeOut: 0,
   };
   const SH = { maxDeg: 2.0, decay: 1.9, freq: 1, ...(cfg && cfg.shake ? cfg.shake : {}) };
+  // [W3-ULT] кинорежим: ключи (первый — ракурс старта), время, длина, возврат; last* — прошлый кадр (старт без прыжка)
+  const cine = { active: false, keys: [], t: 0, dur: 0, blendOut: 0.6, pending: false,
+    pos: { x: 0, y: 0, z: 0 }, look: { x: 0, y: 0, z: 0 }, lastPos: null, lastLook: null };
+  function cinematic(keys, o = {}) {
+    if (!Array.isArray(keys) || !keys.length) return false;
+    const ok = (v) => v && fin(v.x) && fin(v.y) && fin(v.z);
+    const ks = keys.filter((k) => k && fin(k.t) && ok(k.pos) && ok(k.look)).map((k) => ({ t: Math.max(0, k.t), pos: { ...k.pos }, look: { ...k.look } }));
+    if (!ks.length) return false;
+    ks.sort((a, b) => a.t - b.t);
+    cine.dur = fin(o.duration) && o.duration > 0 ? o.duration : ks[ks.length - 1].t + 0.6;
+    cine.blendOut = fin(o.blendOut) && o.blendOut > 0 ? Math.min(o.blendOut, cine.dur) : 0.6;
+    cine.keys = ks; cine.t = 0; cine.active = true;
+    cine.pending = true;    // первый ключ t=0 — ракурс камеры на момент старта (дописывается в update)
+    return true;
+  }
+  function stopCinematic() { cine.active = false; cine.pending = false; cine.keys = []; }
+  const _cp = { x: 0, y: 0, z: 0 }, _ct = { x: 0, y: 0, z: 0 };
 
   // Экранный «вправо» для угла a: касательная к окружности в сторону роста угла.
   // pos(a) = (R sin a, 0, R cos a) ⇒ d/da = (cos a, 0, -sin a).
@@ -93,6 +148,7 @@ export function createCameraRig(cfg) {
     s.steady = 0; s.lastMoveDir = null;
     s.initialized = true;
     s.trauma = 0; s.shakeOut = 0;
+    stopCinematic();   // [W3-ULT] новый бой — без облёта прошлого
   }
 
   // [FEEL] тряска: добавить «травму» (0..1). Возвращает текущую.
@@ -263,16 +319,42 @@ export function createCameraRig(cfg) {
     fx /= fl; fz /= fl;
     const yaw = Math.atan2(fx, fz);
     s.lastYaw = yaw;
-    const so = shakeOffset(dt, pos, target, st.reducedMotion === true);   // [FEEL] поворотная тряска
+    // [W3-ULT] кинорежим: облёт по ключам поверх обычной камеры (курс ввода и yaw — от обычной)
+    let cpos = pos, ctgt = target;
+    if (cine.active) {
+      if (cine.pending) {
+        cine.pending = false;
+        const from = cine.lastPos && cine.lastLook ? { t: 0, pos: { ...cine.lastPos }, look: { ...cine.lastLook } } : { t: 0, pos: { ...pos }, look: { ...target } };
+        if (cine.keys[0].t > 1e-3) cine.keys.unshift(from); else cine.keys[0] = from;
+      }
+      cine.t = fin(st.cineT) ? Math.max(0, st.cineT) : cine.t + (fin(dt) ? dt : 0);
+      if (cine.t >= cine.dur) stopCinematic();
+      else {
+        sampleCinematic(cine.keys, cine.t, _cp, _ct);
+        // последние blendOut секунд — плавно к обычной камере
+        let w = Math.max(0, Math.min(1, (cine.dur - cine.t) / cine.blendOut));
+        w = w * w * (3 - 2 * w);
+        cpos = { x: pos.x + (_cp.x - pos.x) * w, y: pos.y + (_cp.y - pos.y) * w, z: pos.z + (_cp.z - pos.z) * w };
+        ctgt = { x: target.x + (_ct.x - target.x) * w, y: target.y + (_ct.y - target.y) * w, z: target.z + (_ct.z - target.z) * w };
+      }
+    }
+    const so = shakeOffset(dt, cpos, ctgt, st.reducedMotion === true);   // [FEEL] поворотная тряска
+    const outPos = { x: cpos.x + ix, y: cpos.y + iy, z: cpos.z + iz };
+    const outTgt = so ? { x: ctgt.x + so.x, y: ctgt.y + so.y, z: ctgt.z + so.z } : ctgt;
+    if (!cine.lastPos) { cine.lastPos = { x: 0, y: 0, z: 0 }; cine.lastLook = { x: 0, y: 0, z: 0 }; }
+    copy3(cine.lastPos, outPos); copy3(cine.lastLook, outTgt);
     return {
-      position: { x: pos.x + ix, y: pos.y + iy, z: pos.z + iz },
-      target: so ? { x: target.x + so.x, y: target.y + so.y, z: target.z + so.z } : target,
+      position: outPos,
+      target: outTgt,
       right: { x: -fz, y: 0, z: fx },
       forward: { x: fx, y: 0, z: fz },
       yaw,
       shake: s.shakeOut,
+      cinematic: cine.active,   // [W3-ULT]
     };
   }
 
-  return { update, reset, shake, rightVector, get angle() { return s.angle; }, get yaw() { return s.lastYaw; }, get inputYaw() { return s.inputYaw; }, get blend() { return s.blend; }, get trauma() { return s.trauma; } };
+  return { update, reset, shake, rightVector,
+    cinematic, stopCinematic, get cinematicActive() { return cine.active; }, get cinematicT() { return cine.t; },   // [W3-ULT]
+    get angle() { return s.angle; }, get yaw() { return s.lastYaw; }, get inputYaw() { return s.inputYaw; }, get blend() { return s.blend; }, get trauma() { return s.trauma; } };
 }

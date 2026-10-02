@@ -35,6 +35,7 @@ import { feelOfEvents, FEEL_TIME } from './core/gameFeel.js';     // [FEEL] ос
 import { createCueTracker } from './modules/sfx.js';    // [SFX] «✓ Распознано» и «ОШИБКА» на обучении и в бою
 import { createCoachOverlay } from './core/coachOverlay.js'; // [ТВИСТ «ОШИБКА»] подсветка ошибки на превью камеры
 import { createTechniqueTrainer } from './modules/techniqueTrainer.js'; // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
+import { createUltimateGesture, ultTimeScale, ultCameraKeys } from './core/ultimate.js'; // [W3-ULT] «Небесный суд»
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
 
@@ -436,6 +437,7 @@ function resetFight() {
   app.lostTime = 0;
   app.outroAt = 0;             // [FEEL] финал и замедление прошлого боя не переходят в новый
   timeFx.slowUntil = 0; timeFx.stopUntil = 0;
+  ultReset();                  // [W3-ULT] сцена и удержание жеста не переходят в новый бой
 }
 
 // [ASHEN_V2] состояние камеры из снимка: вне арены — камера исследования, в арене — lock-on.
@@ -447,6 +449,7 @@ function rigState(snap, impulse) {
     groundY: worldLayout ? worldLayout.groundY : null,   // [ASHEN_V3] камера над рельефом большой карты
     steer: P.moveMode === 'steer',                        // [V5] «Руль»: камера держится за спиной героя
     reducedMotion: !!settings.reducedMotion,              // [FEEL] без тряски камеры
+    cineT: ULT.cine ? ULT.cine.t : null,                  // [W3-ULT] время облёта «Небесного суда»
   };
 }
 
@@ -1086,7 +1089,7 @@ function drawCoachOverlay(now, hands, pose, mode) {
 
 // ---------------------------------------------------------------- UI
 function renderUI() {
-  uiRoot.classList.toggle('ao-intro', app.screen === 'intro');
+  uiRoot.classList.toggle('ao-intro', app.screen === 'intro' || !!ULT.cine);   // [W3-ULT] на время сцены DOM-HUD прячется
   ui.update({
     screen: app.screen === 'intro' ? 'playing' : app.screen,
     snapshot: lastSnapshot,
@@ -1204,6 +1207,7 @@ function timeEvents(events, now) {
   if (f.shake > 0 && typeof rig.shake === 'function') rig.shake(f.shake);
 }
 function timeScale(now) {
+  if (ULT.cine && app.screen === 'playing') return ultScale(now);   // [W3-ULT] замедление сцены
   if (now < timeFx.stopUntil) return 0.04;
   if (now < timeFx.slowUntil) {
     const left = (timeFx.slowUntil - now) / Math.max(1, timeFx.slowMs);
@@ -1213,6 +1217,119 @@ function timeScale(now) {
 }
 // [FEEL] финал боя: последний удар замедлен, HUD пишет «ПОБЕДА» / «РЕГЕНТ УСТОЯЛ», потом — экран итогов.
 const OUTRO = { victoryMs: 1700, defeatMs: 1200, victoryScale: 0.25, defeatScale: 0.45 };
+
+// ---------------------------------------------------------------- [W3-ULT] «Небесный суд»
+// Полная шкала «Ярость клятвы» (combat) → жест «обе руки над головой 0,8 с» по позе камеры (core/ultimate.js)
+// или U в отладке → input.ultimate → бой начинает сцену (ultimate_start). Сцена здесь: время (бой — в реальном
+// времени, мир и эффекты замедлены), облёт камеры (core/cameraRig.js cinematic), меч из света
+// (modules/fx/ultimate.js), вспышка (postfx.pulse, если есть; иначе рывок экрана и вспышка HUD), звук, HUD.
+const ULT = { gesture: createUltimateGesture(), g: null, fx: null, q: null, cine: null, flashByPost: false };
+import('./modules/fx/ultimate.js').then((m) => {
+  try {
+    ULT.fx = m.createUltimateFx({ THREE, scene, camera, getKit: () => (effects && effects.v6 && effects.v6.enabled ? effects.v6.kit : null),
+      groundY: worldLayout && typeof worldLayout.groundY === 'function' ? worldLayout.groundY : null, reducedMotion: () => !!settings.reducedMotion });
+  } catch (e) { console.warn('[W3-ULT] эффект', e); ULT.fx = null; }
+}).catch((e) => console.warn('[W3-ULT] modules/fx/ultimate.js', e && e.message));
+// ?fury=100 — бой начинается с полной шкалой (показ «Небесного суда» на сцене сразу, QA)
+const ULT_FURY0 = PERF_Q.has('fury') ? Math.max(0, Math.min(100, Number(PERF_Q.get('fury')) || 100)) : 0;
+function ultReset() {
+  if (ULT_FURY0 > 0 && typeof combat.setFury === 'function') { try { combat.setFury(ULT_FURY0); } catch (e) { /* ignore */ } }
+  ULT.cine = null; ULT.g = null; ULT.gesture.reset();
+  if (ULT.fx) { try { ULT.fx.reset(); } catch (e) { /* ignore */ } }
+  if (typeof rig.stopCinematic === 'function') rig.stopCinematic();
+}
+function ultArmed() {
+  const s = lastSnapshot;
+  return !!(s && s.status === 'playing' && s.player && s.player.furyReady && !ULT.cine && !app.outroAt && !(pvpCtl && pvpCtl.active));
+}
+// Жест с камеры → импульс ultimate и подсказки «ОШИБКА» (до разбора подсказок в кадре)
+function ultInput(input, now) {
+  if (!input) return;
+  if (ULT.cine) { input.hint = null; input.ultimate = false; return; }   // в сцене ввод не нужен
+  if (app.debug || !vision || app.screen !== 'playing') { ULT.g = null; ULT.gesture.push(null, now, { armed: false }); return; }
+  let pose = null;
+  try { pose = vision.getPose(); } catch (e) { pose = null; }
+  const g = ULT.gesture.push(pose, now, { armed: ultArmed() });
+  ULT.g = g;
+  if (g.fired) input.ultimate = true;
+  // руки над головой: подсказки кистей («у края кадра» и т. п.) сейчас мешают — только свои
+  if (g.phase === 'hold' || g.phase === 'fired' || g.phase === 'one') input.hint = null;
+  if (g.hint) input.hint = { code: g.hint, side: g.side, guess: null, tMs: now };
+}
+function ultScale(now) {
+  const c = ULT.cine;
+  const v = ultTimeScale(c.t, c.dur, c.strikeAt, !!settings.reducedMotion);
+  return now < timeFx.stopUntil ? Math.min(v, 0.04) : v;
+}
+function ultPostPulse(kind, pos) {
+  if (!postfx || !postfx.enabled) return false;
+  let x = 0.5, y = 0.5;
+  if (pos) { _sunV.set(pos.x, pos.y || 0, pos.z).project(camera); if (_sunV.z < 1) { x = _sunV.x * 0.5 + 0.5; y = _sunV.y * 0.5 + 0.5; } }
+  let ok = false;
+  if (typeof postfx.pulse === 'function') { try { postfx.pulse(kind, { x, y, strength: 1 }); ok = true; } catch (e) { ok = false; } }
+  if (kind === 'shockwave' && typeof postfx.punch === 'function') { try { postfx.punch(1, x, y); } catch (e) { /* ignore */ } }
+  return ok;
+}
+// События боя этого кадра → старт сцены, удар
+function ultEvents(events, now) {
+  if (!events || !events.length) return;
+  for (const e of events) {
+    if (!e) continue;
+    const d = e.data || {};
+    if (e.type === 'ultimate_ready') cue('perfect');
+    else if (e.type === 'ultimate_start') {
+      const snap = lastSnapshot || combat.getSnapshot();
+      const hero = snap.player.position, target = d.target || snap.boss.position;
+      ULT.cine = { t: 0, dur: Number.isFinite(d.duration) ? d.duration : 3.6, strikeAt: Number.isFinite(d.strikeAt) ? d.strikeAt : 2.3,
+        struck: false, amount: 0, pct: 0, target: { x: target.x, y: target.y, z: target.z } };
+      ULT.flashByPost = false;
+      if (typeof rig.cinematic === 'function') {
+        const keys = settings.reducedMotion ? [] : ultCameraKeys({ p: hero, b: snap.boss.position, dur: ULT.cine.dur, strikeAt: ULT.cine.strikeAt,
+          maxR: config.camera.maxRadiusFromCenter, ground: worldLayout ? worldLayout.groundY : null });
+        if (keys.length) rig.cinematic(keys, { duration: ULT.cine.dur, blendOut: 0.6 });
+      }
+      if (ULT.fx) { try { ULT.fx.start({ target, hero, duration: ULT.cine.dur, strikeAt: ULT.cine.strikeAt }); } catch (err) { console.warn('[W3-ULT] fx.start', err); } }
+      cue('rune_light'); cue('burst');
+    } else if (e.type === 'ultimate_strike' && ULT.cine) {
+      ULT.cine.struck = true;
+      ULT.cine.amount = Number(d.amount) || 0;
+      const mx = lastSnapshot && lastSnapshot.boss ? lastSnapshot.boss.maxHp : 0;
+      ULT.cine.pct = mx > 0 ? (ULT.cine.amount / mx) * 100 : 0;
+      if (!settings.reducedMotion) {
+        if (typeof rig.shake === 'function') rig.shake(1);
+        ULT.flashByPost = ultPostPulse('flash', e.position);
+        ultPostPulse('shockwave', e.position);
+      }
+      cue('boss_slam'); cue('boss_nova'); cue('rune_storm');
+    }
+  }
+}
+// Время сцены: по бою (снимок), а если бой окончен ударом — по настенным часам до конца облёта
+function ultTick(dtReal) {
+  if (ULT.fx && ULT.q !== settings.quality) { ULT.q = settings.quality; try { ULT.fx.setQuality(settings.quality); } catch (e) { /* ignore */ } }
+  const c = ULT.cine;
+  if (!c) return;
+  const su = lastSnapshot && lastSnapshot.ultimate;
+  if (su && su.active) c.t = su.t;
+  else if (app.screen === 'playing' || app.screen === 'intro') c.t += dtReal;
+  if (c.t >= c.dur || (app.screen !== 'playing' && app.screen !== 'paused')) {
+    ULT.cine = null;
+    if (ULT.fx && app.screen !== 'playing') { try { ULT.fx.reset(); } catch (e) { /* ignore */ } }
+  }
+  if (ULT.fx) { try { ULT.fx.update(c.t, app.screen === 'paused' ? 0 : dtReal); } catch (e) { console.warn('[W3-ULT] fx.update', e); ULT.fx = null; } }
+}
+// В отладке (руки героя не повторяют руки игрока) на время сцены герой сам поднимает руки к небу
+const ULT_ARMS_UP = { valid: true, left: { upper: { x: -0.32, y: -0.95 }, fore: { x: -0.1, y: -0.99 } }, right: { upper: { x: 0.32, y: -0.95 }, fore: { x: 0.1, y: -0.99 } }, lean: 0, depth: 0 };
+function ultMirror(m) { return ULT.cine && !(m && m.valid) ? ULT_ARMS_UP : m; }
+const _ultView = { fury: 0, furyMax: 100, ready: false, gesture: null, debug: false, flash: false, cine: null };   // один объект на кадр HUD
+function ultView() {
+  const s = lastSnapshot, P = s && s.player;
+  if (!P || !Number.isFinite(P.fury)) return null;
+  const v = _ultView;
+  v.fury = P.fury; v.furyMax = P.furyMax; v.ready = !!P.furyReady; v.gesture = ULT.g; v.debug = app.debug; v.flash = ULT.flashByPost;
+  v.cine = ULT.cine;   // { t, dur, strikeAt, struck, amount, pct } — HUD только читает
+  return v;
+}
 
 // ---------------------------------------------------------------- [ТВИСТ «ОШИБКА»]
 // Импульсы удачных жестов и коды подсказок из распознавателя → статистика боя.
@@ -1315,6 +1432,7 @@ function frame(now) {
   const input = readInput();
   // [HAND] лук и магия рукой → input.bow / input.handSpell; конфликтующие жесты гасятся (C2)
   if (handZone) { try { handZone.apply(input, now, { debug: app.debug, playing: app.screen === 'playing', enabled: handCombatOn() }); } catch (e) { console.warn('[HAND] apply', e); } }
+  try { ultInput(input, now); } catch (e) { console.warn('[W3-ULT] жест', e); }   // [W3-ULT] обе руки над головой → «Небесный суд»
   // [ТВИСТ «ОШИБКА»] код подсказки → жест и текст исправления (для HUD, обучения и итогов)
   if (input && input.hint && hintInfo(input.hint.code)) { input.hint = { ...input.hint, ...hintInfo(input.hint.code) }; noteHint(input.hint, now); }
   if (input && input.hint && (app.screen === 'tutorial' || app.screen === 'playing')) cue(sfxCues.hint(input.hint, now)); // [SFX] мягкий «тук»
@@ -1363,12 +1481,13 @@ function frame(now) {
       input.autoWalk = settings.autoWalk !== false && !app.debug && !(pvpCtl && pvpCtl.active);
       let inputC = input;
       if (pvpCtl && pvpCtl.active) { try { inputC = pvpCtl.beforeUpdate(input); } catch (e) { console.error('[PVP] beforeUpdate', e); } } // [PVP] фазы раунда, оглушение, соперник
-      try { combat.update(dt, inputC); } catch (e) { console.error('[ASHEN] combat.update', e); }
+      try { combat.update(ULT.cine ? dtReal : dt, inputC); } catch (e) { console.error('[ASHEN] combat.update', e); }   // [W3-ULT] сцена идёт по настенным часам, замедлен только мир
     }
     events = adaptEvents(combat.drainEvents());
     if (pvpCtl && pvpCtl.active) { try { events = pvpCtl.afterUpdate(events); } catch (e) { console.error('[PVP] afterUpdate', e); } } // [PVP] сеть, раунды
     timeEvents(events, now);
     lastSnapshot = combat.getSnapshot();
+    try { ultEvents(events, now); } catch (e) { console.warn('[W3-ULT] события', e); }   // [W3-ULT]
     events = checkEmbers(lastSnapshot, events);
     events = forestZoneEvents(events, lastSnapshot);   // [FOREST]
     if (lastSnapshot.status === 'victory' || lastSnapshot.status === 'defeat') finishCoach();   // [ТВИСТ «ОШИБКА»] итог — в историю (один раз; жесты финала уже не считаются)
@@ -1436,10 +1555,10 @@ function frame(now) {
   try { onboardTick(now); autoResumeTick(now); gateTick(now); } catch (e) { console.warn('[ONBOARD]', e); }
 
   if (typeof world.setMirror === 'function') {
-    try { world.setMirror(app.debug ? null : mirrorFromPose(input, now)); } catch (e) { /* ignore */ }
+    try { world.setMirror(ultMirror(app.debug ? null : mirrorFromPose(input, now))); } catch (e) { /* ignore */ }   // [W3-ULT] в сцене руки к небу
   }
   // [HERO] руки VRM-героя повторяют руки игрока; C5: поза лука и чар рукой из ввода C2
-  if (heroModel && heroModel.setMirror) { try { heroModel.setMirror(app.debug ? null : mirrorFromPose(input, now)); if (app.screen !== 'menu') heroModel.setPose(heroPoseFromInput(input)); } catch (e) { /* ignore */ } }
+  if (heroModel && heroModel.setMirror) { try { heroModel.setMirror(ultMirror(app.debug ? null : mirrorFromPose(input, now))); if (app.screen !== 'menu') heroModel.setPose(heroPoseFromInput(input)); } catch (e) { /* ignore */ } }
   // [NET] соперник: отправка st/ev/pr, его модель; его события (data.remote=true) и снаряды — в эффекты.
   // world и heroModel получают только свои события: иначе свой герой повторял бы чужие удары.
   let fxEvents = events, fxSnap = lastSnapshot;
@@ -1453,6 +1572,7 @@ function frame(now) {
   if (handVisuals && effects.linkHandVisuals) effects.linkHandVisuals(handVisuals); // [VFX] стрелы/сгустки/попадания — V6, лук — №6
   if (handVisuals) { try { handVisuals.update(dt, fxSnap, fxEvents, handAnchors()); } catch (e) { /* [HAND] */ } } // [HAND] (fxSnap — со стрелами соперника)
 
+  try { ultTick(dtReal); } catch (e) { console.warn('[W3-ULT] сцена', e); }   // [W3-ULT] время сцены и меч из света
   // камера
   if (app.screen === 'intro' && lastSnapshot) {
     // облёт: спереди-снизу у стража → вверх и за спину героя, к стартовому ракурсу боя
@@ -1504,6 +1624,7 @@ function frame(now) {
     pois: unlitEmbers(),
     coach: coachView(input),
     layout: worldLayout, // [BDO] мини-карта и названия зон
+    ult: ultView(),      // [W3-ULT] шкала «Ярость клятвы», зов, сцена
   });
 
   perf.frames++;
@@ -1565,6 +1686,7 @@ window.__ASHEN__ = Object.freeze({
   squats: () => squats.getDebug(),
   technique: () => (techView ? JSON.parse(JSON.stringify({ ...techView, synthHands: null, synthPose: null, focus: techView.focus ? { ...techView.focus, pictogram: !!techView.focus.pictogram } : null })) : null), // [ТВИСТ «ОШИБКА»] QA тренажёра
   pvp: () => (pvpCtl ? pvpCtl.debug() : null),   // [PVP] QA: фаза, счёт, статистика дуэли
+  ult: () => ({ cine: ULT.cine ? { ...ULT.cine } : null, gesture: ULT.g ? { ...ULT.g } : null, rig: !!rig.cinematicActive, fx: !!(ULT.fx && ULT.fx.active) }),   // [W3-ULT] QA
   zoneMood: (m) => { try { world.atmosphere.setZoneMood(m); return true; } catch (e) { return false; } }, // [BDO] QA: настроение зоны
   heroMax: () => { const c = typeof combat.getEffectiveConfig === 'function' ? combat.getEffectiveConfig() : null; return c ? { hp: c.player.maxHp, energy: c.player.maxEnergy } : null; },
   embers: () => (worldLayout && Array.isArray(worldLayout.pois) ? worldLayout.pois.map((q) => ({ id: q.id, x: q.x, z: q.z, lit: progression.isEmberLit(q.id) })) : []),

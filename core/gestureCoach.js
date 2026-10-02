@@ -34,6 +34,7 @@ export const COACH_GROUPS = Object.freeze({
   spell:  Object.freeze({ id: 'spell', title: 'Магия рукой', short: 'Магия', success: Object.freeze(['hand_spell']), bars: true }),
   move:   Object.freeze({ id: 'move', title: 'Движение («Руль»)', short: 'Руль', success: Object.freeze([]), bars: false }),
   frame:  Object.freeze({ id: 'frame', title: 'Кадр', short: 'Кадр', success: Object.freeze([]), bars: false }),
+  ult:    Object.freeze({ id: 'ult', title: 'Небесный суд', short: 'Суд', success: Object.freeze([]), bars: false }),   // [W3-ULT]
 });
 
 // Точки кисти MediaPipe: 0 запястье, 4 кончик большого, 8 указательного, 12 среднего, 16 безымянного, 20 мизинца.
@@ -101,6 +102,9 @@ const RAW_HINTS = {
   stretch_slow:  h('sigil', 'both', 'Врата · Столп', 'Растягивай ладони резче — рывком, за полсекунды', 'Растяни резче', 'РЕЗЧЕ', [9]),
   stretch_open:  h('sigil', 'both', 'Врата · Столп', 'Сначала сомкни ладони вплотную и подержи полсекунды, потом растягивай', 'Сомкни ладони', 'СОМКНИ', [9]),
   stretch_diag:  h('sigil', 'both', 'Врата · Столп', 'Тяни ровно: в стороны — «Врата бури», вверх-вниз — «Столп небес», не по диагонали', 'В стороны или вверх-вниз', 'РОВНО', [9]),
+  // [W3-ULT] «Небесный суд» (core/ultimate.js): всем телом — обе руки над головой 0,8 с
+  ult_one_hand:  h('ult', 'both', 'Небесный суд', 'Подними ОБЕ руки над головой — локти выше плеч', 'Обе руки — вверх', 'ОБЕ РУКИ', [0, 9], [[0, 9]]),
+  ult_early:     h('ult', 'both', 'Небесный суд', 'Держи руки вверху ещё секунду — пока круг над героем не заполнится', 'Держи руки вверху', 'ДЕРЖИ', [0, 9], [[0, 9]]),
 };
 export const COACH_HINTS = Object.freeze(Object.fromEntries(
   Object.entries(RAW_HINTS).map(([code, e]) => [code, Object.freeze({ ...e, pictogram: code })]),

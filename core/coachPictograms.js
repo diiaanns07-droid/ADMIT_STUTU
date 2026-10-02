@@ -683,6 +683,14 @@ one('g_orb', (D) => { orb(D, 32, 27, 9.5); hand(D, { x: 13, y: 30, s: 32, side: 
 one('g_squat', (D) => { floor(D); squatSide(D, { ax: 30, ...SQ }); });
 one('g_pushup', (D) => { pushupSide(D, { down: 0.5 }); });
 
+// [W3-ULT] «Небесный суд»: обе руки над головой (core/ultimate.js)
+pair('ult_one_hand',
+  (D) => { chestLine(D, 21); bodyFront(D, { x: 32, y: 30, lh: [24, 10], rh: [42, 50], lk: 'open', rk: 'open', hs: 10 }); focus(D, 42, 48, 6); },
+  (D) => { chestLine(D, 21); bodyFront(D, { x: 32, y: 30, lh: [24, 10], rh: [40, 10], lk: 'open', rk: 'open', hs: 10 }); arrow(D, 55, 44, 55, 18, { w: 2.2 }); });
+pair('ult_early',
+  (D) => { chestLine(D, 21); bodyFront(D, { x: 28, y: 30, lh: [20, 10], rh: [36, 10], lk: 'open', rk: 'open', hs: 10 }); clock(D, 53, 13, 8); arrow(D, 53, 27, 53, 48, { w: 2, color: MUTE }); },
+  (D) => { chestLine(D, 21); bodyFront(D, { x: 28, y: 30, lh: [20, 10], rh: [36, 10], lk: 'open', rk: 'open', hs: 10 }); clock(D, 53, 13, 8); D.ring(53, 13, 11, 2.2); });
+
 export const PICTOGRAM_IDS = Object.freeze(Object.keys(FIG));
 
 export function hasPictogram(id) {
