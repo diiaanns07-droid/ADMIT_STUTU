@@ -46,20 +46,20 @@ void main() {
   vec2 vh = normalize(V.xz + vec2(1e-5));
   vec2 nh = normalize(vN.xz + vec2(1e-5));
   float f = abs(dot(nh, vh));                     // 1 — середина столпа на экране, 0 — край
-  float core = pow(f, 7.0);
-  float body = pow(f, 1.3);
+  float core = pow(f, 12.0);
+  float body = pow(f, 2.2);
   float a = atan(vN.z, vN.x);
   float y = vW.y;
   float n1 = fxNoise3(vec3(cos(a) * 1.8, sin(a) * 1.8, y * 0.32 + uTime * 7.0 + uSeed));
   float n2 = fxNoise3(vec3(cos(a) * 4.5 + 3.1, sin(a) * 4.5, y * 0.11 + uTime * 2.6 - uSeed));
   float str = 0.45 + 0.9 * n1 * (0.4 + 0.6 * n2);
   float hm = h * uH;                              // метры от земли
-  float base = 1.0 + 1.3 * exp(-hm * 0.9);        // всплеск у земли
+  float base = 1.0 + 0.5 * exp(-hm * 0.9);        // всплеск у земли
   float top = 1.0 - smoothstep(0.72, 1.0, h);     // растворяется в тучах
   float head = exp(-abs(h - lead) * uH * 0.7) * step(0.002, lead + 0.002) * (1.0 - step(0.999, uGrow));
-  vec3 col = uCore * (core * 2.1 + head * 1.6)
-           + uHot * body * str * 1.15
-           + uCol * (0.25 + 0.35 * n2) * body;
+  vec3 col = uCore * (core * 0.9 + head * 0.8)
+           + uHot * body * str * 0.32
+           + uCol * (0.06 + 0.12 * n2) * body;
   col *= uI * uFade * m * top * base;
   gl_FragColor = vec4(col, 0.0);
 ${FX_OUT}
@@ -232,7 +232,7 @@ export function register(fx) {
     mesh.position.set(ground.x, ground.y - 0.05, ground.z);
     mesh.scale.set(r0, H, r0); mesh.updateMatrix();
     const life = 0.6 + 0.3 * st.power;
-    const I = (0.9 + 0.5 * st.power) * soft() * (R ? 0.75 : 1);
+    const I = (0.75 + 0.35 * st.power) * soft() * (R ? 0.7 : 1);
     const red = fx.reduced();
     p.touch = nowMs(); mesh.visible = true;
     kit.actor({
@@ -247,7 +247,7 @@ export function register(fx) {
         const r = r0 * (1 + 0.22 * punch) * (1 - 0.55 * out);
         mesh.scale.set(r, H, r); mesh.updateMatrix();
         u.uGrow.value = grow; u.uFade.value = (1 - out) * flick;
-        u.uI.value = I * (1 + 0.7 * punch);
+        u.uI.value = I * (1 + 0.5 * punch);
         u.uTime.value = kit.clock;
         p.touch = nowMs(); mesh.visible = true;
         if (!(dt > 0) || grow < 0.6) return;
@@ -283,16 +283,16 @@ export function register(fx) {
     const rr = st.radius;
     pillarMesh(st);
     // разрыв туч и вспышка в ядре
-    kit.flash(sky, { ramp, size: [3, 9 * s], dur: 0.4, intensity: 3 * sf, sprite: 'glow', pull: 0, rival: R });
-    kit.flash(gp, { ramp: 'whiteHold', size: [1.5, 6 * s], dur: 0.3, intensity: 4 * sf, sprite: 'star', pull: 0.8, rival: R });
-    kit.flash(gp, { ramp, size: [2.5, 8 * s], dur: 0.55, intensity: 2.4 * sf, sprite: 'glow', pull: 0.8, rival: R });
+    kit.flash(sky, { ramp, size: [3, 8 * s], dur: 0.4, intensity: 2.2 * sf, sprite: 'glow', pull: 0, rival: R });
+    kit.flash(gp, { ramp: 'whiteHold', size: [0.8, 2.8 * s], dur: 0.2, intensity: 2.2 * sf, sprite: 'star', pull: 0.8, rival: R });
+    kit.flash(gp, { ramp, size: [1.4, 3.8 * s], dur: 0.4, intensity: 1.1 * sf, sprite: 'glow', pull: 0.8, rival: R });
     if (reach) {
       // сочный удар по цели: звезда в ядре, искры с тела
-      kit.flash(tgt, { ramp: 'whiteHold', size: [1.2, 5 * s], dur: 0.26, intensity: 4 * sf, sprite: 'star', pull: 0.9, rival: R });
+      kit.flash(tgt, { ramp: 'whiteHold', size: [0.8, 3.2 * s], dur: 0.22, intensity: 2.8 * sf, sprite: 'star', pull: 0.9, rival: R });
       kit.emit({ at: tgt, radius: 0.6, count: 70 * (0.45 + 0.55 * power), speed: [4, 12], life: [0.3, 0.8], size: [0.07, 0.014], ramp, intensity: 3.4, sprite: 'spark', stretch: 0.04, gravity: 6, drag: 1.5, ground: ground.y + 0.03, rival: R });
     }
-    kit.screenFlash(R ? 0xb49cff : 0xfff0c8, (R ? 0.14 : 0.2 + 0.16 * power) * sf, 0.13);
-    kit.light(gp, { color: P.hot, intensity: 1.4, range: 18 + 6 * power, dur: 0.75, attack: 0.03 });
+    kit.screenFlash(R ? 0xb49cff : 0xfff0c8, (R ? 0.08 : 0.1 + 0.1 * power) * sf, 0.12);
+    kit.light(gp, { color: P.hot, intensity: 0.8 + 0.3 * power, range: 12 + 4 * power, dur: 0.6, attack: 0.03 });
     kit.shake((R ? 0.18 : 0.24 + 0.22 * power) * (reach ? 1 : 0.7));
     if (reach) kit.hitstop(R ? 30 : 40 + 35 * power);
     // ветвящиеся молнии с неба вокруг столпа
