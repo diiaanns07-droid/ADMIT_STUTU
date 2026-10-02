@@ -81,7 +81,7 @@ test('типичные попытки ложатся в разные ранги'
 // ───────── подсчёт по событиям ─────────
 test('ультимейт узнаётся по имени события, служебные события — нет', () => {
   for (const t of ['ultimate', 'ultimate_cast', 'player_ultimate', 'ult_cast', 'hero_ultimate_start']) ok(isUltimateEvent({ type: t }), t);
-  for (const t of ['ultimate_hit', 'ultimate_ready', 'ultimate_end', 'ultimate_charge', 'boss_hit', 'result', 'multi_cast', 'adult']) ok(!isUltimateEvent({ type: t }), `не ${t}`);
+  for (const t of ['ultimate_hit', 'ultimate_ready', 'ultimate_strike', 'ultimate_end', 'ultimate_charge', 'boss_hit', 'result', 'multi_cast', 'adult']) ok(!isUltimateEvent({ type: t }), `не ${t}`);
   ok(isUltimateEvent({ type: 'player_cast', data: { ability: 'ultimate' } }), 'player_cast ultimate');
   ok(!isUltimateEvent({ type: 'player_cast', data: { ability: 'bolt' } }), 'player_cast bolt');
   ok(!isUltimateEvent(null) && !isUltimateEvent({}), 'мусор');
@@ -110,6 +110,23 @@ test('серия, печати, руны, ультимейт; повторы п�
   eq(r.elapsed, 28);
   eq(r.gestures, 12); eq(r.accuracy, 75);
   eq(t.lastHitAt, 5.5);
+});
+test('«Небесный суд» и новые печати: одна сцена ультимейта — один бонус, «Врата бури» и «Столп небес» — магия', () => {
+  const t = createTally();
+  t.reset({ time: 0, stats: { damageDealt: 0 } });
+  t.add([{ id: 'a', type: 'ultimate_ready', data: { fury: 100 } }], 10);
+  t.add([{ id: 'b', type: 'ultimate_start', data: { duration: 3.6, strikeAt: 2.3 } }], 12);
+  t.add([{ id: 'c', type: 'ultimate_strike', data: { amount: 250 } }, { id: 'd', type: 'boss_hit', data: { amount: 250, combo: 4, source: 'ultimate' } }], 14.3);
+  t.add([{ id: 'e', type: 'ultimate_end', data: { struck: true } }], 15.6);
+  t.add([{ id: 'f', type: 'sigil_cast', data: { sigil: 'gate', power: 0.8 } }, { id: 'g', type: 'sigil_cast', data: { sigil: 'pillar' } }, { id: 'h', type: 'sigil_miss', data: { sigil: 'pillar' } }], 20);
+  t.add([{ id: 'i', type: 'ultimate_start', data: {} }], 40);
+  const r = t.read({ time: 41, stats: { damageDealt: 600 } }, null);
+  eq(r.ultimates, 2, 'два ультимейта за попытку');
+  eq(r.magic, 2, 'две печати (промах — не магия)');
+  eq(r.magicKinds, 2);
+  eq(r.damage, 600, 'урон меча — из снимка');
+  const sc = scoreChallenge({ ...r, accuracy: null });
+  eq(sc.parts.find((p) => p.id === 'magic').points, 2 * SCORE.magic + 2 * SCORE.magicNew + 2 * SCORE.ultimate);
 });
 test('лучший жест — по числу удачных', () => {
   const b = bestGestureOf({ groups: [{ id: 'ok', title: '«OK» · снаряд', good: 14, accuracy: 80 }, { id: 'shield', title: 'Щит', good: 3, accuracy: 100 }, { id: 'burst', title: 'Выброс', good: 0, accuracy: 0 }] });

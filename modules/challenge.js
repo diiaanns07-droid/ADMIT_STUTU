@@ -70,10 +70,11 @@ export function nextRank(score) {
 }
 
 // ───────── подсчёт по событиям боя ─────────
-// Ультимейт агентов №2 и №6: имя события пока не известно этому модулю — подходит любое с «ultimate» (или «ult»)
-// в имени, кроме служебных (готовность, попадания, конец), и player_cast с ability 'ultimate'.
+// Ультимейт (ветка «Небесный суд»: ultimate_ready → ultimate_start → ultimate_strike → ultimate_end): подходит
+// любое событие с «ultimate» (или «ult») в имени, кроме служебных (готовность, удар, конец), и player_cast с
+// ability 'ultimate' — подсчёт не зависит от точного имени. Урон удара считается как обычный урон (снимок).
 const ULT_TYPE = /(^|_)ult(imate)?(_|$)|ultimate/i;
-const ULT_SKIP = /hit|end|ready|charge|denied|tick|fail|cancel|progress|stop|expire/i;
+const ULT_SKIP = /hit|strike|end|ready|charge|denied|tick|fail|cancel|progress|stop|expire|miss/i;
 export function isUltimateEvent(e) {
   if (!isObj(e) || typeof e.type !== 'string') return false;
   if (e.type === 'player_cast') return !!(e.data && typeof e.data.ability === 'string' && ULT_TYPE.test(e.data.ability));
@@ -86,7 +87,7 @@ export function magicKindOf(e) {
   if (e.type === 'rune_cast') return `rune:${(e.data && e.data.rune) || '?'}`;
   return null;
 }
-const ULT_GAP_SEC = 1;   // несколько событий одного ультимейта (старт, вспышка) — один ультимейт
+const ULT_GAP_SEC = 4;   // события одной сцены ультимейта (≈3,6 с) — один ультимейт
 
 export function createTally() {
   const t = { hits: 0, maxCombo: 0, magic: 0, kinds: new Set(), ultimates: 0, lastUlt: -1e9, seen: new Set(), startDamage: 0, startTime: 0, lastHitAt: null };
