@@ -1388,14 +1388,13 @@ export function createBattleHud({ canvas } = {}) {
     const big = age < 5 || holding || one;
     const base = clamp(H * (big ? 0.068 : 0.048), 24, big ? 66 : 46);
     const sc = rm ? 1 : (1 + 0.45 * (1 - kIn) * (1 - kIn)) * (holding ? 1 : 1 + 0.035 * Math.sin(t * 6.5));
-    const sz = Math.round(base * sc), cy = H * (big ? 0.25 : 0.2);
+    const sz = Math.round(base * sc), cy = H * (big ? 0.31 : 0.24);
     const title = U.debug ? 'НАЖМИ U — НЕБЕСНЫЙ СУД' : holding ? 'ДЕРЖИ!' : 'ПОДНИМИ ОБЕ РУКИ!';
     ctx.globalAlpha = kIn;
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
     ctx.font = `800 ${sz}px ${SANS}`;
-    const tw = ctx.measureText(title).width;
-    // фигурка слева от надписи; при удержании — кольцо прогресса вокруг неё
-    const gs = sz * 1.5, gx = W / 2 - tw / 2 - gs * 0.62, gy = cy - sz * 0.32;
+    // фигурка над надписью (по центру — не заходит на панели по краям); при удержании — кольцо прогресса вокруг неё
+    const gs = base * 1.35, gx = W / 2, gy = cy - sz * 0.95 - gs * 0.62;
     if (!U.debug) {
       const k = holding ? 1 : rm ? 1 : 0.5 + 0.5 * Math.sin(t * 3.2);
       drawRaiseGlyph(gx, gy, gs, k, holding ? CRIT : GOLD_HI);
