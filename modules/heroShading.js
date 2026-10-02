@@ -1240,6 +1240,22 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     // [W4-ЛИЦО] лента бровей и подводки: цвет подводки — вершинами, смещение полигонов — поверх кожи без мерцания
     // (только у своей ленты: у GLB почти все меши с COLOR_0, а шторка века heroGear берёт материал лица без него)
     if (orig.vertexColors && orig.userData && orig.userData.faceRibbon) m.vertexColors = true;
+    // лента бровей вдали (меню, бой): волоски усредняются мип-уровнями и бровь бледнеет до цвета кожи —
+    // плотность восстанавливается по размеру текселя на экране (вблизи без изменений)
+    if (orig.userData && orig.userData.faceRibbon && m.map) {
+      const prevR = m.onBeforeCompile;
+      m.onBeforeCompile = (sh, r) => {
+        if (prevR) prevR.call(m, sh, r);
+        sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+  {
+    vec2 fwT = fwidth( vMapUv ) * vec2( textureSize( map, 0 ) );
+    float lodT = log2( max( max( fwT.x, fwT.y ), 1.0 ) );
+    diffuseColor.a = min( 1.0, diffuseColor.a * ( 1.0 + 0.9 * smoothstep( 0.6, 3.2, lodT ) ) );
+  }`);
+      };
+      const pkR = m.customProgramCacheKey;
+      m.customProgramCacheKey = () => 'heroRibbon:' + (pkR ? pkR.call(m) : '');
+    }
     if (orig.polygonOffset) { m.polygonOffset = true; m.polygonOffsetFactor = orig.polygonOffsetFactor; m.polygonOffsetUnits = orig.polygonOffsetUnits; }
     if (kind === 'skin') { m.roughness = Math.max(0.45, orig.roughness * 0.85); }
     // брови и волосы модели — в цвет причёски героини (серая текстура × цвет)
