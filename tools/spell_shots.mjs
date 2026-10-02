@@ -113,7 +113,7 @@ try {
   page.on('pageerror', (e) => report.errors.push(String(e && e.message).slice(0, 300)));
   page.on('console', (m) => { if (m.type() === 'error') report.errors.push(('[console] ' + m.text()).slice(0, 300)); });
   const btn = (text) => page.locator('button:visible', { hasText: text }).first();
-  await page.goto(`http://127.0.0.1:${PORT}/?uncapped=1`);
+  await page.goto(`http://127.0.0.1:${PORT}/?uncapped=1`, { timeout: 240000 });
   await page.waitForFunction(() => !!window.__ASHEN__, null, { timeout: 180000 });
   await page.waitForFunction(() => { const a = window.__ASHEN__.worldAssets(); return !a || a.pending === 0; }, null, { timeout: 180000 }).catch(() => {});
   await sleep(1500);
