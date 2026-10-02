@@ -194,7 +194,10 @@ void RE_Direct_Hair( const in IncidentLight directLight, const in vec3 geometryP
   hairVolN = normal;
   #ifdef DOUBLE_SIDED
   hairVolN *= faceDirection;
-  #endif`)
+  #endif
+  // причёска — объём волокон, а не гладкая оболочка: френель по касательной (макушка, кромка) не должен
+  // заливать её кромкой атмосферы и отражением неба — нормаль для них чуть повёрнута к камере
+  normal = normalize( normal + normalize( vViewPosition ) * 0.7 );`)
       .replace('#include <map_fragment>', `#include <map_fragment>
   #ifdef USE_MAP
   { float hl = dot( sampledDiffuseColor.rgb, vec3( 0.3333 ) ); hairGlint = 0.35 + 0.9 * hl; hairShift = vHairS.x + ( hl - 0.62 ) * 0.22; }
@@ -208,8 +211,9 @@ void RE_Direct_Hair( const in IncidentLight directLight, const in vec3 geometryP
     float hNL = dot( hN, heroKeyDir );
     totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * saturate( ( hNL + 0.4 ) / 1.4 );
     totalEmissiveRadiance += heroKeyColor * hairKKSpec( hN, hV, heroKeyDir );
+    // кромка света витрины — узкая, только со стороны контрового и в цвет волос (не белый ободок)
     float hF = pow( 1.0 - saturate( dot( normal, hV ) ), 4.0 );
-    totalEmissiveRadiance += heroRimColor * hF * saturate( dot( hN, heroRimDir ) * 0.6 + 0.45 ) * 0.7;
+    totalEmissiveRadiance += heroRimColor * hF * saturate( dot( hN, heroRimDir ) ) * 0.3 * mix( vec3( 1.0 ), diffuseColor.rgb * 2.5, 0.6 );
     totalEmissiveRadiance += heroRimColor * hairTrans( hN, hV, heroRimDir, diffuseColor.rgb );
     totalEmissiveRadiance += diffuseColor.rgb * heroFillColor * ( 0.4 + 0.6 * saturate( dot( normal, hV ) ) );
   }`);

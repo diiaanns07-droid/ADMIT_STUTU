@@ -117,7 +117,16 @@ async function openHero(hero) {
   // ручной шаг: сцена стоит, пока мы не шагнём (кадр rAF только рисует)
   await page.evaluate(() => { window.__HS_MANUAL__ = true; window.__hold = true; });
   // --eval 'js': QA — код в странице после загрузки героя (A = __HS_API__; волосы: mesh.userData.hair — юниформы)
-  if (arg('--eval', '')) await page.evaluate((code) => { const A = window.__HS_API__; let hairU = null; A.a.root.traverse((o) => { if (o.userData && o.userData.hair && !hairU) hairU = o.userData.hair; }); new Function('A', 'hairU', code)(A, hairU); }, arg('--eval', ''));
+  if (arg('--eval', '')) await page.evaluate(async (code) => { const A = window.__HS_API__; let hairU = null; A.a.root.traverse((o) => { if (o.userData && o.userData.hair && !hairU) hairU = o.userData.hair; }); const AF = Object.getPrototypeOf(async function () {}).constructor; await new AF('A', 'hairU', code)(A, hairU); }, arg('--eval', ''));
+  // --showcase: свет витрины меню (HERO_LIGHT, как heroShowcase: ключ тёплый спереди-сбоку, контровой сзади-слева)
+  if (argv.includes('--showcase')) await page.evaluate(async () => {
+    const m = await import('/modules/heroShading.js'), L = m.HERO_LIGHT;
+    if (!L.heroKeyColor.value) return;
+    L.heroKeyColor.value.setRGB(1.0, 0.82, 0.66).multiplyScalar(1.45 * 1.3); L.heroRimColor.value.setRGB(0.62, 0.78, 1.0).multiplyScalar(1.4); L.heroFillColor.value.setRGB(0.36, 0.4, 0.52).multiplyScalar(0.3);
+    L.heroKeyDir.value.set(0.55, 0.45, 0.7).normalize(); L.heroRimDir.value.set(-0.55, 0.35, -0.75).normalize();
+    // источники стенда — приглушить (в меню основной свет героя — эти юниформы)
+    window.__HS_API__.scene.traverse((o) => { if (o.isLight) o.intensity *= 0.35; });
+  });
   // --nohood: QA — капюшон скрыт (что под ним)
   if (argv.includes('--nohood')) await page.evaluate(() => { window.__HS_API__.a.root.traverse((o) => { if (o.isMesh && /Hood/i.test(o.name)) o.visible = false; }); });
   return { ctx, page, errors };
