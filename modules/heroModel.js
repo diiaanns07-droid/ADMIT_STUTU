@@ -783,7 +783,7 @@ export function createHeroModel({
     } else { pose.bowActive = false; pose.bowDraw = 0; }
     // жест визитки раз в ~12 с, если витрина сама не позвала flourish
     S.sigIdle = (S.sigIdle || 0) + dt;
-    if (S.sigIdle > 12 && (S.gaze || 0) < 0.5) { S.sigIdle = 0; poses.flourish(); }
+    if (S.sigIdle > 12 && (S.gaze || 0) < 0.5) { S.sigIdle = 0; if (!poses.flourish()) S.sigDrawT = 0; }
   }
 
   // ---------------------------------------------------------------- слой действий
@@ -1399,7 +1399,8 @@ export function createHeroModel({
     // жест «выхода» в меню: клип один раз на всё тело, затем снова стойка
     setGaze(k) { const g = k > 0.5 ? 1 : 0; if (g !== (S.gaze || 0)) { S.gaze = g; if (g) S.lookT = 0; } },
     flourish(name = 'CastRaise') {
-      if (cur && S.inMenu && posesOn() && poses.signature && poses.flourish()) { S.sigIdle = 0; return; }   // [W4-ПОЗЫ] жест визитки
+      // [W4-ПОЗЫ] жест визитки (у лучницы — новый выстрел-натяг), клип поверх визитки не играем
+      if (cur && S.inMenu && posesOn() && poses.signature) { if (!poses.flourish()) S.sigDrawT = 0; S.sigIdle = 0; return; }
       if (cur && cur.full[name]) playAct(name, { speed: 1.1, fade: 0.2 });
     },
     get ready() { return S.ready; },

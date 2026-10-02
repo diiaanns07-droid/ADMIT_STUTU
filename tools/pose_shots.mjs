@@ -56,6 +56,7 @@ const CLOCK = () => {
     if (on && !virt) { vt = oNow(); virt = true; } else if (!on && virt) { virt = false; const qq = q; q = []; for (const cb of qq) oRAF(cb); }
   };
   window.__kinoStep = (ms) => { vt += ms; const qq = q; q = []; for (const cb of qq) { try { cb(vt); } catch (e) { console.error(e); } } return qq.length; };
+  window.__kinoPending = () => q.length;
 };
 
 const { chromium } = loadPlaywright();
@@ -130,7 +131,15 @@ async function gamePage(q, extra = {}, query = '') {
   await page.waitForFunction(() => { const a = window.__ASHEN__.worldAssets(); return !a || a.pending === 0; }, null, { timeout: 180000 }).catch(() => {});
   return { ctx, page };
 }
-const vstep = (page, n = 1) => page.evaluate((n) => { for (let i = 0; i < n; i++) window.__kinoStep(1000 / 30); }, n);
+// шаг — только когда кадр игры ждёт в очереди: сразу после включения виртуальных часов кадр ещё «в полёте»
+// по настоящему rAF (на программном рендере — секунды), и шаги вхолостую сдвинули бы время без кадра
+async function vstep(page, n = 1) {
+  for (let i = 0; i < n;) {
+    const done = await page.evaluate((n) => { let k = 0; while (k < n && window.__kinoPending() > 0) { window.__kinoStep(1000 / 30); k++; } return k; }, n - i);
+    i += done;
+    if (i < n) await page.waitForFunction(() => window.__kinoPending() > 0, null, { timeout: 240000, polling: 50 });
+  }
+}
 async function pickHero(page, id) {
   await page.evaluate((id) => { const el = document.querySelector(`input.ao-herocard__input[value="${id}"]`); if (el && !el.checked) el.click(); }, id);
   await page.waitForFunction((id) => { const h = window.__ASHEN__.hero(); return h && h.ready && h.hero === id; }, id, { timeout: 180000 });
