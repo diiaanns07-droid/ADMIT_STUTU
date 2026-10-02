@@ -8,14 +8,15 @@
  *
  * Протокол (главный поток → worker):
  *   { type:'init', apiVersion, mp:{moduleUrl, wasmRoot, modelUrl}, delegate:'GPU'|'CPU', options }
- *   { type:'frame', seq, tMs, w, h, bitmap:ImageBitmap }   // bitmap передаётся (transfer)
+ *   { type:'frame', seq, tMs, w, h, bitmap:ImageBitmap, pose?:bool }   // bitmap передаётся (transfer); pose:false — только кисти [PERF]
  *   { type:'close' }
  * worker → главный поток:
  *   { type:'progress', stage:'module'|'wasm'|'model'|'warmup', progress }
  *   { type:'ready', delegate, warmupMs, fallbackFrom }
  *   { type:'init-error', message }
  *   { type:'result', seq, tMs, w, h, inferMs, landmarks:Float32Array|null,   // Float32Array передаётся
- *     hands:Float32Array|null, handsMeta:[{handedness, score}], handsMs }  // [№1] кисти, см. HAND_STRIDE
+ *     hands:Float32Array|null, handsMeta:[{handedness, score}], handsMs,   // [№1] кисти, см. HAND_STRIDE
+ *     poseSkipped:bool }                                                   // [PERF] поза в этом кадре не считалась
  *
  * [№1, «Перстни»] init может нести hands:{ modelUrl, numHands, minHandDetectionConfidence, ... }.
  * HandLandmarker создаётся на том же fileset и делегате; его сбой не валит самопроверку позы:
@@ -214,10 +215,16 @@ function onFrame(msg) {
     // Метки VIDEO-режима должны строго расти.
     const ts = Math.max(lastTs + 1, Math.round(Number(msg.tMs) || 0));
     lastTs = ts;
-    const t0 = performance.now();
-    res = landmarker.detectForVideo(bmp, ts);
-    const inferMs = performance.now() - t0;
-    const pose = res && res.landmarks && res.landmarks.length ? res.landmarks[0] : null;
+    // [PERF] msg.pose === false — кадр только для кистей (поза на слабой видеокарте считается через кадр)
+    const wantPose = msg.pose !== false || !handLandmarker;
+    let inferMs = null;
+    let pose = null;
+    if (wantPose) {
+      const t0 = performance.now();
+      res = landmarker.detectForVideo(bmp, ts);
+      inferMs = performance.now() - t0;
+      pose = res && res.landmarks && res.landmarks.length ? res.landmarks[0] : null;
+    }
     let out = null;
     if (pose && pose.length > COMPACT_INDICES[COMPACT_INDICES.length - 1]) {
       out = new Float32Array(COMPACT_INDICES.length * COMPACT_STRIDE);
@@ -247,7 +254,7 @@ function onFrame(msg) {
     const transfer = [];
     if (out) transfer.push(out.buffer);
     if (hands.buf) transfer.push(hands.buf.buffer);
-    post({ type: 'result', seq: msg.seq, tMs: msg.tMs, w: msg.w, h: msg.h, inferMs, landmarks: out, hands: hands.buf, handsMeta: hands.meta, handsMs }, transfer);
+    post({ type: 'result', seq: msg.seq, tMs: msg.tMs, w: msg.w, h: msg.h, inferMs, landmarks: out, hands: hands.buf, handsMeta: hands.meta, handsMs, poseSkipped: !wantPose }, transfer);
   } catch (e) {
     post({ type: 'frame-error', seq: msg.seq, message: errText(e) });
   } finally {
