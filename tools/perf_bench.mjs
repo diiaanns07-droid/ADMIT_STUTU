@@ -156,6 +156,7 @@ window.__benchRun = (sec) => new Promise((res) => {
       try { ri = A.renderInfo() || {}; } catch (e) {}
       samp.push({ t: Math.round(t - t0), fps: p.fps, gpuMs: p.gpuMs, cpuMs: p.cpuMs, scale: p.scale, tier: p.tier, capFps: p.capFps, lowMode: p.lowMode,
         hz: d.inferenceHz, inferMs: d.inferMs, handsMs: d.handsMs, latencyMs: d.latencyMs, camFps: d.cameraFps, skippedBusy: d.skippedBusy, results: d.results,
+        poseEvery: d.poseEvery, poseHz: d.poseHz,
         status: tr && tr.status, mode: tr && tr.mode, delegate: tr && tr.delegate, poseModel: d.poseModel, cap: d.captureMaxWidth, video: d.video,
         calls: ri.calls, tris: ri.triangles, pr: ri.pixelRatio, screen: A.screen });
     }
@@ -175,7 +176,9 @@ function summarizeRun(r, skipFrac = 0.25) {
     fps: med(s.map((x) => x.fps)), gpuMs: med(s.map((x) => x.gpuMs)), cpuMs: med(s.map((x) => x.cpuMs)),
     scale: last.scale, tier: last.tier, capFps: last.capFps, lowMode: last.lowMode, calls: med(s.map((x) => x.calls)), tris: med(s.map((x) => x.tris)), pixelRatio: last.pr,
     hz: med(s.map((x) => x.hz)), inferMs: med(s.map((x) => x.inferMs)), handsMs: med(s.map((x) => x.handsMs)), latencyMs: med(s.map((x) => x.latencyMs)), camFps: med(s.map((x) => x.camFps)),
+    poseEvery: last.poseEvery, poseHz: med(s.map((x) => x.poseHz)), poseEveryFirst: r.samp.length ? r.samp[0].poseEvery : null,
     results: s.length ? (last.results || 0) - (s[0].results || 0) : null, status: last.status, mode: last.mode, delegate: last.delegate, poseModel: last.poseModel, cap: last.cap, video: last.video, screen: last.screen,
+    samples: r.samp.map((x) => ({ t: x.t, fps: x.fps, gpuMs: x.gpuMs, hz: x.hz, poseHz: x.poseHz, poseEvery: x.poseEvery, inferMs: x.inferMs, handsMs: x.handsMs, latencyMs: x.latencyMs })),
   };
 }
 
@@ -367,7 +370,8 @@ try {
     for (const ph of ['vision', 'fight', 'fightcam']) {
       const F = R[ph]; if (!F) continue;
       line(ph, `fps ${F.fps} (rAF ${F.rafFps}) · GPU ${F.gpuMs} мс · JS ${F.cpuMs} мс · tier ${F.tier} scale ${F.scale} cap ${F.capFps} · calls ${F.calls} · ` +
-        `vision ${F.hz} Гц, поза ${F.inferMs} мс, кисти ${F.handsMs} мс, задержка ${F.latencyMs} мс, камера ${F.camFps} к/с ${F.video ? F.video.w + 'x' + F.video.h : ''} cap ${F.cap} ${F.mode}/${F.delegate} ${F.poseModel} · ошибок ${F.errors.length}`);
+        `vision ${F.hz} Гц, поза ${F.inferMs} мс, кисти ${F.handsMs} мс, задержка ${F.latencyMs} мс, камера ${F.camFps} к/с ${F.video ? F.video.w + 'x' + F.video.h : ''} cap ${F.cap} ${F.mode}/${F.delegate} ${F.poseModel}` +
+        `${F.poseEvery > 1 ? ` · поза на каждом ${F.poseEvery}-м (${F.poseHz} Гц)` : ''} · ошибок ${F.errors.length}`);
     }
     if (R.vbench) for (const v of R.vbench) line('vbench', v.note || `${v.delegate} w${v.width}${v.extra ? ' ' + v.extra : ''}: ${v.hz} Гц · поза ${v.inferMs} мс · кисти ${v.handsMs} мс · задержка ${v.latencyMs} мс · старт ${v.startMs} мс · ${v.mode}/${v.delegate}${v.handsDelegate ? '+' + v.handsDelegate : ''} ${v.poseModel}${v.error ? ' ОШИБКА ' + v.error : ''}`);
   }

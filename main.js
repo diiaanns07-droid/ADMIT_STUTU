@@ -237,7 +237,11 @@ try {
 } catch (e) { console.warn('[ASHEN] heroModel', e); }
 // [HERO] витрина героя в меню: кинематографичный свет и облёт (modules/heroShowcase.js); ошибка — прежняя камера меню
 let heroShowcase = null;
-if (heroModel && world && world.hero) import('./modules/heroShowcase.js').then((m) => { try { heroShowcase = m.createHeroShowcase({ THREE, scene, heroRoot: world.hero.root, heroModel, getPostfx: () => postfx, settings, dom: canvas }); } catch (e) { console.warn('[HERO] витрина', e); } }).catch((e) => console.warn('[HERO] heroShowcase.js', e && e.message));
+// [LOAD] промис витрины: её свет должен быть в сцене до сборки шейдеров мира (bootCompile), иначе первый кадр меню
+// пересобирает все программы заново (другое число источников света) — на NVIDIA это ещё ~10 с рывков
+const heroShowcaseP = heroModel && world && world.hero
+  ? import('./modules/heroShowcase.js').then((m) => { try { heroShowcase = m.createHeroShowcase({ THREE, scene, heroRoot: world.hero.root, heroModel, getPostfx: () => postfx, settings, dom: canvas }); } catch (e) { console.warn('[HERO] витрина', e); } }).catch((e) => console.warn('[HERO] heroShowcase.js', e && e.message))
+  : Promise.resolve();
 const bossBrain = make('boss.js', () => createChallengeBrain(createBossBrain, config)); // [W3-CHALLENGE] в испытании — фиксированный seed
 const combat = make('combat.js', () => createCombat({ config, bossBrain, layout: worldLayout }));
 const effects = make('effects.js', () => createEffects({ THREE, scene, camera, renderer, config }));
@@ -2169,9 +2173,9 @@ renderUI();
 // [LOAD] шейдеры мира собираются до первого кадра (compileAsync + KHR_parallel_shader_compile): пока драйвер линкует
 // программы в своих потоках, главный поток свободен — модель героя разбирается и одевается параллельно, а первый
 // кадр не стоит несколько секунд. Экран загрузки («Сборка мира и героев…») остаётся до готовности, не дольше BOOT_COMPILE_MAX_MS.
-const BOOT_COMPILE_MAX_MS = 8000;
+const BOOT_COMPILE_MAX_MS = 12000;
 const bootCompile = PARALLEL_COMPILE && typeof renderer.compileAsync === 'function'
-  ? Promise.race([renderer.compileAsync(scene, camera).catch(() => null), new Promise((r) => setTimeout(r, BOOT_COMPILE_MAX_MS))])
+  ? Promise.race([heroShowcaseP.then(() => renderer.compileAsync(scene, camera)).catch(() => null), new Promise((r) => setTimeout(r, BOOT_COMPILE_MAX_MS))])
   : Promise.resolve();
 const tBoot0 = performance.now();
 bootCompile.then(() => {

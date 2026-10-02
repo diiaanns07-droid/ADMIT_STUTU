@@ -386,7 +386,17 @@ export function createHeroModel({
     showProcedural(!modelHero); parentAnchors();
     if (!modelHero) { S.ready = !!heroBody; S.loading = false; return; }
     S.loading = true;
-    if (heroBody) fallbackT = setTimeout(() => { fallbackT = null; if (token === S.token && !S.ready && !S.disposed) { S.fallback = true; showProcedural(true); } }, HERO_FALLBACK_MS);
+    // запасной таймер: только если за HERO_FALLBACK_MS модель даже не разобрана (сеть); если байты уже пришли
+    // и идёт разбор/оболочка/шейдеры (главный поток занят компиляцией мира), ждём дальше — плащ не мелькает
+    const armFallback = () => {
+      fallbackT = setTimeout(() => {
+        fallbackT = null;
+        if (token !== S.token || S.ready || S.disposed) return;
+        if (tm.parse !== null) { armFallback(); return; }
+        S.fallback = true; showProcedural(true);
+      }, HERO_FALLBACK_MS);
+    };
+    if (heroBody) armFallback();
     try {
       const url = def.glb ? new URL(def.glb, heroesBase).href : new URL(def.vrm, new URL(vrmUrl, base)).href;
       prefetchHeroDeps(libUrls);   // [LOAD] клипы и модули оболочки — параллельно с моделью
