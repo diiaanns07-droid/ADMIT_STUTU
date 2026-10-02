@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>[W4-ПОЗЫ] стенд поз героев</title>
+<!-- Стенд поз: один герой (createHeroModel) перед камерой, бой подменяется снимком и событиями — каст-позы,
+     удержания, ранение, победа/поражение и витрина меню (signature) воспроизводятся по шагам без rAF.
+     Только vendor/ (как игра): без сети.
+       ?hero=elf&q=high&cam=full|upper|face|side|three
+     window.__PS__ = { ready, hero, step(dt, n), play(name), state(), perf(n) } — для tools/pose_shots.mjs. -->
+<style>html,body{margin:0;height:100%;background:#0b0d12;color:#ddd;font:12px system-ui;overflow:hidden}#info{position:fixed;left:10px;top:8px;white-space:pre;font:600 15px system-ui;color:#e8dcc0;text-shadow:0 1px 3px #000}</style>
+<script type="importmap">
+{ "imports": {
+  "three": "../vendor/npm/three@0.185.1/build/three.module.min.js",
+  "three/addons/": "../vendor/npm/three@0.185.1/examples/jsm/",
+  "@pixiv/three-vrm": "../vendor/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+} }
+</script>
+</head>
+<body>
+<div id="info">загрузка…</div>
+<script type="module">
+import * as THREE from 'three';
+import { createHeroModel, configureHeroes } from '../modules/heroModel.js';
+
+const qs = new URLSearchParams(location.search);
+const HERO = qs.get('hero') || 'elf';
+const quality = qs.get('q') || 'high';
+const W = innerWidth, H = innerHeight;
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(W, H); renderer.setPixelRatio(1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = quality !== 'low'; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x161b26);
+scene.fog = new THREE.Fog(0x161b26, 6, 14);
+const camera = new THREE.PerspectiveCamera(30, W / H, 0.05, 60);
+// свет: тёплый ключевой спереди-справа, холодный контровой, мягкая полусфера
+const key = new THREE.DirectionalLight(0xffe2c4, 2.4); key.position.set(2.2, 3.6, 3.2); key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024); Object.assign(key.shadow.camera, { left: -2, right: 2, top: 2.6, bottom: -0.4 }); key.shadow.bias = -0.0004; key.shadow.normalBias = 0.02;
+const rim = new THREE.DirectionalLight(0x9fc4ff, 2.6); rim.position.set(-2.4, 2.6, -3.4);
+const hemi = new THREE.HemisphereLight(0x9aa8c8, 0x2a2018, 1.1);
+scene.add(key, rim, hemi);
+const floor = new THREE.Mesh(new THREE.CircleGeometry(5, 48), new THREE.MeshStandardMaterial({ color: 0x2c3038, roughness: 0.85 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+// «Регент» — ориентир взгляда и цель печатей (вне кадра справа-сзади)
+const boss = { position: { x: 0, y: 0, z: 9 } };
+
+configureHeroes({ quality });
+const hm = createHeroModel({ THREE, scene, hero: HERO, quality, shading: 'realistic' });
+const cams = {
+  full: [[0.35, 1.25, 4.6], [0, 0.98, 0]],
+  upper: [[0.25, 1.45, 2.7], [0, 1.22, 0]],
+  face: [[0.12, 1.6, 0.95], [0, 1.55, 0]],
+  side: [[3.2, 1.35, 1.2], [0, 1.0, 0]],
+  three: [[2.4, 1.5, 3.6], [0, 1.0, 0]],
+  back: [[0.6, 2.0, -4.2], [0, 1.2, 2]],
+};
+function setCam(name) { const c = cams[name] || cams.full; camera.position.set(...c[0]); camera.lookAt(...c[1]); }
+setCam(qs.get('cam') || 'full');
+
+// бой: снимок игрока и события (как combat.getSnapshot / drainEvents)
+const P = { position: { x: 0, y: 0, z: 0 }, yaw: 0, velocity: { x: 0, z: 0 }, action: 'idle', hp: 100, maxHp: 100, encounter: 'engaged', shielding: false, conjure: null, sigilCharge: 0, sigilAxis: null, fury: 0, furyMax: 100 };
+const snap = { status: 'playing', player: P, boss, ultimate: null };
+let mode = qs.get('menu') ? 'menu' : 'battle';
+let t = 0, script = null, pend = [];
+const label = document.getElementById('info');
+// сценарии поз: [время с начала, действие] — действие меняет снимок или кладёт событие
+const ev = (type, data = {}) => () => pend.push({ type, data, position: { x: 0, y: 1.2, z: 0 } });
+const set = (patch) => () => Object.assign(P, patch);
+const SCRIPTS = {
+  idle: [],
+  shield: [[0.1, set({ action: 'shield', shielding: true })], [0.12, ev('shield_start')], [1.6, ev('block')], [2.6, set({ action: 'idle', shielding: false })]],
+  bolt: [[0.1, set({ action: 'cast' })], [0.1, ev('player_cast', { ability: 'bolt' })], [0.4, ev('player_cast', { ability: 'bolt' })], [0.7, ev('player_cast', { ability: 'bolt' })], [1.0, set({ action: 'idle' })]],
+  burst: [[0.1, ev('burst', { power: 0.8, both: true })], [0.1, set({ action: 'cast' })], [0.5, set({ action: 'idle' })]],
+  conjure: [[0.1, set({ action: 'conjure', conjure: { kind: 'orb', size: 0.3, charge: 0 } })], [2.4, set({ action: 'cast', conjure: null })], [2.4, ev('player_cast', { ability: 'throw', kind: 'sphere', power: 0.8 })], [2.7, set({ action: 'idle' })]],
+  gate: [[0.1, set({ sigilAxis: 'h' })], [1.6, set({ sigilCharge: 0, sigilAxis: null, action: 'cast' })], [1.6, ev('sigil_cast', { sigil: 'gate', power: 0.9 })], [1.9, set({ action: 'idle' })]],
+  pillar: [[0.1, set({ sigilAxis: 'v' })], [1.6, set({ sigilCharge: 0, sigilAxis: null, action: 'cast' })], [1.6, ev('sigil_cast', { sigil: 'pillar', power: 0.9 })], [1.9, set({ action: 'idle' })]],
+  ultimate: [[0.1, ev('ultimate_start', { duration: 3.6, strikeAt: 2.3 })], [0.1, set({ action: 'cast' })], [2.4, ev('ultimate_strike', { amount: 300 })], [3.7, ev('ultimate_end', { struck: true })], [3.7, set({ action: 'idle' })]],
+  hit: [[0.3, ev('player_hit', { amount: 18, direction: { x: 0, y: 0, z: -1 } })], [0.3, set({ action: 'hit', hp: 70 })], [0.6, set({ action: 'idle' })], [1.8, ev('player_hit', { amount: 26, direction: { x: 0.5, y: 0, z: -1 } })], [1.8, set({ action: 'hit', hp: 44 })], [2.1, set({ action: 'idle' })]],
+  victory: [[0.1, () => { snap.status = 'victory'; }]],
+  defeat: [[0.1, () => { snap.status = 'defeat'; P.action = 'dead'; P.hp = 0; }]],
+  walk: [[0.0, set({ velocity: { x: 0, z: 1.6 } })]],
+};
+function reset() {
+  Object.assign(P, { action: 'idle', shielding: false, conjure: null, sigilCharge: 0, sigilAxis: null, hp: 100, velocity: { x: 0, z: 0 } });
+  snap.status = 'playing'; snap.ultimate = null; pend = [];
+}
+let scriptT = 0, ultT = -1;
+function play(name) { reset(); if (hm.setStance) hm.setStance(null); script = (SCRIPTS[name] || []).map((s) => ({ at: s[0], fn: s[1], done: false })); scriptT = 0; ultT = -1; label.textContent = name; mode = 'battle'; }
+function step(dt) {
+  t += dt; scriptT += dt;
+  if (mode === 'battle' && script) {
+    for (const s of script) if (!s.done && scriptT >= s.at) { s.done = true; s.fn(); }
+    // удержание печати: заряд растёт за 1,5 с (как debugInput)
+    if (P.sigilAxis) P.sigilCharge = Math.min(1, P.sigilCharge + dt / 1.5);
+    if (P.conjure) P.conjure.charge = Math.min(1, P.conjure.charge + dt / 1.2);
+    for (const e of pend) if (e.type === 'ultimate_start') ultT = 0;
+    if (ultT >= 0) { ultT += dt; snap.ultimate = ultT < 3.6 ? { active: true, t: ultT, duration: 3.6, strikeAt: 2.3, struck: ultT > 2.3, amount: 300 } : null; if (ultT >= 3.6) ultT = -1; }
+  }
+  const events = pend; pend = [];
+  hm.update(dt, mode === 'menu' ? null : snap, events);
+}
+function render() { renderer.render(scene, camera); }
+window.__PS__ = {
+  get ready() { return hm.ready; },
+  hero: HERO,
+  hm, THREE, scene, camera, renderer, P, snap,
+  setCam, play, render,
+  // витрина: как heroShowcase — стойка класса (menuStance), взгляд в камеру
+  menu() { mode = 'menu'; label.textContent = 'витрина'; configureHeroes({ camera }); if (hm.setStance) hm.setStance(hm.menuStance ? hm.menuStance(HERO) : null); },
+  flourish() { if (hm.flourish) hm.flourish('CastRaise'); },
+  label(s) { label.textContent = s; },
+  step(dt = 1 / 30, n = 1) { for (let i = 0; i < n; i++) step(dt); render(); return hm.state(); },
+  state: () => hm.state(),
+  info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries, programs: renderer.info.programs ? renderer.info.programs.length : 0 }),
+  // CPU: средняя стоимость update героя, мс (n шагов по 1/60 с)
+  perf(n = 240, name = null) {
+    if (name) play(name);
+    const now = (window.__realNow || performance.now.bind(performance));
+    const t0 = now(); for (let i = 0; i < n; i++) step(1 / 60); return (now() - t0) / n;
+  },
+};
+// без rAF: шагает tools/pose_shots.mjs; вручную (?auto=1) — живой просмотр
+if (qs.get('auto')) {
+  let last = performance.now();
+  const loop = () => { const now = performance.now(); step(Math.min(0.05, (now - last) / 1000)); last = now; render(); requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+  if (qs.get('play')) setTimeout(() => play(qs.get('play')), 500);
+}
+const wait = setInterval(() => { if (hm.ready) { clearInterval(wait); label.textContent = HERO; render(); } }, 100);
+</script>
+</body>
+</html>

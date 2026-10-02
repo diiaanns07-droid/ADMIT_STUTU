@@ -12,16 +12,19 @@
 // шага общая и идёт по пройденному пути (ноги не скользят). В lock-on грудь довёрнута к цели.
 // Верхний слой — действия по событиям боя (пока герой идёт — только корпус и руки). Поверх — поза
 // setPose (лук, чары рукой) и зеркало рук игрока setMirror (как world.setMirror у процедурного героя),
-// затем дыхание и оглядывание в покое.
+// затем дыхание и оглядывание в покое. [W4-ПОЗЫ] Ещё выше — modules/heroPoses.js: смена опорной ноги и
+// контрапост (IK ног), каст-позы на жесты боя, мимика (кости лица), победа/поражение и визитки витрины.
 //
 // createHeroModel({ THREE, heroRoot?, heroBody?, extras?, markers?, scene?, hero, shading?, quality?,
 //                   atmosphere?, remote?, baseUrl?, vrmUrl?, heroesUrl? })
 //   → { root, update(dt, snapLike, events), setHero(id), setPose(p), setMirror(m), getAnchors(),
-//       setShading(mode), setQuality(q), setLod(level), get ready, get hero, state(), dispose() }
+//       setShading(mode), setQuality(q), setLod(level), get ready, get hero, state(), dispose(),
+//       signaturePose(id), setSignature(id | null | undefined) }   // [W4-ПОЗЫ] визитки витрины меню
 // heroRoot не задан — экземпляр создаёт свой root (для удалённого игрока) и сам ставит его по snapLike.player.
 // snapLike: нужен только { player: { position, yaw, velocity, action, hp, … как в snapshot } }.
 
 import { loadVRM, loadHumanoidGLB, retargetClip, createGltfLoader } from './vrmKit.js';
+import { createHeroPoses, rigFace, signaturePose, SIGNATURES } from './heroPoses.js'; // [W4-ПОЗЫ]
 
 // Карточки героев: имя, класс, стихия и три строки описания — для меню №8 и витрины (heroShowcase).
 export const HEROES = Object.freeze({
@@ -257,8 +260,11 @@ export function createHeroModel({
   let cur = null;   // { model, vrm, mixer, full, upper, stride, gear, shade, bones }
   let act = null, actName = '', actUntil = 0, actUpper = false, holdName = '';
   let time = 0, lastStatus = '';
-  const pose = { bowDraw: 0, aimX: 0, aimY: 0, handSpell: 0, bowActive: false, w: 0, wBow: 0, wSpell: 0, wStaff: 0, draw: 0 };
+  const pose = { bowDraw: 0, aimX: 0, aimY: 0, handSpell: 0, bowActive: false, w: 0, wBow: 0, wSpell: 0, wStaff: 0, draw: 0, bowCarry: 0 };
   const mirror = { data: null, w: 0 };
+  // [W4-ПОЗЫ] выразительные позы поверх клипов (modules/heroPoses.js): контрапост, каст-позы, мимика, визитки
+  const poses = createHeroPoses(THREE, { quality: opts.quality, heroId: hero });
+  let sigWant;   // визитка витрины: undefined — своя у текущего героя, null — выключена, id — заданная
 
   // ---------------------------------------------------------------- якоря C5 (постоянные объекты)
   const anchors = {};
@@ -315,7 +321,9 @@ export function createHeroModel({
     const curScene = cur && cur.vrm ? cur.vrm.scene : null;
     // якоря снять с костей до освобождения модели
     for (const n of ANCHOR_NAMES) { const a = anchors[n]; if (a.parent) a.parent.remove(a); }
+    poses.unbind();   // [W4-ПОЗЫ]
     if (cur) {
+      if (cur.face) { try { cur.face.dispose(); } catch (e) { /* ignore */ } }
       cur.mixer.stopAllAction();
       cur.mixer.uncacheRoot(cur.vrm.scene);
       if (cur.gear && cur.gear.dispose) { try { cur.gear.dispose(); } catch (e) { console.warn('[HERO] снаряжение не освободилось', e && e.message); } }
@@ -403,6 +411,8 @@ export function createHeroModel({
       const nb = (n) => H.getNormalizedBoneNode(n);
       const bones = {};
       for (const n of ['hips', 'spine', 'chest', 'upperChest', 'neck', 'head', 'leftUpperArm', 'leftLowerArm', 'leftHand', 'rightUpperArm', 'rightLowerArm', 'rightHand', 'leftShoulder', 'rightShoulder']) bones[n] = nb(n);
+      // [W4-ПОЗЫ] ноги — в «чистой» позе (IK ног слоя поз; микшер пишет кость, только если значение клипа изменилось)
+      for (const n of ['leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'rightUpperLeg', 'rightLowerLeg', 'rightFoot']) bones[n] = nb(n);
       const midR = nb('rightMiddleProximal');
       const hands = setupHands(vrm, wrapG);
       // кости без дорожек в клипах (у KayKit — шея, ключицы, верх груди): их сбрасываем в покой каждый
@@ -414,6 +424,9 @@ export function createHeroModel({
       // оболочка: реалистичные материалы (modules/heroShading.js) и снаряжение (modules/heroGear.js)
       await dressUp(token);
       if (S.disposed || token !== S.token) return;
+      // [W4-ПОЗЫ] кости лица — после оболочки (волосы подогнаны по весам головы) и до первого снимка образов рывка
+      try { cur.face = rigFace(THREE, vrm, { mouth: true }); } catch (e) { cur.face = null; console.warn('[HERO] мимика', e && e.message); }
+      bindPoses();
       showProcedural(false);
       for (const n of LOCO) if (full[n]) { full[n].play(); full[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); if (lower[n]) { lower[n].play(); lower[n].setEffectiveWeight(0); } }
       mixer.update(0);
@@ -685,6 +698,7 @@ export function createHeroModel({
   }
   function setQuality(q) {
     opts.quality = q;
+    poses.setQuality(q);   // [W4-ПОЗЫ]
     if (cur && cur.shade && cur.shade.setQuality) cur.shade.setQuality(q);
     if (cur && cur.gear && cur.gear.setQuality) cur.gear.setQuality(q);
   }
@@ -698,6 +712,64 @@ export function createHeroModel({
     if (cur) cur.vrm.scene.traverse((o) => { if (o.isMesh) o.castShadow = l === 0; });
     if (cur && cur.gear && cur.gear.setLod) cur.gear.setLod(l);
     if (cur && cur.aura) cur.aura.setLod(l);
+  }
+
+  // ---------------------------------------------------------------- [W4-ПОЗЫ] слой поз (modules/heroPoses.js)
+  const posesOn = () => !!(S.ready && cur && S.lod < 2);
+  const _gripP = new THREE.Vector3(), _tipP = new THREE.Vector3();
+  function bindPoses() {
+    if (!cur) return;
+    const staff = !!(cur.gear && cur.gear.staffTip), bow = !!(cur.gear && cur.gear.bow);
+    poses.bind({
+      bones: cur.bones, hands: cur.hands, vrm: cur.vrm, model: cur.model, height: cur.def.height || 1.75, orientHand,
+      // древко посоха: точка хвата и направление к навершию (мир) — для второй руки на древке
+      staffAxis(outP, outDir) {
+        const g = cur && cur.hands && cur.hands.staffGrip, tip = cur && cur.gear && cur.gear.staffTip;
+        if (!g || !tip) return false;
+        g.updateWorldMatrix(true, false); tip.updateWorldMatrix(true, false);
+        outP.setFromMatrixPosition(g.matrixWorld); _tipP.setFromMatrixPosition(tip.matrixWorld);
+        outDir.subVectors(_tipP, outP); const l = outDir.length(); if (l < 1e-4) return false; outDir.divideScalar(l);
+        return true;
+      },
+    });
+    poses.setHero(cur.def.id, { female: !!cur.def.hair, stance: staff ? 'staff' : bow ? 'bow' : 'none' });
+    void _gripP;
+  }
+  // контекст кадра для слоя поз (один объект — без аллокаций)
+  const PC = { P: null, snap: null, status: 'playing', menu: false, idleW: 1, standW: 1, moving: false, bowW: 0, spellW: 0, mirrorW: 0, gaze: 0, lookTarget: null, staffR: false, bowHero: false, bowHeld: false };
+  const _lookT = new THREE.Vector3();
+  function poseCtx(P, snap, status, menu, idleW, standW, tgt) {
+    PC.P = P; PC.snap = snap; PC.status = status; PC.menu = menu; PC.idleW = idleW; PC.standW = standW;
+    PC.bowW = pose.wBow; PC.spellW = pose.wSpell; PC.mirrorW = mirror.w; PC.gaze = S.gaze || 0;
+    PC.lookTarget = tgt ? _lookT.set(num(tgt.x), num(tgt.y), num(tgt.z)) : null;
+    PC.staffR = !!(cur.gear && cur.gear.staffTip); PC.bowHero = !!(cur.gear && cur.gear.bow); PC.bowHeld = !!pose.bowHeld;
+    return PC;
+  }
+  const E0 = { smile: 0, frown: 0, brow: 0, squint: 0, pain: 0 };
+  function faceTick(dt) {
+    const E = poses.expression(dt, PC);
+    if (cur.face) cur.face.update(opts.quality !== 'low' && S.lod < 1 ? E : E0);
+  }
+  // визитка витрины: какая и что она делает с луком (лук у плеча — в кулаке без прицела; натянутый — поза лука)
+  function sigSync(dt) {
+    const id = sigWant === undefined ? S.hero : sigWant;
+    const want = id && SIGNATURES[id] ? id : null;
+    if (poses.signature !== want) { poses.setSignature(want); S.sigIdle = 0; S.sigDrawT = 0; }
+    pose.bowCarry = 0;
+    if (!want) return;
+    const sg = SIGNATURES[want], portrait = (S.gaze || 0) > 0.5;
+    pose.handSpell = 0;
+    if (sg.bow === 'rest') { pose.bowActive = false; pose.bowDraw = 0; pose.bowCarry = portrait ? 0 : 1; }
+    else if (sg.bow === 'draw' && !portrait) {
+      // натянуть за 1,4 с, держать прицел 1,2 с, плавно отпустить за 0,8 с, пауза 1,6 с
+      S.sigDrawT = ((S.sigDrawT || 0) + dt) % 5;
+      const c = S.sigDrawT;
+      const d = c < 1.4 ? smooth(0, 1.4, c) : c < 2.6 ? 1 : c < 3.4 ? 1 - smooth(2.6, 3.4, c) : 0;
+      pose.bowActive = true; pose.bowDraw = 0.08 + 0.84 * d; pose.aimX = 0.85; pose.aimY = 0.02 + 0.05 * d;   // прицел в сторону — лицо открыто
+    } else { pose.bowActive = false; pose.bowDraw = 0; }
+    // жест визитки раз в ~12 с, если витрина сама не позвала flourish
+    S.sigIdle = (S.sigIdle || 0) + dt;
+    if (S.sigIdle > 12 && (S.gaze || 0) < 0.5) { S.sigIdle = 0; poses.flourish(); }
   }
 
   // ---------------------------------------------------------------- слой действий
@@ -886,11 +958,11 @@ export function createHeroModel({
     }
     // лук из-за спины — в кулак левой (узел хвата: рукоять в кулаке, тетивой к лучнику)
     if (cur.gear && cur.gear.setBowHeld && cur.gear.bow) {
-      const held = pose.wBow > 0.35 || (pose.bowHeld && pose.wBow > 0.2);
+      const held = pose.bowCarry > 0.5 || pose.wBow > 0.35 || (pose.bowHeld && pose.wBow > 0.2);   // [W4-ПОЗЫ] bowCarry — лук в руке без прицела
       pose.bowHeld = held;
       if (held && cur.hands && cur.hands.bowGrip) {
         cur.vrm.scene.updateMatrixWorld(true);
-        cur.gear.setBowHeld(true, cur.hands.bowGrip, cur.hands.nock, pose.draw);
+        cur.gear.setBowHeld(true, cur.hands.bowGrip, cur.hands.nock, pose.wBow > 0.35 ? pose.draw : 0);
       } else cur.gear.setBowHeld(false);
     }
     // посох: правая «несёт» его — плечо вниз, локоть согнут, предплечье вперёд, кулак большим пальцем вверх,
@@ -972,7 +1044,8 @@ export function createHeroModel({
     adduct(B.leftUpperArm, -add);
     adduct(B.rightUpperArm, add);
     S.idleT = idle ? S.idleT + dt : 0;
-    const br = Math.sin(time * 1.7) * 0.022 * (idle ? 1 : 0.4);
+    // [W4-ПОЗЫ] дыхание: вдох короче выдоха, после кастов — глубже и чаще
+    const br = posesOn() ? poses.breath(dt, idle) : Math.sin(time * 1.7) * 0.022 * (idle ? 1 : 0.4);
     if (B.upperChest) B.upperChest.rotateX(-br);
     else if (B.chest) B.chest.rotateX(-br);
     if (B.leftShoulder) B.leftShoulder.rotateZ(br * 0.6);
@@ -1011,11 +1084,13 @@ export function createHeroModel({
     const L = cur.touched || (cur.touched = Object.values(cur.bones).filter(Boolean));
     if (!cur.clean) cur.clean = L.map(() => new THREE.Quaternion());
     for (let i = 0; i < L.length; i++) cur.clean[i].copy(L[i].quaternion);
+    if (cur.bones.hips) (cur.cleanHipsP || (cur.cleanHipsP = new THREE.Vector3())).copy(cur.bones.hips.position);   // [W4-ПОЗЫ] сдвиг таза
   }
   function restoreClean() {
     if (!cur.clean) return;
     const L = cur.touched;
     for (let i = 0; i < L.length; i++) L[i].quaternion.copy(cur.clean[i]);
+    if (cur.cleanHipsP && cur.bones.hips) cur.bones.hips.position.copy(cur.cleanHipsP);
   }
 
   function update(dt, snap, events) {
@@ -1052,8 +1127,13 @@ export function createHeroModel({
       cur.mixer.update(dt);
       saveClean();
       applyLife(dt, true, 0, true);
+      // [W4-ПОЗЫ] визитка витрины и живая стойка поверх клипа; руки — после позы лука/посоха
+      const pz = posesOn();
+      if (pz) { sigSync(dt); poses.body(dt, poseCtx(null, null, 'menu', true, 1, 1, null)); }
       applyPose(dt);
-      applyFingers(dt, handWants());
+      if (pz) poses.arms(dt, PC);
+      applyFingers(dt, pz ? poses.fingers(handWants(), PC) : handWants());
+      if (pz) faceTick(dt);
       S.inMenu = true;
       vrmTick(dt);
       return;
@@ -1064,18 +1144,32 @@ export function createHeroModel({
     const W = cur.model;
     // смерть — по статусу боя или по action 'dead' (PvP: статус боя не меняется); воскрешение — стоп
     const dead = status === 'defeat' || P.action === 'dead' || !!P.dead;
-    if (dead && !S.dead) playAct('Death', { speed: 1, fade: 0.2 });
+    // [W4-ПОЗЫ] поражение — на колено, победа — оружие к небу и гордая стойка (heroPoses); без слоя — клипы
+    const pz = posesOn();
+    if (dead && !S.dead) { if (pz) stopAct(0.2); else playAct('Death', { speed: 1, fade: 0.2 }); }
     else if (!dead && S.dead) stopAct(0.1);
     S.dead = dead;
     if (status !== lastStatus) {
-      if (status === 'victory' && !dead) playAct('Victory', { loop: true, speed: 1, fade: 0.3 });
+      if (status === 'victory' && !dead) { if (pz) stopAct(0.3); else playAct('Victory', { loop: true, speed: 1, fade: 0.3 }); }
       else if (lastStatus === 'victory') stopAct(0.1);
       lastStatus = status;
     }
     if (dead || status === 'victory') {
       W.rotation.set(0, 0, 0);
       updateLoco(dt, 0, 0, 0, false);
-      cur.mixer.update(dt); saveClean(); applyFingers(dt, handWants()); vrmTick(dt); return;
+      cur.mixer.update(dt); saveClean();
+      if (pz) {
+        poses.events(Array.isArray(events) ? events : [], remote);
+        applyLife(dt, true, 0);
+        pose.bowCarry = status === 'victory' && cur.gear && cur.gear.bow ? 1 : 0;   // лучницы вскидывают лук
+        pose.bowActive = false; pose.bowDraw = 0; pose.handSpell = 0;
+        poses.body(dt, poseCtx(P, snap, status, false, 1, 1, null));
+        applyPose(dt);
+        poses.arms(dt, PC);
+        applyFingers(dt, poses.fingers(handWants(), PC));
+        faceTick(dt);
+      } else applyFingers(dt, handWants());
+      vrmTick(dt); return;
     }
 
     // скорость в осях героя (вперёд = +z, влево = +x)
@@ -1099,6 +1193,7 @@ export function createHeroModel({
       if (!e) continue;
       const d = e.data || {};
       if (!!d.remote !== !!remote) continue; // C3: события соперника (data.remote) — только его модели
+      if (pz && poses.claims(e)) continue;   // [W4-ПОЗЫ] каст-позу ведёт слой поз (клип не нужен)
       switch (e.type) {
         case 'player_dash': {
           const wd = d.worldDirection || P.dashDir;
@@ -1128,11 +1223,13 @@ export function createHeroModel({
       const ty = e && e.type;
       if (ty === 'player_cast' || ty === 'burst' || ty === 'rune_cast' || ty === 'sigil_cast' || ty === 'hand_spell_throw' || ty === 'bow_release' || ty === 'parry' || ty === 'player_slash') S.flare = Math.min(1.6, (S.flare || 0) + (ty === 'burst' || ty === 'sigil_cast' || ty === 'rune_cast' ? 1.2 : 0.6));
     }
+    if (pz) poses.events(evList, remote);   // [W4-ПОЗЫ]
     if (want) {
       playAct(want.name, { speed: want.speed, upperOnly: !want.full && moving });
     } else {
       // удержания: щит — блок, чары — каст в цикле, стрельба — рука вперёд
-      const holdKey = P.action === 'shield' ? 'shield' : P.action === 'conjure' ? 'conjure' : P.action === 'cast' ? 'cast' : P.stunned ? 'stun' : '';
+      let holdKey = P.action === 'shield' ? 'shield' : P.action === 'conjure' ? 'conjure' : P.action === 'cast' ? 'cast' : P.stunned ? 'stun' : '';
+      if (holdKey && pz && poses.claimsHold(holdKey, P)) holdKey = '';   // [W4-ПОЗЫ] щит, сфера, печати, «Небесный суд» — слой поз
       const busy = act && !holdName && time < actUntil;
       if (holdKey && !busy) {
         if (holdName !== holdKey || actUpper !== moving) {
@@ -1163,8 +1260,15 @@ export function createHeroModel({
       if (dx * dx + dz * dz > 0.25) twist = clamp(wrap(Math.atan2(dx, dz) - yaw), -0.7, 0.7);
     }
     applyLife(dt, !moving && !act, twist);
+    // [W4-ПОЗЫ] корпус и ноги — до позы лука/посоха (её IK целится в мир), руки каст-поз — после
+    if (pz) {
+      const standW = clamp(S.wLoco.Idle, 0, 1), aw = act ? clamp(act.getEffectiveWeight(), 0, 1) : 0;
+      poses.body(dt, poseCtx(P, snap, status, false, standW * (1 - aw), standW * (act && !actUpper ? 1 - aw : 1), tgt));
+    }
     applyPose(dt);
-    applyFingers(dt, handWants());
+    if (pz) poses.arms(dt, PC);
+    applyFingers(dt, pz ? poses.fingers(handWants(), PC) : handWants());
+    if (pz) faceTick(dt);
     // жилы и аура: вспышка магии, при ранении — вздрог, при низком HP — мерцание и угасание
     S.flare = Math.max(0, (S.flare || 0) - dt * 2.2);
     S.hurt = Math.max(0, (S.hurt || 0) - dt * 3);
@@ -1190,7 +1294,7 @@ export function createHeroModel({
     S.blink = Math.max(0, S.blink - dt);
     const em = vrm.expressionManager;
     if (em) { try { em.setValue('blink', bw); } catch (e) { /* нет выражения */ } }
-    if (cur.gear && cur.gear.setBlink) cur.gear.setBlink(S.lod >= 2 ? 0 : bw);   // веки-шторки героинь (heroGear)
+    if (cur.gear && cur.gear.setBlink) cur.gear.setBlink(S.lod >= 2 ? 0 : posesOn() ? poses.lids(bw) : bw);   // веки-шторки героинь (heroGear); [W4-ПОЗЫ] прищур мимики
     if (S.lod >= 2 && vrm.springBoneManager) {
       // без пружин: только скелет и выражения
       vrm.humanoid.update(); if (em) em.update();
@@ -1239,6 +1343,7 @@ export function createHeroModel({
   function dispose() {
     S.disposed = true;
     clear();
+    poses.dispose();
     showProcedural(true);
     if (ownRoot && root.parent) root.parent.remove(root);
   }
@@ -1257,12 +1362,21 @@ export function createHeroModel({
   return {
     prefetch,
     root, update, setHero, setPose, setMirror, getAnchors, setShading, setQuality, setLod, setStance, dispose,
-    menuStance: (id) => (HEROES[id] && HEROES[id].menuStance) || null,
+    // [W4-ПОЗЫ] у героя с визиткой стойка витрины — её клип-основа
+    menuStance: (id) => ((sigWant === undefined || sigWant === id) && SIGNATURES[id] ? SIGNATURES[id].stance : (HEROES[id] && HEROES[id].menuStance) || null),
+    // [W4-ПОЗЫ] позы-«визитки» витрины: описание (stance, bow, orb, mood) и выбор — undefined: своя у каждого героя,
+    // null: выключить (витрина №5 ставит позы сама), id: визитка этого героя на текущей модели
+    signaturePose: (id) => signaturePose(id),
+    setSignature(id) { sigWant = id === undefined ? undefined : (id || null); },
+    get poses() { return poses; },   // QA
     menuPose: (id) => (HEROES[id] && HEROES[id].menuPose) || null,
     heroFx: (id) => (HEROES[id] && HEROES[id].fx) || null,
     // жест «выхода» в меню: клип один раз на всё тело, затем снова стойка
     setGaze(k) { const g = k > 0.5 ? 1 : 0; if (g !== (S.gaze || 0)) { S.gaze = g; if (g) S.lookT = 0; } },
-        flourish(name = 'CastRaise') { if (cur && cur.full[name]) playAct(name, { speed: 1.1, fade: 0.2 }); },
+    flourish(name = 'CastRaise') {
+      if (cur && S.inMenu && posesOn() && poses.signature && poses.flourish()) { S.sigIdle = 0; return; }   // [W4-ПОЗЫ] жест визитки
+      if (cur && cur.full[name]) playAct(name, { speed: 1.1, fade: 0.2 });
+    },
     get ready() { return S.ready; },
     get appear() { return S.appear || 0; },
     get hero() { return S.hero; },
@@ -1281,6 +1395,7 @@ export function createHeroModel({
         shading: opts.shading, lod: S.lod, pose: { bow: +pose.wBow.toFixed(2), spell: +pose.wSpell.toFixed(2), mirror: +mirror.w.toFixed(2) },
         gear: cur && cur.gear ? cur.gear.names || [] : [],
         gearMs: cur && cur.gear && cur.gear.perf ? { cloth: +cur.gear.perf.cloth.toFixed(3), hair: +cur.gear.perf.hair.toFixed(3) } : null,
+        poses: poses.state(), face: cur && cur.face ? cur.face.bones : 0,   // [W4-ПОЗЫ]
       };
     },
   };
