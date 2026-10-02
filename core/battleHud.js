@@ -55,6 +55,7 @@ const NUM_STYLE = {
   hurt: { top: '#ffe4d4', mid: '#ff7a4a', bot: '#b0241a', edge: '#360705', glow: 'rgba(255,80,40,0.7)', dur: 1.0, rise: 48, arc: 34, drop: 20, pop: 0.5 },
 };
 const NUM_MAX = 14;        // одновременно на экране; новое число вытесняет самое старое
+const CAP15 = `400 15px ${CAP_FONT}`;
 
 const isObj = (v) => v !== null && typeof v === 'object';
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -1295,6 +1296,7 @@ export function createBattleHud({ canvas } = {}) {
     return anchor;
   }
   const HAND_NAME = { left: 'ЛЕВАЯ РУКА', right: 'ПРАВАЯ РУКА', both: 'ОБЕ РУКИ' };
+  const accText = { v: -1, s: '', w: 150, t: -9 };   // [W4-UI]
   function drawCoach(cv, dtR, rm) {
     if (!isObj(cv)) return;
     if (isObj(cv.hint) && cv.hint.text && (!coach.hint || cv.hint.tMs !== coach.hint.tMs || cv.hint.code !== coach.hint.code)) {
@@ -1302,14 +1304,22 @@ export function createBattleHud({ canvas } = {}) {
     }
     // точность жестов за бой — у правого края под кнопкой паузы, с полоской
     if (Number.isFinite(cv.accuracy) && num(cv.good, 0) + num(cv.mistakes, 0) >= 3) {
+      // [W4-UI] плашка в стиле панелей ui.css: бронзовая кромка, золотой кант, капитель Forum, полоска с ромбом
       const acc = cv.accuracy;
       const col = acc >= 75 ? GOLD_HI : acc >= 50 ? GOLD : EMBER;
-      const bw = 150, bx = W - 24 - bw, by = 68;
-      ctx.fillStyle = PLATE; ctx.fillRect(bx - 8, by - 4, bw + 16, 30);
-      ctx.font = `600 13px ${MONO}`; ctx.textAlign = 'right'; ctx.fillStyle = col;
-      ctx.fillText(`ТОЧНОСТЬ ЖЕСТОВ ${acc}%`, W - 24, by);
-      ctx.fillStyle = 'rgba(223,232,245,0.16)'; ctx.fillRect(bx, by + 18, bw, 4);
-      ctx.fillStyle = col; ctx.fillRect(bx, by + 18, bw * clamp(acc / 100, 0, 1), 4);
+      if (acc !== accText.v) { accText.v = acc; accText.s = `ТОЧНОСТЬ ЖЕСТОВ ${acc}%`; accText.t = -9; }   // строка — только при смене
+      if (t - accText.t > 1) { accText.t = t; ctx.font = CAP15; accText.w = num(ctx.measureText(accText.s).width, 150); }   // ширина — раз в секунду (шрифт мог догрузиться)
+      const bw = Math.max(150, Math.ceil(accText.w) + 4), bx = W - 24 - bw, by = 68;
+      ctx.fillStyle = 'rgba(8,7,6,0.78)'; ctx.fillRect(bx - 10, by - 6, bw + 20, 34);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(111,85,50,0.95)'; ctx.strokeRect(bx - 9.5, by - 5.5, bw + 19, 33);
+      ctx.strokeStyle = 'rgba(216,179,106,0.25)'; ctx.strokeRect(bx - 6.5, by - 2.5, bw + 13, 27);
+      ctx.font = CAP15; ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.fillStyle = col;
+      ctx.fillText(accText.s, W - 24, by - 1);
+      ctx.fillStyle = 'rgba(8,6,5,0.9)'; ctx.fillRect(bx, by + 18, bw, 4);
+      const fwA = bw * clamp(acc / 100, 0, 1);
+      ctx.fillStyle = col; ctx.fillRect(bx, by + 18, fwA, 4);
+      if (fwA > 4) capDiamond(bx + fwA, by + 20, 3.5);
       ctx.textAlign = 'left';
     }
     if (!coach.hint || coach.t >= COACH_DUR) { coach.t += dtR; return; }
