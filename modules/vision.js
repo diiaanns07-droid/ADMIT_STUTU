@@ -2158,7 +2158,11 @@ export async function createVision(options = {}) {
     out.spark = !!h.spark;
     out.slash = h.slash || null;
     out.parry = !!h.parry;
-    out.sigil = h.sigil || null;          // [V3] двуручная печать: clap | gate | frame
+    out.sigil = h.sigil || null;          // [V3] двуручная печать: clap | gate | frame | pillar
+    // [W3-MAGIC] сила печати 0..1; ладони сомкнуты — заряд 0..1 и ось растяжения 'h' | 'v' | null
+    out.sigilPower = h.sigilPower || 0;
+    out.sigilCharge = h.sigilCharge || 0;
+    out.sigilAxis = h.sigilAxis || null;
     out.charge = h.charge;
     out.rune = h.rune;
     out.runeScore = h.runeScore;
@@ -2183,7 +2187,8 @@ export async function createVision(options = {}) {
     if (out.burst) { out.attack = false; out.spark = false; }
     if (cfg.gestureMode === 'novice') {
       // [НОВИЧОК] страховка поверх профиля распознавателя: импульсы выключенных жестов не уходят в бой
-      out.spark = false; out.slash = null; out.parry = false; out.sigil = null;
+      out.spark = false; out.slash = null; out.parry = false;
+      if (out.sigil !== 'gate' && out.sigil !== 'pillar') out.sigil = null;   // [W3-MAGIC] «Врата бури» и «Столп небес» — и в «Новичке»
       out.rune = null; out.runeScore = 0; out.runeFizzle = false;
     }
     out.gestureMode = cfg.gestureMode === 'novice' ? 'novice' : 'master';

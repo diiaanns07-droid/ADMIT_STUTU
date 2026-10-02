@@ -153,7 +153,8 @@ function run(g, seq, t0 = 1000, dt = 33) {
 const lerp = (a, b, u) => a + (b - a) * u;
 
 test('профили: в «Новичке» ровно базовые жесты', () => {
-  ok(GESTURE_PROFILES.novice.join() === 'steer,shield,dash,attack,burst,orb,throw', GESTURE_PROFILES.novice.join());
+  // [W3-MAGIC] «ладони вместе → растянуть» («Врата бури» / «Столп небес») — базовый жест и в «Новичке»
+  ok(GESTURE_PROFILES.novice.join() === 'steer,shield,dash,attack,burst,orb,throw,stretch', GESTURE_PROFILES.novice.join());
   for (const g of ['rune', 'spark', 'slash', 'parry', 'prism', 'sigil', 'twin']) ok(!GESTURE_PROFILES.novice.includes(g), g);
 });
 

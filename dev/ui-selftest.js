@@ -605,7 +605,7 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
       const errNode = $('.ao-cvdock .ao-gread__err');
       check('«ОШИБКА»: красная рамка превью и текст подсказки', $('.ao-cvdock').getAttribute('data-err') === 'on' && isVisible(errNode) && /Сомкни кончики/.test(errNode.textContent), errNode && errNode.textContent);
       const item = (k) => $(`.ao-cheat__item[data-key="${k}"]`);
-      check('шпаргалка: 6 жестов, сработавший «Выброс» подсвечен', layer.querySelectorAll('.ao-cheat__item').length === 6 && item('burst').getAttribute('data-state') === 'active', item('burst') && item('burst').getAttribute('data-state'));
+      check('шпаргалка: 7 жестов ([W3-MAGIC] + «ладони вместе → растянуть»), сработавший «Выброс» подсвечен', layer.querySelectorAll('.ao-cheat__item').length === 7 && item('burst').getAttribute('data-state') === 'active', item('burst') && item('burst').getAttribute('data-state'));
       check('шпаргалка: «Рывок» на перезарядке тускнеет', item('dash').getAttribute('data-state') === 'cooldown' && getComputedStyle(item('dash')).opacity < 0.7);
       const small = [...layer.querySelectorAll('.ao-cheat *, .ao-cvdock .ao-gread *')].filter((n) => isVisible(n) && n.childNodes.length && [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()) && parseFloat(getComputedStyle(n).fontSize) < 14);
       check('шпаргалка и подписи — шрифт не меньше 14 px', small.length === 0, small.map((n) => `${n.className}:${getComputedStyle(n).fontSize}`).join(', '));
