@@ -3507,7 +3507,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
 
   // [ПРОЕКТОР] Tab в бою — скрыть/показать шпаргалку; P — режим презентации (в бою с отладкой P — «призма»,
   // там режим переключает Shift+P). В полях ввода (лобби дуэли) клавиши не перехватываются.
-  const typingTarget = (t) => !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''));
+  // только поля, куда печатают текст: радио, флажки и ползунки настроек P не «съедают»
+  const typingTarget = (t) => !!t && (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT'
+    || (t.tagName === 'INPUT' && !/^(radio|checkbox|range|button|submit|reset|color|file|image)$/i.test(t.type || '')));
   // Tab остаётся навигацией, если фокус на чужой кнопке (итоги дуэли modules/pvp.js и т. п.) или открыто окно дуэли
   const tabFree = () => {
     const a = doc.activeElement;
