@@ -235,7 +235,8 @@ export function createBattleHud({ canvas } = {}) {
   function drawNumbers(dtR, rm) {
     let any = false;
     // 1. возраст и точка на дуге
-    for (const n of nums) {
+    for (let i = 0; i < NUM_MAX; i++) {           // индексные циклы: в кадре ни одного итератора
+      const n = nums[i];
       if (!n.on) continue;
       n.t += dtR;
       if (n.t >= n.dur) { n.on = false; continue; }
@@ -248,9 +249,11 @@ export function createBattleHud({ canvas } = {}) {
     }
     if (!any) return;
     // 2. без наложений: старшее из пересекающихся уходит вверх (плавно; три прохода — каскад по стопке)
-    for (let pass = 0; pass < 3; pass++) for (const a of nums) {
+    for (let pass = 0; pass < 3; pass++) for (let i = 0; i < NUM_MAX; i++) {
+      const a = nums[i];
       if (!a.on) continue;
-      for (const b of nums) {
+      for (let j = 0; j < NUM_MAX; j++) {
+        const b = nums[j];
         if (!b.on || b.seq <= a.seq) continue;              // a — старше b
         const aTop = a.py - a.size * 0.8 - a.ls * 1.1, aBot = a.py + a.size * 0.1;
         const bTop = b.py - b.size * 0.8 - b.ls * 1.1, bBot = b.py + b.size * 0.1;
@@ -261,7 +264,8 @@ export function createBattleHud({ canvas } = {}) {
     }
     // 3. отрисовка
     const base = ctx.globalAlpha, lowQ = quality === 'low', hiQ = quality === 'high';
-    for (const n of nums) {
+    for (let i = 0; i < NUM_MAX; i++) {
+      const n = nums[i];
       if (!n.on) continue;
       const S = NUM_STYLE[n.kind] || NUM_STYLE.dmg, k = n.t / n.dur;
       const kin = clamp(n.t / 0.14, 0, 1);
@@ -292,8 +296,8 @@ export function createBattleHud({ canvas } = {}) {
         ctx.beginPath(); ctx.arc(n.px, cy, n.size * (0.55 + 1.25 * e), 0, Math.PI * 2); ctx.stroke();
         if (hiQ) {
           ctx.beginPath();
-          for (let i = 0; i < 8; i++) {
-            const ang = i * Math.PI / 4 + n.seq, r0 = n.size * (0.5 + 1.1 * e), r1 = r0 + n.size * 0.35 * (1 - r);
+          for (let q = 0; q < 8; q++) {
+            const ang = q * Math.PI / 4 + n.seq, r0 = n.size * (0.5 + 1.1 * e), r1 = r0 + n.size * 0.35 * (1 - r);
             ctx.moveTo(n.px + Math.cos(ang) * r0, cy + Math.sin(ang) * r0); ctx.lineTo(n.px + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
           }
           ctx.stroke();

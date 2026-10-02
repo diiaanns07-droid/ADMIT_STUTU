@@ -4630,6 +4630,20 @@ html.ao-bdo .ao-boss__frame::after {
   pointer-events: none;
   filter: drop-shadow(0 1px 2px #000);
 }
+/* узкие окна и режим презентации (игра — 60 % окна): полоса Регента по ширине игровой области */
+@media (max-width: 900px) {
+  html.ao-bdo .ao-boss { width: min(600px, 74vw); }
+}
+@media (max-width: 620px) {
+  html.ao-bdo .ao-boss__frame { padding: 0 2.5rem; }
+  html.ao-bdo .ao-boss__frame::before,
+  html.ao-bdo .ao-boss__frame::after { width: 2.7rem; }
+  html.ao-bdo .ao-boss__name::before,
+  html.ao-bdo .ao-boss__name::after { width: 1.8em; }
+}
+html.ao-bdo.ao-present .ao-boss {
+  width: min(600px, 29vw);
+}
 html.ao-bdo .ao-boss__frame::before { left: 0; }
 html.ao-bdo .ao-boss__frame::after { right: 0; transform: scaleX(-1); }
 html.ao-bdo .ao-bar--boss {
@@ -4830,6 +4844,10 @@ html.ao-bdo .ao-btn--quiet.ao-hc-hover {
   background: transparent;
   border-color: transparent;
   box-shadow: none;
+}
+html.ao-bdo .ao-btn--quiet:hover,
+html.ao-bdo .ao-btn--quiet.ao-hc-hover {
+  text-decoration: none;
 }
 html.ao-bdo .ao-btn--quiet::after {
   box-shadow: none;

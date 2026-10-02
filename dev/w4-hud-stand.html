@@ -83,6 +83,9 @@ const SCRIPT = [
 const ui = createUI({ root: document.getElementById('ao-ui-root'), callbacks: {}, options: { keyboardPause: false, showVolume: false, abilityCosts: { bolt: 4, shield: 10, burst: 25 } } });
 const hud = createBattleHud({ canvas: document.getElementById('ao-hud-canvas') });
 let t = 0, last = performance.now(), loopT = 0, fired = 0;
+// QA: время battleHud.frame по настоящим часам (скрипты съёмки подменяют performance.now виртуальным)
+const realNow = window.__realNow || (() => performance.now());
+const QA = window.__W4__ = { hudMs: 0, frames: 0, ms: new Float64Array(4096), reset() { this.hudMs = 0; this.frames = 0; } };
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
@@ -105,12 +108,15 @@ function frame(now) {
   snap.player.energy = Math.min(100, snap.player.energy + dt * 2);
   paintScene(snap);
   ui.update({ screen: 'playing', snapshot: snap, tracking: { status: 'ready', confidence: 0.86, calibrated: true }, debug: false, settings, input: null, pauseReason: 'user' });
+  const t0 = realNow();
   hud.frame({
     dtReal: dt, timeScale: 1, screen: 'playing', snapshot: snap, events, input: null, project,
     viewport: { w: innerWidth, h: innerHeight }, intro: { active: false, t: 0, duration: 5 },
     settings, resumeLeftMs: 0, pois: [], layout: null, coach: null,
     ult: { fury: snap.player.fury, furyMax: 100, ready: snap.player.furyReady, gesture: null, debug: false, flash: 0, cine: null },
   });
+  const dtHud = realNow() - t0;
+  QA.hudMs += dtHud; QA.ms[QA.frames & 4095] = dtHud; QA.frames++;
   window.__STAND__ = { t, loopT };
 }
 requestAnimationFrame(frame);
