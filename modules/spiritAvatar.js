@@ -1186,7 +1186,9 @@ export function createSpiritAvatar(opts = {}) {
     st.colElem2[0] = c2.r; st.colElem2[1] = c2.g; st.colElem2[2] = c2.b;
   }
   const _cM = new THREE.Color(COL_MISTAKE);
+  let bothFlashAt = -9;
   function flashHand(side, mistake) {
+    if (side === 2 && !mistake) bothFlashAt = st.time;
     for (let s = side === 2 ? 0 : side, e = side === 2 ? 1 : side; s <= e; s++) {
       st.flash[s] = 1;
       const fc = st.flashCol[s];
@@ -1210,7 +1212,7 @@ export function createSpiritAvatar(opts = {}) {
     castCool = 0.35;
     st.slitDir[0] = axis === 'v' ? 0 : 1; st.slitDir[1] = axis === 'v' ? 1 : 0; st.slitAxis = axis;
     st.slitBurst = 1;
-    flashHand(2);
+    if (st.time - bothFlashAt > 0.3) flashHand(2);   // ладони уже вспыхнули от жеста в этом касте — второй раз не надо
     ring(4, 0.7, 0.3, 1.8 + 1.0 * clamp(fin(power) ? power : 0.6, 0, 1), st.colElem2);
   }
   const sigAxis = (v) => (v === 'h' || v === 'v' ? v : null);
@@ -1218,6 +1220,9 @@ export function createSpiritAvatar(opts = {}) {
   function react(dt, ctx) {
     const I = ctx.input || null, snap = ctx.snapshot || null, ev = Array.isArray(ctx.events) ? ctx.events : null;
     const pl = snap && snap.player ? snap.player : null;
+    const screen = ctx.screen || 'playing', fight = screen === 'playing';
+    // удержания из снимка (заряд, ось, щит, сфера) — только пока бой идёт: на паузе снимок застыл
+    const plHold = fight ? pl : null;
     elemColors(ctx.hero || (liveSettings && liveSettings.hero) || 'ashen');
     // распознанные жесты — по импульсам ввода (они же на обучении); удержания — по началу
     if (I && I.valid !== false) {
@@ -1229,7 +1234,9 @@ export function createSpiritAvatar(opts = {}) {
       if (I.spark || I.slash || I.rune || (I.bow && I.bow.release) || (I.handSpell && I.handSpell.phase === 'throw')) flashHand(1);
       if (I.parry || I.dashDir || I.dash) flashHand(0);
       if (I.burst) flashHand(I.burstHand === 'both' ? 2 : 1);
-      if (I.sigil === 'gate' || I.sigil === 'pillar') castSlit(I.sigil === 'pillar' ? 'v' : 'h', I.sigilPower);
+      // «ладони вместе → растянуть»: в бою щель разлетается только по 'sigil_cast' (отказ по откату или энергии не
+      // выглядит кастом), жест — вспышка ладоней; вне боя (обучение) событий нет — каст по жесту
+      if (I.sigil === 'gate' || I.sigil === 'pillar') { if (fight) flashHand(2); else castSlit(I.sigil === 'pillar' ? 'v' : 'h', I.sigilPower); }
       else if (I.sigil || I.throw) flashHand(2);
       // «ОШИБКА»: короткая красная вспышка на руке, к которой относится подсказка
       const h = I.hint && I.hint.code ? I.hint : null;
@@ -1254,7 +1261,9 @@ export function createSpiritAvatar(opts = {}) {
     // облёт камеры идёт, пока идёт сцена боя; после победы ударом меча — ещё до конца своего отсчёта
     const su = snap && snap.ultimate;
     if (su && su.active && fin(su.t) && fin(su.duration)) cineLeft = Math.max(cineLeft, su.duration - su.t);
-    cineLeft = SKY_SCREENS.has(ctx.screen || 'playing') ? Math.max(0, cineLeft - dt) : 0;
+    // бой идёт, а сцены в снимке нет (null — бой с ультимейтом; undefined — без него) — облёта нет: «Заново» посреди сцены
+    if (snap && snap.status === 'playing' && snap.ultimate === null) cineLeft = 0;
+    cineLeft = SKY_SCREENS.has(screen) ? Math.max(0, cineLeft - dt) : 0;
     // шкала ультимейта есть (player.fury) — полная: нимб пульсирует «руки вверх!»; идёт сцена — руки духа подняты
     const furySys = !!(pl && fin(pl.fury));
     st.ready = approach(st.ready, pl && pl.furyReady ? 1 : 0, dt, 0.2, 0.3);
@@ -1268,7 +1277,7 @@ export function createSpiritAvatar(opts = {}) {
     ultCool = Math.max(0, ultCool - dt);
     st.ult = Math.max(0, st.ult - dt / 1.6);
     // щит — купол в левой ладони
-    const shieldOn = !!(I && I.shield) || !!(pl && pl.shielding);
+    const shieldOn = !!(I && I.shield) || !!(plHold && plHold.shielding);
     const wasOff = st.shield < 0.05;
     st.shield = approach(st.shield, shieldOn ? 1 : 0, dt, 0.08, 0.22);
     if (shieldOn && wasOff) chargeT = 0;
@@ -1277,18 +1286,19 @@ export function createSpiritAvatar(opts = {}) {
     st.shieldHit = Math.max(0, st.shieldHit - dt * 3);
     // заряд между ладонями: player.sigilCharge (новые магии), сфера/призма двумя руками
     let ch = 0;
-    if (pl && fin(pl.sigilCharge)) ch = Math.max(ch, pl.sigilCharge);
+    if (plHold && fin(plHold.sigilCharge)) ch = Math.max(ch, plHold.sigilCharge);
     if (I && fin(I.sigilCharge)) ch = Math.max(ch, I.sigilCharge);
     if (I && I.conjure) ch = Math.max(ch, 0.25 + 0.75 * clamp(+I.conjure.charge || 0, 0, 1));
-    if (pl && pl.conjure) ch = Math.max(ch, 0.25 + 0.75 * clamp(+pl.conjure.charge || 0, 0, 1));
+    if (plHold && plHold.conjure) ch = Math.max(ch, 0.25 + 0.75 * clamp(+plHold.conjure.charge || 0, 0, 1));
     st.charge = approach(st.charge, clamp(ch, 0, 1), dt, 0.1, 0.3);
     // щель вдоль оси растяжения: есть ось (player.sigilAxis / input.sigilAxis) и ладони сомкнуты с зарядом
     let sc = 0;
-    if (pl && fin(pl.sigilCharge)) sc = Math.max(sc, pl.sigilCharge);
+    if (plHold && fin(plHold.sigilCharge)) sc = Math.max(sc, plHold.sigilCharge);
     if (I && fin(I.sigilCharge)) sc = Math.max(sc, I.sigilCharge);
-    const ax = sigAxis(I && I.sigilAxis) || sigAxis(pl && pl.sigilAxis);
+    const ax = sigAxis(I && I.sigilAxis) || sigAxis(plHold && plHold.sigilAxis);
     const slitOn = !!ax && sc > 0.01;
     st.slit = approach(st.slit, slitOn ? 0.3 + 0.7 * clamp(sc, 0, 1) : 0, dt, 0.08, 0.15);
+    if (slitOn && castCool <= 0) st.slitBurst = 0;   // новый заряд сразу после каста — вспышка прошлой оси гаснет
     if (ax && st.slitBurst <= 0) {
       // ось сменилась — щель плавно поворачивается (без «Уменьшенного движения»)
       const tx = ax === 'v' ? 0 : 1, ty = ax === 'v' ? 1 : 0, k = st.rm || st.slit < 0.05 ? 1 : 1 - Math.exp(-dt / 0.06);
@@ -1334,7 +1344,14 @@ export function createSpiritAvatar(opts = {}) {
     const present = ctx.present !== undefined ? !!ctx.present : hasDom && !!document.documentElement && document.documentElement.classList.contains('ao-present');
     presentNow = present;
     // выключен в настройках и уже погас — не тратим кадр (холст в превью освободится сам)
-    if (!on && skyA < 0.003 && frameA < 0.003 && warm <= 0) { skyA = frameA = 0; sky.root.visible = false; frameTick(now, 0, ctx); return; }
+    if (!on && skyA < 0.003 && frameA < 0.003 && warm <= 0) {
+      skyA = frameA = 0; sky.root.visible = false; frameTick(now, 0, ctx);
+      // реакции не считаются, пока дух выключен: включили снова — без старой сцены, вспышек и позы
+      cineLeft = 0; rise = 0; st.ult = st.up = 0; upLatch = false; presence = 0; st.slitBurst = 0; st.slit = 0; castCool = 0;
+      st.flash.fill(0); st.shield = 0; st.charge = 0;
+      for (const R of st.rings) R.on = false;
+      return;
+    }
 
     // источник: синтетика в отладке, иначе камера
     let live = false;
@@ -1387,11 +1404,12 @@ export function createSpiritAvatar(opts = {}) {
 
     // где виден; «Небесный суд»: облёт камеры идёт без духа над ареной — он вспыхивает, уходит в небо и гаснет,
     // а в последние полсекунды облёта (камера возвращается к обычному ракурсу) проявляется снова
-    const cine = cineLeft > 0.45;
+    const cine = cineLeft > 0.45 && !st.rm;   // «Уменьшенное движение»: облёта нет — дух остаётся и реагирует
     const wantSky = on && SKY_SCREENS.has(screen) && !!camera && !cine;
     const wantFrame = on && (FRAME_SCREENS.has(screen) || (present && PRESENT_SLOT_SCREENS.has(screen)));
     if (cine) rise = Math.min(1, rise + dt / 0.6);
     else if (skyA < 0.02) rise = 0;          // возвращается с неба уже на своём месте
+    else rise = Math.max(0, rise - dt / 0.4);   // сцену прервали, пока дух ещё виден, — плавно опускается
     skyA = approach(skyA, wantSky ? 1 : 0, dt, 0.35, cine ? 0.16 : 0.3);
     frameA = approach(frameA, wantFrame ? 1 : 0, dt, 0.25, 0.25);
     const flare = 1 + 0.55 * st.ult + 0.25 * st.up;
@@ -1595,7 +1613,7 @@ export function createSpiritAvatar(opts = {}) {
         tier: sky.tier, elem: [+st.colElem[0].toFixed(3), +st.colElem[1].toFixed(3), +st.colElem[2].toFixed(3)],
         slit: +st.slitI.toFixed(3), slitAxis: st.slitAxis, slitBurst: +st.slitBurst.toFixed(3),
         slitEnds: [Array.from(st.slitA, (v) => +v.toFixed(3)), Array.from(st.slitB, (v) => +v.toFixed(3))],
-        cine: cineLeft > 0.45, rise: +rise.toFixed(3), present: presentNow, frameBright: +frameBright.toFixed(3), rm: st.rm,
+        cine: cineLeft > 0.45 && !st.rm, rise: +rise.toFixed(3), present: presentNow, frameBright: +frameBright.toFixed(3), rm: st.rm,
         shaderTime: +st.tSh.toFixed(3), arcs: st.charge > 0.05 && !st.rm,
         flashColor: [Array.from(st.flashCol[0], (v) => +v.toFixed(3)), Array.from(st.flashCol[1], (v) => +v.toFixed(3))],
       };
