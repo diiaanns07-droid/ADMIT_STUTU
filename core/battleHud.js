@@ -535,6 +535,9 @@ export function createBattleHud({ canvas } = {}) {
     const dd = input && isObj(input.dashDir) ? input.dashDir : null;
     if (dd && (num(dd.x, 0) || num(dd.z, 0))) { stickFx.dashT = 0; stickFx.dashX = num(dd.x, 0); stickFx.dashY = -num(dd.z, 0); }
     stickFx.dashT += dtR;
+    // [НОВИЧОК] «Автоход» ведёт героя сам: вместо руля (он звал бы «поднимите руку, чтобы идти») —
+    // плашка, что герой идёт сам и где это выключить
+    if (input && input.autoWalk === true) { drawAutoWalkHud(snap, rm); return; }
     if (st && st.mode === 'steer') { drawSteerHud(st, snap, rm); return; }
     const R = clamp(Math.min(W, H) * 0.075, 40, 66);
     const cx = W / 2, cy = H - R - 26;
@@ -613,6 +616,40 @@ export function createBattleHud({ canvas } = {}) {
   // полоса в середине — мёртвая зона, точка — где сейчас рука), столбик в центре — высота левой руки
   // и ступени «ШАГ» / «БЕГ»; ниже — что делает герой и что сделать, чтобы пойти. Занимает то же место,
   // что индикатор джойстика: низ экрана по центру, ниже карточки «ОШИБКА».
+  // [НОВИЧОК] плашка «Автоход»: герой идёт к Регенту и обходит его сам; выключается в паузе (Esc)
+  function drawAutoWalkHud(snap, rm) {
+    const base = ctx.globalAlpha, A = stickFx.alpha;
+    const P = snap && snap.player;
+    const arena = !!(P && P.encounter === 'engaged');
+    const l1 = arena ? 'АВТОХОД · ГЕРОЙ САМ ОБХОДИТ РЕГЕНТА' : 'АВТОХОД · ГЕРОЙ САМ ИДЁТ К РЕГЕНТУ';
+    const l2 = 'левая рука — щит и рывок · выключить: Пауза (Esc) → «Автоход»';
+    ctx.font = `600 13px ${MONO}`;
+    const w1 = ctx.measureText(l1).width;
+    ctx.font = `11px ${MONO}`;
+    const w2 = ctx.measureText(l2).width;
+    const w = Math.max(w1, w2) + 56, h = 46;
+    const x = W / 2 - w / 2, y = H - h - 26;
+    ctx.globalAlpha = base * A * 0.8; ctx.fillStyle = PLATE;
+    ctx.fillRect(x, y, w, h);
+    ctx.globalAlpha = base * A * 0.6; ctx.strokeStyle = GOLD; ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    // значок: две стрелки по кругу, медленно вращаются (в «Уменьшенном движении» — стоят)
+    const ix = x + 24, iy = y + h / 2, r = 10, rot = rm ? 0 : t * 1.6;
+    ctx.globalAlpha = base * A; ctx.strokeStyle = GOLD_HI; ctx.fillStyle = GOLD_HI; ctx.lineWidth = 2;
+    for (let k = 0; k < 2; k++) {
+      const a0 = rot + k * Math.PI, a1 = a0 + Math.PI * 0.7;
+      ctx.beginPath(); ctx.arc(ix, iy, r, a0, a1); ctx.stroke();
+      const hx = ix + Math.cos(a1) * r, hy = iy + Math.sin(a1) * r, tx = -Math.sin(a1), ty = Math.cos(a1);
+      ctx.beginPath(); ctx.moveTo(hx + tx * 5, hy + ty * 5); ctx.lineTo(hx - ty * 4, hy + tx * 4); ctx.lineTo(hx + ty * 4, hy - tx * 4); ctx.closePath(); ctx.fill();
+    }
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.font = `600 13px ${MONO}`; ctx.fillStyle = GOLD_HI;
+    ctx.fillText(l1, x + 44, y + 8);
+    ctx.font = `11px ${MONO}`; ctx.fillStyle = DIM;
+    ctx.fillText(l2, x + 44, y + 27);
+    ctx.globalAlpha = base;
+  }
+
   function drawSteerHud(st, snap, rm) {
     const base = ctx.globalAlpha, A = stickFx.alpha;
     const R = clamp(Math.min(W, H) * 0.075, 40, 66);
