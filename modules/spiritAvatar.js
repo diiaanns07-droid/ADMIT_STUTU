@@ -1281,7 +1281,7 @@ export function createSpiritAvatar(opts = {}) {
     const wasOff = st.shield < 0.05;
     st.shield = approach(st.shield, shieldOn ? 1 : 0, dt, 0.08, 0.22);
     if (shieldOn && wasOff) chargeT = 0;
-    st.shieldPop = shieldOn ? 1 + 0.25 * Math.exp(-chargeT * 9) * Math.sin(chargeT * 18) : 1;
+    st.shieldPop = shieldOn && !st.rm ? 1 + 0.25 * Math.exp(-chargeT * 9) * Math.sin(chargeT * 18) : 1;   // купол «пружинит» при появлении
     chargeT += dt;
     st.shieldHit = Math.max(0, st.shieldHit - dt * 3);
     // заряд между ладонями: player.sigilCharge (новые магии), сфера/призма двумя руками
