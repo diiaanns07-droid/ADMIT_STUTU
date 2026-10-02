@@ -84,7 +84,7 @@ async function standPage(hero, q, cam = 'full', size = { width: 960, height: 540
   const page = await ctx.newPage();
   page.setDefaultTimeout(240000);
   page.on('pageerror', (e) => log('pageerror', hero, e && e.message));
-  await page.goto(`${base}/dev/pose-stand.html?hero=${hero}&q=${q}&cam=${cam}`);
+  await page.goto(`${base}/dev/pose-stand.html?hero=${hero}&q=${q}&cam=${cam}${argOf('--query', '')}`);
   await page.waitForFunction(() => window.__PS__ && window.__PS__.ready, null, { timeout: 180000 });
   return { ctx, page };
 }
@@ -267,6 +267,7 @@ async function runPerf() {
       log('perf', q, hero, JSON.stringify(r));
       await ctx.close();
     }
+    if (has('--no-game')) continue;
     // игра: renderInfo в меню и в бою (весь кадр)
     const { ctx, page } = await gamePage(q, { hero: 'dark' });
     await page.waitForFunction(() => { const h = window.__ASHEN__.hero(); return h && h.ready; }, null, { timeout: 180000 });
