@@ -350,9 +350,9 @@ export function createHeroModel({
       const pre = def.glb ? await fetchBytes(url).catch(() => null) : null;
       if (S.disposed || token !== S.token) return;   // пока качали, выбрали другого героя — дальше не грузим
       const vrm = def.glb ? await loadHumanoidGLB(THREE, url, undefined, pre) : await loadVRM(THREE, url);
-      if (def.recolor) await recolorHero(vrm, def.recolor, def.makeup || null);
+      if (def.recolor) await recolorHero(vrm, def.recolor, def.makeup || null, def.id);   // [W4-ЛИЦО] + лицо героини
       if (def.hide) vrm.scene.traverse((o) => { if (o.isMesh && def.hide.some((n) => o.name.startsWith(n))) o.visible = false; });
-      if (def.brows) thinBrows(vrm, def.brows);
+      if (def.brows && !vrm.scene.userData.faceW4) thinBrows(vrm, def.brows);   // [W4-ЛИЦО] у героинь брови — лента с волосками
       if (def.smile) smileFace(vrm, def.smile);
       // пропорции: у Quaternius голова стилизованно крупная — чуть меньше (снаряжение головы крепится после)
       if (def.headScale) { const hb = vrm.humanoid.getRawBoneNode ? vrm.humanoid.getRawBoneNode('head') : null; if (hb) hb.scale.setScalar(def.headScale); }
@@ -620,17 +620,20 @@ export function createHeroModel({
   }
 
   // перекраска атласа костюма (heroShading.recolorTexture) — у каждого экземпляра своя текстура
-  async function recolorHero(vrm, rules, makeup = null) {
+  async function recolorHero(vrm, rules, makeup = null, heroId = null) {
     try {
       const m = await import('./heroShading.js');
-      const paint = makeup ? m.makeupPainter(makeup) : null;
+      // [W4-ЛИЦО] лицо героини (characterLooks.FACE_LOOKS): пропорции, брови, подводка — и макияж атласа по нему
+      const look = heroId ? (await import('./characterLooks.js')).faceLookOf(heroId) : null;
+      if (look) { try { m.beautifyFace(THREE, vrm, look, { quality: opts.quality }); } catch (e) { console.warn('[HERO] лицо', e && e.message); } }
+      const paint = look ? m.facePainter(look) : makeup ? m.makeupPainter(makeup) : null;
       vrm.scene.traverse((o) => {
         if (!o.isMesh) return;
         for (const mt of [].concat(o.material)) {
           const R = mt && rules[mt.name];
           if (!R || !mt.map || mt.userData.recolored) continue;
           const face = /^MI_Regular_Female/.test(mt.name) && !!paint;
-          const nt = m.recolorTexture(THREE, mt.map, R, face ? paint : null, mt.metalnessMap ? mt.metalnessMap.image : null, face ? 2 : 1);
+          const nt = m.recolorTexture(THREE, mt.map, R, face ? paint : null, mt.metalnessMap ? mt.metalnessMap.image : null, face ? (opts.quality === 'low' ? 1 : 2) : 1);   // [W4-ЛИЦО] на low — 512²
           if (nt !== mt.map) { mt.map = nt; mt.userData.recolored = true; mt.needsUpdate = true; }
         }
       });
