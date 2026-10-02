@@ -294,7 +294,7 @@ function simSquatFrame(now, dt) {
   const rate = K.has('ShiftLeft') || K.has('ShiftRight') ? 4 : 1;       // глубина в секунду
   const floor = K.has('KeyB') ? 0.25 : 0;
   const target = down ? 1 : floor;
-  const step = rate * Math.min(0.1, dt);
+  const step = rate * Math.min(0.5, dt);   // [W3-SQUAT] по времени: и при 2–5 кадрах/с (слабая машина) присед доходит до низа
   sim.k = sim.k < target ? Math.min(target, sim.k + step) : Math.max(target, sim.k - step);
   const kf = K.has('KeyG');
   return synthSquatPose(sim.k, kf ? 'side' : 'front', { valgus: K.has('KeyV'), kneesForward: kf, lean: K.has('KeyT'), heels: K.has('KeyH') });
