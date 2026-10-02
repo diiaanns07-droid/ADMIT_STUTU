@@ -4388,3 +4388,139 @@ html.ao-present .ao-perfhud {
     display: none;
   }
 }
+
+/* ---- [W4-ВИТРИНА] табличка героя на витрине меню (modules/heroShowcase.js): класс, имя, стихия с иконкой.
+   Стоит справа от героя; прозрачность и въезд задаёт витрина по часам страницы (идут и под записью видео).
+   Размеры — от высоты окна и доли игровой области: в режиме презентации (игра — 60 % окна) не разъезжаются. */
+.ao-heroplate {
+  --ao-elem: #d8b36a;
+  position: absolute;
+  right: 4%;
+  top: 36%;
+  width: 31%;
+  text-align: right;
+  pointer-events: none;
+  color: var(--ao-parch);
+  opacity: 0;
+  will-change: opacity, transform;
+}
+.ao-heroplate__cls {
+  font-family: var(--bdo-font-italic);
+  font-style: italic;
+  font-size: clamp(15px, 2.5vh, 24px);
+  letter-spacing: 0.06em;
+  color: var(--ao-gold-hi);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+.ao-heroplate__name {
+  margin-top: 0.05em;
+  font-family: var(--bdo-font-display);
+  font-size: clamp(30px, 6.4vh, 70px);
+  line-height: 1.04;
+  letter-spacing: 0.03em;
+  background: linear-gradient(180deg, #fff8e8 0%, #f0dcae 46%, #c0924c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 16px color-mix(in srgb, var(--ao-elem) 42%, transparent));
+}
+.ao-heroplate__rule {
+  position: relative;
+  height: 1px;
+  margin: 0.55em 0 0.6em auto;
+  width: 78%;
+  background: linear-gradient(90deg, transparent, rgba(216, 179, 106, 0.75) 45%, color-mix(in srgb, var(--ao-elem) 80%, #fff 20%));
+}
+.ao-heroplate__rule i {
+  position: absolute;
+  right: -4px;
+  top: -4px;
+  width: 9px;
+  height: 9px;
+  transform: rotate(45deg);
+  border: 1px solid var(--bdo-gold-hi, #f3dca0);
+  background: color-mix(in srgb, var(--ao-elem) 60%, #000 40%);
+  box-shadow: 0 0 10px var(--ao-elem);
+}
+.ao-heroplate__elem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75em;
+  font-family: var(--bdo-font-display);
+  font-size: clamp(16px, 2.6vh, 26px);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ao-elem) 62%, #fff 38%);
+  text-shadow: 0 0 14px color-mix(in srgb, var(--ao-elem) 70%, transparent), 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+.ao-heroplate__icon {
+  display: grid;
+  place-items: center;
+  width: 2.2em;
+  height: 2.2em;
+  transform: rotate(45deg);
+  border: 1px solid rgba(216, 179, 106, 0.7);
+  outline: 1px solid rgba(216, 179, 106, 0.25);
+  outline-offset: 3px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--ao-elem) 38%, transparent) 0%, rgba(10, 10, 14, 0.72) 72%);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--ao-elem) 45%, transparent), inset 0 0 10px rgba(0, 0, 0, 0.6);
+}
+.ao-heroplate__icon svg {
+  width: 72%;
+  height: 72%;
+  transform: rotate(-45deg);
+  color: var(--ao-elem);
+  filter: drop-shadow(0 0 4px var(--ao-elem));
+}
+.ao-heroplate__desc {
+  margin-top: 0.8em;
+  font-family: var(--bdo-font-italic);
+  font-style: italic;
+  font-size: clamp(14px, 2.1vh, 20px);
+  color: rgba(234, 223, 197, 0.8);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+/* окно уже 3:2 (4:3, 5:4) — герой правее середины: табличка над ним, справа вверху */
+@media (max-aspect-ratio: 3/2) {
+  .ao-heroplate { top: 5%; width: 40%; }
+  .ao-heroplate__desc { display: none; }
+}
+/* узкий экран: панель меню на всю ширину — табличке места нет */
+@media (max-width: 760px) {
+  .ao-heroplate { display: none; }
+}
+/* [W4-ВИТРИНА] «Призыв героя…» у рунного круга, пока грузится модель: кольцо вращает витрина */
+.ao-showcase-summon {
+  --ao-elem: #ffb070;
+  position: absolute;
+  left: 65%;
+  bottom: 6%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0;
+  color: color-mix(in srgb, var(--ao-elem) 55%, #fff 45%);
+}
+.ao-showcase-summon__ring {
+  width: clamp(40px, 7vh, 64px);
+  height: clamp(40px, 7vh, 64px);
+  color: var(--ao-elem);
+  filter: drop-shadow(0 0 6px var(--ao-elem));
+}
+.ao-showcase-summon__text {
+  font-family: var(--bdo-font-display);
+  font-size: clamp(15px, 2.3vh, 21px);
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--ao-elem) 80%, transparent), 0 1px 3px rgba(0, 0, 0, 0.95);
+}
+.ao-showcase-summon__dots {
+  display: inline-block;
+  width: 1.6em;
+  text-align: left;
+  letter-spacing: 0.1em;
+}
