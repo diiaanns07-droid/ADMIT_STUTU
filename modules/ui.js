@@ -943,6 +943,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     read: { left: null, right: null, err: null, errKey: '', fired: {}, view: null },
     cheatHidden: false,
     present: false,
+    menuSetOpen: null,       // null — по высоте окна: свёрнуты при ≤ 1200 px
   };
 
   /* ---------------------------------------------------------- plumbing */
@@ -1471,6 +1472,17 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const oathBtn = btn('Клятва героя', () => invoke('onOath', { from: 'menu' }), { variant: 'secondary' });
     const netBtn = btn('Онлайн-дуэль', () => invoke('onNet', { from: 'menu' }), { variant: 'secondary' }); // [NET] экран лобби — modules/netLobby.js
     const bookM = localBtn('Книга заклинаний', (e) => openBook(e && e.currentTarget), { iconName: 'book' }); // [ТРЕНАЖЁР] все жесты
+    // [ПРОЕКТОР] в окне до 1200 px высотой «Настройки» свёрнуты, чтобы меню влезало без прокрутки; кнопка раскрывает их на месте
+    const setBody = el('div', { class: 'ao-menu__setbody', id: `${uid}-menu-set` }, buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'difficulty', 'reducedMotion'], 'menu'));
+    const setToggle = el(
+      'button',
+      { type: 'button', class: 'ao-disclose', 'aria-expanded': 'true', 'aria-controls': `${uid}-menu-set`, 'data-ui-local': '' },
+      el('span', { class: 'ao-disclose__label', text: 'Настройки' }),
+      el('span', { class: 'ao-disclose__sum', text: 'управление, место старта, графика, сложность' }),
+    );
+    const setOpen = () => (state.menuSetOpen === null ? win.innerHeight > 1200 : state.menuSetOpen);
+    listen(setToggle, 'click', () => { state.menuSetOpen = !setOpen(); paintSet(); });
+    const paintSet = () => { const open = setOpen(); setAttr(setToggle, 'aria-expanded', open ? 'true' : 'false'); setHidden(setBody, !open); };
     // [ТВИСТ «ОШИБКА»] тренажёр: чек-лист условий жеста вживую — твист за 20 секунд
     const techBtn = btn('Тренажёр техники', () => invoke('onTechnique', { from: 'menu' }), { variant: 'secondary' });
     techBtn.node.classList.add('ao-menu__tech');
@@ -1496,7 +1508,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
       el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, techBtn.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode'], 'menu')), // [НОВИЧОК] режим жестов — на виду
       buildHeroPick('menu'),
-      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'difficulty', 'reducedMotion'], 'menu')),
+      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3 ao-menu__sethead' }, setToggle), setBody),
       el('div', { class: 'ao-menu__foot' }, el('div', { class: 'ao-menu__toggles' }, dbg, presentBtn), dbgKeys),
     );
     return {
@@ -1506,6 +1518,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       update(ctx) {
         setAttr(dbg, 'aria-pressed', ctx.debug ? 'true' : 'false');
         setAttr(presentBtn, 'aria-pressed', state.present ? 'true' : 'false');
+        paintSet();
         setHidden(dbgKeys, !ctx.debug);
         const pts = ctx.vm.progress && isNum(ctx.vm.progress.points) ? ctx.vm.progress.points : 0;
         setText(oathPts, pts > 0 ? `${pts} ${plural(pts, 'очко', 'очка', 'очков')}` : '');

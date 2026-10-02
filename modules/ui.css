@@ -4096,3 +4096,64 @@ html.ao-present .ao-perfhud {
     display: none;
   }
 }
+
+/* ---- [ПРОЕКТОР] меню снова влезает в 1366×768 после новых кнопок и настроек: «Настройки» сворачиваются
+   (ui.js, при высоте окна ≤ 1200 px), второстепенные кнопки — в одну строку */
+.ao-menu__sethead {
+  margin: 0;
+}
+.ao-disclose {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.6rem;
+  width: 100%;
+  padding: 0.2rem 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ao-disclose::before {
+  content: '▸';
+  color: var(--ao-gold);
+  transition: transform 0.15s;
+}
+.ao-disclose[aria-expanded='true']::before {
+  transform: rotate(90deg);
+}
+.ao-disclose__sum {
+  font-family: var(--ao-font-ui);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--ao-faint);
+}
+.ao-disclose[aria-expanded='true'] .ao-disclose__sum {
+  display: none;
+}
+.ao-disclose:focus-visible {
+  outline: 2px solid var(--ao-gold-hi);
+  outline-offset: 2px;
+}
+.ao-menu__setbody {
+  margin-top: 0.35rem;
+}
+.ao-menu__setbody[hidden] {
+  display: none;
+}
+@media (max-height: 960px) {
+  .ao-menu__row .ao-btn:not(.ao-btn--primary) {
+    min-height: 2.4rem;
+    padding: 0.38rem 0.75rem;
+    font-size: max(14px, 0.9rem);
+  }
+  .ao-menu__row {
+    gap: 0.45rem 0.55rem;
+  }
+  /* пауза: пояснения под настройками — мелкий второстепенный текст, «Продолжить бой» важнее */
+  .ao-panel--pause .ao-field__hint {
+    display: none;
+  }
+}
