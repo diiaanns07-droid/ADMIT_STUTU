@@ -8,35 +8,126 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230d1016'/%3E%3Cpath d='M16 5 L25 27 H7 Z' fill='none' stroke='%23c9a45c' stroke-width='2.5'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="modules/ui.css">
-  <!-- Three.js подключается ОДИН раз. Версия обязана совпадать с DEPS.three в config.js. -->
+  <style>
+    /* [OFFLINE] полоса загрузки на заставке */
+    .ao-boot-bar { width: min(420px, 78vw); height: 6px; margin: 18px auto 10px; border-radius: 3px; background: rgba(239, 230, 210, 0.1); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(201, 164, 92, 0.18); }
+    .ao-boot-bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #8a6a32, #e0b866); border-radius: 3px; transition: width 0.25s ease-out; }
+    .ao-boot-meta { display: flex; justify-content: space-between; gap: 16px; width: min(420px, 78vw); margin: 0 auto; font: 13px/1.4 system-ui, "Segoe UI", sans-serif; color: #8f8a80; }
+    .ao-boot-meta b { color: #e0b866; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .ao-boot-card p.ao-boot-msg { min-height: 1.4em; margin: 14px 0 0; font-size: 14px; }
+    .ao-boot-retry { display: none; margin: 14px auto 0; padding: 8px 22px; font: 600 14px system-ui, sans-serif; color: #15161a; background: #e0b866; border: 0; border-radius: 4px; cursor: pointer; }
+    #ao-boot.is-error .ao-boot-bar, #ao-boot.is-error .ao-boot-meta { display: none; }
+    #ao-boot.is-error .ao-boot-retry { display: inline-block; }
+  </style>
+  <script>
+    // [OFFLINE] Запасной вариант: ?cdn=1 — библиотеки с cdn.jsdelivr.net вместо vendor/. Срабатывает и сам,
+    // если код не загрузился (см. __aoModuleError). Первая карта импорта главнее следующей, поэтому она здесь.
+    (function () {
+      if (!/[?&]cdn=1(&|$)/.test(location.search)) return;
+      var cdn = 'https://cdn.jsdelivr.net/npm/';
+      document.write('<script type="importmap">' + JSON.stringify({ imports: {
+        'three': cdn + 'three@0.185.1/build/three.module.min.js',
+        'three/addons/': cdn + 'three@0.185.1/examples/jsm/',
+        '@pixiv/three-vrm': cdn + '@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js'
+      } }) + '<\/script>');
+    })();
+  </script>
+  <!-- Three.js подключается ОДИН раз. Версия обязана совпадать с DEPS.three в config.js.
+       [OFFLINE] Всё из vendor/ (tools/vendor_update.mjs): игра стартует без интернета. -->
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/",
-      "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+      "three": "./vendor/npm/three@0.185.1/build/three.module.min.js",
+      "three/addons/": "./vendor/npm/three@0.185.1/examples/jsm/",
+      "@pixiv/three-vrm": "./vendor/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
     }
   }
   </script>
   <script>
     // Загрузчик-страховка: показывает понятную ошибку вместо чёрного экрана.
+    // [OFFLINE] и настоящий прогресс загрузки: байты и файлы кода, подпись — что именно грузится.
     (function () {
       var failed = false;
       var timedOut = false;
+      var domReady = false;
+      // Объём стартовой загрузки (статические импорты main.js + стили). Обновляет tools/sw_manifest.mjs.
+      var BOOT = /*AO_BOOT*/{"bytes":2642911,"files":42,"big":["vendor/npm/three@0.185.1/build/three.core.min.js","vendor/npm/three@0.185.1/build/three.module.min.js","modules/world.js"]}/*/AO_BOOT*/;
+      var prog = { bytes: 0, files: 0, pct: 0, label: 'Код игры', lastT: Date.now(), startT: Date.now(), done: {} };
+      var seen = {};
+      function el(id) { return document.getElementById(id); }
       function show(msg) {
-        var el = document.getElementById('ao-boot');
-        if (!el) { document.addEventListener('DOMContentLoaded', function () { show(msg); }); return; }
-        el.hidden = false;
-        el.classList.add('is-error');
-        el.querySelector('p').textContent = msg;
+        var b = el('ao-boot');
+        if (!b) { document.addEventListener('DOMContentLoaded', function () { show(msg); }); return; }
+        b.hidden = false;
+        b.classList.add('is-error');
+        b.querySelector('p').textContent = msg;
       }
+      function labelFor(u) {
+        var f = u.split('?')[0];
+        if (/three[.-](core|module)/.test(f)) return 'Three.js — 3D-движок';
+        if (/three-vrm/.test(f)) return 'Модели героев (VRM)';
+        if (/examples\/jsm\//.test(f)) return 'Three.js: загрузчики и эффекты';
+        if (/\/fonts\//.test(f) || /\.woff2$/.test(f)) return 'Шрифты';
+        if (/\.css$/.test(f)) return 'Оформление';
+        if (/\/modules\/(world|atmosphere|brightForest|elfVillage)/.test(f)) return 'Мир: плато и лес';
+        if (/\/modules\/(hero|characterLooks|vrmKit)/.test(f)) return 'Герои';
+        if (/\/modules\/(fx|effects)/.test(f) || /\/modules\/fx\//.test(f)) return 'Магия и эффекты';
+        if (/\/modules\/(boss|combat)/.test(f)) return 'Бой и страж';
+        if (/\/modules\/vision|\/core\/(hand|steer|leftStick|bow|squat|pushup)/.test(f)) return 'Управление камерой';
+        if (/\/net\/|pvp|netLobby|remotePlayer/.test(f)) return 'Дуэль';
+        if (/\/modules\/ui|\/core\/(bdo|battleHud|trackingHud)/.test(f)) return 'Интерфейс';
+        return 'Код игры';
+      }
+      function render() {
+        if (failed && !timedOut) return;
+        var b = el('ao-boot');
+        if (!b) return;
+        var fb = BOOT.bytes > 0 ? prog.bytes / BOOT.bytes : 0;
+        var fc = BOOT.files > 0 ? prog.files / BOOT.files : 0;
+        // байты главнее (Three.js — треть объёма), файлы страхуют, если размер браузер не сообщил
+        var f = prog.bytes > 0 ? 0.75 * Math.min(1, fb) + 0.25 * Math.min(1, fc) : Math.min(1, fc);
+        var pct = Math.max(prog.pct, Math.min(99, Math.round(f * 100)));
+        prog.pct = pct;
+        var bar = b.querySelector('.ao-boot-bar');
+        if (bar) { bar.firstChild.style.width = pct + '%'; bar.setAttribute('aria-valuenow', String(pct)); }
+        // что грузится сейчас: крупный файл старта, которого ещё нет (браузер сообщает только о готовых)
+        var label = prog.label;
+        if (fb >= 0.4 && BOOT.big) for (var i = 0; i < BOOT.big.length; i++) if (!prog.done[BOOT.big[i]]) { label = labelFor(BOOT.big[i]); break; }
+        var what = b.querySelector('.ao-boot-what');
+        if (what) what.textContent = pct >= 97 ? 'Сборка мира и героев…' : 'Загрузка · ' + label;
+        var pc = b.querySelector('.ao-boot-pct');
+        if (pc) pc.textContent = pct + '%';
+      }
+      function onEntry(e) {
+        var u = e.name || '';
+        if (seen[u] || u.indexOf('data:') === 0) return;
+        if (u.indexOf(location.origin) !== 0 && !/cdn\.jsdelivr\.net|fonts\.(gstatic|googleapis)\.com/.test(u)) return;
+        seen[u] = 1;
+        if (BOOT.big) for (var i = 0; i < BOOT.big.length; i++) if (u.split('?')[0].slice(-BOOT.big[i].length) === BOOT.big[i]) prog.done[BOOT.big[i]] = 1;
+        prog.bytes += e.decodedBodySize || e.encodedBodySize || 0;
+        prog.files++;
+        prog.lastT = Date.now();
+        prog.label = labelFor(u);
+        render();
+      }
+      try {
+        var po = new PerformanceObserver(function (list) { list.getEntries().forEach(onEntry); });
+        po.observe({ type: 'resource', buffered: true });
+        window.__aoBootObserver = po;
+      } catch (e) { /* старый браузер: просто «Загрузка…» */ }
+      document.addEventListener('DOMContentLoaded', function () { domReady = true; render(); });
+
       window.__aoBoot = {
         done: function () {
           clearTimeout(window.__aoBootTimer);
-          var el = document.getElementById('ao-boot');
-          if (el && (!failed || timedOut)) { el.hidden = true; failed = false; }
+          prog.pct = 100; render();
+          try { if (window.__aoBootObserver) window.__aoBootObserver.disconnect(); } catch (e) { /* ignore */ }
+          var b = el('ao-boot');
+          if (b && (!failed || timedOut)) { b.hidden = true; failed = false; }
+          window.__aoBootMs = Date.now() - prog.startT;
         },
-        fail: function (msg) { failed = true; show(msg); }
+        fail: function (msg) { failed = true; show(msg); },
+        progress: function () { return { pct: prog.pct, bytes: prog.bytes, files: prog.files, label: prog.label }; }
       };
       if (location.protocol === 'file:') {
         failed = true;
@@ -44,12 +135,43 @@
           show('Игра открыта как файл. Браузер так не загрузит модули и камеру. Закройте вкладку и запустите START_GAME.cmd из папки игры.');
         });
       }
+      // Код не загрузился. vendor/ не выложен (404) — те же библиотеки с CDN (?cdn=1); сбой сети или
+      // сервера — ещё одна попытка (?retry=1); не помогло — понятное сообщение и кнопка «Обновить».
+      function failLoad() {
+        window.__aoBoot.fail('Не удалось загрузить код игры. Обновите страницу. Если игра запущена через START_GAME.cmd — проверьте, что окно сервера открыто; если по ссылке — нужна сеть хотя бы для первого запуска.');
+      }
       window.__aoModuleError = function () {
-        window.__aoBoot.fail('Не удалось загрузить код игры или Three.js. Проверьте интернет-подключение (библиотеки загружаются с cdn.jsdelivr.net) и обновите страницу (F5).');
+        if (location.protocol === 'file:') return;
+        var q = location.search;
+        var has = function (k) { return new RegExp('[?&]' + k + '=1(&|$)').test(q); };
+        var go = function (k) { location.replace(location.pathname + (q ? q + '&' : '?') + k + '=1' + location.hash); };
+        if (has('cdn')) { failLoad(); return; }
+        fetch('vendor/npm/three@0.185.1/build/three.module.min.js', { method: 'HEAD', cache: 'no-store' }).then(function (r) {
+          if (r.status === 404) go('cdn');
+          else if (!has('retry')) go('retry');
+          else failLoad();
+        }, function () { if (!has('retry')) go('retry'); else failLoad(); });
       };
-      window.__aoBootTimer = setTimeout(function () {
-        if (!window.__ASHEN__ && !failed) { window.__aoBoot.fail('Игра не запустилась за 25 секунд. Проверьте интернет и обновите страницу (F5). Подробности — в консоли (F12).'); timedOut = true; }
-      }, 25000);
+      window.__aoReload = function () {
+        location.replace(location.pathname + location.search.replace(/[?&](retry|cdn)=1(?=&|$)/g, '').replace(/^&/, '?') + location.hash);
+      };
+      // [OFFLINE] 25 с — не приговор: пока файлы продолжают приходить, ждём и пишем, что сеть медленная.
+      // Ошибка — только если загрузка встала (45 с без единого файла) или код загрузился, но игра не стартовала.
+      function checkBoot() {
+        if (window.__ASHEN__ || failed) return;
+        var idle = Date.now() - prog.lastT;
+        if (!domReady && idle < 45000) {
+          var m = document.querySelector('#ao-boot .ao-boot-msg');
+          if (m) m.textContent = 'Медленная сеть — загрузка продолжается. Следующий запуск будет мгновенным: игра сохранится на этом компьютере.';
+          window.__aoBootTimer = setTimeout(checkBoot, 5000);
+          return;
+        }
+        window.__aoBoot.fail(domReady
+          ? 'Игра не запустилась. Обновите страницу (F5). Подробности — в консоли (F12).'
+          : 'Загрузка остановилась: сеть не отвечает. Проверьте подключение и обновите страницу (F5).');
+        timedOut = true;
+      }
+      window.__aoBootTimer = setTimeout(checkBoot, 25000);
       // [PERF] частота экрана, пока грузятся модули и ничего тяжёлого не рисуется: в бою браузер под
       // нагрузкой зовёт rAF реже, и по игровым кадрам 165 Гц не отличить от 70. Читает core/perfTuner.js.
       (function () {
@@ -85,11 +207,16 @@
     <div id="ao-boot">
       <div class="ao-boot-card">
         <h1>ASHEN OATH</h1>
-        <p>Загрузка…</p>
+        <div class="ao-boot-bar" role="progressbar" aria-label="Загрузка игры" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+        <div class="ao-boot-meta"><span class="ao-boot-what">Загрузка…</span><b class="ao-boot-pct">0%</b></div>
+        <p class="ao-boot-msg"></p>
+        <button type="button" class="ao-boot-retry" onclick="window.__aoReload()">Обновить страницу</button>
       </div>
     </div>
     <noscript><div class="ao-noscript">Для игры нужен JavaScript.</div></noscript>
   </div>
   <script type="module" src="main.js" onerror="window.__aoModuleError()"></script>
+  <!-- [OFFLINE] service worker (sw.js), предзагрузка MediaPipe в меню и докачка для игры без сети -->
+  <script type="module" src="offline.js"></script>
 </body>
 </html>

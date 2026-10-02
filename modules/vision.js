@@ -22,14 +22,119 @@ import { createInputRecorder } from '../core/inputRecorder.js'; // [CONTROLS] з
 // Версия проверена по реестру npm 28.09.2026.
 // Главный сборщик может передать свои URL через config.mediaPipe — тогда эти не используются.
 // [№1, интеграция] 0.10.35 вместо 1.0.1: бандл 1.0.x отправляет метрики на odml.pa.googleapis.com/v1/log.
+// [OFFLINE] По умолчанию всё берётся из vendor/ рядом с игрой (tools/vendor_update.mjs) — работает без интернета.
+// Пути vendor/ повторяют CDN; если локальные файлы не загрузились, loadEngine повторяет попытку с CDN (cdnFallback).
 export const MEDIAPIPE_VERSION = '0.10.35';
-export const DEFAULT_MEDIAPIPE = Object.freeze({
+const VENDOR_URL = (() => { try { return new URL('../vendor/', import.meta.url).href; } catch { return 'vendor/'; } })();
+export const CDN_MEDIAPIPE = Object.freeze({
   moduleUrl: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/vision_bundle.mjs`,
   wasmRoot: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`,
   modelUrl: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-  // [№1] модель кистей (21 точка на кисть); та же версия WASM/библиотеки
   handModelUrl: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
 });
+export const DEFAULT_MEDIAPIPE = Object.freeze({
+  moduleUrl: `${VENDOR_URL}npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/vision_bundle.mjs`,
+  wasmRoot: `${VENDOR_URL}npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`,
+  modelUrl: `${VENDOR_URL}mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
+  // [№1] модель кистей (21 точка на кисть); та же версия WASM/библиотеки
+  handModelUrl: `${VENDOR_URL}mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+});
+// [OFFLINE] локальный URL из vendor/ → тот же файл на CDN (для остальных URL — null)
+export function cdnTwinUrl(url) {
+  const u = String(url || '');
+  let i = u.indexOf('/vendor/npm/');
+  if (i >= 0) return 'https://cdn.jsdelivr.net/npm/' + u.slice(i + 12);
+  i = u.indexOf('/vendor/mediapipe-models/');
+  if (i >= 0) return 'https://storage.googleapis.com/mediapipe-models/' + u.slice(i + 25);
+  return null;
+}
+// На CDN уходят только те файлы, которых нет локально (HEAD не 2xx или нет ответа): если в vendor/
+// не хватает одной модели, библиотека и WASM остаются свои.
+async function cdnTwinMediaPipe(mp) {
+  if (!mp) return null;
+  const probe = async (u) => {
+    try { const r = await fetch(u, { method: 'HEAD', cache: 'no-store' }); return r.ok; } catch { return false; }
+  };
+  const tw = { ...mp };
+  let changed = false;
+  for (const k of ['moduleUrl', 'wasmRoot', 'modelUrl', 'handModelUrl']) {
+    const t = mp[k] ? cdnTwinUrl(mp[k]) : null;
+    if (!t) continue;
+    if (await probe(k === 'wasmRoot' ? `${mp[k]}/vision_wasm_internal.wasm` : mp[k])) continue;
+    tw[k] = t;
+    changed = true;
+  }
+  // модуль и WASM — одной версии из одного места
+  if (tw.moduleUrl !== mp.moduleUrl || tw.wasmRoot !== mp.wasmRoot) {
+    tw.moduleUrl = cdnTwinUrl(mp.moduleUrl) || tw.moduleUrl;
+    tw.wasmRoot = cdnTwinUrl(mp.wasmRoot) || tw.wasmRoot;
+  }
+  return changed ? tw : null;
+}
+
+// [OFFLINE] Предзагрузка MediaPipe, пока человек в меню: модуль, WASM (вариант для worker) и модели качаются
+// с низким приоритетом заранее — тогда «Разрешить камеру» не ждёт ~25 МБ. Файлы оседают в кэше
+// service worker (sw.js, cache-first), без него — в HTTP-кэше. Повторный вызов с теми же URL не качает заново.
+// opts: { onProgress({ loaded, total, file, done }), signal, priority: 'low' }. Ошибки не бросает: { ok, errors }.
+const preloadSeen = new Map();
+export function mediaPipePreloadList(mp, extraModels = []) {
+  const r = resolveMediaPipe(mp);
+  const list = [r.moduleUrl, `${r.wasmRoot}/vision_wasm_module_internal.js`, `${r.wasmRoot}/vision_wasm_module_internal.wasm`];
+  if (r.handModelUrl) list.push(r.handModelUrl);
+  list.push(r.modelUrl);
+  for (const m of extraModels) if (m) list.push(resolveMediaPipe({ ...mp, modelUrl: m }).modelUrl);
+  return [...new Set(list)];
+}
+export async function preloadMediaPipe(urls, opts = {}) {
+  const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+  const list = Array.isArray(urls) ? urls : mediaPipePreloadList(urls);
+  const sizes = new Map(list.map((u) => [u, 0]));
+  const loaded = new Map(list.map((u) => [u, 0]));
+  const errors = [];
+  let file = null;
+  const emit = (done = false) => {
+    if (!onProgress) return;
+    let total = 0, got = 0;
+    for (const u of list) { const sz = sizes.get(u) || 0; total += sz; got += Math.min(loaded.get(u) || 0, sz || Infinity); }
+    try { onProgress({ loaded: got, total, file, done, files: list.length }); } catch { /* ignore */ }
+  };
+  for (const url of list) {
+    if (opts.signal && opts.signal.aborted) break;
+    file = url.split('/').pop();
+    if (preloadSeen.has(url)) { const n = preloadSeen.get(url); sizes.set(url, n); loaded.set(url, n); emit(); continue; }
+    try {
+      const init = { priority: opts.priority || 'low', credentials: 'same-origin' };
+      if (opts.signal) init.signal = opts.signal;
+      const res = await fetch(url, init);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const len = +res.headers.get('content-length') || 0;
+      sizes.set(url, len);
+      if (res.body && typeof res.body.getReader === 'function') {
+        const rd = res.body.getReader();
+        let n = 0;
+        for (;;) {
+          const { done, value } = await rd.read();
+          if (done) break;
+          n += value.byteLength;
+          loaded.set(url, n);
+          if (!len) sizes.set(url, n);
+          emit();
+        }
+        sizes.set(url, Math.max(len, n));
+      } else {
+        const b = await res.arrayBuffer();
+        sizes.set(url, b.byteLength);
+        loaded.set(url, b.byteLength);
+      }
+      preloadSeen.set(url, sizes.get(url));
+      emit();
+    } catch (e) {
+      errors.push(`${file}: ${(e && e.message) || e}`);
+    }
+  }
+  emit(true);
+  return { ok: errors.length === 0, errors, files: list.length };
+}
 
 // Индексы MediaPipe Pose (33 точки). «Левое/правое» — стороны самого человека.
 export const LANDMARK = Object.freeze({
@@ -140,6 +245,7 @@ export const DEFAULT_VISION_CONFIG = Object.freeze({
   // Движок и производительность
   useWorker: 'auto',       // 'auto' | 'off' (или false)
   workerUrl: null,         // по умолчанию ./vision-worker.js рядом с vision.js
+  cdnFallback: true,       // [OFFLINE] локальные файлы MediaPipe (vendor/) не загрузились — повторить с CDN
   workerInitTimeoutMs: 30000, // без сообщений от worker дольше — откат в главный поток
   workerFrameTimeoutMs: 2500,
   delegate: 'GPU',         // 'GPU' (с откатом на CPU) | 'CPU'
@@ -1281,8 +1387,23 @@ export async function createVision(options = {}) {
     return enginePromise;
   }
 
+  // [OFFLINE] сначала vendor/ (работает без интернета); не вышло — те же файлы с CDN
   async function loadEngine() {
-    mpResolved = resolveMediaPipe(cfg.mediaPipe);
+    try {
+      return await loadEngineFrom(resolveMediaPipe(cfg.mediaPipe));
+    } catch (e) {
+      // только ошибки загрузки файлов (404, нет сети, модуль не импортировался), а не отказ GPU/модели
+      const loadErr = /fetch|import|load|network|HTTP|404|wasm|скрипт worker/i.test(String((e && e.message) || e));
+      const twin = cfg.cdnFallback === false || !loadErr ? null : await cdnTwinMediaPipe(mpResolved);
+      if (!twin || disposed) throw e;
+      console.warn('[vision] локальные файлы MediaPipe не загрузились — пробуем CDN:', (e && e.message) || e);
+      workerFallbackReason = null;
+      return loadEngineFrom(resolveMediaPipe(twin));
+    }
+  }
+
+  async function loadEngineFrom(resolved) {
+    mpResolved = resolved;
     const sup = workerSupport();
     const wantWorker = !(cfg.useWorker === false || cfg.useWorker === 'off');
     if (wantWorker && sup.ok) {

@@ -63,6 +63,7 @@ class Page {
       const sid = msg.params.sessionId;
       this.workers = (this.workers || 0) + 1;
       this.send('Network.enable', {}, sid).catch(() => {});
+      if (this.blocked) this.send('Network.setBlockedURLs', { urls: this.blocked }, sid).catch(() => {});   // [OFFLINE] и в worker
       this.send('Runtime.enable', {}, sid).catch(() => {});
       return;
     }
@@ -376,8 +377,11 @@ async function scenarioDenied() {
 }
 
 async function scenarioNoModel() {
-  const { page, kill } = await launch('nomodel', ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--host-resolver-rules=MAP storage.googleapis.com ~NOTFOUND']);
+  // [OFFLINE] модели лежат в vendor/ — «модель недоступна» теперь значит: нет ни локального .task, ни CDN
+  const { page, kill } = await launch('nomodel', ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--host-resolver-rules=MAP storage.googleapis.com ~NOTFOUND'], URL + '?sw=0&preload=0');
   try {
+    page.blocked = ['*.task'];
+    await page.send('Network.setBlockedURLs', { urls: page.blocked });
     await page.waitFor('!!window.__ASHEN__', 60000);
     await page.click('Начать');
     await page.click('Разрешить камеру');
@@ -388,10 +392,18 @@ async function scenarioNoModel() {
 }
 
 async function scenarioNoCdn() {
-  const { page, kill } = await launch('nocdn', ['--host-resolver-rules=MAP cdn.jsdelivr.net ~NOTFOUND']);
+  // [OFFLINE] библиотеки, WASM, модели и шрифты — из vendor/: без CDN и Google игра стартует и камера работает
+  const noNet = 'MAP cdn.jsdelivr.net ~NOTFOUND, MAP storage.googleapis.com ~NOTFOUND, MAP fonts.googleapis.com ~NOTFOUND, MAP fonts.gstatic.com ~NOTFOUND';
+  const { page, kill } = await launch('nocdn', ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--host-resolver-rules=${noNet}`]);
   try {
-    const msg = await page.waitFor(`(() => { const b = document.getElementById('ao-boot'); return b && b.classList.contains('is-error') && b.querySelector('p').textContent; })()`, 30000);
-    check('нет сети/CDN → понятная ошибка вместо чёрного экрана', !!msg && /интернет/i.test(msg), msg || 'timeout');
+    const ok = await page.waitFor('!!window.__ASHEN__', 60000);
+    check('без CDN и Google Fonts игра стартует (всё из vendor/)', !!ok, ok ? '' : 'timeout');
+    await page.click('Начать');
+    await page.click('Разрешить камеру');
+    const st = await page.waitFor(`(() => { const t = __ASHEN__.tracking; return ['ready','lost','error'].includes(t.status) ? t.status : null; })()`, 180000, 300);
+    const ext = [...new Set(page.requests.filter((u) => /^https?:/.test(u) && !u.startsWith(URL)).map((u) => u.split('/')[2]))];
+    check('без CDN распознавание запускается на локальных моделях', st && st !== 'error', String(st));
+    check('без CDN нет ни одного внешнего запроса', ext.length === 0, ext.join(', '));
   } finally { await kill(); }
 }
 
