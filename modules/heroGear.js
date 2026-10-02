@@ -157,9 +157,9 @@ function lashTex(THREE, dense) {
     g.clearRect(0, 0, N, N);
     g.fillStyle = '#fff';
     // сплошная линия роста у корня (читается как подводка, не рассыпается при альфа-тесте)
-    g.fillRect(0, N * (dense ? 0.88 : 0.92), N, N);
+    g.fillRect(0, N * (dense ? 0.88 : 0.955), N, N);
     // пучки: клин от корня к кончику, загиб наружу (к внешнему углу — сильнее)
-    const n = dense ? 64 : 18;
+    const n = dense ? 64 : 13;
     for (let i = 0; i < n; i++) {
       const u = (i + 0.3 + lr() * 0.4) / n;
       const x0 = u * N, lean = (u - 0.3) * 0.55 + (lr() - 0.5) * 0.25;
@@ -1064,7 +1064,8 @@ export function dressHero(THREE, vrm, opts = {}) {
         up.name = 'lash-up';
         piv.add(lid, up);
         const low = new THREE.Group(); low.name = 'lash-low';
-        low.add(new THREE.Mesh(lashStrip(e, -0.7, 1.15, yL, F.dL, (t) => F.lenL * 0.2 * (0.3 + 0.7 * Math.sin(Math.PI * t)) * (0.6 + 0.6 * t), -1), mLow));
+        // [W4-ЛИЦО] нижние ресницы — от середины к внешнему углу и короче (у внутреннего угла читались чёрными «колючками»)
+        low.add(new THREE.Mesh(lashStrip(e, -0.25, 1.1, yL, F.dL, (t) => F.lenL * 0.16 * (0.3 + 0.7 * Math.sin(Math.PI * t)) * (0.5 + 0.7 * t), -1), mLow));
         const tear = new THREE.Mesh(tearStrip(e), mTear); tear.name = 'tearline'; tear.renderOrder = 3; low.add(tear);
         stick(piv, 'head', e.c, new THREE.Quaternion());
         stick(low, 'head', e.c, new THREE.Quaternion());

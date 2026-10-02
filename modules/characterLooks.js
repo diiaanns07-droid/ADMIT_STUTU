@@ -253,7 +253,7 @@ export function clipMap(animations) {
 export const FACE_LOOKS = Object.freeze({
   // Эльфийка (Гроза): светлые тонкие брови высокой дугой, серебристо-голубые тени, нежные розовые губы
   elf: {
-    brow: { color: 0x86704f, inner: [0.0135, 1.6738], peak: [0.0425, 1.6838], tail: [0.0608, 1.6772], w: [0.0038, 0.0032, 0.0009], peakT: 0.64, soft: 0.75, hair: 0.75, seed: 3 },
+    brow: { color: 0x7a6447, inner: [0.0135, 1.6738], peak: [0.0425, 1.6838], tail: [0.0608, 1.6772], w: [0.0040, 0.0034, 0.0009], peakT: 0.64, soft: 0.75, hair: 0.75, seed: 3 },
     eyes: { scale: 1.07, iris: 1.08, shadow: 0x7f9fd6, shadowA: 0.42, shadow2: 0xb6c8ee, liner: 0x3b2c24, linerW: 0.0006, wing: 0.0016, wingUp: 0.32, lower: 0.18 },
     skin: { blush: 0xf2959a, blushA: 0.2, glow: 0.8, contour: 0.55, conceal: 0.65 },
     lips: { color: 0xd8828c, a: 0.62, gloss: 0.75, tint: 0xf0a0a8 },

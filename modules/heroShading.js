@@ -104,6 +104,9 @@ export function patchHeroLight(THREE, mat) {
   mat.onBeforeCompile = (shader, r) => {
     if (prev) prev.call(mat, shader, r);
     Object.assign(shader.uniforms, HERO_LIGHT);
+    // [W4-ЛИЦО] кожа: «обёрнутый» ключевой свет с тёплой полосой у терминатора (дешёвая имитация SSS)
+    // и просвет тонких мест (уши, крылья носа, кромка щёк) против контрового — без новых источников и проходов
+    const skin = mat.userData.heroKind === 'skin';
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform vec3 heroKeyColor;\nuniform vec3 heroKeyDir;\nuniform vec3 heroRimColor;\nuniform vec3 heroRimDir;\nuniform vec3 heroFillColor;')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
@@ -111,9 +114,13 @@ export function patchHeroLight(THREE, mat) {
     vec3 hN = normal;
     vec3 hV = normalize( vViewPosition );
     float hNL = dot( hN, heroKeyDir );
-    float hDiff = mix( saturate( hNL ), saturate( ( hNL + 0.35 ) / 1.35 ), 0.35 );
     float hMet = 1.0 - 0.8 * metalnessFactor;
-    totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * hDiff * hMet;
+    ${skin ? `float hDiff = saturate( hNL );
+    float hWrap = saturate( ( hNL + 0.5 ) / 1.5 );
+    totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * ( hDiff + max( hWrap - hDiff, 0.0 ) * vec3( 0.62, 0.34, 0.26 ) ) * hMet;
+    float hTr = pow( saturate( dot( hV, - heroRimDir ) ), 3.0 ) * pow( 1.0 - saturate( dot( hN, hV ) ), 1.5 );
+    totalEmissiveRadiance += heroRimColor * diffuseColor.rgb * vec3( 1.0, 0.36, 0.24 ) * hTr * 1.4;` : `float hDiff = mix( saturate( hNL ), saturate( ( hNL + 0.35 ) / 1.35 ), 0.35 );
+    totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * hDiff * hMet;`}
     vec3 hH = normalize( heroKeyDir + hV );
     float hSpec = pow( saturate( dot( hN, hH ) ), mix( 90.0, 12.0, roughnessFactor ) ) * ( 1.0 - roughnessFactor );
     totalEmissiveRadiance += heroKeyColor * hSpec * mix( vec3( 0.1 ), diffuseColor.rgb * 1.8 + 0.06, metalnessFactor ) * ( 1.0 + 0.6 * metalnessFactor );
@@ -123,7 +130,7 @@ export function patchHeroLight(THREE, mat) {
   }`);
   };
   const prevKey = mat.customProgramCacheKey;
-  mat.customProgramCacheKey = () => 'heroLight:' + (prevKey ? prevKey.call(mat) : '');
+  mat.customProgramCacheKey = () => 'heroLight:' + (mat.userData.heroKind === 'skin' ? 'S:' : '') + (prevKey ? prevKey.call(mat) : '');
   mat.needsUpdate = true;
   return mat;
 }
@@ -235,9 +242,9 @@ float hmAA( float lambda, float fw ) { return 1.0 - smoothstep( 0.3 * lambda, 0.
     // пятна «захватанности»: металл местами матовее, местами полирован; ткань — чуть неровная
     float sm = hmNoise( hmP * 16.0 ) * 0.5 + hmNoise( hmP * 47.0 ) * 0.5 - 0.5;
     ${mode === 'skin' ? 'roughnessFactor = clamp( roughnessFactor + sm * 0.1 * heroMicroK, 0.2, 1.0 );' : 'roughnessFactor = clamp( roughnessFactor + sm * mix( 0.08, 0.16, hmMet ) * heroMicroK, 0.06, 1.0 );'}
-    ${lips ? `// губы (атлас женского лица Quaternius: центр 92,133 из 512) — влажный блеск
-    vec2 hmL = ( vMapUv - vec2( 0.1797, 0.2598 ) ) / vec2( 0.03, 0.0125 );
-    roughnessFactor = mix( roughnessFactor, 0.2, ( 1.0 - smoothstep( 0.55, 1.0, length( hmL ) ) ) * 0.85 );` : ''}
+    ${lips ? `// губы (атлас женского лица Quaternius: центр 94.1, 133.5 из 512 — на оси лица) — влажный блеск
+    vec2 hmL = ( vMapUv - vec2( 0.18376, 0.2607 ) ) / vec2( 0.031, 0.0128 );
+    roughnessFactor = mix( roughnessFactor, ${(0.32 - 0.16 * (typeof lips === 'number' ? lips : 0.6)).toFixed(3)}, ( 1.0 - smoothstep( 0.5, 1.0, length( hmL ) ) ) * 0.88 );` : ''}
   }`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
   {
@@ -302,7 +309,7 @@ float hmAA( float lambda, float fw ) { return 1.0 - smoothstep( 0.3 * lambda, 0.
     }
   };
   const prevKey = mat.customProgramCacheKey;
-  mat.customProgramCacheKey = () => 'heroMicro:' + mode + (lips ? 'L' : '') + ':' + (prevKey ? prevKey.call(mat) : '');
+  mat.customProgramCacheKey = () => 'heroMicro:' + mode + (lips ? 'L' + (typeof lips === 'number' ? lips.toFixed(2) : '') : '') + ':' + (prevKey ? prevKey.call(mat) : '');
   mat.needsUpdate = true;
   return mat;
 }
@@ -324,9 +331,12 @@ function patchSkin(THREE, mat, uniforms) {
 		float heroW = saturate( ( dot( geometryNormal, directLight.direction ) + heroSkinWrap ) / ( 1.0 + heroSkinWrap ) );
 		reflectedLight.directDiffuse += max( heroW - dotNL, 0.0 ) * directLight.color * heroSkinTint * BRDF_Lambert( material.diffuseContribution );
 	}`);
+    shader.uniforms.heroSkinAmb = uniforms.amb;
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float heroSkinWrap;\nuniform vec3 heroSkinTint;')
-      .replace(`#include <${pars}>`, patched);
+      .replace('#include <common>', '#include <common>\nuniform float heroSkinWrap;\nuniform vec3 heroSkinTint;\nuniform vec3 heroSkinAmb;')
+      .replace(`#include <${pars}>`, patched)
+      // [W4-ЛИЦО] рассеянный свет на коже теплее (свет, прошедший под кожей, — красноватый): тень на лице живая, не серая
+      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.indirectDiffuse *= heroSkinAmb;');
   };
   const prevKey = mat.customProgramCacheKey;
   mat.customProgramCacheKey = () => 'heroSkin:' + (prevKey ? prevKey.call(mat) : '');
@@ -477,7 +487,7 @@ function faceWarp(P, shape, eyeK) {
     // нос: уже крылья и спинка, кончик аккуратнее (чуть меньше, назад и вверх)
     if (nose > 0 && z > zNose - 0.04) {
       const wn = fss(zNose - 0.036, zNose - 0.02, z) * Math.exp(-(((y - yNose - 0.006) / 0.02) ** 2)) * (1 - fss(0.016, 0.03, ax));
-      if (wn > 1e-3) X *= 1 - 0.16 * nose * wn;
+      if (wn > 1e-3) X *= 1 - 0.2 * nose * wn;
       const dt = ((x / 0.009) ** 2 + ((y - yNose) / 0.008) ** 2 + ((z - zNose) / 0.012) ** 2);
       const wt = Math.exp(-dt);
       if (wt > 1e-3) { X *= 1 - 0.1 * nose * wt; Z -= 0.0016 * nose * wt; Y += 0.0007 * nose * wt; }
@@ -716,7 +726,7 @@ function buildBrows(THREE, P, b, E, quality) {
   const surf = faceSurface(P, [-0.09, 0.09, e0.c[1] - 1.4 * e0.r, e0.c[1] + 0.05, 0.0]);
   const tex = browTexture(THREE, b, quality === 'low' ? 256 : 512);
   const fv = (tex && tex.userData.faceV) || { liner: 0.08, brow: 0.12 };
-  const pos = [], nor = [], uv = [], col = [], idx = [], sI = [], sW = [];
+  const pos = [], nor = [], uv = [], col = [], idx = [], sI = [], sW = [], linerV = [];
   const p = [0, 0, 0], nn = [0, 0, 0];
   const cB = new THREE.Color(b.color ?? 0x3a2a20), cL = new THREE.Color(E.liner ?? 0x1a1010);
   const lin = [Math.min(1, cL.r / Math.max(1e-4, cB.r)), Math.min(1, cL.g / Math.max(1e-4, cB.g)), Math.min(1, cL.b / Math.max(1e-4, cB.b))];
@@ -732,7 +742,7 @@ function buildBrows(THREE, P, b, E, quality) {
         if (!surf(cx - ty * o, cy + tx * o, p, nn)) return false;
         pos.push(side * (p[0] + nn[0] * lift), p[1] + nn[1] * lift, p[2] + nn[2] * lift);
         nor.push(side * nn[0], nn[1], nn[2]);
-        uv.push(t, vMap(v)); col.push(rgb[0], rgb[1], rgb[2]);
+        uv.push(t, vMap(v)); col.push(rgb[0], rgb[1], rgb[2], 1);
         sI.push(head, 0, 0, 0); sW.push(1, 0, 0, 0);
       }
     }
@@ -751,28 +761,29 @@ function buildBrows(THREE, P, b, E, quality) {
     const lid = E.linerW ? upperLid(P, e) : null;
     if (lid) {
       const W0 = E.linerW, wl = E.wing || 0, up = E.wingUp ?? 0.3;
-      const span = lid.xo - lid.xi, x0 = lid.xi + span * 0.06;
-      // касательная века у внешнего угла → направление стрелки (повёрнуто вверх на wingUp)
-      const yo2 = lid.yAt(lid.xo - span * 0.12), dx0 = span * 0.12, dy0 = lid.yo - yo2, dl = Math.hypot(dx0, dy0) || 1;
-      const ca = Math.cos(up), sa = Math.sin(up), wx = (dx0 / dl) * ca - (dy0 / dl) * sa, wy = (dx0 / dl) * sa + (dy0 / dl) * ca;
-      const lidLen = lid.xo - x0, tot = lidLen + wl, tl = lidLen / (tot || 1);
+      // по веку — до 90% разреза (у самого угла веко круто уходит вниз — подводка от него отрывается),
+      // дальше «стрелка» наружу и вверх под углом wingUp к горизонтали
+      const span = lid.xo - lid.xi, x0 = lid.xi + span * 0.06, x1 = lid.xi + span * 0.9;
+      const wx = Math.cos(up), wy = Math.sin(up);
+      const lidLen = x1 - x0, tot = lidLen + wl, tl = lidLen / (tot || 1);
       const centre = (t) => {
-        if (t <= tl || wl <= 0) { const x = x0 + (lidLen * t) / (tl || 1); const th = half(t); return [x, lid.yAt(Math.min(lid.xo, x)) + th + 0.00012]; }
-        const d = ((t - tl) / (1 - tl)) * wl, th0 = half(tl);
-        return [lid.xo + wx * d, lid.yo + th0 + 0.00012 + wy * d];
+        if (t <= tl || wl <= 0) { const x = x0 + (lidLen * Math.min(t, tl)) / (tl || 1); return [x, lid.yAt(x) + half(t) + 0.00012]; }
+        const d = ((t - tl) / (1 - tl)) * wl;
+        return [x1 + wx * d, lid.yAt(x1) + half(tl) + 0.00012 + wy * d];
       };
       function half(t) {
         const k = t <= tl ? 0.25 + 0.75 * fss(0, 0.8, t / (tl || 1)) : 1 - fss(0, 1, (t - tl) / (1 - tl || 1)) * 0.92;
         return W0 * 0.5 * k;
       }
-      ribbon(side, wl > 0.002 ? 28 : 20, [0, 0.5, 1], centre, half, (v) => v * fv.liner, lin, 0.00028);
+      const v0 = pos.length / 3;
+      if (ribbon(side, wl > 0.002 ? 28 : 20, [0, 0.5, 1], centre, half, (v) => v * fv.liner, lin, 0.00028)) linerV.push([v0, pos.length / 3]);
     }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
   g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(sI, 4));
   g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sW, 4));
   g.setIndex(idx);
@@ -797,7 +808,40 @@ function buildBrows(THREE, P, b, E, quality) {
   noShadowCast(mesh);
   mesh.renderOrder = 1;
   face.parent.add(mesh);
+  if (linerV.length) blinkLiner(THREE, mesh, linerV);
   return mesh;
+}
+
+// Моргание: подводка лежит на неподвижной коже века, а шторка века (heroGear, группа 'eyelid') опускается —
+// пока она закрыта, подводка тает (альфа вершинами; выгружается только диапазон подводки и только на моргании).
+// Угол шторки — от её положения при открытом глазе (у открытого глаза шторка в нулевом масштабе).
+function blinkLiner(THREE, mesh, ranges) {
+  const ca = mesh.geometry.attributes.color;
+  let pivots = null, tries = 0, alpha = 1;
+  const q0 = [];
+  mesh.onBeforeRender = () => {
+    if (!pivots) {
+      if (++tries > 240) { mesh.onBeforeRender = () => {}; return; }   // у героини нет век — проверять перестаём
+      let root = mesh; while (root.parent) root = root.parent;
+      const found = [];
+      root.traverse((o) => { if (o.name === 'eyelid' && o.children.length) found.push(o); });
+      if (!found.length) return;
+      pivots = found; for (const pv of pivots) q0.push(pv.quaternion.clone());
+    }
+    let ang = 0;
+    for (let i = 0; i < pivots.length; i++) {
+      const pv = pivots[i], lid = pv.children[0];
+      if (lid && lid.scale.x < 0.01) { q0[i].copy(pv.quaternion); continue; }   // открыт — запомнить покой
+      const d = Math.abs(q0[i].dot(pv.quaternion));
+      ang = Math.max(ang, 2 * Math.acos(Math.min(1, d)));
+    }
+    const a = 1 - fss(0.06, 0.32, ang);
+    if (Math.abs(a - alpha) < 0.02) return;
+    alpha = a;
+    ca.clearUpdateRanges();
+    for (const [lo, hi] of ranges) { for (let i = lo; i < hi; i++) ca.setW(i, a); ca.addUpdateRange(lo * 4, (hi - lo) * 4); }
+    ca.needsUpdate = true;
+  };
 }
 // тонкие детали лица теней не бросают (LOD героя переключает castShadow у всех мешей — здесь всегда «нет»)
 function noShadowCast(o) {
@@ -914,7 +958,7 @@ export function facePainter(look) {
         const u = FACE_UV.mid + du, v = 106 + dv;
         if (Math.abs(du) < 4.5 && v > 109) continue;   // кончик носа и ноздри — чистые
         const fall = Math.exp(-(((Math.abs(du) - 10) / 16) ** 2));
-        const a = (0.05 + rnd() * 0.1) * fa * (0.4 + 0.6 * fall);
+        const a = (0.16 + rnd() * 0.22) * fa * (0.35 + 0.65 * fall);
         blob(u, v, 0.55 + rnd() * 0.45, 0.45 + rnd() * 0.35, rnd() * 3, Sk.freckles, a, 'multiply', 0.3);
       }
     }
@@ -1063,7 +1107,17 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
   const owned = [];
   const hidden = new THREE.MeshBasicMaterial({ visible: false });
   owned.push(hidden);
-  const skinU = { wrap: { value: 0.55 }, tint: { value: new THREE.Color(1.0, 0.42, 0.32) } };
+  // [W4-ЛИЦО] подповерхностный оттенок кожи: у героинь — по FACE_LOOKS.skin.glow (userData.heroSkinGlow на материале лица)
+  const skinU = { wrap: { value: 0.55 }, tint: { value: new THREE.Color(1.0, 0.42, 0.32) }, amb: { value: new THREE.Color(1.04, 0.98, 0.95) } };
+  vrm.scene.traverse((o) => {
+    const mt = o.isMesh && !Array.isArray(o.material) ? o.material : null;
+    const g = mt && mt.userData ? mt.userData.heroSkinGlow : undefined;
+    if (g === undefined) return;
+    const k = Math.max(0, Math.min(1, g));
+    skinU.wrap.value = 0.5 + 0.15 * k;
+    skinU.tint.value.setRGB(1.0, 0.42 - 0.06 * k, 0.32 - 0.07 * k).multiplyScalar(0.85 + 0.3 * k);
+    skinU.amb.value.setRGB(1.03 + 0.04 * k, 0.98, 0.95 - 0.03 * k);
+  });
   let curMode = null, curQ = quality;
 
   function build(orig, q) {
@@ -1130,35 +1184,43 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
       roughness: orig.roughness, metalness: orig.metalness, emissive: orig.emissive.clone(), emissiveMap: orig.emissiveMap, emissiveIntensity: orig.emissiveIntensity,
     });
     if (orig.normalMap) m.normalScale.copy(orig.normalScale);
+    // [W4-ЛИЦО] лента бровей и подводки: цвет подводки — вершинами, смещение полигонов — поверх кожи без мерцания
+    if (orig.vertexColors) m.vertexColors = true;
+    if (orig.polygonOffset) { m.polygonOffset = true; m.polygonOffsetFactor = orig.polygonOffsetFactor; m.polygonOffsetUnits = orig.polygonOffsetUnits; }
     if (kind === 'skin') { m.roughness = Math.max(0.45, orig.roughness * 0.85); }
     // брови и волосы модели — в цвет причёски героини (серая текстура × цвет)
     if (kind === 'hair' && hairColor !== null && hairColor !== undefined) m.color.set(hairColor).multiplyScalar(1.35);
     if (kind === 'iris') {
       m.roughness = 0.2;
-      // светящаяся радужка (стихия героя): светится тёмная часть текстуры глаза, белок — нет
-      if (fx && fx.eyes) {
-        m.emissive = new THREE.Color(fx.eyes); m.emissiveIntensity = fx.eyesK || 1.6;
-        const prevE = m.onBeforeCompile;
-        m.onBeforeCompile = (sh, r) => {
-          if (prevE) prevE.call(m, sh, r);
-          sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-  totalEmissiveRadiance *= 1.0 - smoothstep( 0.3, 0.62, dot( diffuseColor.rgb, vec3( 0.333 ) ) );`);
-        };
-        const pk = m.customProgramCacheKey;
-        m.customProgramCacheKey = () => 'heroEyes:' + (pk ? pk.call(m) : '');
-      }
+      // светящаяся радужка (стихия героя): светится радужка (тёмная часть текстуры глаза), белок — нет
+      const glow = !!(fx && fx.eyes);
+      if (glow) { m.emissive = new THREE.Color(fx.eyes); m.emissiveIntensity = fx.eyesK || 1.6; }
       // [HERO] радужка вблизи: лимбальное кольцо, радиальные волокна, светлый венчик у зрачка; запечённый в
       // текстуру блик убран (глаз теперь поворачивается — блик «ездил» бы с ним; живой блик — ниже).
       // Текстура Quaternius: радужка — диск в центре (0.5, 0.5), радиус ≈ 0.105.
-      if (m.map) {
-        const prevI = m.onBeforeCompile;
-        m.onBeforeCompile = (sh, r) => {
-          if (prevI) prevI.call(m, sh, r);
-          sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      // [W4-ЛИЦО] радужка крупнее (userData.heroIris у героинь: выборка внутри 1.1 R сжата, к 1.5 R — как была);
+      // глубина глаза: тень верхнего века и уголков на яблоке (оси глаза — из patchGaze), каустика — свет
+      // сверху собирается роговицей в нижней части радужки; искра — чёткое ядро, ореол и вторая точка снизу.
+      const irisU = { heroIrisK: { value: Math.max(1, Math.min(1.25, (orig.userData && orig.userData.heroIris) || 1)) } };
+      const hasMap = !!m.map;
+      const prevI = m.onBeforeCompile;
+      m.onBeforeCompile = (sh, r) => {
+        if (prevI) prevI.call(m, sh, r);
+        Object.assign(sh.uniforms, irisU);
+        let fs = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float heroIrisK;');
+        fs = fs.replace('#include <map_fragment>', hasMap ? `vec2 irUv = vMapUv;
   {
-    vec2 irD = ( vMapUv - vec2( 0.5 ) ) / 0.105;
-    float irR = length( irD ), irA = atan( irD.y, irD.x );
-    float irIn = 1.0 - smoothstep( 0.96, 1.06, irR );
+    vec2 d0 = vMapUv - vec2( 0.5 );
+    float r0 = length( d0 ) / 0.105, a0 = 1.1 * heroIrisK;
+    float r1 = r0 < a0 ? r0 / heroIrisK : ( r0 < 1.5 ? mix( 1.1, 1.5, ( r0 - a0 ) / max( 1.5 - a0, 1e-3 ) ) : r0 );
+    irUv = vec2( 0.5 ) + d0 * ( r1 / max( r0, 1e-4 ) );
+  }
+  diffuseColor *= texture2D( map, irUv );
+  vec3 heroEyeTex = diffuseColor.rgb;
+  vec2 irD = ( irUv - vec2( 0.5 ) ) / 0.105;
+  float irR = length( irD ), irA = atan( irD.y, irD.x );
+  float heroIrM = 1.0 - smoothstep( 0.96, 1.06, irR );
+  {
     float irL = dot( diffuseColor.rgb, vec3( 0.333 ) );
     // запечённый блик: яркие пиксели внутри радужки → цвет зрачка/радужки вокруг
     float irHi = smoothstep( 0.55, 0.8, irL ) * ( 1.0 - smoothstep( 0.55, 0.75, irR ) );
@@ -1166,28 +1228,30 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     // волокна и венчик
     float fib = 0.5 + 0.5 * sin( irA * 41.0 + sin( irA * 7.0 ) * 2.0 + irR * 5.0 ) * sin( irA * 23.0 - irR * 9.0 );
     float band = smoothstep( 0.3, 0.45, irR ) * ( 1.0 - smoothstep( 0.9, 1.0, irR ) );
-    diffuseColor.rgb *= 1.0 + ( fib - 0.5 ) * 0.45 * band * irIn;
+    diffuseColor.rgb *= 1.0 + ( fib - 0.5 ) * 0.45 * band * heroIrM;
     diffuseColor.rgb *= 1.0 + 0.22 * smoothstep( 0.36, 0.5, irR ) * ( 1.0 - smoothstep( 0.5, 0.66, irR ) );
     // лимбальное кольцо — тёмный ободок по краю радужки
     diffuseColor.rgb *= 1.0 - 0.6 * smoothstep( 0.8, 0.97, irR ) * ( 1.0 - smoothstep( 1.0, 1.12, irR ) );
-  }`);
-        };
-        const pkI = m.customProgramCacheKey;
-        m.customProgramCacheKey = () => 'heroIris:' + (pkI ? pkI.call(m) : '');
-      }
-      // блик в глазах: отражение «студийного» источника сверху-слева (глаза — сферы, выходит точка)
-      const prevC = m.onBeforeCompile;
-      m.onBeforeCompile = (sh, r) => {
-        if (prevC) prevC.call(m, sh, r);
-        sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+    // глубина: тень верхнего века и уголков, белок к уголкам теплее; каустика в нижней части радужки
+    float lidSh = smoothstep( 0.0, 0.3, vHeroEyeL.y ) * 0.85;
+    float cornerSh = smoothstep( 0.55, 0.95, abs( vHeroEyeL.x ) ) * ( 1.0 - heroIrM );
+    diffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.74, 0.68, 0.66 ), lidSh ) * mix( vec3( 1.0 ), vec3( 0.86, 0.76, 0.74 ), cornerSh );
+    float caus = heroIrM * smoothstep( 0.02, -0.34, vHeroEyeP.y ) * smoothstep( 0.3, 0.62, irR );
+    diffuseColor.rgb *= 1.0 + 0.75 * caus;
+  }` : '#include <map_fragment>\n  vec3 heroEyeTex = diffuseColor.rgb;\n  float heroIrM = 1.0;');
+        fs = fs.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  ${glow ? 'totalEmissiveRadiance *= heroIrM * ( 1.0 - smoothstep( 0.3, 0.62, dot( heroEyeTex, vec3( 0.333 ) ) ) );' : ''}
   {
+    // блик в глазах: отражение «студийного» источника сверху-слева (глаза — сферы, выходит точка)
     vec3 eyR = reflect( - normalize( vViewPosition ), normalize( normal ) );
-    float eyC = pow( saturate( dot( eyR, normalize( vec3( -0.35, 0.55, 0.76 ) ) ) ), 220.0 );
+    float d1 = dot( eyR, normalize( vec3( -0.35, 0.55, 0.76 ) ) ), d2 = dot( eyR, normalize( vec3( 0.42, -0.2, 0.88 ) ) );
+    float eyC = smoothstep( 0.9955, 0.9982, d1 ) * 1.4 + pow( saturate( d1 ), 90.0 ) * 0.16 + smoothstep( 0.9986, 0.9994, d2 ) * 0.5;
     totalEmissiveRadiance += vec3( 1.25 ) * eyC;
   }`);
+        sh.fragmentShader = fs;
       };
-      const pkC = m.customProgramCacheKey;
-      m.customProgramCacheKey = () => 'heroCatch:' + (pkC ? pkC.call(m) : '');
+      const pkI = m.customProgramCacheKey;
+      m.customProgramCacheKey = () => 'heroIris:' + (glow ? 'G' : '') + (hasMap ? 'M' : '') + ':' + (pkI ? pkI.call(m) : '');
       patchGaze(m);
     }
     if (physical) {
@@ -1198,7 +1262,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     }
     if (kind === 'skin') patchSkin(THREE, m, skinU);
     if (kind === 'armor' && q !== 'low') patchMicro(THREE, m, { unit: armorUnit });
-    if (kind === 'skin' && q !== 'low' && m.map) patchMicro(THREE, m, { unit: armorUnit, mode: 'skin', lips: /^MI_Regular_Female/.test(orig.name) });
+    if (kind === 'skin' && q !== 'low' && m.map) patchMicro(THREE, m, { unit: armorUnit, mode: 'skin', lips: /^MI_Regular_Female/.test(orig.name) ? (orig.userData && orig.userData.heroLipGloss !== undefined ? orig.userData.heroLipGloss : true) : false });   // [W4-ЛИЦО] сила блеска губ
     if (kind === 'hair' && q !== 'low' && /^MI_Hair/.test(orig.name || '')) patchMicro(THREE, m, { unit: bodyUnit, mode: 'hair' });
     if (kind === 'armor' && fx && fx.armor && q !== 'low') { patchArmorGlow(THREE, m, { color: fx.armor, strength: fx.armorK || 2.4, unit: armorUnit, mode: fx.armorMode || 'veins', gild: fx.gild || null }); armorUs.push({ U: m.userData.heroArmorU, base: fx.armorK || 2.4 }); }
     if (atmosphere) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, P.env); } catch (e) { /* ignore */ } }
@@ -1218,7 +1282,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
   // [HERO] взгляд: глазные яблоки (MI_Eyes — две сферы в одном меше) поворачиваются вокруг своих центров
   // в вершинном шейдере (оси позы привязки). Направление — по трём вершинам глаз (кадр «привязка → мир»)
   // каждый кадр; «вперёд»/«вверх» головы в осях привязки — один раз (от затылка к глазам, мировой верх).
-  const gazeU = { heroGazeRot: { value: new THREE.Matrix3() }, heroEyeCL: { value: new THREE.Vector3() }, heroEyeCR: { value: new THREE.Vector3() }, heroEyeLR: { value: new THREE.Vector3(1, 0, 0) }, heroEyeMid: { value: new THREE.Vector3() } };
+  const gazeU = { heroGazeRot: { value: new THREE.Matrix3() }, heroEyeCL: { value: new THREE.Vector3() }, heroEyeCR: { value: new THREE.Vector3() }, heroEyeLR: { value: new THREE.Vector3(1, 0, 0) }, heroEyeMid: { value: new THREE.Vector3() }, heroEyeR: { value: 0.0165 } };
   const G = { mesh: null, idx: null, b: null, fwd: null, up: null, left: null, yaw: 0, pitch: 0, ok: false };
   {
     const e = entries.find((x) => /^MI_Eye/.test(x.orig && x.orig.name) && x.mesh.isSkinnedMesh && x.index < 0);
@@ -1241,6 +1305,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
       gazeU.heroEyeCL.value.copy(box[0][0]).add(box[0][1]).multiplyScalar(0.5);
       gazeU.heroEyeCR.value.copy(box[1][0]).add(box[1][1]).multiplyScalar(0.5);
       gazeU.heroEyeLR.value.copy(lr); gazeU.heroEyeMid.value.copy(mid);
+      { const ext0 = box[0][1].clone().sub(box[0][0]); const rr = Math.max(ext0.x, ext0.y, ext0.z) / 2; if (rr > 1e-5) gazeU.heroEyeR.value = rr; }   // [W4-ЛИЦО] радиус яблока
       G.mesh = e.mesh; G.idx = [iA, iB, iC];
       G.b = G.idx.map((i) => new THREE.Vector3().fromBufferAttribute(pa, i));
       G.eyeMid = mid;
@@ -1251,14 +1316,19 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     m.onBeforeCompile = (sh, r) => {
       if (prevG) prevG.call(m, sh, r);
       Object.assign(sh.uniforms, gazeU);
+      // [W4-ЛИЦО] vHeroEyeP — точка в осях яблока (радиусы, без поворота взгляда), vHeroEyeL — после поворота
+      // (оси головы: y — вверх): по ним тень века, уголки и каустика радужки
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform mat3 heroGazeRot;\nuniform vec3 heroEyeCL;\nuniform vec3 heroEyeCR;\nuniform vec3 heroEyeLR;\nuniform vec3 heroEyeMid;')
+        .replace('#include <common>', '#include <common>\nuniform mat3 heroGazeRot;\nuniform vec3 heroEyeCL;\nuniform vec3 heroEyeCR;\nuniform vec3 heroEyeLR;\nuniform vec3 heroEyeMid;\nuniform float heroEyeR;\nvarying vec3 vHeroEyeL;\nvarying vec3 vHeroEyeP;')
         .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n  objectNormal = heroGazeRot * objectNormal;')
         .replace('#include <begin_vertex>', `#include <begin_vertex>
   {
     vec3 hgC = dot( position - heroEyeMid, heroEyeLR ) > 0.0 ? heroEyeCL : heroEyeCR;
+    vHeroEyeP = ( position - hgC ) / heroEyeR;
     transformed = heroGazeRot * ( transformed - hgC ) + hgC;
+    vHeroEyeL = ( transformed - hgC ) / heroEyeR;
   }`);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vHeroEyeL;\nvarying vec3 vHeroEyeP;');
     };
     const pk = m.customProgramCacheKey;
     m.customProgramCacheKey = () => 'heroGaze:' + (pk ? pk.call(m) : '');
