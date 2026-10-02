@@ -1582,12 +1582,13 @@ float ashPuddle( vec2 xz ) {
       const x = Math.sin(a) * r, z = Math.cos(a) * r;
       farPush(x, baseY, z, color, 0);
       farPush(x, h, z, color, 1);
-      if (i < count) { const b = b0 + i * 2; farSil.idx.push(b, b + 2, b + 1, b + 1, b + 2, b + 3); }
+      if (i < count) { const b = b0 + i * 2; farSil.idx.push(b, b + 2, b + 1, b + 1, b + 2, b + 3, b, b + 1, b + 2, b + 1, b + 3, b + 2); }   // гребень — с обеих сторон, шпили — лицом
     }
   }
-  ridge(skyR * 0.52, 220, -40, 16, 44, 0x12161e, wc.seed + 113, { valley: 1, sharp: 1.3, freq: 11 });
-  ridge(skyR * 0.66, 240, -40, 20, 54, 0x171c26, wc.seed + 114, { valley: 0.8, sharp: 1.15 });
-  ridge(skyR * 0.8, 260, -40, 22, 58, 0x1d2430, wc.seed + 112, { valley: 0.5 });
+  // высоты — над краем рельефа большой карты (он закрывает горизонт до ~5°): гребни встают на 4–11°
+  ridge(skyR * 0.52, 220, -40, 26, 66, 0x11151c, wc.seed + 113, { valley: 1, sharp: 1.3, freq: 11, spike: 80 });
+  ridge(skyR * 0.66, 240, -40, 40, 98, 0x161b24, wc.seed + 114, { valley: 0.8, sharp: 1.15, spike: 110 });
+  ridge(skyR * 0.8, 260, -40, 56, 132, 0x1c222e, wc.seed + 112, { valley: 0.6, spike: 140 });
 
   /* --------------------------- Руины: колонны --------------------------- */
   const shaftGeo = (() => {
@@ -2501,7 +2502,7 @@ float ashPuddle( vec2 xz ) {
     g.setAttribute('aRim', new THREE.Float32BufferAttribute(farSil.rim, 1));
     g.setIndex(farSil.idx);
     g.computeBoundingSphere();
-    const mat = M(new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, fog: true }));
+    const mat = M(new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, fog: true }));
     const sk = atmo.skyU;
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, { uASun: sk.uSun, uACorona: sk.uCorona, uACoronaI: sk.uCoronaI });
@@ -2586,6 +2587,7 @@ float ashPuddle( vec2 xz ) {
     materials: { stone: matStone, iron: matIron, coals: matCoals }, LI, quality: initialQuality, reducedMotion: wc.reducedMotion,
     seed: wc.seed, runeU, sky: atmo.skyU, runeR: 3.82 * K, embersR: [2.5 * K, 21 * K],
   });
+  const arenaCtx = { focus: null, cam: null, fade: 1 };   // кадр без аллокаций
   arenaFx.patchLit(matFloor, 'floor');
   arenaFx.patchLit(matTerrain, 'terrain');
 
@@ -4442,7 +4444,8 @@ float ashPuddle( vec2 xz ) {
       ash.material.color.setRGB(1, 1 - 0.1 * ashW, 1 - 0.16 * ashW);
     }
     // [W4-ARENA] огни, воздух, пул света; лужицы тепла и блики на полу — uniform-ы его шейдера
-    arenaFx.update(dt, time * (wc.reducedMotion ? 0.6 : 1), { focus: heroRoot.position, cam: camera });
+    arenaCtx.focus = heroRoot.position; arenaCtx.cam = camera;
+    arenaFx.update(dt, time * (wc.reducedMotion ? 0.6 : 1), arenaCtx);
     if (camera && typeof atmo.setGroundHaze === 'function') {   // [W4-ARENA] лунная дымка у пола — только у арены
       const cd = Math.hypot(camera.position.x, camera.position.z);
       atmo.setGroundHaze((1 - smoothstep(24, 56, cd)) * (1 - (elfVillage ? elfVillage.weight : 0)) * (1 - (brightForest ? brightForest.weight : 0)));
@@ -4569,7 +4572,7 @@ float ashPuddle( vec2 xz ) {
     }
     for (const it of instTiers) it.mesh.count = it.counts[q.tier];
     ashGeo.setDrawRange(0, q.ash);
-    arenaFx.setQuality(quality);   // [W4-ARENA] пул света огней (q.brazierLights), частицы, отражения
+    arenaFx.setQuality(quality, q.brazierLights);   // [W4-ARENA] пул света огней, частицы, отражения
     clothEvery = q.clothNormals;
     matBlob.opacity = moonLight.castShadow ? 0.42 : 0.62;
     atmo.setQuality(quality);

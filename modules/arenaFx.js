@@ -3,7 +3,7 @@
  * Огни и воздух арены Регента, отражения на мокром полу.
  *
  * export function createArenaFx({ THREE, parent, G, M, renderer, fires, ruins, groundY, materials, LI, quality, reducedMotion, seed })
- *   -> { update(dt, time, ctx), setQuality(level), configure(patch), patchLit(mat, kind), dispose(), stats(), fires }
+ *   -> { update(dt, time, ctx), setQuality(level, lights?), configure(patch), patchLit(mat, kind), dispose(), stats(), fires }
  *
  *   Жаровни и факелы-столпы — инстансы: подножие (камень), железо (чаша с когтями), угли — 3 вызова отрисовки на все огни.
  *   Живой огонь — процедурный шейдер: пламя, ореол и дым (high) — один вызов на все огни.
@@ -75,7 +75,8 @@ void main() {
   vFlick = aFlick( uTime, vSeed );
   vec3 toCam = cameraPosition - c;
   float dist = length( toCam );
-  vFade = smoothstep( 0.6, 1.6, dist ) * exp( - dist * 0.0045 );
+  // вблизи камеры огонь занимает пол-экрана — HDR-ядро гасим, иначе bloom заливает угол кадра
+  vFade = smoothstep( 0.6, 1.6, dist ) * exp( - dist * 0.0045 ) * mix( 0.45, 1.0, smoothstep( 3.0, 14.0, dist ) );
   vec4 mv;
   if ( type > 0.5 && type < 1.5 ) {
     // ореол: круглый билборд к камере на середине языка
@@ -118,13 +119,13 @@ void main() {
     float core = smoothstep( w * 0.55, 0.0, abs( x ) ) * ( 1.0 - smoothstep( 0.04, 0.5, y + ( n - 0.5 ) * 0.25 ) );
     vec3 col = mix( vec3( 0.95, 0.16, 0.02 ), vec3( 1.0, 0.5, 0.12 ), smoothstep( 0.0, 0.75, f ) );
     col = mix( col, vec3( 1.0, 0.86, 0.56 ), core );
-    float I = ( f * 2.4 + core * 4.6 ) * vFlick * vFade * uFireK;
+    float I = ( f * 2.0 + core * 3.6 ) * vFlick * vFade * uFireK;
     outC = vec4( col * I, 0.0 );
   } else if ( vType < 1.5 ) {
     vec2 d = ( vUv - 0.5 ) * 2.0;
     float r2 = dot( d, d );
     float g = exp( - r2 * 4.5 ) * ( 1.0 - smoothstep( 0.55, 1.0, r2 ) );
-    outC = vec4( vec3( 1.0, 0.42, 0.13 ) * g * 0.3 * vFlick * vFade * uFireK, 0.0 );
+    outC = vec4( vec3( 1.0, 0.42, 0.13 ) * g * 0.22 * vFlick * vFade * uFireK, 0.0 );
   } else {
     vec2 uv = vec2( vUv.x - 0.5, vUv.y );
     vec2 q = vec2( uv.x * 2.0, uv.y * 1.6 - uTime * 0.32 );
@@ -184,9 +185,9 @@ void main() {
     float tt = t * aB.y;
     p = aA.xyz + vec3( sin( tt * 0.9 + s * 6.0 ) * aB.z, sin( tt * 1.7 + s * 3.0 ) * 0.32 + sin( tt * 0.43 + s ) * 0.24, cos( tt * 0.7 + s * 4.0 ) * aB.z );
     p += vec3( sin( uTime * 9.0 + s * 30.0 ), cos( uTime * 11.0 + s * 20.0 ), sin( uTime * 7.0 + s * 9.0 ) ) * 0.025 * uMotion;
-    size = 0.08 * aB.w;
+    size = 0.11 * aB.w;
     float blink = smoothstep( -0.3, 0.95, sin( t * 0.8 + s * 17.0 ) );
-    col = mix( vec3( 0.5, 0.88, 1.0 ), vec3( 1.0, 0.84, 0.52 ), step( 0.7, fract( s * 7.31 ) ) ) * ( 1.3 + 2.4 * blink );
+    col = mix( vec3( 0.5, 0.88, 1.0 ), vec3( 1.0, 0.84, 0.52 ), step( 0.7, fract( s * 7.31 ) ) ) * ( 1.8 + 3.2 * blink );
     a = 0.3 + 0.7 * blink;
     vFlap = sin( uTime * 17.0 * uMotion + s * 40.0 );
   }
@@ -221,12 +222,14 @@ void main() {
 
 /* ------------------------- Мокрый пол: свет огней и рун ------------------------- */
 // Встраивается после <lights_fragment_end> в материалы, где уже есть vAshWorldPos и ashPud (patchWet / земля).
+// ARENA_TIER (define, ключ программы): 0 — low: только лужицы тепла ближних огней и отсвет рун; 1 — medium: + блики
+// огней штрихами и корона затмения в лужах; 2 — high: + резкое отражение неба в лужах. Смена уровня и так
+// перекомпилирует освещённые материалы (меняется число источников пула), лишних компиляций нет.
 export const ARENA_LIGHT_PARS = /* glsl */`
 uniform vec4 uAFire[ ${FIRE_MAX} ];
 uniform float uAFireA[ ${FIRE_MAX} ];
 uniform vec3 uAFireCol;
 uniform float uAFireN;
-uniform float uAFireRefl;
 uniform vec4 uRuneW[ 4 ];
 uniform vec4 uRuneC[ 4 ];
 uniform vec3 uRuneBase;
@@ -253,14 +256,19 @@ const ARENA_LIGHT_BODY = /* glsl */`
       vec4 f = uAFire[ i ];
       vec3 d = f.xyz - aP;
       float d2 = dot( d, d );
-      if ( d2 > 784.0 ) continue;
+      #if ARENA_TIER == 0
+        if ( d2 > 56.0 ) continue;   // low: только лужица тепла, за 7,5 м её нет
+      #else
+        if ( d2 > 784.0 ) continue;
+      #endif
       float dl = sqrt( d2 );
       vec3 dn = d / dl;
       // лужица тепла: рассеянный свет огня (если его не освещает настоящий источник из пула)
       float nl = saturate( dot( aN, dn ) * 0.75 + 0.25 );
       aDiff += f.w * uAFireA[ i ] * nl / ( 1.0 + d2 * 0.6 ) * ( 1.0 - smoothstep( 30.0, 56.0, d2 ) );
       // блик-штрих: зеркальное отражение пламени, по вертикали вытянуто (мокрая мостовая)
-      if ( uAFireRefl > 0.5 ) {
+      #if ARENA_TIER >= 1
+      {
         float c = dot( aR, dn );
         if ( c > 0.0 ) {
           vec3 tH = normalize( vec3( dn.z, 0.0, - dn.x ) + vec3( 1e-5, 0.0, 0.0 ) );
@@ -271,9 +279,12 @@ const ARENA_LIGHT_BODY = /* glsl */`
           aSpec += f.w * exp( - h * h / ( sh * sh ) - v * v / ( sv * sv ) ) * ( 0.18 + 0.82 * aWetK ) * ( 0.04 / ( sh + 0.02 ) );
         }
       }
+      #endif
     }
     reflectedLight.indirectDiffuse += material.diffuseColor * uAFireCol * aDiff * 2.4;
-    reflectedLight.indirectSpecular += uAFireCol * aSpec * aFres * 9.0;
+    #if ARENA_TIER >= 1
+      reflectedLight.indirectSpecular += uAFireCol * aSpec * aFres * 9.0;
+    #endif
     // кольцо рун светит на пол: тление и волны заклинаний — те же uniform-ы, что у самого кольца
     float aRr = length( aP.xz ) - uARuneR;
     if ( abs( aRr ) < 1.9 && aP.y > -0.25 ) {
@@ -292,9 +303,10 @@ const ARENA_LIGHT_BODY = /* glsl */`
       reflectedLight.indirectDiffuse += material.diffuseColor * rc * sw * 1.5;
       reflectedLight.indirectSpecular += rc * sw * ( 0.25 + 0.75 * aWetK ) * aFres * 2.2;
     }
-    // лужи отражают небо резче и сильнее, чем общий IBL, и ловят корону затмения
+    // лужи отражают небо резче и сильнее, чем общий IBL (high), и ловят корону затмения (medium+)
+    #if ARENA_TIER >= 1
     if ( aWetK > 0.01 ) {
-      #ifdef USE_ENVMAP
+      #if defined( USE_ENVMAP ) && ARENA_TIER >= 2
         reflectedLight.indirectSpecular += getIBLRadiance( geometryViewDir, geometryNormal, 0.07 ) * aWetK * aFres * uAWet;
       #endif
       float cs = dot( aR, uASun );
@@ -305,6 +317,7 @@ const ARENA_LIGHT_BODY = /* glsl */`
         reflectedLight.indirectSpecular += uACorona * uACoronaI * cor * aWetK * aFres * 1.4;
       }
     }
+    #endif
   }`;
 
 export function createArenaFx({
@@ -315,7 +328,7 @@ export function createArenaFx({
   const own = (x, f) => (f ? f(x) : x);
   const Gx = (g) => own(g, G), Mx = (m) => own(m, M);
   const rnd = mulberry32(seed + 4401);
-  const state = { quality: normQ(quality), reduced: !!reducedMotion, disposed: false, far: false };
+  const state = { quality: normQ(quality), reduced: !!reducedMotion, disposed: false, far: false, lights: null };
   const group = new THREE.Group();
   group.name = 'arena-fx';
   parent.add(group);
@@ -367,12 +380,12 @@ export function createArenaFx({
       pedM.push(mat4(f.x, f.y, f.z, yaw, 0.6, PH, 0.6));
       ironM.push(mat4(f.x, f.y + 0.95 * PH, f.z, yaw, IS, IS, IS));
       coalM.push(mat4(f.x, f.y + 0.95 * PH + 0.25 * IS, f.z, yaw, IS * 1.05, IS, IS * 1.05));
-      fires.push({ x: f.x, y: f.y + 0.95 * PH + 0.2 * IS, z: f.z, h: 0.95, w: 0.58, seed: s0, kind: 'torch', light: 8.5 });
+      fires.push({ x: f.x, y: f.y + 0.95 * PH + 0.2 * IS, z: f.z, h: 1.1, w: 0.62, seed: s0, kind: 'torch', light: 8.5 });
     } else {
       pedM.push(mat4(f.x, f.y, f.z, yaw, 1, 1.08, 1));
       ironM.push(mat4(f.x, f.y + 1.02, f.z, yaw, 1, 1, 1));
       coalM.push(mat4(f.x, f.y + 1.28, f.z, yaw, 1.05, 1, 1.05));
-      fires.push({ x: f.x, y: f.y + 1.2, z: f.z, h: 1.45, w: 0.92, seed: s0, kind: 'brazier', light: 14 });
+      fires.push({ x: f.x, y: f.y + 1.2, z: f.z, h: 1.75, w: 1.05, seed: s0, kind: 'brazier', light: 14 });
     }
   }
   const NF = fires.length;
@@ -490,7 +503,7 @@ export function createArenaFx({
   const fireA = new Float32Array(FIRE_MAX).fill(1);
   const litU = {
     uAFire: { value: fireP }, uAFireA: { value: fireA }, uAFireCol: { value: new THREE.Color(1.0, 0.46, 0.16) },
-    uAFireN: { value: NF }, uAFireRefl: { value: 1 },
+    uAFireN: { value: NF },
     uRuneW: runeU ? runeU.uRuneW : { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
     uRuneC: runeU ? runeU.uRuneC : { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
     uRuneBase: runeU ? runeU.uRuneBase : { value: new THREE.Color(0, 0, 0) },
@@ -503,9 +516,12 @@ export function createArenaFx({
   };
   fires.forEach((f, i) => fireP[i].set(f.x, f.y + f.h * 0.38, f.z, 0));
   // Встроить свет огней и рун в материал пола: после patchWet (нужны vAshWorldPos и ashPud).
+  const litMats = [];
+  const tierOf = () => ARENA_FX_QUALITY[state.quality].tier;
   function patchLit(mat, kind = 'floor') {
     if (!mat || mat.userData.arenaLit) return;
     mat.userData.arenaLit = kind;
+    litMats.push(mat);
     const prev = mat.onBeforeCompile;
     const body = kind === 'terrain'
       ? `\n  if ( dot( vAshWorldPos.xz, vAshWorldPos.xz ) < 1600.0 ) ${ARENA_LIGHT_BODY}`
@@ -514,11 +530,11 @@ export function createArenaFx({
       if (prev) prev.call(mat, shader, r);
       Object.assign(shader.uniforms, litU);
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\n' + ARENA_LIGHT_PARS)
+        .replace('#include <common>', `#include <common>\n#define ARENA_TIER ${tierOf()}\n` + ARENA_LIGHT_PARS)
         .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>' + body);
     };
     const prevKey = mat.customProgramCacheKey;
-    mat.customProgramCacheKey = () => 'arenaLit:' + kind + ':' + (prevKey ? prevKey.call(mat) : '');
+    mat.customProgramCacheKey = () => 'arenaLit:' + kind + tierOf() + ':' + (prevKey ? prevKey.call(mat) : '');
     mat.needsUpdate = true;
   }
 
@@ -543,8 +559,7 @@ export function createArenaFx({
       fireA[i] = 1;
     }
     // пул света: ближайшие к герою огни; передача — затуханием, без рывка
-    const Q = ARENA_FX_QUALITY[state.quality];
-    const nAct = Math.min(Q.lights, NF);
+    const nAct = activeLights();
     if (nAct > 0) {
       const fx = ctx.focus ? ctx.focus.x : 0, fz = ctx.focus ? ctx.focus.z : 0;
       for (let i = 0; i < NF; i++) { dist2[i] = (fires[i].x - fx) ** 2 + (fires[i].z - fz) ** 2; want[i] = 0; held[i] = 0; }
@@ -578,14 +593,18 @@ export function createArenaFx({
     }
   }
 
-  function setQuality(level) {
+  // число источников пула: из пресета владельца (world: QUALITY_PRESETS.brazierLights), иначе — из ARENA_FX_QUALITY
+  const activeLights = () => Math.min(state.lights != null ? state.lights : ARENA_FX_QUALITY[state.quality].lights, POOL, NF);
+  function setQuality(level, lights) {
     state.quality = normQ(level);
+    state.lights = Number.isFinite(lights) ? Math.max(0, lights | 0) : null;
     const Q = ARENA_FX_QUALITY[state.quality];
     airGeo.setDrawRange(0, airCounts[Q.tier]);
     if (flames) flames.geometry.setDrawRange(0, Q.smoke ? flameIdxHigh : flameIdxLow);
-    litU.uAFireRefl.value = Q.refl;
+    for (const m of litMats) m.needsUpdate = true;   // ярус шейдера пола — define в ключе программы
     // видимых источников столько, сколько разрешает уровень (одна перекомпиляция — при смене уровня)
-    slots.forEach((s, i) => { s.l.visible = i < Math.min(Q.lights, NF); if (!s.l.visible) { s.l.intensity = 0; s.idx = -1; s.w = 0; } });
+    const n = activeLights();
+    slots.forEach((s, i) => { s.l.visible = i < n; if (!s.l.visible) { s.l.intensity = 0; s.idx = -1; s.w = 0; } });
   }
   function configure(patch = {}) {
     if ('reducedMotion' in patch) { state.reduced = !!patch.reducedMotion; airU.uMotion.value = state.reduced ? 0.4 : 1; }
@@ -614,7 +633,7 @@ export function createArenaFx({
 // Слить геометрии (position/normal/uv) в одну: железо жаровни — один инстанс-меш.
 function mergeParts(THREE, list) {
   let vN = 0, iN = 0;
-  const geos = list.map((g) => (g.index ? g : g.toNonIndexed ? g : g));
+  const geos = list;
   for (const g of geos) { vN += g.attributes.position.count; iN += g.index ? g.index.count : g.attributes.position.count; }
   const pos = new Float32Array(vN * 3), nor = new Float32Array(vN * 3), uv = new Float32Array(vN * 2), idx = new Uint32Array(iN);
   let vo = 0, io = 0;
