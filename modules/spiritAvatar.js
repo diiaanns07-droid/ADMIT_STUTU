@@ -1495,7 +1495,11 @@ export function createSpiritAvatar(opts = {}) {
       fr = { canvas, renderer: r, scene: sc, cam, rig, w: 0, h: 0, dpr: 0 };
       canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); disposeFrame(); }, { once: true });
       attachCanvas();
-      if (typeof r.compileAsync === 'function') r.compileAsync(sc, cam).catch(() => {});
+      // шейдеры заранее и параллельно — только если драйвер умеет (KHR_parallel_shader_compile, как в main.js);
+      // без него compileAsync предупреждает в консоли и всё равно компилирует синхронно — тогда при первом показе
+      let par = false;
+      try { par = !!(r.extensions && r.extensions.has('KHR_parallel_shader_compile')); } catch (e) { par = false; }
+      if (par && typeof r.compileAsync === 'function') r.compileAsync(sc, cam).catch(() => {});
       return true;
     } catch (e) {
       console.warn('[W3-SPIRIT] холст духа в превью недоступен:', e && e.message);
