@@ -1450,7 +1450,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   const backdrop = el('div', { class: 'ao-backdrop', 'aria-hidden': 'true' });
   const live = el('div', { class: 'ao-sr', role: 'status', 'aria-live': 'polite' });
   const liveAlert = el('div', { class: 'ao-sr', role: 'alert', 'aria-live': 'assertive' });
-  const debugBadge = el('div', { class: 'ao-debug', hidden: true }, el('span', { class: 'ao-debug__main', text: 'DEBUG / НЕ CV' }), el('span', { class: 'ao-debug__sub', text: 'ввод с клавиатуры' }));
+  const debugBadge = el('div', { class: 'ao-debug', hidden: true }, el('span', { class: 'ao-debug__main', text: 'Демо без камеры · клавиатура' })); // [W3-CURSOR] без «DEBUG / НЕ CV»
   const banner = el('div', { class: 'ao-banner', hidden: true, 'aria-hidden': 'true' });
   const park = el('div', { class: 'ao-slot-park', 'aria-hidden': 'true' });
   const slot = el('div', { class: 'ao-camera-slot ui-camera-slot', 'data-ui-camera-slot': '' });
@@ -1521,7 +1521,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const h = heading('h2', hid, 'Камера', 'ao-h2');
     const enable = btn('Разрешить камеру', pressEnable, { variant: 'primary', iconName: 'camera' });
     const next = btn('Далее: калибровка', () => invoke('onStart', { from: 'camera' }), { variant: 'primary' });
-    const skip = btn('Продолжить без камеры (DEBUG)', () => invoke('onStart', { from: 'camera', debug: true }));
+    const skip = btn('Продолжить без камеры (демо)', () => invoke('onStart', { from: 'camera', debug: true }));
     const back = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
     const status = statusLine();
     const msg = el('p', { class: 'ao-msg' });
@@ -1811,7 +1811,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         body.paint(ctx.tr);
 
         let text = '';
-        if (ctx.debug) text = 'Режим DEBUG: управление с клавиатуры, калибровка не нужна. Это не проверка трекинга.';
+        if (ctx.debug) text = 'Демо без камеры: управление с клавиатуры, калибровка не нужна. Это не проверка распознавания.';
         else if (calibrating) text = 'Держите нейтральную позу, пока заполняется шкала.';
         else if (done && st === 'ready') text = 'Калибровка завершена. Переходите к обучению или повторите калибровку.';
         else if (done && st === 'lost') text = 'Калибровка есть, но сейчас поза не распознана. Вернитесь в кадр.';
@@ -1835,7 +1835,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setBtn(run, { hidden: off, disabled: !canRun || pendRun, label: runLabel });
         setClass(run.node, 'ao-btn--primary', !done);
         setClass(run.node, 'ao-btn--secondary', done);
-        setBtn(next, { hidden: !(done || ctx.debug), label: ctx.debug && !done ? 'Далее: обучение (DEBUG)' : 'Далее: обучение' });
+        setBtn(next, { hidden: !(done || ctx.debug), label: ctx.debug && !done ? 'Далее: обучение (демо)' : 'Далее: обучение' });
         setAttr(host, 'data-tone', describeTracking(ctx.tr, cfg).tone);
       },
     };
@@ -2796,7 +2796,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el('li', { text: 'Ноги на ширине плеч. Садитесь, пока бёдра не станут параллельны полу, и выпрямляйтесь полностью. Очко дают только чистые повторы.' }));
     const simNote = el('p', {
       class: 'ao-note ao-train__sim', hidden: true,
-      text: 'DEBUG, без камеры: S или ↓ (держать) — присесть, Shift — быстро, V — колени внутрь, G — колени за носки, T — наклон, H — пятки, B — не выпрямляться.',
+      text: 'Демо без камеры: S или ↓ (держать) — присесть, Shift — быстро, V — колени внутрь, G — колени за носки, T — наклон, H — пятки, B — не выпрямляться.',
     });
     // итог подхода (приседания)
     const sumLine = el('p', { class: 'ao-train__sumline' });
