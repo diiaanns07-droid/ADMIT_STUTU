@@ -87,6 +87,14 @@ test('детектор: запястья за верхним краем кадр
   const r = armsRaised(pose('up', 'up', { wristOut: true }), { aspect: 4 / 3 });
   assert(r.both, JSON.stringify(r.left));
 });
+test('детектор: и локти за верхним краем кадра (видимость 0.1, высоко над плечами) — засчитано; низко и невидимо — нет', () => {
+  const L = pose('up', 'up', { wristOut: true });
+  for (const i of [13, 14]) { L[i].y -= 0.1; L[i].visibility = 0.1; }
+  assert(armsRaised(L, { aspect: 4 / 3 }).both, 'локти за кадром');
+  const D = pose('down', 'down');
+  for (const i of [13, 14, 15, 16]) { D[i].visibility = 0.1; }
+  assert(armsRaised(D, { aspect: 4 / 3 }).count === 0, 'опущенные невидимые руки');
+});
 test('детектор: плечи не видны — ok=false, ничего не засчитано', () => {
   const r = armsRaised(pose('up', 'up', { noShoulders: true }), { aspect: 4 / 3 });
   assert(!r.ok && !r.both && r.count === 0, JSON.stringify(r));

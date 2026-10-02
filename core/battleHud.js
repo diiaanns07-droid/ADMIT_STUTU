@@ -1442,8 +1442,8 @@ export function createBattleHud({ canvas } = {}) {
     }
     // вспышка удара (если её не дала постобработка)
     const u = T - S;
-    if (u >= 0 && u < 0.35 && !U.flash) {
-      ctx.globalAlpha = (1 - u / 0.35) * (rm ? 0.2 : 0.55);
+    if (u >= 0 && u < 0.28 && !U.flash) {
+      ctx.globalAlpha = (1 - u / 0.28) * (rm ? 0.2 : 0.45);
       ctx.fillStyle = '#fff6e0'; ctx.fillRect(0, 0, W, H);
     }
     // титр «НЕБЕСНЫЙ СУД»

@@ -73,8 +73,11 @@ export function armsRaised(L, o = {}) {
   }
   const arm = (S, iE, iW, prev) => {
     const E = pt(L, iE), Wr = pt(L, iW);
-    if (!E || vis(E) < C.minVis) return none;
+    if (!E) return none;
     const elbowMargin = (S.y - E.y) / sw;
+    // локоть за верхним краем кадра (сидят близко к камере): MediaPipe достраивает его с низкой видимостью —
+    // верим, только если он явно высоко над плечом
+    if (vis(E) < C.minVis && !(vis(E) >= 0.05 && elbowMargin >= 0.3)) return none;
     let wristMargin = -1;
     if (Wr) {
       const raw = (noseY - Wr.y) / sw;
@@ -212,7 +215,7 @@ export function ultTimeScale(t, dur = 3.6, strikeAt = 2.3, reduced = false) {
  * (спереди-снизу → сбоку выше → за спиной высоко, взгляд в небо над Регентом) — удар — общий план.
  * maxR — камера не дальше этого радиуса от Регента (кольцо руин), ground(x,z) — высота земли.
  */
-export function ultCameraKeys({ p, b, dur = 3.6, strikeAt = 2.3, maxR = 11.6, ground = null, skyH = 15 } = {}) {
+export function ultCameraKeys({ p, b, dur = 3.6, strikeAt = 2.3, maxR = 11.6, ground = null, skyH = 17 } = {}) {
   const P = { x: fin(p && p.x) ? p.x : 0, y: fin(p && p.y) ? p.y : 0, z: fin(p && p.z) ? p.z : 6 };
   const B = { x: fin(b && b.x) ? b.x : 0, y: fin(b && b.y) ? b.y : 0, z: fin(b && b.z) ? b.z : 0 };
   let fx = B.x - P.x, fz = B.z - P.z;

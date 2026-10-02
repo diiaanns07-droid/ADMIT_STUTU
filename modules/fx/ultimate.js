@@ -16,7 +16,7 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 const smooth = (k) => { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); };
 
-const RIFT_Y = 23;          // м над Регентом: трещина в небе (видна из облёта камеры, core/ultimate.js)
+const RIFT_Y = 20;          // м над Регентом: трещина в небе (видна из облёта камеры, core/ultimate.js)
 const SWORD_LEN = 9.5;      // клинок (острие → гарда), м
 const GOLD = 0xffd98a, CORE = 0xfff6e0;
 
@@ -112,6 +112,17 @@ void main() {
   ${FX_OUT}
 }`;
 
+// Клинок из света: грани к камере — белые, скошенные — золотые (кристалл читается силуэтом и гранями).
+const FS_BLADE = /* glsl */`
+uniform float uAmt;
+varying float vRim;
+void main() {
+  float f = 1.0 - vRim;
+  vec3 col = mix(vec3(1.0, 0.62, 0.22) * 0.85, vec3(1.0, 0.97, 0.88) * 1.35, smoothstep(0.15, 0.85, f));
+  gl_FragColor = vec4(col * uAmt, uAmt);
+  ${FX_OUT}
+}`;
+
 // Клинок: вытянутая ромбовидная бипирамида (острие внизу, у гарды — шире), по оси Y от 0 до len.
 function bladeGeometry(THREE, len, halfW, halfT) {
   const tipY = 0, baseY = len, shoulderY = len * 0.12;
@@ -171,7 +182,11 @@ export function createUltimateFx({ THREE, scene, camera, getKit = null, groundY 
 
   // меч: клинок, гарда, рукоять, навершие — один материал «раскалённого света» (выше порога bloom)
   // клинок — чуть выше порога bloom (1.0), чтобы светился, но читался силуэтом; гарда и рукоять — глубже по тону
-  const swordMat = keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(0xfff0cf).multiplyScalar(1.25), transparent: true, opacity: 1, fog: false, toneMapped: false, depthWrite: true }));
+  const swordMat = keep(new THREE.ShaderMaterial({
+    uniforms: { uAmt: { value: 1 } }, vertexShader: VS_GLOW, fragmentShader: FS_BLADE,
+    side: THREE.FrontSide, depthTest: true, depthWrite: true, fog: false, ...premulBlend(THREE),
+  }));
+  swordMat.depthWrite = true;
   const guardMat = keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(0xe0a040).multiplyScalar(0.95), transparent: true, opacity: 1, fog: false, toneMapped: false }));
   const sword = new THREE.Group();
   sword.name = 'ult-sword';
@@ -180,7 +195,7 @@ export function createUltimateFx({ THREE, scene, camera, getKit = null, groundY 
   guard.position.y = SWORD_LEN + 0.17;
   const grip = new THREE.Mesh(keep(new THREE.CylinderGeometry(0.16, 0.2, 1.9, 10)), guardMat);
   grip.position.y = SWORD_LEN + 0.34 + 0.95;
-  const pommel = new THREE.Mesh(keep(new THREE.OctahedronGeometry(0.42, 0)), swordMat);
+  const pommel = new THREE.Mesh(keep(new THREE.OctahedronGeometry(0.42, 0)), guardMat);
   pommel.position.y = SWORD_LEN + 0.34 + 1.9 + 0.3;
   const glowMat = keep(new THREE.ShaderMaterial({
     uniforms: { uAmt: { value: 0 } }, vertexShader: VS_GLOW, fragmentShader: FS_GLOW,
@@ -209,8 +224,11 @@ export function createUltimateFx({ THREE, scene, camera, getKit = null, groundY 
     active: false, t: 0, dur: 3.6, strikeAt: 2.3, struck: false, sparkAcc: 0, motesAcc: 0,
     target: new THREE.Vector3(), ground: 0, hero: new THREE.Vector3(), heroGround: 0,
   };
-  const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
-  const _p = { x: 0, y: 0, z: 0 }, _q = { x: 0, y: 0, z: 0 };
+  const _up = new THREE.Vector3(0, 1, 0);
+  const _p = { x: 0, y: 0, z: 0 };
+  // опции частиц, которые идут каждый кадр (след меча, свет из трещины), — один объект на всё время
+  const TRAIL = { at: { x: 0, y: 0, z: 0 }, shape: 'box', box: { x: 0.4, y: SWORD_LEN * 0.5, z: 0.4 }, count: 0, dir: { x: 0, y: 1, z: 0 }, cone: 0.5, speed: [1, 4], life: [0.3, 0.7], size: [0.1, 0.02], ramp: 'gold', intensity: 2.2, drag: 1 };
+  const MOTES = { at: { x: 0, y: 0, z: 0 }, shape: 'box', box: { x: 9, y: 0.5, z: 3 }, count: 0, dir: { x: 0, y: -1, z: 0 }, cone: 0.15, speed: [6, 12], life: [1, 1.8], size: [0.09, 0.03], ramp: 'gold', intensity: 2, drag: 0.2 };
 
   function gy(x, z, d) {
     if (typeof groundY !== 'function') return d;
@@ -271,8 +289,8 @@ export function createUltimateFx({ THREE, scene, camera, getKit = null, groundY 
     k.emit({ at: _p, shape: 'ring', radius: 1.6, count: 60, dir: _up, cone: 0.9, speed: [4, 10], life: [0.8, 1.6], size: [0.22, 0.12], ramp: 'stone', blend: 'alpha', sprite: 'debris', gravity: 14, spin: [-6, 6], ground: s.ground });
     k.emit({ at: _p, shape: 'ring', radius: 2.2, count: 46, radial: 7, speed: [0.5, 2], life: [1.2, 2.2], size: [0.9, 2.6], ramp: 'dust', blend: 'alpha', sprite: 'smoke', drag: 1.6 });
     _p.y = s.ground + 3;
-    k.flash(_p, { color: CORE, size: [1.5, 9], dur: 0.45, intensity: 3.4, sprite: 'glow' });
-    k.flash(_p, { color: GOLD, size: [2, 7], dur: 0.35, intensity: 3, sprite: 'star' });
+    k.flash(_p, { color: CORE, size: [1.2, 6], dur: 0.32, intensity: 2.6, sprite: 'glow' });
+    k.flash(_p, { color: GOLD, size: [1.5, 5], dur: 0.28, intensity: 2.4, sprite: 'star' });
     k.light(_p, { color: 0xffe0a0, intensity: 1.4, range: 22, dur: 1.4, attack: 0.02 });
   }
 
@@ -292,7 +310,7 @@ export function createUltimateFx({ THREE, scene, camera, getKit = null, groundY 
     // столб: тонкий «прицел» перед ударом → широкий столб в момент удара → гаснет
     let pw = 0, pa = 0;
     if (T < S) { const a = smooth((T - (S - 0.85)) / 0.6); pw = 0.12 * a; pa = 0.5 * a; }
-    else { const u = T - S; pw = 0.12 + 1.15 * smooth(u / 0.1) * (1 - smooth((u - 0.2) / 0.7)); pa = (1 - smooth((u - 0.1) / 0.75)) * 1.1; }
+    else { const u = T - S; pw = 0.12 + 0.75 * smooth(u / 0.08) * (1 - smooth((u - 0.12) / 0.5)); pa = (1 - smooth((u - 0.05) / 0.5)) * 0.8; }
     pillar.visible = pa > 0.002;
     pillar.scale.set(Math.max(0.001, pw), RIFT_Y, Math.max(0.001, pw));
     pillarMat.uniforms.uAmt.value = pa * (rm() ? 0.6 : 1);
@@ -307,7 +325,7 @@ export function createUltimateFx({ THREE, scene, camera, getKit = null, groundY 
       sword.rotation.set(0, T * 0.15, 0);
       const fade = 1 - smooth((T - (D - 0.55)) / 0.5);
       const appear = smooth((T - (S - fallT)) / 0.15);
-      swordMat.opacity = appear * fade; guardMat.opacity = appear * fade;
+      swordMat.uniforms.uAmt.value = appear * fade; guardMat.opacity = appear * fade;
       glowMat.uniforms.uAmt.value = appear * fade * (T >= S ? 1.3 - 0.5 * smooth((T - S) / 0.6) : 0.9);
       sword.scale.setScalar(1 + 0.08 * smooth((T - (D - 0.55)) / 0.5));
       // след падения: искры вдоль клинка
@@ -316,9 +334,8 @@ export function createUltimateFx({ THREE, scene, camera, getKit = null, groundY 
         const n = Math.floor(s.sparkAcc);
         if (n > 0) {
           s.sparkAcc -= n;
-          _p.x = s.target.x; _p.y = y + SWORD_LEN * 0.5; _p.z = s.target.z;
-          _q.x = 0; _q.y = 1; _q.z = 0;
-          k.emit({ at: _p, shape: 'box', box: { x: 0.4, y: SWORD_LEN * 0.5, z: 0.4 }, count: n, dir: _q, cone: 0.5, speed: [1, 4], life: [0.3, 0.7], size: [0.1, 0.02], ramp: 'gold', intensity: 2.2, drag: 1 });
+          TRAIL.at.x = s.target.x; TRAIL.at.y = y + SWORD_LEN * 0.5; TRAIL.at.z = s.target.z; TRAIL.count = n;
+          k.emit(TRAIL);
         }
       }
     } else sword.visible = false;
@@ -327,8 +344,8 @@ export function createUltimateFx({ THREE, scene, camera, getKit = null, groundY 
     const u = T - S;
     const wa = waveA.material.uniforms, wb = waveB.material.uniforms;
     if (u >= 0) {
-      wa.uR.value = 1 + 15 * smooth(u / 0.9); wa.uW.value = 0.5 + 0.5 * u; wa.uAmt.value = (1 - smooth(u / 0.95)) * 1.4;
-      wb.uR.value = 0.5 + 22 * smooth(u / 0.5); wb.uW.value = 0.18; wb.uAmt.value = (1 - smooth(u / 0.5)) * 1.8;
+      wa.uR.value = 1 + 15 * smooth(u / 0.9); wa.uW.value = 0.4 + 0.4 * u; wa.uAmt.value = (1 - smooth(u / 0.95)) * 1.0;
+      wb.uR.value = 0.5 + 22 * smooth(u / 0.5); wb.uW.value = 0.15; wb.uAmt.value = (1 - smooth(u / 0.5)) * 1.3;
     } else { wa.uAmt.value = 0; wb.uAmt.value = 0; }
     waveA.scale.setScalar(Math.max(1, wa.uR.value + wa.uW.value * 4)); waveB.scale.setScalar(Math.max(1, wb.uR.value + wb.uW.value * 4));
     // шейдер кольца считает радиус в единицах геометрии — переводим в доли масштаба
@@ -343,12 +360,10 @@ export function createUltimateFx({ THREE, scene, camera, getKit = null, groundY 
       const n = Math.floor(s.motesAcc);
       if (n > 0) {
         s.motesAcc -= n;
-        _p.x = s.target.x; _p.y = s.ground + RIFT_Y - 1; _p.z = s.target.z;
-        _q.x = 0; _q.y = -1; _q.z = 0;
-        k.emit({ at: _p, shape: 'box', box: { x: 9, y: 0.5, z: 3 }, count: n, dir: _q, cone: 0.15, speed: [6, 12], life: [1, 1.8], size: [0.09, 0.03], ramp: 'gold', intensity: 2, drag: 0.2 });
+        MOTES.at.x = s.target.x; MOTES.at.y = s.ground + RIFT_Y - 1; MOTES.at.z = s.target.z; MOTES.count = n;
+        k.emit(MOTES);
       }
     }
-    _v.set(0, 0, 0); _w.set(0, 0, 0);   // (резерв: без аллокаций в кадре)
   }
 
   function reset() { s.active = false; s.t = 0; hideAll(); }

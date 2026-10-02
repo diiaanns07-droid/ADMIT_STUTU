@@ -1252,7 +1252,9 @@ function ultInput(input, now) {
   const g = ULT.gesture.push(pose, now, { armed: ultArmed() });
   ULT.g = g;
   if (g.fired) input.ultimate = true;
-  if (g.hint && !input.hint) input.hint = { code: g.hint, side: g.side, guess: null, tMs: now };
+  // руки над головой: подсказки кистей («у края кадра» и т. п.) сейчас мешают — только свои
+  if (g.phase === 'hold' || g.phase === 'fired' || g.phase === 'one') input.hint = null;
+  if (g.hint) input.hint = { code: g.hint, side: g.side, guess: null, tMs: now };
 }
 function ultScale(now) {
   const c = ULT.cine;
@@ -1319,11 +1321,14 @@ function ultTick(dtReal) {
 // В отладке (руки героя не повторяют руки игрока) на время сцены герой сам поднимает руки к небу
 const ULT_ARMS_UP = { valid: true, left: { upper: { x: -0.32, y: -0.95 }, fore: { x: -0.1, y: -0.99 } }, right: { upper: { x: 0.32, y: -0.95 }, fore: { x: 0.1, y: -0.99 } }, lean: 0, depth: 0 };
 function ultMirror(m) { return ULT.cine && !(m && m.valid) ? ULT_ARMS_UP : m; }
+const _ultView = { fury: 0, furyMax: 100, ready: false, gesture: null, debug: false, flash: false, cine: null };   // один объект на кадр HUD
 function ultView() {
   const s = lastSnapshot, P = s && s.player;
   if (!P || !Number.isFinite(P.fury)) return null;
-  return { fury: P.fury, furyMax: P.furyMax, ready: !!P.furyReady, gesture: ULT.g, debug: app.debug, flash: ULT.flashByPost,
-    cine: ULT.cine ? { t: ULT.cine.t, dur: ULT.cine.dur, strikeAt: ULT.cine.strikeAt, struck: ULT.cine.struck, amount: ULT.cine.amount, pct: ULT.cine.pct } : null };
+  const v = _ultView;
+  v.fury = P.fury; v.furyMax = P.furyMax; v.ready = !!P.furyReady; v.gesture = ULT.g; v.debug = app.debug; v.flash = ULT.flashByPost;
+  v.cine = ULT.cine;   // { t, dur, strikeAt, struck, amount, pct } — HUD только читает
+  return v;
 }
 
 // ---------------------------------------------------------------- [ТВИСТ «ОШИБКА»]
