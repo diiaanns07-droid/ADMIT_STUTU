@@ -3,105 +3,479 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ASHEN OATH — стенд модулей modules/fx (V6, не игра)</title>
+<title>ASHEN OATH — стенд магий ладонями (modules/fx, не игра)</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #0e1014; overflow: hidden; color: #cfc8b8; font: 12px/1.3 ui-monospace, monospace; }
+  html, body { margin: 0; height: 100%; background: #0e1014; overflow: hidden; color: #d8d2c4; font: 12px/1.35 system-ui, sans-serif; }
   canvas { display: block; }
-  #info { position: fixed; left: 8px; bottom: 8px; white-space: pre; background: rgba(10,12,16,.7); padding: 4px 6px; }
+  #panel { position: fixed; top: 6px; left: 6px; width: 290px; max-height: calc(100% - 12px); overflow: auto; padding: 8px; background: rgba(16,18,22,.88); border: 1px solid #3a3d44; }
+  #panel h1 { margin: 0 0 4px; font-size: 13px; color: #e8a14a; font-weight: 600; }
+  #panel h2 { margin: 8px 0 2px; font-size: 11px; color: #9aa4b4; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+  #panel .row { display: flex; flex-wrap: wrap; gap: 3px; }
+  #panel button { flex: 1 1 70px; padding: 4px 4px; background: #262a31; color: #d8d2c4; border: 1px solid #454a54; cursor: pointer; font: inherit; }
+  #panel button.big { flex: 1 1 120px; background: #3a2c1c; border-color: #8a6a3a; color: #ffe2b0; }
+  #panel button:hover { background: #333842; }
+  #panel label { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  #panel input[type=range] { flex: 1; }
+  #info { position: fixed; right: 6px; bottom: 6px; padding: 5px 8px; background: rgba(16,18,22,.82); font: 11px/1.35 ui-monospace, monospace; white-space: pre; }
+  #cap { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); padding: 6px 18px; font: 600 22px/1.2 Georgia, serif; color: #ffe6b8; text-shadow: 0 2px 8px #000; letter-spacing: .04em; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  #cap.on { opacity: 1; }
+  body.shot #panel, body.shot #info { display: none; }
 </style>
 <script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
-               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/" } }
+{ "imports": { "three": "../vendor/npm/three@0.185.1/build/three.module.min.js",
+               "three/addons/": "../vendor/npm/three@0.185.1/examples/jsm/",
+               "@pixiv/three-vrm": "../vendor/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js" } }
 </script>
 </head>
 <body>
+<div id="cap"></div>
+<div id="panel"><h1>Магия ладонями · modules/fx</h1><div id="groups"></div>
+  <h2>Параметры</h2>
+  <label>Сила (power) <input id="pw" type="range" min="0" max="1" step="0.05" value="1"><span id="pwv">1.00</span></label>
+  <label>Качество <select id="q"><option>low</option><option selected>medium</option><option>high</option></select></label>
+  <label><input id="rm" type="checkbox"> reducedMotion</label>
+  <label><input id="v6" type="checkbox" checked> V6 (fxMagic)</label>
+  <label><input id="pause" type="checkbox"> пауза (dt = 0)</label>
+</div>
 <div id="info"></div>
 <script type="module">
-// Стенд для отдельных модулей modules/fx/*.js. Сцена похожа на игровую: тёмный каменный пол,
-// герой-болванка в (0,0,6) лицом к Регенту в (0,0,0), камера за спиной как в бою.
-// ?demo=<путь к модулю> — модуль с export default async function(stand), который создаёт эффект
-// и может задать stand.onStep(dt, t). Детерминированное время: stand.run(sec).
+// Стенд магий ладонями (ASHEN W3): настоящая арена (modules/world.js), постобработка игры (core/postfx.js),
+// эффекты modules/effects.js + modules/fx. Бой — фейковая симуляция (не combat.js): события и снимок по контракту
+// №2 — 'sigil_cast' { sigil: 'gate'|'pillar', power }, player.sigilCharge 0..1, player.sigilAxis 'h'|'v'|null,
+// урон — 'boss_hit' { source: 'sigil', sigil }.
+// URL: ?shot=1 — без панели (Playwright), ?post=0 — без постобработки, ?world=0 — лёгкая сцена-болванка,
+//      ?quality=low|medium|high, ?rm=1, ?seq=show — показ по кругу (для видео), ?hero=1 — модель героя игры (C5).
+// ?demo=<путь к модулю> — прежний стенд отдельного модуля: export default async function(stand).
+// Протокол: window.__stand = { ready, play(name), run(sec), reset(), info(), measure(sec), set(k, v) }.
 import * as THREE from 'three';
 const qs = new URLSearchParams(location.search);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(1);
-renderer.setSize(innerWidth, innerHeight);
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-document.body.prepend(renderer.domElement);
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x151820);
-scene.fog = new THREE.Fog(0x151820, 22, 60);
-const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 400);
-scene.add(camera);
-scene.add(new THREE.HemisphereLight(0x8a98b0, 0x2a2420, 0.7));
-const key = new THREE.DirectionalLight(0xc8d6f0, 1.4); key.position.set(-6, 10, -8); scene.add(key);
-// пол: процедурная «плитка» (без внешних текстур)
-const tile = (() => {
-  const s = 128, d = new Uint8Array(s * s * 4);
-  for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
-    const i = (y * s + x) * 4, g = ((x % 64) < 2 || (y % 64) < 2) ? 40 : 70 + ((x * 7 + y * 13) % 17);
-    d[i] = g; d[i + 1] = g - 3; d[i + 2] = g - 6; d[i + 3] = 255;
+const SHOT = qs.has('shot');
+if (SHOT) document.body.classList.add('shot');
+
+if (qs.get('demo')) await moduleStand(); else await magicStand();
+
+// ======================================================================= стенд магий
+async function magicStand() {
+  const { config } = await import('../config.js');
+  const { createEffects } = await import('../modules/effects.js');
+  const useWorld = qs.get('world') !== '0';
+  const quality = qs.get('quality') || 'medium';
+  const settings = { ...config.defaultSettings, quality, volume: 0, reducedMotion: qs.has('rm'), fxMagic: !qs.has('nov6'), gestureMode: 'master' };
+  config.settings = settings;
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(SHOT ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  document.body.prepend(renderer.domElement);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(config.camera ? config.camera.fov || 58 : 58, innerWidth / innerHeight, 0.1, 1200);
+  scene.add(camera);
+
+  // ---------------------------------------------------------------- сцена: арена игры или болванки
+  let world = null, groundY = () => 0, anchors = null, heroModel = null;
+  const HERO = { x: 0, z: 7.4, yaw: Math.PI };
+  const dummy = {};
+  if (useWorld) {
+    const { createWorld } = await import('../modules/world.js');
+    world = createWorld({ THREE, scene, renderer, camera, config });
+    if (world.layout && typeof world.layout.groundY === 'function') groundY = world.layout.groundY;
+    anchors = () => (heroModel && heroModel.getAnchors ? heroModel.getAnchors() : world.getAnchors());
+    if (qs.has('hero') && world.hero) {
+      try {
+        const m = await import('../modules/heroModel.js');
+        if (m.configureHeroes) m.configureHeroes({ atmosphere: world.atmosphere, shading: settings.heroShading, quality, camera });
+        heroModel = m.createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, markers: world.hero.markers, atmosphere: world.atmosphere, shading: settings.heroShading, quality, hero: settings.hero, baseUrl: new URL('../assets/quaternius/', import.meta.url).href });
+      } catch (e) { console.warn('heroModel', e); heroModel = null; }
+    }
+  } else {
+    scene.background = new THREE.Color(0x151820);
+    scene.fog = new THREE.Fog(0x151820, 24, 70);
+    scene.add(new THREE.HemisphereLight(0x8a98b0, 0x2a2420, 0.75));
+    const key = new THREE.DirectionalLight(0xc8d6f0, 1.3); key.position.set(-6, 10, -8); scene.add(key);
+    scene.add(new THREE.Mesh(new THREE.CircleGeometry(45, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5a564e, roughness: 0.9 })));
+    const m = new THREE.MeshStandardMaterial({ color: 0x3b3431, roughness: 0.75 });
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.27, 1.0, 6, 12).translate(0, 0.85, 0), m));
+    g.add(new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10).translate(0, 1.62, 0), m));
+    const mk = (x, y, z) => { const o = new THREE.Object3D(); o.position.set(x, y, z); g.add(o); return o; };
+    dummy.a = { handR: mk(0.34, 1.4, -0.4), handL: mk(-0.34, 1.4, -0.4), chest: mk(0, 1.25, -0.12), head: mk(0, 1.62, 0), staffTip: mk(0.36, 1.7, -0.5), bowSocket: mk(-0.36, 1.45, -0.5) };
+    dummy.g = g; scene.add(g);
+    const bm = new THREE.MeshStandardMaterial({ color: 0x6a6c72, roughness: 0.6 });
+    const b = new THREE.Group();
+    b.add(new THREE.Mesh(new THREE.ConeGeometry(1.1, 3.4, 16).translate(0, 1.7, 0), bm));
+    b.add(new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 12).translate(0, 3.5, 0), bm));
+    scene.add(b);
+    anchors = () => dummy.a;
   }
-  const t = new THREE.DataTexture(d, s, s); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(12, 12); t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; return t;
-})();
-const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tile, roughness: 0.9, color: 0x9a948c }));
-scene.add(floor);
-const heroMat = new THREE.MeshStandardMaterial({ color: 0x3b3431, roughness: 0.75 });
-const hero = new THREE.Group();
-hero.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 1.0, 6, 12).translate(0, 0.85, 0), heroMat));
-hero.add(new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10).translate(0, 1.62, 0), heroMat));
-const handR = new THREE.Object3D(); handR.position.set(0.36, 1.35, -0.35); hero.add(handR);
-const handL = new THREE.Object3D(); handL.position.set(-0.36, 1.35, -0.35); hero.add(handL);
-const chest = new THREE.Object3D(); chest.position.set(0, 1.25, -0.1); hero.add(chest);
-const head = new THREE.Object3D(); head.position.set(0, 1.65, 0); hero.add(head);
-hero.position.set(0, 0, 6); hero.rotation.y = 0; // лицом к -Z (к Регенту)
-scene.add(hero);
-const bossMat = new THREE.MeshStandardMaterial({ color: 0x6a6c72, roughness: 0.6 });
-const boss = new THREE.Group();
-boss.add(new THREE.Mesh(new THREE.ConeGeometry(0.9, 3.2, 16).translate(0, 1.6, 0), bossMat));
-boss.add(new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12).translate(0, 3.3, 0), bossMat));
-boss.add(new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.07, 8, 32).translate(0, 3.4, -0.2), new THREE.MeshStandardMaterial({ color: 0x8a6a3a, metalness: 0.8, roughness: 0.4 })));
-scene.add(boss);
-// камера боя: за спиной героя над правым плечом, смотрит между героем и Регентом
-function placeCamera() {
-  camera.position.set(hero.position.x + 1.2, 2.75, hero.position.z + 4.9);
-  camera.lookAt(0.35, 1.9, 2.2);
-  camera.updateMatrixWorld();
-}
-placeCamera();
-const root = new THREE.Group(); root.name = 'fx-stand-root'; scene.add(root);
-let clock = 0;
-const stand = {
-  THREE, scene, camera, renderer, root, hero, boss,
-  anchors: { handR, handL, chest, head },
-  heroPos: hero.position, bossCore: new THREE.Vector3(0, 2.6, 0),
-  onStep: null, onRender: null,
-  get clock() { return clock; },
-  step(dt) { clock += dt; if (stand.onStep) stand.onStep(dt, clock); },
-  render() { placeCamera(); hero.updateMatrixWorld(true); if (stand.onRender) stand.onRender(); renderer.render(scene, camera); },
-  run(sec) { const n = Math.max(1, Math.round(sec * 60)); for (let i = 0; i < n; i++) { hero.updateMatrixWorld(true); stand.step(sec > 0 ? sec / n : 0); } stand.render(); },
-  play: (name) => (stand.onPlay ? stand.onPlay(name) : null),
-  info: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, programs: renderer.info.programs ? renderer.info.programs.length : 0, extra: stand.extraInfo ? stand.extraInfo() : null }),
-  measure(sec) {
-    return new Promise((res) => {
-      let n = 0, t0 = performance.now(), last = t0;
-      const f = (now) => { stand.step(Math.min(0.1, (now - last) / 1000)); last = now; stand.render(); n++; if (now - t0 < sec * 1000) requestAnimationFrame(f); else res({ fps: n * 1000 / (now - t0), ...stand.info() }); };
-      requestAnimationFrame(f);
+
+  const fx = createEffects({ THREE, scene, camera, renderer, config });
+  fx.setQuality(quality);
+  fx.setVolume(0);
+  fx.setAnchors(anchors);
+  fx.setGround((x, z) => groundY(x, z));
+
+  let postfx = null;
+  if (qs.get('post') !== '0') {
+    try {
+      const m = await import('../core/postfx.js');
+      postfx = m.createPostFX({ THREE, renderer, scene, camera, quality, reducedMotion: settings.reducedMotion });
+      postfx.setSize(innerWidth, innerHeight, renderer.getPixelRatio());
+      if (postfx.whenReady) await postfx.whenReady;
+      if (typeof postfx.setMode === 'function') postfx.setMode('playing', settings);
+    } catch (e) { console.warn('postfx', e); postfx = null; }
+  }
+  let rig = null;
+  if (useWorld) { try { const m = await import('../core/cameraRig.js'); rig = m.createCameraRig(config.camera); } catch (e) { rig = null; } }
+
+  // ---------------------------------------------------------------- фейковая симуляция боя
+  const v3 = (x, y, z) => ({ x, y, z });
+  let eid = 0, pid = 0;
+  const S = {
+    time: 0, pending: [], timers: [], projectiles: [],
+    charge: null,            // { axis, t0, dur, then }
+    bastion: 0, stun: 0, mark: 0, heroAction: 'idle', bossAction: 'idle', pvp: false, seq: null,
+  };
+  const emit = (type, position, data = {}) => S.pending.push({ id: 's' + (++eid), type, position: position ? { ...position } : null, data });
+  const later = (sec, fn) => S.timers.push({ t: S.time + sec, fn });
+  const _w = new THREE.Vector3();
+  const heroFeet = () => v3(HERO.x, groundY(HERO.x, HERO.z), HERO.z);
+  function anchorPos(name) {
+    const a = anchors && anchors();
+    const map = { handR: ['handR', 'heroHandR'], handL: ['handL', 'heroHandL'], chest: ['chest', 'heroChest'] }[name] || [name];
+    if (a) for (const k of map) { const o = a[k]; if (o && typeof o.getWorldPosition === 'function') { o.getWorldPosition(_w); return v3(_w.x, _w.y, _w.z); } if (o && typeof o.x === 'number') return v3(o.x, o.y, o.z); }
+    const f = heroFeet(); return v3(f.x, f.y + 1.25, f.z - 0.1);
+  }
+  const heroChest = () => anchorPos('chest');
+  const bossCore = () => v3(0, groundY(0, 0) + 2.6, 0);
+  const power = () => +document.getElementById('pw').value;
+  let caption = null, capT = 0;
+  function say(text, sec = 1.6) { const el = document.getElementById('cap'); el.textContent = text; el.classList.add('on'); capT = sec; caption = text; }
+
+  function bossHit(amount, point, extra) { emit('boss_hit', point || bossCore(), { amount, source: 'rune', ...extra }); S.bossAction = 'hit'; later(0.3, () => { S.bossAction = S.stun > 0 ? 'stunned' : 'idle'; }); }
+  function fly(kind, speed, extra = {}) {
+    const from = extra.from || anchorPos('handR'), to = bossCore();
+    const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z, l = Math.hypot(dx, dy, dz) || 1;
+    const p = { id: kind + ':' + (++pid), owner: 'player', kind, position: { ...from }, velocity: v3(dx / l * speed, dy / l * speed, dz / l * speed), radius: extra.radius || 0.2, ...extra };
+    delete p.from;
+    S.projectiles.push(p);
+    return p;
+  }
+
+  // заряд печати: ладони сомкнуты → снимок player.sigilCharge растёт; then() — выпуск
+  function startCharge(axis, dur, then) { S.charge = { axis, t0: S.time, dur, then }; S.heroAction = 'cast'; }
+  function castGate(pw) {
+    const me = heroChest(), to = bossCore();
+    emit('sigil_cast', me, { sigil: 'gate', power: pw, from: me, to, duration: 5, reduction: 0.6 });
+    S.heroAction = 'cast'; later(0.4, () => { S.heroAction = 'idle'; });
+    S.bastion = 5; emit('bastion_start', heroFeet(), { duration: 5 });
+    later(0.5, () => bossHit(Math.round(40 + 60 * pw), to, { source: 'sigil', sigil: 'gate' }));
+  }
+  function castPillar(pw) {
+    const me = heroChest(), to = bossCore();
+    emit('sigil_cast', me, { sigil: 'pillar', power: pw, from: me, to, stun: 1.5 + pw });
+    S.heroAction = 'cast'; later(0.4, () => { S.heroAction = 'idle'; });
+    later(0.5, () => {
+      bossHit(Math.round(50 + 70 * pw), to, { source: 'sigil', sigil: 'pillar' });
+      S.stun = 1.5 + pw; emit('boss_stunned', to, { duration: S.stun, source: 'pillar' });
     });
-  },
-};
-window.__stand = stand;
-stand.ready = (async () => {
-  const demo = qs.get('demo');
-  if (demo) { const m = await import(demo); await m.default(stand); }
-  stand.render();
-  return true;
-})();
-if (qs.has('live')) {
-  let last = performance.now();
-  const loop = (now) => { stand.step(Math.min(0.1, (now - last) / 1000)); last = now; stand.render(); requestAnimationFrame(loop); };
-  requestAnimationFrame(loop);
+  }
+  const RUNE = { ignis: { amount: 45 }, fulgur: { stun: 1.2, cancelled: 0 }, stella: { count: 5, amount: 90 } };
+  function castRune(rune) {
+    const me = heroChest(), to = bossCore();
+    emit('rune_cast', me, { rune, from: me, to, ...RUNE[rune] });
+    emit('player_cast', me, { ability: 'rune', rune });
+    if (rune === 'ignis') later(0.45, () => bossHit(45, to, { rune }));
+    if (rune === 'fulgur') later(0.12, () => { bossHit(35, to, { rune }); S.stun = 1.2; emit('boss_stunned', to, { duration: 1.2, source: 'fulgur' }); });
+    if (rune === 'stella') for (let i = 0; i < 5; i++) later(0.5 + i * 0.12, () => { emit('rune_hit', to, { rune, index: i, amount: 18 }); bossHit(18, to, { rune }); });
+  }
+  const ACTIONS = {
+    chargeGate: () => { say('Ладони сомкнуты → разведи по горизонтали'); startCharge('h', 1.3, () => { say('«Врата бури»'); castGate(power()); }); },
+    chargePillar: () => { say('Ладони сомкнуты → разведи по вертикали'); startCharge('v', 1.3, () => { say('«Столп небес»'); castPillar(power()); }); },
+    holdH: () => startCharge('h', 1.3, null),
+    holdV: () => startCharge('v', 1.3, null),
+    holdNone: () => startCharge(null, 1.3, null),
+    release: () => { if (S.charge) { const c = S.charge; S.charge = null; S.heroAction = 'idle'; if (c.then) c.then(); } },
+    cancel: () => { S.charge = null; S.heroAction = 'idle'; },
+    gate: () => castGate(power()),
+    pillar: () => castPillar(power()),
+    burst: () => { const me = heroChest(); emit('burst', me, { amount: 40, power: power(), both: false, cleared: 0, from: me, to: bossCore(), radius: 7 }); later(0.1, () => bossHit(40, bossCore(), { source: 'burst' })); },
+    sphere: () => { const from = v3(heroChest().x, heroChest().y + 0.05, heroChest().z - 0.5); emit('player_cast', from, { ability: 'throw', kind: 'sphere', size: 0.8, power: power(), projectileId: 'sphere:' + (pid + 1) }); fly('sphere', 16, { from, radius: 0.5, size: 0.8 }); },
+    prism: () => { const from = v3(heroChest().x, heroChest().y + 0.05, heroChest().z - 0.5); emit('player_cast', from, { ability: 'throw', kind: 'prism', size: 0.8, power: power(), projectileId: 'prism:' + (pid + 1) }); fly('prism', 17, { from, radius: 0.45, size: 0.8 }); },
+    ok: () => { for (let i = 0; i < 6; i++) later(i * 0.16, () => { const h = anchorPos('handR'); const p = fly('bolt', 24, { from: h, radius: 0.16 }); emit('player_cast', h, { ability: 'bolt', projectileId: p.id, velocity: p.velocity }); }); },
+    spark: () => { const h = anchorPos('handR'); const p = fly('spark', 38, { from: h, radius: 0.12 }); emit('player_cast', h, { ability: 'spark', projectileId: p.id, velocity: p.velocity }); },
+    ignis: () => castRune('ignis'), fulgur: () => castRune('fulgur'), stella: () => castRune('stella'),
+    clap: () => { const me = heroChest(); emit('sigil_cast', me, { sigil: 'clap', radius: 7, cleared: 0, stunned: true, from: me, to: bossCore() }); later(0.08, () => bossHit(25, bossCore(), { source: 'sigil', sigil: 'clap' })); },
+    delta: () => { const me = heroChest(); emit('sigil_cast', me, { sigil: 'delta', ticks: 4, amount: 160, cleared: 0, from: me, to: bossCore() }); for (let i = 0; i < 4; i++) later(0.3 + i * 0.22, () => { emit('sigil_hit', bossCore(), { sigil: 'delta', index: i, amount: 40, from: heroChest() }); bossHit(40, bossCore(), { source: 'sigil', sigil: 'delta' }); }); },
+    hit: () => bossHit(30, v3((Math.random() - 0.5) * 1.2, groundY(0, 0) + 1.6 + Math.random() * 1.6, 0.9), { source: 'bolt' }),
+    show: () => runSeq(SHOW),
+    reset: () => resetSim(),
+  };
+  // показ по кругу (видео 10–15 с): заряд → врата, заряд → столп, выброс, сфера, OK
+  const SHOW = [
+    [0.0, 'chargeGate'], [3.8, 'chargePillar'], [7.6, 'burst'], [8.8, 'sphere'], [10.0, 'ok'], [11.6, 'ignis'],
+  ];
+  function runSeq(list) { S.seq = { list: list.slice(), t0: S.time }; }
+  function resetSim() {
+    Object.assign(S, { time: 0, pending: [], timers: [], projectiles: [], charge: null, bastion: 0, stun: 0, mark: 0, heroAction: 'idle', bossAction: 'idle', seq: null });
+    fx.reset();
+  }
+
+  function stepSim(dt) {
+    S.time += dt;
+    for (const k of ['bastion', 'stun', 'mark']) if (S[k] > 0) S[k] = Math.max(0, S[k] - dt);
+    if (S.seq) { while (S.seq.list.length && S.time - S.seq.t0 >= S.seq.list[0][0]) ACTIONS[S.seq.list.shift()[1]](); if (!S.seq.list.length) S.seq = null; }
+    const due = S.timers.filter((t) => t.t <= S.time); S.timers = S.timers.filter((t) => t.t > S.time);
+    for (const t of due) t.fn();
+    if (S.charge && S.charge.then && S.time - S.charge.t0 >= S.charge.dur + 0.35) ACTIONS.release();
+    for (const p of S.projectiles) p.position = v3(p.position.x + p.velocity.x * dt, p.position.y + p.velocity.y * dt, p.position.z + p.velocity.z * dt);
+    const core = bossCore();
+    S.projectiles = S.projectiles.filter((p) => {
+      const d = Math.hypot(p.position.x - core.x, (p.position.y - core.y) * 0.6, p.position.z - core.z);
+      if (d < 1.1) {
+        const pos = { ...p.position };
+        emit('projectile_impact', pos, { owner: 'player', kind: p.kind, projectileId: p.id, result: 'boss', direction: p.velocity });
+        bossHit(p.kind === 'sphere' || p.kind === 'prism' ? 60 : p.kind === 'spark' ? 14 : 9, pos, { source: p.kind === 'sphere' || p.kind === 'prism' ? 'throw' : p.kind });
+        return false;
+      }
+      return Math.hypot(p.position.x, p.position.z) < 40;
+    });
+    if (capT > 0) { capT -= dt; if (capT <= 0) document.getElementById('cap').classList.remove('on'); }
+  }
+  // ладони болванки: сомкнуты при заряде, разводятся по оси перед выпуском
+  function poseDummy() {
+    if (!dummy.a) return;
+    const c = S.charge, k = c ? Math.min(1, (S.time - c.t0) / c.dur) : 0;
+    const spread = c ? 0.09 + (S.time - c.t0 > c.dur ? Math.min(1, (S.time - c.t0 - c.dur) / 0.35) * 0.3 : 0) : 0.34;
+    if (c && c.axis === 'v') { dummy.a.handR.position.set(0.02, 1.32 + spread, -0.42); dummy.a.handL.position.set(-0.02, 1.32 - spread, -0.42); }
+    else if (c) { dummy.a.handR.position.set(spread, 1.32, -0.42); dummy.a.handL.position.set(-spread, 1.32, -0.42); }
+    else { dummy.a.handR.position.set(0.34, 1.4, -0.4); dummy.a.handL.position.set(-0.34, 1.4, -0.4); }
+    void k;
+  }
+
+  function snapshot() {
+    const hp = heroFeet();
+    const c = S.charge;
+    const charge = c ? Math.min(1, (S.time - c.t0) / c.dur) : 0;
+    return {
+      status: 'playing', time: S.time, mode: 'boss',
+      player: {
+        position: hp, yaw: HERO.yaw, velocity: v3(0, 0, 0), hp: 80, maxHp: 100, energy: 70, maxEnergy: 100,
+        action: S.heroAction, invulnerable: false, shielding: false, conjure: null,
+        sigilCharge: charge, sigilAxis: c ? c.axis : null,
+        burstCharge: 0, warded: false, bastion: S.bastion > 0, bastionRemaining: S.bastion,
+        vortex: false, regen: false, lockedOn: true, encounter: 'engaged', moveMode: 'steer',
+      },
+      boss: { position: v3(0, groundY(0, 0), 0), yaw: 0, hp: 600, maxHp: 1000, stage: 1, action: S.stun > 0 ? 'stunned' : S.bossAction, stunned: S.stun > 0, stunRemaining: S.stun, slowed: false, marked: S.mark > 0, markRemaining: S.mark },
+      cooldowns: { dashRemaining: 0, dashTotal: 1, burstRemaining: 0, burstTotal: 6 },
+      projectiles: S.projectiles.map((q) => ({ id: q.id, owner: q.owner, kind: q.kind, position: { ...q.position }, velocity: { ...q.velocity }, radius: q.radius, size: q.size })),
+      telegraphs: [], stats: { damageDealt: 0, damageTaken: 0, dodges: 0, blocks: 0 }, opponent: null,
+      lockTarget: { position: v3(0, groundY(0, 0), 0), kind: 'boss' },
+    };
+  }
+
+  // ---------------------------------------------------------------- кадр
+  const ZERO = v3(0, 0, 0);
+  function placeCamera(dt) {
+    const imp = settings.reducedMotion ? ZERO : fx.getCameraImpulse();
+    if (rig) {
+      const s = lastSnap;
+      const c = rig.update(dt, { player: s.player.position, playerYaw: s.player.yaw, velocity: s.player.velocity, boss: s.boss.position, engaged: true, impulse: imp, colliders: world.layout ? world.layout.colliders : null, groundY: world.layout ? world.layout.groundY : null, steer: true, reducedMotion: settings.reducedMotion });
+      camera.position.set(c.position.x, c.position.y, c.position.z);
+      camera.lookAt(c.target.x, c.target.y, c.target.z);
+    } else {
+      camera.position.set(HERO.x + 1.2 + imp.x, 2.75 + imp.y, HERO.z + 4.9 + imp.z);
+      camera.lookAt(0.35, 1.9, 2.2);
+    }
+    camera.updateMatrixWorld();
+  }
+  const perf = { upd: 0, ren: 0, n: 0, updAvg: 0, renAvg: 0, fps: 0, frames: 0, t0: performance.now(), hitstop: 0 };
+  let lastSnap = snapshot();
+  let hitStopLeft = 0, firstFrame = true;
+  // render=false — шаг без отрисовки (run(sec) рисует только последний кадр: на программном рендере мир тяжёлый)
+  function frame(dt, render = true) {
+    const paused = document.getElementById('pause').checked;
+    let events = [];
+    let ts = 1;
+    if (hitStopLeft > 0) { ts = 0.04; hitStopLeft -= dt * 1000; }
+    const sdt = paused ? 0 : dt * ts;
+    if (!paused) { stepSim(sdt); lastSnap = snapshot(); events = S.pending; S.pending = []; }
+    if (dummy.g) { dummy.g.position.set(HERO.x, 0, HERO.z); dummy.g.rotation.y = HERO.yaw - Math.PI; poseDummy(); dummy.g.updateMatrixWorld(true); }
+    if (world) { try { world.update(sdt, lastSnap, events); } catch (e) { console.warn('world.update', e); } }
+    if (heroModel) { try { heroModel.update(sdt, lastSnap, events); } catch (e) { console.warn('heroModel.update', e); } }
+    placeCamera(firstFrame ? 0 : dt); firstFrame = false;
+    const t0 = performance.now();
+    fx.update(sdt, lastSnap, events);
+    const hs = fx.takeHitStop(); if (hs > 0) { hitStopLeft = Math.max(hitStopLeft, hs); perf.hitstop = hs; }
+    const t1 = performance.now();
+    if (render) { if (postfx && postfx.enabled) postfx.render(sdt || 1 / 60); else renderer.render(scene, camera); }
+    const t2 = performance.now();
+    perf.upd += t1 - t0; perf.ren += t2 - t1; perf.n++;
+    if (perf.n >= 10) { perf.updAvg = perf.upd / perf.n; perf.renAvg = perf.ren / perf.n; perf.upd = perf.ren = 0; perf.n = 0; }
+  }
+  function info() {
+    const d = fx.getDebugInfo();
+    const k = d.v6 && d.v6.kit;
+    return {
+      fps: Math.round(perf.fps), updMs: +perf.updAvg.toFixed(3), cpuRenderMs: +perf.renAvg.toFixed(2),
+      calls: renderer.info.render.calls, tris: renderer.info.render.triangles, programs: renderer.info.programs ? renderer.info.programs.length : null,
+      geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures,
+      v6Particles: k ? k.particles : 0, v6Cap: k ? k.cap : 0, actors: k ? k.actors : 0, lights: k ? k.lights : 0,
+      sub: d.v6 ? d.v6.sub : null, failed: d.v6 ? d.v6.loaded.failed : null,
+      events: d.events, hitstop: perf.hitstop, quality: d.quality, reduced: d.reducedMotion, time: +S.time.toFixed(2),
+      charge: lastSnap.player.sigilCharge, caption,
+    };
+  }
+
+  // ---------------------------------------------------------------- UI
+  const GROUPS = [
+    ['Новые магии ладонями', [['chargeGate', '⟷ Заряд → Врата бури', 1], ['chargePillar', '↕ Заряд → Столп небес', 1], ['gate', 'Врата сразу'], ['pillar', 'Столп сразу']]],
+    ['Заряд (держать)', [['holdH', 'ось ⟷'], ['holdV', 'ось ↕'], ['holdNone', 'без оси'], ['release', 'выпустить'], ['cancel', 'отмена']]],
+    ['Остальное', [['burst', 'Выброс'], ['sphere', 'Сфера'], ['prism', 'Призма'], ['ok', '«OK» ×6'], ['spark', 'Искра'], ['ignis', 'ignis'], ['fulgur', 'fulgur'], ['stella', 'stella'], ['clap', 'Хлопок'], ['delta', 'Дельта'], ['hit', 'Удар по Регенту']]],
+    ['Показ', [['show', '▶ Показ 13 с', 1], ['reset', 'Сброс']]],
+  ];
+  const groupsEl = document.getElementById('groups');
+  for (const [title, items] of GROUPS) {
+    const h = document.createElement('h2'); h.textContent = title; groupsEl.appendChild(h);
+    const row = document.createElement('div'); row.className = 'row';
+    for (const [n, label, big] of items) { const b = document.createElement('button'); b.textContent = label; if (big) b.className = 'big'; b.onclick = () => ACTIONS[n](); row.appendChild(b); }
+    groupsEl.appendChild(row);
+  }
+  const pwEl = document.getElementById('pw');
+  pwEl.oninput = () => { document.getElementById('pwv').textContent = (+pwEl.value).toFixed(2); };
+  if (qs.has('power')) { pwEl.value = qs.get('power'); pwEl.oninput(); }
+  document.getElementById('q').value = quality;
+  document.getElementById('rm').checked = settings.reducedMotion;
+  document.getElementById('v6').checked = settings.fxMagic;
+  const setQ = (q) => { settings.quality = q; fx.setQuality(q); if (world && world.setQuality) world.setQuality(q); if (postfx && postfx.setQuality) postfx.setQuality(q); document.getElementById('q').value = q; };
+  document.getElementById('q').onchange = (e) => setQ(e.target.value);
+  document.getElementById('rm').onchange = (e) => { settings.reducedMotion = e.target.checked; };
+  document.getElementById('v6').onchange = (e) => { settings.fxMagic = e.target.checked; };
+  window.addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); if (postfx) postfx.setSize(innerWidth, innerHeight, renderer.getPixelRatio()); });
+  // клавиши: 1 — врата, 2 — столп, 3 — выброс, 4 — сфера, 5 — «OK», Пробел — показ
+  window.addEventListener('keydown', (e) => {
+    const k = { Digit1: 'chargeGate', Digit2: 'chargePillar', Digit3: 'burst', Digit4: 'sphere', Digit5: 'ok', Space: 'show' }[e.code];
+    if (k) { e.preventDefault(); ACTIONS[k](); }
+  });
+
+  let last = performance.now(), infoT = 0;
+  function loop(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    frame(dt);
+    perf.frames++;
+    if (now - perf.t0 >= 1000) { perf.fps = perf.frames * 1000 / (now - perf.t0); perf.frames = 0; perf.t0 = now; }
+    infoT += dt;
+    if (infoT > 0.25 && !SHOT) {
+      infoT = 0; const i = info();
+      document.getElementById('info').textContent = `three r${THREE.REVISION}  ${i.quality}${i.reduced ? ' · reducedMotion' : ''}  ${world ? 'арена' : 'болванки'}${postfx ? ' + postfx' : ''}\nfps ${i.fps}  effects.update ${i.updMs} мс  render(CPU) ${i.cpuRenderMs} мс\nчастицы V6 ${i.v6Particles}/${i.v6Cap}  акторы ${i.actors}  свет ${i.lights}\ndraw calls ${i.calls}  tris ${i.tris}  geo ${i.geometries}  tex ${i.textures}\nзаряд ${i.charge.toFixed(2)}  сбой V6: ${(i.failed || []).join(',') || '—'}\nсобытия ${i.events.processed} ошибки ${i.events.errors}  хит-стоп ${i.hitstop} мс`;
+    }
+    if (!SHOT || live) requestAnimationFrame(loop);
+  }
+  const live = qs.has('live') || qs.get('seq') === 'show';
+  const stand = {
+    ready: (async () => { if (fx.v6 && fx.v6.ready) { try { await fx.v6.ready; } catch (e) { /* ignore */ } } if (heroModel && heroModel.ready) { try { await heroModel.ready; } catch (e) { /* ignore */ } } return true; })(),
+    play(name) { if (ACTIONS[name]) ACTIONS[name](); else console.warn('нет действия', name); },
+    run(sec) { const n = Math.max(1, Math.round(sec * 60)); for (let i = 0; i < n; i++) frame(sec > 0 ? sec / n : 0, i === n - 1); },
+    set(k, v) { if (k === 'power') { pwEl.value = v; pwEl.oninput(); } else if (k === 'quality') setQ(v); else if (k === 'reducedMotion') settings.reducedMotion = !!v; else if (k === 'fxMagic') settings.fxMagic = !!v; },
+    reset: resetSim, info,
+    measure(sec) {
+      return new Promise((res) => {
+        let n = 0; const t0 = performance.now(); let l = t0;
+        const f = (now) => { frame(Math.min(0.1, (now - l) / 1000)); l = now; n++; if (now - t0 < sec * 1000) requestAnimationFrame(f); else res({ fps: n * 1000 / (now - t0), ...info() }); };
+        requestAnimationFrame(f);
+      });
+    },
+    actions: Object.keys(ACTIONS),
+  };
+  window.__stand = stand;
+  window.__bench = { fx, S, ACTIONS, frame, renderer, scene, camera, THREE, settings, snapshot, world, postfx };
+  await stand.ready;
+  stand.run(0.5);   // мир «прогрет»: камера на месте, тени, первые кадры
+  if (qs.get('seq') === 'show') { runSeq(SHOW); S.seq.loop = true; }
+  if (!SHOT || live) requestAnimationFrame(loop);
+}
+
+// ======================================================================= стенд отдельного модуля (?demo=)
+// Сцена похожа на игровую: тёмный каменный пол, герой-болванка в (0,0,6) лицом к Регенту в (0,0,0), камера за спиной.
+// Модуль: export default async function(stand) создаёт эффект и может задать stand.onStep(dt, t). Время: stand.run(sec).
+async function moduleStand() {
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(1);
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  document.body.prepend(renderer.domElement);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x151820);
+  scene.fog = new THREE.Fog(0x151820, 22, 60);
+  const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 400);
+  scene.add(camera);
+  scene.add(new THREE.HemisphereLight(0x8a98b0, 0x2a2420, 0.7));
+  const key = new THREE.DirectionalLight(0xc8d6f0, 1.4); key.position.set(-6, 10, -8); scene.add(key);
+  const tile = (() => {
+    const s = 128, d = new Uint8Array(s * s * 4);
+    for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+      const i = (y * s + x) * 4, g = ((x % 64) < 2 || (y % 64) < 2) ? 40 : 70 + ((x * 7 + y * 13) % 17);
+      d[i] = g; d[i + 1] = g - 3; d[i + 2] = g - 6; d[i + 3] = 255;
+    }
+    const t = new THREE.DataTexture(d, s, s); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(12, 12); t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; return t;
+  })();
+  scene.add(new THREE.Mesh(new THREE.CircleGeometry(40, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tile, roughness: 0.9, color: 0x9a948c })));
+  const heroMat = new THREE.MeshStandardMaterial({ color: 0x3b3431, roughness: 0.75 });
+  const hero = new THREE.Group();
+  hero.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 1.0, 6, 12).translate(0, 0.85, 0), heroMat));
+  hero.add(new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10).translate(0, 1.62, 0), heroMat));
+  const mk = (x, y, z) => { const o = new THREE.Object3D(); o.position.set(x, y, z); hero.add(o); return o; };
+  const handR = mk(0.36, 1.35, -0.35), handL = mk(-0.36, 1.35, -0.35), chest = mk(0, 1.25, -0.1), head = mk(0, 1.65, 0);
+  hero.position.set(0, 0, 6);
+  scene.add(hero);
+  const bossMat = new THREE.MeshStandardMaterial({ color: 0x6a6c72, roughness: 0.6 });
+  const boss = new THREE.Group();
+  boss.add(new THREE.Mesh(new THREE.ConeGeometry(0.9, 3.2, 16).translate(0, 1.6, 0), bossMat));
+  boss.add(new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12).translate(0, 3.3, 0), bossMat));
+  boss.add(new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.07, 8, 32).translate(0, 3.4, -0.2), new THREE.MeshStandardMaterial({ color: 0x8a6a3a, metalness: 0.8, roughness: 0.4 })));
+  scene.add(boss);
+  function placeCamera() {
+    camera.position.set(hero.position.x + 1.2, 2.75, hero.position.z + 4.9);
+    camera.lookAt(0.35, 1.9, 2.2);
+    camera.updateMatrixWorld();
+  }
+  placeCamera();
+  const root = new THREE.Group(); root.name = 'fx-stand-root'; scene.add(root);
+  let clock = 0;
+  const stand = {
+    THREE, scene, camera, renderer, root, hero, boss,
+    anchors: { handR, handL, chest, head },
+    heroPos: hero.position, bossCore: new THREE.Vector3(0, 2.6, 0),
+    onStep: null, onRender: null,
+    get clock() { return clock; },
+    step(dt) { clock += dt; if (stand.onStep) stand.onStep(dt, clock); },
+    render() { placeCamera(); hero.updateMatrixWorld(true); if (stand.onRender) stand.onRender(); renderer.render(scene, camera); },
+    run(sec) { const n = Math.max(1, Math.round(sec * 60)); for (let i = 0; i < n; i++) { hero.updateMatrixWorld(true); stand.step(sec > 0 ? sec / n : 0); } stand.render(); },
+    play: (name) => (stand.onPlay ? stand.onPlay(name) : null),
+    info: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, programs: renderer.info.programs ? renderer.info.programs.length : 0, extra: stand.extraInfo ? stand.extraInfo() : null }),
+    measure(sec) {
+      return new Promise((res) => {
+        let n = 0, t0 = performance.now(), last = t0;
+        const f = (now) => { stand.step(Math.min(0.1, (now - last) / 1000)); last = now; stand.render(); n++; if (now - t0 < sec * 1000) requestAnimationFrame(f); else res({ fps: n * 1000 / (now - t0), ...stand.info() }); };
+        requestAnimationFrame(f);
+      });
+    },
+  };
+  window.__stand = stand;
+  stand.ready = (async () => {
+    const m = await import(qs.get('demo'));
+    await m.default(stand);
+    stand.render();
+    return true;
+  })();
+  if (qs.has('live')) {
+    let last = performance.now();
+    const loop = (now) => { stand.step(Math.min(0.1, (now - last) / 1000)); last = now; stand.render(); requestAnimationFrame(loop); };
+    requestAnimationFrame(loop);
+  }
 }
 </script>
 </body>

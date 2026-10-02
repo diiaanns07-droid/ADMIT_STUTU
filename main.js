@@ -1560,6 +1560,7 @@ window.__ASHEN__ = Object.freeze({
   netSession: () => netSession,                                    // [NET] для тестов и №3
   hand: () => (handZone ? handZone.getDebug() : null), // [HAND] лук и магия рукой
   fx: () => { try { return JSON.parse(JSON.stringify(effects.getDebugInfo())); } catch (e) { return null; } }, // [VFX] QA: частицы и слой V6
+  fxLayer: () => (effects && effects.v6) || null, // [W3-МАГИЯ] QA: слой V6 (события магий и подмена заряда для видео)
   heroStep: (dt, snap, events) => { if (heroModel) heroModel.update(dt, snap, events || []); return heroModel ? heroModel.state() : null; }, // QA: шаг анимации без rAF
   squats: () => squats.getDebug(),
   technique: () => (techView ? JSON.parse(JSON.stringify({ ...techView, synthHands: null, synthPose: null, focus: techView.focus ? { ...techView.focus, pictogram: !!techView.focus.pictogram } : null })) : null), // [ТВИСТ «ОШИБКА»] QA тренажёра
