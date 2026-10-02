@@ -29,9 +29,18 @@ export function register(fx) {
   // предвыделенные опции (мутируются в кадре)
   const emCore = { at: new V3(), count: 1, speed: 0, life: [0.09, 0.14], size: [0.3, 0.26], sizeVar: 0.15, ramp: 'whiteHold', intensity: 2.6, sprite: 'glow', fadeIn: 0.2, essential: true, rival: false };
   const emHalo = { at: new V3(), count: 1, speed: [0, 0.05], life: [0.16, 0.24], size: [0.8, 0.7], sizeVar: 0.2, ramp: 'gold', intensity: 1.1, alpha: 0.55, sprite: 'glow', fadeIn: 0.3, essential: true, rival: false };
-  const emSpark = { at: new V3(), shape: 'shell', radius: 0.5, count: 1, radial: -1.6, speed: [0, 0.1], tangent: 0, life: [0.26, 0.34], size: [0.05, 0.015], ramp: 'gold', intensity: 2.6, sprite: 'spark', stretch: 0.035, fadeIn: 0.25, essential: true, rival: false };
+  const emSpark = { at: new V3(), shape: 'shell', radius: 0.5, count: 1, radial: -1.6, speed: [0, 0.1], tangent: 0, life: [0.26, 0.34], size: [0.08, 0.02], ramp: 'gold', intensity: 2.6, sprite: 'spark', stretch: 0.035, fadeIn: 0.25, essential: true, rival: false };
   const emMote = { at: new V3(), shape: 'sphere', radius: 0.18, count: 1, speed: [0.05, 0.25], life: [0.3, 0.5], size: [0.035, 0.01], ramp: 'storm', intensity: 2.2, sprite: 'dot', turb: 0.6, essential: true, rival: false };
-  const emSlit = { at: new V3(), shape: 'line', to: new V3(), radius: 0.008, count: 1, speed: [0, 0.03], life: [0.07, 0.12], size: [0.07, 0.05], ramp: 'storm', intensity: 3, sprite: 'glow', fadeIn: 0.1, essential: true, rival: false };
+  const emSlit = { at: new V3(), shape: 'line', to: new V3(), radius: 0.01, count: 1, speed: [0, 0.03], life: [0.07, 0.12], size: [0.12, 0.08], ramp: 'storm', intensity: 3, sprite: 'glow', fadeIn: 0.1, essential: true, rival: false };
+  // ядро и ореол — вспышки со сдвигом к камере: камера за спиной, ладони у груди закрыты телом героя
+  const flCore = { ramp: 'whiteHold', size: [0.5, 0.45], curve: 0.5, dur: 0.11, intensity: 3, sprite: 'glow', pull: 0.75, fadeIn: 0.3, rival: false };
+  const flHalo = { ramp: 'gold', size: [1.2, 1.1], curve: 0.5, dur: 0.16, intensity: 1.4, alpha: 0.7, sprite: 'glow', pull: 0.7, fadeIn: 0.35, rival: false };
+  const flStar = { ramp: 'gold', size: [0.9, 0.8], curve: 0.5, dur: 0.12, intensity: 2.2, sprite: 'star', pull: 0.8, fadeIn: 0.3, spin: 0, rot: 0, rival: false };
+  // аура вокруг героя и кольцо света у ног — видны и со спины
+  const emAura = { at: new V3(), shape: 'ring', normal: UP, radius: 0.55, count: 1, dir: UP, cone: 0.15, speed: [0.6, 1.4], life: [0.6, 0.9], size: [0.07, 0.02], ramp: 'gold', intensity: 2.4, sprite: 'spark', stretch: 0.03, drag: 0.4, orbit: 2.2, center: new V3(), essential: true, rival: false };
+  const emFloor = { at: new V3(), shape: 'ring', normal: UP, radius: 0.9, count: 1, dir: UP, cone: 0.05, speed: [0, 0.05], radial: -0.4, life: [0.35, 0.5], size: [0.16, 0.1], ramp: 'gold', intensity: 1.6, sprite: 'glow', alpha: 0.8, essential: true, rival: false };
+  const _ft = new V3();
+  let accFlash = 0, accAura = 0, accFloor = 0, starRot = 0;
   const lightOpt = { color: 0xffe2a8, intensity: 0.5, range: 5, dur: 0.42, attack: 0.45, follow: null };
   const followCore = () => S.pos;
   lightOpt.follow = followCore;
@@ -75,10 +84,46 @@ export function register(fx) {
       if (hum && typeof L.loopCtl === 'function' && kit.clock >= ctlT) { ctlT = kit.clock + 0.05; L.loopCtl(HUM, ch); }
     } else if (hum) { hum = false; if (typeof L.loopStop === 'function') L.loopStop(HUM, 0.12); }
     lastCharge = ch;
-    if (!S.active || !(dt > 0)) { accCore = accHalo = accSpark = accMote = accSlit = 0; return; }
+    if (!S.active || !(dt > 0)) { accCore = accHalo = accSpark = accMote = accSlit = accFlash = accAura = accFloor = 0; return; }
 
     const dec = decor(), sf = soft();
     const pulse = 0.85 + 0.15 * Math.sin(kit.clock * (9 + 10 * ch));
+    // ядро/ореол/звезда — каждые ~1/18 с (вспышки не масштабируются качеством: по одной на слой)
+    accFlash += dt * 18;
+    if (accFlash >= 1) {
+      accFlash -= Math.floor(accFlash);
+      const s = (0.35 + 0.85 * ch) * pulse;
+      flCore.size[0] = s; flCore.size[1] = s * 0.92; flCore.intensity = (2.4 + 1.4 * ch) * sf;
+      kit.flash(S.pos, flCore);
+      const hs = 1 + 1.9 * ch;
+      flHalo.size[0] = hs; flHalo.size[1] = hs * 0.95; flHalo.ramp = axis === 'h' ? 'storm' : 'gold'; flHalo.intensity = (0.9 + 0.9 * ch) * sf;
+      kit.flash(S.pos, flHalo);
+      if (ch > 0.25) {
+        starRot += 0.35; const ss = 0.6 + 1.6 * ch;
+        flStar.size[0] = ss; flStar.size[1] = ss * 0.9; flStar.rot = starRot; flStar.ramp = axis === 'h' ? 'storm' : 'gold';
+        flStar.intensity = (1.2 + 1.6 * ch) * sf;
+        kit.flash(S.pos, flStar);
+      }
+    }
+    // аура: искры поднимаются по спирали вокруг героя
+    fx.anchor('feet', _ft, false);
+    accAura += dt * (10 + 40 * ch) * dec;
+    let na = Math.floor(accAura);
+    if (na > 0) {
+      accAura -= na;
+      emAura.at.set(_ft.x, _ft.y + 0.15, _ft.z); emAura.center.copy(emAura.at); emAura.count = na;
+      emAura.radius = 0.5 + 0.25 * ch; emAura.ramp = axis === 'h' ? 'storm' : 'gold';
+      kit.emit(emAura);
+    }
+    // кольцо света у ног — сжимается к герою
+    accFloor += dt * (20 + 50 * ch) * dec;
+    na = Math.floor(accFloor);
+    if (na > 0) {
+      accFloor -= na;
+      emFloor.at.set(_ft.x, _ft.y + 0.04, _ft.z); emFloor.count = na; emFloor.radius = 0.7 + 0.6 * ch;
+      emFloor.ramp = axis === 'h' ? 'storm' : 'gold'; emFloor.intensity = (1 + 1.2 * ch) * sf;
+      kit.emit(emFloor);
+    }
     // ядро: неподвижные тающие точки — сплошной шар, растёт и разгорается с зарядом
     accCore += dt * 70;
     let n = Math.floor(accCore);
@@ -105,7 +150,7 @@ export function register(fx) {
     n = Math.floor(accSpark);
     if (n > 0) {
       accSpark -= n;
-      const r = 0.38 + 0.4 * ch;
+      const r = 0.6 + 0.8 * ch;
       emSpark.at.copy(S.pos); emSpark.count = n; emSpark.radius = r;
       emSpark.radial = -r / 0.3; emSpark.ramp = axis === 'h' ? 'storm' : 'gold';
       kit.emit(emSpark);
@@ -122,7 +167,7 @@ export function register(fx) {
       n = Math.floor(accSlit);
       if (n > 0) {
         accSlit -= n;
-        const half = 0.22 + 0.55 * ch;
+        const half = 0.35 + 1.25 * ch;
         if (axis === 'h') { fx.right(_rt, false); _a.copy(_rt).multiplyScalar(half); }
         else _a.set(0, half, 0);
         emSlit.at.copy(S.pos).sub(_a); emSlit.to.copy(S.pos).add(_a);
