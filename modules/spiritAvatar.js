@@ -1309,10 +1309,11 @@ export function createSpiritAvatar(opts = {}) {
     st.slitBurst = Math.max(0, st.slitBurst - dt / 0.55);
     castCool = Math.max(0, castCool - dt);
     const b = st.slitBurst, grow = b > 0 ? 1 - b * b : 0;
-    st.slitHalf = 0.1 + 0.34 * st.slit + (st.rm ? 0.8 : 1.6) * grow;
-    st.slitR = 0.016 + 0.02 * st.slit + 0.03 * b;
+    // разлёт каста — до ширины плеч в каждую сторону: над ареной вспышка не дотягивается до Регента
+    st.slitHalf = 0.1 + 0.34 * st.slit + (st.rm ? 0.6 : 1.0) * grow;
+    st.slitR = 0.016 + 0.02 * st.slit + 0.025 * b;
     const shimmer = st.rm ? 1 : 0.88 + 0.12 * Math.sin(st.time * 27);
-    st.slitI = Math.max(st.slit * shimmer, b * Math.sqrt(b) * 1.8);
+    st.slitI = Math.max(st.slit * shimmer, b * Math.sqrt(b) * 1.3);
     if (st.slitI < 0.005 && !slitOn) st.slitAxis = null;
     const e2 = st.colElem2;
     st.slitCol[0] = e2[0] * 1.2 + 0.45; st.slitCol[1] = e2[1] * 1.2 + 0.45; st.slitCol[2] = e2[2] * 1.2 + 0.45;

@@ -345,7 +345,7 @@ test('sigil_cast: ладони вспыхивают, щель разлетает
   assert.equal(inf.rings, 3, 'кольца: две ладони и центр');
   run(sp, 0.25, () => close());
   let d = span(sp.info());
-  assert.ok(d.x > 1.5 && d.y < 0.02, `разлёт в стороны ${d.x}×${d.y}`);
+  assert.ok(d.x > 1.3 && d.y < 0.02, `разлёт в стороны ${d.x}×${d.y}`);
   run(sp, 1.2, () => close());
   assert.ok(sp.info().slit < 0.01 && sp.info().rings === 0, 'вспышка погасла');
   // «Столп небес»: жест на кадре раньше события боя — вспышка одна
@@ -356,7 +356,7 @@ test('sigil_cast: ладони вспыхивают, щель разлетает
   assert.equal(inf.rings, 3, 'одна вспышка на каст');
   run(sp, 0.25, () => close());
   d = span(sp.info());
-  assert.ok(d.y > 1.5 && d.x < 0.02, `разлёт вверх-вниз ${d.x}×${d.y}`);
+  assert.ok(d.y > 1.3 && d.x < 0.02, `разлёт вверх-вниз ${d.x}×${d.y}`);
   // отказ (откат, энергия): жест есть, события боя нет — в бою только вспышка ладоней, щель не разлетается
   run(sp, 1.2, () => close());
   sp.frame(DT, (T += 16), { ...close(), input: { valid: true, sigil: 'gate', sigilPower: 0.8 }, events: [{ id: 'd1', type: 'ability_denied', data: { reason: 'cooldown', sigil: 'gate' } }] });
