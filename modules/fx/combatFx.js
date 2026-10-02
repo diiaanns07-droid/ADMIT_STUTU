@@ -230,7 +230,8 @@ export function register(fx) {
   const SH_R = 1.0, SH_FWD = 0.85;
   function mkShield(side) {
     // [W4-УДАР] dmg — износ от ударов (гаснет), broken — сек до нового раскрытия после пролома, breakT — когда пролом
-    const S = { side, h: null, open: 0, on: false, flash: 0, acc: 0, pos: new V3(), f: new V3(), r: new V3(), dmg: 0, broken: 0, breakT: -9 };
+    const S = { side, h: null, open: 0, on: false, flash: 0, acc: 0, pos: new V3(), f: new V3(), r: new V3(), dmg: 0, broken: 0, breakT: -9, breakWhy: '',
+      blockT: -9, blockP: new V3(), blockK: 0.5 };
     S.st = { pos: S.pos, normal: S.f, radius: SH_R, open: 0, yaw: 0, intensity: 1, damage: 0 };
     return S;
   }
@@ -314,8 +315,11 @@ export function register(fx) {
   const _sp = new V3();
   // пролом щита: why — 'pierce' (удар сквозь щит), 'drain' (блок исчерпал энергию), 'pvp', 'fizzle' (иссяк сам)
   function breakShield(S, at, strength, why) {
-    if (kit.clock - S.breakT < 0.25) return;   // блок и shield_end одного удара — один пролом
-    S.breakT = kit.clock;
+    // один удар — один пролом (блок + shield_end, shield_break + player_hit); но тихое осыпание того же кадра
+    // (PvP: shield_end приходит раньше shield_break) сильный пролом дополняет — вспышкой, светом и рывком
+    const again = kit.clock - S.breakT < 0.25;
+    if (again && (S.breakWhy !== 'fizzle' || why === 'fizzle')) return;
+    S.breakT = kit.clock; S.breakWhy = why;
     const remote = S.side === 1, P = remote ? RIV : GOLD, ramp = remote ? 'rival' : 'gold';
     shieldFrame(S);
     const p = at && hasVec(at) ? _sp.set(at.x, at.y, at.z) : _sp.copy(S.pos);
@@ -325,8 +329,11 @@ export function register(fx) {
     // сам щит: ячейки осыпаются, пластины разлетаются (на low пластин нет — больше частиц)
     let plates = false;
     if (S.h && typeof S.h.shatter === 'function' && S.open > 0.05) {
-      shatO.point = p; shatO.strength = k; shatO.ground = feetY;
-      try { S.h.shatter(shatO); plates = !lowQ(); } catch (e) { plates = false; }
+      if (S.h.broken) plates = !lowQ();
+      else {
+        shatO.point = p; shatO.strength = k; shatO.ground = feetY;
+        try { S.h.shatter(shatO); plates = !lowQ(); } catch (e) { plates = false; }
+      }
     }
     S.broken = soft ? 0.35 : 0.55; S.flash = 1; S.dmg = 0;
     emShard.at = p; emShard.dir.copy(S.f); emShard.ramp = ramp; emShard.rival = remote; emShard.ground = feetY + 0.02;
@@ -381,7 +388,8 @@ export function register(fx) {
       decSlide.pos.set(fy.x, emSlide.at.y - 0.06, fy.z); decSlide.cap = decalCap();
       try { fx.decals.spawn(decSlide); } catch (e) { /* ignore */ }
     }
-    // блок исчерпал энергию — щит проломлен
+    // блок исчерпал энергию — щит проломлен (PvP гасит щит уже при ≤ 0,5 — поймает shield_end этого кадра)
+    S.blockT = kit.clock; S.blockP.copy(p); S.blockK = strength;
     if (isNum(d.energyAfter) && d.energyAfter <= 0 && !d.ward && !d.bastion) breakShield(S, p, strength, 'drain');
     kit.hitstop(20);
     if (remote) {
@@ -395,7 +403,13 @@ export function register(fx) {
   });
 
   // [W4-УДАР] щит иссяк сам (без удара) — тихое осыпание; PvP: соперник проломил наш щит
-  fx.on('shield_end', (ev, d) => { if (d && d.reason === 'depleted') breakShield(SH[0], null, 0.3, 'fizzle'); }, (d) => !fx.isRemote(d));
+  fx.on('shield_end', (ev, d) => {
+    if (!d || d.reason !== 'depleted') return;
+    const S = SH[0];
+    // блок этого же кадра выпил энергию — это пролом ударом, а не тихое осыпание
+    if (kit.clock - S.blockT < 0.02) breakShield(S, S.blockP, S.blockK, 'drain');
+    else breakShield(S, null, 0.3, 'fizzle');
+  }, (d) => !fx.isRemote(d));
   fx.on('shield_break', (ev, d) => { breakShield(SH[0], fx.evPos(ev, _q), 1, 'pvp'); }, (d) => !fx.isRemote(d));
 
   // ================================================================== 4) ПАРИРОВАНИЕ И ИДЕАЛЬНОЕ УКЛОНЕНИЕ

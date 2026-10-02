@@ -262,9 +262,12 @@ export function register(fx) {
   const strength = (amount) => clamp((amount - 6) / 74, 0, 1);    // 6 (болт) → 0, 80+ → 1
 
   // ============================================================ [W4-УДАР] сила удара: кольцо, punch, след, крит, добивание
-  const _g = new V3(), _h = new V3(), _gd = new V3();
+  const _g = new V3(), _h = new V3();
   const ringO = { pos: _g, normal: undefined, r0: 0.3, r1: 3, dur: 0.45, color: 0, hot: 0, intensity: 1.8, thickness: 0.18, dustAmount: 1.2, distort: 0.7, wall: undefined, rival: 0 };
   const sphO = { pos: _h, r0: 0.3, r1: 3, dur: 0.4, color: 0, hot: 0, intensity: 1.2, distort: 0.8, rival: 0 };
+  // второе (отложенное) кольцо добивания — свой объект: общий ringO/_g за 80 мс может занять другой удар
+  const ringFin = { pos: new V3(), r0: 0.2, r1: 5, dur: 0.5, color: 0, hot: 0, intensity: 1.1, thickness: 0.24, dustAmount: 2, distort: 0.7, wall: undefined, rival: 0 };
+  const ringFinGo = () => { if (fx.shock) { try { fx.shock.ring(ringFin); } catch (e) { /* ignore */ } } };
   const decO = { pos: _g, radius: 1, kind: 'scorch', life: 6, color: 0, hot: 0, intensity: 1.4, rival: 0, tag: 'hit', cap: 4, merge: 0.6, rot: undefined };
   const eDust = { at: _g, shape: 'ring', radius: 0.4, normal: undefined, dir: { x: 0, y: 1, z: 0 }, cone: 0.5, radial: 3.2, count: 10, speed: [0.2, 0.7], life: [0.7, 1.2], size: [0.35, 1.0], ramp: 'dust', blend: 'alpha', alpha: 0.7, intensity: 1, sprite: 'smoke', drag: 2.4, gravity: -0.1, turb: 0.3, spin: [-0.6, 0.6], essential: false, rival: false };
   const eRubble = { at: _g, shape: 'disk', radius: 0.6, dir: { x: 0, y: 1, z: 0 }, cone: 0.6, count: 8, speed: [2, 4.5], life: [0.5, 0.9], size: [0.07, 0.05], sizeVar: 0.5, ramp: 'stone', blend: 'alpha', intensity: 1.0, sprite: 'debris', gravity: 9.8, drag: 0.5, spin: [-9, 9], ground: 0, essential: false, rival: false };
@@ -313,7 +316,7 @@ export function register(fx) {
     // 3) экранный рывок: 30–45 и крит — наш; ≥ 45 его уже дал cinemaFeed (в момент урона), выбросу, руне и печати —
     //    main.js в кадр каста (второй, слабее и позже, читался бы как «двойной» удар)
     if (fin) pulse('punch', 0.9, p);
-    else if (OWN_PUNCH[src] !== 1 && (crit || amount < HIT_TIER.cine)) pulse('punch', clamp(0.22 + (amount - 30) / 60 + (crit ? 0.2 : 0), 0.2, 0.6), p);
+    else if (OWN_PUNCH[src] !== 1 && amount < HIT_TIER.cine) pulse('punch', clamp(0.22 + (amount - 30) / 60 + (crit ? 0.2 : 0), 0.2, 0.6), p);
     if (own && !fin) return;
     // 4) кольцо ударной волны и пыль по земле под Регентом
     groundSpot(_g, p, dir);
@@ -326,7 +329,8 @@ export function register(fx) {
         ringO.dustAmount = fin ? 2 : 1 + 0.6 * k; ringO.distort = lo ? 0 : 0.7; ringO.wall = lo ? 0 : undefined; ringO.rival = rv;
         try { fx.shock.ring(ringO); } catch (e) { /* ignore */ }
         if (fin) {
-          kit.after(0.08, () => { if (!fx.shock) return; ringO.r0 = 0.2; ringO.r1 = 5 * sf; ringO.dur = 0.5; ringO.intensity = 1.1; ringO.thickness = 0.24; try { fx.shock.ring(ringO); } catch (e) { /* ignore */ } });
+          ringFin.pos.copy(_g); ringFin.r1 = 5 * sf; ringFin.color = ringO.color; ringFin.hot = ringO.hot; ringFin.distort = ringO.distort; ringFin.wall = ringO.wall; ringFin.rival = rv;
+          kit.after(0.08, ringFinGo);
           if (!lo) { _h.copy(p); sphO.r1 = 4.2 * sf; sphO.intensity = 0.8; sphO.color = P.hot; sphO.hot = P.core; sphO.rival = rv; try { fx.shock.sphere(sphO); } catch (e) { /* ignore */ } }
         }
       }

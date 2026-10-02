@@ -209,7 +209,7 @@ void main() {
   // [W4-УДАР] пролом: ячейки вспыхивают и осыпаются от точки пролома наружу
   float gone = 0.0;
   if (uBreak.w > 0.5) {
-    float bt = length(cc - uBreak.xy) / max(uCap, 0.1) * 0.75 + h1 * 0.25;
+    float bt = length(cc - uBreak.xy) / max(uCap + length(uBreak.xy), 0.1) * 0.75 + h1 * 0.25;   // до дальнего края
     float bk = uBreak.z * 1.25;
     gone = step(bt, bk);
     float pre = smoothstep(bt - 0.18, bt, bk) * (1.0 - gone);
@@ -219,7 +219,7 @@ void main() {
   float rimL = ln(abs(capD - 0.014), 0.005) + ln(abs(capD - 0.042), 0.0022) * 0.6;
   Lc += (col * fres * 0.55 * cv + hot * rimL * 1.5 * uRim + col * exp(-max(capD, 0.0) / 0.06) * 0.25 * uRim) * uOpen
     * (1.0 - step(0.5, uBreak.w) * smoothstep(0.3, 0.9, uBreak.z));   // [W4-УДАР] пролом гасит и кромку
-  Lc += hot * (cr * 2.6 + flash * 1.3) + mix(col, hot, 0.5) * cg * 0.55;
+  Lc += (hot * (cr * 2.6 + flash * 1.3) + mix(col, hot, 0.5) * cg * 0.55) * (1.0 - gone);   // [W4-УДАР] осыпавшиеся — без трещин
   Lc *= uI * uFade * (ndv < 0.0 ? uBack : 1.0);
   float dA = SQ > 1 ? (1.0 - glass) * 0.06 * cv * uFade * (1.0 - gone) : 0.0;
   gl_FragColor = vec4(fxRival(Lc, uRival), dA);
@@ -278,7 +278,7 @@ ${FX_RIVAL}
 void main() {
   if (vK.x >= 1.0) discard;
   vec2 a = abs(vQ);
-  float hx = max(a.x * 0.8660254 + a.y * 0.5, a.y);           // шестиугольник (вершины на ±y)
+  float hx = max(a.x, a.x * 0.5 + a.y * 0.8660254) * 1.1547005;   // шестиугольник с вершинами на ±y: рёбра — 1
   float edge = smoothstep(0.62, 0.96, hx);
   float fade = pow(1.0 - vK.x, 1.4) * smoothstep(0.0, 0.05, vK.x + 0.02);
   vec3 L = vHot * (edge * 1.9 + vK.z * 0.9) * vK.w + vCol * 0.28 + vHot * exp(-vK.x * 9.0) * 1.2;
