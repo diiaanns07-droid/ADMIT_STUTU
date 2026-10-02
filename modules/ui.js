@@ -321,7 +321,7 @@ const TUTORIAL = [
   {
     key: 'both',
     title: 'Кулак и руны',
-    gesture: 'Правый кулак подержите и резко раскройте — выброс. Правым указательным рисуйте в воздухе, держа фигуру прямо: ▲ ϟ ○ ★ @ ∞ ^ V ⧗ ℓ, в конце замрите.',
+    gesture: 'Правый кулак подержите и резко раскройте — выброс. Правым указательным рисуйте в воздухе, держа фигуру прямо: ▲ ϟ ○ ★ @ ∞ ^ ∨ ⧗ ℓ, в конце замрите.',
     effect: 'Копьё, оглушение, лечение, звездопад, вихрь, вечность, иглы, жатва, замедление Регента, сброс откатов.',
     svg: svgWrap(
       burstRays() +
@@ -616,7 +616,7 @@ function normCosts(c) {
 
 const RUNE_RU = { ignis: 'ИГНИС ▲', fulgur: 'ФУЛЬГУР ϟ', orbis: 'ОРБИС ○', stella: 'СТЕЛЛА ★', spira: 'СПИРА @', lemnis: 'ЛЕМНИСКА ∞', caret: 'АКУС ^', vee: 'МЕССИС V', clepsydra: 'КЛЕПСИДРА ⧗', alpha: 'АЛЬФА ℓ' };
 const SIGIL_RU = { clap: 'ХЛОПОК', gate: 'ВРАТА', frame: 'РАМКА', delta: 'ДЕЛЬТА', cor: 'СЕРДЦЕ' };
-const SHAPE_RU = { pinch: 'ЩЕПОТЬ', point: 'УКАЗАТЕЛЬНЫЙ', fist: 'КУЛАК', open: 'ЛАДОНЬ', victory: 'V', unknown: 'В КАДРЕ' };
+const SHAPE_RU = { pinch: 'ЩЕПОТЬ', point: 'УКАЗАТЕЛЬНЫЙ', fist: 'КУЛАК', open: 'ЛАДОНЬ', victory: 'ДВА ПАЛЬЦА', unknown: 'В КАДРЕ' };
 const READ_ERR_MS = 4200;      // «ОШИБКА» держится столько же, сколько карточка подсказки battleHud
 const CHEAT_KEY = 'ashen-oath.cheat.v1';
 
@@ -2356,7 +2356,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       basic: el('div', { class: 'ao-book-pane', role: 'tabpanel', id: `${uid}-book-basic`, 'aria-labelledby': `${uid}-book-tab-basic` },
         el('p', { class: 'ao-lead', text: 'Эти жесты учит тренажёр «Научись за 60 секунд» перед боем. Их хватает, чтобы победить.' }), basic),
       adv: el('div', { class: 'ao-book-pane', role: 'tabpanel', id: `${uid}-book-adv`, 'aria-labelledby': `${uid}-book-tab-adv`, hidden: true },
-        el('p', { class: 'ao-lead', text: 'Рывок, искра, рассечение, парирование, руны ▲ ϟ ○ ★ @ ∞ ^ V ⧗ ℓ, печати двумя руками, лук и стихии.' }), grid),
+        el('p', { class: 'ao-lead', text: 'Рывок, искра, рассечение, парирование, руны ▲ ϟ ○ ★ @ ∞ ^ ∨ ⧗ ℓ, печати двумя руками, лук и стихии.' }), grid),
     };
     for (const [key, label] of TABS) {
       const t = el('button', { type: 'button', class: 'ao-book-tab', role: 'tab', id: `${uid}-book-tab-${key}`, 'aria-controls': `${uid}-book-${key}`, 'aria-selected': key === 'basic' ? 'true' : 'false', 'data-ui-local': '', text: label });

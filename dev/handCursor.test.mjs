@@ -134,6 +134,16 @@ test('щепоть на кнопке — мгновенный клик', () => {
   ok(pinchRatio(at(0, 0, { pinch: true }).right, 4 / 3) < 0.3 && pinchRatio(at(0, 0).right, 4 / 3) > 0.5, 'длина щепоти');
 });
 
+test('щепоть при редких кадрах камеры (кадр раз в 0,5 с) — тоже клик', () => {
+  const core = createCursorCore();
+  let r = run(core, rep(3, () => at(400, 330)), { dt: 500 });
+  ok(r.clicks.length === 0 || r.clicks[0].how === 'dwell');
+  const c2 = createCursorCore();
+  r = run(c2, rep(2, () => at(400, 330)), { dt: 300 });
+  r = run(c2, [at(400, 330, { pinch: true })], { t0: r.t, dt: 500 });
+  ok(r.clicks.length === 1 && r.clicks[0].how === 'pinch', JSON.stringify(r.clicks));
+});
+
 test('«OK», поднесённый к кнопке уже сведённым, щепотью не кликает', () => {
   const core = createCursorCore();
   const r = run(core, rep(12, () => at(400, 330, { pinch: true })));

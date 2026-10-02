@@ -25,7 +25,7 @@ export const CURSOR_DEFAULTS = Object.freeze({
   pinchOn: 0.3,            // |большой − указательный| / длина ладони: меньше — щепоть
   pinchOff: 0.5,           // больше — пальцы разжаты (гистерезис)
   pinchHoverMs: 150,       // щепоть кликает цель, на которой кольцо простояло хотя бы столько
-  pinchFreshMs: 1500,      // и только если пальцы были разжаты недавно (не «OK», поднесённый к кнопке)
+  pinchFreshMs: 1500,      // и только если пальцы были разжаты в прошлом кадре или недавно (не «OK», поднесённый к кнопке)
   pinchLookbackMs: 120,    // цель — та, что была под кольцом чуть раньше (палец сдвигается при щепоти)
   pinchFreezeMs: 250,      // столько после щепоти кольцо стоит на месте (кончик пальца уезжает), потом снова следует
   // рамка досягаемости в ширинах плеч (ось x — от правого плеча наружу, y — от линии плеч вверх)
@@ -117,12 +117,12 @@ export function createCursorCore(opts = {}) {
   const st = {
     lastT: null, seenAt: -1e9, visible: false, x: 0, y: 0, fx: null, dx: 0, dy: 0,
     box: null, targetId: null, hoverSince: 0, dwell: 0, dwellMs: 0, lockedId: null, cooldownUntil: -1e9,
-    pinched: false, pinchAt: -1e9, openAt: -1e9, hist: [], clicks: 0, lastHow: null,
+    pinched: false, pinchAt: -1e9, openAt: -1e9, prevOpen: false, hist: [], clicks: 0, lastHow: null,
   };
   const out = { visible: false, x: 0, y: 0, targetId: null, progress: 0, disabled: false, pinched: false, click: null, how: null };
 
   function reset() {
-    st.visible = false; st.fx = null; st.targetId = null; st.dwell = 0; st.lockedId = null; st.pinched = false; st.hist.length = 0; st.box = null;
+    st.visible = false; st.fx = null; st.targetId = null; st.dwell = 0; st.lockedId = null; st.pinched = false; st.prevOpen = false; st.hist.length = 0; st.box = null;
   }
 
   function filter(x, y, dt) {
@@ -167,6 +167,7 @@ export function createCursorCore(opts = {}) {
           if (!st.pinched && pr < cfg.pinchOn) { st.pinched = true; st.pinchAt = t; onPinch(t, f); }
           else if (st.pinched && pr > cfg.pinchOff) { st.pinched = false; st.openAt = t; }
           else if (!st.pinched && pr > cfg.pinchOff) st.openAt = t;
+          st.prevOpen = pr > cfg.pinchOff;   // для следующего кадра: щепоть из разжатых пальцев — даже при редких кадрах камеры
         }
         const frozen = f.pinch !== false && st.pinched && t - st.pinchAt < cfg.pinchFreezeMs;
         if (!frozen || !st.visible) {
@@ -197,7 +198,7 @@ export function createCursorCore(opts = {}) {
   }
 
   function onPinch(t, f) {
-    if (f.pinch === false || t < st.cooldownUntil || t - st.openAt > cfg.pinchFreshMs) return;
+    if (f.pinch === false || t < st.cooldownUntil || (!st.prevOpen && t - st.openAt > cfg.pinchFreshMs)) return;
     // цель — та, что была под кольцом pinchLookbackMs назад и простояла там pinchHoverMs
     let id = st.targetId;
     for (let i = st.hist.length - 1; i >= 0; i--) if (t - st.hist[i].t >= cfg.pinchLookbackMs) { id = st.hist[i].id; break; }
