@@ -161,7 +161,8 @@ const key = async (page, code, ms = 80) => { await page.keyboard.down(code); awa
   const scr = await page.evaluate(() => window.__ASHEN__.screen);
   if (scr === 'tutorial') {
     const n0 = (await said(page)).length;
-    await key(page, 'KeyH', 300); await sleep(1200);
+    await key(page, 'KeyH', 300);
+    await page.waitForFunction((n) => window.__voiceLog.length > n, n0, { timeout: 8000 }).catch(() => {});
     const after = (await said(page)).slice(n0);
     const shown = await page.evaluate(() => { const c = document.querySelector('[data-voice-hint]'); return c && c.getAttribute('data-voice-hint'); });
     const phrase = shown ? HINT_PHRASES[shown.split('|')[0]] : null;
@@ -241,6 +242,15 @@ const key = async (page, code, ms = 80) => { await page.keyboard.down(code); awa
   const noteText = await page.evaluate(() => { const n = document.querySelector('.ao-panel--pause .ao-voice__note'); return n && !n.hidden ? n.textContent : null; });
   check('нет русского: в паузе строка «Русского голоса в системе нет…»', pp && pp.text === 'Нет русского голоса' && /русского голоса в системе нет/i.test(noteText || ''), JSON.stringify({ pp, noteText }));
   await page.screenshot({ path: join(OUT, 'voice-pause-no-ru.png') });
+  // режим презентации: колонка настроек паузы узкая — кнопки переносятся, панель не уезжает вбок (самый широкий случай: без звука)
+  await page.keyboard.press('KeyM'); await sleep(300);
+  await page.keyboard.press('KeyP'); await sleep(1500);
+  const ov = await page.evaluate(() => {
+    const pn = document.querySelector('.ao-panel--pause'), b = pn && pn.querySelector('.ao-voice');
+    return pn && b && { present: document.documentElement.classList.contains('ao-present'), sw: pn.scrollWidth, cw: pn.clientWidth, btnRight: Math.round(b.getBoundingClientRect().right), panelRight: Math.round(pn.getBoundingClientRect().right) };
+  });
+  check('презентация: пауза без прокрутки вбок, кнопка голоса внутри панели', ov && ov.present && ov.sw <= ov.cw + 1 && ov.btnRight <= ov.panelRight, JSON.stringify(ov));
+  await page.screenshot({ path: join(OUT, 'voice-pause-present.png') });
   check('нет русского: ничего не сказано и ошибок нет', (await said(page)).length === 0 && errors.length === 0, errors.slice(0, 2).join(' | '));
   await ctx.close();
 }

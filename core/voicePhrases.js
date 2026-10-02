@@ -166,6 +166,7 @@ export const ANNOUNCER = Object.freeze({
   fight: 'В бой!',
   roundWin: 'Раунд твой!',
   roundLose: 'Раунд проигран!',
+  matchLose: 'Соперник победил!',   // дуэль: там нет Регента
   voiceOn: 'Голос тренера включён',
 });
 // Печати двумя руками (событие 'sigil_cast', data.sigil): новые «Врата бури» и «Столп небес».

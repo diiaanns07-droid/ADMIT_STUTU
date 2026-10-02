@@ -487,7 +487,12 @@
   border-color: var(--ao-debug);
   background: rgba(224, 162, 76, 0.14);
 }
-/* [W3-VOICE] «Голос · V» рядом с «Без звука»: включён — золотая рамка, русского голоса нет — приглушён */
+/* [W3-VOICE] «Голос · V» рядом с «Без звука»: включён — золотая рамка, русского голоса нет — приглушён.
+   В узкой колонке (пауза в режиме презентации) кнопки переносятся под подпись, а не вылезают за панель. */
+.ao-field__head:has(.ao-voice) {
+  flex-wrap: wrap;
+  row-gap: 0.3rem;
+}
 .ao-voice[aria-pressed='true'] {
   color: var(--ao-gold-hi);
   border-color: var(--ao-gold);

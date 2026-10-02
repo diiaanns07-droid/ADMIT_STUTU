@@ -124,9 +124,22 @@ function rig(opts = {}) {
   only.coach.event('Победа!');
   only.synth.finish('network');
   check('сетевой голос упал без сети → «нет русского голоса», без исключений', only.coach.status().state === 'no-ru' && only.coach.say('Добей его!') === 'off');
+  only.clk.t = 61000; only.coach.pump(61000);
+  check('…через минуту отложенный сетевой голос пробуется снова', only.coach.status().state === 'ready' && only.coach.say('Добей его!') === 'queued');
   const two = rig({ voices: [V.google, V.irina, V.milena] });
   two.coach.event('Победа!'); two.synth.finish('synthesis-failed');
-  check('сломанный голос → следующий русский', two.coach.status().state === 'ready' && two.coach.status().voice === 'Milena');
+  check('разовый сбой синтеза (сменили выход звука) — голос остаётся', two.coach.status().state === 'ready' && two.coach.status().voice === 'Microsoft Irina');
+  for (const [t, txt] of [[3000, 'Добей его!'], [6000, 'Регент в ярости!']]) { two.clk.t = t; two.coach.event(txt); two.synth.finish('synthesis-failed'); }
+  check('три сбоя подряд → следующий русский голос', two.coach.status().state === 'ready' && two.coach.status().voice === 'Milena', two.coach.status().voice);
+  const lone = rig({ voices: [V.en, V.irina] });
+  lone.coach.event('Победа!'); lone.synth.finish('audio-busy');
+  lone.clk.t = 3000;
+  check('единственный русский голос после сбоя не объявлен «нет голоса»', lone.coach.status().state === 'ready' && lone.coach.event('Добей его!') === 'queued' && lone.synth.log.length === 2);
+  lone.synth.finish();
+  for (const t of [6000, 9000, 12000]) { lone.clk.t = t; lone.coach.event(`Фраза ${t}`); lone.synth.finish('synthesis-failed'); }
+  check('голос сломан совсем (3 сбоя) → тихо выключиться', lone.coach.status().state === 'no-ru');
+  lone.synth.setVoices([V.en, V.irina]);
+  check('новый список голосов (voiceschanged) — голос снова пробуется', lone.coach.status().state === 'ready');
 }
 
 // 5. getVoices() пуст до voiceschanged; нет русского — тихо выключиться
@@ -292,6 +305,9 @@ function rig(opts = {}) {
   pv.clk.t = 9000;
   pv.director.frame(9000, { screen: 'playing', pvp: true, events: [{ type: 'pvp_round', data: { phase: 'match_end', winner: 'me' } }] });
   check('дуэль: победа в матче → «Победа!»', pv.synth.current && pv.synth.current.text === ANNOUNCER.victory);
+  pv.synth.finish(); pv.clk.t = 20000;
+  pv.director.frame(20000, { screen: 'playing', pvp: true, events: [{ type: 'pvp_round', data: { phase: 'match_end', winner: 'opponent' } }] });
+  check('дуэль: проигрыш → «Соперник победил!», а не «Регент устоял!»', pv.synth.current && pv.synth.current.text === ANNOUNCER.matchLose);
   const ar = rig();
   ar.director.frame(0, { screen: 'paused', countdown: 3 });
   ar.clk.t = 300; ar.coach.error('Сомкни кольцо!');
@@ -301,6 +317,8 @@ function rig(opts = {}) {
   tu.director.frame(0, { screen: 'tutorial', recognized: 'ok' });
   tu.synth.finish(); tu.clk.t = 3000; tu.director.frame(3000, { screen: 'tutorial', recognized: 'ok' });
   check('обучение: «Распознано!» один раз на карточку', tu.synth.log.length === 1 && tu.synth.log[0].text === ANNOUNCER.recognized);
+  for (const [t, k] of [[3000, 'ok|2'], [6000, 'ok|3'], [9000, 'ok|4']]) { tu.synth.finish(); tu.clk.t = t; tu.director.frame(t, { screen: 'tutorial', recognized: k }); }
+  check('обучение: «Распознано!» на каждом шаге, даже через 3 с (не «раз в 10 с»)', tu.synth.texts().filter((x) => x === ANNOUNCER.recognized).length === 4, tu.synth.texts().join(','));
   // тренировка: счёт, ошибка, итог подхода
   const tr = rig();
   const T = (dt, training) => { tr.clk.t += dt; tr.synth.finish(); tr.director.frame(tr.clk.t, { screen: 'training', training }); };

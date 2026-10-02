@@ -5,8 +5,9 @@
 //
 // Голос: локальный ru-RU (работает без интернета) → другой локальный ru → любой ru (сетевой) → тихо
 // выключиться (status().state === 'no-ru', в настройках — «русского голоса в системе нет»). getVoices() до
-// события voiceschanged бывает пустым: пока ждём (до voicesWaitMs) — состояние 'pending'. Сетевой голос,
-// который не смог заговорить (нет сети), помечается плохим, берётся следующий.
+// события voiceschanged бывает пустым: пока ждём (до voicesWaitMs) — состояние 'pending'. Голос, который не может
+// говорить (сетевой без сети, голос недоступен) или сорвался badAfter раз подряд, откладывается на badMs и берётся
+// следующий; разовая ошибка синтеза (переключили выход звука на проектор) голос не выключает.
 //
 // Очередь с приоритетами (PRIORITY): счёт < инфо < бой < «ОШИБКА» < финал. Правила:
 //  - любая фраза — не чаще раза в minGapMs (2,5 с) от начала прошлой; исключения: счёт повторов (у него свой
@@ -24,6 +25,8 @@ import { hintPhrase, trainPhrase, countWord, setSummary, ANNOUNCER, SIGIL_PHRASE
 export const PRIORITY = Object.freeze({ count: 1, info: 2, event: 3, error: 4, final: 5 });
 const TTL = Object.freeze({ count: 900, info: 2500, event: 2500, error: 1400, final: 4000 });
 const RATE = Object.freeze({ count: 1.15, info: 1.05, event: 1.05, error: 1.1, final: 0.95 });
+// ошибки, после которых этот голос сейчас говорить не может (остальные — сбой одной фразы)
+const VOICE_ERRORS = new Set(['network', 'synthesis-unavailable', 'language-unavailable', 'voice-unavailable']);
 
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 const clamp01 = (v) => (fin(v) ? Math.min(1, Math.max(0, v)) : 0);
@@ -47,7 +50,7 @@ export function createVoiceCoach({
     const ua = typeof navigator !== 'undefined' && navigator ? navigator.userActivation : null;
     return !ua || ua.hasBeenActive !== false;
   },
-  minGapMs = 2500, repeatGapMs = 10000, cutInGapMs = 450, voicesWaitMs = 3000,
+  minGapMs = 2500, repeatGapMs = 10000, cutInGapMs = 450, voicesWaitMs = 3000, badMs = 60000, badAfter = 3,
   volume = 0.7, enabled = true, muted = false,
   onDuck = null, onChange = null,
 } = {}) {
@@ -55,7 +58,9 @@ export function createVoiceCoach({
   const t0 = clock();
   let state = api ? 'pending' : 'no-api';
   let ranked = [], voice = null;
-  const bad = new Set();          // голоса, которые не смогли заговорить
+  const bad = new Map();          // голос → до какого времени отложен (не смог заговорить)
+  const fails = new Map();        // голос → сбоев подряд
+  const vid = (v) => v.voiceURI || v.name;
   let vol = clamp01(volume), on = enabled !== false, mute = muted === true;
   let queue = [];                 // { text, key, kind, priority, at, ttl }
   let cur = null;                 // { u, item, at }
@@ -76,7 +81,8 @@ export function createVoiceCoach({
     if (!api || disposed) return;
     let list = [];
     try { list = synth.getVoices() || []; } catch (e) { list = []; }
-    ranked = rankRussianVoices(list).filter((v) => !bad.has(v.voiceURI || v.name));
+    for (const [id, until] of bad) if (now >= until) bad.delete(id);   // отложенный голос пробуем снова
+    ranked = rankRussianVoices(list).filter((v) => !bad.has(vid(v)));
     const prev = state, prevVoice = voice;
     if (ranked.length) { state = 'ready'; voice = ranked[0]; }
     else {
@@ -87,7 +93,7 @@ export function createVoiceCoach({
     if (state !== prev || voice !== prevVoice) { if (state !== 'ready') hush(); emit(); }
   }
   if (api) {
-    const onVoices = () => resolveVoices(clock());
+    const onVoices = () => { bad.clear(); fails.clear(); resolveVoices(clock()); };   // новый список — с чистого листа
     try {
       if (typeof synth.addEventListener === 'function') synth.addEventListener('voiceschanged', onVoices);
       else synth.onvoiceschanged = onVoices;
@@ -149,12 +155,15 @@ export function createVoiceCoach({
       if (cur !== c) return;
       cur = null; endedAt = clock();
       const err = ev && ev.error;
-      // сетевой голос без сети, сломанный голос — помечаем и берём следующий
-      if (err && err !== 'interrupted' && err !== 'canceled') {
-        stats.errors++;
-        if (err === 'not-allowed') return;   // нет действия пользователя — фраза пропала, голос исправен
-        if (voice) { bad.add(voice.voiceURI || voice.name); resolveVoices(clock()); }
-      }
+      const v = voice;
+      if (!err) { if (v) fails.delete(vid(v)); return; }
+      if (err === 'interrupted' || err === 'canceled') return;
+      stats.errors++;
+      if (err === 'not-allowed' || !v) return;   // нет действия пользователя — фраза пропала, голос исправен
+      // голос не может говорить (сетевой без сети) или срывается раз за разом — откладываем, берём следующий
+      const n = (fails.get(vid(v)) || 0) + 1;
+      fails.set(vid(v), n);
+      if (VOICE_ERRORS.has(err) || n >= badAfter) { bad.set(vid(v), clock() + badMs); fails.delete(vid(v)); resolveVoices(clock()); }
     };
     u.onend = () => done(null);
     u.onerror = (ev) => done(ev || { error: 'unknown' });
@@ -170,7 +179,7 @@ export function createVoiceCoach({
 
   function pump(now = clock()) {
     if (disposed) return;
-    if (state === 'pending' && now - pollAt >= 250) { pollAt = now; resolveVoices(now); }
+    if ((state === 'pending' || (state === 'no-ru' && bad.size)) && now - pollAt >= 250) { pollAt = now; resolveVoices(now); }
     if (!audible()) { if (cur || queue.length) hush(); if (!cur) duck(false); return; }
     queue = queue.filter((q) => { const keep = now - q.at <= q.ttl; if (!keep) stats.dropped++; return keep; });
     // страховка: onend не пришёл (бывает в Chrome) — фраза давно должна была кончиться
@@ -320,7 +329,7 @@ export function createVoiceDirector(coach, { records = null } = {}) {
       case 'pvp_round':
         if (d.phase === 'fight') coach.final(ANNOUNCER.fight, { ttl: 1500 });
         else if (d.phase === 'round_end' && (d.winner === 'me' || d.winner === 'opponent')) coach.event(d.winner === 'me' ? ANNOUNCER.roundWin : ANNOUNCER.roundLose);
-        else if (d.phase === 'match_end' && (d.winner === 'me' || d.winner === 'opponent')) coach.final(d.winner === 'me' ? ANNOUNCER.victory : ANNOUNCER.defeat);
+        else if (d.phase === 'match_end' && (d.winner === 'me' || d.winner === 'opponent')) coach.final(d.winner === 'me' ? ANNOUNCER.victory : ANNOUNCER.matchLose);
         break;
       default: break;
     }
@@ -391,7 +400,7 @@ export function createVoiceDirector(coach, { records = null } = {}) {
       }
       if (view.recognized && screen === 'tutorial' && !S.recognized.has(view.recognized)) {
         S.recognized.add(view.recognized);
-        coach.info(ANNOUNCER.recognized, { ttl: 1500 });
+        coach.info(ANNOUNCER.recognized, { ttl: 1500, key: `recognized|${view.recognized}` });   // на каждый шаг, не «раз в 10 с»
       }
       if (Array.isArray(view.events)) for (const e of view.events) onEvent(e, view);
       // «Добей его!» — у Регента меньше 20 % здоровья (один раз за бой)
