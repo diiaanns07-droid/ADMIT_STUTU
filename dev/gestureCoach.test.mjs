@@ -15,9 +15,9 @@ function test(name, fn) {
 const ok = (c, m) => { if (!c) throw new Error(m || 'assert'); };
 const eq = (a, b, m) => { if (a !== b) throw new Error(`${m || ''}: ${JSON.stringify(a)} !== ${JSON.stringify(b)}`); };
 
-test('44 подсказки, у каждой — жест, текст, исправление, рука, точки, пиктограмма', () => {
+test('46 подсказок, у каждой — жест, текст, исправление, рука, точки, пиктограмма', () => {
   const codes = Object.keys(COACH_HINTS);
-  eq(codes.length, 44, 'число подсказок'); // + hand_far_stand («Новичок»: игра стоя)
+  eq(codes.length, 46, 'число подсказок'); // + hand_far_stand («Новичок»: игра стоя); [W3-ULT] + ult_one_hand, ult_early
   for (const code of codes) {
     const e = COACH_HINTS[code];
     ok(e.gesture && e.text && e.fix && e.mark, `${code}: тексты`);
@@ -159,13 +159,13 @@ test('история: не больше 12 записей; битое и нед�
   eq(compactSummary(s.summary(), 5).groups.rune, 50);
 });
 
-test('отладка: H по кругу листает все 44 подсказки, первая — «OK»', () => {
+test('отладка: H по кругу листает все 46 подсказок, первая — «OK»', () => {
   const L = {};
   const target = { addEventListener: (t, f) => { (L[t] || (L[t] = [])).push(f); }, removeEventListener() {} };
   const dbg = createDebugInput(target);
   dbg.setEnabled(true);
   const seen = [];
-  for (let i = 0; i < 45; i++) {
+  for (let i = 0; i < 47; i++) {
     for (const f of L.keydown) f({ code: 'KeyH', key: 'h', repeat: false, target: null, preventDefault() {} });
     for (const f of L.keyup || []) f({ code: 'KeyH', key: 'h', target: null, preventDefault() {} });
     const fr = dbg.read();
@@ -173,8 +173,8 @@ test('отладка: H по кругу листает все 44 подсказ�
     seen.push(fr.hint.code);
   }
   eq(seen[0], 'ok_ring_open', 'первая');
-  eq(new Set(seen.slice(0, 44)).size, 44, 'все коды');
-  eq(seen[44], seen[0], 'по кругу');
+  eq(new Set(seen.slice(0, 46)).size, 46, 'все коды');
+  eq(seen[46], seen[0], 'по кругу');
 });
 
 for (const line of out) console.log(line);

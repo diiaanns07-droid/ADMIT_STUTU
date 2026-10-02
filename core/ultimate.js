@@ -33,8 +33,8 @@ export const ULT_GESTURE_DEFAULTS = Object.freeze({
   hintCooldownSec: 4,    // одна и та же подсказка — не чаще
   staleMs: 400,          // кадр позы старше — данных нет
   // запасы в долях ширины плеч (вход / выход — гистерезис)
-  wristIn: 0.06, wristOut: -0.04,   // запястье выше носа
-  elbowIn: 0.08, elbowOut: -0.03,   // локоть выше плеча
+  wristIn: 0.06, wristOut: 0.0,     // запястье выше носа
+  elbowIn: 0.1, elbowOut: 0.02,     // локоть выше плеча (и на выходе — не ниже линии плеч)
   minShoulderVis: 0.5, minVis: 0.3, wristVis: 0.25,
 });
 
@@ -132,12 +132,12 @@ export function createUltimateGesture(opts = {}) {
       // нет свежей позы: провал трекинга — удержание живёт graceSec
       if (s.lastT !== null) s.gap += clamp(tNow - s.lastT, 0, 0.25);
       s.lastT = tNow;
-      if (s.gap > C.graceSec) { resetHold(); s.one = 0; o.phase = 'idle'; o.progress = 0; o.count = 0; o.both = false; }
+      if (s.gap > C.graceSec) { resetHold(); s.one = 0; s.lastPoseT = null; o.phase = 'idle'; o.progress = 0; o.count = 0; o.both = false; }   // после долгого провала — отсчёт заново
       return o;
     }
     if (pose.tMs === s.lastPoseT) { s.lastT = tNow; return o; }   // тот же кадр камеры
     const t = pose.tMs / 1000;
-    const dt = s.lastPoseT === null ? 0 : clamp(t - s.lastPoseT / 1000, 0, 0.25);
+    const dt = s.lastPoseT === null ? 0 : clamp(t - s.lastPoseT / 1000, 0, 0.15);   // медленная камера (8 Гц) — до 0,125 с
     s.lastPoseT = pose.tMs; s.lastT = tNow;
     const W = fin(pose.frameW) ? pose.frameW : 640, H = fin(pose.frameH) ? pose.frameH : 480;
     const r = armsRaised(pose.landmarks, { ...C, aspect: H > 0 ? W / H : 4 / 3, prev: s.prev });

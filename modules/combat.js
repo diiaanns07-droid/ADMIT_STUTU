@@ -2363,6 +2363,15 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     st.pendingThrow = null; st.pendingSpark = false; st.pendingSlash = null; st.pendingParry = false; st.pendingUlt = false; st.p.charge = 0;
     if (hand) hand.clearInput();
   }
+  // шкала вручную (main.js: ?fury=100 — показ ультимейта на сцене сразу; тесты)
+  function setFury(v) {
+    if (!ultAllowed() || !st || st.status !== 'playing') return 0;
+    const n = Number(v);
+    st.p.fury = clamp(Number.isFinite(n) ? n : 0, 0, C.ultimate.furyMax);
+    st.furyFullSent = false;
+    addFury(1e-9);   // полная — событие ultimate_ready
+    return st.p.fury;
+  }
   function tryUltimate() {
     if (!st.pendingUlt) return false;
     st.pendingUlt = false;   // одна попытка на импульс
@@ -2560,5 +2569,6 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   reset();
   return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig, setSpawn, get hand() { return hand; } /* [HAND] */,
     setDifficulty, getDifficulty,   // [FEEL]
+    setFury,   // [W3-ULT]
     attachPvp, setMode, getMode, setOpponent, applyRemoteHit };   // [PVP]
 }

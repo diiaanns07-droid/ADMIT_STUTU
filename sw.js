@@ -17,7 +17,7 @@
 'use strict';
 
 // <AO_MANIFEST> — генерирует node tools/sw_manifest.mjs, руками не править
-const VERSION = 'ff2b2e7e2359';
+const VERSION = '69b965298e33';
 const VENDOR_VERSION = 'b3f563930682';
 const SHELL = [
   "./",
@@ -48,6 +48,7 @@ const SHELL = [
   "core/steerStick.js",
   "core/trackingHud.js",
   "core/tutorialTrainer.js",
+  "core/ultimate.js",
   "index.html",
   "main.js",
   "modules/atmosphere.js",
@@ -78,6 +79,7 @@ const SHELL = [
   "modules/fx/shock.js",
   "modules/fx/sigils.js",
   "modules/fx/trails.js",
+  "modules/fx/ultimate.js",
   "modules/handVisuals.js",
   "modules/heroAura.js",
   "modules/heroCloth.js",

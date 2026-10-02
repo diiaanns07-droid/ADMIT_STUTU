@@ -5,6 +5,8 @@
 //   [V5] в схеме «Руль» (setMoveMode('steer'), по умолчанию): W — вперёд (бег; ~1 с ровно — спринт),
 //   A/D — поворот героя влево/вправо (в арене — обход Регента), S — стоп (перекрывает W);
 //   J — огонь (удержание), U — «Искра», I — «Рассечение» (направление по зажатой A/D, иначе вправо),
+//   [W3-ULT] U при полной шкале «Ярость клятвы» — «Небесный суд» (импульс ultimate; бой выбирает сам: шкала
+//   не полна или идёт дуэль — остаётся «Искра»),
 //   K — щит (удержание), F — парирование, L — выброс (обе руки),
 //   O / P (удерживать) — слепить сферу / призму, отпустить — бросить;
 //   [V3] Z — печать «Хлопок», X — «Врата», C — «Рамка», V — «Дельта», B — «Кор»; 1…9, 0 — десять рун правой руки (RUNE_KEYS);
@@ -33,6 +35,7 @@ export function createDebugInput(target = window) {
   let pendingSigil = null;
   let pendingRune = null;
   let pendingHint = null;
+  let pendingUlt = false;   // [W3-ULT]
   let hintIdx = 0;
   let enabled = false;
   let moveMode = 'steer';   // [V5] 'steer' — «Руль», 'stick' — джойстик
@@ -79,7 +82,7 @@ export function createDebugInput(target = window) {
       pendingDashDir = l > 0.01 ? { x: v.x / l, z: v.z / l } : { x: 0, z: 1 };
     }
     if (code === 'KeyL') pendingBurst = true;
-    if (code === 'KeyU') pendingSpark = true;
+    if (code === 'KeyU') { pendingSpark = true; pendingUlt = true; }   // [W3-ULT] + «Небесный суд»
     if (code === 'KeyF') pendingParry = true;
     if (code === 'KeyH') { pendingHint = { code: ALL_HINTS[hintIdx % ALL_HINTS.length], side: null, guess: null, tMs: performance.now() }; hintIdx++; }
     if (SIGIL_KEYS[code]) pendingSigil = SIGIL_KEYS[code];
@@ -116,6 +119,7 @@ export function createDebugInput(target = window) {
     pendingSigil = null;
     pendingRune = null;
     pendingHint = null;
+    pendingUlt = false;   // [W3-ULT]
     conj = null;
     pendingThrow = null;
   }
@@ -148,6 +152,7 @@ export function createDebugInput(target = window) {
       frame.rune = pendingRune;
       frame.runeScore = pendingRune ? 1 : 0;
       frame.hint = pendingHint;
+      frame.ultimate = pendingUlt;   // [W3-ULT]
       if (conj) {
         frame.conjure = conjState(frame.tMs);
         frame.attack = false; frame.shield = false; frame.spark = false; frame.slash = null; frame.parry = false;
@@ -165,6 +170,7 @@ export function createDebugInput(target = window) {
     pendingSigil = null;
     pendingRune = null;
     pendingHint = null;
+    pendingUlt = false;   // [W3-ULT]
     return frame;
   }
 
