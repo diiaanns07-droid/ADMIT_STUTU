@@ -163,7 +163,8 @@ void main() {
   float fill = smoothstep( 0.05, -0.5, d ) * 0.32;
   float life = 1.0 - vAge;
   float flash = exp( - vSec * 9.0 );
-  float I = ( edge * 0.85 + fill ) * life * life * vK;
+  float halo = exp( - max( d, 0.0 ) * 5.0 ) * 0.22;      // мягкий ореол вокруг подошвы — след виден и издалека
+  float I = ( edge * 1.3 + fill + halo ) * life * life * vK;
   vec3 col = mix( uC1, uC2, flash * 0.8 + edge * 0.15 ) * ( 1.0 + 2.2 * flash );
   gl_FragColor = vec4( col, clamp( I * ( 1.0 + flash ), 0.0, 1.0 ) );
   #include <tonemapping_fragment>

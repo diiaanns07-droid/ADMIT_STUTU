@@ -449,7 +449,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
   let prints = null, burst = null;
   const sceneOf = (o) => { let r = o; while (r && r.parent) r = r.parent; return r && r.isScene ? r : null; };
   function makeTrails() {
-    if (Q.prints && !prints) prints = createFootprints(THREE, { color: c1, color2: c2, count: Q.prints });
+    if (Q.prints && !prints) prints = createFootprints(THREE, { color: c1, color2: c2, count: Q.prints, size: 1.25, life: 2.2 });
     if (Q.burst && !burst) burst = createDashBurst(THREE, { color: c1, color2: c2, count: Q.burst });
     attachTrails();
   }
