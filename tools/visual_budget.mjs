@@ -250,7 +250,7 @@ function report(data, budget) {
     L.push(`- **${q}** · кадр SwiftShader, мс: ${top('wallMs')}`);
   }
   L.push('');
-  if (data.compare) {
+  if (data.compare && data.compare.results) {   // в сохранённом JSON — только ссылка на прошлый замер, без цифр
     const C = data.compare;
     L.push(`## Было → стало (против ${C.file}: \`${C.git.branch || '?'}\` @ \`${C.git.commit || '?'}\`)`);
     L.push('');
