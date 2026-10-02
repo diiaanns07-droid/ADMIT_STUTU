@@ -18,7 +18,8 @@
 //   край лепестка к соседу. cup — выпуклость каждого лепестка (м), без кромки-складки на разрезе.
 //   Движение: на бегу ткань сильнее отдувается назад и трепещет, рывок (резко > 11 м/с) — короткий всплеск;
 //   react: true — включает этот отклик; setMotion(k) — 1 обычно, < 1 спокойнее («Уменьшенное движение»:
-//   меньше трепета, без всплеска).
+//   меньше трепета, без всплеска). home — «память формы», 1/с: частицы мягко тянутся к своему месту в осях
+//   кости крепления — полы, перелетевшие через ноги на кувырке, распутываются, а не застревают сзади.
 //   → { mesh, update(dt, lod), reset(), setWind(k), setMotion(k), dispose() }
 
 const H = 1 / 60;                 // шаг симуляции
@@ -197,7 +198,7 @@ export function createCloth(THREE, o) {
     P[k * 3] = x; P[k * 3 + 1] = y; P[k * 3 + 2] = z;
   }
   let floorY = -1e9, backLim = 0.02, backH = 0.5;
-  const DRAG = 2.2, DAMP = 0.992, ITER = 4, VCAP = 3.2, VMAX = 3.5, CARRY = o.carry ?? 0.6, cling = o.cling ?? 0;
+  const DRAG = 2.2, DAMP = 0.992, ITER = 4, VCAP = 3.2, VMAX = 3.5, CARRY = o.carry ?? 0.6, cling = o.cling ?? 0, HOME = o.home || 0;
   // перенос движения тела на ткань (без рывка): доля CARRY сдвига кости груди за кадр прикладывается к
   // частицам и их прошлым положениям; встречный воздух видит эту долю как скорость (vA)
   const Mprev = new THREE.Matrix4(), Md = new THREE.Matrix4();
@@ -289,6 +290,16 @@ export function createCloth(THREE, o) {
       if (cling > 0) {
         const cx = P[i3] - hipP.x, cz = P[i3 + 2] - hipP.z, cl2 = Math.sqrt(cx * cx + cz * cz);
         if (cl2 > 1e-4) { P[i3] -= (cx / cl2) * cling * h2; P[i3 + 2] -= (cz / cl2) * cling * h2; }
+      }
+    }
+    // память формы: к положению покоя в осях кости крепления (сильнее к подолу — верх держат связи)
+    if (HOME > 0) {
+      const e = anchor.matrixWorld.elements, kh = Math.min(1, HOME * h);
+      for (let k = cols; k < N; k++) {
+        const x = L[k * 3], y = L[k * 3 + 1], z = L[k * 3 + 2], i3 = k * 3, kk = kh * (0.4 + 0.6 * Math.floor(k / cols) / (rows - 1));
+        P[i3] += (e[0] * x + e[4] * y + e[8] * z + e[12] - P[i3]) * kk;
+        P[i3 + 1] += (e[1] * x + e[5] * y + e[9] * z + e[13] - P[i3 + 1]) * kk;
+        P[i3 + 2] += (e[2] * x + e[6] * y + e[10] * z + e[14] - P[i3 + 2]) * kk;
       }
     }
     for (let it = 0; it < iters; it++) {

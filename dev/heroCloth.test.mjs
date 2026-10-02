@@ -114,6 +114,32 @@ assert.equal(cl.mesh.parent, null); assert.equal(cl.hem.parent, null);
   pet.dispose();
 }
 
+// [W4-НАРЯДЫ] кувырок: таз делает полный оборот вперёд за 0,3 с — полы с «памятью формы» (home) через 1,5 с
+// снова на своих местах (не застряли за бёдрами), без памяти — как раньше (проверяем только конечность)
+{
+  const roll = (home) => {
+    root.position.set(0, 0, 0); root.rotation.set(0, 0, 0); hips.rotation.set(0, 0, 0); root.updateMatrixWorld(true);
+    const pc = 12, pr = 10, prest = new Float32Array(pc * pr * 3);
+    for (let j = 0; j < pr; j++) for (let i = 0; i < pc; i++) { const t = j / (pr - 1), ph = 1.6 - (i / (pc - 1)) * 1.4, r = 0.17 + 0.03 * t; prest.set([Math.sin(ph) * r, 1.05 - t * 0.45, Math.cos(ph) * r], (j * pc + i) * 3); }
+    const pet = createCloth(THREE, { cols: pc, rows: pr, rest: prest, anchor: hips, parent: root, colliders, material: mat, plane: 'none', cling: 3, pleats: 0, pleatDepth: 0, slits: { gaps: [3, 7], from: 2 }, react: true, home, hips, fwd: (out) => out.set(0, 0, 1), floor: () => 0 });
+    for (let f = 0; f < 120; f++) {
+      if (f >= 10 && f < 28) hips.rotation.x += (Math.PI * 2) / 18;   // кувырок вперёд
+      root.updateMatrixWorld(true);
+      pet.update(1 / 60, 0);
+    }
+    hips.rotation.set(0, 0, 0); root.updateMatrixWorld(true);
+    for (let f = 0; f < 90; f++) pet.update(1 / 60, 0);
+    const P = pet.particles;
+    assert.ok(finite(P), 'кувырок: частицы конечны');
+    let err = 0; for (let k = pc; k < pc * pr; k++) err += Math.hypot(P[k * 3] - prest[k * 3], P[k * 3 + 1] - prest[k * 3 + 1], P[k * 3 + 2] - prest[k * 3 + 2]);
+    pet.dispose();
+    return err / (pc * pr - pc);
+  };
+  const withHome = roll(3);
+  assert.ok(withHome < 0.03, `после кувырка полы на местах (среднее отклонение ${withHome.toFixed(3)} м)`);
+  roll(0);
+}
+
 // [W4-НАРЯДЫ] движение: на бегу плащ отдувает назад сильнее, чем в покое; рывок — всплеск; «Уменьшенное
 // движение» — спокойнее (меньше отдув и трепет, без всплеска)
 {

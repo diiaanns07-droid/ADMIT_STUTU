@@ -1727,12 +1727,13 @@ export function dressHero(THREE, vrm, opts = {}) {
       }
       const cl = createCloth(THREE, {
         cols, rows, rest, anchor: raw(stole ? chestB : 'hips'), parent: holder, material: pet ? petalMats[pn.layer ? 1 : 0] : pn.emblem || !panelMat ? capeMat : panelMat,
-        // внешний слой лепестков — на капсулах толще (ложится поверх внутреннего); колчан и снаряжение — препятствия
-        colliders: (pet && !pn.layer ? legCaps.map((c) => ({ ...c, r: c.r + 0.014 })) : legCaps).concat(gearCaps),
+        // внешний слой лепестков — на капсулах толще (ложится поверх внутреннего); колчан на бедре — не препятствие:
+        // правая пола до него не достаёт, а запутавшись за ним на кувырке, не вернулась бы
+        colliders: pet && !pn.layer ? legCaps.map((c) => ({ ...c, r: c.r + 0.014 })) : legCaps,
         pleats: pet ? 0 : pn.pleats ?? 1.5, pleatDepth: pet ? 0 : 0.008, name: 'tabard', plane: Math.abs(pn.az) < 0.5 ? 'front' : 'none',
         hem: pet || ST ? null : { r: 0.0045, material: mats.trim },
         cling: pet ? (pn.layer ? 4 : 3) : P.tabard.cling ?? 3,
-        slits: pet ? { gaps: PL.gaps, from: 2 } : null, cup: pet ? 0.011 : 0, react: true,
+        slits: pet ? { gaps: PL.gaps, from: 2 } : null, cup: pet ? 0.011 : 0, react: true, home: pet || ST ? 3 : 0,
         uv: pn.emblem || panelMat || pet ? { u0: 0, u1: 1, v0: 0, v1: 1 } : { u0: 0, u1: 1, v0: 0, v1: 0.62 },
         hips: raw('hips'), back: { lim: 0.03, h: 0.3 },
         fwd: (out) => out.set(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(_mq2)),
