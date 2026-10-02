@@ -17,7 +17,7 @@
 'use strict';
 
 // <AO_MANIFEST> — генерирует node tools/sw_manifest.mjs, руками не править
-const VERSION = 'cc132d41971d';
+const VERSION = '24c837b56ad2';
 const VENDOR_VERSION = 'b3f563930682';
 const SHELL = [
   "./",
@@ -56,6 +56,7 @@ const SHELL = [
   "index.html",
   "main.js",
   "manifest.webmanifest",
+  "modules/arenaFx.js",
   "modules/atmosphere.js",
   "modules/bdoIcons.js",
   "modules/boss.js",

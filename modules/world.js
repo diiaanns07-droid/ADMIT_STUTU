@@ -1571,8 +1571,10 @@ float ashPuddle( vec2 xz ) {
     const b0 = farSil.pos.length / 3;
     for (let i = 0; i <= count; i++) {
       const u = i / count, a = u * TAU;
-      // гребни острее: |шум| с подъёмом к вершинам, редкие пики
-      let h = hMin + (hMax - hMin) * Math.pow(nz.fbm(u * (o.freq || 9), 0.5, o.freq || 9, 5), o.sharp || 1);
+      // острые гребни: ridged-шум (1 − |2n − 1|)², бесшовно по кругу (период — число ячеек)
+      let rs = 0, amp = 0.5, fq = o.freq || 9, nrm = 0;
+      for (let k = 0; k < 4; k++) { const v = 1 - Math.abs(2 * nz.n2(u * fq, 0.5 + k * 3.1, fq) - 1); rs += amp * v * v; nrm += amp; amp *= 0.5; fq *= 2; }
+      let h = hMin + (hMax - hMin) * Math.pow(rs / nrm, o.sharp || 1);
       const spike = nz.n2(u * 40, 3.3, 40);
       if (spike > 0.83) h += (spike - 0.83) * (o.spike || 60);
       // долина под затмением: кадр «камера → Регент → затмение» обрамляют склоны, а не закрывает гребень
@@ -1585,10 +1587,11 @@ float ashPuddle( vec2 xz ) {
       if (i < count) { const b = b0 + i * 2; farSil.idx.push(b, b + 2, b + 1, b + 1, b + 2, b + 3, b, b + 1, b + 2, b + 1, b + 3, b + 2); }   // гребень — с обеих сторон, шпили — лицом
     }
   }
-  // высоты — над краем рельефа большой карты (он закрывает горизонт до ~5°): гребни встают на 4–11°
-  ridge(skyR * 0.52, 220, -40, 26, 66, 0x11151c, wc.seed + 113, { valley: 1, sharp: 1.3, freq: 11, spike: 80 });
-  ridge(skyR * 0.66, 240, -40, 40, 98, 0x161b24, wc.seed + 114, { valley: 0.8, sharp: 1.15, spike: 110 });
-  ridge(skyR * 0.8, 260, -40, 56, 132, 0x1c222e, wc.seed + 112, { valley: 0.6, spike: 140 });
+  // горы — за шпилями мёртвого города (те до 0,74 радиуса неба); высоты — над краем рельефа большой карты
+  // (он закрывает горизонт до ~5°): вершины встают на 6–12°
+  ridge(skyR * 0.78, 260, -40, 36, 118, 0x141922, wc.seed + 113, { valley: 1, sharp: 1.25, freq: 7, spike: 70 });
+  ridge(skyR * 0.87, 280, -40, 52, 150, 0x192029, wc.seed + 114, { valley: 0.8, sharp: 1.1, freq: 9, spike: 90 });
+  ridge(skyR * 0.95, 300, -40, 70, 185, 0x1f2632, wc.seed + 112, { valley: 0.6, freq: 6, spike: 110 });
 
   /* --------------------------- Руины: колонны --------------------------- */
   const shaftGeo = (() => {

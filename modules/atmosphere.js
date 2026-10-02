@@ -282,7 +282,7 @@ void main() {
     float prH = 0.0012 + 0.0055 * pr;
     col += vec3( 1.0, 0.34, 0.42 ) * uCoronaI * ( 1.0 - uSunDisc ) * pr * step( 0.0, rimD ) * exp( - rimD / prH ) * 2.4;
     float st = pow( ashVN( cp * 6.5 + 13.0 ), 7.0 );
-    col += uCorona * uCoronaI * st * outside * exp( - max( rimD, 0.0 ) / 0.24 ) * 0.14 * ( 1.0 - cm * 0.7 );
+    col += uCorona * uCoronaI * st * outside * exp( - max( rimD, 0.0 ) / 0.24 ) * 0.14 * ( 1.0 - cm * 0.7 ) * smoothstep( uDiscR + 0.5, uDiscR + 0.3, ang );
   }
   float beadA = pa - 2.35;
   beadA = atan( sin( beadA ), cos( beadA ) );

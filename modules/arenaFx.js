@@ -251,6 +251,7 @@ const ARENA_LIGHT_BODY = /* glsl */`
     vec3 aDiff = vec3( 0.0 );
     vec3 aSpec = vec3( 0.0 );
     float aSh0 = mix( 0.08, 0.014, aWetK );
+    float aKeep = ARENA_KEEP;   // земля: к краю зоны расчёта свет гаснет плавно, без кольца
     for ( int i = 0; i < ${FIRE_MAX}; i ++ ) {
       if ( float( i ) >= uAFireN ) break;
       vec4 f = uAFire[ i ];
@@ -276,14 +277,15 @@ const ARENA_LIGHT_BODY = /* glsl */`
           float h = dot( aR, tH ), v = dot( aR, tV );
           float sh = aSh0 + 0.22 / dl;
           float sv = sh * 3.6 + 0.03;
-          aSpec += f.w * exp( - h * h / ( sh * sh ) - v * v / ( sv * sv ) ) * ( 0.18 + 0.82 * aWetK ) * ( 0.04 / ( sh + 0.02 ) );
+          aSpec += f.w * exp( - h * h / ( sh * sh ) - v * v / ( sv * sv ) ) * ( 0.18 + 0.82 * aWetK ) * ( 0.04 / ( sh + 0.02 ) )
+            * ( 1.0 - smoothstep( 400.0, 784.0, d2 ) );   // к 28 м штрих тает, а не обрывается
         }
       }
       #endif
     }
-    reflectedLight.indirectDiffuse += material.diffuseColor * uAFireCol * aDiff * 2.4;
+    reflectedLight.indirectDiffuse += material.diffuseColor * uAFireCol * aDiff * ( 2.4 * aKeep );
     #if ARENA_TIER >= 1
-      reflectedLight.indirectSpecular += uAFireCol * aSpec * aFres * 9.0;
+      reflectedLight.indirectSpecular += uAFireCol * aSpec * aFres * ( 9.0 * aKeep );
     #endif
     // кольцо рун светит на пол: тление и волны заклинаний — те же uniform-ы, что у самого кольца
     float aRr = length( aP.xz ) - uARuneR;
@@ -300,21 +302,21 @@ const ARENA_LIGHT_BODY = /* glsl */`
         float pr = max( tr, 0.0 );
         rc += c.rgb * ( w.z * step( 0.0, tr ) * exp( - pr * c.a ) * ( 1.0 + 1.6 * exp( - pr * 14.0 ) ) * exp( - dr * 1.4 ) );
       }
-      reflectedLight.indirectDiffuse += material.diffuseColor * rc * sw * 1.5;
-      reflectedLight.indirectSpecular += rc * sw * ( 0.25 + 0.75 * aWetK ) * aFres * 2.2;
+      reflectedLight.indirectDiffuse += material.diffuseColor * rc * ( sw * 1.5 * aKeep );
+      reflectedLight.indirectSpecular += rc * sw * ( 0.25 + 0.75 * aWetK ) * aFres * ( 2.2 * aKeep );
     }
     // лужи отражают небо резче и сильнее, чем общий IBL (high), и ловят корону затмения (medium+)
     #if ARENA_TIER >= 1
     if ( aWetK > 0.01 ) {
       #if defined( USE_ENVMAP ) && ARENA_TIER >= 2
-        reflectedLight.indirectSpecular += getIBLRadiance( geometryViewDir, geometryNormal, 0.07 ) * aWetK * aFres * uAWet;
+        reflectedLight.indirectSpecular += getIBLRadiance( geometryViewDir, geometryNormal, 0.07 ) * aWetK * aFres * uAWet * aKeep;
       #endif
       float cs = dot( aR, uASun );
       if ( cs > 0.93 ) {
         float ang = acos( clamp( cs, -1.0, 1.0 ) );
         float rim = ang - uADiscR;
         float cor = step( 0.0, rim ) * ( exp( - rim / 0.03 ) * 0.8 + exp( - rim / 0.14 ) * 0.16 ) + exp( - abs( rim ) / 0.0035 ) * 2.2;
-        reflectedLight.indirectSpecular += uACorona * uACoronaI * cor * aWetK * aFres * 1.4;
+        reflectedLight.indirectSpecular += uACorona * uACoronaI * cor * aWetK * aFres * ( 1.4 * aKeep );
       }
     }
     #endif
@@ -523,14 +525,17 @@ export function createArenaFx({
     mat.userData.arenaLit = kind;
     litMats.push(mat);
     const prev = mat.onBeforeCompile;
-    const body = kind === 'terrain'
-      ? `\n  if ( dot( vAshWorldPos.xz, vAshWorldPos.xz ) < 1600.0 ) ${ARENA_LIGHT_BODY}`
-      : ARENA_LIGHT_BODY;
     mat.onBeforeCompile = (shader, r) => {
       if (prev) prev.call(mat, shader, r);
+      // земля большой карты: только у арены (low — 25 м: дальше лужиц тепла нет, medium/high — 40 м)
+      const g2 = tierOf() === 0 ? 625.0 : 1600.0;
+      const keep = kind === 'terrain' ? `( 1.0 - smoothstep( ${(g2 * 0.68).toFixed(1)}, ${g2.toFixed(1)}, dot( vAshWorldPos.xz, vAshWorldPos.xz ) ) )` : '1.0';
+      const body = kind === 'terrain'
+        ? `\n  if ( dot( vAshWorldPos.xz, vAshWorldPos.xz ) < ${g2.toFixed(1)} ) ${ARENA_LIGHT_BODY}`
+        : ARENA_LIGHT_BODY;
       Object.assign(shader.uniforms, litU);
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\n#define ARENA_TIER ${tierOf()}\n` + ARENA_LIGHT_PARS)
+        .replace('#include <common>', `#include <common>\n#define ARENA_TIER ${tierOf()}\n#define ARENA_KEEP ${keep}\n` + ARENA_LIGHT_PARS)
         .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>' + body);
     };
     const prevKey = mat.customProgramCacheKey;
