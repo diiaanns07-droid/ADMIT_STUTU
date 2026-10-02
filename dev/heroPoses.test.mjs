@@ -175,6 +175,10 @@ const finite = (H) => Object.values(H.B).every((b) => [b.quaternion.x, b.quatern
   assert.ok(poses.claims({ type: 'burst', data: {} }) && poses.claims({ type: 'sigil_cast', data: { sigil: 'gate' } }) && poses.claims({ type: 'player_cast', data: { ability: 'bolt' } }));
   assert.ok(!poses.claims({ type: 'player_slash', data: {} }) && !poses.claims({ type: 'sigil_cast', data: { sigil: 'clap' } }));
   assert.ok(poses.claimsHold('shield') && poses.claimsHold('conjure') && !poses.claimsHold('stun'));
+  // застывший Cast1 не нужен: первый кадр «Небесного суда» (по снимку), сгусток в ладони; лук — клип остаётся
+  assert.ok(poses.claimsHold('cast', { action: 'cast' }, { ultimate: { active: true, t: 0 } }), 'Cast1 не мигает в начале суда');
+  assert.ok(poses.claimsHold('cast', { action: 'cast', handSpell: { phase: 'hold' } }, null), 'сгусток в ладони — без Cast1');
+  assert.ok(!poses.claimsHold('cast', { action: 'cast', bow: { active: true } }, null), 'лук — поза лука heroModel');
 
   // магия ладони: сгусток в правой (лёд — ладонь вниз), бросок — толчок вперёд
   run(0.5, ctx({ P: { action: 'idle', handSpell: { phase: 'hold', element: 'frost', power: 0.6 } } }));

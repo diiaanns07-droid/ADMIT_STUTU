@@ -285,7 +285,8 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
   const _ew = { smile: 0, frown: 0, brow: 0, squint: 0, pain: 0 };
   let rigArms = null, rigLegs = null;   // кости рук и ног — один раз на героя
 
-  const legsOn = () => st.q !== 'low';
+  // на low ноги не трогаем — кроме поражения (колено без IK ног не встанет)
+  const legsOn = () => st.q !== 'low' || !!(st.a && st.a.def === ACTIONS.defeat);
   const faceOn = () => st.q !== 'low';
   const fineOn = () => st.q === 'high';
 
@@ -400,6 +401,8 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
       } },
   };
   const ZERO_ACT = (() => { const z = new Float32Array(ZERO); z[I.ACT] = 1; return z; })();
+  const CAST_HOLDS = new Set();   // действия, под которыми не нужен застывший Cast1
+  for (const a of [ACTIONS.ok, ACTIONS.burst, ACTIONS.gate, ACTIONS.pillar, ACTIONS.sphereThrow, ACTIONS.ultimate, ACTIONS.orb, ACTIONS.orbThrow]) CAST_HOLDS.add(a);
 
   // ---------------------------------------------------------------- события боя
   const handled = new Set(['burst', 'sigil_cast', 'shield', 'conjure', 'ultimate', 'bolt', 'throw']);
@@ -412,9 +415,14 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     if (e.type === 'hand_spell_throw') return true;
     return false;
   }
-  function claimsHold(key, P) {
+  function claimsHold(key, P, snap = null) {
     if (key === 'shield' || key === 'conjure') return true;
-    if (key === 'cast') return !!(P && (P.sigilCharge > 0.02)) || !!st.ult || (st.a && (st.a.def === ACTIONS.ok || st.a.def === ACTIONS.burst || st.a.def === ACTIONS.gate || st.a.def === ACTIONS.pillar || st.a.def === ACTIONS.sphereThrow || st.a.def === ACTIONS.ultimate));
+    if (key === 'cast') {
+      if (P && P.sigilCharge > 0.02) return true;
+      if (st.ult || (snap && snap.ultimate && snap.ultimate.active)) return true;   // и первый кадр «Небесного суда»
+      if (P && P.handSpell && (P.handSpell.phase === 'form' || P.handSpell.phase === 'hold')) return true;
+      return !!(st.a && CAST_HOLDS.has(st.a.def));
+    }
     return false;
   }
   function recognized() {
@@ -519,9 +527,11 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     idle[I.FLZ] = 0.07 * freeL * f; idle[I.FLX] = -0.01 * freeL; idle[I.FLYW] = 0.32 * freeL * f; idle[I.FLY] = lift * (st.wsTo < 0 ? 1 : 0.3);
     idle[I.FRZ] = 0.07 * freeR * f; idle[I.FRX] = 0.01 * freeR; idle[I.FRYW] = -0.32 * freeR * f; idle[I.FRY] = lift * (st.wsTo > 0 ? 1 : 0.3);
     // рука на поясе у героинь (в покое дольше 1,2 с; не когда руки ведёт зеркало игрока)
-    st.hipT = still > 0.9 && !c.menu && !st.a && out[I.ACT] < 0.05 && st.female && c.mirrorW < 0.3 && c.bowW < 0.1 && c.spellW < 0.1 ? (st.hipT || 0) + dt : 0;
+    st.hipT = still > 0.9 && !c.menu && !st.a && out[I.ACT] < 0.05 && c.mirrorW < 0.3 && c.bowW < 0.1 && c.spellW < 0.1 ? (st.hipT || 0) + dt : 0;
     const hip = smooth01(((st.hipT || 0) - 1.2) / 0.8);
-    if (hip > 0) {
+    // у стража и архимага — «рука у оружия»: левая ложится на древко посоха выше правой (руки — в arms)
+    st.staffRest = !st.female && c.staffR ? hip : 0;
+    if (hip > 0 && st.female) {
       const side = c.staffR ? AL : (st.ws >= 0 ? AR : AL);
       const H = side === AL ? HIP_L : HIP_R;
       idle[side] = hip; idle.set(H.at, side + 1); idle.set(H.pole, side + 4); idle.set(H.dir, side + 7); idle.set(H.thumb, side + 10); idle[side + 13] = hip * H.hw;
@@ -730,11 +740,22 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
         rig.orientHand(h, _u, _w, clamp01(hw));
       }
     }
-    // посох-клинок наискось (визитка стража): левая — на древко посоха
-    if (st.a && st.a.def === ACTIONS.signature && st.sig === 'ashen' && rig.staffAxis && B.leftUpperArm) {
-      const ax = rig.staffAxis(_a, _b);   // точка хвата (мир) и направление к навершию
-      if (ax) { _t.copy(_a).addScaledVector(_b, 0.42 * (rig.height || 1.8) / 1.8); _m.set(1, -0.6, -0.2).applyQuaternion(_qm); ik2(B.leftUpperArm, B.leftLowerArm, B.leftHand, _t, _m, out[AL] * 0.95); }
+    // левая на древке посоха: визитка стража (посох-клинок наискось) и «рука у оружия» в покое
+    const onSig = st.a && st.a.def === ACTIONS.signature && st.sig === 'ashen' ? out[AL] * 0.95 : 0;
+    const onRest = (st.staffRest || 0) * (1 - clamp01(out[I.ACT])) * (1 - clamp01(c.mirrorW));
+    const ws = Math.max(onSig, onRest);
+    if (ws > 1e-3 && rig.staffAxis && B.leftUpperArm && rig.staffAxis(_a, _b)) {   // точка хвата (мир) и направление к навершию
+      _t.copy(_a).addScaledVector(_b, (onSig >= onRest ? 0.42 : 0.2) * (rig.height || 1.8) / 1.8);
+      _m.set(1, -0.6, -0.2).applyQuaternion(_qm);
+      ik2(B.leftUpperArm, B.leftLowerArm, B.leftHand, _t, _m, ws);
+      // кисть обхватывает древко: большой палец — вдоль древка, пальцы — поперёк (к правому боку)
+      if (rig.hands && rig.hands.left && rig.orientHand && onRest > onSig) {
+        _qmi.copy(_qm).invert();
+        _w.copy(_b).applyQuaternion(_qmi); _u.set(-1, 0, 0.35); _u.addScaledVector(_w, -_u.dot(_w)).normalize();
+        rig.orientHand(rig.hands.left, _u, _w, ws);
+      }
     }
+    st.staffGrip = ws;
     st.msArms = (typeof performance !== 'undefined' ? performance.now() : 0) - t0;
     st.ms = (st.msBody || 0) + st.msArms + (st.msFace || 0);
     st.msAvg += (st.ms - st.msAvg) * 0.05;
@@ -742,8 +763,10 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
   }
 
   // пальцы: пожелания действия поверх handWants (с посохом правая всегда в кулаке)
-  const FMAP = { open: 'open', claw: 'claw', grip: 'grip', ok: 'ok', point: 'point', soft: 'relax' };
+  const FMAP = { open: 'open', claw: 'claw', grip: 'grip', ok: 'ok', point: 'point', soft: 'relax' };   // формы — HAND_POSES heroModel
   function fingers(want, c) {
+    // левая на древке — кулак
+    if ((st.staffGrip || 0) > 0.05) { const W = want.left, g = st.staffGrip; for (const k in W) W[k] *= 1 - g; W.grip = (W.grip || 0) + g; }
     for (let fi = 0; fi < 2; fi++) {
       const base = FINGER_SIDES[fi][0], fb = FINGER_SIDES[fi][1], side = FINGER_SIDES[fi][2];
       const w = clamp01(out[base]);
