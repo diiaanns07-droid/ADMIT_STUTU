@@ -130,7 +130,7 @@ void main() {
 
 // ---------------------------------------------------------------- [W4-АУРА] руна-круг у ног
 // Плоскость 2×2 в осях корня героя (x — вправо, z — вперёд), масштаб — радиус. Узор в мировых углах
-// (uYaw): знаки не крутятся вслед за поворотом героя. RUNE_HQ (medium/high) — пояс знаков и гексаграмма.
+// (uYaw): знаки не крутятся вслед за поворотом героя. RUNE_HQ (medium/high) — пояс знаков (на low — засечки).
 const RUNE_VERT = /* glsl */`
 varying vec2 vP;
 void main() {
@@ -155,10 +155,10 @@ varying vec2 vP;
 #define TAU 6.2831853
 #define PI 3.1415927
 float band( float x, float c, float w, float aa ) { return 1.0 - smoothstep( w, w + aa, abs( x - c ) ); }
+float tri( vec2 p, float r ) { return max( max( p.y, dot( p, vec2( 0.8660254, -0.5 ) ) ), dot( p, vec2( -0.8660254, -0.5 ) ) ) - r; }
 #ifdef RUNE_HQ
 float hash1( float n ) { return fract( sin( n * 127.1 + 3.7 ) * 43758.5453 ); }
 float seg( vec2 p, vec2 a, vec2 b ) { vec2 pa = p - a, ba = b - a; float h = clamp( dot( pa, ba ) / dot( ba, ba ), 0.0, 1.0 ); return length( pa - ba * h ); }
-float tri( vec2 p, float r ) { return max( max( p.y, dot( p, vec2( 0.8660254, -0.5 ) ) ), dot( p, vec2( -0.8660254, -0.5 ) ) ) - r; }
 #endif
 void main() {
   vec2 p = vP;
@@ -170,57 +170,61 @@ void main() {
   float t = uTime;
   float spin = t * ( 0.1 + 0.3 * uFury + 0.25 * uReady );
   float I = 0.0, H = 0.0;
-  // кольца: двойной внешний ободок, внутреннее и малое
-  I += band( r, 0.95, 0.011, aa ) * 0.9 + band( r, 0.885, 0.005, aa ) * 0.5;
-  I += band( r, 0.6, 0.007, aa ) * 0.6 + band( r, 0.2, 0.005, aa ) * 0.4;
-  // засечки между ободками — медленно идут по кругу
-  float tk = ( a + spin * 0.5 ) / TAU * 36.0;
-  float tick = 1.0 - smoothstep( 0.07, 0.07 + aw / TAU * 36.0 * 1.5, abs( fract( tk ) - 0.5 ) );
-  I += tick * band( r, 0.918, 0.022, aa ) * 0.45;
+  // тонкие кольца: внешний ободок, внутренний к поясу знаков, круг гексаграммы и малое
+  I += band( r, 0.97, 0.005, aa ) * 0.5 + band( r, 0.895, 0.0035, aa ) * 0.32;
+  I += band( r, 0.62, 0.005, aa ) * 0.42 + band( r, 0.22, 0.004, aa ) * 0.3;
+  // гексаграмма: два треугольника, крутятся навстречу поясу; заряд разжигает её
+  {
+    float sa = - spin * 1.6 - uYaw, ca = cos( sa ), sn = sin( sa );
+    vec2 pr = vec2( ca * p.x - sn * p.y, sn * p.x + ca * p.y );
+    float hx = ( 1.0 - smoothstep( 0.0035, 0.0035 + aa, min( abs( tri( pr, 0.28 ) ), abs( tri( - pr, 0.28 ) ) ) ) ) * step( r, 0.6 );
+    I += hx * 0.3; H += hx * uCharge * 0.55;
+  }
 #ifdef RUNE_HQ
   // пояс знаков: 16 ячеек, «рукописный» знак из 2–4 штрихов по хэшу ячейки; разгораются с яростью
   {
     float ga = ( a + spin ) / TAU * 16.0;
     float ci = floor( ga ), cu = fract( ga ) - 0.5;
-    vec2 q = vec2( cu * ( TAU * 0.765 / 16.0 ), r - 0.765 ) / 0.085;
+    vec2 q = vec2( cu * ( TAU * 0.76 / 16.0 ), r - 0.76 ) / 0.085;
     float h1 = hash1( ci + 1.0 ), h2 = hash1( ci + 17.0 ), h3 = hash1( ci + 31.0 );
     float d = seg( q, vec2( 0.0, -0.72 ), vec2( 0.0, 0.72 ) );
     if ( h1 > 0.3 ) d = min( d, seg( q, vec2( -0.42, 0.72 - h2 * 0.5 ), vec2( 0.42, 0.1 - h2 * 0.6 ) ) );
     if ( h3 > 0.45 ) d = min( d, seg( q, vec2( -0.38, -0.25 + h1 * 0.4 ), vec2( 0.38, -0.25 + h1 * 0.4 ) ) );
     if ( h2 > 0.62 ) d = min( d, abs( length( q - vec2( 0.0, 0.42 - h3 * 0.7 ) ) - 0.2 ) );
-    float g = 1.0 - smoothstep( 0.075, 0.075 + aa / 0.085 * 1.5, d );
-    g *= step( r, 0.86 ) * step( 0.67, r );
-    float lit = 0.4 + 0.6 * smoothstep( h1 * 0.85, h1 * 0.85 + 0.12, uFury );
-    I += g * lit * 0.75; H += g * lit * ( 0.15 + 0.5 * uReady );
+    float g = 1.0 - smoothstep( 0.06, 0.06 + aa / 0.085 * 1.5, d );
+    g *= step( r, 0.86 ) * step( 0.66, r );
+    float lit = 0.3 + 0.7 * smoothstep( h1 * 0.85, h1 * 0.85 + 0.12, uFury );
+    I += g * lit * 0.5; H += g * lit * ( 0.08 + 0.35 * uReady );
   }
-  // гексаграмма: два треугольника, крутятся навстречу поясу; заряд разжигает её
+#else
+  // low: вместо знаков — засечки по поясу, медленно идут по кругу
   {
-    float sa = - spin * 1.6 - uYaw, ca = cos( sa ), sn = sin( sa );
-    vec2 pr = vec2( ca * p.x - sn * p.y, sn * p.x + ca * p.y );
-    float hx = ( 1.0 - smoothstep( 0.004, 0.004 + aa, min( abs( tri( pr, 0.27 ) ), abs( tri( - pr, 0.27 ) ) ) ) ) * step( r, 0.58 );
-    I += hx * 0.5; H += hx * uCharge * 0.8;
+    float tk = ( a + spin * 0.5 ) / TAU * 48.0;
+    float tick = 1.0 - smoothstep( 0.06, 0.06 + aw / TAU * 48.0 * 1.5, abs( fract( tk ) - 0.5 ) );
+    I += tick * band( r, 0.8, 0.045, aa ) * ( 0.22 + 0.25 * uFury );
   }
 #endif
-  // кольцо ярости: заполняется от лица героя назад, к камере, обеими сторонами; горячая «голова» — край
+  // кольцо ярости между ободками: заполняется от лица героя назад, к камере, обеими сторонами;
+  // горячая «голова» на краю, когда полно — всё кольцо горит светлым цветом
   float af = abs( atan( p.x, p.y ) );
   float fa = uFury * PI;
-  float fill = 1.0 - smoothstep( fa - 0.015, fa + 0.015, af );
-  float rim = band( r, 0.95, 0.024, aa );
-  I += rim * fill * 0.6;
-  H += rim * fill * ( 0.35 + 0.65 * uReady ) + rim * exp( - pow( ( af - fa ) * 7.0, 2.0 ) ) * step( 0.01, uFury ) * ( 1.0 - uReady ) * 1.4;
-  // подсветка земли кругом, рябь при накоплении, сердцевина заряда
-  I += ( 1.0 - smoothstep( 0.2, 1.0, r ) ) * ( 0.05 + 0.07 * uFury );
-  float w = fract( r * 1.6 - t * 0.5 );
-  I += smoothstep( 0.0, 0.05, w ) * ( 1.0 - smoothstep( 0.05, 0.2, w ) ) * 0.22 * smoothstep( 0.25, 0.9, uFury ) * ( 1.0 - r );
-  H += exp( - r * r * 10.0 ) * uCharge * 0.9;
+  float fill = 1.0 - smoothstep( fa - 0.012, fa + 0.012, af );
+  float fr = band( r, 0.933, 0.013, aa );
+  I += fr * fill * 0.4;
+  H += fr * fill * ( 0.1 + 0.45 * uReady ) + fr * exp( - pow( ( af - fa ) * 9.0, 2.0 ) ) * step( 0.01, uFury ) * ( 1.0 - uReady ) * 0.9;
+  // мягкий свет кольцом по земле (не диск), рябь при накоплении, сердцевина заряда
+  I += smoothstep( 0.15, 0.7, r ) * ( 1.0 - smoothstep( 0.7, 1.0, r ) ) * ( 0.025 + 0.04 * uFury );
+  float w = fract( r * 1.6 - t * 0.45 );
+  I += smoothstep( 0.0, 0.04, w ) * ( 1.0 - smoothstep( 0.04, 0.16, w ) ) * 0.12 * smoothstep( 0.25, 0.9, uFury ) * ( 1.0 - r );
+  H += exp( - r * r * 14.0 ) * uCharge * 0.5;
   // вспышка: волна от центра к ободу, весь круг на миг ярче
-  float rf = 0.22 + ( 1.0 - uFlash ) * 0.8;
-  H += band( r, rf, 0.025, aa * 2.0 ) * uFlash * 2.2;
-  I *= 1.0 + 0.9 * uFlash + 0.35 * uReady * ( 0.5 + 0.5 * sin( t * 5.0 ) );
-  // золотой ободок оберега/щита — двойное кольцо у внутреннего круга
-  float S = ( band( r, 0.63, 0.008, aa ) + band( r, 0.565, 0.006, aa ) * 0.7 ) * uStateK;
+  float rfl = 0.22 + ( 1.0 - uFlash ) * 0.78;
+  H += band( r, rfl, 0.02, aa * 2.0 ) * uFlash * 1.5;
+  I *= 1.0 + 0.9 * uFlash + 0.3 * uReady * ( 0.5 + 0.5 * sin( t * 5.0 ) );
+  // золотой ободок оберега/щита — двойное кольцо у круга гексаграммы
+  float S = ( band( r, 0.65, 0.006, aa ) + band( r, 0.59, 0.004, aa ) * 0.7 ) * uStateK;
   vec3 c1 = mix( uC1, uLowC, uLow * 0.75 );
-  vec3 col = c1 * I + uC2 * H * 1.6 + uStateC * S * 1.6;
+  vec3 col = c1 * I + uC2 * H + uStateC * S * 1.2;
   gl_FragColor = vec4( col * uK, 1.0 );
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -617,7 +621,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
       RNU.uK.value = rk; RNU.uFury.value = st.fz; RNU.uReady.value = st.rdy; RNU.uFlash.value = st.flash; RNU.uCharge.value = ch;
       RNU.uYaw.value = rootYaw; RNU.uLow.value = Math.min(1, hb * 1.2);
       RNU.uStateK.value = st.gd * (1 + 0.8 * st.pop);
-      rune.scale.setScalar(0.95 * (1 + 0.28 * st.fz) * (1 + 0.12 * st.flash * (1 - st.flash) * 4));
+      rune.scale.setScalar(0.85 * (1 + 0.25 * st.fz) * (1 + 0.12 * st.flash * (1 - st.flash) * 4));
     }
     // волны вокруг тела: при накоплении ярости, заряде и вспышке
     if (waves) {

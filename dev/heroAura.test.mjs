@@ -74,7 +74,7 @@ const s1 = aura.state();
 assert.ok(s1.fury > 0.7, `ярость сглажена к 0.8: ${s1.fury}`);
 assert.ok(s1.points > s0.points, `искр больше с яростью: ${s0.points} → ${s1.points}`);
 assert.ok(s1.rimK > s0.rimK, 'кромка ярче с яростью');
-assert.ok(aura.rune.scale.x > 0.95 * 1.15, 'руна выросла');
+assert.ok(aura.rune.scale.x > 0.85 * 1.15, 'руна выросла');
 assert.equal(s1.waves, true, 'волны вокруг тела при накоплении ярости');
 // заполнение: вспышка
 P.fury = 100; P.furyReady = true;
