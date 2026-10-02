@@ -549,6 +549,7 @@ function normSettings(s) {
     difficulty: o.difficulty === 'normal' ? 'normal' : 'easy', // [FEEL] сложность боя с Регентом
     hero: HERO_OPTIONS.some(([v]) => v === o.hero) ? o.hero : DEFAULT_SETTINGS.hero,
     muted: o.muted === true, // [SFX] «Без звука» (клавиша M)
+    spiritAvatar: o.spiritAvatar !== false, // [W3-SPIRIT] «Дух игрока»
   };
 }
 
@@ -1292,6 +1293,18 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     return node;
   }
 
+  // [W3-SPIRIT] «Дух игрока»: светящийся дух повторяет руки и пальцы игрока (превью камеры и небо над ареной)
+  function buildSpirit(prefix) {
+    const id = `${uid}-${prefix}-spirit`;
+    const input = el('input', { type: 'checkbox', id, class: 'ao-check__input' });
+    const node = el('div', { class: 'ao-field' }, el('label', { class: 'ao-check', for: id, title: 'Светящийся дух повторяет ваши руки и пальцы: в превью камеры и в небе над ареной' }, input, el('span', { text: 'Дух игрока' })));
+    listen(input, 'change', () => invoke('onSettings', { spiritAvatar: input.checked }));
+    const ctl = { sync(settings, force) { if (!force && doc.activeElement === input) return; if (input.checked !== settings.spiritAvatar) input.checked = settings.spiritAvatar; } };
+    listen(input, 'blur', () => { if (state.settings) ctl.sync(state.settings, true); });
+    controls.push(ctl);
+    return node;
+  }
+
   // [V5] «Управление движением»: Руль (по умолчанию) / Джойстик — тот же сегментный переключатель, что у качества
   const MOVE_OPTIONS = [['steer', 'Руль'], ['stick', 'Джойстик']];
   function buildMoveMode(prefix) {
@@ -1460,6 +1473,11 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         if (prev && keys[keys.indexOf(key) - 1] === 'difficulty') { const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 22px;align-items:flex-end' }); wrap.replaceChild(row, prev); row.append(prev, mo); }
         else wrap.append(mo);
       }
+      else if (key === 'spiritAvatar') { // [W3-SPIRIT] в строке «Жесты: Новичок | Мастер ☑ Автоход» (меню не растёт по высоте)
+        const sp = buildSpirit(prefix), prev = wrap.lastElementChild;
+        const row = prev && keys[keys.indexOf(key) - 1] === 'gestureMode' ? prev.querySelector('div[style*="flex"]') : null;
+        if (row) { sp.style.margin = '0'; row.append(sp); } else wrap.append(sp);
+      }
     }
     return wrap;
   }
@@ -1525,7 +1543,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       title,
       el('p', { class: 'ao-subtitle', text: 'Бой с Регентом Нимба' }),
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
-      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, techBtn.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode'], 'menu')), // [НОВИЧОК] режим жестов — на виду
+      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, techBtn.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode', 'spiritAvatar'], 'menu')), // [НОВИЧОК] режим жестов — на виду; [W3-SPIRIT] «Дух игрока»
       buildHeroPick('menu'),
       el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3 ao-menu__sethead' }, setToggle), setBody),
       el('div', { class: 'ao-menu__foot' }, el('div', { class: 'ao-menu__toggles' }, dbg, presentBtn), dbgKeys),
@@ -2500,7 +2518,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         'div',
         { class: 'ao-cols' },
         el('div', { class: 'ao-col ao-col--media' }, host, status.node, hint, bookWrap),
-        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['gestureMode', 'moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
+        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['gestureMode', 'spiritAvatar', 'moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
       ),
       dbgKeys,
       el('div', { class: 'ao-actions' }, resume.node, recal.node, restart.node, oathP.node, el('span', { class: 'ao-spacer' }), exit.node),
@@ -3470,7 +3488,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   function syncSettings(s) {
-    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}|${s.gestureMode}|${s.autoWalk}|${s.difficulty}|${s.muted}`; // [FOREST] + startZone, [НОВИЧОК] + жесты, [FEEL] + difficulty, [SFX] + muted
+    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}|${s.gestureMode}|${s.autoWalk}|${s.difficulty}|${s.muted}|${s.spiritAvatar}`; // [FOREST] + startZone, [НОВИЧОК] + жесты, [FEEL] + difficulty, [SFX] + muted, [W3-SPIRIT] + дух
     state.settings = s;
     if (key === state.settingsKey) return;
     state.settingsKey = key;

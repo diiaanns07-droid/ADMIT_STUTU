@@ -92,6 +92,7 @@ function sanitizeSettings(patch, base) {
     out.gestureMode = patch.gestureMode;
   }
   if ('autoWalk' in patch) out.autoWalk = patch.autoWalk !== false;
+  if ('spiritAvatar' in patch) out.spiritAvatar = patch.spiritAvatar !== false; // [W3-SPIRIT] «Дух игрока»
   return out;
 }
 function loadSettings() {
@@ -957,6 +958,9 @@ function handAnchors() {
 try { handZone = createHandZone({ target: window }); heroBowPose = createHeroBowPose(); } catch (e) { console.warn('[HAND] handZone', e); handZone = null; }
 import('./core/handFxOverlay.js').then((m) => { try { handFx = m.createHandFxOverlay({ canvas: overlay }); } catch (e) { console.warn('[HAND] handFxOverlay', e); } }).catch((e) => console.warn('[HAND] core/handFxOverlay.js', e && e.message));
 import('./modules/handVisuals.js').then((m) => { try { handVisuals = m.createHandVisuals({ THREE, scene, config }); handVisuals.setQuality(settings.quality); } catch (e) { console.warn('[HAND] handVisuals', e); handVisuals = null; } }).catch((e) => console.warn('[HAND] modules/handVisuals.js', e && e.message));
+// [W3-SPIRIT] дух игрока: светящийся силуэт повторяет руки и пальцы игрока — в превью камеры и над ареной (modules/spiritAvatar.js)
+let spirit = null;
+import('./modules/spiritAvatar.js').then((m) => { try { spirit = m.createSpiritAvatar({ THREE, scene, camera, renderer, slot, overlay, heroes: HEROES, settings }); } catch (e) { console.warn('[W3-SPIRIT]', e); } }).catch((e) => console.warn('[W3-SPIRIT] modules/spiritAvatar.js', e && e.message));
 const battleHud = createBattleHud({ canvas: hudCanvas });
 // [ТВИСТ «ОШИБКА»] удачные жесты и подсказки за бой → точность и частая ошибка на экране итогов
 const coachStats = createCoachStats();
@@ -1642,6 +1646,7 @@ function frame(now) {
     if (bossFinale) bossFinale.applyCamera(camera, dtReal);   // [W3-КИНО] наезд на Регента / облёт места гибели
   }
 
+  if (spirit) spirit.frame(dtReal, now, { screen: app.screen, debug: app.debug, vision, status: vision ? visionStatus() : null, input, events, snapshot: lastSnapshot, hero: heroModel ? heroModel.hero : settings.hero }); // [W3-SPIRIT]
   if (heroShowcase) { try { heroShowcase.update(dtReal, app.screen === 'menu', camera); } catch (e) { console.warn('[HERO] витрина', e); heroShowcase = null; } } // [HERO] свет и облёт витрины
   if (pvpCtl) { try { pvpCtl.frame(lastSnapshot, app.screen); } catch (e) { console.error('[PVP] frame', e); } } // [PVP] фазы хоста, готовность, панель
   if (postfx && typeof postfx.setMode === 'function') { try { postfx.setMode(app.screen, settings); } catch (e) { /* ignore */ } } // [BDO] DOF меню и грейд по экрану
