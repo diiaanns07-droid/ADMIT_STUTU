@@ -34,9 +34,10 @@ export const HAND_GESTURES_VERSION = 'ASHEN_V3-hands-6';
 // кулак → выброс, сфера двумя руками и её бросок. Остальные детекторы не работают вовсе, поэтому
 // не перехватывают позы базовых жестов (щепоть «Искры» у кулака, перо руны у «OK», «кулак → ладонь»
 // левой как парирование, хлопок/врата у сферы) и не сыплют подсказками о жестах, которых нет.
+// [W3-MAGIC] 'stretch' — «ладони вместе → растянуть» («Врата бури» / «Столп небес») есть в обоих профилях.
 export const GESTURE_PROFILES = Object.freeze({
-  novice: Object.freeze(['steer', 'shield', 'dash', 'attack', 'burst', 'orb', 'throw']),
-  master: Object.freeze(['steer', 'shield', 'dash', 'attack', 'burst', 'orb', 'throw', 'rune', 'spark', 'slash', 'parry', 'prism', 'sigil', 'twin']),
+  novice: Object.freeze(['steer', 'shield', 'dash', 'attack', 'burst', 'orb', 'throw', 'stretch']),
+  master: Object.freeze(['steer', 'shield', 'dash', 'attack', 'burst', 'orb', 'throw', 'rune', 'spark', 'slash', 'parry', 'prism', 'sigil', 'twin', 'stretch']),
 });
 // Подсказки «ОШИБКА» о выключенных в «Новичке» жестах
 const NOVICE_MUTED_HINTS = /^(rune_|spark_|slash_|parry_|prism_|gate_|frame_)/;
@@ -219,13 +220,19 @@ export const DEFAULT_HAND_CONFIG = Object.freeze({
   clapWindowMs: 320,       // за столько
   clapSpeed: 4.0,          // S/с — средняя скорость сближения
   clapDy: 0.7,             // |dy| / расстояние в начале: руки на одной высоте
-  // ВРАТА: ладони вместе (молитвенно) → резко развести в стороны
-  gateTogether: 1.15,      // ближе стольких S
-  gateHoldMs: 250,         // вместе столько
-  gatePrimeMs: 700,        // после разъединения ждём развода столько
-  gateApart: 2.8,          // развели дальше
-  gateSpeed: 4.0,          // S/с
-  gateHoriz: 0.75,         // |dx| / расстояние: развели по горизонтали
+  // [W3-MAGIC] ЛАДОНИ ВМЕСТЕ → РАСТЯНУТЬ: в стороны — «Врата бури» (sigil 'gate'), вверх-вниз — «Столп небес» ('pillar').
+  // Сомкнуты — центры ладоней ближе stretchTogether и это не сфера/призма (у сферы между ладонями «мяч»).
+  stretchTogether: 1.15,   // ближе стольких S — ладони сомкнуты
+  stretchHoldMs: 300,      // сомкнуты не меньше — жест взведён (меньше — подсказка «сомкни и подержи»)
+  stretchFullMs: 1500,     // держал столько — полный заряд (сила растёт от stretchHoldMs до stretchFullMs)
+  stretchShowMs: 120,      // заряд показывается после стольких мс (руки, просто прошедшие рядом, не мигают)
+  stretchPrimeMs: 900,     // после размыкания столько ждём растяжения
+  stretchLostMs: 700,      // сомкнутые ладони MediaPipe теряет: «вместе» держится столько без кадров кистей
+  stretchApart: 2.4,       // растянули дальше стольких S — жест закончен
+  stretchSpeed: 3.0,       // S/с — средняя скорость растяжения не меньше
+  stretchAxisCos: 0.79,    // |dx|/gap не меньше — в стороны, |dy|/gap — вверх-вниз (≈38°); между — диагональ
+  stretchNear: 1.9,        // [ОШИБКА] ладони были ближе стольких S, но не сомкнуты — «сомкни ладони»
+  stretchOpenWindowMs: 500,
   // РАМКА: обе кисти буквой «Г» (указательный и большой выпрямлены, остальные согнуты), по диагонали
   frameHoldMs: 300,
   frameThumb: 0.6,         // большой отставлен (|кончик − MCP указательного| / ширина ладони); поджатый ≈ 0.45
@@ -777,6 +784,11 @@ export function createHandGestures(configPatch = {}) {
     };
   }
 
+  // [W3-MAGIC] состояние «ладони вместе → растянуть»
+  function newStretch() {
+    return { since: null, togEnd: null, togSeen: null, togGap: 0, lost: false, prime: null, axis: null, hist: [], blockedUntil: -Infinity };
+  }
+
   let st;
   function reset() {
     st = {
@@ -784,7 +796,8 @@ export function createHandGestures(configPatch = {}) {
       lastObsT: null, frameDt: 33, mirror: true, aspect: 4 / 3, standing: false, unitK: 1,
       pulses: { burst: null, rune: null, runeFizzle: null, dash: null, throw: null, dashDir: null, parry: null, spark: null, slash: null, sigil: null, hint: null },
       coach: { until: {}, gapUntil: -Infinity, near: {}, counts: {}, noHandsSince: null },
-      sig: { hist: [], togetherSince: null, primedUntil: -Infinity, frameSince: null, frameFired: false, blockedUntil: -Infinity },
+      sig: { hist: [], frameSince: null, frameFired: false, blockedUntil: -Infinity },
+      str: newStretch(),   // [W3-MAGIC] «ладони вместе → растянуть»
       twin: null,   // [V3] двуручное рисование: { phase: 'arming'|'drawing', ... }
       burstBlockedUntil: -Infinity, pendingBurst: null,
       parryBlockedUntil: -Infinity, sparkBlockedUntil: -Infinity, strokeBlockedUntil: -Infinity,
@@ -1209,6 +1222,7 @@ export function createHandGestures(configPatch = {}) {
   // ───────── [ТВИСТ «ОШИБКА»] подсказки ─────────
   function hint(code, t, data, cooldownMs) {
     if (profile === 'novice' && NOVICE_MUTED_HINTS.test(code)) return;   // [НОВИЧОК] о выключенных жестах молчим
+    if ((st.str.since !== null || st.str.prime) && !/^stretch_/.test(code)) return;   // [W3-MAGIC] ладони сомкнуты/растягиваются — о щите и ходе молчим
     const C = st.coach;
     if (t < C.gapUntil || t < (C.until[code] ?? -Infinity)) return;
     C.until[code] = t + (fin(cooldownMs) ? cooldownMs : cfg.hintCooldownMs);
@@ -1546,6 +1560,8 @@ export function createHandGestures(configPatch = {}) {
       return;
     }
     if (!e) { C.pending = null; return; }
+    // [W3-MAGIC] ладони сомкнуты или их растягивают после удержания — это «Врата»/«Столп», не сфера
+    if (st.str.since !== null || st.str.prime) { C.pending = null; return; }
     if (!C.pending && steering(mover().read(t)) > cfg.conjureStickMax) return;
     if (!C.pending || C.pending.kind !== e.kind) { C.pending = { kind: e.kind, since: t }; return; }
     if (t - C.pending.since >= cfg.conjureOnMs) {
@@ -1555,7 +1571,7 @@ export function createHandGestures(configPatch = {}) {
     }
   }
 
-  // ───────── [V3] двуручные фигуры-печати: ХЛОПОК, ВРАТА, РАМКА ─────────
+  // ───────── [V3] двуручные фигуры-печати: ХЛОПОК, РАМКА (ВРАТА — в updateStretch, [W3-MAGIC]) ─────────
   // «Г»: указательный выпрямлен, большой отставлен ПОД УГЛОМ ≥ frameAngleDeg к указательному.
   // Обычное указание (перо рун) — 28–65° (реальные кадры HaGRID: без угла 20 из 23 проходили как «Г»).
   function lShape(H) {
@@ -1584,7 +1600,7 @@ export function createHandGestures(configPatch = {}) {
           }
         }
       }
-      G.hist.length = 0; G.togetherSince = null; G.frameSince = null; G.frameFired = false; return;
+      G.hist.length = 0; G.frameSince = null; G.frameFired = false; return;
     }
     const S = (L.scale + R.scale) / 2;
     const cL = palmCenter(L), cR = palmCenter(R);
@@ -1612,26 +1628,10 @@ export function createHandGestures(configPatch = {}) {
         const e = G.hist[i], span = t - e.t;
         if (span > cfg.clapWindowMs) break;
         if (e.gap >= cfg.clapFrom && e.open && e.dy / Math.max(1e-3, e.gap) <= cfg.clapDy && (e.gap - gap) / Math.max(1e-3, span / 1000) >= cfg.clapSpeed) {
-          if (fire('clap', { power: clamp((e.gap - gap) / Math.max(1e-3, span / 1000) / (cfg.clapSpeed * 2.5), 0.3, 1) })) { G.hist.length = 0; G.togetherSince = null; G.primedUntil = -Infinity; }
+          if (fire('clap', { power: clamp((e.gap - gap) / Math.max(1e-3, span / 1000) / (cfg.clapSpeed * 2.5), 0.3, 1) })) G.hist.length = 0;
           return;
         }
       }
-    }
-    // ВРАТА: вместе → резко врозь по горизонтали
-    if (gap <= cfg.gateTogether && G.hist[G.hist.length - 1].open) {
-      if (G.togetherSince === null) G.togetherSince = t;
-      if (t - G.togetherSince >= cfg.gateHoldMs) G.primedUntil = t + cfg.gatePrimeMs;
-    } else G.togetherSince = null;
-    if (t <= G.primedUntil && gap >= cfg.gateApart && dx / Math.max(1e-3, gap) >= cfg.gateHoriz) {
-      // скорость разведения: от последнего кадра «вместе»
-      let from = null;
-      for (let i = G.hist.length - 1; i >= 0; i--) if (G.hist[i].gap <= cfg.gateTogether) { from = G.hist[i]; break; }
-      const sp = from ? (gap - from.gap) / Math.max(1e-3, (t - from.t) / 1000) : 0;
-      if (sp >= cfg.gateSpeed && fire('gate', { power: clamp(sp / (cfg.gateSpeed * 2.5), 0.3, 1) })) { G.primedUntil = -Infinity; G.togetherSince = null; return; }
-      // [ОШИБКА] ладони развели, но медленно
-      if (sp < cfg.gateSpeed && t >= G.blockedUntil) { hint('gate_slow', t); G.primedUntil = -Infinity; }
-    } else if (t <= G.primedUntil && gap >= cfg.gateApart && dx / Math.max(1e-3, gap) < cfg.gateHoriz * 0.8 && t >= G.blockedUntil) {
-      hint('gate_horiz', t); G.primedUntil = -Infinity; // [ОШИБКА] развели вверх-вниз, а не в стороны
     }
     // РАМКА: две «Г» по диагонали держатся frameHoldMs
     const frame = lShape(L) && lShape(R) && dx >= cfg.frameDx && dy >= cfg.frameDy;
@@ -1642,6 +1642,104 @@ export function createHandGestures(configPatch = {}) {
     } else { G.frameSince = null; G.frameFired = false; }
     // [ОШИБКА] обе «Г» есть, но руки рядом по высоте — рамка не по диагонали
     if (sustained('frame', !frame && lShape(L) && lShape(R) && dy < cfg.frameDy, t, 600)) hint('frame_diag', t);
+  }
+
+  // ───────── [W3-MAGIC] «ладони вместе → растянуть»: «Врата бури» (в стороны) и «Столп небес» (вверх-вниз) ─────────
+  // Ладони сомкнуты (почти касаются) ≥ stretchHoldMs → жест взведён; затем за stretchPrimeMs их растягивают
+  // дальше stretchApart со скоростью ≥ stretchSpeed. Ось — по направлению «ладонь → ладонь» в конце.
+  // Сила 0..1 — от времени удержания (0,3–1,5 с), скорости и размаха. MediaPipe часто теряет сомкнутые
+  // ладони: пропавшие кадры до stretchLostMs считаются «вместе», а растяжение после пропажи — резким.
+  // Сфера (ладони «как мяч», conj.pending/on) и призма сомкнутыми ладонями не считаются.
+  function updateStretch(t) {
+    const T = st.str, C = st.conj, G = st.sig;
+    const L = st.hands.left, R = st.hands.right;
+    const seen = (H) => H.present && H.lastSeen === t && H.pts && H.scale;
+    if (!seen(L) || !seen(R)) {
+      if (T.since !== null && t - T.togSeen <= cfg.stretchLostMs) { T.togEnd = t; T.lost = true; }
+      else if (T.since !== null) { T.since = null; T.lost = false; }
+      if (T.prime && t - T.prime.t0 > cfg.stretchPrimeMs) T.prime = null;
+      T.hist.length = 0; T.axis = null;
+      return;
+    }
+    const S = (L.scale + R.scale) / 2;
+    const cL = palmCenter(L), cR = palmCenter(R);
+    const gap = d2(cL, cR) / S, dx = Math.abs(cL.x - cR.x) / S, dy = Math.abs(cL.y - cR.y) / S;
+    const conj = C.on || !!C.pending || !!(st.twin && st.twin.phase === 'drawing');   // сфера, призма, рисование
+    T.hist.push({ t, gap });
+    while (T.hist.length > 30 || (T.hist.length && t - T.hist[0].t > cfg.stretchOpenWindowMs)) T.hist.shift();
+    if (gap <= cfg.stretchTogether && !conj) {
+      if (T.since === null) { T.since = t; T.lost = false; }
+      T.togEnd = t; T.togSeen = t; T.togGap = gap; T.prime = null; T.axis = null;
+      busyHands(t);
+      return;
+    }
+    if (T.since !== null) {
+      // ладони разомкнулись: удержали достаточно — жест взведён
+      const held = T.togEnd - T.since;
+      if (held >= cfg.stretchHoldMs && !conj) T.prime = { t0: T.togEnd, held, gap0: T.togGap, lost: T.lost, maxGap: gap };
+      T.since = null; T.lost = false;
+    }
+    const P = T.prime;
+    if (P) {
+      busyHands(t);
+      P.maxGap = Math.max(P.maxGap, gap);
+      T.axis = gap >= cfg.stretchTogether * 1.3 ? axisOf(dx, dy, gap) : null;
+      if (gap >= cfg.stretchApart) {
+        const sp = (gap - P.gap0) / Math.max(1e-3, (t - P.t0) / 1000);
+        const axis = axisOf(dx, dy, gap);
+        T.prime = null; T.axis = null;
+        if (!axis) { if (t >= T.blockedUntil) hint('stretch_diag', t); return; }            // [ОШИБКА] по диагонали
+        if (sp < cfg.stretchSpeed && !P.lost) { if (t >= T.blockedUntil) hint('stretch_slow', t); return; } // [ОШИБКА] медленно
+        const holdK = clamp((P.held - cfg.stretchHoldMs) / Math.max(1, cfg.stretchFullMs - cfg.stretchHoldMs), 0, 1);
+        const speedK = P.lost ? 0.5 : clamp((sp - cfg.stretchSpeed) / (cfg.stretchSpeed * 2), 0, 1);
+        const spanK = clamp((gap - cfg.stretchApart) / 1.5, 0, 1);
+        const power = clamp(0.3 + 0.4 * holdK + 0.2 * speedK + 0.1 * spanK, 0.3, 1);
+        fireStretch(t, axis === 'h' ? 'gate' : 'pillar', { power: Math.round(power * 1000) / 1000, axis, heldMs: Math.round(P.held) });
+        return;
+      }
+      if (t - P.t0 > cfg.stretchPrimeMs) {
+        // [ОШИБКА] растягивал, но не успел за окно — медленно
+        if (P.maxGap >= (cfg.stretchTogether + cfg.stretchApart) / 2 && t >= T.blockedUntil) hint('stretch_slow', t);
+        T.prime = null; T.axis = null;
+      }
+      return;
+    }
+    T.axis = null;
+    // [ОШИБКА] ладони были рядом, но не сомкнуты (или сомкнуты на миг) — и резко растянуты
+    if (gap >= cfg.stretchApart && !conj && t >= G.blockedUntil && t >= C.throwBlockedUntil) {
+      for (let i = T.hist.length - 2; i >= 0; i--) {
+        const e = T.hist[i];
+        if (e.gap <= cfg.stretchNear && (gap - e.gap) / Math.max(1e-3, (t - e.t) / 1000) >= cfg.stretchSpeed) { hint('stretch_open', t); T.hist.length = 0; break; }
+      }
+    }
+  }
+  function axisOf(dx, dy, gap) {
+    const g = Math.max(1e-3, gap);
+    return dx / g >= cfg.stretchAxisCos ? 'h' : dy / g >= cfg.stretchAxisCos ? 'v' : null;
+  }
+  // пока ладони сомкнуты и растягиваются — взмах, выброс и рывок левой молчат (руки летят в стороны)
+  function busyHands(t) {
+    st.swipe.armed = false; st.swipe.until = Math.max(st.swipe.until, t + 300);
+    st.burstBlockedUntil = Math.max(st.burstBlockedUntil, t + 300);
+  }
+  // Откат «Хлопка» врата не держит: в «Мастере» быстро сведённые ладони — уже хлопок, а удержанные и
+  // растянутые после него — ещё и «Врата»/«Столп» (два разных жеста подряд).
+  function fireStretch(t, kind, data) {
+    const G = st.sig, C = st.conj, T = st.str;
+    if (t < T.blockedUntil) return false;
+    firePulse('sigil', t, { kind, ...data });
+    T.blockedUntil = t + cfg.sigilRefractoryMs;
+    G.blockedUntil = Math.max(G.blockedUntil, t + cfg.sigilRefractoryMs);
+    // разведённые ладони «друг к другу» — поза сферы: она не вспыхивает сразу после печати
+    Object.assign(C, { on: false, kind: null, pending: null, size: 0, charge: 0, hist: [], throwBlockedUntil: Math.max(C.throwBlockedUntil, t + 900) });
+    st.swipe.armed = false; st.swipe.until = Math.max(st.swipe.until, t + 500);
+    return true;
+  }
+  // Заряд для HUD и эффектов: 0..1, пока ладони сомкнуты (и пока их растягивают после удержания)
+  function stretchCharge() {
+    const T = st.str;
+    if (T.since !== null) { const h = T.togEnd - T.since; return h >= cfg.stretchShowMs ? clamp(h / cfg.stretchFullMs, 0, 1) : 0; }
+    return T.prime ? clamp(T.prime.held / cfg.stretchFullMs, 0, 1) : 0;
   }
 
   // ───────── [V3] двуручное рисование: ДЕЛЬТА (треугольник) и КОР (сердце) ─────────
@@ -1780,7 +1878,8 @@ export function createHandGestures(configPatch = {}) {
       if (on('rune')) updateStroke(t); else if (st.stroke) { st.stroke = null; st.tipF = null; }
       if (on('slash')) updateSwipe(t);
       updateConjure(t, obs);
-      if (on('sigil')) updateSigils(t); else { st.sig.hist.length = 0; st.sig.togetherSince = null; st.sig.frameSince = null; }
+      if (on('sigil')) updateSigils(t); else { st.sig.hist.length = 0; st.sig.frameSince = null; }
+      if (on('stretch')) updateStretch(t); else st.str = newStretch();   // [W3-MAGIC]
       if (on('twin')) updateTwin(t); else st.twin = null;
       if (on('spark')) updateSpark(t);
       // левая рука — джойстик: центр ладони в кадре (с аспектом) относительно середины плеч
@@ -1793,7 +1892,7 @@ export function createHandGestures(configPatch = {}) {
       const pw = isObj(obs.poseWrists) && isObj(obs.poseWrists.left) ? obs.poseWrists.left : null;
       const inFrame = pw && fin(pw.x) && fin(pw.y) && pw.x > 0.03 && pw.x < 0.97 && pw.y > 0.03 && pw.y < 0.95; // поза «додумывает» точки за краем
       const wrist = inFrame && (!fin(pw.visibility) || pw.visibility >= 0.5) ? { x: pw.x * st.aspect, y: pw.y } : null;
-      mover().push({ t, hand: pc ? { x: pc.x, y: pc.y, scale: L.scale } : null, wrist, body: bc, mirror: st.mirror, aspect: st.aspect, busy: st.conj.on || !!st.conj.pending || t < st.conj.quietUntil || !!(st.twin && st.twin.phase === 'drawing') });
+      mover().push({ t, hand: pc ? { x: pc.x, y: pc.y, scale: L.scale } : null, wrist, body: bc, mirror: st.mirror, aspect: st.aspect, busy: st.conj.on || !!st.conj.pending || t < st.conj.quietUntil || !!(st.twin && st.twin.phase === 'drawing') || st.str.since !== null || !!st.str.prime });
       const dsh = mover().takeDash();
       if (dsh) firePulse('dashDir', t, { x: dsh.x, z: dsh.z, speed: dsh.speed });
       updateShield(t);
@@ -2065,6 +2164,9 @@ export function createHandGestures(configPatch = {}) {
       slash: sp ? { dir: sp.dir, power: Math.round(sp.power * 1000) / 1000 } : null,
       parry: !!live('parry', t),
       sigil: sg ? sg.kind : null, sigilPower: sg ? Math.round(num0(sg.power) * 1000) / 1000 : 0,
+      // [W3-MAGIC] ладони сомкнуты — идёт заряд «Врат бури» / «Столпа небес»; ось растяжения 'h' | 'v' | null
+      sigilCharge: fresh ? Math.round(stretchCharge() * 1000) / 1000 : 0,
+      sigilAxis: fresh ? st.str.axis : null,
       burstHand: burstP ? (burstP.hand || (burstP.both ? 'both' : 'right')) : null,
       drawing,
       trail: t <= st.trailUntil ? st.trail : [],

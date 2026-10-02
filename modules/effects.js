@@ -1415,7 +1415,8 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
         onShake: (v) => addTrauma(v), onKick: (dir, disp) => addKick(_an.copy(dir), disp),
         anchor: resolveAnchor,
         groundY: (x, z, fb) => (typeof groundFn === 'function' ? groundFn(x, z) : fb),
-        legacy: { flash: (...a) => fxFlash(...a), ring: (...a) => fxRing(...a), wall: (...a) => fxWall(...a), sparks: (...a) => sparks(...a), audio: (n, p, x) => audio.fx(n, p, x), RAW, PAL },
+        legacy: { flash: (...a) => fxFlash(...a), ring: (...a) => fxRing(...a), wall: (...a) => fxWall(...a), sparks: (...a) => sparks(...a), audio: (n, p, x) => audio.fx(n, p, x), RAW, PAL,
+          loop: (k, kind, p) => audio.loop(k, kind, p), loopStop: (k, f) => audio.loopStop(k, f), loopCtl: (k, x) => audio.loopCtl(k, x) }, // [W3-МАГИЯ] гул заряда печати
       });
       flashLight.visible = false; // свет вспышек — пул V6
     } catch (e) { v6 = null; warnOnce('v6', 'слой V6 не создан, старые эффекты:', e); }
@@ -3493,7 +3494,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     unlockAudio: () => (disposed ? Promise.resolve(false) : audio.unlock()),
     setVolume: (value) => { if (!disposed) audio.setVolume(value); },
     // [SFX] интерфейсный звук вне боя: 'ui_ok' («✓ Распознано»), 'ui_error' («ОШИБКА»), проба громкости
-    cue: (name) => { if (!disposed && typeof name === 'string') audio.play(name, null); },
+    cue: (name, param) => { if (!disposed && typeof name === 'string') audio.play(name, null, param); },   // [W3-КИНО] param { gain, rate } — для сэмплов (гром грозы)
     setAudioPaused: (p) => { if (!disposed) audio.setPaused(p); },
     setQuality,
     getCameraImpulse,

@@ -22,16 +22,20 @@
  *     (modules/techniqueTrainer.js), viewModel.coach — итог боя { accuracy, groups[], top3[], compare }
  *   viewModel.progress = { points, earned, pushups, squats, embers[], emberTotal, upgrades[{id,name,level,max,cost,canBuy,now,next}] }
  *   viewModel.training = { exercise, reps, total, state, message, depth, lastOk, sinceRepMs,
- *     приседания: attempts, knee, view, lastHint{code,text,tMs}, sinceHintMs, faults{}, formScore, topFault{code,text,count}, debugSim }
+ *     приседания: attempts, knee, view, lastHint{code,text,tMs}, sinceHintMs, faults{}, formScore, topFault{code,text,count}, debugSim,
+ *     [W3-SQUAT] mode ('novice'|'master'), clean, points, feet, lastRep, lastEvent{clean,points}, framing{points,tip,status,ready},
+ *     diag{vis,knee,kneeRaw,thighDeg,dropDeg,phaseRu,hz,last}, pose{model,switching,recFrames} }  onPoseRecord() — сохранить запись позы
+ *   [W3-VOICE] viewModel.voice = { on, state: 'ready'|'pending'|'no-ru'|'no-api' } — «Голос тренера» (modules/voiceCoach.js)
  */
 
 import { createTutorialTrainer, TRAINER_STEPS } from '../core/tutorialTrainer.js';
 import { COACH_GROUPS, hintPictogram } from '../core/gestureCoach.js'; // [ТВИСТ «ОШИБКА»] итоги: жесты и пиктограммы
 import { createTechniqueScreen } from './techniqueTrainer.js';            // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
+import { createChallengeScreen, createChallengeMenuButton } from './challenge.js'; // [W3-CHALLENGE] «Испытание · 60 с»
 
 export const API_VERSION = 'ASHEN_V1';
 
-const SCREENS = ['menu', 'camera', 'calibration', 'tutorial', 'playing', 'paused', 'victory', 'defeat', 'error', 'oath', 'training', 'technique'];
+const SCREENS = ['menu', 'camera', 'calibration', 'tutorial', 'playing', 'paused', 'victory', 'defeat', 'error', 'oath', 'training', 'technique', 'challenge']; // [W3-CHALLENGE] + итоги испытания
 const TRACK_STATES = ['idle', 'loading', 'permission', 'calibrating', 'ready', 'lost', 'error'];
 const CAMERA_RUNNING = ['ready', 'lost', 'calibrating'];
 const CAMERA_STARTING = ['permission', 'loading'];
@@ -63,6 +67,7 @@ const SCREEN_ANNOUNCE = {
   paused: 'Пауза',
   victory: 'Победа',
   defeat: 'Поражение',
+  challenge: 'Итоги испытания', // [W3-CHALLENGE]
   error: 'Ошибка',
   oath: 'Клятва героя: улучшения',
   training: 'Тренировка клятвы',
@@ -71,8 +76,9 @@ const SCREEN_ANNOUNCE = {
 
 const DEBUG_KEYS_TEXT =
   'Клавиши отладки: W — вперёд, A и D — поворот (в «Джойстике» — шаг вбок), S — стоп (в «Джойстике» — назад), ' +
-  'пробел — рывок по ходу, Q и E — рывок вбок, J — огонь, U — искра, I — рассечение, ' +
-  'K — щит, F — парирование, L — выброс, O или P — сфера или призма; Esc — пауза. Это клавиатура, а не трекинг.';
+  'пробел — рывок по ходу, Q и E — рывок вбок, J — огонь, U — искра (полная шкала — «Небесный суд»), I — рассечение, ' +
+  'K — щит, F — парирование, L — выброс, O или P — сфера или призма, ' +
+  'X или G (держать и отпустить) — «Врата бури» или «Столп небес»; Esc — пауза. Это клавиатура, а не трекинг.';   // [W3-MAGIC] X/G
 
 const PART_NAMES = {
   head: 'голова',
@@ -321,7 +327,7 @@ const TUTORIAL = [
   {
     key: 'both',
     title: 'Кулак и руны',
-    gesture: 'Правый кулак подержите и резко раскройте — выброс. Правым указательным рисуйте в воздухе, держа фигуру прямо: ▲ ϟ ○ ★ @ ∞ ^ V ⧗ ℓ, в конце замрите.',
+    gesture: 'Правый кулак подержите и резко раскройте — выброс. Правым указательным рисуйте в воздухе, держа фигуру прямо: ▲ ϟ ○ ★ @ ∞ ^ ∨ ⧗ ℓ, в конце замрите.',
     effect: 'Копьё, оглушение, лечение, звездопад, вихрь, вечность, иглы, жатва, замедление Регента, сброс откатов.',
     svg: svgWrap(
       burstRays() +
@@ -471,6 +477,17 @@ const TRAINER_PICS = {
     '<g class="pic-b">' + handG(HAND_OPEN, 'right') + '</g></g>' +
     '<g class="pic-rays"><path d="M100 28 V8 M158 46 L172 30 M42 46 L28 30 M178 104 H200 M22 104 H2"/></g>'),
 };
+// [W3-MAGIC] «Книга заклинаний»: магия двух ладоней — «ладони вместе → растянуть» (и в «Новичке»)
+const PALMS_TOGETHER = '<g transform="translate(10 40) scale(.6)">' + handG(HAND_OPEN, 'left') + '</g>' +
+  '<g transform="translate(198 40) scale(-.6 .6)">' + handG(HAND_OPEN, 'left') + '</g>';
+const STRETCH_CARDS = [
+  { id: 'gate', title: 'Врата бури', effect: 'волна огня и молний по земле к Регенту и щит на 3,5 с',
+    tip: 'Сомкни ладони, подержи (чем дольше, тем сильнее) и резко разведи в стороны.', keyText: 'X — держать и отпустить',
+    pic: picWrap('mini', PALMS_TOGETHER + '<g class="pic-arrows"><path d="M44 120 H8 M20 108 L8 120 L20 132 M164 120 H200 M188 108 L200 120 L188 132"/></g>') },
+  { id: 'pillar', title: 'Столп небес', effect: 'столп света сверху: оглушает Регента на 1,2 с',
+    tip: 'Сомкни ладони, подержи и резко растяни: одну руку вверх, другую вниз.', keyText: 'G — держать и отпустить',
+    pic: picWrap('mini', PALMS_TOGETHER + '<g class="pic-arrows"><path d="M104 36 V6 M92 18 L104 6 L116 18 M104 178 V214 M92 202 L104 214 L116 202"/></g>') },
+];
 // Маленькие (статичные) — для полосы шагов, итога и «Книги заклинаний».
 const TRAINER_MINI = {
   walk: picWrap('mini', '<path class="pic-line" d="M8 104 H200"/><g transform="translate(14 22) scale(0.82)">' + handG(HAND_OPEN, 'left') + '</g>'),
@@ -521,6 +538,26 @@ const BODY_MAP_SVG =
   '<text class="f-lab" x="92" y="44" text-anchor="middle">П</text>' +
   '</svg>';
 
+// [W3-SQUAT] силуэт подготовки к приседаниям: точки ног (зелёные — видно, жёлтые — плохо, красные — нет).
+// Левая сторона человека — слева, как в зеркальном превью камеры.
+const SQUAT_SIL_SVG =
+  '<svg class="ao-sil__svg" viewBox="0 0 60 104" fill="none" stroke-linecap="round" stroke-linejoin="round" ' +
+  'aria-hidden="true" focusable="false">' +
+  '<path class="s-bone" d="M30 16 L30 26 M19 26 L41 26 M19 26 L22 52 M41 26 L38 52 M22 52 L38 52 M19 26 L13 47 M41 26 L47 47 ' +
+  'M22 52 L21 73 L21 94 M38 52 L39 73 L39 94 M21 94 L15 98 M39 94 L45 98"/>' +
+  '<circle data-pt="0" class="s-pt s-pt--head" cx="30" cy="10" r="6"/>' +
+  '<circle data-pt="11" class="s-pt" cx="19" cy="26" r="3.3"/>' +
+  '<circle data-pt="12" class="s-pt" cx="41" cy="26" r="3.3"/>' +
+  '<circle data-pt="23" class="s-pt" cx="22" cy="52" r="3.3"/>' +
+  '<circle data-pt="24" class="s-pt" cx="38" cy="52" r="3.3"/>' +
+  '<circle data-pt="25" class="s-pt" cx="21" cy="73" r="3.3"/>' +
+  '<circle data-pt="26" class="s-pt" cx="39" cy="73" r="3.3"/>' +
+  '<circle data-pt="27" class="s-pt" cx="21" cy="94" r="3.3"/>' +
+  '<circle data-pt="28" class="s-pt" cx="39" cy="94" r="3.3"/>' +
+  '<text class="s-lab" x="6" y="30" text-anchor="middle">Л</text>' +
+  '<text class="s-lab" x="54" y="30" text-anchor="middle">П</text>' +
+  '</svg>';
+
 /* ------------------------------------------------------------ normalizers */
 
 function normSettings(s) {
@@ -537,6 +574,8 @@ function normSettings(s) {
     difficulty: o.difficulty === 'normal' ? 'normal' : 'easy', // [FEEL] сложность боя с Регентом
     hero: HERO_OPTIONS.some(([v]) => v === o.hero) ? o.hero : DEFAULT_SETTINGS.hero,
     muted: o.muted === true, // [SFX] «Без звука» (клавиша M)
+    spiritAvatar: o.spiritAvatar !== false, // [W3-SPIRIT] «Дух игрока»
+    voice: o.voice !== false, // [W3-VOICE] «Голос тренера» (клавиша V)
   };
 }
 
@@ -615,8 +654,8 @@ function normCosts(c) {
  * normInput выше их не пропускает, и его потребители (обучение, пауза) не меняются. */
 
 const RUNE_RU = { ignis: 'ИГНИС ▲', fulgur: 'ФУЛЬГУР ϟ', orbis: 'ОРБИС ○', stella: 'СТЕЛЛА ★', spira: 'СПИРА @', lemnis: 'ЛЕМНИСКА ∞', caret: 'АКУС ^', vee: 'МЕССИС V', clepsydra: 'КЛЕПСИДРА ⧗', alpha: 'АЛЬФА ℓ' };
-const SIGIL_RU = { clap: 'ХЛОПОК', gate: 'ВРАТА', frame: 'РАМКА', delta: 'ДЕЛЬТА', cor: 'СЕРДЦЕ' };
-const SHAPE_RU = { pinch: 'ЩЕПОТЬ', point: 'УКАЗАТЕЛЬНЫЙ', fist: 'КУЛАК', open: 'ЛАДОНЬ', victory: 'V', unknown: 'В КАДРЕ' };
+const SIGIL_RU = { clap: 'ХЛОПОК', gate: 'ВРАТА БУРИ', frame: 'РАМКА', delta: 'ДЕЛЬТА', cor: 'СЕРДЦЕ', pillar: 'СТОЛП НЕБЕС' };   // [W3-MAGIC] +столп
+const SHAPE_RU = { pinch: 'ЩЕПОТЬ', point: 'УКАЗАТЕЛЬНЫЙ', fist: 'КУЛАК', open: 'ЛАДОНЬ', victory: 'ДВА ПАЛЬЦА', unknown: 'В КАДРЕ' };
 const READ_ERR_MS = 4200;      // «ОШИБКА» держится столько же, сколько карточка подсказки battleHud
 const CHEAT_KEY = 'ashen-oath.cheat.v1';
 
@@ -650,6 +689,8 @@ function normGestures(v) {
     slash: !!v.slash,
     parry: v.parry === true,
     sigil: typeof v.sigil === 'string' && v.sigil ? v.sigil : null,
+    sigilCharge: clamp(num(v.sigilCharge), 0, 1),   // [W3-MAGIC] ладони сомкнуты — заряд
+    sigilAxis: v.sigilAxis === 'h' || v.sigilAxis === 'v' ? v.sigilAxis : null,
     rune: typeof v.rune === 'string' && v.rune ? v.rune : null,
     dashDir: dd,
     conjure: v.conjure && typeof v.conjure === 'object' ? (v.conjure.kind === 'prism' ? 'prism' : 'orb') : null,
@@ -693,6 +734,10 @@ const GESTURE_ICONS = {
   burst: `<svg ${SVG36}>${PALM(0, 3)}<path d="M18 2.5v3.6M7 6.5l2.4 2.4M29 6.5l-2.4 2.4M3.5 15.5h3.4M29 15.5h3.4"/></svg>`,
   // искра: из кулака выпрямлен указательный, у кончика — вспышка
   spark: `<svg ${SVG36}>${FIST(0, 6)}<path d="M14.3 19.5V8.5" stroke-width="2.8"/><path d="M14.3 2.2v2.4M9.8 4.2l1.6 1.6M18.8 4.2l-1.6 1.6M8.6 8.4h2.2M17.8 8.4H20"/></svg>`,
+  // [W3-MAGIC] ладони вместе → растянуть: две сомкнутые ладони, стрелки в стороны и вверх-вниз
+  stretch: `<svg ${SVG36}><rect x="12.6" y="11" width="5" height="14" rx="2.5" fill="currentColor" fill-opacity=".2" stroke-width="2.2"/>` +
+    '<rect x="18.4" y="11" width="5" height="14" rx="2.5" fill="currentColor" fill-opacity=".2" stroke-width="2.2"/>' +
+    '<path d="M9 18H2.8M5.3 15.5 2.8 18l2.5 2.5M27 18h6.2M30.7 15.5l2.5 2.5-2.5 2.5M18 8V2.6M15.6 5 18 2.6 20.4 5M18 28v5.4M15.6 31l2.4 2.4 2.4-2.4"/></svg>',
 };
 const CHEAT_ITEMS = [
   { key: 'move', side: 'left', name: 'Ход', how: 'левая ладонь у груди', howStick: 'левая рука — джойстик' },
@@ -701,6 +746,7 @@ const CHEAT_ITEMS = [
   { key: 'bolt', side: 'right', name: 'Снаряд', how: '«OK» правой' },
   { key: 'burst', side: 'right', name: 'Выброс', how: 'кулак → резко ладонь' },
   { key: 'spark', side: 'right', name: 'Искра', how: 'щелчок указательным' },
+  { key: 'stretch', side: 'right', name: 'Врата · Столп', how: 'ладони вместе → растянуть' },   // [W3-MAGIC]
 ];
 
 /* ------------------------------------------------------------ descriptions */
@@ -923,6 +969,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   const timers = new Set();
   const warned = new Set();
   const controls = [];
+  const voiceCtls = []; // [W3-VOICE] «Голос · V»: красятся каждый кадр — голос находится асинхронно (voiceschanged)
 
   const state = {
     screen: null,
@@ -943,6 +990,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     read: { left: null, right: null, err: null, errKey: '', fired: {}, view: null },
     cheatHidden: false,
     present: false,
+    menuSetOpen: null,       // null — по высоте окна: свёрнуты при ≤ 1200 px
   };
 
   /* ---------------------------------------------------------- plumbing */
@@ -1272,6 +1320,18 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     return node;
   }
 
+  // [W3-SPIRIT] «Дух игрока»: светящийся дух повторяет руки и пальцы игрока (превью камеры и небо над ареной)
+  function buildSpirit(prefix) {
+    const id = `${uid}-${prefix}-spirit`;
+    const input = el('input', { type: 'checkbox', id, class: 'ao-check__input' });
+    const node = el('div', { class: 'ao-field' }, el('label', { class: 'ao-check', for: id, title: 'Светящийся дух повторяет ваши руки и пальцы: в превью камеры и в небе над ареной' }, input, el('span', { text: 'Дух игрока' })));
+    listen(input, 'change', () => invoke('onSettings', { spiritAvatar: input.checked }));
+    const ctl = { sync(settings, force) { if (!force && doc.activeElement === input) return; if (input.checked !== settings.spiritAvatar) input.checked = settings.spiritAvatar; } };
+    listen(input, 'blur', () => { if (state.settings) ctl.sync(state.settings, true); });
+    controls.push(ctl);
+    return node;
+  }
+
   // [V5] «Управление движением»: Руль (по умолчанию) / Джойстик — тот же сегментный переключатель, что у качества
   const MOVE_OPTIONS = [['steer', 'Руль'], ['stick', 'Джойстик']];
   function buildMoveMode(prefix) {
@@ -1396,6 +1456,27 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     return fs;
   }
 
+  // [W3-VOICE] «Голос тренера»: подсказки «ОШИБКА» и реплики диктора вслух (main.js, modules/voiceCoach.js).
+  // Включён ли — settings.voice; найден ли русский голос — viewModel.voice.state. Голоса нет — кнопка неактивна,
+  // в паузе под громкостью ещё и строка «русского голоса в системе нет» (в меню — только кнопка: меню не растёт).
+  // Узлы создаются один раз, update() меняет текст и атрибуты.
+  function buildVoiceToggle(prefix) {
+    const btn = el('button', { type: 'button', class: 'ao-mute ao-voice', 'aria-pressed': 'true', 'aria-keyshortcuts': 'V', title: 'Голос тренера: подсказки и реплики вслух — клавиша V', text: 'Голос · V' });
+    const note = el('div', { class: 'ao-field__hint ao-voice__note', hidden: true, text: 'Русского голоса в системе нет — голос тренера молчит' });
+    let missing = false;
+    listen(btn, 'click', () => { if (!missing) invoke('onSettings', { voice: !(state.settings && state.settings.voice !== false) }); });
+    voiceCtls.push((v, st) => {
+      missing = !!v && (v.state === 'no-ru' || v.state === 'no-api');
+      const on = !missing && !(st && st.voice === false);
+      setAttr(btn, 'aria-pressed', on ? 'true' : 'false');
+      setAttr(btn, 'aria-disabled', missing ? 'true' : null);
+      setAttr(btn, 'title', missing ? 'Русского голоса в системе нет — голос тренера молчит' : 'Голос тренера: подсказки и реплики вслух — клавиша V');
+      setText(btn, missing ? 'Нет русского голоса' : on ? 'Голос · V' : 'Голос выкл · V');
+      setHidden(note, !missing || prefix === 'menu');
+    });
+    return { btn, note };
+  }
+
   function buildSettings(keys, prefix) {
     const wrap = el('div', { class: 'ao-settings' });
     for (const key of keys) {
@@ -1419,12 +1500,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
             setText(mute, m ? 'Звук выключен · M' : 'Без звука · M');
           },
         });
-        wrap.append(
-          buildRange({
-            key: 'volume', prefix, label: 'Громкость', min: 0, max: 100, step: 5, head: mute,
-            toRaw: (v) => Math.round(v * 100), fromRaw: (r) => r / 100, format: (v) => `${Math.round(v * 100)}%`,
-          }),
-        );
+        const voice = buildVoiceToggle(prefix); // [W3-VOICE] «Голос · V» — в той же строке, меню не растёт
+        const volField = buildRange({
+          key: 'volume', prefix, label: 'Громкость', min: 0, max: 100, step: 5, head: [mute, voice.btn],
+          toRaw: (v) => Math.round(v * 100), fromRaw: (r) => r / 100, format: (v) => `${Math.round(v * 100)}%`,
+        });
+        volField.append(voice.note);
+        wrap.append(volField);
       } else if (key === 'sensitivity') {
         wrap.append(
           buildRange({
@@ -1440,6 +1522,11 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         if (prev && keys[keys.indexOf(key) - 1] === 'difficulty') { const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 22px;align-items:flex-end' }); wrap.replaceChild(row, prev); row.append(prev, mo); }
         else wrap.append(mo);
       }
+      else if (key === 'spiritAvatar') { // [W3-SPIRIT] в строке «Жесты: Новичок | Мастер ☑ Автоход» (меню не растёт по высоте)
+        const sp = buildSpirit(prefix), prev = wrap.lastElementChild;
+        const row = prev && keys[keys.indexOf(key) - 1] === 'gestureMode' ? prev.querySelector('div[style*="flex"]') : null;
+        if (row) { sp.style.margin = '0'; row.append(sp); } else wrap.append(sp);
+      }
     }
     return wrap;
   }
@@ -1450,7 +1537,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   const backdrop = el('div', { class: 'ao-backdrop', 'aria-hidden': 'true' });
   const live = el('div', { class: 'ao-sr', role: 'status', 'aria-live': 'polite' });
   const liveAlert = el('div', { class: 'ao-sr', role: 'alert', 'aria-live': 'assertive' });
-  const debugBadge = el('div', { class: 'ao-debug', hidden: true }, el('span', { class: 'ao-debug__main', text: 'DEBUG / НЕ CV' }), el('span', { class: 'ao-debug__sub', text: 'ввод с клавиатуры' }));
+  const debugBadge = el('div', { class: 'ao-debug', hidden: true }, el('span', { class: 'ao-debug__main', text: 'Демо без камеры · клавиатура' })); // [W3-CURSOR] без «DEBUG / НЕ CV»
   const banner = el('div', { class: 'ao-banner', hidden: true, 'aria-hidden': 'true' });
   const park = el('div', { class: 'ao-slot-park', 'aria-hidden': 'true' });
   const slot = el('div', { class: 'ao-camera-slot ui-camera-slot', 'data-ui-camera-slot': '' });
@@ -1471,9 +1558,21 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const oathBtn = btn('Клятва героя', () => invoke('onOath', { from: 'menu' }), { variant: 'secondary' });
     const netBtn = btn('Онлайн-дуэль', () => invoke('onNet', { from: 'menu' }), { variant: 'secondary' }); // [NET] экран лобби — modules/netLobby.js
     const bookM = localBtn('Книга заклинаний', (e) => openBook(e && e.currentTarget), { iconName: 'book' }); // [ТРЕНАЖЁР] все жесты
+    // [ПРОЕКТОР] в окне до 1200 px высотой «Настройки» свёрнуты, чтобы меню влезало без прокрутки; кнопка раскрывает их на месте
+    const setBody = el('div', { class: 'ao-menu__setbody', id: `${uid}-menu-set` }, buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'difficulty', 'reducedMotion'], 'menu'));
+    const setToggle = el(
+      'button',
+      { type: 'button', class: 'ao-disclose', 'aria-expanded': 'true', 'aria-controls': `${uid}-menu-set`, 'data-ui-local': '' },
+      el('span', { class: 'ao-disclose__label', text: 'Настройки' }),
+      el('span', { class: 'ao-disclose__sum', text: 'управление, место старта, графика, сложность' }),
+    );
+    const setOpen = () => (state.menuSetOpen === null ? win.innerHeight > 1200 : state.menuSetOpen);
+    listen(setToggle, 'click', () => { state.menuSetOpen = !setOpen(); paintSet(); });
+    const paintSet = () => { const open = setOpen(); setAttr(setToggle, 'aria-expanded', open ? 'true' : 'false'); setHidden(setBody, !open); };
     // [ТВИСТ «ОШИБКА»] тренажёр: чек-лист условий жеста вживую — твист за 20 секунд
     const techBtn = btn('Тренажёр техники', () => invoke('onTechnique', { from: 'menu' }), { variant: 'secondary' });
     techBtn.node.classList.add('ao-menu__tech');
+    const chalBtn = createChallengeMenuButton({ el, listen, invoke }); // [W3-CHALLENGE] «Испытание · 60 с» и рекорд дня
     const oathPts = el('span', { class: 'ao-oathpts', hidden: true });
     const dbg = el('button', { type: 'button', class: 'ao-toggle', 'aria-pressed': 'false' }, el('span', { class: 'ao-toggle__track', 'aria-hidden': 'true' }), el('span', { class: 'ao-toggle__label', text: 'Отладка с клавиатуры' }));
     listen(dbg, 'click', () => invoke('onDebug', !state.debug));
@@ -1494,9 +1593,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       title,
       el('p', { class: 'ao-subtitle', text: 'Бой с Регентом Нимба' }),
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
-      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, techBtn.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode'], 'menu')), // [НОВИЧОК] режим жестов — на виду
+      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, chalBtn.node /* [W3-CHALLENGE] */, techBtn.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode', 'spiritAvatar'], 'menu')), // [НОВИЧОК] режим жестов — на виду; [W3-SPIRIT] «Дух игрока»
       buildHeroPick('menu'),
-      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'difficulty', 'reducedMotion'], 'menu')),
+      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3 ao-menu__sethead' }, setToggle), setBody),
       el('div', { class: 'ao-menu__foot' }, el('div', { class: 'ao-menu__toggles' }, dbg, presentBtn), dbgKeys),
     );
     return {
@@ -1506,10 +1605,12 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       update(ctx) {
         setAttr(dbg, 'aria-pressed', ctx.debug ? 'true' : 'false');
         setAttr(presentBtn, 'aria-pressed', state.present ? 'true' : 'false');
+        paintSet();
         setHidden(dbgKeys, !ctx.debug);
         const pts = ctx.vm.progress && isNum(ctx.vm.progress.points) ? ctx.vm.progress.points : 0;
         setText(oathPts, pts > 0 ? `${pts} ${plural(pts, 'очко', 'очка', 'очков')}` : '');
         setHidden(oathPts, !(pts > 0));
+        chalBtn.update(ctx); // [W3-CHALLENGE]
       },
     };
   })();
@@ -1521,7 +1622,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const h = heading('h2', hid, 'Камера', 'ao-h2');
     const enable = btn('Разрешить камеру', pressEnable, { variant: 'primary', iconName: 'camera' });
     const next = btn('Далее: калибровка', () => invoke('onStart', { from: 'camera' }), { variant: 'primary' });
-    const skip = btn('Продолжить без камеры (DEBUG)', () => invoke('onStart', { from: 'camera', debug: true }));
+    const skip = btn('Продолжить без камеры (демо)', () => invoke('onStart', { from: 'camera', debug: true }));
     const back = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
     const status = statusLine();
     const msg = el('p', { class: 'ao-msg' });
@@ -1811,7 +1912,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         body.paint(ctx.tr);
 
         let text = '';
-        if (ctx.debug) text = 'Режим DEBUG: управление с клавиатуры, калибровка не нужна. Это не проверка трекинга.';
+        if (ctx.debug) text = 'Демо без камеры: управление с клавиатуры, калибровка не нужна. Это не проверка распознавания.';
         else if (calibrating) text = 'Держите нейтральную позу, пока заполняется шкала.';
         else if (done && st === 'ready') text = 'Калибровка завершена. Переходите к обучению или повторите калибровку.';
         else if (done && st === 'lost') text = 'Калибровка есть, но сейчас поза не распознана. Вернитесь в кадр.';
@@ -1835,7 +1936,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setBtn(run, { hidden: off, disabled: !canRun || pendRun, label: runLabel });
         setClass(run.node, 'ao-btn--primary', !done);
         setClass(run.node, 'ao-btn--secondary', done);
-        setBtn(next, { hidden: !(done || ctx.debug), label: ctx.debug && !done ? 'Далее: обучение (DEBUG)' : 'Далее: обучение' });
+        setBtn(next, { hidden: !(done || ctx.debug), label: ctx.debug && !done ? 'Далее: обучение (демо)' : 'Далее: обучение' });
         setAttr(host, 'data-tone', describeTracking(ctx.tr, cfg).tone);
       },
     };
@@ -2255,6 +2356,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         // «ОШИБКА»: что не так и как исправить — на месте совета под кистью
         const hint = v.hint;
         setHidden(coach, !hint);
+        setAttr(coach, 'data-voice-hint', hint ? `${hint.code}|${Math.round(hint.at || 0)}` : null); // [W3-VOICE] голос читает показанную подсказку
         if (hint) {
           const side = hint.side === 'left' ? ' · левая рука' : hint.side === 'right' ? ' · правая рука' : '';
           setText(coachHead, `Ошибка · ${hint.gesture}${side}`);
@@ -2341,6 +2443,14 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         el('div', { class: 'ao-book-card__pic', html: TRAINER_MINI[st.id] }), el('p', { class: 'ao-trn-hand', text: st.hand }), t, tip, key);
       return { st, t, tip, key, node };
     });
+    // [W3-MAGIC] две карточки «ладони вместе → растянуть»
+    const magicCards = STRETCH_CARDS.map((st) => {
+      const key = el('p', { class: 'ao-book-card__key', hidden: true, text: `Отладка: ${st.keyText}` });
+      const node = el('article', { class: 'ao-book-card', 'data-side': 'both', 'data-magic': st.id },
+        el('div', { class: 'ao-book-card__pic', html: st.pic }), el('p', { class: 'ao-trn-hand', text: 'Обе руки' }),
+        el('h3', { class: 'ao-h3', text: `${st.title} → ${st.effect}` }), el('p', { class: 'ao-tut-gesture', text: st.tip }), key);
+      return { key, node };
+    });
     const paintBasic = (moveMode, debug) => {
       for (const c of basicCards) {
         const v = c.st.stick && moveMode === 'stick' ? { ...c.st, ...c.st.stick } : c.st;
@@ -2348,15 +2458,18 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setText(c.tip, v.tip);
         setHidden(c.key, !debug);
       }
+      for (const c of magicCards) setHidden(c.key, !debug);
     };
     paintBasic('steer', false);
     const basic = el('div', { class: 'ao-book-basic' }, basicCards.map((c) => c.node));
+    const magic = el('div', { class: 'ao-book-basic ao-book-magic' }, magicCards.map((c) => c.node));
     const { grid, cards } = buildTutCards();
     const panes = {
       basic: el('div', { class: 'ao-book-pane', role: 'tabpanel', id: `${uid}-book-basic`, 'aria-labelledby': `${uid}-book-tab-basic` },
-        el('p', { class: 'ao-lead', text: 'Эти жесты учит тренажёр «Научись за 60 секунд» перед боем. Их хватает, чтобы победить.' }), basic),
+        el('p', { class: 'ao-lead', text: 'Эти жесты учит тренажёр «Научись за 60 секунд» перед боем. Их хватает, чтобы победить.' }), basic,
+        el('p', { class: 'ao-lead ao-book-magic__lead', text: 'Мощная магия двух ладоней: сомкни ладони → растяни. Работает в обоих режимах.' }), magic),
       adv: el('div', { class: 'ao-book-pane', role: 'tabpanel', id: `${uid}-book-adv`, 'aria-labelledby': `${uid}-book-tab-adv`, hidden: true },
-        el('p', { class: 'ao-lead', text: 'Рывок, искра, рассечение, парирование, руны ▲ ϟ ○ ★ @ ∞ ^ V ⧗ ℓ, печати двумя руками, лук и стихии.' }), grid),
+        el('p', { class: 'ao-lead', text: 'Рывок, искра, рассечение, парирование, руны ▲ ϟ ○ ★ @ ∞ ^ ∨ ⧗ ℓ, печати двумя руками, лук и стихии.' }), grid),
     };
     for (const [key, label] of TABS) {
       const t = el('button', { type: 'button', class: 'ao-book-tab', role: 'tab', id: `${uid}-book-tab-${key}`, 'aria-controls': `${uid}-book-${key}`, 'aria-selected': key === 'basic' ? 'true' : 'false', 'data-ui-local': '', text: label });
@@ -2457,7 +2570,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         'div',
         { class: 'ao-cols' },
         el('div', { class: 'ao-col ao-col--media' }, host, status.node, hint, bookWrap),
-        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['gestureMode', 'moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
+        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['gestureMode', 'spiritAvatar', 'moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
       ),
       dbgKeys,
       el('div', { class: 'ao-actions' }, resume.node, recal.node, restart.node, oathP.node, el('span', { class: 'ao-spacer' }), exit.node),
@@ -2627,6 +2740,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const techR = btn('Тренажёр техники', () => invoke('onTechnique', { from: kind }));
     const oathR = btn('Клятва героя', () => invoke('onOath', { from: kind }));
     const exit = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
+    const posterR = btn('Сохранить постер', () => invoke('onPosterSave', { from: kind })); // [W3-CHALLENGE] постер и после обычного боя
     const panel = el(
       'div',
       { class: `ao-panel ao-panel--result ao-panel--${kind} ao-frame ao-has-tech` },
@@ -2637,7 +2751,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       tech.node,
       coachTip,
       tip,
-      el('div', { class: 'ao-actions ao-actions--center' }, again.node, techR.node, oathR.node, exit.node),
+      el('div', { class: 'ao-actions ao-actions--center' }, again.node, posterR.node /* [W3-CHALLENGE] */, techR.node, oathR.node, exit.node),
     );
     return {
       section: screenSection(kind, panel, hid),
@@ -2777,31 +2891,70 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       listen(input, 'change', () => { if (input.checked) invoke('onExercise', value); });
     }
     const exField = el('fieldset', { class: 'ao-field ao-fieldset ao-train__ex' }, el('legend', { class: 'ao-field__legend', text: 'Упражнение' }), exSeg);
+    // [W3-SQUAT] режим судьи приседаний — тот же «Новичок»/«Мастер», что у жестов (onSettings({ gestureMode }))
+    const modeName = `${uid}-train-mode`;
+    const modeSeg = el('div', { class: 'ao-seg' });
+    const modeInputs = [];
+    for (const [value, label] of [['novice', 'Новичок'], ['master', 'Мастер']]) {
+      const input = el('input', { type: 'radio', name: modeName, value, class: 'ao-seg__input' });
+      modeInputs.push(input);
+      modeSeg.append(el('label', { class: 'ao-seg__opt' }, input, el('span', { class: 'ao-seg__label', text: label })));
+      // «Автоход» сохраняем: иначе смена режима ставит его по умолчанию режима (main.js sanitizeSettings)
+      listen(input, 'change', () => { if (input.checked) invoke('onSettings', { gestureMode: value, ...(state.settings ? { autoWalk: state.settings.autoWalk !== false } : {}) }); });
+    }
+    const modeHint = el('span', { class: 'ao-field__hint ao-train__modehint' });
+    const modeField = el('fieldset', { class: 'ao-field ao-fieldset ao-train__mode', hidden: true, title: 'Тот же переключатель «Новичок / Мастер», что у жестов в бою' }, el('legend', { class: 'ao-field__legend', text: 'Режим — и для жестов в бою' }), modeSeg, modeHint);
     const count = el('strong', { class: 'ao-train__count', text: '0' });
     const countLabel = el('span', { class: 'ao-train__label', text: 'отжиманий за подход' });
     const good = el('span', { class: 'ao-train__good', 'aria-hidden': 'true', hidden: true, text: 'Чисто! +1' });
     const depth = meter('Глубина отжимания', 'ao-train__depth');
+    // [W3-SQUAT] подготовка: силуэт с точками ног, совет (отойди, наклони экран), автопроверка «вижу тебя целиком ✓»
+    const sil = el('div', { class: 'ao-sil', html: SQUAT_SIL_SVG });
+    const silPts = {};
+    sil.querySelectorAll('[data-pt]').forEach((n) => { silPts[n.getAttribute('data-pt')] = n; });
+    const prepState = el('strong', { class: 'ao-train__prepstate' });
+    const prepTip = el('span', { class: 'ao-train__preptip' });
+    const prepGo = el('span', { class: 'ao-train__prepgo' });
+    const prep = el('div', { class: 'ao-train__prep', 'data-state': 'wait', hidden: true }, sil, el('div', { class: 'ao-train__preptext' }, prepState, prepTip, prepGo));
     // карточка ошибки техники (приседания): держится ~3 с после подсказки
+    const faultKey = el('strong', { class: 'ao-train__faultkey', text: 'Ошибка' });
     const faultText = el('span', { class: 'ao-train__faulttext' });
-    const fault = el('div', { class: 'ao-train__fault', 'data-tone': 'bad', hidden: true },
-      el('strong', { class: 'ao-train__faultkey', text: 'Ошибка' }), faultText);
+    const fault = el('div', { class: 'ao-train__fault', 'data-tone': 'bad', hidden: true }, faultKey, faultText);
     const msg = el('p', { class: 'ao-train__msg', role: 'status' });
+    const advice = el('p', { class: 'ao-note ao-train__advice', hidden: true });   // [W3-SQUAT] совет про стопы во время подхода
     const stepsPush = el('ol', { class: 'ao-train__steps' },
       el('li', { text: 'Поставьте ноутбук на пол перед головой (или сбоку), камерой на себя.' }),
       el('li', { text: 'Упор лёжа: в кадре должны быть плечи и обе кисти.' }),
       el('li', { text: 'Опускайтесь, пока плечи почти не дойдут до кистей, и выпрямляйте руки. Можно с колен.' }));
+    const stepSquat3 = el('li');
     const stepsSquat = el('ol', { class: 'ao-train__steps', hidden: true },
-      el('li', { text: 'Поставьте ноутбук в 2–3 м от себя, камерой на себя.' }),
-      el('li', { text: 'В кадре — всё тело, от плеч до стоп. Встаньте лицом к камере или под углом 45°.' }),
-      el('li', { text: 'Ноги на ширине плеч. Садитесь, пока бёдра не станут параллельны полу, и выпрямляйтесь полностью. Очко дают только чистые повторы.' }));
+      el('li', { text: 'Ноутбук на столе, вы — в 2–3 шагах от него, лицом к камере.' }),
+      el('li', { text: 'В кадре — от плеч до колен, лучше до стоп. Не видно ног — отойдите на шаг или наклоните экран.' }),
+      stepSquat3);
     const simNote = el('p', {
       class: 'ao-note ao-train__sim', hidden: true,
-      text: 'DEBUG, без камеры: S или ↓ (держать) — присесть, Shift — быстро, V — колени внутрь, G — колени за носки, T — наклон, H — пятки, B — не выпрямляться.',
+      text: 'Демо без камеры: S или ↓ (держать) — присесть, Shift — быстро, V — колени внутрь, G — колени за носки, T — наклон, H — пятки, B — не выпрямляться.',
     });
     // итог подхода (приседания)
     const sumLine = el('p', { class: 'ao-train__sumline' });
     const sumTip = el('p', { class: 'ao-train__sumtip' });
     const summary = el('div', { class: 'ao-train__summary', hidden: true }, el('strong', { class: 'ao-train__sumhead', text: 'Итог подхода' }), sumLine, sumTip);
+    // [W3-SQUAT] диагностика: видимость точек ног, угол, фаза, причина отказа; запись позы (F8)
+    const diagVis = {};
+    const visRows = [['Плечи', 11, 12], ['Бёдра', 23, 24], ['Колени', 25, 26], ['Лодыжки', 27, 28]].map(([name, a, b]) => {
+      const va = el('span', { class: 'ao-diag__v' }), vb = el('span', { class: 'ao-diag__v' });
+      diagVis[a] = va; diagVis[b] = vb;
+      return el('div', { class: 'ao-diag__row' }, el('span', { class: 'ao-diag__k', text: name }), va, vb);
+    });
+    const diagAngle = el('p', { class: 'ao-diag__line' });
+    const diagPhase = el('p', { class: 'ao-diag__line' });
+    const diagLast = el('p', { class: 'ao-diag__line' });
+    const recB = btn('Сохранить запись позы (F8)', () => invoke('onPoseRecord'), { size: 'sm' });
+    const diag = el('details', { class: 'ao-train__diag', hidden: true },
+      el('summary', { text: 'Диагностика' }),
+      el('div', { class: 'ao-diag__vis' }, el('div', { class: 'ao-diag__row ao-diag__row--head' }, el('span', { class: 'ao-diag__k', text: 'Видимость' }), el('span', { text: 'Л' }), el('span', { text: 'П' })), visRows),
+      diagAngle, diagPhase, diagLast, recB.node,
+      el('p', { class: 'ao-note', text: 'Запись — только числа точек позы, без видео. Разбор: node dev/squat_replay.mjs файл.json' }));
     const total = el('p', { class: 'ao-note' });
     const oathB = btn('Улучшения', () => invoke('onOath', { from: 'training' }));
     const done = btn('Готово', () => invoke('onBack'), { variant: 'primary' });
@@ -2812,19 +2965,21 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el(
         'div',
         { class: 'ao-cols' },
-        el('div', { class: 'ao-col ao-col--media' }, host, status.node, enable.node),
+        el('div', { class: 'ao-col ao-col--media' }, host, el('div', { class: 'ao-train__statusrow' }, status.node, diag), enable.node, summary),
         el(
           'div',
           { class: 'ao-col' },
           exField,
+          modeField,
           el('div', { class: 'ao-train__score' }, count, countLabel, good),
           depth.node,
+          prep,
           fault,
           msg,
+          advice,
           stepsPush,
           stepsSquat,
           simNote,
-          summary,
           total,
         ),
       ),
@@ -2832,8 +2987,16 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     );
     const POSTURE = ['valgus', 'knees_forward', 'lean', 'heels'];
     const VIEW_NAME = { front: 'вид спереди', side: 'вид сбоку', diag: 'вид под углом' };
+    const MODE_HINT = {
+      novice: 'Мягко: с ошибкой +1, чисто +2, стопы не обязательны',
+      master: 'Строго: бёдра до параллели, только чистые, нужны стопы',
+    };
+    const visState = (v) => (!isNum(v) ? 'off' : v >= 0.5 ? 'on' : v >= 0.3 ? 'weak' : 'off');
+    const f2 = (v) => (isNum(v) ? v.toFixed(2).replace('.', ',') : '—');
+    const deg = (v) => (isNum(v) ? `${Math.round(v)}°` : '—');
     let lastKey = '';
     let lastMode = '';
+    let lastJudge = '';
     return {
       section: screenSection('training', panel, hid),
       heading: h,
@@ -2847,64 +3010,139 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setBtn(enable, { hidden: squat && T.debugSim ? true : !(st === 'idle' || st === 'error'), disabled: CAMERA_STARTING.includes(st) });
         setAttr(host, 'data-tone', describeTracking(ctx.tr, cfg).tone);
         const mode = squat ? 'squats' : 'pushups';
-        if (mode !== lastMode) {
+        const judge = T.mode === 'master' ? 'master' : 'novice';   // [W3-SQUAT]
+        const novice = squat && judge === 'novice';
+        if (mode !== lastMode || (squat && judge !== lastJudge)) {
           lastMode = mode;
+          lastJudge = squat ? judge : '';
           lastKey = '';
           for (const i of exInputs) { const on = i.value === mode; if (i.checked !== on) i.checked = on; }
           setText(lead, squat
-            ? 'Каждое чистое приседание — очко клятвы. Игра следит за техникой и подсказывает, что исправить. Видео обрабатывается только в браузере и не записывается.'
+            ? (novice
+              ? 'Каждое засчитанное приседание — очко клятвы, чистое — два. Игра следит за техникой и подсказывает, что улучшить. Видео обрабатывается только в браузере и не записывается.'
+              : 'Каждое чистое приседание — очко клятвы. Игра следит за техникой и подсказывает, что исправить. Видео обрабатывается только в браузере и не записывается.')
             : 'Каждое настоящее отжимание — очко клятвы. Видео обрабатывается только в браузере и не записывается.');
           setAttr(depth.node, 'aria-label', squat ? 'Глубина приседа' : 'Глубина отжимания');
           setHidden(stepsPush, squat);
           setHidden(stepsSquat, !squat);
+          setHidden(modeField, !squat);
+          setHidden(diag, !squat);
+          setText(stepSquat3, novice
+            ? 'Ноги на ширине плеч. Садитесь, как на стул, и выпрямляйтесь полностью. Ошибка техники не отменяет повтор — карточка подскажет, что улучшить.'
+            : 'Ноги на ширине плеч. Садитесь, пока бёдра не станут параллельны полу, и выпрямляйтесь полностью. Очко дают только чистые повторы.');
+          setText(modeHint, MODE_HINT[judge]);
+          if (!modeField.contains(doc.activeElement)) for (const i of modeInputs) { const on = i.value === judge; if (i.checked !== on) i.checked = on; }
         }
         const reps = Math.max(0, num(T.reps) | 0);
         setText(count, String(reps));
         setText(countLabel, squat
-          ? `${plural(reps, 'чистое приседание', 'чистых приседания', 'чистых приседаний')} за подход`
+          ? (novice
+            ? `${plural(reps, 'приседание', 'приседания', 'приседаний')} за подход`
+            : `${plural(reps, 'чистое приседание', 'чистых приседания', 'чистых приседаний')} за подход`)
           : `${plural(reps, 'отжимание', 'отжимания', 'отжиманий')} за подход`);
         paintMeter(depth, num(T.depth));
         const repAge = isNum(T.sinceRepMs) ? T.sinceRepMs : Infinity;
         setClass(count, 'is-flash', repAge < 600 && T.lastOk !== false);
         const P = ctx.vm.progress;
         if (!squat) {
+          setText(good, 'Чисто! +1');
+          setClass(good, 'is-gold', false);
           setHidden(good, true);
           setHidden(fault, true);
           setHidden(simNote, true);
           setHidden(summary, true);
+          setHidden(prep, true);
+          setHidden(advice, true);
           const text = typeof T.message === 'string' ? T.message : '';
           if (text !== lastKey) { lastKey = text; setText(msg, /^\d+$/.test(text) ? 'Засчитано!' : text); }
           setText(total, P && isNum(P.points) ? `Очков клятвы: ${P.points} · отжиманий всего: ${num(P.pushups)}` : '');
           return;
         }
-        // --- приседания: карточка ошибки ~3 с (про кадр — пока тело не в кадре), «Чисто! +1», итог
+        // --- приседания: подготовка, карточка ошибки ~3 с (про кадр — пока тело не в кадре), «Чисто!», итог
+        const att = Math.max(0, num(T.attempts) | 0);
+        const F = T.framing && typeof T.framing === 'object' ? T.framing : null;
+        const running = CAMERA_RUNNING.includes(st) || !!T.debugSim;
+        const prepOn = running && !!F && (T.state === 'noPose' || T.state === 'setup' || att === 0);
+        setHidden(prep, !prepOn);
+        if (prepOn) {
+          const pts = F.points || {};
+          for (const [id, n] of Object.entries(silPts)) setAttr(n, 'data-vis', visState(pts[id] ? pts[id].v : null));
+          const okState = F.status === 'ok' || F.status === 'okNoFeet';
+          const ready = okState && F.ready;
+          setAttr(prep, 'data-state', ready ? (F.status === 'ok' ? 'ok' : 'nofeet') : okState ? 'check' : 'bad');
+          setText(prepState, okState ? (ready ? F.statusText : 'Проверяю кадр…') : (F.tip && F.tip.text) || '');
+          // совет: в «Новичке» без стоп — как добавить стопы; иначе — подсказка кадра, если она не главная
+          const tip = F.tip && F.tip.code !== 'ok' && okState ? `Совет: ${F.tip.text.charAt(0).toLowerCase()}${F.tip.text.slice(1)}` : '';
+          setText(prepTip, tip);
+          setHidden(prepTip, !tip);
+          const pose = T.pose || {};
+          // «Готово» — только когда и кадр в порядке (иначе рядом с красным советом — противоречие)
+          const go = pose.switching ? 'Включаю точную модель позы…'
+            : T.state === 'top' && att === 0 && okState ? (novice ? 'Готово — приседай!' : 'Готово — приседайте')
+              : T.state === 'setup' ? (novice ? 'Встань прямо — начнём через полсекунды' : 'Встаньте прямо, ноги на ширине плеч')
+                : '';
+          setText(prepGo, go);
+          setHidden(prepGo, !go);
+          setClass(prepGo, 'is-go', T.state === 'top' && att === 0 && okState);
+        }
         const H = T.lastHint && typeof T.lastHint === 'object' && typeof T.lastHint.text === 'string' ? T.lastHint : null;
         const hintAge = isNum(T.sinceHintMs) ? T.sinceHintMs : Infinity;
-        const framing = !!H && H.code === 'frame' && T.state === 'noPose';
-        const showFault = !!H && (framing || (hintAge < 3000 && hintAge <= repAge));
+        // [W3-SQUAT] про кадр («не вижу ног») говорит подготовка — карточкой не дублируем (и не всплывает после возвращения);
+        // подсказка прошлого повтора гаснет, как только начался новый
+        const stale = !!H && isNum(T.repStart) && isNum(H.tMs) && H.tMs < T.repStart;
+        const showFault = !!H && H.code !== 'frame' && !stale && hintAge < 3000 && hintAge <= repAge + 50;
+        // «Новичок»: повтор с ошибкой засчитан — «Ошибка · засчитано +1»; повтор не засчитан — «Не засчитано»; идёт повтор — «Ошибка»
+        const LR = T.lastRep && typeof T.lastRep === 'object' ? T.lastRep : null;
+        const ofLast = !!LR && isNum(LR.tMs) && isNum(H && H.tMs) && LR.tMs === H.tMs;
+        const counted = ofLast && LR.ok === true && !LR.clean;
         setHidden(fault, !showFault);
         if (showFault) {
           setText(faultText, H.text);
-          setAttr(fault, 'data-tone', POSTURE.includes(H.code) ? 'bad' : 'warn');
+          setText(faultKey, counted ? 'Ошибка · засчитано +1' : ofLast && LR.ok === false ? 'Не засчитано' : 'Ошибка');
+          setAttr(fault, 'data-tone', counted ? 'warn' : POSTURE.includes(H.code) ? 'bad' : 'warn');
           setAttr(fault, 'data-code', H.code);
           const key = `${H.code}|${H.tMs}`;
-          if (key !== lastKey) { lastKey = key; announce(`Ошибка: ${H.text}`); }
+          if (key !== lastKey) { lastKey = key; announce(counted ? `Засчитано, но есть ошибка: ${H.text}` : `Ошибка: ${H.text}`); }
         }
-        setHidden(good, !(repAge < 1200 && T.lastOk === true && !showFault));
+        const EV = T.lastEvent && typeof T.lastEvent === 'object' ? T.lastEvent : null;
+        const clean = T.lastOk === true && (!EV || EV.clean !== false);
+        const pts = EV && isNum(EV.points) ? EV.points : 1;
+        setText(good, `Чисто! +${pts}`);
+        setClass(good, 'is-gold', novice && pts > 1);
+        setHidden(good, !(repAge < 1400 && clean && !showFault));
         const knee = isNum(T.knee) ? `угол колена ${Math.round(T.knee)}°` : '';
         const live = T.state !== 'noPose' && T.state !== 'setup';
-        setText(msg, live ? [knee, VIEW_NAME[T.view] || ''].filter(Boolean).join(' · ') : (typeof T.message === 'string' ? T.message : ''));
+        const feetNote = novice && T.feet === false ? 'без стоп' : '';
+        setText(msg, live ? [knee, VIEW_NAME[T.view] || '', feetNote].filter(Boolean).join(' · ') : (prepOn ? '' : typeof T.message === 'string' ? T.message : ''));
+        // совет про стопы во время подхода (подготовка уже скрыта)
+        const adv = !prepOn && novice && F && F.status === 'okNoFeet' && F.tip && F.tip.code !== 'ok' ? `Совет: ${F.tip.text.charAt(0).toLowerCase()}${F.tip.text.slice(1)}` : '';
+        setText(advice, adv);
+        setHidden(advice, !adv);
         setHidden(simNote, !T.debugSim);
-        const att = Math.max(0, num(T.attempts) | 0);
         setHidden(summary, att === 0);
         // подход идёт (есть попытки или карточка ошибки) — инструкция по установке уже не нужна, место — карточкам
-        setHidden(stepsSquat, att > 0 || showFault);
+        setHidden(stepsSquat, att > 0 || showFault || prepOn);
         if (att > 0) {
+          const cleanN = Math.max(0, num(T.clean, reps) | 0);
           const score = isNum(T.formScore) ? Math.round(T.formScore * 100) : 0;
-          setText(sumLine, `Чистых: ${reps} из ${att} · техника ${score}%`);
+          setText(sumLine, novice
+            ? `Засчитано: ${reps} из ${att} · чистых ${cleanN} · очков ${Math.max(0, num(T.points) | 0)} · техника ${score}%`
+            : `Чистых: ${reps} из ${att} · техника ${score}%`);
           const tf = T.topFault && typeof T.topFault.text === 'string' ? T.topFault : null;
           setText(sumTip, tf ? `Чаще всего (${tf.count}×): ${tf.text}` : 'Ошибок нет — так держать!');
           setClass(summary, 'is-clean', !tf);
+        }
+        // диагностика (только когда раскрыта)
+        if (diag.open && T.diag && typeof T.diag === 'object') {
+          const D = T.diag;
+          for (const [id, n] of Object.entries(diagVis)) { const v = D.vis ? D.vis[id] : null; setText(n, f2(v)); setAttr(n, 'data-vis', visState(v)); }
+          setText(diagAngle, `Угол колена ${deg(D.knee)} (без сглаживания ${deg(D.kneeRaw)}) · бедро ${deg(D.thighDeg)}${isNum(D.dropDeg) ? ` · по тазу ${deg(D.dropDeg)}` : ''} · глубина ≤ ${deg(D.downDeg)}, стоя ≥ ${deg(D.lockDeg)}`);
+          const pose = T.pose || {};
+          setText(diagPhase, `Фаза: ${D.phaseRu || '—'} · ${D.mode === 'master' ? 'Мастер' : 'Новичок'} · ноги: ${D.feet === false ? 'без стоп' : D.feet ? 'до стоп' : '—'} · ${isNum(D.hz) ? `${Math.round(D.hz)} Гц` : '— Гц'} · модель позы: ${pose.switching ? 'переключается…' : pose.model || '—'} · запись ${isNum(pose.recFrames) && isNum(D.hz) && D.hz > 0 ? Math.round(pose.recFrames / D.hz) : 0} с`);
+          const L = D.last;
+          setText(diagLast, L
+            ? `Последний повтор: ${L.ok ? (L.clean ? 'засчитан, чисто' : 'засчитан с ошибкой') : 'не засчитан'}${L.reason ? ` — ${L.reason}` : ''} (${deg(L.minKnee)}, ${fmtSeconds(num(L.ms) / 1000)})`
+            : 'Последний повтор: ещё не было');
         }
         setText(total, P && isNum(P.points) ? `Очков клятвы: ${P.points} · приседаний всего: ${num(P.squats)}` : '');
       },
@@ -2967,6 +3205,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   function liveLeft(g) {
     if (!g || g.empty) return g && g.source === 'debug' ? { text: 'КЛАВИАТУРА', tone: 'off' } : { text: 'НЕ ВИДНА', tone: 'off' };
     if (g.conjure) return { text: g.conjure === 'prism' ? 'ПРИЗМА' : 'СФЕРА', tone: 'go' };
+    if (g.sigilCharge > 0) return stretchRead(g);   // [W3-MAGIC]
     if (g.bowActive) return { text: 'ЛУК', tone: 'go' };
     if (g.shield) return { text: 'ЩИТ', tone: 'go' };
     const st = g.stick;
@@ -2983,9 +3222,16 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     if (!h) return g.source === 'debug' ? { text: 'КЛАВИАТУРА', tone: 'off' } : { text: 'НЕ ВИДНА', tone: 'off' };
     return { text: SHAPE_RU[h.shape] || 'В КАДРЕ', tone: 'idle' };
   }
+  // [W3-MAGIC] ладони сомкнуты — заряд «Врат бури» / «Столпа небес»; тянут — куда
+  function stretchRead(g) {
+    if (g.sigilAxis === 'h') return { text: 'ВРАТА БУРИ ←→', tone: 'go' };
+    if (g.sigilAxis === 'v') return { text: 'СТОЛП НЕБЕС ↕', tone: 'go' };
+    return { text: `ЛАДОНИ ВМЕСТЕ · ${Math.round(g.sigilCharge * 100)}% → РАСТЯНИ`, tone: 'go' };
+  }
   function liveRight(g) {
     if (!g || g.empty) return g && g.source === 'debug' ? { text: 'КЛАВИАТУРА', tone: 'off' } : { text: 'НЕ ВИДНА', tone: 'off' };
     if (g.conjure) return { text: g.conjure === 'prism' ? 'ПРИЗМА' : 'СФЕРА', tone: 'go' };
+    if (g.sigilCharge > 0) return stretchRead(g);   // [W3-MAGIC]
     if (g.spell) return { text: 'МАГИЯ: СГУСТОК', tone: 'go' };
     if (g.bowActive) return { text: g.bowDraw > 0.05 ? `ТЕТИВА ${Math.round(g.bowDraw * 100)}%` : 'ЛУК: ЩЕПОТЬ', tone: 'go' };
     if (g.attack) return { text: 'OK → ВЫСТРЕЛ', tone: 'go' };
@@ -3014,7 +3260,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       if (g.rune) latchSide('right', `РУНА ${RUNE_RU[g.rune] || g.rune.toUpperCase()}`, now);
       if (g.spark) { latchSide('right', 'ИСКРА', now); if (fight) fired.spark = now; }
       if (g.slash) latchSide('right', 'РАССЕЧЕНИЕ', now);
-      if (g.sigil) { const t = `ПЕЧАТЬ ${SIGIL_RU[g.sigil] || g.sigil.toUpperCase()}`; latchSide('left', t, now); latchSide('right', t, now); }
+      if (g.sigil) { const t = `ПЕЧАТЬ ${SIGIL_RU[g.sigil] || g.sigil.toUpperCase()}`; latchSide('left', t, now); latchSide('right', t, now); if (fight && (g.sigil === 'gate' || g.sigil === 'pillar')) fired.stretch = now; }
       if (g.thrown) { latchSide('left', 'БРОСОК ЧАР', now); latchSide('right', 'БРОСОК ЧАР', now); }
       if (g.bowRelease) latchSide('right', 'ВЫСТРЕЛ ИЗ ЛУКА', now);
       if (g.spellThrow) latchSide('right', 'МАГИЯ: БРОСОК', now);
@@ -3096,7 +3342,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el('p', { class: 'ao-cheat__foot', text: 'Tab — скрыть' }),
     );
     const pill = el('p', { class: 'ao-cheat-pill', hidden: true, text: 'Tab — шпаргалка жестов' });
-    const FIRE_MS = { move: 250, shield: 250, bolt: 250, dash: IMPULSE_LATCH_MS, burst: IMPULSE_LATCH_MS, spark: IMPULSE_LATCH_MS };
+    const FIRE_MS = { move: 250, shield: 250, bolt: 250, dash: IMPULSE_LATCH_MS, burst: IMPULSE_LATCH_MS, spark: IMPULSE_LATCH_MS, stretch: IMPULSE_LATCH_MS };
     const CD = { dash: 'dash', burst: 'burst', spark: 'spark' };
     return {
       node,
@@ -3114,8 +3360,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           const k = c.it.key;
           if (k === 'move' && c.mode !== moveMode) { c.mode = moveMode; setText(c.how, moveMode === 'stick' ? c.it.howStick : c.it.how); }
           let st = 'ready', frac = 0, tt = '';
-          const rem = CD[k] ? Math.max(0, num(cd[`${CD[k]}Remaining`])) : 0;
-          const tot = CD[k] ? num(cd[`${CD[k]}Total`]) : 0;
+          let rem = CD[k] ? Math.max(0, num(cd[`${CD[k]}Remaining`])) : 0;
+          let tot = CD[k] ? num(cd[`${CD[k]}Total`]) : 0;
+          if (k === 'stretch' && cd.sigils && cd.sigils.gate && cd.sigils.pillar) {
+            // [W3-MAGIC] перезарядка — пока не готова ни одна из двух печатей
+            const a = cd.sigils.gate, b = cd.sigils.pillar, first = num(a.remaining) <= num(b.remaining) ? a : b;
+            rem = Math.max(0, num(first.remaining)); tot = num(first.total);
+          }
           if (!alive) st = 'off';
           else if (ctx.now - num(fired[k], -1e9) < FIRE_MS[k]) st = 'active';
           else if (rem > 0.05) { st = 'cooldown'; frac = tot > 0 ? clamp(rem / tot, 0, 1) : 0; tt = rem >= 1 ? `${Math.ceil(rem)} с` : ''; }
@@ -3350,7 +3601,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     uid, el, btn, setBtn, listen, heading, screenSection, statusLine, paintStatus, setText, setHidden, setAttr, setClass, setStyle,
     invoke, announce, pressEnable, describe: (tr) => describeTracking(tr, cfg), cameraStarting: CAMERA_STARTING, debugInfo: DEBUG_INFO,
   });
-  const screens = { menu, camera, calibration: calib, tutorial, paused, victory, defeat, error: errorScr, oath, training, technique };
+  // [W3-CHALLENGE] итоги испытания: ранг, очки, имя из 3 букв, зал славы дня, постер (modules/challenge.js)
+  const challenge = createChallengeScreen({ uid, el, btn, setBtn, listen, heading, screenSection, setText, setHidden, setAttr, setClass, invoke, announce, doc });
+  const screens = { menu, camera, calibration: calib, tutorial, paused, victory, defeat, error: errorScr, oath, training, technique, challenge };
   const slotHosts = { camera: camera.host, calibration: calib.host, tutorial: tutorial.host, paused: paused.host, playing: hud.dockHost, training: training.host, technique: technique.host };
 
   ui.append(backdrop, hud.node, banner);
@@ -3414,7 +3667,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   function syncSettings(s) {
-    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}|${s.gestureMode}|${s.autoWalk}|${s.difficulty}|${s.muted}`; // [FOREST] + startZone, [НОВИЧОК] + жесты, [FEEL] + difficulty, [SFX] + muted
+    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}|${s.gestureMode}|${s.autoWalk}|${s.difficulty}|${s.muted}|${s.spiritAvatar}|${s.voice}`; // [FOREST] + startZone, [НОВИЧОК] + жесты, [FEEL] + difficulty, [SFX] + muted, [W3-SPIRIT] + дух
     state.settings = s;
     if (key === state.settingsKey) return;
     state.settingsKey = key;
@@ -3459,6 +3712,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     oath: (ctx) => oath.update(ctx),
     training: (ctx) => training.update(ctx),
     technique: (ctx) => technique.update(ctx),
+    challenge: (ctx) => challenge.update(ctx), // [W3-CHALLENGE]
   };
 
   function update(viewModel) {
@@ -3493,6 +3747,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     setClass(ui, 'ao-reduced-motion', ctx.settings.reducedMotion);
     setClass(doc.documentElement, 'ao-bdo', !(vm.settings && vm.settings.bdoUi === false)); // [BDO] стиль Black Desert (настройка bdoUi)
     syncSettings(ctx.settings);
+    for (const paintVoice of voiceCtls) paintVoice(vm.voice, ctx.settings); // [W3-VOICE]
     computeReadout(ctx);   // [ПРОЕКТОР] до экранов: подписи нужны HUD и панели презентации
     UPDATERS[screen](ctx);
     book.update(ctx);
@@ -3507,7 +3762,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
 
   // [ПРОЕКТОР] Tab в бою — скрыть/показать шпаргалку; P — режим презентации (в бою с отладкой P — «призма»,
   // там режим переключает Shift+P). В полях ввода (лобби дуэли) клавиши не перехватываются.
-  const typingTarget = (t) => !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''));
+  // только поля, куда печатают текст: радио, флажки и ползунки настроек P не «съедают»
+  const typingTarget = (t) => !!t && (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT'
+    || (t.tagName === 'INPUT' && !/^(radio|checkbox|range|button|submit|reset|color|file|image)$/i.test(t.type || '')));
   // Tab остаётся навигацией, если фокус на чужой кнопке (итоги дуэли modules/pvp.js и т. п.) или открыто окно дуэли
   const tabFree = () => {
     const a = doc.activeElement;

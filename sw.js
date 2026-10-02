@@ -17,7 +17,7 @@
 'use strict';
 
 // <AO_MANIFEST> — генерирует node tools/sw_manifest.mjs, руками не править
-const VERSION = 'ff2b2e7e2359';
+const VERSION = 'cc132d41971d';
 const VENDOR_VERSION = 'b3f563930682';
 const SHELL = [
   "./",
@@ -28,11 +28,13 @@ const SHELL = [
   "core/bdoTheme.js",
   "core/bowGesture.js",
   "core/cameraRig.js",
+  "core/cinemaFeed.js",
   "core/coachOverlay.js",
   "core/coachPictograms.js",
   "core/debugInput.js",
   "core/gameFeel.js",
   "core/gestureCoach.js",
+  "core/handCursor.js",
   "core/handFxOverlay.js",
   "core/handGestures.js",
   "core/handMagic.js",
@@ -41,6 +43,7 @@ const SHELL = [
   "core/leftStick.js",
   "core/perfHud.js",
   "core/perfTuner.js",
+  "core/poseRecorder.js",
   "core/postfx.js",
   "core/progression.js",
   "core/pushupCounter.js",
@@ -48,12 +51,17 @@ const SHELL = [
   "core/steerStick.js",
   "core/trackingHud.js",
   "core/tutorialTrainer.js",
+  "core/ultimate.js",
+  "core/voicePhrases.js",
   "index.html",
   "main.js",
+  "manifest.webmanifest",
   "modules/atmosphere.js",
   "modules/bdoIcons.js",
   "modules/boss.js",
   "modules/brightForest.js",
+  "modules/challenge.css",
+  "modules/challenge.js",
   "modules/characterLooks.js",
   "modules/coach.css",
   "modules/combat.js",
@@ -61,13 +69,16 @@ const SHELL = [
   "modules/effects.js",
   "modules/elfVillage.js",
   "modules/fx/bolts.js",
+  "modules/fx/bossFinale.js",
   "modules/fx/bowHand.js",
+  "modules/fx/castFx.js",
   "modules/fx/combatFx.js",
   "modules/fx/common.js",
   "modules/fx/decals.js",
   "modules/fx/glsl.js",
   "modules/fx/glyph.js",
   "modules/fx/handMagic.js",
+  "modules/fx/hitFx.js",
   "modules/fx/index.js",
   "modules/fx/kit.js",
   "modules/fx/runesFire.js",
@@ -76,8 +87,12 @@ const SHELL = [
   "modules/fx/runesWild.js",
   "modules/fx/shieldHex.js",
   "modules/fx/shock.js",
+  "modules/fx/sigilCharge.js",
+  "modules/fx/sigilGate.js",
+  "modules/fx/sigilPillar.js",
   "modules/fx/sigils.js",
   "modules/fx/trails.js",
+  "modules/fx/ultimate.js",
   "modules/handVisuals.js",
   "modules/heroAura.js",
   "modules/heroCloth.js",
@@ -90,15 +105,18 @@ const SHELL = [
   "modules/heroTrail.js",
   "modules/netLobby.css",
   "modules/netLobby.js",
+  "modules/posterCard.js",
   "modules/pvp.js",
   "modules/remotePlayer.js",
   "modules/sfx.js",
+  "modules/spiritAvatar.js",
   "modules/techniqueTrainer.js",
   "modules/ui-onboard.css",
   "modules/ui.css",
   "modules/ui.js",
   "modules/vision-worker.js",
   "modules/vision.js",
+  "modules/voiceCoach.js",
   "modules/vrmKit.js",
   "modules/world.js",
   "net/diag.js",
@@ -231,12 +249,15 @@ const WARM = [
   "assets/sfx/boss_nova.ogg",
   "assets/sfx/boss_phase.ogg",
   "assets/sfx/shield_loop.ogg",
+  "assets/icons/icon-192.png",
   "assets/sfx/victory.ogg",
   "assets/polyhaven/dark_rock_02/dark_rock_02_diff.webp",
   "assets/polyhaven/monastery_stone_floor/monastery_stone_floor_nor_gl.webp",
   "assets/polyhaven/dark_rock_02/dark_rock_02_nor_gl.webp",
   "assets/polyhaven/monastery_stone_floor/monastery_stone_floor_diff.webp",
+  "assets/icons/icon-maskable-512.png",
   "assets/sfx/ambient.ogg",
+  "assets/icons/icon-512.png",
   "assets/quaternius/human.glb",
   "assets/heroes/anims_kaykit.glb",
   "assets/quaternius/woman.glb",
@@ -397,7 +418,7 @@ self.addEventListener('fetch', (e) => {
     if (path === 'sw.js') return;
     if (isVendor(path)) { e.respondWith(cacheFirst(e, req, VENDOR, path)); return; }
     if (path.startsWith('assets/')) { e.respondWith(LOOPBACK ? networkFirst(e, req, ASSETS, 0) : staleWhileRevalidate(e, req, ASSETS)); return; }
-    if (req.mode === 'navigate' || path === '' || /\.(m?js|css|html|json)$/.test(path)) { e.respondWith(networkFirst(e, req, APP, LOOPBACK ? 0 : NET_TIMEOUT_MS)); return; }
+    if (req.mode === 'navigate' || path === '' || /\.(m?js|css|html|json|webmanifest)$/.test(path)) { e.respondWith(networkFirst(e, req, APP, LOOPBACK ? 0 : NET_TIMEOUT_MS)); return; }
     return;   // остальное — как без service worker
   }
   if (CDN_HOSTS.includes(url.hostname)) e.respondWith(cacheFirst(e, req, CDN, null));

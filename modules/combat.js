@@ -21,6 +21,12 @@
 // Следствие: если в одном шаге смертельны оба удара, побеждает игрок, потому
 // что его урон разрешается раньше. Второй исход не наступает, событие
 // результата выпускается ровно одно.
+//
+// [W3-ULT] «Ярость клятвы» и ультимейт «Небесный суд»: шкала 0..furyMax копится от урона по
+// Регенту, длинных серий, идеальных уклонений и парирований. Полная шкала + input.ultimate
+// (обе руки над головой 0,8 с — core/ultimate.js; в отладке — U) → сцена C.ultimate.duration с:
+// бой стоит (ввод игнорируется, мозг Регента не думает, его удары и сферы рассеяны), в strikeAt
+// с неба падает меч — damagePct от максимума HP Регента. В дуэли ультимейта нет.
 // =============================================================================
 
 import { createCombatHand } from './combatHand.js'; // [HAND] лук и магия рукой: стрелы и сгустки
@@ -34,7 +40,9 @@ const DEFAULT_COLUMNS = [0, 45, 90, 135, 180, 225, 270, 315].map((a) => ({
 }));
 // [ASHEN_V3] руны правой руки и двуручные печати
 export const RUNE_IDS = Object.freeze(['ignis', 'fulgur', 'orbis', 'stella', 'spira', 'lemnis', 'caret', 'vee', 'clepsydra', 'alpha']);
-export const SIGIL_IDS = Object.freeze(['clap', 'gate', 'frame', 'delta', 'cor']);
+export const SIGIL_IDS = Object.freeze(['clap', 'gate', 'frame', 'delta', 'cor', 'pillar']);   // [W3-MAGIC] +pillar
+// [W3-MAGIC] «ладони вместе → растянуть»: эти две печати есть и в «Новичке»
+export const STRETCH_SIGILS = Object.freeze(['gate', 'pillar']);
 
 export const DEFAULT_LAYOUT = Object.freeze({
   version: 1,
@@ -201,10 +209,15 @@ export const DEFAULT_COMBAT_CONFIG = deepFreeze({
   // [ASHEN_V3] двуручные печати (input.sigil): хлопок, врата, рамка
   sigils: {
     clap: { energy: 25, cooldown: 12, radius: 7, damage: 25, stun: 1.2, reach: 9 },   // громовой хлопок
-    gate: { energy: 30, cooldown: 20, duration: 5, reduction: 0.6 },                  // бастион: −60% урона, орбы гаснут
+    // [W3-MAGIC] «Врата бури» (ладони вместе → в стороны): волна огня и молний по земле к Регенту
+    // (урон damage × (minK..1) по силе жеста, скорость speed м/с, дальность range) + короткий бастион: −60% урона, орбы гаснут
+    gate: { energy: 25, cooldown: 12, duration: 3.5, reduction: 0.6, damage: 60, minK: 0.5, speed: 16, range: 26, width: 3.5 },
     frame: { energy: 20, cooldown: 18, duration: 8, bonus: 0.3 },                     // метка цели: +30% урона по Регенту
     delta: { energy: 50, cooldown: 30, ticks: 4, damage: 40, interval: 0.2, width: 1.2 }, // ▲ двумя руками: луч, гасит сферы на линии
     cor: { energy: 40, cooldown: 35, heal: 45, duration: 3, ward: 6 },                 // ♥ двумя руками: лечение за 3 с + оберег
+    // [W3-MAGIC] «Столп небес» (ладони вместе → вверх-вниз): столп света бьёт Регента сверху через delay с,
+    // урон damage × (minK..1), оглушение stun с (срывает замах); дальность range
+    pillar: { energy: 35, cooldown: 18, damage: 100, minK: 0.5, stun: 1.2, delay: 0.45, range: 30 },
     castTime: 0.3,
   },
   combo: {
@@ -237,6 +250,20 @@ export const DEFAULT_COMBAT_CONFIG = deepFreeze({
     loft: 0.1,              // подъём контрольной точки на метр дистанции
     lifetime: 2.5,
     castTime: 0.3,          // action 'cast' у героя после броска
+  },
+  // [W3-ULT] «Ярость клятвы» и «Небесный суд»
+  ultimate: {
+    furyMax: 100,
+    fillAt: 0.45,           // шкала полна от урона в такую долю максимума HP Регента (от сложности не зависит)…
+    perCombo: 0.25,         // …быстрее — за каждое попадание в серии от comboFrom
+    comboFrom: 5,
+    perfectDodge: 12,       // идеальное уклонение
+    parry: 14,              // отражённая сфера
+    duration: 3.6,          // с: вся сцена (бой стоит)
+    strikeAt: 2.3,          // с от начала: меч касается Регента
+    damagePct: 0.28,        // урон — доля максимума HP Регента (без множителей комбо и метки)
+    graceAfter: 0.8,        // неуязвимость героя после сцены — успеть сориентироваться
+    bossReact: 1.2,         // Регент шатается после удара
   },
   boss: {
     maxHp: 1000,
@@ -576,8 +603,10 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         fireTimer: 0, firing: false, castTimer: 0, burstCd: 0,
         runeCd: Object.fromEntries(RUNE_IDS.map((k) => [k, 0])), ward: 0, charge: 0,
         sigilCd: Object.fromEntries(SIGIL_IDS.map((k) => [k, 0])), bastion: 0, beam: [],
+        magic: [],   // [W3-MAGIC] летящие «Врата бури» / падающие «Столпы небес»: { sigil, t, dmg, power }
         vortex: 0, regen: 0, regenRate: 0, meteors: [],
         combo: 0, comboTimer: 0,
+        fury: 0,                 // [W3-ULT] «Ярость клятвы»
         dead: false,
       },
       b: {
@@ -591,7 +620,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       seenIds: new Set(),
       seenOrder: [],
       stats: { damageDealt: 0, damageTaken: 0, dodges: 0, blocks: 0 },
-      input: { moveX: 0, moveZ: 0, attack: false, shield: false, valid: false, conjure: null, viewYaw: NaN, steer: false, autoWalk: false },
+      input: { moveX: 0, moveZ: 0, attack: false, shield: false, valid: false, conjure: null, viewYaw: NaN, steer: false, autoWalk: false, sigilCharge: 0, sigilAxis: null },
       auto: { dir: 1, flipT: 0, stuckT: 0, detourT: 0, detourSign: 1, lastX: null, lastZ: null, want: 0 },   // [НОВИЧОК] автоход
       engaged: engaged0,
       frame: { yaw: null, stickA: 0, idle: 0, target: null },
@@ -606,9 +635,10 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       pendingBurst: false,
       pendingBurstPower: null,
       pendingRune: null,
-      pendingSigil: null,
+      pendingSigil: null, pendingSigilPower: null,
       dashBuffer: null,
       pendingThrow: null,
+      pendingUlt: false, ult: null, furyFullSent: false,   // [W3-ULT] импульс, сцена { t, duration, strikeAt, struck, amount }
       debug: {
         steps: 0, brainCalls: 0, brainErrors: 0,
         acceptedAttacks: 0, rejectedAttacks: 0, duplicateAttacks: 0,
@@ -705,6 +735,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   function playerAction() {
     const P = st.p;
     if (P.dead) return 'dead';
+    if (st.ult) return 'cast';   // [W3-ULT] руки к небу
     if (P.hitReact > 0) return 'hit';
     if (P.dashing) return 'dash';
     if (P.parryT > 0) return 'parry';
@@ -786,6 +817,11 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         bastion: P.bastion > 0, bastionRemaining: P.bastion,
         vortex: P.vortex > 0, vortexRemaining: P.vortex, regen: P.regen > 0, regenRemaining: P.regen,
         combo: P.combo, comboMultiplier: 1 + comboBonus(), comboTimer: P.comboTimer,
+        // [W3-MAGIC] ладони сомкнуты — заряд «Врат бури» / «Столпа небес» 0..1 и куда тянут: 'h' | 'v' | null
+        sigilCharge: st.status === 'playing' ? st.input.sigilCharge : 0,
+        sigilAxis: st.status === 'playing' ? st.input.sigilAxis : null,
+        // [W3-ULT] «Ярость клятвы»: шкала и готовность «Небесного суда» (в дуэли — нет)
+        fury: P.fury, furyMax: C.ultimate.furyMax, furyReady: ultReady(),
       },
       boss: {
         position: vcopy(BOSS),
@@ -831,6 +867,10 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       }),
       stats: { ...st.stats },
     };
+    // [W3-ULT] идущая сцена «Небесного суда» (только пока бой идёт)
+    snap.ultimate = st.ult && st.status === 'playing'
+      ? { active: true, t: st.ult.t, duration: st.ult.duration, strikeAt: st.ult.strikeAt, struck: st.ult.struck, amount: st.ult.amount }
+      : null;
     if (hand) { try { hand.decorateSnapshot(snap); } catch (e) { /* [HAND] снимок без стрел */ } } // [HAND]
     // [PVP] C4: режим, соперник и цель lock-on (в бою с боссом — Регент)
     snap.mode = PV && PV.on ? 'pvp' : 'boss';
@@ -848,6 +888,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       st.input.conjure = null; st.input.autoWalk = false;
       st.pendingDash = 0; st.pendingDashCam = null; st.pendingBurst = false; st.pendingRune = null; st.pendingThrow = null; st.p.charge = 0;
       st.pendingSpark = false; st.pendingSlash = null; st.pendingParry = false;
+      st.pendingUlt = false;   // [W3-ULT]
       if (hand) hand.clearInput(); // [HAND]
       return;
     }
@@ -898,10 +939,19 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       st.pendingBurstPower = Number.isFinite(bp) && bp > 0 ? clamp(bp, 0, 1) : null;
     }
     if (typeof input.rune === 'string' && RUNE_IDS.includes(input.rune) && !novice) st.pendingRune = input.rune;
-    if (typeof input.sigil === 'string' && SIGIL_IDS.includes(input.sigil) && !novice) st.pendingSigil = input.sigil;
+    if (typeof input.sigil === 'string' && SIGIL_IDS.includes(input.sigil) && (!novice || STRETCH_SIGILS.includes(input.sigil))) {
+      st.pendingSigil = input.sigil;
+      st.pendingSigilPower = unit(input.sigilPower, 0.6);   // [W3-MAGIC] сила жеста 0..1 (нет — средняя)
+    }
+    // [W3-MAGIC] заряд «ладони вместе» для снимка (эффекты, HUD)
+    st.input.sigilCharge = unit(input.sigilCharge, 0);
+    st.input.sigilAxis = input.sigilAxis === 'h' || input.sigilAxis === 'v' ? input.sigilAxis : null;
     const ch = Number(input.charge);
     st.p.charge = Number.isFinite(ch) ? clamp(ch, 0, 1) : 0;
     if (hand) { try { hand.readInput(novice ? { ...input, bow: null, handSpell: null } : input); } catch (e) { console.warn('[combat] hand.readInput', e); } } // [HAND] input.bow / input.handSpell; [НОВИЧОК] без лука и магии рукой
+    // [W3-ULT] «Небесный суд» — и в «Новичке»; во время сцены любой ввод игнорируется
+    if (input.ultimate === true) st.pendingUlt = true;
+    if (st.ult) ultMuteInput();
   }
 
   function readVec2(v) {
@@ -1090,6 +1140,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       emit('shield_end', playerPos(), { reason: 'fight_end' });
     }
     st.status = result;
+    st.pendingUlt = false; st.ult = null;   // [W3-ULT] сцена (если шла) не переживает исход
     st.projectiles.length = 0;
     if (hand) hand.clear(); // [HAND]
     st.telegraphs.length = 0;
@@ -1117,7 +1168,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     if (st.status !== 'playing' || !(amount > 0)) return;
     const B = st.b;
     const P = st.p;
-    const mult = (1 + comboBonus()) * (B.mark > 0 ? 1 + C.sigils.frame.bonus : 1);
+    const mult = extra && extra.flat ? 1 : (1 + comboBonus()) * (B.mark > 0 ? 1 + C.sigils.frame.bonus : 1);   // [W3-ULT] flat — урон ультимейта
     const dealt = Math.min(B.hp, amount * mult);
     B.hp -= dealt;
     if (B.hp < 1e-6) B.hp = 0;
@@ -1125,6 +1176,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     if (source === 'burst' || source === 'rune' || source === 'throw' || source === 'sigil') B.hitReact = C.boss.hitReactTime;
     P.combo++;
     P.comboTimer = C.combo.decay;
+    if (source !== 'ultimate') addFury(dealt * C.ultimate.furyMax / (C.ultimate.fillAt * C.boss.maxHp) + (P.combo >= C.ultimate.comboFrom ? C.ultimate.perCombo : 0));   // [W3-ULT]
     emit('boss_hit', point, { ...(extra || {}), amount: dealt, source, hpAfter: B.hp, combo: P.combo, multiplier: Math.round(mult * 100) / 100, marked: B.mark > 0 });
     if (B.hp <= 0) finish('victory');
   }
@@ -1150,6 +1202,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       if (perfect) {
         P.energy = Math.min(C.player.maxEnergy, P.energy + C.perfectDodge.energy);
         emit('perfect_dodge', playerPos(), { attackId: att.id, attackKind: att.kind, energy: C.perfectDodge.energy });
+        addFury(C.ultimate.perfectDodge);   // [W3-ULT]
       }
     } else if (outcome === 'ward') {
       st.stats.blocks++;
@@ -1568,6 +1621,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     const sg = st.pendingSigil;
     if (!sg) return;
     st.pendingSigil = null;
+    const power = Number.isFinite(st.pendingSigilPower) ? st.pendingSigilPower : 0.6;
     const S = C.sigils[sg];
     let reason = '';
     if (P.sigilCd[sg] > EPS) reason = 'cooldown';
@@ -1599,10 +1653,8 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         emit('boss_stunned', to, { duration: S.stun, source: 'clap' });
         damageBoss(S.damage, 'sigil', to, { sigil: 'clap' });
       }
-    } else if (sg === 'gate') {
-      P.bastion = S.duration;
-      emit('sigil_cast', chest, { sigil: 'gate', duration: S.duration, reduction: S.reduction, from: vcopy(chest), to: vcopy(chest) });
-      emit('bastion_start', pp, { duration: S.duration });
+    } else if (sg === 'gate' || sg === 'pillar') {
+      castStretch(sg, S, power, pp, chest, to);   // [W3-MAGIC]
     } else if (sg === 'frame') {
       B.mark = S.duration;
       emit('sigil_cast', chest, { sigil: 'frame', duration: S.duration, bonus: S.bonus, from: vcopy(chest), to: vcopy(to) });
@@ -1631,6 +1683,53 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       P.ward = S.ward;
       emit('sigil_cast', chest, { sigil: 'cor', heal: S.heal, duration: S.duration, ward: S.ward, from: vcopy(chest), to: vcopy(chest) });
       emit('ward_start', pp, { duration: S.ward });
+    }
+  }
+
+  // ───────── [W3-MAGIC] «ладони сомкнуты → растянуть»: «Врата бури» и «Столп небес» ─────────
+  // Контракт для визуала (№3), голоса (№7) и «Духа игрока» (№5):
+  //  • событие 'sigil_cast' { sigil: 'gate' | 'pillar', power 0..1, damage, from, to, ... }:
+  //    gate — волна огня и молний по земле от героя к Регенту (speed м/с, width м, eta с до удара)
+  //           + короткий бастион (duration с, reduction; как раньше — ещё и 'bastion_start');
+  //    pillar — столп света с неба над Регентом, удар через delay с, оглушение stun с;
+  //  • снимок: player.sigilCharge 0..1 (ладони сомкнуты, идёт заряд), player.sigilAxis 'h' | 'v' | null;
+  //  • попадание — обычное 'boss_hit' с source 'sigil' и data { sigil, power } (столп — ещё 'boss_stunned'
+  //    с source 'pillar'); волна, не долетевшая до Регента (дальше range), не бьёт: 'sigil_miss'.
+  function castStretch(sg, S, power, pp, chest, to) {
+    const P = st.p;
+    const k = S.minK + (1 - S.minK) * clamp(power, 0, 1);
+    const dmg = S.damage * k;
+    const dist = distXZ(pp, BOSS);
+    const reach = dist <= S.range;
+    if (sg === 'gate') {
+      P.bastion = Math.max(P.bastion, S.duration);
+      const eta = dist / Math.max(1, S.speed);
+      emit('sigil_cast', chest, { sigil: 'gate', power, damage: dmg, duration: S.duration, reduction: S.reduction, speed: S.speed, width: S.width, eta, reach, from: vcopy(chest), to: vcopy(to) });
+      emit('bastion_start', pp, { duration: S.duration });
+      P.magic.push({ sigil: 'gate', t: reach ? eta : Math.min(eta, S.range / Math.max(1, S.speed)), dmg: reach ? dmg : 0, power });
+    } else {
+      emit('sigil_cast', chest, { sigil: 'pillar', power, damage: dmg, stun: S.stun, delay: S.delay, reach, from: vcopy(chest), to: vcopy(to) });
+      P.magic.push({ sigil: 'pillar', t: S.delay, dmg: reach ? dmg : 0, power });
+    }
+  }
+  function stepStretchMagic(h) {
+    const P = st.p, B = st.b;
+    if (!P.magic.length) return;
+    for (const m of P.magic) m.t -= h;
+    while (P.magic.length && st.status === 'playing') {
+      const i = P.magic.findIndex((m) => m.t <= 0);
+      if (i < 0) break;
+      const m = P.magic.splice(i, 1)[0];
+      const to = bossAim();
+      if (!(m.dmg > 0)) { emit('sigil_miss', to, { sigil: m.sigil, power: m.power }); continue; }
+      if (m.sigil === 'pillar' && !(PV && PV.on)) {
+        const S = C.sigils.pillar;
+        for (const tg of st.telegraphs) emit('telegraph_cancel', tg.center, { attackId: tg.id, attackKind: tg.kind, reason: 'stun' });
+        st.telegraphs.length = 0;
+        B.stun = Math.max(B.stun, S.stun);
+        emit('boss_stunned', to, { duration: S.stun, source: 'pillar' });
+      }
+      damageBoss(m.dmg, 'sigil', to, { sigil: m.sigil, power: m.power });
     }
   }
 
@@ -1912,6 +2011,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       P.parryHit = true;
       P.energy = Math.min(C.player.maxEnergy, P.energy + Q.energyGain);
       emit('parry', vcopy(o.position), { success: true, projectileId: o.id });
+      addFury(C.ultimate.parry);   // [W3-ULT]
       emit('projectile_reflected', vcopy(o.position), { projectileId: o.id, owner: 'player' });
     }
     P.parryWin = Math.max(0, P.parryWin - h);
@@ -2244,6 +2344,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       if (P.hp > 0) P.hp = Math.min(C.player.maxHp, P.hp + P.regenRate * dtR);
       if (P.regen <= 0) emit('regen_end', playerPos(), { reason: 'expired' });
     }
+    stepStretchMagic(h);   // [W3-MAGIC]
     if (P.beam.length) {
       for (const m of P.beam) m.t -= h;
       while (P.beam.length && P.beam[0].t <= 0 && st.status === 'playing') {
@@ -2269,6 +2370,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
 
   // ---------------------------------------------------------------- шаг
   function step(h) {
+    if (st.ult && st.status === 'playing') { stepUltimate(h); return; }   // [W3-ULT] сцена: бой стоит
     // оглушённый страж «замирает»: часы мозга стоят; вне арены (explore) босс не думает об атаках
     const bh = st.b.slow > 0 ? h * (1 - C.runes.clepsydra.slow) : h;   // [V3] «Клепсидра»: время Регента медленнее
     if (PV && PV.on) PV.preStep(h);                     // [PVP] босса нет: соперник, статусы fx, отсечка ввода
@@ -2277,6 +2379,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     st.time += h;
     st.debug.steps++;
     tickTimers(h);
+    if (tryUltimate()) return;   // [W3-ULT] «Небесный суд» начался — остаток шага пропущен
     const playerPrev = playerPos();
     updateShield(h);
     tryParry();
@@ -2303,6 +2406,78 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     updateBossProjectiles(bh, playerPrev);
     if (st.status !== 'playing') return;
     updateBossYaw(h);
+  }
+
+  // ---------------------------------------------------------------- [W3-ULT] «Ярость клятвы» и «Небесный суд»
+  function ultAllowed() { return !(PV && PV.on); }   // в дуэли ультимейта нет
+  function ultReady() { return ultAllowed() && st.p.fury >= C.ultimate.furyMax - 1e-6; }
+  function addFury(v) {
+    const P = st.p;
+    if (!(v > 0) || st.ult || !ultAllowed() || st.status !== 'playing') return;
+    P.fury = Math.min(C.ultimate.furyMax, P.fury + v);
+    if (P.fury >= C.ultimate.furyMax - 1e-6 && !st.furyFullSent) {
+      st.furyFullSent = true;
+      emit('ultimate_ready', playerPos(), { fury: P.fury });
+    }
+  }
+  // во время сцены импульсы и удержания не копятся «на потом»
+  function ultMuteInput() {
+    st.input.attack = false; st.input.shield = false; st.input.conjure = null;
+    st.pendingDash = 0; st.pendingDashCam = null; st.dashBuffer = null; st.pendingBurst = false; st.pendingRune = null; st.pendingSigil = null;
+    st.pendingThrow = null; st.pendingSpark = false; st.pendingSlash = null; st.pendingParry = false; st.pendingUlt = false; st.p.charge = 0;
+    if (hand) hand.clearInput();
+  }
+  // шкала вручную (main.js: ?fury=100 — показ ультимейта на сцене сразу; тесты)
+  function setFury(v) {
+    if (!ultAllowed() || !st || st.status !== 'playing') return 0;
+    const n = Number(v);
+    st.p.fury = clamp(Number.isFinite(n) ? n : 0, 0, C.ultimate.furyMax);
+    st.furyFullSent = false;
+    addFury(1e-9);   // полная — событие ultimate_ready
+    return st.p.fury;
+  }
+  function tryUltimate() {
+    if (!st.pendingUlt) return false;
+    st.pendingUlt = false;   // одна попытка на импульс
+    if (!ultReady() || st.status !== 'playing' || st.p.dead) return false;
+    if (C.encounter.enabled && !st.engaged) { deny('ultimate', 'far'); return false; }
+    const P = st.p, U = C.ultimate;
+    // небо раскалывается: телеграфы и сферы Регента рассеяны, щит опущен
+    for (const pr of st.projectiles) {
+      if (pr.owner === 'boss') emit('projectile_impact', pr.position, { owner: 'boss', kind: pr.kind, projectileId: pr.id, attackId: pr.attackId, result: 'dispelled' });
+    }
+    st.projectiles = st.projectiles.filter((pr) => pr.owner !== 'boss');
+    st.telegraphs.length = 0;
+    if (P.shielding) endShield('ultimate');
+    P.dashing = false; P.firing = false; P.vx = 0; P.vz = 0; P.parryWin = 0;
+    P.fury = 0; st.furyFullSent = false;
+    const amount = Math.round(C.boss.maxHp * U.damagePct);
+    st.ult = { t: 0, duration: U.duration, strikeAt: Math.min(U.strikeAt, U.duration), struck: false, amount };
+    ultMuteInput();
+    emit('ultimate_start', playerChest(), { target: bossAim(), duration: U.duration, strikeAt: st.ult.strikeAt, amount });
+    return true;
+  }
+  function stepUltimate(h) {
+    const U = st.ult, P = st.p, B = st.b;
+    st.time += h;
+    st.debug.steps++;
+    U.t += h;
+    P.vx = 0; P.vz = 0;
+    P.yaw = Math.atan2(BOSS.x - P.x, BOSS.z - P.z);   // лицом к Регенту
+    if (!U.struck && U.t + 1e-9 >= U.strikeAt) {
+      U.struck = true;
+      const to = bossAim();
+      const dealt = Math.min(B.hp, U.amount);
+      emit('ultimate_strike', to, { amount: dealt, from: { x: to.x, y: to.y + 30, z: to.z } });
+      damageBoss(U.amount, 'ultimate', to, { flat: true, ultimate: true });
+      if (st.status !== 'playing') return;   // меч добил Регента — победа
+      B.hitReact = C.ultimate.bossReact;
+    }
+    if (U.t + 1e-9 >= U.duration) {
+      st.ult = null;
+      P.grace = Math.max(P.grace, C.ultimate.graceAfter);
+      emit('ultimate_end', playerPos(), { struck: U.struck });
+    }
   }
 
   // ---------------------------------------------------------------- публичный API
@@ -2458,5 +2633,6 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   reset();
   return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig, setSpawn, get hand() { return hand; } /* [HAND] */,
     setDifficulty, getDifficulty,   // [FEEL]
+    setFury,   // [W3-ULT]
     attachPvp, setMode, getMode, setOpponent, applyRemoteHit };   // [PVP]
 }

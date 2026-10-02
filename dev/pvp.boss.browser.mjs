@@ -28,7 +28,7 @@ const click = (label) => p.evaluate((l) => { const b = [...document.querySelecto
 const out = {};
 out.debug = await click('Отладка с клавиатуры'); await sleep(300);
 out.start = await click('Играть'); await sleep(500);
-out.nocam = await click('Продолжить без камеры (DEBUG)'); await sleep(500);
+out.nocam = await click('Продолжить без камеры (демо)'); await sleep(500);
 out.fight = await click('В бой'); await sleep(8000);
 const s = await p.evaluate(() => { const s = window.__ASHEN__.snapshot(); return { screen: window.__ASHEN__.screen, mode: s && s.mode, lock: s && s.lockTarget && s.lockTarget.kind, opp: s && s.opponent, bossHp: s && s.boss.hp, pvp: window.__ASHEN__.pvp() }; });
 // идём к Регенту (W) и стреляем искрой, чтобы бой шёл

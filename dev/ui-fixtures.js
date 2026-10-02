@@ -116,6 +116,26 @@ function vm(over = {}) {
 const READY = { status: 'ready', message: '', progress: 1, confidence: 0.86, calibrated: true, parts: { ...ALL_PARTS } };
 const LOST = { status: 'lost', message: 'Поза не найдена в кадре', progress: 1, confidence: 0.08, calibrated: true };
 
+// [W3-CHALLENGE] итоги «Испытания · 60 с»: зал славы дня из 11 попыток, своя запись — 'me'
+const HALL_DAY = [['ТИМ', 12380, 'S', 93], ['АНЯ', 9120, 'A', 91], ['ДАН', 7410, 'A', 84], ['ЖАН', 6950, 'B', 80], ['ЕВА', 6020, 'B', 77],
+  ['', 5480, 'B', 82], ['МИР', 4410, 'B', 71], ['ОЛЯ', 3950, 'C', 69], ['КАЙ', 2870, 'C', 64], ['ЛЕВ', 2110, 'C', 58], ['ИЯ', 1340, 'D', 52]]
+  .map(([name, score, rank, acc], i) => ({ id: i === 5 ? 'me' : `h${i}`, name, score, rank, acc, mode: i === 2 ? 'master' : 'novice', t: i, day: '2026-10-02', dmg: Math.round(score / 13), combo: 12, hero: 'ashen', won: score > 12000 }));
+function challengeVm(record) {
+  const parts = record
+    ? [['damage', 'Урон', '700', 7000], ['combo', 'Лучшая серия', '×38', 1140], ['accuracy', 'Точность жестов', '91%', 1092], ['magic', 'Магия и ультимейт', '2 чары · ультимейт ×1', 2100], ['victory', 'Регент повержен', '+17 с в запасе', 3520]]
+    : [['damage', 'Урон', '412', 4120], ['combo', 'Лучшая серия', '×19', 570], ['accuracy', 'Точность жестов', '82%', 790], ['magic', 'Магия и ультимейт', '—', 0]];
+  const score = parts.reduce((a, p) => a + p[3], 0);
+  const hall = record ? [{ ...HALL_DAY[5], name: 'ДИА', score, rank: 'S', acc: 91 }, ...HALL_DAY.filter((e) => e.id !== 'me')] : HALL_DAY.map((e) => (e.id === 'me' ? { ...e, score } : e));
+  return {
+    result: {
+      kind: 'challenge', score, rank: record ? 'S' : 'B', rankTitle: record ? 'Легенда арены' : 'Страж', outcome: record ? 'victory' : 'timeup', elapsed: record ? 43 : 60,
+      parts: parts.map(([id, label, detail, points]) => ({ id, label, detail, points })), next: record ? null : { id: 'A', need: 7000 - score },
+      place: record ? 1 : 6, total: 11, isRecord: record, entryId: 'me', name: record ? 'ДИА' : '', named: record,
+    },
+    hall, best: hall[0], posterUrl: '',
+  };
+}
+
 export const FIXTURES = {
   menu: vm(),
   'menu-debug': vm({ debug: true }),
@@ -226,6 +246,9 @@ export const FIXTURES = {
     error: 'TypeError: Failed to fetch (pose_landmarker_lite.task)\n    at loadModel (vision.js:120:11)\n    at async start (vision.js:88:5)',
   }),
   'error-secure': vm({ screen: 'error', error: 'SecurityError: getUserMedia requires a secure context' }),
+  // [W3-CHALLENGE] итоги испытания: ввод имени (6-е место из 11) и рекорд дня с именем
+  challenge: vm({ screen: 'challenge', tracking: { ...READY }, challenge: challengeVm(false) }),
+  'challenge-record': vm({ screen: 'challenge', tracking: { ...READY }, challenge: challengeVm(true) }),
 
   oath: vm({ screen: 'oath', progress: PROGRESS_MID }),
   'oath-new': vm({ screen: 'oath', progress: PROGRESS_NEW }),
@@ -240,6 +263,29 @@ export const FIXTURES = {
       exercise: 'squats', reps: 4, attempts: 6, state: 'bottom', message: '', depth: 0.92, knee: 104, view: 'front',
       lastOk: false, sinceRepMs: 4000, lastHint: { code: 'valgus', text: 'Колени заваливаются внутрь — разводи их в стороны, по линии носков', tMs: 1 }, sinceHintMs: 300,
       faults: { shallow: 1, valgus: 1 }, formScore: 0.667, topFault: { code: 'shallow', text: 'Садись глубже — бёдра до параллели с полом', count: 1 },
+    },
+  }),
+  // [W3-SQUAT] подготовка: ноутбук на столе, стопы не в кадре — «вижу до колен ✓» и совет; «Новичок»: засчитан с ошибкой
+  'training-squat-prep': vm({
+    screen: 'training', tracking: { ...READY }, progress: PROGRESS_MID,
+    training: {
+      exercise: 'squats', mode: 'novice', reps: 0, attempts: 0, state: 'top', message: 'Готово — приседай!', depth: 0, knee: 171, view: 'front', feet: false,
+      lastOk: null, sinceRepMs: 1e9, lastHint: null, sinceHintMs: null, faults: {}, formScore: null, topFault: null, clean: 0, points: 0,
+      framing: { full: false, upper: true, ready: true, readyMs: 900, status: 'okNoFeet', statusText: 'Вижу до колен ✓ — можно приседать',
+        tip: { code: 'tiltDown', text: 'Стопы не в кадре — наклони экран ноутбука чуть вперёд или отойди на шаг' },
+        points: { 0: { v: 0.99, ok: true }, 11: { v: 0.99, ok: true }, 12: { v: 0.99, ok: true }, 23: { v: 0.93, ok: true }, 24: { v: 0.92, ok: true }, 25: { v: 0.81, ok: true }, 26: { v: 0.78, ok: true }, 27: { v: 0.32, ok: false }, 28: { v: 0.12, ok: false } } },
+      pose: { model: 'full', switching: false, hz: 15, recFrames: 450 },
+    },
+  }),
+  'training-squat-counted': vm({
+    screen: 'training', tracking: { ...READY }, progress: PROGRESS_MID,
+    training: {
+      exercise: 'squats', mode: 'novice', reps: 3, attempts: 3, clean: 2, points: 5, state: 'top', message: '', depth: 0, knee: 172, view: 'front', feet: false,
+      lastOk: true, sinceRepMs: 400, lastHint: { code: 'fast', text: 'Слишком быстро — опускайся подконтрольно, 2 секунды вниз', tMs: 9000 }, sinceHintMs: 400,
+      lastRep: { tMs: 9000, ok: true, clean: false, faults: ['fast'], minKnee: 121, ms: 640, reason: 'Слишком быстро — опускайся подконтрольно, 2 секунды вниз' },
+      lastEvent: { tMs: 9000, rep: 3, clean: false, points: 1, faults: ['fast'] },
+      faults: { fast: 1 }, formScore: 0.667, topFault: { code: 'fast', text: 'Слишком быстро — опускайся подконтрольно, 2 секунды вниз', count: 1 },
+      framing: { full: false, upper: true, ready: true, readyMs: 9000, status: 'okNoFeet', statusText: 'Вижу до колен ✓ — можно приседать', tip: { code: 'tiltDown', text: 'Стопы не в кадре — наклони экран ноутбука чуть вперёд или отойди на шаг' }, points: {} },
     },
   }),
   'training-squat-clean': vm({

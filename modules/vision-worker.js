@@ -29,6 +29,15 @@
 
 import { API_VERSION, COMPACT_INDICES, COMPACT_STRIDE } from './vision.js';
 
+// [W3-CURSOR] служебные строки glog из WASM MediaPipe («W1002 … gl_context.cc:1118] OpenGL error checking is disabled»,
+// «… landmark_projection_calculator.cc:81] Using NORM_RECT …») — не сбои игры, в консоль игрока их не пускаем.
+// Только уровни I (info) и W (warning) в формате glog; E/F (ошибки) и всё остальное — как раньше.
+const GLOG_NOISE = /^[IW]\d{4} \d\d:\d\d:\d\d\.\d+\s+\d+\s+[\w.-]+:\d+\]/;
+for (const k of ['log', 'info', 'warn']) {
+  const orig = console[k];
+  if (typeof orig === 'function') console[k] = (...a) => { if (typeof a[0] === 'string' && GLOG_NOISE.test(a[0])) return; orig.apply(console, a); };
+}
+
 let landmarker = null;
 let handLandmarker = null;
 let readyDelegate = null;

@@ -576,6 +576,18 @@ pair('frame_diag',
   (D) => { hand(D, { x: 16, y: 30, s: 30, side: 'left', ...LSH }); hand(D, { x: 48, y: 30, s: 30, side: 'right', ...LSH }); D.thin([[3, 20], [61, 20]], 1, { dash: '2 2', op: 0.7 }); },
   (D) => { const a = hand(D, { x: 12, y: 39, s: 28, side: 'left', ...LSH }); const b = hand(D, { x: 52, y: 17, s: 28, side: 'right', ...LSH, palm: 'away', roll: 180 }); D.thin([a.p[8], [b.p[4][0], a.p[8][1]], b.p[8], [a.p[4][0], b.p[8][1]]], 1.3, { closed: true, dash: '2.4 2', op: 0.85 }); });
 
+// [W3-MAGIC] «ладони вместе → растянуть» («Врата бури» / «Столп небес»): ладони ребром друг к другу
+const PRAY = { ...OPEN, spread: 0.6, yaw: 66, curls: [0.05, 0.05, 0.05, 0.05] };
+pair('stretch_slow',
+  (D) => { hand(D, { x: 21, y: 30, s: 30, side: 'left', ...PRAY }); hand(D, { x: 43, y: 30, s: 30, side: 'right', ...PRAY }); slowDots(D, 12, 50, 180, 2, 3.5); slowDots(D, 52, 50, 0, 2, 3.5); hourglass(D, 32, 9, 7); },
+  (D) => { hand(D, { x: 10, y: 30, s: 30, side: 'left', ...PRAY }); hand(D, { x: 54, y: 30, s: 30, side: 'right', ...PRAY }); arrow(D, 28, 30, 20, 30, { w: 2.4 }); arrow(D, 36, 30, 44, 30, { w: 2.4 }); speedLines(D, 30, 30, 180, 6, 2, 5, { w: 1.4 }); speedLines(D, 34, 30, 0, 6, 2, 5, { w: 1.4 }); });
+pair('stretch_open',
+  (D) => { hand(D, { x: 17, y: 30, s: 30, side: 'left', ...PRAY }); hand(D, { x: 47, y: 30, s: 30, side: 'right', ...PRAY }); focus(D, 32, 28, 8); },
+  (D) => { hand(D, { x: 27.5, y: 30, s: 30, side: 'left', ...PRAY }); hand(D, { x: 36.5, y: 30, s: 30, side: 'right', ...PRAY }); arrow(D, 18, 50, 8, 50, { w: 1.8 }); arrow(D, 46, 50, 56, 50, { w: 1.8 }); hourglass(D, 32, 50, 6); });
+pair('stretch_diag',
+  (D) => { hand(D, { x: 19, y: 19, s: 26, side: 'left', ...PRAY }); hand(D, { x: 45, y: 41, s: 26, side: 'right', ...PRAY }); arrow(D, 26, 24, 14, 12, { w: 2 }); arrow(D, 38, 34, 50, 46, { w: 2 }); },
+  (D) => { hand(D, { x: 11, y: 30, s: 28, side: 'left', ...PRAY }); hand(D, { x: 53, y: 30, s: 28, side: 'right', ...PRAY }); arrow(D, 28, 30, 20, 30, { w: 2.4 }); arrow(D, 36, 30, 44, 30, { w: 2.4 }); arrow(D, 32, 22, 32, 6, { w: 1.6 }); arrow(D, 32, 38, 32, 52, { w: 1.6 }); });
+
 // лук (вид сбоку: лук слева, тетива тянется вправо к уху)
 pair('bow_fist',
   (D) => { bow(D, 22, 5, 51, 7, 0); hand(D, { x: 18, y: 30, s: 30, side: 'left', ...OPEN, arm: 0.04 }); focus(D, 18, 22, 11); },
@@ -670,6 +682,14 @@ one('g_parry', (D) => { D.group('opacity=".35"', () => hand(D, { x: 10, y: 46, s
 one('g_orb', (D) => { orb(D, 32, 27, 9.5); hand(D, { x: 13, y: 30, s: 32, side: 'left', ...ORBH }); hand(D, { x: 51, y: 30, s: 32, side: 'right', ...ORBH }); });
 one('g_squat', (D) => { floor(D); squatSide(D, { ax: 30, ...SQ }); });
 one('g_pushup', (D) => { pushupSide(D, { down: 0.5 }); });
+
+// [W3-ULT] «Небесный суд»: обе руки над головой (core/ultimate.js)
+pair('ult_one_hand',
+  (D) => { chestLine(D, 21); bodyFront(D, { x: 32, y: 30, lh: [24, 10], rh: [42, 50], lk: 'open', rk: 'open', hs: 10 }); focus(D, 42, 48, 6); },
+  (D) => { chestLine(D, 21); bodyFront(D, { x: 32, y: 30, lh: [24, 10], rh: [40, 10], lk: 'open', rk: 'open', hs: 10 }); arrow(D, 55, 44, 55, 18, { w: 2.2 }); });
+pair('ult_early',
+  (D) => { chestLine(D, 21); bodyFront(D, { x: 28, y: 30, lh: [20, 10], rh: [36, 10], lk: 'open', rk: 'open', hs: 10 }); clock(D, 53, 13, 8); arrow(D, 53, 27, 53, 48, { w: 2, color: MUTE }); },
+  (D) => { chestLine(D, 21); bodyFront(D, { x: 28, y: 30, lh: [20, 10], rh: [36, 10], lk: 'open', rk: 'open', hs: 10 }); clock(D, 53, 13, 8); D.ring(53, 13, 11, 2.2); });
 
 export const PICTOGRAM_IDS = Object.freeze(Object.keys(FIG));
 

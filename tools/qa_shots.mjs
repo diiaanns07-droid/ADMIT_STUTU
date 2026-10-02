@@ -149,7 +149,7 @@ try {
   stats.menu = zoneStats(decodePNG(await page.shot('00_menu')));
   await page.click('Отладка с клавиатуры'); await sleep(150);
   await page.click('Играть'); await sleep(200);
-  await page.click('Продолжить без камеры (DEBUG)'); await sleep(400);
+  await page.click('Продолжить без камеры (демо)'); await sleep(400);
   await page.shot('00b_tutorial');
   await page.click('В бой'); await sleep(700);   // интро 1,8 с
   await page.shot('01_intro');

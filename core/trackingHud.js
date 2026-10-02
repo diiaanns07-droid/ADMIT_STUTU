@@ -1,11 +1,12 @@
 // ASHEN OATH — HUD трекинга в стиле «tracking edit» поверх превью камеры.
 //
 // Рисует на overlay-canvas (#ao-overlay) каждый кадр, когда main.js вызывает draw():
-//  - скобки-рамки HEAD / L.HAND / R.HAND / TORSO с живыми координатами кадра;
+//  - скобки-рамки ГОЛОВА / Л.РУКА / П.РУКА / КОРПУС с живыми координатами кадра;
 //  - «созвездие» суставов (плечи, локти, запястья) и линию голова — торс;
-//  - нейтраль калибровки (пунктир, мёртвая зона, линейка наклона, «LEAN +0.42»);
-//  - состояния жестов: FIRE / SHIELD / BURST (кольцо заряда) / DASH (шлейф);
-//  - колонку данных CV (full), «NO TARGET» при потере, полосу калибровки.
+//  - нейтраль калибровки (пунктир, мёртвая зона, линейка наклона, «НАКЛОН +0.42»);
+//  - состояния жестов: ОГОНЬ / ЩИТ / ВЫБРОС (кольцо заряда) / РЫВОК (шлейф);
+//  - строку состояния камеры (full), «НЕ ВИЖУ ВАС» при потере, полосу калибровки.
+//    Цифры распознавания (точность, частота, задержка) — в панели F3, не на превью (TELEMETRY).
 //
 // Правила модуля: без импортов, без собственного rAF, никогда не бросает исключений.
 // Горячий путь без аллокаций: цвета — константы (прозрачность через globalAlpha),
@@ -45,8 +46,9 @@ const FULL_BASE_W = 360;       // то же для полного рисунка
 const STALE_MS = 800;          // pose.tMs не меняется дольше — считаем цель потерянной
 const COORD_EVERY_MS = 66;     // «живые» цифры ~15 Гц
 const DATA_EVERY_MS = 250;     // колонка данных 4 Гц
+const TELEMETRY = false;       // [W3-CURSOR] true — колонка цифр CV на превью (для отладки; иначе они в панели F3)
 
-const GLYPHS = '0123456789ABCDEFXZ#%+=/<>';
+const GLYPHS = '0123456789АБВГДЕЖЗКМ#%+=/<>';
 // MediaPipe Pose: 0 нос, 11/12 плечи, 13/14 локти, 15/16 запястья (левое/правое самого человека).
 const NODE_IDX = [0, 11, 12, 13, 14, 15, 16];
 const S_NOSE = 0, S_LS = 1, S_RS = 2, S_LE = 3, S_RE = 4, S_LW = 5, S_RW = 6;
@@ -132,10 +134,10 @@ export function createTrackingHud(opts) {
   let trackAlpha = 0;
   let lostAlpha = 1;
 
-  const torso = makeBox('TORSO', 'T');
-  const head = makeBox('HEAD', 'H');
-  const lHand = makeBox('L.HAND', 'L');
-  const rHand = makeBox('R.HAND', 'R');
+  const torso = makeBox('КОРПУС', 'К');
+  const head = makeBox('ГОЛОВА', 'Г');
+  const lHand = makeBox('Л.РУКА', 'Л');
+  const rHand = makeBox('П.РУКА', 'П');
   const BOXES = [torso, head, lHand, rHand];
 
   // ---- жесты и импульсы
@@ -419,7 +421,7 @@ export function createTrackingHud(opts) {
     let mv = input && input.valid !== false ? num(input.moveX, NaN) : NaN;
     if (!(mv === mv)) mv = num(dbg.lateral && dbg.lateral.moveX, 0);
     const r = Math.round(mv * 100);
-    if (r !== leanVal) { leanVal = r; leanText = 'LEAN ' + signed2(mv); }
+    if (r !== leanVal) { leanVal = r; leanText = 'НАКЛОН ' + signed2(mv); }
     const cwD = charWidth(F_DATA);
     const tw = leanText.length * cwD;
     let tx = xc + 8;
@@ -499,7 +501,7 @@ export function createTrackingHud(opts) {
       ctx.fillStyle = GOLD_HI;
       ctx.beginPath(); ctx.arc(cx, cy, 1.6 * k, 0, Math.PI * 2); ctx.fill();
       if (!mini) {
-        const tag = (mag <= 0.01 ? 'STICK' : run ? 'RUN' : 'WALK') + (stick.source === 'wrist' ? ' · WRIST' : '');
+        const tag = (mag <= 0.01 ? 'СТОИТ' : run ? 'БЕГ' : 'ШАГ') + (stick.source === 'wrist' ? ' · ЗАПЯСТЬЕ' : '');
         setFont(F_DATA);
         const tw = measure(F_DATA, tag);
         const tx = clamp(cx - tw / 2, rx + 2, rx + rw - tw - 2), ty = clamp(cy + full + 4, ry + 2, ry + rh - 14);
@@ -522,7 +524,7 @@ export function createTrackingHud(opts) {
         ctx.strokeStyle = stick.grabbing ? GOLD_HI : GOLD;
         ctx.beginPath(); ctx.arc(hxS, hyS, r + (stick.grabbing ? 0 : 2 * ph), 0, Math.PI * 2); ctx.stroke();
         if (!mini) {
-          const tag = stick.grabbing ? 'GRAB…' : 'HOLD ◎';
+          const tag = stick.grabbing ? 'ХВАТ…' : 'ЗАМРИТЕ ◎';
           setFont(F_DATA);
           const tw = measure(F_DATA, tag);
           const tx = clamp(hxS - tw / 2, rx + 2, rx + rw - tw - 2), ty = clamp(hyS + r + 4, ry + 2, ry + rh - 14);
@@ -625,7 +627,7 @@ export function createTrackingHud(opts) {
     ctx.stroke();
   }
 
-  // Ярлык рамки: «R.HAND  x:402 y:120» (full) / «R» (mini) и чип состояния над ним.
+  // Ярлык рамки: «П.РУКА  402·120» (full) / «П» (mini) и чип состояния над ним.
   function drawTag(b, color, stateColor, now, rm, mini) {
     if (b.alpha <= 0.01) return;
     boxRect(b);
@@ -638,7 +640,7 @@ export function createTrackingHud(opts) {
     // координаты в пикселях отображаемого кадра, ~15 Гц
     if (!mini && now - b.coordAt >= COORD_EVERY_MS) {
       const fx = Math.round(clamp(b.x, 0, 1) * frameW), fy = Math.round(clamp(b.y, 0, 1) * frameH);
-      if (fx !== b.fx || fy !== b.fy || !b.coord) { b.fx = fx; b.fy = fy; b.coord = 'x:' + pad3(fx) + ' y:' + pad3(fy); }
+      if (fx !== b.fx || fy !== b.fy || !b.coord) { b.fx = fx; b.fy = fy; b.coord = pad3(fx) + '·' + pad3(fy); }
       b.coordAt = now;
     }
     const nChars = mini ? nameStr.length : nameStr.length + 2 + b.coord.length;
@@ -806,7 +808,7 @@ export function createTrackingHud(opts) {
   function drawCalib(status, now, rm, mini) {
     const p = clamp(num(status.progress, 0), 0, 1);
     const pct = Math.round(p * 100);
-    if (pct !== calibPct) { calibPct = pct; calibText = (mini ? 'CAL ' : 'CALIBRATING ') + pct + '%'; }
+    if (pct !== calibPct) { calibPct = pct; calibText = (mini ? '◎ ' : 'КАЛИБРОВКА ') + pct + '%'; }
     let x, y, w;
     if (torso.alpha > 0.05) {
       boxRect(torso);
@@ -926,11 +928,11 @@ export function createTrackingHud(opts) {
     crosshair(cx, cy, R * 0.22, R * 0.38, STEEL, 0.6 * a);
     // заголовок
     let head;
-    if (st === 'loading') head = 'LOADING ' + Math.round(clamp(num(status && status.progress, 0), 0, 1) * 100) + '%';
-    else if (st === 'permission') head = 'AWAIT CAMERA';
-    else if (st === 'error') head = 'NO SIGNAL';
-    else if (st === 'idle') head = 'CAMERA OFF';
-    else head = 'NO TARGET';
+    if (st === 'loading') head = 'ЗАГРУЗКА ' + Math.round(clamp(num(status && status.progress, 0), 0, 1) * 100) + '%';
+    else if (st === 'permission') head = 'ЖДУ КАМЕРУ';
+    else if (st === 'error') head = 'НЕТ СИГНАЛА';
+    else if (st === 'idle') head = 'КАМЕРА ВЫКЛ';
+    else head = 'НЕ ВИЖУ ВАС';
     const hf = mini ? F_MINI_CHIP : F_CHIP;
     setLabel(headingLabel, head, hf, now);
     const blink = rm || lost === false ? 1 : ((now % 1000) < 620 ? 1 : 0.45);
@@ -944,8 +946,8 @@ export function createTrackingHud(opts) {
     if (!rm && now - scanAt >= 100) {
       scanAt = now;
       const sx = (Math.random() * frameW) | 0, sy = (Math.random() * frameH) | 0;
-      scanText = 'scan x:' + pad3(sx) + ' y:' + pad3(sy);
-    } else if (rm) scanText = 'scan x:--- y:---';
+      scanText = 'поиск ' + pad3(sx) + '·' + pad3(sy);
+    } else if (rm) scanText = 'поиск ---·---';
     if (scanText) {
       const cwD = charWidth(F_DATA);
       const w = scanText.length * cwD;
@@ -990,13 +992,13 @@ export function createTrackingHud(opts) {
       dRes = frameW + 'x' + frameH + (mirror ? ' MIR' : '');
     }
     let word, wcol;
-    if (st === 'calibrating') { word = 'CALIB ' + Math.round(clamp(num(status && status.progress, 0), 0, 1) * 100) + '%'; wcol = BLUE; }
-    else if (st === 'loading') { word = 'LOAD ' + Math.round(clamp(num(status && status.progress, 0), 0, 1) * 100) + '%'; wcol = BLUE; }
-    else if (st === 'error') { word = 'ERROR'; wcol = EMBER; }
-    else if (st === 'idle') { word = 'IDLE'; wcol = DIM; }
-    else if (st === 'permission') { word = 'WAIT'; wcol = BLUE; }
-    else if (!present) { word = 'LOST'; wcol = EMBER; }
-    else { word = 'LIVE'; wcol = GOLD_HI; }
+    if (st === 'calibrating') { word = 'КАЛИБРОВКА ' + Math.round(clamp(num(status && status.progress, 0), 0, 1) * 100) + '%'; wcol = BLUE; }
+    else if (st === 'loading') { word = 'ЗАГРУЗКА ' + Math.round(clamp(num(status && status.progress, 0), 0, 1) * 100) + '%'; wcol = BLUE; }
+    else if (st === 'error') { word = 'ОШИБКА'; wcol = EMBER; }
+    else if (st === 'idle') { word = 'ВЫКЛ'; wcol = DIM; }
+    else if (st === 'permission') { word = 'ЖДУ'; wcol = BLUE; }
+    else if (!present) { word = 'НЕ ВИЖУ'; wcol = EMBER; }
+    else { word = 'ВИЖУ'; wcol = GOLD_HI; }
     setLabel(trackWord, word, F_DATA, now);
 
     const cwD = charWidth(F_DATA);
@@ -1010,15 +1012,18 @@ export function createTrackingHud(opts) {
     if (dMode.length * cwD > maxW) maxW = dMode.length * cwD;
     if (dFrm.length * cwD > maxW) maxW = dFrm.length * cwD;
     setFont(F_DATA);
-    plate(x - 4, y - 3, maxW + 8, lh * 5 + 5, 0.72);
+    const rows = TELEMETRY ? 5 : 1;
+    if (!TELEMETRY) maxW = l1;
+    plate(x - 4, y - 3, maxW + 8, lh * rows + 5, 0.72);
     // тонкая золотая риска слева — «шапка» колонки
     ctx.globalAlpha = 0.8;
     ctx.fillStyle = GOLD;
-    ctx.fillRect(snapT(x - 4), snapT(y - 3), lwDev / dpr, lh * 5 + 5);
-    text('TRACK', x, y, STEEL, 0.9);
-    const blink = rm || word !== 'LIVE' ? 1 : ((now % 1000) < 560 ? 1 : 0.25);
+    ctx.fillRect(snapT(x - 4), snapT(y - 3), lwDev / dpr, lh * rows + 5);
+    text('ВИДЕО', x, y, STEEL, 0.9);
+    const blink = rm || word !== 'ВИЖУ' ? 1 : ((now % 1000) < 560 ? 1 : 0.25);
     text('●', x + 6 * cwD, y, wcol, blink);
     text(scrambled(trackWord.text, trackWord.since, now, rm), x + 6 * cwD + dotW + cwD, y, wcol, 1);
+    if (!TELEMETRY) return;
     text(dConf, x, y + lh, DIM, 1);
     text(dHz, x, y + lh * 2, DIM, 1);
     text(dMode, x, y + lh * 3, DIM, 1);
@@ -1034,9 +1039,9 @@ export function createTrackingHud(opts) {
     [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]];
   const TIPS = [4, 8, 12, 16, 20];
   // [ПРОЕКТОР] подписи по-русски; «ЩИТ» и «ОГОНЬ» — только когда жест действительно сработал (input.shield / input.attack)
-  const SHAPE_TXT = { pinch: '◎ OK', point: '✎ РУНА', fist: '▣ КУЛАК', open: '◇ ЛАДОНЬ', victory: 'V', unknown: '· · ·' };
-  const SHAPE_MINI = { pinch: 'OK', point: 'РУНА', fist: 'КУЛАК', open: 'ЛАДОНЬ', victory: 'V', unknown: '' };
-  const RUNE_TXT = { ignis: 'ИГНИС ▲', fulgur: 'ФУЛЬГУР ϟ', orbis: 'ОРБИС ○', stella: 'СТЕЛЛА ★', spira: 'СПИРА @', lemnis: 'ЛЕМНИСКА ∞', caret: 'АКУС ^', vee: 'МЕССИС V', clepsydra: 'КЛЕПСИДРА ⧗', alpha: 'АЛЬФА ℓ' };
+  const SHAPE_TXT = { pinch: '◎ OK', point: '✎ РУНА', fist: '▣ КУЛАК', open: '◇ ЛАДОНЬ', victory: 'ДВА ПАЛЬЦА', unknown: '· · ·' };
+  const SHAPE_MINI = { pinch: 'OK', point: 'РУНА', fist: 'КУЛАК', open: 'ЛАДОНЬ', victory: 'ДВА', unknown: '' };
+  const RUNE_TXT = { ignis: 'ИГНИС ▲', fulgur: 'ФУЛЬГУР ϟ', orbis: 'ОРБИС ○', stella: 'СТЕЛЛА ★', spira: 'СПИРА @', lemnis: 'ЛЕМНИСКА ∞', caret: 'АКУС ^', vee: 'МЕССИС ∨', clepsydra: 'КЛЕПСИДРА ⧗', alpha: 'АЛЬФА ℓ' };
   const handLabels = { left: makeLabel(), right: makeLabel(), rune: makeLabel() };
   let runeFlashT = -1e9, runeFlashName = '', runeFlashAt = null, lastRuneKey = '';
   let curAttack = false, curShield = false, forcedFull = false;
@@ -1090,7 +1095,7 @@ export function createTrackingHud(opts) {
       setFont(F_TAG);
       for (const t of [4, 8]) {
         const X = hx(L[t]), Y = hy(L[t]);
-        const txt = `${t === 8 ? 'IDX' : 'THB'} x:${pad3(Math.round(L[t].x * frameW))} y:${pad3(Math.round(L[t].y * frameH))}`;
+        const txt = `${t === 8 ? 'указ.' : 'больш.'} ${pad3(Math.round(L[t].x * frameW))}·${pad3(Math.round(L[t].y * frameH))}`;
         const tw = measure(F_TAG, txt);
         const tx = side === 'right' ? X + 7 : X - 7 - tw;
         plate(tx - 2, Y - 13, tw + 4, 12, 0.6);
@@ -1301,12 +1306,12 @@ export function createTrackingHud(opts) {
 
     const chipF = mini ? F_MINI_CHIP : F_CHIP;
     const handsOn = !!(hR || hL);
-    const rTxt = handsOn || both ? '' : rUp ? (blocked && !attack ? (mini ? 'REARM' : '▲ REARM') : (mini ? 'FIRE' : '▲ FIRE')) : '';
-    const lTxt = handsOn || both ? '' : lUp ? (blocked && !shield ? (mini ? 'REARM' : '◆ REARM') : (mini ? 'SHIELD' : '◆ SHIELD')) : '';
+    const rTxt = handsOn || both ? '' : rUp ? (blocked && !attack ? (mini ? 'ОПУСТИ' : '▲ ОПУСТИ') : (mini ? 'ОГОНЬ' : '▲ ОГОНЬ')) : '';
+    const lTxt = handsOn || both ? '' : lUp ? (blocked && !shield ? (mini ? 'ОПУСТИ' : '◆ ОПУСТИ') : (mini ? 'ЩИТ' : '◆ ЩИТ')) : '';
     setLabel(rHand.state, rTxt, chipF, now);
     setLabel(lHand.state, lTxt, chipF, now);
-    setLabel(burstLabel, burstK > 0 ? 'BURST ✦' : both && !handsOn ? 'BURST' : '', chipF, now);
-    setLabel(dashLabel, dashK > 0 ? (dashDir > 0 ? '» DASH' : 'DASH «') : '', chipF, now);
+    setLabel(burstLabel, burstK > 0 ? 'ВЫБРОС ✦' : both && !handsOn ? 'ВЫБРОС' : '', chipF, now);
+    setLabel(dashLabel, dashK > 0 ? (dashDir > 0 ? '» РЫВОК' : 'РЫВОК «') : '', chipF, now);
     setLabel(head.state, '', chipF, now);
     setLabel(torso.state, '', chipF, now);
 

@@ -390,6 +390,116 @@ function paintFloorCracks(size, seed, innerFrac) {
   return c;
 }
 
+// [W3-КИНО] Пояс рун кольца вокруг печати: R — глифы со свечением, G — две направляющие и ромбы-разделители.
+// Полоса тайлится по U; верх канваса — внутренний край кольца (глифы стоят «лицом» к зрителю снаружи).
+function paintRuneBelt(w, h, seed, cells) {
+  const c = makeCanvas(w, h);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, h);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const cw = w / cells;
+  ctx.strokeStyle = 'rgb(0,255,0)';
+  ctx.lineWidth = h * 0.026;
+  for (const y of [h * 0.1, h * 0.9]) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  ctx.lineWidth = h * 0.02;
+  for (let k = 0; k <= cells; k++) {
+    const x = k * cw, d = h * 0.055;
+    ctx.beginPath(); ctx.moveTo(x, h * 0.5 - d * 2); ctx.lineTo(x + d, h * 0.5); ctx.lineTo(x, h * 0.5 + d * 2); ctx.lineTo(x - d, h * 0.5); ctx.closePath(); ctx.stroke();
+  }
+  const rnd = mulberry32(seed);
+  ctx.strokeStyle = 'rgb(255,0,0)';
+  ctx.shadowColor = 'rgb(140,0,0)';
+  ctx.shadowBlur = h * 0.07;
+  for (let k = 0; k < cells; k++) {
+    const cx = (k + 0.5) * cw, cy = h * 0.5, s = h * 0.27;
+    ctx.lineWidth = h * 0.042;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - s); ctx.lineTo(cx, cy + s);
+    const strokes = 2 + ((rnd() * 3) | 0);
+    for (let q = 0; q < strokes; q++) {
+      const t = rnd();
+      const y0 = cy + lerp(-s, s * 0.5, rnd());
+      if (t < 0.35) { ctx.moveTo(cx, y0); ctx.lineTo(cx + (rnd() < 0.5 ? -1 : 1) * s * 0.7, y0 + s * 0.5); }
+      else if (t < 0.65) { ctx.moveTo(cx - s * 0.55, y0); ctx.lineTo(cx + s * 0.55, y0); }
+      else { ctx.moveTo(cx + s * 0.5, y0); ctx.arc(cx, y0, s * 0.5, 0, Math.PI, rnd() < 0.5); }
+    }
+    ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
+  return c;
+}
+
+// [W3-КИНО] Шейдер кольца рун. Волна: x — угол (доля круга), y — возраст, с, z — сила, w — с на долю круга
+// (0 — весь круг разом); цвет волны: rgb, a — затухание, 1/с. Глиф загорается целиком, когда до него дошёл фронт.
+const RUNE_N = 32, RUNE_REP = 2;
+const RUNE_VERT = /* glsl */`
+varying vec2 vRuneUv;
+void main() {
+  vRuneUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+}`;
+const RUNE_FRAG = /* glsl */`
+uniform sampler2D uRuneMap;
+uniform vec4 uRuneW[ 4 ];
+uniform vec4 uRuneC[ 4 ];
+uniform vec3 uRuneBase;
+uniform float uRuneT;
+varying vec2 vRuneUv;
+void main() {
+  vec2 m = texture2D( uRuneMap, vec2( vRuneUv.x * ${RUNE_REP}.0, vRuneUv.y ) ).rg;
+  float cell = floor( vRuneUv.x * ${RUNE_N}.0 );
+  float gu = ( cell + 0.5 ) / ${RUNE_N}.0;
+  float h = fract( sin( cell * 12.9898 + 4.1 ) * 43758.5453 );
+  vec3 glyph = uRuneBase * ( 0.7 + 0.3 * sin( uRuneT * ( 1.1 + h * 1.9 ) + h * 6.2831 ) );
+  vec3 rail = uRuneBase * 0.55;
+  for ( int i = 0; i < 4; i ++ ) {
+    vec4 w = uRuneW[ i ];
+    if ( w.z <= 0.0 ) continue;   // пустая волна — без работы (ветка по uniform, бесплатна)
+    vec4 c = uRuneC[ i ];
+    float dg = abs( fract( gu - w.x + 0.5 ) - 0.5 );
+    float dr = abs( fract( vRuneUv.x - w.x + 0.5 ) - 0.5 );
+    float tg = w.y - dg * w.w;
+    float tr = w.y - dr * w.w;
+    float pg = max( tg, 0.0 ), pr = max( tr, 0.0 );
+    glyph += c.rgb * ( w.z * step( 0.0, tg ) * exp( - pg * c.a ) * ( 1.0 + 1.6 * exp( - pg * 14.0 ) ) * exp( - dg * 1.4 ) );
+    rail += c.rgb * ( w.z * 0.5 * step( 0.0, tr ) * exp( - pr * c.a * 1.6 ) * ( 1.0 + 2.5 * exp( - pr * 22.0 ) ) * exp( - dr * 1.4 ) );
+  }
+  gl_FragColor = vec4( glyph * m.r + rail * m.g, 1.0 );
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+
+// [W3-КИНО] Лава в трещинах брони Регента: маска — уже прочитанная emissiveMap трещин (emissiveColor:
+// сердцевина — жёлтая, ореол — багровый; накал сверх 1 — только в сердцевине), фронт расходится от ядра
+// (kinoLavaO), на кромке — добела. kinoLavaP: x — фронт 0..1, y — радиус, м, z — накал, w — время.
+const LAVA_VERT = /* glsl */`
+  {
+    vec4 kinoWP = vec4( transformed, 1.0 );
+    #ifdef USE_INSTANCING
+      kinoWP = instanceMatrix * kinoWP;
+    #endif
+    vKinoLavaPos = ( modelMatrix * kinoWP ).xyz;
+  }`;
+const LAVA_FRAG = /* glsl */`
+#ifdef USE_EMISSIVEMAP
+  if ( kinoLavaP.z > 0.0 ) {   // в фазе 1 лавы нет — ничего не считаем
+    float kinoCore = smoothstep( 0.25, 0.85, emissiveColor.r );
+    float kinoHalo = sqrt( emissiveColor.r ) * 0.35;
+    float kinoA = kinoLavaP.z;
+    float kinoD = distance( vKinoLavaPos, kinoLavaO );
+    float kinoR = kinoLavaP.x * kinoLavaP.y;
+    float kinoIn = 1.0 - smoothstep( kinoR - 0.8, kinoR, kinoD );
+    float kinoEdge = exp( - abs( kinoD - kinoR ) * 5.0 ) * step( 0.001, kinoLavaP.x ) * ( 1.0 - step( 0.999, kinoLavaP.x ) ) * saturate( kinoA * 2.5 );
+    float kinoFlow = 0.7 + 0.3 * sin( kinoLavaP.w * 2.1 + dot( vKinoLavaPos, vec3( 3.1, 4.3, 2.7 ) ) ) * sin( kinoLavaP.w * 1.3 - vKinoLavaPos.y * 6.0 );
+    vec3 kinoCol = mix( vec3( 1.0, 0.2, 0.03 ), vec3( 1.0, 0.7, 0.34 ), saturate( kinoCore * 0.85 + ( kinoA - 1.0 ) * 0.2 ) );
+    float kinoL = kinoCore * kinoA + kinoHalo * min( kinoA, 1.0 );
+    totalEmissiveRadiance += kinoCol * ( kinoL * kinoIn * kinoFlow * 4.0 ) + vec3( 1.0, 0.86, 0.62 ) * ( ( kinoCore + kinoHalo ) * kinoEdge * 7.0 );
+  }
+#endif`;
+
 // Спиральная дымка портала.
 function paintSpiral(size, seed) {
   const c = makeCanvas(size, size);
@@ -693,6 +803,25 @@ export function createWorld({ THREE, scene, renderer, camera, config = {} } = {}
   const matBossCore = std({ color: 0x2a2010, emissive: 0xffe2a8, emissiveIntensity: 2.4, roughness: 0.35, flatShading: true }); // «украденное солнце»
   const matBossEyes = std({ color: 0x000000, emissive: 0xffd08a, emissiveIntensity: 2.6 });
   const matBossRunes = std({ color: 0x3b3128, emissive: 0xffb060, emissiveIntensity: 0.9, roughness: 0.8, flatShading: true });
+  // [W3-КИНО] лава в трещинах брони: общие униформы для matBoss, matBossDark, matBossMask (патч — у patchLit ниже)
+  const lavaU = { kinoLavaO: { value: new THREE.Vector3(0, 3.4, 0) }, kinoLavaP: { value: new THREE.Vector4(0, 6, 0, 0) } };
+  function patchLava(mat) {
+    const prev = mat.onBeforeCompile;
+    mat.onBeforeCompile = (shader, r) => {
+      if (prev) prev.call(mat, shader, r);
+      Object.assign(shader.uniforms, lavaU);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vKinoLavaPos;')
+        .replace('#include <project_vertex>', '#include <project_vertex>' + LAVA_VERT);
+      // токены <common>/<emissivemap_fragment> остаются на месте — их же ищет atmo.patchLit
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform vec3 kinoLavaO;\nuniform vec4 kinoLavaP;\nvarying vec3 vKinoLavaPos;')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>' + LAVA_FRAG);
+    };
+    const prevKey = mat.customProgramCacheKey;
+    mat.customProgramCacheKey = () => 'kinoLava:' + (prevKey ? prevKey.call(mat) : '');
+    mat.needsUpdate = true;
+  }
 
   const addMat = (color, opacity, map, fog = false) => M(new THREE.MeshBasicMaterial({
     color, map, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, fog,
@@ -1022,6 +1151,32 @@ float ashPuddle( vec2 xz ) {
     const R = 9.4 * K;
     for (let i = 0; i < uvA.count; i++) uvA.setXY(i, pA.getX(i) / (2 * R) + 0.5, pA.getY(i) / (2 * R) + 0.5);
     uvA.needsUpdate = true;
+  }
+  // [W3-КИНО] Кольцо рун вокруг печати (один draw call, одна текстура): тлеет; заклинание зажигает глиф
+  // напротив мага, и вспышка бежит по кругу в обе стороны. До 4 волн разом — uniform-массивы без аллокаций.
+  const texRunes = tex(paintRuneBelt(2048, 128, wc.seed + 81, RUNE_N / RUNE_REP), { srgb: false, aniso: 8 });
+  texRunes.wrapT = THREE.ClampToEdgeWrapping;
+  const runeW = [], runeC = [], runeLife = new Float32Array(4);
+  for (let i = 0; i < 4; i++) { runeW.push(new THREE.Vector4(0, 0, 0, 0)); runeC.push(new THREE.Vector4(1, 1, 1, 1)); }
+  const runeU = { uRuneMap: { value: texRunes }, uRuneW: { value: runeW }, uRuneC: { value: runeC }, uRuneBase: { value: new THREE.Color() }, uRuneT: { value: 0 } };
+  const matRunes = M(new THREE.ShaderMaterial({
+    uniforms: runeU, vertexShader: RUNE_VERT, fragmentShader: RUNE_FRAG,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  }));
+  {
+    const SEG = 128;
+    const g = G(new THREE.RingGeometry(3.42 * K, 4.22 * K, SEG, 2));
+    // U — по кругу (θ/2π, без шва), V — поперёк: 1 у внутреннего края (верх глифа к центру)
+    const uvA = g.attributes.uv;
+    for (let j = 0; j <= 2; j++) for (let i = 0; i <= SEG; i++) uvA.setXY(j * (SEG + 1) + i, i / SEG, 1 - j / 2);
+    uvA.needsUpdate = true;
+    const runeRing = new THREE.Mesh(g, matRunes);
+    runeRing.name = 'rune-ring';
+    runeRing.rotation.x = -Math.PI / 2;   // мир: x = r·cosθ, z = −r·sinθ
+    runeRing.position.y = 0.042;
+    runeRing.renderOrder = 3;
+    env.add(runeRing);
   }
 
   /* ----------------------- Внешняя земля и дальний план ----------------------- */
@@ -2294,7 +2449,7 @@ float ashPuddle( vec2 xz ) {
   }
 
   /* ------------------------------ Пепел ------------------------------ */
-  const ASH_MAX = QUALITY_PRESETS.high.ash;
+  const ASH_MAX = Math.ceil(QUALITY_PRESETS.high.ash * 1.6);   // [W3-КИНО] запас под густой пепел второй фазы (буферы — один раз)
   const ashPos = new Float32Array(ASH_MAX * 3), ashCol = new Float32Array(ASH_MAX * 3), ashSeed = new Float32Array(ASH_MAX);
   {
     const rnd = mulberry32(wc.seed + 141);
@@ -2307,6 +2462,7 @@ float ashPuddle( vec2 xz ) {
       ashSeed[i] = rnd() * 100;
     }
   }
+  const ashCol0 = ashCol.slice();   // [W3-КИНО] исходные цвета: вторая фаза перекрашивает буфер один раз на переходе
   const ashGeo = G(new THREE.BufferGeometry());
   ashGeo.setAttribute('position', new THREE.BufferAttribute(ashPos, 3));
   ashGeo.setAttribute('color', new THREE.BufferAttribute(ashCol, 3));
@@ -3340,6 +3496,8 @@ float ashPuddle( vec2 xz ) {
     es = { sigilFlash: 0, frame: 0 };
   }
   initState();
+  // [W3-КИНО] кинохуки Регента (modules/fx/bossFinale.js): ручной фронт лавы, рассыпанное тело, угли в пепле
+  const kino = { lavaFront: null, lavaBoost: 0, shattered: false, hidden: [], ashEmbers: false, p2T: 0 };
   const recentIds = new Set(), recentQ = [];
   let time = 0, quality = initialQuality, clothEvery = 1, disposed = false;
 
@@ -3400,6 +3558,74 @@ float ashPuddle( vec2 xz ) {
       case 'victory': if (bs.deadT < 0) bs.deadT = 0; break;
       case 'defeat': hs.deadW = Math.max(hs.deadW, 0.01); break;
       case 'ember_lit': setPoiState(d.id, { lit: true, flash: true }); break;   // [ASHEN_V2] уголь клятвы
+      default: break;
+    }
+    kinoEvent(ev, d);   // [W3-КИНО]
+  }
+
+  // [W3-КИНО] Вспышка кольца рун: угол — от центра арены к точке (x, z); speed — доли круга в секунду
+  // (0 — весь круг разом), decay — затухание, 1/с. Занимает свободную или самую угасшую из 4 волн.
+  const RUNE_GOLD = new THREE.Color(1.0, 0.64, 0.24), RUNE_AMBER = new THREE.Color(1.0, 0.4, 0.1);
+  const RUNE_BLUE = new THREE.Color(0.36, 0.68, 1.0), RUNE_CRIMSON = new THREE.Color(1.0, 0.09, 0.04);
+  const RUNE_DAWN = new THREE.Color(1.0, 0.8, 0.48), RUNE_ICE = new THREE.Color(0.72, 0.88, 1.0);
+  function runeFlash(x, z, strength, col, speed = 0.85, decay = 2.4) {
+    let slot = 0, best = Infinity;
+    for (let i = 0; i < 4; i++) {
+      const e = runeW[i].z > 0 ? runeW[i].z * Math.exp(-runeW[i].y * runeC[i].w) : -1;
+      if (e < best) { best = e; slot = i; }
+    }
+    const a = Number.isFinite(x) && Number.isFinite(z) && (x || z) ? Math.atan2(-z, x) / TAU : 0.25;
+    const sp = speed > 0 ? speed * (wc.reducedMotion ? 0.6 : 1) : 0;
+    runeW[slot].set(a - Math.floor(a), 0, strength * (wc.reducedMotion ? 0.6 : 1), sp > 0 ? 1 / sp : 0);
+    runeC[slot].set(col.r, col.g, col.b, decay);
+    runeLife[slot] = (sp > 0 ? 0.5 / sp : 0) + 6 / decay;
+  }
+  // Заклинания героя — золото/янтарь (fulgur — холодная синь), печать в центре отзывается слабее;
+  // удары Регента и вторая фаза — багровая вспышка всего круга; победа — медленная золотая волна.
+  function spell() { es.sigilFlash = Math.max(es.sigilFlash, 0.5); }
+  function kinoEvent(ev, d) {
+    // угол волны — от точки события; у самого центра (удар Регента, нова) угол не определён — берём героя
+    const p = ev.position, hx = heroRoot.position.x, hz = heroRoot.position.z;
+    const ok = p && Number.isFinite(p.x) && Number.isFinite(p.z) && p.x * p.x + p.z * p.z > 4;
+    const px = ok ? p.x : hx, pz = ok ? p.z : hz;
+    switch (ev.type) {
+      case 'player_cast': {
+        const ab = d.ability;
+        if (ab === 'rune' || ab === 'slash') break;   // руну рисует rune_cast, мах — player_slash
+        runeFlash(px, pz, ab === 'spark' ? 0.75 : ab === 'throw' ? 0.8 + 0.6 * clamp(num(d.power, 0.5), 0, 1) : 1.1, ab === 'spark' ? RUNE_AMBER : RUNE_GOLD);
+        spell();
+        break;
+      }
+      case 'rune_cast': runeFlash(px, pz, 1.5, d.rune === 'fulgur' ? RUNE_BLUE : d.rune === 'ignis' ? RUNE_AMBER : RUNE_GOLD); spell(); break;
+      case 'sigil_cast': {
+        // «Врата бури» — янтарная волна быстро бежит по кругу; «Столп небес» — холодный заряд (удар — ниже)
+        const pw = clamp(num(d.power, 0.6), 0, 1);
+        if (d.sigil === 'gate') runeFlash(px, pz, 1.5 + 0.8 * pw, RUNE_AMBER, 1.5, 1.6);
+        else if (d.sigil === 'pillar') runeFlash(px, pz, 0.9 + 0.5 * pw, RUNE_ICE, 0.5, 2.2);
+        else runeFlash(px, pz, 1.4, RUNE_GOLD, 0.7, 1.8);
+        spell();
+        break;
+      }
+      case 'sigil_miss': if (d.sigil === 'pillar') runeFlash(hx, hz, 1.6, RUNE_ICE, 0, 1.6); break;   // столп ударил мимо — круг всё равно отзывается
+      case 'burst': runeFlash(px, pz, 2.4, RUNE_DAWN, 1.3, 1.6); break;   // печать уже вспыхнула (sigilFlash = 1)
+      case 'player_slash': runeFlash(px, pz, 0.45 + 0.4 * clamp(num(d.power, 0.6), 0, 1), RUNE_GOLD, 1.1, 3.2); break;
+      case 'boss_hit':
+        if (d.sigil === 'pillar') runeFlash(hx, hz, 2.6, RUNE_ICE, 0, 1.4);   // удар столпа — весь круг разом
+        else if (d.source === 'ultimate' || d.ultimate) break;               // «Небесный суд» — ниже, по ultimate_strike
+        else if (num(d.amount, 0) >= 30) runeFlash(hx, hz, 1.2, RUNE_GOLD, 1.0, 2.2);
+        break;
+      case 'ultimate_strike': runeFlash(hx, hz, 3.0, RUNE_DAWN, 0, 0.8); break;   // меч из света — круг вспыхивает целиком
+      case 'boss_impact': {
+        if (d.launch) break;
+        const k = normKind(d.attackKind || d.kind);
+        if (k === 'slam' || k === 'nova') runeFlash(px, pz, k === 'nova' ? 2.0 : 1.6, RUNE_CRIMSON, 0, 2.0);
+        break;
+      }
+      case 'boss_phase':
+        if (num(d.stage, 1) >= 2) runeFlash(hx, hz, 2.6, RUNE_CRIMSON, 0, 0.9);
+        else if (d.awaken) runeFlash(hx, hz, 1.6, RUNE_AMBER, 0.45, 1.0);   // пробуждение в облёте: руны загораются по кругу
+        break;
+      case 'victory': runeFlash(hx, hz, 2.2, RUNE_DAWN, 0.28, 0.45); break;
       default: break;
     }
   }
@@ -3819,7 +4045,7 @@ float ashPuddle( vec2 xz ) {
     const act = b && typeof b.action === 'string' ? b.action : 'idle';
     const dead = act === 'dead' || status === 'victory' || (b && num(b.hp, 1) <= 0 && num(b.maxHp, 0) > 0);
     if (dead && bs.deadT < 0) bs.deadT = 0;
-    if (!dead && bs.deadT >= 0 && status === 'playing') { bs.deadT = -1; restorePieces(); }
+    if (!dead && (bs.deadT >= 0 || kino.shattered) && status === 'playing') { bs.deadT = -1; restorePieces(); }   // [W3-КИНО] и рассыпанное тело
     const isDead = bs.deadT >= 0;
     if (!isDead) {
       const tYaw = num(b && b.yaw, toHero) + num(wc.yawOffset, 0);
@@ -3828,6 +4054,7 @@ float ashPuddle( vec2 xz ) {
     bossRoot.rotation.y = bs.yaw;
     const stage = b && num(b.stage, 1) >= 2 ? 2 : 1;
     bs.stageW += ((stage === 2 ? 1 : 0) - bs.stageW) * dampK(bs.roarT < 1.4 ? 2.5 : 1.5, dt);
+    kino.p2T = stage === 2 ? kino.p2T + dt : 0;   // [W3-КИНО] время во второй фазе: фронт лавы
 
     // фазы атаки
     if (act === 'windup' && bs.prevAct !== 'windup' && !bs.windupEvtFrame) bs.windT = 0;
@@ -3920,7 +4147,7 @@ float ashPuddle( vec2 xz ) {
       const [hA, hB] = B.haloHalves;
       hA.position.set(0.16 * p2, 0.1 * p2, 0.05 * p2); hA.rotation.z = 0.1 * p2;
       hB.position.set(-0.18 * p2, -0.06 * p2, -0.04 * p2); hB.rotation.z = -0.13 * p2;
-      B.maskCrack.visible = p2 > 0.02;
+      B.maskCrack.visible = p2 > 0.02 && !kino.shattered;   // [W3-КИНО] рассыпанное тело не «проявляется»
       matMaskCrack.opacity = clamp(p2 * 1.4, 0, 1) * (0.8 + 0.2 * Math.sin(time * 9.1)) * (isDead ? 0.3 : 1);
       matSunGlow.opacity = clamp(p2, 0, 1) * (0.55 + 0.15 * Math.sin(time * 2.3));
       B.sunGlow.scale.setScalar(0.01 + p2 * (1.6 + 0.12 * Math.sin(time * 1.7)));
@@ -3953,7 +4180,7 @@ float ashPuddle( vec2 xz ) {
     matBossEyes.emissiveIntensity = (6 + bs.stageW * 2 + bs.charge * 3 + roarG * 2) * fade; // щель маски ~8 (Библия)
     matSeal.opacity = (0.55 + 0.35 * (0.5 + 0.5 * Math.sin(time * TAU * 1.2))) * fade;
     matBossRunes.emissiveIntensity = (lerp(0.9, 1.7, bs.stageW) + roarG) * fade;
-    B.coreLight.intensity = (lerp(4, 8, bs.stageW) + bs.charge * 10 + roarG * 8 + pulse * 0.6) * LI.point * fade;
+    B.coreLight.intensity = (lerp(4, 8, bs.stageW) + bs.charge * 10 + roarG * 8 + pulse * 0.6) * LI.point * fade * (kino.shattered ? 0 : 1);   // [W3-КИНО] свет не выключаем (перекомпиляция) — гасим
     matCoreGlow.opacity = clamp((0.34 + 0.12 * bs.stageW + bs.charge * 0.35 + roarG * 0.3 + pulse * 0.04) * fade, 0, 1);
     B.coreGlow.scale.setScalar(1.25 + bs.charge * (bs.kind === 'nova' ? 1.4 : 0.4) + roarG);
     matChestSigil.opacity = clamp((0.35 + 0.3 * bs.stageW + bs.charge * 0.3 + roarG * 0.3) * fade, 0, 1);
@@ -3961,6 +4188,15 @@ float ashPuddle( vec2 xz ) {
     B.fistGlow.R.material.opacity = clamp(fistK * (bs.kind === 'orb' ? 1 : bs.kind === 'slam' ? 0.7 : 0.25), 0, 1) * fade;
     B.fistGlow.L.material.opacity = clamp(fistK * (bs.kind === 'slam' ? 0.7 : bs.kind === 'nova' ? 0.25 : 0.1), 0, 1) * fade;
     B.fistGlow.R.scale.setScalar(1.0 + fistK * 0.8);
+    // [W3-КИНО] лава в трещинах: база второй фазы (фронт от ядра за ~1,4 с, накал × угасание смерти)
+    // или ручное управление bossFinale (bossFx.setLava) — тогда угасание смерти не применяется.
+    {
+      lavaU.kinoLavaO.value.setFromMatrixPosition(boss.markers.core.matrixWorld);
+      const over = kino.lavaFront !== null;
+      const amt = bs.stageW * (0.6 + 0.1 * pulse + 0.25 * (1 - hpFrac) + bs.hitFlash * 0.25) + roarG * 0.6;
+      lavaU.kinoLavaP.value.set(over ? kino.lavaFront : smoothstep(0.05, 1.4, kino.p2T), 6 * bossRoot.scale.y,
+        over ? amt + kino.lavaBoost : amt * fade, time * rmK);
+    }
     return { stageW: bs.stageW, fade, pulse, roarG, isDead };
   }
 
@@ -4009,6 +4245,28 @@ float ashPuddle( vec2 xz ) {
       fp.obj.position.copy(fp.pos); fp.obj.quaternion.copy(fp.quat); fp.obj.scale.copy(fp.scl);
       fp.active = false; fp.settled = false; fp.v.set(0, 0, 0); fp.w.set(0, 0, 0);
     }
+    kinoRestore();   // [W3-КИНО]
+  }
+  // [W3-КИНО] тело Регента снова целое, лава — снова под управлением world
+  function kinoRestore() {
+    for (const o of kino.hidden) o.visible = true;
+    kino.hidden.length = 0;
+    kino.shattered = false;
+    kino.lavaFront = null; kino.lavaBoost = 0;
+    lavaU.kinoLavaP.value.z = 0;
+    bossBlob.visible = true;
+  }
+  // [W3-КИНО] тело рассыпалось (осколки рисует bossFinale): нимб и обломки срываются и падают, остальное
+  // скрываем по мешам — сам bossBody видимым оставляем, чтобы не выключать свет ядра (иначе перекомпиляция).
+  function kinoShatter() {
+    if (disposed || kino.shattered) return;
+    kino.shattered = true;
+    if (!bs.fell) startFall();
+    bossBody.traverse(kinoHide);
+    bossBlob.visible = false;
+  }
+  function kinoHide(o) {
+    if (o.visible && !o.isLight && (o.isMesh || o.isSprite || o.isPoints || o.isLine)) { o.visible = false; kino.hidden.push(o); }
   }
 
   /* ============================= ОКРУЖЕНИЕ ============================= */
@@ -4026,12 +4284,21 @@ float ashPuddle( vec2 xz ) {
       const villageBusy = !P || (P.encounter === 'engaged' && (!snap.status || snap.status === 'playing')
         && (!pvPhase || pvPhase === 'fight' || pvPhase === 'countdown'));
       elfVillage.update(dt, heroRoot.position, villageBusy);
-      ashGeo.setDrawRange(0, Math.round(QUALITY_PRESETS[quality].ash * (1 - 0.85 * elfVillage.weight)));   // в деревне пепел почти не падает
     }
     if (brightForest) {   // [FOREST] лес: трава, вода, частицы; в лесу пепла нет, настроение неба и тумана
       brightForest.update(dt, heroRoot.position, forestHero2);
-      ashGeo.setDrawRange(0, Math.round(QUALITY_PRESETS[quality].ash * (1 - 0.85 * (elfVillage ? elfVillage.weight : 0)) * (1 - brightForest.weight)));
       if (typeof atmo.setZoneMood === 'function') atmo.setZoneMood(brightForest.mood);
+    }
+    // Пепел: в деревне почти не падает, в лесу его нет. [W3-КИНО] Во второй фазе — гуще (low — не больше ×1.25),
+    // падает быстрее, каждая ~пятая пылинка тлеет (цвета перекрашиваются один раз на переходе, с гистерезисом).
+    const ashW = bInfo.stageW;
+    {
+      const zoneK = (1 - 0.85 * (elfVillage ? elfVillage.weight : 0)) * (1 - (brightForest ? brightForest.weight : 0));
+      const phaseK = 1 + (quality === 'low' ? 0.25 : 0.6) * ashW;
+      ashGeo.setDrawRange(0, Math.min(ASH_MAX, Math.round(QUALITY_PRESETS[quality].ash * zoneK * phaseK)));
+      if (!kino.ashEmbers && ashW > 0.35) setAshEmbers(true);
+      else if (kino.ashEmbers && ashW < 0.15) setAshEmbers(false);
+      ash.material.color.setRGB(1, 1 - 0.1 * ashW, 1 - 0.16 * ashW);
     }
     for (let i = 0; i < braziers.length; i++) {
       const bz = braziers[i];
@@ -4045,13 +4312,14 @@ float ashPuddle( vec2 xz ) {
     if (ash.visible) {
       const n = ashGeo.drawRange.count;
       const a = ashPos;
-      const wind = 0.18 * rm;
+      const wind = 0.18 * rm * (1 + 0.5 * ashW);
+      const fallK = rm * (1 + 0.5 * ashW);   // [W3-КИНО]
       const acx = heroRoot.position.x, acz = heroRoot.position.z, acy = heroRoot.position.y;
       for (let i = 0; i < n; i++) {
         const sd = ashSeed[i];
         const k = i * 3;
         a[k] += (wind + Math.sin(time * 0.37 + sd) * 0.14 * rm) * dt;
-        a[k + 1] -= (0.22 + (sd % 1) * 0.28) * rm * dt;
+        a[k + 1] -= (0.22 + (sd % 1) * 0.28) * fallK * dt;
         a[k + 2] += Math.cos(time * 0.31 + sd * 1.7) * 0.12 * rm * dt;
         // [ASHEN_V3] облако пепла идёт за героем: вышедшие за радиус переносятся на противоположную сторону
         const ddx = a[k] - acx, ddz = a[k + 2] - acz;
@@ -4065,7 +4333,10 @@ float ashPuddle( vec2 xz ) {
           if (a[k + 1] > acy + ASH_TOP) a[k + 1] = acy - 1 + hash3(sd, i, 1, 9) * ASH_TOP;
         }
       }
-      ashGeo.attributes.position.needsUpdate = true;
+      // [W3-КИНО] на GPU — только живой диапазон (буфер с запасом под густой пепел фазы 2)
+      const ashP = ashGeo.attributes.position;
+      ashP.clearUpdateRanges(); ashP.addUpdateRange(0, n * 3);
+      ashP.needsUpdate = true;
     }
     waterU.uWT.value = time * (wc.reducedMotion ? 0.35 : 1);
     if (camera) for (const g of lakeGlints) {
@@ -4085,6 +4356,24 @@ float ashPuddle( vec2 xz ) {
     const oath = status === 'victory' ? 1.6 : status === 'defeat' ? 0.25 : lerp(0.6, 1.0, bInfo.stageW);
     matSigilTop.emissiveIntensity += (oath + es.sigilFlash * 1.5 + bInfo.pulse * 0.05 - matSigilTop.emissiveIntensity) * dampK(4, dt);
     matFloorCracks.opacity = clamp((lerp(0.12, 0.6, bInfo.stageW) + bInfo.roarG * 0.3 + bInfo.pulse * 0.04) * (bInfo.isDead ? lerp(1, 0.35, 1 - bInfo.fade) : 1), 0, 1);
+    // [W3-КИНО] кольцо рун: возраст волн; тление — янтарное, во второй фазе багровое (гаснет вместе с Регентом)
+    for (let i = 0; i < 4; i++) { const w = runeW[i]; if (w.z > 0) { w.y += dt; if (w.y > runeLife[i]) w.z = 0; } }
+    runeU.uRuneT.value = time * rm;
+    {
+      const red = clamp(bInfo.stageW * (bInfo.isDead ? bInfo.fade : 1), 0, 1);
+      const lvl = (status === 'victory' ? 0.3 : status === 'defeat' ? 0.05 : lerp(0.15, 0.24, red)) + bInfo.roarG * 0.35;
+      runeU.uRuneBase.value.setRGB(lvl, lerp(0.62, 0.13, red) * lvl, lerp(0.26, 0.05, red) * lvl);
+    }
+  }
+  // [W3-КИНО] угли в пепле второй фазы: доп. ~20% пылинок — HDR-оранжевые (ловит bloom), остальные — исходный цвет
+  function setAshEmbers(on) {
+    kino.ashEmbers = on;
+    for (let i = 0; i < ASH_MAX; i++) {
+      const k = i * 3;
+      if (on && hash3(i, 7, 3, 77) < 0.2) { ashCol[k] = 1.7; ashCol[k + 1] = 0.42 + 0.3 * hash3(i, 1, 2, 78); ashCol[k + 2] = 0.12; }
+      else { ashCol[k] = ashCol0[k]; ashCol[k + 1] = ashCol0[k + 1]; ashCol[k + 2] = ashCol0[k + 2]; }
+    }
+    ashGeo.attributes.color.needsUpdate = true;
   }
 
   /* ================================= API ================================= */
@@ -4160,6 +4449,7 @@ float ashPuddle( vec2 xz ) {
     tunic.off.set(0, 0); tunic.vel.set(0, 0); coatSkirt.off.set(0, 0); coatSkirt.vel.set(0, 0);
     capeState.off.set(0, 0); capeState.vel.set(0, 0);
     matSigilTop.emissiveIntensity = 0.6;
+    for (const w of runeW) w.z = 0;   // [W3-КИНО] волны рун прошлого боя гаснут
     mirror.data = null; mirror.w = 0; mirror.L.ok = false; mirror.R.ok = false;
     update(0, null, null);
   }
@@ -4207,6 +4497,7 @@ float ashPuddle( vec2 xz ) {
     atmo.patchLit(m, 'hero');
     atmo.useEnv(m, 0.45);
   }
+  for (const m of [matBoss, matBossDark, matBossMask]) patchLava(m);   // [W3-КИНО] до patchLit: он оборачивает onBeforeCompile и ключ
   for (const m of [matBoss, matBossDark, matBossMask, matBossRunes, B.mantleMat, B.hoodMat]) atmo.patchLit(m, 'boss');
   atmo.useEnv(matHaloBronze, 0.9);
 
@@ -4232,5 +4523,29 @@ float ashPuddle( vec2 xz ) {
     forest: brightForest,  // [FOREST] Сияющий лес (weight, inside, mood, drainEvents(), stats()) — для main/QA
     setForestHero2(p) { forestHero2 = p && Number.isFinite(p.x) && Number.isFinite(p.z) ? p : null; },   // [FOREST] второй игрок (PvP) мнёт траву
     hero: { root: heroRoot, body: heroBody, extras: [cape], markers: hero.markers }, // [ASHEN_V3] для скиннинговой модели героя (modules/heroModel.js); [HERO] markers — якоря C5
+    // [W3-КИНО] хуки кинематографа Регента (modules/fx/bossFinale.js). Всё снимается в reset() и когда Регент
+    // снова жив в 'playing'. Баланс и тайминги фаз не трогаются.
+    bossFx: {
+      // front 0..1 | null — фронт трещин от ядра (null — снова сам world); boost 0..4 — накал поверх базы.
+      // Пока задан front, лава не гаснет вместе с телом (угасание смерти не применяется).
+      setLava(front, boost) {
+        if (front === null || front === undefined || !Number.isFinite(front)) {
+          // ручной фронт уже дошёл до края — база подхватывает с полного фронта, без второго пробега
+          if (kino.lavaFront !== null && kino.lavaFront > 0.99) kino.p2T = Math.max(kino.p2T, 1.4);
+          kino.lavaFront = null; kino.lavaBoost = 0; return;
+        }
+        kino.lavaFront = clamp(front, 0, 1);
+        kino.lavaBoost = clamp(num(boost, 0), 0, 4);
+      },
+      // тело рассыпалось: нимб и обломки срываются и падают (если ещё не упали), меши тела скрыты,
+      // блоб-тень гаснет, свет ядра — в ноль; повторный вызов ничего не делает
+      shatter: kinoShatter,
+      get shattered() { return kino.shattered; },
+      get body() { return bossBody; },   // по его мешам bossFinale выбирает точки осколков
+      origin(out) {   // мировая точка ядра (boss.markers.core) → out (Vector3)
+        const o = out || new THREE.Vector3();
+        return o.setFromMatrixPosition(boss.markers.core.matrixWorld);
+      },
+    },
   };
 }

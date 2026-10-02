@@ -1285,6 +1285,7 @@ export async function createVision(options = {}) {
         video: { w: video.videoWidth || 0, h: video.videoHeight || 0 },
         cameraFps: r1(cameraFps()),          // [PERF] реальная частота камеры
         poseModel: poseModelName(),          // [PERF] lite | full
+        poseSwitching: switching,            // [W3-SQUAT] модель позы пересоздаётся (≈1 с без кадров)
         captureMaxWidth: cfg.captureMaxWidth,
         cameraFallback: perf.camFallback,
         mediaPipe: { version: mpResolved.version, versionMismatch: mpResolved.versionMismatch },
@@ -2158,7 +2159,11 @@ export async function createVision(options = {}) {
     out.spark = !!h.spark;
     out.slash = h.slash || null;
     out.parry = !!h.parry;
-    out.sigil = h.sigil || null;          // [V3] двуручная печать: clap | gate | frame
+    out.sigil = h.sigil || null;          // [V3] двуручная печать: clap | gate | frame | pillar
+    // [W3-MAGIC] сила печати 0..1; ладони сомкнуты — заряд 0..1 и ось растяжения 'h' | 'v' | null
+    out.sigilPower = h.sigilPower || 0;
+    out.sigilCharge = h.sigilCharge || 0;
+    out.sigilAxis = h.sigilAxis || null;
     out.charge = h.charge;
     out.rune = h.rune;
     out.runeScore = h.runeScore;
@@ -2183,7 +2188,8 @@ export async function createVision(options = {}) {
     if (out.burst) { out.attack = false; out.spark = false; }
     if (cfg.gestureMode === 'novice') {
       // [НОВИЧОК] страховка поверх профиля распознавателя: импульсы выключенных жестов не уходят в бой
-      out.spark = false; out.slash = null; out.parry = false; out.sigil = null;
+      out.spark = false; out.slash = null; out.parry = false;
+      if (out.sigil !== 'gate' && out.sigil !== 'pillar') out.sigil = null;   // [W3-MAGIC] «Врата бури» и «Столп небес» — и в «Новичке»
       out.rune = null; out.runeScore = 0; out.runeFizzle = false;
     }
     out.gestureMode = cfg.gestureMode === 'novice' ? 'novice' : 'master';
@@ -2266,9 +2272,11 @@ export async function createVision(options = {}) {
   async function setPoseModel(url) {
     if (!url || disposed) return false;
     if (cfg.mediaPipe && cfg.mediaPipe.modelUrl === url) return true;
-    cfg = mergeVisionConfig(cfg, { mediaPipe: { ...(cfg.mediaPipe || {}), modelUrl: url } });
+    if (switching) return false; // [W3-SQUAT] сначала: иначе новый URL записан, а движок остался прежним
+    const prevUrl = cfg.mediaPipe && cfg.mediaPipe.modelUrl;
+    const withUrl = (u) => mergeVisionConfig(cfg, { mediaPipe: { ...(cfg.mediaPipe || {}), modelUrl: u } });
+    cfg = withUrl(url);
     if (!engine && !enginePromise) return true; // движок ещё не создан — возьмёт новый URL
-    if (switching) return false;
     switching = true;
     try {
       if (!engine && enginePromise) { try { await enginePromise; } catch { /* пересоздадим ниже */ } }
@@ -2279,6 +2287,15 @@ export async function createVision(options = {}) {
       await ensureEngine();
       return true;
     } catch (err) {
+      // [W3-SQUAT] новая модель не создалась (нет файла офлайн, мало памяти) — прежняя, а не «Обновите страницу»
+      if (prevUrl && !disposed) {
+        try {
+          console.warn('[vision] модель позы не сменилась, возвращаю прежнюю:', (err && err.message) || err);
+          cfg = withUrl(prevUrl); engine = null; enginePromise = null;
+          await ensureEngine();
+          return false;
+        } catch (e2) { err = e2; }
+      }
       if (running) fail('model-failed', 'Не удалось сменить модель распознавания позы. Обновите страницу.', err);
       return false;
     } finally {

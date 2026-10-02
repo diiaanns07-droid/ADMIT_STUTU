@@ -163,7 +163,7 @@ try {
       const click = (label) => page.evaluate((l) => { const b = [...document.querySelectorAll('button')].find((x) => x.offsetParent !== null && x.textContent.trim() === l); if (b) b.click(); return !!b; }, label);
       await click('Отладка с клавиатуры'); await sleep(150);
       await click('Играть'); await sleep(250);
-      await click('Продолжить без камеры (DEBUG)'); await sleep(400);
+      await click('Продолжить без камеры (демо)'); await sleep(400);
       await click('В бой');
       await page.waitForFunction(() => __ASHEN__.screen === 'playing', null, { timeout: 20000 }).catch(() => {});
       await frames(page, Number(argOf('--intro-frames', '150')), 1500);

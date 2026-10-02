@@ -72,7 +72,7 @@ try {
   await page.evaluate(() => import('./config.js').then((m) => { m.config.loop.stallSec = 30; }));
   console.log('  клики:', await click('Отладка с клавиатуры'), await click('Играть'));
   await sleep(300);
-  console.log('  клики:', await click('Продолжить без камеры (DEBUG)'));
+  console.log('  клики:', await click('Продолжить без камеры (демо)'));
   await sleep(500);
   if (argv.includes('--tutorial')) await page.screenshot({ path: join(OUT, 'hand_tutorial.png'), fullPage: true });
   console.log('  клики:', await click('В бой'));

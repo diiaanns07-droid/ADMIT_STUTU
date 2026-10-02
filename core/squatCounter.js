@@ -1,22 +1,34 @@
-// Счётчик приседаний с контролем техники (ASHEN_V2). Владелец: №1.
+// Счётчик приседаний с контролем техники (ASHEN_V2, [W3-SQUAT]). Владелец: №1.
 // Чистая логика: без DOM, время приходит в аргументах. Вход — 33 точки позы MediaPipe
 // (нормированные x,y + visibility): бёдра 23/24, колени 25/26, лодыжки 27/28, пятки 29/30,
-// носки 31/32, плечи 11/12. Ось x домножается на соотношение сторон кадра.
+// носки 31/32, плечи 11/12. Ось x домножается на соотношение сторон кадра. В живой игре из worker
+// приходят только COMPACT_INDICES (modules/vision.js) — без пяток и носков.
+//
+// [W3-SQUAT] Живая камера: точки дрожат на 1–3 % кадра, распознавание 12–15 Гц, лодыжки у ноутбука на столе
+// часто не видны. Поэтому точки сначала сглаживаются фильтром One-Euro (стоя — сильно, в движении — слабо),
+// эталоны «стоя» (длина бедра, голени, корпуса, высота таза) — перцентили по последним 2,5 с стойки, а не
+// максимум (шум раздувал максимум, и стоящий человек читался как «колено 150°» — подготовка не кончалась).
 //
 // Угол колена. Сбоку его видно прямо (бедро–колено–лодыжка). Спереди бедро уходит «в камеру»,
 // и плоский угол почти не меняется, поэтому берём оценку по бедру: h = (y колена − y таза) /
-// длина бедра стоя (1 — стоим, 0 — таз на уровне колена), угол ≈ 180° − acos(h).
-// Итоговый угол — меньший из двух. Вид (спереди/сбоку) — по ширине таза относительно бедра.
+// длина бедра стоя (1 — стоим, 0 — таз на уровне колена), угол ≈ 180° − acos(h) (= 180° − наклон бедра).
+// «Мастер»: меньший из двух, ноги нужны до лодыжек. «Новичок»: угол по бедру (среднее ног) вместе с
+// опусканием таза относительно длины корпуса — лодыжки не нужны (режим без стоп), про стопы — совет.
+// Вид (спереди/сбоку) — по ширине таза относительно бедра.
 //
 // Повтор: стоим (угол ≥ lockDeg) → вниз (≤ downDeg, таз около колена) → снова выпрямились.
-// Ошибки (повтор не засчитывается, у каждой код и подсказка SQUAT_HINTS):
+// Ошибки (у каждой код и подсказка SQUAT_HINTS):
 //   shallow — не дошёл до глубины; valgus — колени внутрь (спереди); knees_forward — колени далеко
 //   за носками (сбоку); lean — корпус наклонён сильнее leanDeg; heels — пятки оторвались;
-//   fast — повтор короче minRepMs; lockout — не выпрямился наверху; frame — не видно ног до стоп.
+//   fast — повтор короче minRepMs; lockout — не выпрямился наверху; frame — не видно ног.
+// «Мастер» (по умолчанию): засчитывается только чистый повтор (глубина 100° и ни одной ошибки).
+// «Новичок» (SQUAT_PROFILES.novice): глубина ≈ 115–120° (порог 129° — запас на перспективу и сглаживание), с ошибкой — засчитан (+1 очко и карточка,
+// что улучшить), чистый — +2. Неглубокий (не дошёл до глубины) — не повтор.
 //
 // createSquatCounter(cfg?) → { push({tMs, landmarks, frameW, frameH}), read(), drain(), reset(), getDebug() }
+// cfg.mode: 'master' | 'novice' (профиль SQUAT_PROFILES), остальные поля — поверх профиля.
 
-export const SQUAT_VERSION = 'ASHEN_V2-squat-1';
+export const SQUAT_VERSION = 'ASHEN_W3-squat-2';
 
 export const SQUAT_HINTS = Object.freeze({
   shallow: 'Садись глубже — бёдра до параллели с полом',
@@ -28,11 +40,18 @@ export const SQUAT_HINTS = Object.freeze({
   lockout: 'Выпрямись полностью наверху',
   frame: 'Отойди от камеры — нужно видеть тебя целиком, до стоп',
 });
+// [W3-SQUAT] «Новичок»: те же коды, тексты мягче (глубина — до ~115°, ноги — до колен)
+export const SQUAT_HINTS_NOVICE = Object.freeze({
+  shallow: 'Чуть глубже — садись, как на стул, ещё на ладонь вниз',
+  frame: 'Не вижу ног до колен — отойди на шаг назад',
+});
 // Порядок важности: если в повторе несколько ошибок, подсказка — про первую из списка.
 export const SQUAT_FAULT_ORDER = Object.freeze(['shallow', 'valgus', 'knees_forward', 'lean', 'heels', 'fast', 'lockout']);
 
 export const DEFAULT_SQUAT_CONFIG = Object.freeze({
+  mode: 'master',
   minVisibility: 0.5,
+  visHyst: 0.15,         // [W3-SQUAT] видимая точка гаснет только ниже minVisibility − visHyst (без мигания)
   lockDeg: 160,          // выпрямлен (верх)
   startDeg: 150,         // ниже — начался повтор
   attemptDeg: 140,       // дошёл хотя бы сюда — это попытка (иначе дрожь, не считаем)
@@ -40,12 +59,19 @@ export const DEFAULT_SQUAT_CONFIG = Object.freeze({
   riseDeg: 10,           // поднялся от минимума на столько — фаза подъёма
   relockDropDeg: 12,     // на подъёме снова пошёл вниз на столько, не выпрямившись, — «выпрямись»
   stuckMs: 1600,         // завис на подъёме между attemptDeg и lockDeg — «выпрямись»
+  plateauMs: 2200,       // [W3-SQUAT] застыл на спуске выше глубины: попытка закрыта («глубже») или, если мелко, — не попытка
+  stuckRiseDeg: 25,      // [W3-SQUAT] «завис на подъёме» и ниже attemptDeg, если поднялся от низа на столько (стоит, а эталоны устарели)
+  relocRatio: 0.18,      // [W3-SQUAT] ширина таза отличается от эталона больше чем на столько — сменил место
+  relocMs: 400,          //   …дольше этого: повтор отменяется, эталоны «стоя» учатся заново (подход к ноутбуку — 40–50 %)
   setupMs: 450,          // постоять выпрямившись, прежде чем считать
   minRepMs: 800,
   maxRepMs: 12000,
   lostMs: 500,
-  smoothMs: 60,          // сглаживание угла (постоянная времени)
-  refDecayPerSec: 0.03,  // длины сегментов «стоя» медленно забываются (только в фазе top)
+  smoothMs: 60,          // сглаживание признаков угла (постоянная времени)
+  refWindowMs: 2500,     // [W3-SQUAT] эталоны «стоя» — по последним кадрам стойки на столько мс
+  filterMinCutoff: 1.2,  // [W3-SQUAT] One-Euro для точек: срез стоя, Гц
+  filterBeta: 2,         //   …прибавка среза на единицу скорости (доли кадра в секунду)
+  filterDCutoff: 1,      //   …срез для оценки скорости, Гц
   frontRatio: 0.45,      // ширина таза / бедро ≥ — вид спереди
   sideRatio: 0.3,        // < — вид сбоку; между — 45°
   checkDeg: 135,         // ошибки позы проверяются, когда угол колена ниже этого
@@ -56,7 +82,34 @@ export const DEFAULT_SQUAT_CONFIG = Object.freeze({
   leanDeg: 50,           // наклон корпуса от вертикали (сбоку)
   leanFrontRatio: 0.6,   // спереди: корпус укоротился до 60% длины стоя (≈ 53°)
   heelRise: 0.07,        // пятка поднялась относительно носка на 7% голени
+  // [W3-SQUAT] правила режима
+  needFeet: true,        // без лодыжек ноги «не видны» (Мастер); false — режим без стоп
+  faultsBlock: true,     // повтор с ошибкой не засчитывается (Мастер)
+  cleanBonus: 0,         // доп. очки за чистый повтор
+  dropWeight: 0,         // доля оценки по опусканию таза (относительно корпуса) в угле
+  dropLeadDeg: 25,       // оценка по тазу не глубже оценки по бедру больше чем на столько (сдвиг кадра — не присед)
 });
+
+// [W3-SQUAT] Профили: «Мастер» — строгость как раньше; «Новичок» — мягче и без обязательных стоп.
+export const SQUAT_PROFILES = Object.freeze({
+  master: Object.freeze({ mode: 'master' }),
+  novice: Object.freeze({
+    // порог 129° — по показаниям: у ноутбука на столе (камера выше таза) перспектива завышает угол по бедру
+    // на 8–11°, по тазу — на 4–7° (dev/squatSim.mjs), поэтому таз весит больше, а настоящие 115–120° читаются ≈125°
+    mode: 'novice', downDeg: 129, lockDeg: 155, startDeg: 145, attemptDeg: 138, setupMs: 400,
+    needFeet: false, faultsBlock: false, cleanBonus: 1, dropWeight: 0.7, smoothMs: 80,
+    // корпус спереди: камера выше таза укорачивает его в приседе сильнее, чем наклон (у стола 0,65–0,69 при 38°)
+    leanFrontRatio: 0.5,
+  }),
+});
+export function squatConfig(userCfg) {
+  const u = userCfg && typeof userCfg === 'object' ? userCfg : {};
+  const prof = SQUAT_PROFILES[u.mode] || SQUAT_PROFILES.master;
+  return { ...DEFAULT_SQUAT_CONFIG, ...prof, ...u, mode: prof.mode };
+}
+
+// Фазы повтора по-русски (диагностика, экран тренировки)
+export const SQUAT_PHASE_RU = Object.freeze({ noPose: 'нет позы', setup: 'подготовка', top: 'стоя', descent: 'вниз', bottom: 'внизу', ascent: 'вверх' });
 
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -69,6 +122,7 @@ const SIDES = [
 const POSTURE_FAULTS = ['valgus', 'knees_forward', 'lean', 'heels'];
 const downTo = (x, lim, hi) => clamp((hi - x) / Math.max(1e-9, hi - lim), 0, 1);   // меньше — лучше: hi → 0, lim → 1
 const FRAME_IDS = [11, 12, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
+const TRACK_IDS = [11, 12, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
 const CHECK_ITEMS = Object.freeze([   // [key, код SQUAT_HINTS, точки позы 0..32]
   ['frame', 'frame', Object.freeze([11, 12, 27, 28, 31, 32])],
   ['depth', 'shallow', Object.freeze([23, 24, 25, 26])],
@@ -80,17 +134,109 @@ const CHECK_ITEMS = Object.freeze([   // [key, код SQUAT_HINTS, точки п
 ]);
 const JUDGED_MS = 5000;   // итог повтора «только что был» столько после него
 
+// [W3-SQUAT] опускание таза в длинах бедра при наклоне бедра θ (голень наклоняется на ~θ/3, её длина ≈ бедру):
+// g(θ) = (1 − cos θ) + (1 − cos θ/3). Таблица на 0…130° и обратная функция.
+const DROP_TABLE = (() => { const a = new Float64Array(131); for (let d = 0; d <= 130; d++) { const r = d / DEG; a[d] = (1 - Math.cos(r)) + (1 - Math.cos(r / 3)); } return a; })();
+function dropToThighDeg(x) {
+  if (!(x > 0)) return 0;
+  if (x >= DROP_TABLE[130]) return 130;
+  let lo = 0, hi = 130;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (DROP_TABLE[mid] <= x) lo = mid; else hi = mid; }
+  return lo + (x - DROP_TABLE[lo]) / (DROP_TABLE[hi] - DROP_TABLE[lo]);
+}
+
+// [W3-SQUAT] фильтр One-Euro (Casiez и др., 2012): стоя срез низкий — дрожь гасится; в движении срез растёт — без запаздывания
+function oneEuro() { return { x: null, dx: 0 }; }
+function euroStep(f, v, dt, cfg) {
+  if (f.x === null || !(dt > 0)) { f.x = v; f.dx = 0; return v; }
+  const a = (cut) => { const tau = 1 / (2 * Math.PI * cut); return 1 / (1 + tau / dt); };
+  const d = (v - f.x) / dt;
+  f.dx += (d - f.dx) * a(cfg.filterDCutoff);
+  f.x += (v - f.x) * a(cfg.filterMinCutoff + cfg.filterBeta * Math.abs(f.dx));
+  return f.x;
+}
+
+// [W3-SQUAT] перцентиль по кольцевому буферу (scratch — без аллокаций)
+const REF_N = 96;
+function createRefBuf() { return { v: new Float64Array(REF_N), n: 0, i: 0 }; }
+function refPush(b, v) { if (!fin(v)) return; b.v[b.i] = v; b.i = (b.i + 1) % REF_N; if (b.n < REF_N) b.n++; }
+const SCRATCH = new Float64Array(REF_N);
+// последние count кадров стойки (во время повтора не пополняется — эталон заморожен)
+function refPct(b, count, q) {
+  const k = Math.min(b.n, Math.max(1, count));
+  if (!b.n) return null;
+  for (let j = 0; j < k; j++) SCRATCH[j] = b.v[(b.i - 1 - j + REF_N) % REF_N];
+  const a = SCRATCH.subarray(0, k).sort();
+  return a[Math.min(k - 1, Math.max(0, Math.round(q * (k - 1))))];
+}
+
+// [W3-SQUAT] Оценка кадра для подготовки: видно ли ноги, куда отойти/наклонить экран.
+// vis — сглаженная видимость точек { id: 0..1 }, pos — сырые точки. Возвращает { full, upper, tip: { code, text }, points }.
+export const SQUAT_FRAME_TIPS = Object.freeze({
+  noPerson: 'Встань перед камерой в 2–3 шагах, лицом к ней',
+  tiltUp: 'Не видно головы — наклони экран ноутбука назад',
+  stepBack: 'Отойди на шаг назад — ноги не помещаются в кадр',
+  tiltDown: 'Стопы не в кадре — наклони экран ноутбука чуть вперёд или отойди на шаг',
+  tiltDownKnees: 'Не видно колен — наклони экран ноутбука вперёд или отойди на шаг',
+  closer: 'Подойди на шаг ближе — так точнее',
+  center: 'Встань по центру кадра',
+  ok: 'Вижу тебя целиком ✓',
+  okNoFeet: 'Вижу до колен ✓ — можно приседать',
+});
+const FRAME_POINTS = [0, 11, 12, 23, 24, 25, 26, 27, 28];
+// seenIn — необязательно: { id: true|false } — «видна ли точка» по решению счётчика (с гистерезисом), чтобы подготовка
+// и счёт не расходились, когда видимость колен или лодыжек колеблется около порога.
+export function assessSquatFrame(vis, pos, minVis = 0.5, seenIn = null) {
+  const seen = (i) => (seenIn && typeof seenIn[i] === 'boolean' ? seenIn[i] : fin(vis[i]) && vis[i] >= minVis);
+  const yOf = (i) => (pos && pos[i] && fin(pos[i].y) ? pos[i].y : null);
+  const any = (a, b) => seen(a) || seen(b);
+  const sh = any(11, 12), hip = any(23, 24), knee = any(25, 26);
+  const ankY = [27, 28].filter((i) => seen(i)).map(yOf).filter(fin);
+  const ankle = ankY.length > 0 && Math.max(...ankY) < 0.995;
+  const full = sh && hip && knee && ankle;
+  const upper = sh && hip && knee;
+  const kneeY = [25, 26].filter((i) => seen(i)).map(yOf).filter(fin);
+  const headY = seen(0) ? yOf(0) : null;
+  const shY = [11, 12].filter((i) => seen(i)).map(yOf).filter(fin);
+  const top = fin(headY) ? headY : shY.length ? Math.min(...shY) - 0.08 : null;
+  const bottom = ankle ? Math.max(...ankY) : kneeY.length ? Math.max(...kneeY) + 0.2 : null;
+  const hipX = [23, 24].filter((i) => seen(i) && pos[i] && fin(pos[i].x)).map((i) => pos[i].x);
+  const hipMx = hipX.length ? hipX.reduce((a, b) => a + b, 0) / hipX.length : null;
+  const headCut = (!fin(headY) || headY < 0.02) && (!shY.length || Math.min(...shY) < 0.15);
+  let code;
+  if (!sh && !hip) code = 'noPerson';
+  else if (headCut && !ankle) code = 'stepBack';   // обрезано и сверху, и снизу — слишком близко
+  else if (headCut) code = 'tiltUp';
+  // ноги обрезаны снизу: сверху есть место — камере нужно смотреть ниже (наклонить экран), иначе — отойти
+  else if (!knee) code = fin(top) && top > 0.15 ? 'tiltDownKnees' : 'stepBack';
+  else if (!ankle) code = fin(top) && top > 0.15 ? 'tiltDown' : 'stepBack';
+  else if (fin(top) && fin(bottom) && bottom - top < 0.45) code = 'closer';
+  else if (fin(hipMx) && (hipMx < 0.18 || hipMx > 0.82)) code = 'center';
+  else code = 'ok';
+  const points = {};
+  for (const i of FRAME_POINTS) points[i] = { v: fin(vis[i]) ? Math.round(vis[i] * 100) / 100 : 0, ok: seen(i) };
+  return { full, upper, tip: { code, text: SQUAT_FRAME_TIPS[code] }, points };
+}
+
 export function createSquatCounter(userCfg) {
-  const cfg = { ...DEFAULT_SQUAT_CONFIG, ...(userCfg && typeof userCfg === 'object' ? userCfg : {}) };
+  const cfg = squatConfig(userCfg);
+  const novice = cfg.mode === 'novice';
+  const hintText = (code) => (novice && SQUAT_HINTS_NOVICE[code]) || SQUAT_HINTS[code];
   let s;
   function reset() {
     s = {
-      reps: 0, attempts: 0, phase: 'noPose', lastT: null, lastSeen: null, upSince: null,
-      knee: null, kneeRaw: null, view: null, depth: 0,
-      thighRef: 0, shinRef: 0, torsoRef: 0, heel0: [null, null],
-      rep: null, message: 'Встаньте в полный рост: в кадре — от плеч до стоп',
+      reps: 0, attempts: 0, clean: 0, points: 0, phase: 'noPose', lastT: null, lastSeen: null, upSince: null,
+      knee: null, kneeRaw: null, view: null, depth: 0, thighDeg: null, dropDeg: null, feet: null,
+      thighRef: 0, shinRef: 0, torsoRef: 0, hipY0: null, heel0: [null, null],
+      rep: null, message: novice ? 'Встань в полный рост лицом к камере — в кадре от плеч до колен' : 'Встаньте в полный рост: в кадре — от плеч до стоп',
       lastRep: null, lastHint: null, pending: [],
       faults: Object.fromEntries(Object.keys(SQUAT_HINTS).map((k) => [k, 0])),
+      // [W3-SQUAT] сглаженные точки, эталоны «стоя», видимость для подготовки и диагностики
+      trk: Object.fromEntries(TRACK_IDS.map((i) => [i, { on: false, lastT: -1e9, fx: oneEuro(), fy: oneEuro(), p: { x: 0, y: 0 } }])),
+      ref: { thigh: createRefBuf(), shin: createRefBuf(), torso: createRefBuf(), hipY: createRefBuf(), sw: createRefBuf() },
+      swRef: 0, scRaw: null, thRaw: null, scBuf: createRefBuf(), thBuf: createRefBuf(), relocSince: null, tip: null, tipSince: null, fpos: {},
+      vis: Object.fromEntries(FRAME_POINTS.concat([29, 30, 31, 32]).map((i) => [i, 0])), visRaw: {},
+      frm: null, frmOkSince: null, dtAvg: null, fs: { h: null, flat: null, drop: null },
       // [ОШИБКА] только для показа (решения не читают): кадр, метрики текущего повтора, итог прошлого
       chk: { seen: false, vis: 0, live: null, liveT: null, rep: null, last: null },
     };
@@ -101,47 +247,122 @@ export function createSquatCounter(userCfg) {
   const wvis = (p) => (p && fin(p.visibility) ? p.visibility : 1);
 
   function hint(code, t) {
-    s.lastHint = { code, text: SQUAT_HINTS[code], tMs: t };
-    s.message = SQUAT_HINTS[code];
+    s.lastHint = { code, text: hintText(code), tMs: t };
+    s.message = hintText(code);
   }
 
-  function measure(L, ax, dt) {
-    const P = (i) => (vis(L[i]) ? { x: L[i].x * ax, y: L[i].y } : null);
+  // [W3-SQUAT] сглаженная точка или null; видимость с гистерезисом; фильтр сбрасывается после пропуска > 300 мс
+  function track(L, ax, t, dt) {
+    for (const i of TRACK_IDS) {
+      const tr = s.trk[i], p = L[i];
+      const ok = p && fin(p.x) && fin(p.y);
+      const v = ok ? (fin(p.visibility) ? p.visibility : 1) : 0;
+      const on = ok && v >= (tr.on ? cfg.minVisibility - cfg.visHyst : cfg.minVisibility);
+      if (on) {
+        if (!tr.on || t - tr.lastT > 300) { tr.fx = oneEuro(); tr.fy = oneEuro(); }
+        const gap = t - tr.lastT > 300 ? 0 : dt;
+        tr.p.x = euroStep(tr.fx, p.x * ax, gap, cfg);
+        tr.p.y = euroStep(tr.fy, p.y, gap, cfg);
+        tr.lastT = t;
+      }
+      tr.on = on;
+    }
+  }
+  const P = (i) => (s.trk[i].on ? s.trk[i].p : null);
+
+  function measure(L, ax, dt, t) {
+    track(L, ax, t, dt);
     const legs = SIDES.map((d) => {
       const hip = P(d.hip), knee = P(d.knee), ankle = P(d.ankle);
-      if (!hip || !knee || !ankle) return null;
+      if (!hip || !knee || (cfg.needFeet && !ankle)) return null;
       return {
-        hip, knee, ankle, heel: P(d.heel), toe: P(d.toe), sh: P(d.sh),
-        w: wvis(L[d.hip]) + wvis(L[d.knee]) + wvis(L[d.ankle]) + wvis(L[d.toe]),
+        hip, knee, ankle, heel: ankle ? P(d.heel) : null, toe: ankle ? P(d.toe) : null, sh: P(d.sh),
+        w: Math.min(wvis(L[d.hip]), wvis(L[d.knee])) + 0.25 * (ankle ? wvis(L[d.ankle]) : 0) + 0.25 * wvis(L[d.toe]),
       };
     });
     const ok = legs.filter(Boolean);
     if (!ok.length) return null;
     const len = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-    // эталонные длины «стоя»: максимум, медленно забывается; бедро не короче 0,8 голени
-    let thigh = 0, shin = 0;
-    for (const g of ok) { thigh = Math.max(thigh, len(g.hip, g.knee)); shin = Math.max(shin, len(g.knee, g.ankle)); }
-    // забываем только стоя (фаза top): в полуприседе бедро укорочено и не должно стать эталоном
-    const decay = s.phase === 'top' ? 1 - cfg.refDecayPerSec * dt : 1;
-    s.shinRef = Math.max(shin, s.shinRef * decay);
-    s.thighRef = Math.max(thigh, s.thighRef * decay, 0.8 * s.shinRef);
-    if (s.thighRef < 1e-4 || s.shinRef < 1e-4) return null;
-    // угол колена: плоский и оценка по высоте таза над коленом; берём меньший
-    let kneeDeg = 180;
-    for (const g of ok) {
-      const v1x = g.hip.x - g.knee.x, v1y = g.hip.y - g.knee.y, v2x = g.ankle.x - g.knee.x, v2y = g.ankle.y - g.knee.y;
-      const l1 = Math.hypot(v1x, v1y), l2 = Math.hypot(v2x, v2y);
-      const flat = l1 > 1e-6 && l2 > 1e-6 ? Math.acos(clamp((v1x * v2x + v1y * v2y) / (l1 * l2), -1, 1)) * DEG : 180;
-      const h = clamp((g.knee.y - g.hip.y) / s.thighRef, -1, 1);
-      const est = 180 - Math.acos(h) * DEG;
-      kneeDeg = Math.min(kneeDeg, flat, est);
+    const mean = (arr, f) => { let a = 0, n = 0; for (const g of arr) { const v = f(g); if (fin(v)) { a += v; n++; } } return n ? a / n : null; };
+    // масштаб человека в кадре — ширина таза: точки таза есть всегда, когда меряем, а в приседе спереди таз уже лишь на
+    // ~7 % (уходит назад). Учится в тех же кадрах, что и бедро. Сбоку таз узкий и шумит — там не используется
+    const swNow = legs[0] && legs[1] ? len(legs[0].hip, legs[1].hip) : null;
+    // эталоны «стоя» — только из кадров подготовки и стойки: перцентиль за refWindowMs (выбросы и полуприсед не влияют)
+    const R = s.ref;
+    if (s.phase === 'noPose' || s.phase === 'setup' || s.phase === 'top') {
+      refPush(R.thigh, mean(ok, (g) => len(g.hip, g.knee)));
+      refPush(R.shin, mean(ok, (g) => (g.ankle ? len(g.knee, g.ankle) : null)));
+      refPush(R.torso, mean(ok, (g) => (g.sh ? g.hip.y - g.sh.y : null)));
+      refPush(R.hipY, mean(ok, (g) => g.hip.y));
+      refPush(R.sw, swNow);
     }
+    const W = Math.round(cfg.refWindowMs / Math.max(16, (s.dtAvg || 1 / 30) * 1000));   // окно в кадрах
+    const thigh = refPct(R.thigh, W, 0.75), shin = refPct(R.shin, W, 0.75);
+    s.shinRef = shin || s.shinRef;
+    s.thighRef = Math.max(thigh || 0, 0.8 * (s.shinRef || 0));
+    s.torsoRef = refPct(R.torso, W, 0.5) || s.torsoRef;
+    s.hipY0 = refPct(R.hipY, W, 0.25) ?? s.hipY0;
+    s.swRef = refPct(R.sw, W, 0.5) || s.swRef;
+    if (s.thighRef < 1e-4) return null;
     const both = legs[0] && legs[1];
     const hipW = both ? Math.abs(legs[0].hip.x - legs[1].hip.x) : 0;
     const ratio = hipW / s.thighRef;
     const view = !both ? 'side' : ratio >= cfg.frontRatio ? 'front' : ratio < cfg.sideRatio ? 'side' : 'diag';
-    const main = ok.slice().sort((a, b) => b.w - a.w)[0];
-    return { legs, ok, both, view, kneeDeg, main };
+    // [W3-SQUAT] сменил место (подошёл к ноутбуку и вернулся, особенно у низкой камеры): бедро и таз в кадре «как в
+    // приседе», а эталоны «стоя» — от другого расстояния. Признак — масштаб: ширина таза против эталона, медиана за ~1 с
+    // (дрожь — до 10 % на кадр); только когда таз виден широко (спереди или под углом)
+    // Ходьба меняет масштаб целиком: таз и бедро в кадре — в одно и то же число раз; в приседе бедро укорачивается, а таз нет.
+    const scNow = view !== 'side' && fin(swNow) && s.swRef > 0.25 * s.thighRef ? swNow / s.swRef : null;
+    const thNow = mean(ok, (g) => len(g.hip, g.knee)) / s.thighRef;
+    if (fin(scNow) && fin(thNow)) {
+      const nWin = Math.max(7, Math.round(1000 / Math.max(16, (s.dtAvg || 1 / 30) * 1000)));
+      refPush(s.scBuf, scNow); refPush(s.thBuf, thNow);
+      s.scRaw = refPct(s.scBuf, nWin, 0.5); s.thRaw = refPct(s.thBuf, nWin, 0.5);
+    }
+    const reloc = fin(s.scRaw) && fin(s.thRaw) && Math.abs(s.scRaw - 1) > cfg.relocRatio && Math.abs(Math.log(s.thRaw / s.scRaw)) < 0.15;
+    const thighRef = s.thighRef, torsoRef = s.torsoRef;
+    const flatOf = (g) => {
+      const v1x = g.hip.x - g.knee.x, v1y = g.hip.y - g.knee.y, v2x = g.ankle.x - g.knee.x, v2y = g.ankle.y - g.knee.y;
+      const l1 = Math.hypot(v1x, v1y), l2 = Math.hypot(v2x, v2y);
+      return l1 > 1e-6 && l2 > 1e-6 ? Math.acos(clamp((v1x * v2x + v1y * v2y) / (l1 * l2), -1, 1)) * DEG : 180;
+    };
+    // [W3-SQUAT] признаки сглаживаются ДО нелинейностей (acos, «меньший из»): иначе дрожь смещает угол вниз
+    // и стоящий человек читается «полуприседом». Высота таза над коленом — в длинах бедра, взвешенное среднее ног.
+    const fa = dt > 0 ? 1 - Math.exp(-dt * 1000 / cfg.smoothMs) : 1;
+    const ema = (key, v) => { if (!fin(v)) { s.fs[key] = null; return null; } s.fs[key] = s.fs[key] === null ? v : s.fs[key] + (v - s.fs[key]) * fa; return s.fs[key]; };
+    let hs = 0, ws = 0;
+    for (const g of ok) { hs += ((g.knee.y - g.hip.y) / thighRef) * g.w; ws += g.w; }
+    const hRaw = hs / Math.max(1e-9, ws);
+    const thighDeg = Math.acos(clamp(ema('h', hRaw), -1, 1)) * DEG;   // наклон бедра от вертикали
+    const thighRaw = Math.acos(clamp(hRaw, -1, 1)) * DEG;
+    let kneeDeg, kneeRaw, dropDeg = null;
+    if (!novice) {
+      // «Мастер»: плоский угол (сбоку виден прямо) и оценка по бедру — меньший, как раньше. Спереди плоский угол
+      // говорит не о глубине, а о смещении колена вбок, и дрожь его занижает — там только оценка по бедру.
+      const withAnk = view === 'front' ? [] : ok.filter((g) => g.ankle);
+      const flatRaw = withAnk.length ? mean(withAnk, flatOf) : null;
+      const flat = ema('flat', flatRaw);
+      kneeDeg = Math.min(180 - thighDeg, fin(flat) ? flat : 180);
+      kneeRaw = Math.min(180 - thighRaw, fin(flatRaw) ? flatRaw : 180);
+    } else {
+      // «Новичок»: наклон бедра + опускание таза относительно длины корпуса (лодыжки не нужны)
+      let th = thighDeg, thR = thighRaw;
+      const hipY = mean(ok, (g) => g.hip.y);
+      if (cfg.dropWeight > 0 && ok.some((g) => g.sh) && torsoRef > 1e-4 && fin(s.hipY0) && fin(hipY)) {
+        const q = thighRef / torsoRef;   // бедро в длинах корпуса (стоя)
+        const xRaw = ((hipY - s.hipY0) / torsoRef) / q;   // опускание таза в длинах бедра
+        dropDeg = dropToThighDeg(ema('drop', xRaw));
+        // таз «опустился», а бедро не согнулось — это сдвиг всего кадра (наклонили крышку ноутбука, качнули стол),
+        // а не присед: вклад таза — не дальше dropLeadDeg от показаний бедра
+        th = (1 - cfg.dropWeight) * thighDeg + cfg.dropWeight * Math.min(dropDeg, thighDeg + cfg.dropLeadDeg);
+        thR = (1 - cfg.dropWeight) * thighRaw + cfg.dropWeight * Math.min(dropToThighDeg(xRaw), thighRaw + cfg.dropLeadDeg);
+      } else ema('drop', null);
+      kneeDeg = 180 - th;
+      kneeRaw = 180 - thR;
+    }
+    const main = ok.slice().sort((x, y) => y.w - x.w)[0];
+    const feet = ok.some((g) => g.ankle);
+    return { legs, ok, both, view, kneeDeg, kneeRaw, main, thighDeg, dropDeg, feet, reloc };
   }
 
   // Метрики техники на текущем кадре (только в нижней части повтора). Общая функция для решений и для
@@ -150,7 +371,7 @@ export function createSquatCounter(userCfg) {
   function postureMetrics(m) {
     const out = { valgus: null, knees_forward: null, lean: null, heels: null };
     const { legs, both, view, main } = m;
-    if (both && view !== 'side') {
+    if (both && view !== 'side' && legs[0].ankle && legs[1].ankle) {
       const kd = legs[0].knee.x - legs[1].knee.x, ad = legs[0].ankle.x - legs[1].ankle.x;
       if (Math.abs(ad) >= cfg.minStanceRatio * s.thighRef) {
         const lim = view === 'front' ? cfg.valgusRatio : cfg.valgusRatio * 0.9;
@@ -159,7 +380,7 @@ export function createSquatCounter(userCfg) {
         out.valgus = { bad: Math.sign(kd) !== Math.sign(ad) || Math.abs(kd) < lim * Math.abs(ad), value: clamp(q / lim, 0, 1) };
       }
     }
-    if (view === 'side' && main.toe && main.heel) {
+    if (view === 'side' && main.toe && main.heel && main.ankle && s.shinRef > 1e-4) {
       const dir = Math.sign(main.toe.x - main.heel.x) || Math.sign(main.toe.x - main.ankle.x);
       if (dir) {
         const over = (main.knee.x - main.toe.x) * dir / s.shinRef;   // колено за носком, в голенях
@@ -182,7 +403,7 @@ export function createSquatCounter(userCfg) {
     let rise = null;
     for (let i = 0; i < 2; i++) {
       const g = legs[i];
-      if (!g || !g.heel || !g.toe || s.heel0[i] === null) continue;
+      if (!g || !g.heel || !g.toe || s.heel0[i] === null || !(s.shinRef > 1e-4)) continue;
       const r = (s.heel0[i] - (g.heel.y - g.toe.y)) / s.shinRef;
       rise = rise === null ? r : Math.max(rise, r);
     }
@@ -192,13 +413,8 @@ export function createSquatCounter(userCfg) {
   // ошибки позы на текущем кадре (только в нижней части повтора)
   const faultsOf = (pm) => POSTURE_FAULTS.filter((f) => pm[f] && pm[f].bad);
 
-  // эталоны позы «стоя»: длина корпуса, положение пяток относительно носков
+  // эталон позы «стоя»: положение пяток относительно носков (длины — в measure, перцентилями)
   function learnStanding(m) {
-    const shs = m.ok.filter((g) => g.sh);
-    if (shs.length) {
-      const tl = shs.reduce((a, g) => a + (g.hip.y - g.sh.y), 0) / shs.length;
-      s.torsoRef = s.torsoRef ? Math.max(tl, s.torsoRef * 0.995) : tl;
-    }
     for (let i = 0; i < 2; i++) {
       const g = m.legs[i];
       if (!g || !g.heel || !g.toe) continue;
@@ -207,8 +423,15 @@ export function createSquatCounter(userCfg) {
     }
   }
 
+  // эталоны «стоя» устарели (потеря позы, «завис» ниже выпрямления): учим заново с ближайших кадров
+  function forgetRefs() {
+    for (const b of Object.values(s.ref)) { b.n = 0; b.i = 0; }
+    s.swRef = 0; s.scRaw = null; s.thRaw = null; s.relocSince = null;
+    for (const b of [s.scBuf, s.thBuf]) { b.n = 0; b.i = 0; }
+  }
+
   function startRep(t) {
-    s.rep = { start: t, min: s.knee, peak: s.knee, deep: false, rising: false, streak: {}, faults: new Set(), live: new Set(), riseSince: null };
+    s.rep = { start: t, min: s.knee, peak: s.knee, deep: false, rising: false, streak: {}, faults: new Set(), live: new Set(), riseSince: null, moveK: s.knee, moveT: t };
     s.phase = 'descent';
     s.chk.rep = { n: 0, worst: {}, on: {} }; s.chk.live = null;
   }
@@ -223,19 +446,56 @@ export function createSquatCounter(userCfg) {
     s.attempts++;
     const list = SQUAT_FAULT_ORDER.filter((f) => faults.has(f));
     for (const f of list) s.faults[f]++;
-    if (!list.length) {
+    const clean = !list.length;
+    // «Мастер»: засчитан только чистый; «Новичок»: дошёл до глубины — засчитан, ошибки — карточкой
+    // «Новичок»: закрыт по «выпрямись», так и не поднявшись до startDeg, — это пружинка внизу, а не повтор
+    const rose = extra !== 'lockout' || (fin(r.peak) && r.peak >= cfg.startDeg);
+    const counted = cfg.faultsBlock ? clean : r.deep && rose;
+    const minKnee = Math.round(r.min), ms = Math.round(t - r.start);
+    if (counted) {
       s.reps++;
-      s.pending.push({ tMs: t, rep: s.reps, minKnee: Math.round(r.min), ms: Math.round(t - r.start) });
-      s.lastRep = { tMs: t, ok: true, faults: [] };
-      s.message = `${s.reps}`;
-    } else {
-      s.lastRep = { tMs: t, ok: false, faults: list };
-      hint(list[0], t);
+      if (clean) s.clean++;
+      const points = 1 + (clean ? cfg.cleanBonus : 0);
+      s.points += points;
+      s.pending.push({ tMs: t, rep: s.reps, minKnee, ms, clean, faults: list, points });
     }
+    s.lastRep = { tMs: t, ok: counted, clean, faults: list, minKnee, ms, reason: clean ? null : hintText(list[0]) };
+    if (clean) s.message = novice ? `Чисто! +${1 + cfg.cleanBonus}` : `${s.reps}`;
+    else hint(list[0], t);
     // [ОШИБКА] итог повтора для checks: держится до следующего повтора
     const R = s.chk.rep || { n: 0, worst: {}, on: {} };
     s.chk.last = { tMs: t, faults: list, worst: { ...R.worst }, on: { ...R.on }, n: R.n, minKnee: r.min, peak: r.peak };
     s.rep = null;
+  }
+
+  // [W3-SQUAT] сглаженная видимость точек и оценка кадра (подготовка, диагностика) — по сырым точкам
+  function noteFrame(L, t, dt) {
+    const a = dt > 0 ? 1 - Math.exp(-dt / 0.25) : 1;
+    const ap = dt > 0 ? 1 - Math.exp(-dt / 0.3) : 1;
+    for (const k of Object.keys(s.vis)) {
+      const p = L ? L[k] : null;
+      const ok = p && fin(p.x) && fin(p.y);
+      const v = ok ? (fin(p.visibility) ? clamp(p.visibility, 0, 1) : 1) : 0;
+      s.visRaw[k] = v;
+      s.vis[k] += (v - s.vis[k]) * a;
+      // сглаженные позиции: совет «наклони экран / отойди» не должен мигать от дрожи головы у края порога
+      const f = s.fpos[k];
+      if (ok) s.fpos[k] = f ? { x: f.x + (p.x - f.x) * ap, y: f.y + (p.y - f.y) * ap } : { x: p.x, y: p.y };
+    }
+  }
+  // оценка кадра — после measure: видимость точек ног — та же, что у счётчика (гистерезис); совет держится 0,7 с
+  function updateFraming(t) {
+    const seen = {};
+    for (const i of [11, 12, 23, 24, 25, 26, 27, 28]) seen[i] = s.trk[i].on;
+    const f = assessSquatFrame(s.vis, s.fpos, cfg.minVisibility, seen);
+    const code = f.tip.code;
+    if (s.tip === null || code === s.tip || code === 'ok') { s.tip = code; s.tipSince = null; }
+    else if (s.tipSince === null) s.tipSince = t;
+    else if (t - s.tipSince >= 700) { s.tip = code; s.tipSince = null; }
+    f.tip = { code: s.tip, text: SQUAT_FRAME_TIPS[s.tip] };
+    s.frm = f;
+    const good = novice ? f.upper : f.full;
+    if (good) { if (s.frmOkSince === null) s.frmOkSince = t; } else s.frmOkSince = null;
   }
 
   function push(obs) {
@@ -243,29 +503,41 @@ export function createSquatCounter(userCfg) {
     const t = obs.tMs;
     if (s.lastT !== null && t <= s.lastT) return;
     const dt = s.lastT === null ? 0 : Math.min(0.5, (t - s.lastT) / 1000);
+    if (dt > 0) s.dtAvg = s.dtAvg === null ? dt : s.dtAvg + (dt - s.dtAvg) * 0.1;
     s.lastT = t;
     const L = Array.isArray(obs.landmarks) ? obs.landmarks : null;
     const ax = fin(obs.frameW) && fin(obs.frameH) && obs.frameH > 0 ? obs.frameW / obs.frameH : 4 / 3;
-    const m = L ? measure(L, ax, dt) : null;
+    noteFrame(L, t, dt);
+    const m = L ? measure(L, ax, dt, t) : null;
+    updateFraming(t);
     s.chk.seen = !!m;
     s.chk.vis = L ? FRAME_IDS.filter((i) => vis(L[i])).length / FRAME_IDS.length : 0;
     if (!m) {
       if (s.lastSeen === null || t - s.lastSeen > cfg.lostMs) {
         if (s.phase !== 'noPose') {
-          s.rep = null; s.upSince = null; s.knee = null; s.thighRef = 0; s.shinRef = 0;
+          s.rep = null; s.upSince = null; s.knee = null; s.thighRef = 0; s.shinRef = 0; s.fs = { h: null, flat: null, drop: null };
+          forgetRefs();
           hint('frame', t);
           s.faults.frame++;
         }
         s.phase = 'noPose';
-        s.message = SQUAT_HINTS.frame;
+        s.message = hintText('frame');
       }
       return;
     }
     s.lastSeen = t;
+    // сменил место: повтор (если шёл) отменяется без попытки, эталоны «стоя» учатся заново — снова подготовка
+    s.relocSince = m.reloc ? (s.relocSince ?? t) : null;
+    if (m.reloc && t - s.relocSince >= cfg.relocMs) {
+      s.rep = null; s.upSince = null; forgetRefs(); s.phase = 'setup';
+      if (!s.attempts) s.message = novice ? 'Встань на место и замри на секунду' : 'Встаньте на место и замрите на секунду';
+      return;
+    }
     s.view = m.view;
-    s.kneeRaw = m.kneeDeg;
-    const a = dt > 0 ? 1 - Math.exp(-dt * 1000 / cfg.smoothMs) : 1;
-    s.knee = s.knee === null ? m.kneeDeg : s.knee + (m.kneeDeg - s.knee) * a;
+    s.feet = m.feet;
+    s.thighDeg = m.thighDeg; s.dropDeg = m.dropDeg;
+    s.kneeRaw = m.kneeRaw;
+    s.knee = m.kneeDeg;   // признаки уже сглажены в measure
     const k = s.knee;
     s.depth = clamp((180 - k) / (180 - cfg.downDeg), 0, 1);
 
@@ -274,8 +546,8 @@ export function createSquatCounter(userCfg) {
       if (k >= cfg.lockDeg) {
         learnStanding(m);
         if (s.upSince === null) s.upSince = t;
-        if (t - s.upSince >= cfg.setupMs) { s.phase = 'top'; if (!s.attempts) s.message = 'Готово — приседайте'; }
-      } else { s.upSince = null; if (!s.attempts) s.message = 'Встаньте прямо, ноги на ширине плеч'; }
+        if (t - s.upSince >= cfg.setupMs) { s.phase = 'top'; if (!s.attempts) s.message = novice ? 'Готово — приседай!' : 'Готово — приседайте'; }
+      } else { s.upSince = null; if (!s.attempts) s.message = novice ? 'Встань прямо, ноги на ширине плеч' : 'Встаньте прямо, ноги на ширине плеч'; }
       return;
     }
     if (s.phase === 'top') {
@@ -291,7 +563,7 @@ export function createSquatCounter(userCfg) {
     if (k < cfg.checkDeg) {
       const pm = postureMetrics(m);
       const now = new Set(faultsOf(pm));
-      for (const f of ['valgus', 'knees_forward', 'lean', 'heels']) {
+      for (const f of POSTURE_FAULTS) {
         r.streak[f] = now.has(f) ? (r.streak[f] || 0) + 1 : 0;
         if (r.streak[f] >= cfg.holdFrames && !r.faults.has(f)) { r.faults.add(f); hint(f, t); }
       }
@@ -300,6 +572,13 @@ export function createSquatCounter(userCfg) {
     if (!r.rising) {
       r.min = Math.min(r.min, k);
       if (k <= cfg.downDeg) { r.deep = true; s.phase = 'bottom'; }
+      // [W3-SQUAT] застыл выше глубины: присел заметно (≤ attemptDeg) — попытка закрыта с «глубже»; мелко (переминается) —
+      // не попытка. Дальше — подготовка
+      if (Math.abs(k - r.moveK) > 6) { r.moveK = k; r.moveT = t; }
+      if (!r.deep && t - r.moveT > cfg.plateauMs) {
+        if (r.min <= cfg.attemptDeg) finishRep(t, null); else s.rep = null;
+        s.phase = 'setup'; s.upSince = null; return;
+      }
       if (k >= r.min + cfg.riseDeg) {
         if (!r.deep && r.min > cfg.attemptDeg) {
           // не попытка, а покачивание: ждём возврата наверх
@@ -325,9 +604,11 @@ export function createSquatCounter(userCfg) {
         s.rep.min = k;
         return;
       }
-      if (r.peak >= cfg.attemptDeg) {
+      // завис на подъёме: между attemptDeg и lockDeg — или ниже, но поднялся от низа на stuckRiseDeg (стоит, а эталоны
+      // «стоя» устарели — отошёл от камеры): закрыть с «выпрямись» и выучить эталоны заново
+      if (r.peak >= cfg.attemptDeg || r.peak - r.min >= cfg.stuckRiseDeg) {
         if (r.riseSince === null) r.riseSince = t;
-        if (t - r.riseSince > cfg.stuckMs) { finishRep(t, 'lockout'); s.phase = 'setup'; s.upSince = null; }
+        if (t - r.riseSince > cfg.stuckMs) { const low = r.peak < cfg.attemptDeg; finishRep(t, 'lockout'); s.phase = 'setup'; s.upSince = null; if (low) forgetRefs(); }
       }
     }
   }
@@ -374,6 +655,28 @@ export function createSquatCounter(userCfg) {
     return { items, judged: !!r || !!(last && s.lastT - last.tMs <= JUDGED_MS) };
   }
 
+  // [W3-SQUAT] подготовка: силуэт с точками ног, совет, автопроверка «вижу тебя целиком ✓» (держится 0,5 с)
+  function framing() {
+    const f = s.frm || assessSquatFrame({}, [], cfg.minVisibility);
+    const readyMs = s.frmOkSince === null || s.lastT === null ? 0 : s.lastT - s.frmOkSince;
+    const ready = readyMs >= 500;
+    // «Новичок» без стоп: можно приседать, а про стопы — совет
+    const status = f.full ? 'ok' : f.upper && novice ? 'okNoFeet' : null;
+    return { ...f, ready, readyMs: Math.round(readyMs), status, statusText: status ? SQUAT_FRAME_TIPS[status] : null };
+  }
+  // [W3-SQUAT] диагностика: видимость точек ног, угол, фаза, причина отказа последнего повтора
+  function diag() {
+    const v = {};
+    for (const i of [11, 12, 23, 24, 25, 26, 27, 28]) v[i] = Math.round((s.visRaw[i] || 0) * 100) / 100;
+    const r1 = (x) => (fin(x) ? Math.round(x * 10) / 10 : null);
+    return {
+      vis: v, knee: r1(s.knee), kneeRaw: r1(s.kneeRaw), thighDeg: r1(s.thighDeg), dropDeg: r1(s.dropDeg),
+      phase: s.phase, phaseRu: SQUAT_PHASE_RU[s.phase] || s.phase, feet: s.feet, mode: cfg.mode,
+      downDeg: cfg.downDeg, lockDeg: cfg.lockDeg, hz: s.dtAvg ? Math.round(10 / s.dtAvg) / 10 : null,
+      last: s.lastRep ? { ...s.lastRep } : null,
+    };
+  }
+
   function read() {
     const live = s.phase !== 'noPose' && s.phase !== 'setup';
     return {
@@ -384,25 +687,28 @@ export function createSquatCounter(userCfg) {
       lastRep: s.lastRep, lastHint: s.lastHint,
       faults: { ...s.faults },
       rejected: s.attempts - s.reps,
-      formScore: s.attempts ? +(s.reps / s.attempts).toFixed(3) : null,
+      formScore: s.attempts ? +(s.clean / s.attempts).toFixed(3) : null,
       checks: checks(),   // [ОШИБКА] прогресс условий техники (тренажёр)
+      mode: cfg.mode, clean: s.clean, points: s.points, feet: s.feet, downDeg: cfg.downDeg,   // [W3-SQUAT]
+      repStart: s.rep ? s.rep.start : null,
+      framing: framing(), diag: diag(),
     };
   }
-  // Новые чистые повторы с прошлого вызова (для начисления очков).
+  // Новые засчитанные повторы с прошлого вызова (для начисления очков): { tMs, rep, minKnee, ms, clean, faults, points }.
   function drain() { const out = s.pending; s.pending = []; return out; }
   function getDebug() {
-    return { ...read(), kneeRaw: s.kneeRaw === null ? null : +s.kneeRaw.toFixed(1), thighRef: +s.thighRef.toFixed(4), shinRef: +s.shinRef.toFixed(4), torsoRef: +s.torsoRef.toFixed(4), rep: s.rep ? { start: s.rep.start, min: Math.round(s.rep.min), deep: s.rep.deep, rising: s.rep.rising, faults: [...s.rep.faults] } : null, version: SQUAT_VERSION };
+    return { ...read(), scRaw: fin(s.scRaw) ? +s.scRaw.toFixed(3) : null, swRef: +(s.swRef || 0).toFixed(4), kneeRaw: s.kneeRaw === null ? null : +s.kneeRaw.toFixed(1), thighRef: +s.thighRef.toFixed(4), shinRef: +(s.shinRef || 0).toFixed(4), torsoRef: +(s.torsoRef || 0).toFixed(4), hipY0: fin(s.hipY0) ? +s.hipY0.toFixed(4) : null, rep: s.rep ? { start: s.rep.start, min: Math.round(s.rep.min), deep: s.rep.deep, rising: s.rep.rising, faults: [...s.rep.faults] } : null, version: SQUAT_VERSION };
   }
 
-  return { push, read, drain, reset, getDebug };
+  return { push, read, drain, reset, getDebug, config: cfg };
 }
 
 // Самая частая ошибка по счётчикам read().faults (без frame) → { code, text, count } или null.
-export function topSquatFault(faults) {
+export function topSquatFault(faults, mode) {
   let best = null;
   for (const code of SQUAT_FAULT_ORDER) {
     const n = faults && fin(faults[code]) ? faults[code] : 0;
-    if (n > 0 && (!best || n > best.count)) best = { code, text: SQUAT_HINTS[code], count: n };
+    if (n > 0 && (!best || n > best.count)) best = { code, text: (mode === 'novice' && SQUAT_HINTS_NOVICE[code]) || SQUAT_HINTS[code], count: n };
   }
   return best;
 }

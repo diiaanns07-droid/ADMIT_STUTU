@@ -48,15 +48,16 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
   document.body.append(stage);
 
   const calls = [];
-  const names = ['onEnableCamera', 'onCalibrate', 'onStart', 'onPause', 'onResume', 'onRestart', 'onSettings', 'onDebug', 'onExit', 'onOath', 'onTraining', 'onBuyUpgrade', 'onBack', 'onNet'];
+  const names = ['onEnableCamera', 'onCalibrate', 'onStart', 'onPause', 'onResume', 'onRestart', 'onSettings', 'onDebug', 'onExit', 'onOath', 'onTraining', 'onBuyUpgrade', 'onBack', 'onNet', 'onTechnique'];
   const callbacks = {};
-  for (const n of names) {
+  for (const n of names.concat(['onChallenge', 'onChallengeName', 'onPosterSave'])) { // [W3-CHALLENGE] + испытание и постер
     callbacks[n] = (arg) => {
       calls.push({ name: n, arg });
       if (n === 'onCalibrate') return Promise.resolve(true);
       return undefined;
     };
   }
+  callbacks.onPoseRecord = (arg) => { calls.push({ name: 'onPoseRecord', arg }); };   // [W3-SQUAT] «Сохранить запись позы»
   const count = (n) => calls.filter((c) => c.name === n).length;
   const last = (n) => {
     const l = calls.filter((c) => c.name === n);
@@ -120,7 +121,8 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     check('громкость 40% → onSettings({volume:0.4})', JSON.stringify(last('onSettings')) === '{"volume":0.4}', JSON.stringify(last('onSettings')));
     setRange(menuVol, 0);
     check('громкость 0% → volume:0 (в диапазоне 0..1)', last('onSettings').volume === 0);
-    const motion = menuSec.querySelector('input[type=checkbox]');
+    // первый флажок меню теперь «Автоход» (режим жестов): ищем именно «Уменьшенное движение»
+    const motion = menuSec.querySelector('input[id$="-menu-motion"]') || menuSec.querySelector('input[type=checkbox]');
     motion.click();
     check('уменьшенное движение → onSettings({reducedMotion:true})', JSON.stringify(last('onSettings')) === '{"reducedMotion":true}', JSON.stringify(last('onSettings')));
     const dbgToggle = menuSec.querySelector('.ao-toggle');
@@ -243,11 +245,11 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     ui.update(F('camera-idle', { tracking: null }));
     check('tracking=null не ломает UI', st1.textContent.includes('Камера выключена'));
 
-    /* 9. DEBUG / НЕ CV */
+    /* 9. Плашка «Демо без камеры · клавиатура» (была «DEBUG / НЕ CV») */
     for (const name of ['menu-debug', 'tutorial-debug', 'playing-debug', 'paused-debug']) {
       ui.update(F(name));
       const badge = $('.ao-debug');
-      check(`${name}: видна надпись DEBUG / НЕ CV`, isVisible(badge) && badge.textContent.includes('DEBUG / НЕ CV'));
+      check(`${name}: видна плашка «Демо без камеры · клавиатура»`, isVisible(badge) && badge.textContent.includes('Демо без камеры'));
     }
     ui.update(F('playing'));
     check('в CV-бою надписи DEBUG нет', !isVisible($('.ao-debug')));
@@ -604,7 +606,7 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
       const errNode = $('.ao-cvdock .ao-gread__err');
       check('«ОШИБКА»: красная рамка превью и текст подсказки', $('.ao-cvdock').getAttribute('data-err') === 'on' && isVisible(errNode) && /Сомкни кончики/.test(errNode.textContent), errNode && errNode.textContent);
       const item = (k) => $(`.ao-cheat__item[data-key="${k}"]`);
-      check('шпаргалка: 6 жестов, сработавший «Выброс» подсвечен', layer.querySelectorAll('.ao-cheat__item').length === 6 && item('burst').getAttribute('data-state') === 'active', item('burst') && item('burst').getAttribute('data-state'));
+      check('шпаргалка: 7 жестов ([W3-MAGIC] + «ладони вместе → растянуть»), сработавший «Выброс» подсвечен', layer.querySelectorAll('.ao-cheat__item').length === 7 && item('burst').getAttribute('data-state') === 'active', item('burst') && item('burst').getAttribute('data-state'));
       check('шпаргалка: «Рывок» на перезарядке тускнеет', item('dash').getAttribute('data-state') === 'cooldown' && getComputedStyle(item('dash')).opacity < 0.7);
       const small = [...layer.querySelectorAll('.ao-cheat *, .ao-cvdock .ao-gread *')].filter((n) => isVisible(n) && n.childNodes.length && [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()) && parseFloat(getComputedStyle(n).fontSize) < 14);
       check('шпаргалка и подписи — шрифт не меньше 14 px', small.length === 0, small.map((n) => `${n.className}:${getComputedStyle(n).fontSize}`).join(', '));
@@ -625,12 +627,13 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
       check('в режиме презентации <html> не получает стилей панели (не fixed, указатель работает)', htmlCs.position !== 'fixed' && htmlCs.pointerEvents !== 'none', `${htmlCs.position}/${htmlCs.pointerEvents}`);
       // в 60 % ширины длинные экраны могут прокручиваться, но главная кнопка обязана быть видна сразу
       const presFail = [];
-      for (const [name, label] of [['menu', 'Начать'], ['tutorial-live', 'В бой'], ['paused-lost', 'Продолжить бой']]) {
+      for (const [name, labels] of [['menu', ['Начать', 'Играть']], ['tutorial-live', ['В бой', 'Пропустить']], ['paused-lost', ['Продолжить бой']]]) {
         if (!fixtures[name]) continue;
         ui.update(F(name));
         await frame();
         const pnl = $$('.ao-screen').filter(isVisible).map((sc) => sc.querySelector('.ao-panel'))[0];
-        const b = pnl && btnByText(pnl, label);
+        const label = labels.join('/');
+        const b = pnl && labels.map((l) => btnByText(pnl, l)).find(Boolean);
         const r = b && b.getBoundingClientRect(), pr = pnl && pnl.getBoundingClientRect();
         if (!r || r.top < pr.top - 1 || r.bottom > Math.min(pr.bottom, H) + 1 || r.left < 0.4 * W - 1) presFail.push(`${name}: «${label}» ${r ? Math.round(r.top) + '..' + Math.round(r.bottom) : 'нет'}`);
       }
@@ -650,6 +653,21 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
       pbtn.click();
       ui.update(F('menu'));
       check('кнопка «Режим презентации · P» в меню включает и выключает режим', onByClick && !document.documentElement.classList.contains('ao-present'));
+      const keyOn = (node) => node.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', bubbles: true, cancelable: true }));
+      const radio = $('.ao-herocard__input');
+      keyOn(radio);
+      ui.update(F('menu'));
+      const onRadio = document.documentElement.classList.contains('ao-present');
+      keyOn(radio);
+      ui.update(F('menu'));
+      const txt = document.createElement('input');
+      txt.type = 'text';
+      layer.append(txt);
+      keyOn(txt);
+      ui.update(F('menu'));
+      const onText = document.documentElement.classList.contains('ao-present');
+      txt.remove();
+      check('P работает с фокусом на радиокнопке героя и молчит в текстовом поле', onRadio && !onText && !document.documentElement.classList.contains('ao-present'));
       ui.update(F('playing-debug'));
       await frame();
       key('p', { code: 'KeyP' });
