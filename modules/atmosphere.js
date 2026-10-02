@@ -224,7 +224,7 @@ void main() {
   cloudCol += uCloudUnder * ( 1.0 - smoothstep( 0.02, 0.32, el ) ) * ( 0.45 + 0.55 * c1 );
   col = mix( col, cloudCol, cm * 0.9 );
   float edge = clamp( cm * ( 1.0 - cm ) * 4.0, 0.0, 1.0 );
-  col += mix( uCorona, uGold, uGoldK ) * uCoronaI * edge * lit * ( 0.32 + 0.22 * uGoldK );
+  col += mix( uCorona, uGold, uGoldK * pow( max( cs, 0.0 ), 24.0 ) ) * uCoronaI * edge * lit * 0.32;   // [W3-КИНО] золото — только у затмения
 
   // Корона: лучи по полярному углу вокруг диска (бесшовно через точку на окружности).
   vec3 t1 = normalize( cross( uSun, vec3( 0.0, 1.0, 0.0 ) ) );
@@ -242,22 +242,23 @@ void main() {
   float haloX = ( ang - 0.38 ) / 0.014;
   float halo = exp( - haloX * haloX ) * 0.05;
   // [W3-КИНО] золотое кольцо у самого диска, дальше корона уходит в холодный цвет
-  vec3 corC = mix( uCorona, uGold, uGoldK * 0.85 * exp( - max( rimD, 0.0 ) / 0.03 ) );
+  vec3 corC = mix( uCorona, uGold, uGoldK * 0.55 * exp( - max( rimD, 0.0 ) / 0.02 ) );
   col += corC * uCoronaI * ( corona * outside * ( 1.0 - cm * 0.7 ) + halo );
 
   // Диск и раскалённая кромка; «бусина» — точка, где из-за диска выглядывает свет.
   float disc = 1.0 - smoothstep( uDiscR - 0.0016, uDiscR, ang );
   col = mix( col, mix( vec3( 0.0035, 0.0045, 0.0065 ), uCorona * uCoronaI * 6.0 + vec3( 2.2, 2.0, 1.7 ), uSunDisc ), disc );
-  col += mix( uCorona, uGold, uGoldK * 0.9 ) * uCoronaI * exp( - abs( rimD ) / 0.0024 ) * 3.2;
+  col += mix( uCorona, uGold, uGoldK * 0.7 ) * uCoronaI * exp( - abs( rimD ) / 0.0024 ) * 3.2;
   float beadA = pa - 2.35;
   beadA = atan( sin( beadA ), cos( beadA ) );
   col += vec3( 1.0, 0.97, 0.92 ) * uBead * exp( - beadA * beadA / 0.018 ) * exp( - abs( rimD ) / 0.006 ) * 9.0;
 
   // Далёкая молния: облако вспыхивает изнутри.
-  float fl = uFlash * exp( - ( 1.0 - dot( d, uFlashDir ) ) * 14.0 );
+  // [W3-КИНО] диск затмения закрывает облака: вспышка за ним не просвечивает
+  float fl = uFlash * exp( - ( 1.0 - dot( d, uFlashDir ) ) * 14.0 ) * ( 1.0 - disc );
   col += ( cm * 1.6 + 0.2 ) * fl * uFlashCol;
   // [W3-КИНО] вспышка неба (flash): облака светлеют по всему небу
-  col += uFlashCol * uStrike * ( 0.06 + 0.3 * cm );
+  col += uFlashCol * uStrike * ( 0.06 + 0.3 * cm ) * ( 1.0 - disc );
 
   // [W3-КИНО] Разряд: ломаный канал от облаков к горизонту у uFlashDir, с ответвлением.
   // Координаты — тангенсы углов от направления вспышки; считается только в кадрах вспышки.
@@ -422,12 +423,12 @@ void main() {
   vec2 p = vW.xz * 0.21 + vec2( uTime * 0.05, uTime * 0.021 ) + vLayer * 5.31;
   float w = ashVN( vW.xz * 0.07 - vec2( uTime * 0.016, - uTime * 0.01 ) + vLayer * 2.7 );
   float n = ashHazeFbm( p + w * 1.4 );
-  float m = smoothstep( 0.3, 0.8, n ) * ( 0.45 + 0.55 * w );
+  float m = smoothstep( 0.22, 0.75, n ) * ( 0.5 + 0.5 * w );
   vec2 hv = V.xz / max( length( V.xz ), 1e-3 );
   vec2 sh = uSun.xz / max( length( uSun.xz ), 1e-3 );
   float fwd = pow( max( dot( hv, sh ), 0.0 ), 5.0 );   // к затмению дымка светится (рассеяние вперёд)
   vec3 c = mix( uHazeA, uHazeB, fwd ) * ( 0.8 + 0.4 * n );
-  gl_FragColor = vec4( c, clamp( m * k * ( 1.0 + 0.6 * fwd ), 0.0, 1.0 ) );
+  gl_FragColor = vec4( c, clamp( m * k * ( 1.0 + 0.35 * fwd ), 0.0, 1.0 ) );
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -447,8 +448,8 @@ export function createAtmosphere({ THREE, scene, renderer, camera, parent, G, M,
     fogClear: col(0x3e5249),   // [ASHEN_V3] воздух эльфийской деревни: теплее и светлее (setLocalClear)
     // [W3-КИНО] золото короны; фаза 2 — багровое небо, тлеющий горизонт, зарево под облаками
     gold: col(0xffc46a), goldRed: col(0xff7a2e),
-    domeLowRed: col(0x6a1c10), domeHighRed: col(0x1d0508), domeCoronaRed: col(0xb23a18),
-    fogBaseRed: col(0x34141a), fogGlowRed: col(0xd8603a), cloudUnderRed: col(0xb83418),
+    domeLowRed: col(0x701614), domeHighRed: col(0x1d0508), domeCoronaRed: col(0xa82c18),
+    fogBaseRed: col(0x34141a), fogGlowRed: col(0xcc4630), cloudUnderRed: col(0xb83418),
     flashCol: col(0xc2cbe8), flashColRed: col(0xffa08a),
     boltCore: col(0xf2f0ff), boltGlow: col(0x9c86ff), boltCoreRed: col(0xffe6dc), boltGlowRed: col(0xff4a2a),
     // [W3-КИНО] низовая дымка: лунная синь / багровые угли / тёплый рассвет; *Glow — в сторону затмения
@@ -628,9 +629,9 @@ export function createAtmosphere({ THREE, scene, renderer, camera, parent, G, M,
   };
   // слои: высоты над полом, плотность, октавы шума
   const HAZE_TIERS = {
-    low: { n: 1, oct: 2, y: [0.3, 0, 0], a: [0.2, 0, 0] },
-    medium: { n: 2, oct: 3, y: [0.16, 0.48, 0], a: [0.17, 0.13, 0] },
-    high: { n: 3, oct: 4, y: [0.12, 0.35, 0.7], a: [0.15, 0.13, 0.1] },
+    low: { n: 1, oct: 2, y: [0.3, 0, 0], a: [0.3, 0, 0] },
+    medium: { n: 2, oct: 3, y: [0.16, 0.48, 0], a: [0.24, 0.19, 0] },
+    high: { n: 3, oct: 4, y: [0.12, 0.35, 0.7], a: [0.2, 0.17, 0.13] },
   };
   const HSEG = 40, HLAY = 3;
   const hazeGeo = new THREE.BufferGeometry();
@@ -769,22 +770,23 @@ varying vec3 vAshWorldPos;`;
   // bolt = true — ещё и видимый разряд (не в reducedMotion; на low останется только свечение облаков).
   function flash(amount = 1, bolt = false) {
     const a = clamp(Number(amount) || 0, 0, 1);
-    state.strike = Math.max(state.strike, a);
+    state.strike = Math.max(state.strike, a * (state.reduced ? 0.35 : 1));   // reducedMotion — мягко
     if (a <= 0 || state.flashT > 0) return;
     if (bolt && !state.reduced) startFlash(0.7 + 0.5 * a, true, true);
     else aimFlash(true);
   }
-  // [W3-КИНО] куда бьёт молния: фаза 1 — широкий сектор вокруг затмения, фаза 2 и flash() — ближе к кадру
+  // [W3-КИНО] куда бьёт молния: фаза 1 — широкий сектор вокруг затмения, фаза 2 и flash() — в кадре рядом с боссом.
+  // Свечение облака — у верха разряда; ey — тангенс высоты верха.
   function aimFlash(near) {
     const R = look.red;
     const close = near || R > 0.5;
     const side = rnd() < 0.5 ? -1 : 1;
-    const off = close ? side * (12 + rnd() * (near ? 34 : 46)) : -70 + rnd() * 140;
+    const off = close ? side * (10 + rnd() * 30) : -70 + rnd() * 140;
     const a = deg(ECLIPSE.azimuth + off) + state.follow;
-    const ey = close ? 0.13 + rnd() * 0.15 : 0.08 + rnd() * 0.18;
-    skyUniforms.uFlashDir.value.set(Math.sin(a), ey, Math.cos(a)).normalize();
+    const ey = close ? 0.2 + rnd() * 0.14 : 0.14 + rnd() * 0.16;
+    skyUniforms.uFlashDir.value.set(Math.sin(a), ey - 0.02, Math.cos(a)).normalize();
     const sd = skyUniforms.uBoltSeed.value;
-    sd.x = rnd() * 500; sd.z = ey + 0.05; sd.w = rnd() < 0.5 ? -1 : 1;
+    sd.x = rnd() * 500; sd.z = ey; sd.w = rnd() < 0.5 ? -1 : 1;
   }
   function startFlash(amp, bolt, near) {
     state.flashT = 0.0001;
@@ -892,13 +894,13 @@ varying vec3 vAshWorldPos;`;
     MG.sat = lerp(1, gg.sat, mw); MG.contrast = gg.contrast * mw;
 
     // Молния раз в 20–40 с (не в reducedMotion: вспышки — риск для светочувствительных).
-    // [W3-КИНО] в фазе 2 — каждые 3–8 с (по силе R), с видимым разрядом.
+    // [W3-КИНО] в фазе 2 — каждые 2,5–7 с (по силе R), с видимым разрядом.
     look.red = R;
     if (!state.reduced) {
       state.nextFlash = Math.min(state.nextFlash, lerp(40, 8, R));
       state.nextFlash -= dt;
       if (state.nextFlash <= 0 && state.flashT === 0) {
-        state.nextFlash = lerp(20, 3, R) + rnd() * lerp(20, 5, R);
+        state.nextFlash = lerp(20, 2.5, R) + rnd() * lerp(20, 4.5, R);
         startFlash(1 + 0.25 * R, true, false);
       }
     }
@@ -909,11 +911,12 @@ varying vec3 vAshWorldPos;`;
       fl = (Math.exp(-Math.pow((ft - 0.04) / 0.03, 2)) + 0.7 * Math.exp(-Math.pow((ft - 0.13) / 0.035, 2))) * state.flashAmp;
       if (ft > 0.3) { state.flashT = 0; state.bolt = false; }
     }
-    const strikeSky = state.strike * (state.reduced ? 0.35 : 1);
-    skyUniforms.uFlash.value = fl * 1.4 + strikeSky * 0.9;
-    skyUniforms.uStrike.value = strikeSky;
-    // [W3-КИНО] разряд: не на low и не в reducedMotion; ширина ядра — угловой размер пикселя
+    const strikeSky = state.strike;
+    // [W3-КИНО] разряд: не на low и не в reducedMotion; ширина ядра — угловой размер пикселя.
+    // С разрядом свечение облака слабее: иначе белое пятно съедает сам канал.
     const boltOn = state.bolt && state.quality !== 'low' && !state.reduced;
+    skyUniforms.uFlash.value = fl * (boltOn ? 0.6 : 1.4 - 0.5 * R) + strikeSky * 0.9;
+    skyUniforms.uStrike.value = strikeSky;
     skyUniforms.uBolt.value = boltOn ? fl * (1 - mw) : 0;
     if (boltOn && camera && camera.isPerspectiveCamera) {
       const hpx = renderer && renderer.domElement && renderer.domElement.height > 0 ? renderer.domElement.height : 720;
@@ -934,7 +937,8 @@ varying vec3 vAshWorldPos;`;
 
     state.strike *= Math.exp(-dt / 0.06);
     look.dawn = state.dawn; look.dark = state.dark; look.zone = mw;
-    look.flash = clamp(Math.max(fl, state.strike), 0, 1);
+    const lf2 = Math.max(fl, state.strike);
+    look.flash = lf2 < 1e-3 ? 0 : clamp(lf2, 0, 1);
     const keyCol = _keyCol.copy(P.key).lerp(P.coronaRed, R * 0.3).lerp(P.keyDawn, state.dawn).lerp(mood.sunColor, mw);
     return {
       keyColor: keyCol,
