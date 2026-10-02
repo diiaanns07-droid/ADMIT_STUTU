@@ -226,6 +226,19 @@ let cinema = null;
 import('./core/cinemaFeed.js').then((m) => {
   try { cinema = m.createCinemaFeed({ pulse: (kind, k, pos, o) => (postfx && typeof postfx.pulse === 'function' ? postfx.pulse(kind, k, pos, o) : false) }); } catch (e) { console.warn('[W3-КИНО] cinemaFeed', e); }
 }).catch((e) => console.warn('[W3-КИНО] cinemaFeed.js не загружен:', e && e.message));
+// Гроза второй фазы (modules/atmosphere.js): гром — низкий раскат на сэмпле удара Регента (тем тише и ниже, чем
+// дальше молния), молния — короткий холодный отсвет на экране. Только в бою; на low и в reducedMotion молний нет.
+const STORM_FLASH = { color: 0xc9d6ff, dur: 0.14 };
+const _thunder = { gain: 0, rate: 1 };
+try {
+  if (world && world.atmosphere && typeof world.atmosphere.setStormListener === 'function') {
+    world.atmosphere.setStormListener((type, k) => {
+      if (app.screen !== 'playing') return;
+      if (type === 'thunder') { _thunder.gain = 0.22 + 0.4 * k; _thunder.rate = 0.5 + 0.12 * k; cue('boss_slam', _thunder); }
+      else if (type === 'bolt' && postfx && typeof postfx.pulse === 'function') postfx.pulse('flash', 0.08 + 0.08 * k, null, STORM_FLASH);
+    });
+  }
+} catch (e) { console.warn('[W3-КИНО] гроза', e); }
 const combatCfg = typeof combat.getConfig === 'function' ? combat.getConfig() : null;
 
 // [ASHEN_V2] прогресс героя: очки клятвы (отжимания, угли на плато) → улучшения боя.
@@ -587,7 +600,7 @@ function screenAudio(screen) {
   } catch (e) { /* до инициализации звука */ }
 }
 const sfxCues = createCueTracker();
-function cue(name) { if (name && AUDIO_ON && effects && typeof effects.cue === 'function') { try { effects.cue(name); } catch (e) { /* ignore */ } } }
+function cue(name, param) { if (name && AUDIO_ON && effects && typeof effects.cue === 'function') { try { effects.cue(name, param); } catch (e) { /* ignore */ } } }   // [W3-КИНО] param: { gain, rate } — гром
 let previewTimer = 0;
 function previewVolume() { clearTimeout(previewTimer); previewTimer = setTimeout(() => cue('ui_ok'), 120); } // проба после остановки ползунка
 // [SFX] AudioContext разблокируется первым же кликом или клавишей (браузер не даёт звук без жеста игрока)

@@ -338,6 +338,81 @@ await test('cinemaFeed + postfx (low): импульсы доходят до на
   post.dispose();
 });
 
+// ---------------------------------------------------------------- atmosphere: цвет фаз и гроза второй фазы
+const { createAtmosphere, STORM } = await import('../modules/atmosphere.js');
+function makeAtmo(quality = 'medium', reducedMotion = false) {
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(58, 16 / 9, 0.1, 1200);
+  camera.position.set(0, 3, 10); camera.lookAt(0, 2, 0); camera.updateMatrixWorld();
+  const renderer = { toneMappingExposure: 1 };   // PMREM упадёт мягко (нет WebGL)
+  const atmo = createAtmosphere({ THREE, scene, renderer, camera, parent: scene, quality, reducedMotion });
+  const heard = [];
+  atmo.setStormListener((type, k) => heard.push({ type, k }));
+  return { scene, atmo, heard };
+}
+const runAtmo = (atmo, sec, info) => { let out = null; for (let t = 0; t < sec; t += 1 / 60) out = atmo.update(1 / 60, info); return out; };
+const P1 = { stageW: 0, status: 'playing' }, P2 = { stageW: 1, status: 'playing' };
+
+await test('atmosphere.look и setPhaseBoost: postfx получает веса фаз, рывок сцены перехода — сразу', async () => {
+  const { atmo } = makeAtmo();
+  ok(atmo.look && typeof atmo.setPhaseBoost === 'function' && typeof atmo.setStormListener === 'function', 'API');
+  runAtmo(atmo, 1, P1);
+  ok(atmo.look.red < 0.01 && atmo.look.dawn === 0, 'фаза 1 ' + JSON.stringify(atmo.look));
+  atmo.setPhaseBoost(1);
+  runAtmo(atmo, 1 / 60, P1);
+  ok(atmo.look.red > 0.99, 'рывок сразу ' + atmo.look.red);
+  atmo.setPhaseBoost(0);
+  runAtmo(atmo, 1 / 60, P1);
+  ok(atmo.look.red < 0.05, 'снят ' + atmo.look.red);
+  runAtmo(atmo, 8, { stageW: 1, status: 'victory' });
+  ok(atmo.look.dawn > 0.9 && atmo.look.red < 0.05, 'победа — рассвет ' + JSON.stringify(atmo.look));
+  atmo.dispose();
+});
+
+await test('гроза второй фазы (medium): тучи набирают вес, первая молния вскоре, гром позже и по одному на молнию, дымка видна', async () => {
+  const { atmo, heard, scene } = makeAtmo('medium');
+  runAtmo(atmo, 5, P1);
+  ok(atmo.storm.w === 0 && atmo.storm.bolts === 0 && atmo.storm.haze === 0, 'фаза 1 без грозы ' + JSON.stringify(atmo.storm));
+  ok(!scene.getObjectByName('storm-haze').visible, 'дымка скрыта в фазе 1 (0 draw calls)');
+  let tFirst = -1;
+  for (let t = 0; t < 25; t += 1 / 60) { atmo.update(1 / 60, P2); if (tFirst < 0 && atmo.storm.bolts > 0) tFirst = t; }
+  const s = atmo.storm;
+  ok(s.w > 0.95 && s.hq, 'вес грозы ' + JSON.stringify(s));
+  ok(tFirst > 0 && tFirst < 3.5, 'первая молния вскоре после перехода: ' + tFirst.toFixed(2));
+  ok(s.bolts >= 3, 'молнии идут ' + s.bolts);
+  const bolts = heard.filter((h) => h.type === 'bolt').length, th = heard.filter((h) => h.type === 'thunder').length;
+  ok(bolts === s.bolts && th >= bolts - 1 && th <= bolts, `гром на каждую молнию: ${bolts}/${th}`);
+  ok(heard[0].type === 'bolt' && heard[1].type === 'thunder', 'сначала свет, потом звук');
+  ok(heard.every((h) => h.k > 0 && h.k <= 1.25), 'сила в разумных пределах');
+  ok(s.haze === STORM.haze.medium && scene.getObjectByName('storm-haze').visible, 'дымка medium ' + s.haze);
+  atmo.setQuality('high');
+  runAtmo(atmo, 1 / 60, P2);
+  ok(atmo.storm.haze === STORM.haze.high, 'дымка high ' + atmo.storm.haze);
+  // победа: рассвет разгоняет тучи
+  runAtmo(atmo, 12, { stageW: 1, status: 'victory' });
+  ok(atmo.storm.w < 0.05 && atmo.storm.haze === 0, 'тучи ушли ' + JSON.stringify(atmo.storm));
+  atmo.dispose();
+  ok(!scene.getObjectByName('storm-haze'), 'dispose убрал дымку');
+});
+
+await test('гроза на low — только цвет; reducedMotion — без молний; в лесу (настроение зоны) — без грозы', async () => {
+  const L = makeAtmo('low');
+  runAtmo(L.atmo, 20, P2);
+  ok(L.atmo.storm.w > 0.9 && !L.atmo.storm.hq, 'цвет грозы есть ' + JSON.stringify(L.atmo.storm));
+  ok(L.atmo.storm.bolts === 0 && L.heard.length === 0 && L.atmo.storm.haze === 0, 'ни молний, ни дымки на low');
+  L.atmo.dispose();
+  const R = makeAtmo('high', true);
+  runAtmo(R.atmo, 20, P2);
+  ok(R.atmo.storm.bolts === 0 && R.heard.length === 0, 'reducedMotion — без вспышек');
+  ok(R.atmo.storm.haze === STORM.haze.high, 'дымка остаётся');
+  R.atmo.dispose();
+  const F = makeAtmo('high');
+  F.atmo.setZoneMood({ weight: 1 });
+  runAtmo(F.atmo, 10, P2);
+  ok(F.atmo.storm.w < 0.05 && F.atmo.storm.bolts === 0, 'в лесу гроза не видна ' + JSON.stringify(F.atmo.storm));
+  F.atmo.dispose();
+});
+
 // ---------------------------------------------------------------- bossFinale
 function makeWorld() {
   const body = new THREE.Group();
