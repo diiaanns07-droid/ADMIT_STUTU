@@ -3,8 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Ashen Oath</title>
-  <meta name="description" content="ASHEN OATH — браузерный бой с каменным стражем, управление веб-камерой.">
+  <title>ASHEN OATH — игра жестами</title>
+  <meta name="description" content="Камера вместо джойстика: бой с Регентом Нимба, где щит, рывок, снаряды и сферы — жесты рук. Играется прямо в браузере, без установки и контроллера; видео не покидает компьютер.">
+  <!-- [W3-CURSOR] превью ссылки (Telegram, WhatsApp, соцсети) и установка как приложение -->
+  <meta name="theme-color" content="#0d1016">
+  <meta name="color-scheme" content="dark">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="ASHEN OATH">
+  <meta property="og:locale" content="ru_RU">
+  <meta property="og:url" content="https://diiaanns07-droid.github.io/ADMIT_STUTU/">
+  <meta property="og:title" content="ASHEN OATH — игра жестами">
+  <meta property="og:description" content="Камера вместо джойстика: щит, рывок и заклинания — жестами рук. Бой с Регентом Нимба прямо в браузере, без установки.">
+  <meta property="og:image" content="https://diiaanns07-droid.github.io/ADMIT_STUTU/docs/og.jpg">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Кадр боя ASHEN OATH: герой бросает сферу в Регента Нимба на арене под затмением">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="ASHEN OATH — игра жестами">
+  <meta name="twitter:description" content="Камера вместо джойстика: щит, рывок и заклинания — жестами рук. Прямо в браузере.">
+  <meta name="twitter:image" content="https://diiaanns07-droid.github.io/ADMIT_STUTU/docs/og.jpg">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230d1016'/%3E%3Cpath d='M16 5 L25 27 H7 Z' fill='none' stroke='%23c9a45c' stroke-width='2.5'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="modules/ui.css">
@@ -52,7 +72,7 @@
       var timedOut = false;
       var domReady = false;
       // Объём стартовой загрузки (статические импорты main.js + стили). Обновляет tools/sw_manifest.mjs.
-      var BOOT = /*AO_BOOT*/{"bytes":3132271,"files":49,"big":["vendor/npm/three@0.185.1/build/three.core.min.js","vendor/npm/three@0.185.1/build/three.module.min.js","modules/world.js"]}/*/AO_BOOT*/;
+      var BOOT = /*AO_BOOT*/{"bytes":3132934,"files":49,"big":["vendor/npm/three@0.185.1/build/three.core.min.js","vendor/npm/three@0.185.1/build/three.module.min.js","modules/world.js"]}/*/AO_BOOT*/;
       var prog = { bytes: 0, files: 0, pct: 0, label: 'Код игры', lastT: Date.now(), startT: Date.now(), done: {} };
       var seen = {};
       function el(id) { return document.getElementById(id); }

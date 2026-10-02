@@ -542,7 +542,7 @@ function autoResumeTick(now) {
   const auto = QUICK && !app.debug && app.screen === 'paused' && app.pauseReason === 'tracking';
   if (!auto) { app.autoResume = null; return; }
   const r = app.autoResume;
-  if (trackingReady()) {
+  if (trackingReady() && !cursorHolds()) {   // [W3-CURSOR] палец на кнопке паузы — отсчёт ждёт
     if (!r) { app.autoResume = { at: now + AUTO_RESUME_MS, badSince: 0 }; return; }
     r.badSince = 0;
     if (now >= r.at) callbacks.onResume({ auto: true });
@@ -894,14 +894,15 @@ if (slot) { slot.appendChild(video); slot.appendChild(overlay); }
 const trackingHud = createTrackingHud({ canvas: overlay });
 // ---------------------------------------------------------------- [W3-CURSOR] курсор-кисть
 // «Камера вместо джойстика» — и вместо мыши: на экранах с кнопками указательный палец правой руки ведёт
-// светящееся кольцо (core/handCursor.js), клик — задержать на кнопке 0,8 с или щепоть. В бою, интро, обучении,
-// на экранах камеры и в «Отладке с клавиатуры» курсора нет. ?cursor=0 — выключить совсем.
+// светящееся кольцо (core/handCursor.js), клик — задержать на кнопке 0,8 с или щепоть. В бою, интро, на шагах обучения
+// (жесты там — упражнение), на экранах камеры и в «Отладке с клавиатуры» курсора нет; обучение пройдено — курсор
+// нажимает «В бой». ?cursor=0 — выключить совсем.
 // В меню камера включается сама, если разрешение на неё уже дано (окно запроса браузера не всплывает);
 // при первом запуске разрешение спрашивает «Играть» (Enter), дальше мышь не нужна.
 const CURSOR_ON = PERF_Q.get('cursor') !== '0';
 const CURSOR_SCREENS = new Set(['menu', 'paused', 'victory', 'defeat', 'oath', 'technique', 'error']);
 const CURSOR_NO_PINCH = new Set(['technique']);   // в тренажёре щепоть «OK» — упражнение, а не клик
-let handCursor = null;
+let handCursor = null, cursorOut = null;
 const cursorCam = { granted: false, startP: null };
 if (CURSOR_ON) {
   try { handCursor = createHandCursor({ onClick: () => cue('ui_ok') }); } catch (e) { console.warn('[W3-CURSOR] курсор', e); handCursor = null; }
@@ -917,6 +918,8 @@ if (CURSOR_ON) {
 // камера в меню нужна курсору: не отладка, разрешение уже есть
 function cursorCamAllowed() { return !!handCursor && !app.debug && cursorCam.granted; }
 function cursorWantsCamera() { return cursorCamAllowed() && !app.error && (app.screen === 'menu' || app.screen === 'oath'); }
+// кольцо на кнопке: игрок выбирает пункт паузы — автопродолжение 3-2-1 не перебивает его
+function cursorHolds() { return !!(cursorOut && cursorOut.visible && cursorOut.targetId !== null); }
 function cursorTick(now) {
   if (!handCursor) return;
   const vst = vision ? visionStatus().status : 'idle';
@@ -927,10 +930,11 @@ function cursorTick(now) {
       .finally(() => { cursorCam.startP = null; });
   }
   const book = !!uiRoot.querySelector('.ao-screen--book:not([hidden])');
-  const active = !app.debug && !!vision && (CURSOR_SCREENS.has(app.screen) || book);
+  const tutDone = app.screen === 'tutorial' && !!uiRoot.querySelector('.ao-trn-stage.is-done');
+  const active = !app.debug && !!vision && (CURSOR_SCREENS.has(app.screen) || book || tutDone);
   let hands = null, pose = null;
   if (active) { try { hands = vision.getHands(); pose = vision.getPose(); } catch (e) { hands = null; pose = null; } }
-  try { handCursor.update(now, { hands, pose, active, pinch: !CURSOR_NO_PINCH.has(app.screen) || book }); } catch (e) { console.warn('[W3-CURSOR]', e); handCursor = null; }
+  try { cursorOut = handCursor.update(now, { hands, pose, active, pinch: !CURSOR_NO_PINCH.has(app.screen) || book }); } catch (e) { console.warn('[W3-CURSOR]', e); handCursor = null; cursorOut = null; }
 }
 // [ТВИСТ «ОШИБКА»] свой слой поверх overlay: точки, которые надо исправить (getActiveHint) и условия тренажёра.
 // COACH_OVERLAY = false — выключить (например, если подсветку рисует сам трекинг-HUD).

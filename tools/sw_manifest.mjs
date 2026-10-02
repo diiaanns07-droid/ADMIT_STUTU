@@ -30,6 +30,7 @@ const CODE_RE = /\.(m?js|css|html|json)$/;
 const appFiles = [
   ...readdirSync(ROOT).filter((f) => /\.(m?js|css)$/.test(f) && f !== 'sw.js' && statSync(join(ROOT, f)).isFile()),
   'index.html',
+  ...(existsSync(join(ROOT, 'manifest.webmanifest')) ? ['manifest.webmanifest'] : []),   // [W3-CURSOR] манифест приложения
   ...['modules', 'core', 'net'].flatMap((d) => walk(join(ROOT, d))).filter((f) => CODE_RE.test(f)),
 ].sort();
 const vendorAll = walk(join(ROOT, 'vendor')).filter((f) => !/(^|\/)(LICENSE|README)[^/]*$/i.test(f) && !/\.md$/.test(f)).sort();
