@@ -51,6 +51,7 @@ export const DEFAULT_LAYOUT = Object.freeze({
 const EPS = 1e-9;
 const TWO_PI = Math.PI * 2;
 const ATTACK_KINDS = new Set(['slam', 'orb', 'nova']);
+export const DIFFICULTY_LEVELS = Object.freeze(['easy', 'normal']);   // [FEEL] уровни сложности боя с Регентом
 const BOSS_ACTIONS = new Set(['idle', 'windup', 'attack', 'recover']);
 const MISS = Object.freeze({ hit: false, t: -1 });
 
@@ -126,6 +127,20 @@ export const DEFAULT_COMBAT_CONFIG = deepFreeze({
     energyRegenDelay: 0.5,  // пауза регена после траты энергии
     hitGrace: 0.35,         // неуязвимость после полученного удара
     hitReactTime: 0.3,      // action 'hit', огонь подавлен
+  },
+  // [НОВИЧОК] «Автоход» (input.autoWalk): герой сам идёт к Регенту, а в арене обходит его по кругу.
+  // Ввод движения рукой не нужен — левая свободна для щита и рывка; рывок, щит и чары работают как обычно.
+  autoWalk: {
+    approachSpeed: 4.6,     // м/с: от места старта к арене (≈4 с с плато)
+    orbitRadius: 6.5,       // м: дистанция обхода (снаряды долетают, «удар об землю» Регента — не всегда)
+    orbitSpeed: 2.3,        // м/с по окружности
+    radialGain: 1.6,        // 1/с: поправка дистанции к orbitRadius
+    radialMax: 2.2,         // м/с: не быстрее
+    flipEvery: 9,           // с: обход меняет сторону (не зависает у одной колонны, выглядит живо)
+    stuckRatio: 0.35,       // прошли меньше этой доли желаемого пути…
+    stuckTime: 0.45,        // …столько секунд — упёрлись: обход препятствия
+    detourDeg: 70,          // обход препятствия: курс уводится вбок на столько градусов…
+    detourTime: 1.2,        // …на столько секунд
   },
   dash: {
     distance: 3.6,          // м в направлении рывка (V2: любое направление)
@@ -230,6 +245,13 @@ export const DEFAULT_COMBAT_CONFIG = deepFreeze({
     aimHeight: 2.2,
     turnRate: 2.5,          // рад/с
     hitReactTime: 0.35,     // только от burst, только в idle/recover
+  },
+  // [FEEL] сложность боя с Регентом: множители здоровья и урона стража. Уровень выбирает игрок
+  // (settings.difficulty → setDifficulty), здесь по умолчанию 'normal' — прежний баланс без изменений.
+  difficulty: {
+    level: 'normal',        // 'easy' | 'normal'
+    easy: { bossHp: 0.7, bossDamage: 0.7 },
+    normal: { bossHp: 1, bossDamage: 1 },
   },
   bossAttack: {             // санитарные границы AttackSpec от bossBrain
     minWindup: 0.35,
@@ -342,6 +364,9 @@ function normalizeConfig(C) {
   C.encounter.leash = clamp(C.encounter.leash, 0, 100);
   C.encounter.aggroMemory = clamp(C.encounter.aggroMemory, 0, 120);
   C.burst.bothHandsBonus = clamp(C.burst.bothHandsBonus, 0, 3);
+  const df = C.difficulty;   // [FEEL] сложность: множители в разумных пределах, неизвестный уровень — обычная
+  for (const lv of DIFFICULTY_LEVELS) { df[lv].bossHp = clamp(df[lv].bossHp, 0.2, 3); df[lv].bossDamage = clamp(df[lv].bossDamage, 0, 3); }
+  if (!DIFFICULTY_LEVELS.includes(df.level)) df.level = 'normal';
   const bo = C.bolt;
   bo.interval = Math.max(0.05, bo.interval);
   bo.speed = clamp(bo.speed, 1, 120);
@@ -566,7 +591,8 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       seenIds: new Set(),
       seenOrder: [],
       stats: { damageDealt: 0, damageTaken: 0, dodges: 0, blocks: 0 },
-      input: { moveX: 0, moveZ: 0, attack: false, shield: false, valid: false, conjure: null, viewYaw: NaN, steer: false },
+      input: { moveX: 0, moveZ: 0, attack: false, shield: false, valid: false, conjure: null, viewYaw: NaN, steer: false, autoWalk: false },
+      auto: { dir: 1, flipT: 0, stuckT: 0, detourT: 0, detourSign: 1, lastX: null, lastZ: null, want: 0 },   // [НОВИЧОК] автоход
       engaged: engaged0,
       frame: { yaw: null, stickA: 0, idle: 0, target: null },
       move: { sprintT: 0, sprint: 0, dir: null, fullT: 0, cruise: null, blockedT: 0 },   // [V4] спринт и автобег
@@ -819,7 +845,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     const ok = isPlainObject(input) && input.valid === true && input.source !== 'none';
     if (!ok) {
       st.input.moveX = 0; st.input.moveZ = 0; st.input.attack = false; st.input.shield = false; st.input.valid = false;
-      st.input.conjure = null;
+      st.input.conjure = null; st.input.autoWalk = false;
       st.pendingDash = 0; st.pendingDashCam = null; st.pendingBurst = false; st.pendingRune = null; st.pendingThrow = null; st.p.charge = 0;
       st.pendingSpark = false; st.pendingSlash = null; st.pendingParry = false;
       if (hand) hand.clearInput(); // [HAND]
@@ -840,6 +866,11 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     if (ml > 1) { mx /= ml; mz /= ml; } // вектор, а не две независимые оси
     st.input.moveX = mx;
     st.input.moveZ = mz;
+    // [НОВИЧОК] автоход: main.js включает его настройкой (не в дуэли и не с клавиатуры)
+    st.input.autoWalk = input.autoWalk === true && !(PV && PV.on);
+    // [НОВИЧОК] режим жестов: в «Новичке» бой принимает только базовые действия (ход, щит, рывок,
+    // «OK»-огонь, выброс, сфера); импульсы остальных жестов отбрасываются, даже если их кто-то прислал
+    const novice = input.gestureMode === 'novice';
     st.input.conjure = readConjure(input.conjure);
     const thr = readThrow(input.throw);
     if (thr) st.pendingThrow = thr; // импульс: исполняется в ближайшем шаге, один раз
@@ -854,23 +885,23 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     if (dd) st.pendingDashCam = dd;
     else if (Number.isFinite(dsh) && dsh !== 0) st.pendingDashCam = { x: dsh > 0 ? 1 : -1, z: 0 };
     if (st.pendingDashCam) st.pendingDash = st.pendingDashCam.x >= 0 ? 1 : -1;
-    if (input.spark === true) st.pendingSpark = true;
-    if (isPlainObject(input.slash)) {
+    if (input.spark === true && !novice) st.pendingSpark = true;
+    if (isPlainObject(input.slash) && !novice) {
       const dir = Number(input.slash.dir) < 0 ? -1 : 1;
       st.pendingSlash = { dir, power: unit(input.slash.power, 0.6) };
     }
-    if (input.parry === true) st.pendingParry = true;
+    if (input.parry === true && !novice) st.pendingParry = true;
     if (input.burst === true) {
       st.pendingBurstBoth = input.burstHand === 'both';
       st.pendingBurst = true;
       const bp = Number(input.burstPower);
       st.pendingBurstPower = Number.isFinite(bp) && bp > 0 ? clamp(bp, 0, 1) : null;
     }
-    if (typeof input.rune === 'string' && RUNE_IDS.includes(input.rune)) st.pendingRune = input.rune;
-    if (typeof input.sigil === 'string' && SIGIL_IDS.includes(input.sigil)) st.pendingSigil = input.sigil;
+    if (typeof input.rune === 'string' && RUNE_IDS.includes(input.rune) && !novice) st.pendingRune = input.rune;
+    if (typeof input.sigil === 'string' && SIGIL_IDS.includes(input.sigil) && !novice) st.pendingSigil = input.sigil;
     const ch = Number(input.charge);
     st.p.charge = Number.isFinite(ch) ? clamp(ch, 0, 1) : 0;
-    if (hand) { try { hand.readInput(input); } catch (e) { console.warn('[combat] hand.readInput', e); } } // [HAND] input.bow / input.handSpell
+    if (hand) { try { hand.readInput(novice ? { ...input, bow: null, handSpell: null } : input); } catch (e) { console.warn('[combat] hand.readInput', e); } } // [HAND] input.bow / input.handSpell; [НОВИЧОК] без лука и магии рукой
   }
 
   function readVec2(v) {
@@ -973,7 +1004,8 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       radius: 0,
       windup: clamp(windup, A.minWindup, A.maxWindup),
       remaining: 0, duration: 0,
-      damage: clamp(damage, 0, A.maxDamage),
+      damage: scaleBossDamage(clamp(damage, 0, A.maxDamage)),   // [FEEL] множитель сложности — после санитарного предела
+      baseDamage: clamp(damage, 0, A.maxDamage),                // [FEEL] без сложности: от него — урон отражённой сферы
       blockable: spec.blockable === true,
       speed: 0, dir: null, pathEnd: null, travel: 0,
     };
@@ -1220,6 +1252,42 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     });
   }
 
+  // ---------------------------------------------------------------- [НОВИЧОК] автоход
+  // Желаемая скорость героя (мир, м/с) без руки игрока: вне арены — к Регенту (упёрся в препятствие —
+  // обходит вбок), в арене — по кругу на orbitRadius, сторона обхода меняется раз в flipEvery секунд.
+  // Пока слеплены чары, герой стоит (руки заняты, как и при ручном ходе).
+  function autoWalkVelocity(h) {
+    const P = st.p, A = st.auto, K = C.autoWalk;
+    // упёрлись: за прошлый шаг прошли заметно меньше желаемого
+    if (A.lastX !== null && A.want > 0.5 && h > 0) {
+      const got = Math.hypot(P.x - A.lastX, P.z - A.lastZ) / h;
+      A.stuckT = got < A.want * K.stuckRatio ? A.stuckT + h : 0;
+      if (A.stuckT >= K.stuckTime) { A.stuckT = 0; A.detourT = K.detourTime; A.detourSign = -A.detourSign; if (st.engaged) A.dir = -A.dir; }
+    }
+    A.lastX = P.x; A.lastZ = P.z;
+    if (A.detourT > 0) A.detourT = Math.max(0, A.detourT - h);
+    if (st.input.conjure || P.dead) { A.want = 0; return { x: 0, z: 0 }; }
+    const rx = P.x - BOSS.x, rz = P.z - BOSS.z, r = Math.hypot(rx, rz) || 1e-6;
+    const ur = { x: rx / r, z: rz / r };
+    let vx, vz;
+    if (st.engaged) {
+      A.flipT += h;
+      if (A.flipT >= K.flipEvery) { A.flipT = 0; A.dir = -A.dir; }
+      const vr = clamp((K.orbitRadius - r) * K.radialGain, -K.radialMax, K.radialMax);
+      vx = -ur.z * A.dir * K.orbitSpeed + ur.x * vr;
+      vz = ur.x * A.dir * K.orbitSpeed + ur.z * vr;
+    } else {
+      A.flipT = 0;
+      vx = -ur.x * K.approachSpeed; vz = -ur.z * K.approachSpeed;
+    }
+    if (A.detourT > 0) {
+      const a = A.detourSign * K.detourDeg * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a);
+      [vx, vz] = [vx * c + vz * sn, -vx * sn + vz * c];
+    }
+    A.want = Math.hypot(vx, vz);
+    return { x: vx, z: vz };
+  }
+
   // ---------------------------------------------------------------- [ASHEN_V2] движение
   // Свободное движение в осях камеры: кривая «ходьба → бег», разгон/торможение без «льда»,
   // коллизии по раскладке (подшаги — без проскоков на скорости рывка), земля по groundY.
@@ -1241,9 +1309,11 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       }
     } else {
       let ix = st.input.moveX, iz = st.input.moveZ;
+      const AW = st.input.autoWalk ? autoWalkVelocity(h) : null;   // [НОВИЧОК] автоход ведёт сам, ввод рукой не нужен
+      if (AW) { ix = 0; iz = 0; }
       // [V5] «Руль»: вне арены moveX поворачивает героя, moveZ ведёт его вперёд по курсу (оси ввода =
       // курс героя, см. viewYaw); в арене — обход Регента по кругу и сближение, без хода назад
-      if (st.input.steer) {
+      if (st.input.steer && !AW) {
         const turn = clamp(ix, -1, 1), fwd = Math.max(0, iz);
         if (!st.engaged) {
           P.yaw = wrapAngle(P.yaw - turn * cfg.moveSign * cfg.steerTurnRate * h);
@@ -1259,12 +1329,17 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       const dz = cfg.moveDeadzone;
       const M = st.move;
       // [V4] автобег: после спринта рука опущена — герой бежит сам; поднять руку (хватка) — стоп
+      if (M.cruise && AW) M.cruise = null;
       if (M.cruise) {
         M.cruise.t += h;
         const why = st.engaged ? 'engaged' : st.input.steer ? 'mode' : st.input.handUp || m > dz ? 'hand' : M.cruise.t > cfg.cruiseMaxTime ? 'timeout' : M.blockedT > 0.35 ? 'blocked' : P.shielding ? 'shield' : null;
         if (why) { emit('cruise_end', playerPos(), { reason: why }); M.cruise = null; M.sprint = why === 'hand' ? M.sprint : 0; M.blockedT = 0; }
       }
-      if (M.cruise && m <= dz) {
+      if (AW) {
+        const k = P.shielding ? C.shield.moveSpeedFactor : 1;
+        tvx = AW.x * k; tvz = AW.z * k; st.auto.want *= k;   // со щитом медленнее — это не «упёрлись»
+        M.sprintT = 0; M.fullT = 0; M.sprint = 0; M.dir = null;
+      } else if (M.cruise && m <= dz) {
         const ux = Math.sin(M.cruise.dir), uz = Math.cos(M.cruise.dir);
         const g0 = LAY.groundY(P.x, P.z), g1 = LAY.groundY(P.x + ux * 0.6, P.z + uz * 0.6), sl = (g1 - g0) / 0.6;
         const k = clamp(1 - cfg.slopeUp * Math.max(0, sl) + cfg.slopeDown * Math.max(0, -sl), cfg.slopeMin, cfg.slopeMax);
@@ -1414,7 +1489,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     const P = st.p;
     let target = null;
     if (st.engaged) { const f = toBossUnit(); target = Math.atan2(f.x, f.z); }
-    else if (st.input.steer) return;                          // [V5] «Руль»: курс задаёт рука, не скорость
+    else if (st.input.steer && !st.input.autoWalk) return;    // [V5] «Руль»: курс задаёт рука, не скорость ([НОВИЧОК] в автоходе — по ходу)
     else if (P.vx * P.vx + P.vz * P.vz > 0.16) target = Math.atan2(P.vx, P.vz);
     if (target === null) return;
     const diff = wrapAngle(target - P.yaw);
@@ -1830,7 +1905,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       o.owner = 'player';
       o.reflected = true;
       o.velocity = vec(ax / al * sp, ay / al * sp, az / al * sp);
-      o.damage = Math.round((o.damage || 20) * Q.reflectDamageMul);
+      o.damage = Math.round((o.baseDamage || o.damage || 20) * Q.reflectDamageMul);   // [FEEL] сложность не режет награду за парирование
       o.age = 0;
       o.lifetime = Math.max(o.lifetime || 0, al / sp + 0.5);
       o.passed = false;
@@ -2045,7 +2120,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         id, owner: 'boss', kind: 'orb',
         position: vcopy(t.origin), velocity: v, radius: t.radius,
         age: 0, lifetime: Math.min(C.bossAttack.orbMaxLifetime, t.travel / t.speed + 0.1),
-        damage: t.damage, blockable: t.blockable, attackId: t.id, passed: false,
+        damage: t.damage, baseDamage: t.baseDamage, blockable: t.blockable, attackId: t.id, passed: false,
       });
       emit('boss_projectile', t.origin, {
         attackId: t.id, attackKind: 'orb', projectileId: id, velocity: vcopy(v),
@@ -2283,6 +2358,25 @@ export function createCombat({ config, bossBrain, layout } = {}) {
 
   function getConfig() { return frozenConfig; }
 
+  // [FEEL] сложность боя с Регентом (C.difficulty): здоровье стража и урон его атак.
+  // Здоровье меняется со следующего reset() (или сразу, если бой ещё не начат), урон — с ближайшей атаки.
+  const BOSS_HP0 = C.boss.maxHp;
+  function difficultyMods() { return C.difficulty[C.difficulty.level] || C.difficulty.normal; }
+  function scaleBossDamage(dmg) { const m = difficultyMods().bossDamage; return m === 1 ? dmg : Math.round(dmg * m); }
+  function applyDifficulty() { C.boss.maxHp = Math.max(1, Math.round(BOSS_HP0 * difficultyMods().bossHp)); }
+  function getDifficulty() {
+    const m = difficultyMods();
+    return { level: C.difficulty.level, bossMaxHp: C.boss.maxHp, bossHpMul: m.bossHp, bossDamageMul: m.bossDamage };
+  }
+  function setDifficulty(level) {
+    C.difficulty.level = DIFFICULTY_LEVELS.includes(level) ? level : 'normal';
+    applyDifficulty();
+    const B = st.b;
+    if (st.status === 'playing' && !B.dead && st.stats.damageDealt === 0) B.hp = C.boss.maxHp;
+    return getDifficulty();
+  }
+  applyDifficulty();
+
   // [ASHEN_V2] улучшения героя (core/progression.js → mods): поля пересчитываются от базового
   // конфига, поэтому повторный вызов не накапливает бонусы. Полные HP/энергия остаются полными.
   const BASE = JSON.parse(JSON.stringify(C));
@@ -2363,5 +2457,6 @@ export function createCombat({ config, bossBrain, layout } = {}) {
 
   reset();
   return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig, setSpawn, get hand() { return hand; } /* [HAND] */,
+    setDifficulty, getDifficulty,   // [FEEL]
     attachPvp, setMode, getMode, setOpponent, applyRemoteHit };   // [PVP]
 }

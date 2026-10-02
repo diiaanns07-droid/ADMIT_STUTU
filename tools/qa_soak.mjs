@@ -44,7 +44,7 @@ await send('Runtime.enable'); await send('Performance.enable'); await send('Heap
 await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/` });
 for (let i = 0; i < 100 && !(await ev('!!window.__ASHEN__')); i++) await sleep(200);
 await click('Отладка с клавиатуры'); await sleep(100);
-await click('Начать'); await sleep(100);
+await click('Играть'); await sleep(100);
 await click('Продолжить без камеры (DEBUG)'); await sleep(100);
 await click('В бой'); await sleep(300);
 
@@ -65,7 +65,7 @@ while (Date.now() - t0 < MINUTES * 60000) {
     outcomes[scr]++;
     await setHeld(new Set());
     await sleep(800);
-    await click('Сразиться снова');
+    await click(scr === 'defeat' ? 'Ещё раз' : 'Сразиться снова');   // [FEEL] на поражении — «Ещё раз»
     await sleep(200);
     continue;
   }

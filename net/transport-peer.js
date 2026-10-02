@@ -14,16 +14,20 @@ function loadPeerJs() {
   const w = typeof window !== 'undefined' ? window : globalThis;
   if (w.peerjs && w.peerjs.Peer) return Promise.resolve(w.peerjs.Peer);
   if (!libP) {
-    libP = new Promise((resolve, reject) => {
+    // [OFFLINE] сначала vendor/ (DEPS.peerjs.scriptUrl), не загрузилось — тот же файл с CDN
+    const load = (src) => new Promise((resolve, reject) => {
       const s = document.createElement('script');
-      s.src = DEPS.peerjs.scriptUrl;
+      s.src = src;
       s.async = true;
       s.crossOrigin = 'anonymous';
-      const to = setTimeout(() => { libP = null; reject(netError('peer_lib', 'timeout')); }, 15000);
-      s.onload = () => { clearTimeout(to); if (w.peerjs && w.peerjs.Peer) resolve(w.peerjs.Peer); else { libP = null; reject(netError('peer_lib')); } };
-      s.onerror = () => { clearTimeout(to); libP = null; s.remove(); reject(netError('peer_lib')); };
+      const to = setTimeout(() => { reject(netError('peer_lib', 'timeout')); }, 15000);
+      s.onload = () => { clearTimeout(to); if (w.peerjs && w.peerjs.Peer) resolve(w.peerjs.Peer); else reject(netError('peer_lib')); };
+      s.onerror = () => { clearTimeout(to); s.remove(); reject(netError('peer_lib')); };
       document.head.appendChild(s);
     });
+    libP = load(DEPS.peerjs.scriptUrl)
+      .catch((e) => (DEPS.peerjs.cdnUrl && DEPS.peerjs.cdnUrl !== DEPS.peerjs.scriptUrl ? load(DEPS.peerjs.cdnUrl) : Promise.reject(e)))
+      .catch((e) => { libP = null; throw e; });
   }
   return libP;
 }

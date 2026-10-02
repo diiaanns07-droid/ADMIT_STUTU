@@ -1,0 +1,539 @@
+/* ASHEN OATH — режим «ОШИБКА»: экран итогов («Техника жестов») и «Тренажёр техники».
+   Подключается после ui.css; токены --ao-* — из ui.css. */
+
+:root {
+  --ao-ok: #5fd28a;
+  --ao-ok-soft: rgba(95, 210, 138, 0.14);
+  --ao-err: #ff5a4a;
+  --ao-err-soft: rgba(255, 90, 74, 0.13);
+}
+
+/* ------------------------------------------------------------ итоги боя */
+
+.ao-panel--result.ao-has-tech {
+  max-width: 62rem;
+}
+.ao-panel--result.ao-has-tech .ao-stats {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin-bottom: 0.8rem;
+}
+.ao-panel--result.ao-has-tech .ao-stat {
+  padding: 0.5rem 0.4rem;
+}
+.ao-panel--result.ao-has-tech .ao-stat__v {
+  font-size: 1.15rem;
+}
+.ao-panel--result.ao-has-tech .ao-result__mark {
+  width: 2.6rem;
+  height: 2.6rem;
+  margin-bottom: 0.3rem;
+}
+.ao-panel--result.ao-has-tech .ao-lead {
+  margin-bottom: 0.7rem;
+}
+
+.ao-tech {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr);
+  gap: 0.9rem 1.2rem;
+  text-align: left;
+  margin-bottom: 0.8rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--ao-line-soft);
+  background: rgba(10, 10, 12, 0.45);
+}
+.ao-tech__h {
+  margin: 0 0 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ao-gold);
+}
+.ao-tech__acc {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+}
+.ao-tech__accv {
+  font-size: 2.6rem;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--ao-gold-hi);
+  font-variant-numeric: tabular-nums;
+}
+.ao-tech__accv.is-good { color: var(--ao-ok); }
+.ao-tech__accv.is-bad { color: var(--ao-err); }
+.ao-tech__accside {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.ao-tech__delta {
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.ao-tech__delta[data-tone='up'],
+.ao-gbar__d[data-tone='up'] { color: var(--ao-ok); }
+.ao-tech__delta[data-tone='down'],
+.ao-gbar__d[data-tone='down'] { color: var(--ao-err); }
+.ao-tech__delta[data-tone='same'] { color: var(--ao-muted); font-weight: 500; font-size: 0.86rem; }
+.ao-tech__note {
+  font-size: 0.82rem;
+  color: var(--ao-muted);
+}
+.ao-tech__bars {
+  display: grid;
+  gap: 0.32rem;
+}
+.ao-gbar {
+  display: grid;
+  grid-template-columns: 8.4rem minmax(3rem, 1fr) 2.9rem 2.6rem 2.8rem;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.86rem;
+}
+.ao-gbar__name {
+  color: var(--ao-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ao-gbar__track {
+  position: relative;
+  height: 0.62rem;
+  background: rgba(236, 230, 217, 0.1);
+  border: 1px solid rgba(236, 230, 217, 0.12);
+}
+.ao-gbar__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--ao-gold);
+}
+.ao-gbar[data-tone='good'] .ao-gbar__fill { background: var(--ao-ok); }
+.ao-gbar[data-tone='warn'] .ao-gbar__fill { background: var(--ao-warn); }
+.ao-gbar[data-tone='bad'] .ao-gbar__fill { background: var(--ao-err); }
+.ao-gbar__v {
+  text-align: right;
+  font-weight: 700;
+  color: var(--ao-gold-hi);
+  font-variant-numeric: tabular-nums;
+}
+.ao-gbar__n {
+  color: var(--ao-faint);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+.ao-gbar__d {
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ao-tech__empty {
+  margin: 0.2rem 0 0;
+}
+.ao-tech__errs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+.ao-err {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.4rem 0.55rem 0.4rem 0.4rem;
+  border-left: 3px solid var(--ao-err);
+  background: var(--ao-err-soft);
+}
+.ao-err--clean {
+  display: block;
+  border-left-color: var(--ao-ok);
+  background: var(--ao-ok-soft);
+}
+.ao-err__pic {
+  width: 150px;
+  height: 64px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.ao-err__pic svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ao-err__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.ao-err__gest {
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #ff8a6a;
+}
+.ao-err__count {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ao-muted);
+}
+.ao-err__fix {
+  margin: 0.05rem 0 0.1rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ao-gold-hi);
+}
+.ao-err__text {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.32;
+  color: var(--ao-text);
+}
+
+@media (max-width: 860px) {
+  .ao-tech {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ao-panel--result.ao-has-tech .ao-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-height: 840px) {
+  .ao-panel--result.ao-has-tech .ao-result__mark { display: none; }
+  .ao-panel--result.ao-has-tech .ao-h1 { font-size: 2.1rem; margin-bottom: 0.15rem; }
+  .ao-panel--result.ao-has-tech .ao-lead { margin-bottom: 0.5rem; }
+  .ao-panel--result.ao-has-tech .ao-stat { padding: 0.35rem 0.4rem; }
+  .ao-tech { padding: 0.55rem 0.75rem; gap: 0.6rem 1rem; margin-bottom: 0.55rem; }
+  .ao-tech__accv { font-size: 2.2rem; }
+  .ao-err { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+  .ao-err__pic { width: 128px; height: 55px; }
+  .ao-err__text { font-size: 0.78rem; }
+  .ao-panel--result.ao-has-tech .ao-tip { padding: 0.4rem 0.7rem; font-size: 0.86rem; }
+}
+
+/* ------------------------------------------------------- тренажёр техники */
+
+.ao-panel--tech {
+  max-width: 72rem;
+}
+.ao-tt__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.55rem;
+}
+.ao-tt__top .ao-head {
+  margin: 0;
+}
+.ao-tt__left {
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+}
+.ao-panel--tech .ao-lead {
+  margin: 0.2rem 0 0;
+}
+.ao-tt__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0 0 0.7rem;
+}
+.ao-tt__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem 0.2rem 0.25rem;
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--ao-text);
+  background: rgba(236, 230, 217, 0.04);
+  border: 1px solid var(--ao-line-soft);
+  cursor: pointer;
+}
+.ao-tt__chip:hover {
+  border-color: var(--ao-gold);
+}
+.ao-tt__chip:focus-visible {
+  outline: 2px solid var(--ao-gold-hi);
+  outline-offset: 2px;
+}
+.ao-tt__chip[aria-pressed='true'] {
+  border-color: var(--ao-gold);
+  background: rgba(196, 162, 101, 0.16);
+  color: var(--ao-gold-hi);
+  font-weight: 700;
+}
+.ao-tt__chipic {
+  display: block;
+  width: 36px;
+  height: 26px;
+}
+.ao-tt__chipic svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ao-tt__cols {
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  align-items: start;
+  gap: 1.1rem;
+}
+.ao-tt__cam {
+  width: 100%;
+}
+.ao-tt__cam[data-tone='good'] {
+  box-shadow: 0 0 0 2px var(--ao-ok), inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+.ao-tt__cam[data-tone='bad'] {
+  box-shadow: 0 0 0 2px var(--ao-err), inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+.ao-tt__under {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.2rem 0.8rem;
+}
+.ao-tt__src {
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  color: var(--ao-gold);
+}
+.ao-tt__head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.ao-tt__title {
+  margin: 0;
+  font-size: 1.45rem;
+  color: var(--ao-gold-hi);
+}
+.ao-tt__hand {
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ao-muted);
+}
+.ao-tt__how {
+  margin: 0.2rem 0 0.6rem;
+  font-size: 0.92rem;
+  color: var(--ao-text);
+}
+.ao-tt__list {
+  list-style: none;
+  margin: 0 0 0.7rem;
+  padding: 0;
+  display: grid;
+  gap: 0.28rem;
+}
+.ao-tt__item {
+  display: grid;
+  grid-template-columns: 1.7rem minmax(0, 1fr) minmax(4rem, 8.5rem) 2.9rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.32rem 0.5rem 0.32rem 0.35rem;
+  border-left: 3px solid transparent;
+  background: rgba(236, 230, 217, 0.03);
+  font-size: 0.98rem;
+  transition: background 0.2s, border-color 0.2s;
+}
+.ao-tt__mk {
+  display: grid;
+  place-items: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 50%;
+  font-weight: 800;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: #0b0c0e;
+  background: var(--ao-neutral);
+}
+.ao-tt__item[data-ok='yes'] .ao-tt__mk { background: var(--ao-ok); }
+.ao-tt__item[data-ok='no'] .ao-tt__mk { background: var(--ao-err); }
+.ao-tt__item[data-ok='no'] {
+  background: var(--ao-err-soft);
+}
+.ao-tt__item[data-ok='yes'] .ao-tt__lab { color: var(--ao-text); }
+.ao-tt__item[data-ok='na'] .ao-tt__lab { color: var(--ao-faint); }
+.ao-tt__item.is-focus {
+  border-left-color: var(--ao-err);
+  background: rgba(255, 90, 74, 0.22);
+}
+.ao-tt__bar {
+  position: relative;
+  height: 0.7rem;
+  background: rgba(236, 230, 217, 0.1);
+  border: 1px solid rgba(236, 230, 217, 0.12);
+  overflow: hidden;
+}
+.ao-tt__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background: var(--ao-neutral);
+  transition: width 0.12s linear;
+}
+.ao-tt__item[data-ok='yes'] .ao-tt__fill { background: var(--ao-ok); }
+.ao-tt__item[data-ok='no'] .ao-tt__fill { background: var(--ao-err); }
+.ao-tt__pct {
+  text-align: right;
+  font-weight: 700;
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ao-muted);
+}
+.ao-tt__ideal {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.65rem 0.9rem;
+  border: 2px solid var(--ao-ok);
+  background: var(--ao-ok-soft);
+  animation: ao-tt-pop 0.35s var(--ao-ease);
+}
+.ao-tt__idealh {
+  white-space: nowrap;
+  font-size: 2.1rem;
+  line-height: 1;
+  color: var(--ao-ok);
+  letter-spacing: 0.02em;
+}
+.ao-tt__idealh::before {
+  content: '✓ ';
+}
+.ao-tt__idealt {
+  font-size: 0.92rem;
+  color: var(--ao-text);
+}
+.ao-tt__fixbox {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.5rem 0.7rem 0.5rem 0.5rem;
+  border: 2px solid var(--ao-err);
+  background: rgba(255, 90, 74, 0.1);
+}
+.ao-tt__pic {
+  width: 189px;
+  height: 81px;
+  background: rgba(0, 0, 0, 0.4);
+}
+.ao-tt__pic svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ao-tt__fixk {
+  display: block;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #ff8a6a;
+}
+.ao-tt__fix {
+  display: block;
+  margin: 0.1rem 0 0.2rem;
+  font-size: 1.35rem;
+  line-height: 1.15;
+  color: var(--ao-gold-hi);
+}
+.ao-tt__text {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  color: var(--ao-text);
+}
+.ao-tt__wait {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border: 1px dashed var(--ao-line);
+  color: var(--ao-muted);
+}
+.ao-tt__count {
+  margin: 0.5rem 0 0;
+  color: var(--ao-ok);
+}
+@keyframes ao-tt-pop {
+  from { transform: scale(0.96); opacity: 0.4; }
+  to { transform: none; opacity: 1; }
+}
+.ao-reduced-motion .ao-tt__ideal { animation: none; }
+.ao-reduced-motion .ao-tt__fill { transition: none; }
+@media (max-width: 860px) {
+  .ao-tt__cols { grid-template-columns: minmax(0, 1fr); }
+  .ao-tt__cam { max-width: 26rem; }
+  .ao-tt__pic { width: 150px; height: 64px; }
+}
+@media (max-height: 700px) {
+  .ao-panel--tech .ao-lead { display: none; }
+  .ao-tt__chipic { width: 32px; height: 24px; }
+  .ao-tt__item { padding-top: 0.22rem; padding-bottom: 0.22rem; font-size: 0.92rem; }
+}
+.ao-coach-overlay {
+  pointer-events: none;
+}
+
+/* --------------------------------------------- обучение и меню: метки твиста */
+
+.ao-tut-coach:has(.ao-tut-coach__pic svg) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+}
+.ao-tut-coach[hidden] {
+  display: none;
+}
+.ao-tut-coach__pic {
+  display: block;
+  width: 126px;
+  height: 54px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.ao-tut-coach__pic:empty {
+  display: none;
+}
+.ao-tut-coach__pic svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ao-tut-coach__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.ao-menu__tech {
+  position: relative;
+}
+.ao-menu__tech::after {
+  content: 'ОШИБКА';
+  position: absolute;
+  top: -0.55rem;
+  right: -0.4rem;
+  padding: 0.05rem 0.32rem;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #fff;
+  background: var(--ao-err);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}

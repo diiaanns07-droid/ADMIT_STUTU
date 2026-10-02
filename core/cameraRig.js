@@ -18,6 +18,11 @@
 //   на «устойчивый бег»), поэтому «вперёд» всегда «в экран».
 //   colliders — круги и отрезки раскладки; groundY(x,z) — высота земли (камера держится над ней).
 // Совместимость V1: update(dt, player, boss, impulse) — это engaged.
+//
+// [FEEL] shake(trauma) — тряска по силе удара (main.js по core/gameFeel.js): «травма» 0..1 копится и гаснет
+// (cfg.shake.decay в секунду), амплитуда ∝ травма². Трясётся ТОЛЬКО точка взгляда (небольшой поворот
+// камеры, до cfg.shake.maxDeg): позиция, yaw/forward/right и inputYaw не меняются — управление не дёргается,
+// камера не выходит за стены. state.reducedMotion = true («Уменьшенное движение») — тряски нет.
 
 const TAU = Math.PI * 2;
 
@@ -48,7 +53,11 @@ export function createCameraRig(cfg) {
     initialized: false,
     lastYaw: 0,
     inputYaw: 0,        // [V3] курс управления: без плечевого сдвига камеры
+    trauma: 0,          // [FEEL] тряска: 0..1
+    shakeT: 0,
+    shakeOut: 0,
   };
+  const SH = { maxDeg: 2.0, decay: 1.9, freq: 1, ...(cfg && cfg.shake ? cfg.shake : {}) };
 
   // Экранный «вправо» для угла a: касательная к окружности в сторону роста угла.
   // pos(a) = (R sin a, 0, R cos a) ⇒ d/da = (cos a, 0, -sin a).
@@ -83,6 +92,29 @@ export function createCameraRig(cfg) {
     s.heading = engaged ? wrapAngle(t.angle + Math.PI) : (fin(st.playerYaw) ? st.playerYaw : wrapAngle(t.angle + Math.PI));
     s.steady = 0; s.lastMoveDir = null;
     s.initialized = true;
+    s.trauma = 0; s.shakeOut = 0;
+  }
+
+  // [FEEL] тряска: добавить «травму» (0..1). Возвращает текущую.
+  function shake(amount) {
+    if (fin(amount) && amount > 0) s.trauma = Math.min(1, s.trauma + amount);
+    return s.trauma;
+  }
+  // Смещение точки взгляда: детерминированный «шум» из синусов (без Math.random — повторяемо в тестах).
+  function shakeOffset(dt, pos, target, reduced) {
+    if (reduced) { s.trauma = 0; s.shakeOut = 0; return null; }
+    if (fin(dt) && dt > 0) { s.shakeT += dt; s.trauma = Math.max(0, s.trauma - SH.decay * dt); }
+    const a = s.trauma * s.trauma;
+    s.shakeOut = a;
+    if (a < 1e-4) return null;
+    const dist = Math.hypot(target.x - pos.x, target.y - pos.y, target.z - pos.z) || 1;
+    const amp = Math.tan((SH.maxDeg * Math.PI) / 180) * dist * a;
+    const tt = s.shakeT * SH.freq;
+    const nx = Math.sin(tt * 37.1) * 0.55 + Math.sin(tt * 23.7 + 1.3) * 0.3 + Math.sin(tt * 61.3 + 2.1) * 0.15;
+    const ny = Math.sin(tt * 31.3 + 0.7) * 0.55 + Math.sin(tt * 19.1 + 2.9) * 0.3 + Math.sin(tt * 53.9 + 4.1) * 0.15;
+    let fx = target.x - pos.x, fz = target.z - pos.z;
+    const fl = Math.hypot(fx, fz) || 1; fx /= fl; fz /= fl;
+    return { x: -fz * nx * amp, y: ny * amp * 0.8, z: fx * nx * amp };
   }
 
   function lockOn(dt, player, boss) {
@@ -231,14 +263,16 @@ export function createCameraRig(cfg) {
     fx /= fl; fz /= fl;
     const yaw = Math.atan2(fx, fz);
     s.lastYaw = yaw;
+    const so = shakeOffset(dt, pos, target, st.reducedMotion === true);   // [FEEL] поворотная тряска
     return {
       position: { x: pos.x + ix, y: pos.y + iy, z: pos.z + iz },
-      target,
+      target: so ? { x: target.x + so.x, y: target.y + so.y, z: target.z + so.z } : target,
       right: { x: -fz, y: 0, z: fx },
       forward: { x: fx, y: 0, z: fz },
       yaw,
+      shake: s.shakeOut,
     };
   }
 
-  return { update, reset, rightVector, get angle() { return s.angle; }, get yaw() { return s.lastYaw; }, get inputYaw() { return s.inputYaw; }, get blend() { return s.blend; } };
+  return { update, reset, shake, rightVector, get angle() { return s.angle; }, get yaw() { return s.lastYaw; }, get inputYaw() { return s.inputYaw; }, get blend() { return s.blend; }, get trauma() { return s.trauma; } };
 }

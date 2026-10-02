@@ -13,6 +13,10 @@
 // Landmarks приходят в нормализованных НЕзеркальных координатах (0..1); при
 // pose.mirror !== false рисуем x' = 1 - x (превью <video> зеркалится CSS).
 // Правая рука игрока — огонь, левая — щит.
+// [ПРОЕКТОР] Цвет кисти — по стороне: левая синяя («движение»), правая оранжевая («магия»).
+// Рисунок масштабируется под размер канваса (zoom): в крупном доке боя и в режиме презентации
+// подписи не мельче ~14 px, линии толще. Атрибут data-hud-mode="full|mini" у родителя канваса
+// (слот камеры ui.js) переопределяет режим, переданный main.js (main.js читает его и для handFxOverlay).
 
 const MONO = '"Consolas","Cascadia Mono",monospace';
 
@@ -23,6 +27,8 @@ const BLUE = '#9fc4ff';
 const EMBER = '#ff6a3c';
 const PLATE = 'rgba(5,7,11,0.66)';
 const DIM = '#8d97a6';
+const LEFT_C = '#5aaeff';      // левая кисть — движение
+const RIGHT_C = '#ff9a3c';     // правая кисть — магия
 
 const F_TAG = '10px ' + MONO;
 const F_CHIP = '600 11px ' + MONO;
@@ -34,6 +40,8 @@ const FADE_IN_MS = 120;
 const FADE_OUT_MS = 300;
 const DASH_MS = 450;
 const BURST_MS = 500;
+const MINI_BASE_W = 160;       // [ПРОЕКТОР] логическая ширина мини-рисунка: шире канвас — крупнее всё
+const FULL_BASE_W = 360;       // то же для полного рисунка
 const STALE_MS = 800;          // pose.tMs не меняется дольше — считаем цель потерянной
 const COORD_EVERY_MS = 66;     // «живые» цифры ~15 Гц
 const DATA_EVERY_MS = 250;     // колонка данных 4 Гц
@@ -557,8 +565,8 @@ export function createTrackingHud(opts) {
     ctx.beginPath();
     seg(S_LS, S_RS);
     ctx.stroke();
-    armPath(S_LS, S_LE, S_LW, lState ? BLUE : STEEL, lState ? 0.8 : 0.5, a);
-    armPath(S_RS, S_RE, S_RW, rState ? GOLD_HI : STEEL, rState ? 0.85 : 0.5, a);
+    armPath(S_LS, S_LE, S_LW, LEFT_C, lState ? 0.9 : 0.6, a);
+    armPath(S_RS, S_RE, S_RW, RIGHT_C, rState ? 0.9 : 0.6, a);
     // узлы
     const r = mini ? 1.2 : 1.8;
     ctx.globalAlpha = 0.9 * a;
@@ -1025,21 +1033,22 @@ export function createTrackingHud(opts) {
   const HAND_BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12],
     [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]];
   const TIPS = [4, 8, 12, 16, 20];
-  const SHAPE_TXT = { pinch: '◎ OK · FIRE', point: '✎ POINT', fist: '▣ FIST', open: '◇ OPEN', victory: 'V SIGN', unknown: '· · ·' };
-  const SHAPE_MINI = { pinch: 'OK', point: 'RUNE', fist: 'FIST', open: 'OPEN', victory: 'V', unknown: '' };
+  // [ПРОЕКТОР] подписи по-русски; «ЩИТ» и «ОГОНЬ» — только когда жест действительно сработал (input.shield / input.attack)
+  const SHAPE_TXT = { pinch: '◎ OK', point: '✎ РУНА', fist: '▣ КУЛАК', open: '◇ ЛАДОНЬ', victory: 'V', unknown: '· · ·' };
+  const SHAPE_MINI = { pinch: 'OK', point: 'РУНА', fist: 'КУЛАК', open: 'ЛАДОНЬ', victory: 'V', unknown: '' };
   const RUNE_TXT = { ignis: 'ИГНИС ▲', fulgur: 'ФУЛЬГУР ϟ', orbis: 'ОРБИС ○', stella: 'СТЕЛЛА ★', spira: 'СПИРА @', lemnis: 'ЛЕМНИСКА ∞', caret: 'АКУС ^', vee: 'МЕССИС V', clepsydra: 'КЛЕПСИДРА ⧗', alpha: 'АЛЬФА ℓ' };
   const handLabels = { left: makeLabel(), right: makeLabel(), rune: makeLabel() };
   let runeFlashT = -1e9, runeFlashName = '', runeFlashAt = null, lastRuneKey = '';
+  let curAttack = false, curShield = false, forcedFull = false;
 
   function hx(p) { return rx + p.x * rw; }
   function hy(p) { return ry + p.y * rh; }
 
-  function handColor(H, side) {
-    if (H.shape === 'pinch' && side === 'right') return GOLD_HI;
-    if (H.shape === 'open' && side === 'left' && H.palmFacing !== 'away') return BLUE;
-    if (H.shape === 'fist') return H.charge > 0.3 ? EMBER : GOLD;
-    if (H.shape === 'point' && side === 'right') return GOLD_HI;
-    return STEEL;
+  // [ПРОЕКТОР] цвет по стороне; форма, «рабочая» для этой руки, рисуется ярче и толще (handActive)
+  function handColor(H, side) { return side === 'left' ? LEFT_C : RIGHT_C; }
+  function handActive(H, side) {
+    if (side === 'right') return H.shape === 'pinch' || H.shape === 'fist' || H.shape === 'point';
+    return (H.shape === 'open' && H.palmFacing !== 'away') || H.shape === 'fist';
   }
 
   function drawHand(H, side, now, rm, mini) {
@@ -1047,17 +1056,18 @@ export function createTrackingHud(opts) {
     if (!Array.isArray(L) || L.length < 21) return;
     for (let i = 0; i < 21; i++) if (!L[i] || !(L[i].x === L[i].x)) return;
     const col = handColor(H, side);
+    const act = handActive(H, side);
     // кости
     ctx.strokeStyle = col;
-    ctx.globalAlpha = mini ? 0.7 : 0.62;
-    ctx.lineWidth = lw;
+    ctx.globalAlpha = act ? 0.95 : 0.78;
+    ctx.lineWidth = act ? lwEm : lw;
     ctx.beginPath();
     for (const [a, b] of HAND_BONES) { ctx.moveTo(hx(L[a]), hy(L[a])); ctx.lineTo(hx(L[b]), hy(L[b])); }
     ctx.stroke();
     // суставы
     ctx.fillStyle = col;
-    ctx.globalAlpha = 0.85;
-    const r = mini ? 1 : 1.6;
+    ctx.globalAlpha = 0.95;
+    const r = mini ? 1.1 : 1.6;
     for (let i = 0; i < 21; i++) { ctx.fillRect(snapT(hx(L[i]) - r), snapT(hy(L[i]) - r), r * 2, r * 2); }
     // рамка кисти
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -1066,9 +1076,9 @@ export function createTrackingHud(opts) {
     x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
     ctx.globalAlpha = 0.9;
     ctx.strokeStyle = col;
-    ctx.lineWidth = H.shape === 'pinch' || H.shape === 'fist' ? lwEm : lw;
+    ctx.lineWidth = act ? lwEm : lw;
     ctx.beginPath();
-    brackets(x0, y0, x1, y1, Math.max(4, Math.min(12, (x1 - x0) * 0.22)), H.shape === 'pinch' ? lwEmDev : lwDev);
+    brackets(x0, y0, x1, y1, Math.max(4, Math.min(12, (x1 - x0) * 0.22)), act ? lwEmDev : lwDev);
     ctx.stroke();
     if (!mini) {
       // кончики пальцев: микро-рамки, у большого и указательного — координаты
@@ -1106,11 +1116,14 @@ export function createTrackingHud(opts) {
     // метка формы над рамкой
     const lab = handLabels[side];
     let txt = mini ? (SHAPE_MINI[H.shape] || '') : (SHAPE_TXT[H.shape] || '');
-    if (!mini && side === 'left' && H.shape === 'open') txt = H.palmFacing === 'away' ? '◇ OPEN · ТЫЛ' : '◆ SHIELD';
+    if (!mini && side === 'left' && H.shape === 'open' && H.palmFacing === 'away') txt = '◇ ЛАДОНЬ · ТЫЛ';
+    if (side === 'left' && curShield) txt = mini ? 'ЩИТ' : '◆ ЩИТ';
+    if (side === 'right' && H.shape === 'pinch' && curAttack) txt = mini ? 'OK→ВЫСТРЕЛ' : '◎ OK · ВЫСТРЕЛ';
     if (H.shape === 'fist' && !mini) txt = `▣ ${Math.round(ch * 100)}%${ch >= 0.3 ? ' · РАСКРОЙ' : ''}`;
     setLabel(lab, txt, mini ? F_MINI_CHIP : F_CHIP, now);
     if (txt) {
-      const shown = scrambled(lab.text, lab.since, now, rm);
+      // без «глитча» букв: в доке боя, в панели презентации и у процента заряда кулака (текст меняется каждый кадр)
+      const shown = scrambled(lab.text, lab.since, now, rm || mini || forcedFull || H.shape === 'fist');
       const f = mini ? F_MINI_CHIP : F_CHIP;
       setFont(f);
       const tw = measure(f, shown);
@@ -1150,7 +1163,7 @@ export function createTrackingHud(opts) {
     // [V3] двуручное рисование: обе половины фигуры
     const tw = isObj(HI.twin) ? HI.twin : null;
     if (tw) {
-      for (const [path, c] of [[tw.left, BLUE], [tw.right, GOLD_HI]]) {
+      for (const [path, c] of [[tw.left, LEFT_C], [tw.right, RIGHT_C]]) {
         if (!Array.isArray(path) || path.length < 2) continue;
         for (const [w, a] of [[mini ? 3 : 6, 0.2], [mini ? 1 : 1.8, 0.95]]) {
           ctx.strokeStyle = c; ctx.globalAlpha = a; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -1183,7 +1196,6 @@ export function createTrackingHud(opts) {
     const input = isObj(f.input) ? f.input : null;
     const settings = isObj(f.settings) ? f.settings : EMPTY;
     const rm = settings.reducedMotion === true;
-    const mini = f.mode === 'mini';
     const dbg = status && isObj(status.debug) ? status.debug : null;
 
     if (!(typeof now === 'number' && Number.isFinite(now))) now = lastNow >= 0 ? lastNow + 16.7 : 0;
@@ -1201,7 +1213,15 @@ export function createTrackingHud(opts) {
     if (canvas.width !== bw || canvas.height !== bh) { canvas.width = bw; canvas.height = bh; }
     // ctx.restore() прошлого кадра вернул font к сохранённому — кеш шрифта недействителен.
     curFont = '';
-    dpr = d;
+    // [ПРОЕКТОР] режим от слота камеры (ui.js) важнее режима main.js; масштаб — от ширины канваса
+    let forced = null;
+    try { const host = canvas.parentNode; forced = host && host.getAttribute ? host.getAttribute('data-hud-mode') : null; } catch (e) { forced = null; }
+    // маленькое превью (обучение, узкие окна) — мини-рисунок: колонка данных и координаты там нечитаемы
+    const mini = forced === 'full' ? false : forced === 'mini' ? true : f.mode === 'mini' || cw < 240;
+    forcedFull = forced === 'full';
+    const zoom = clamp(cw / (mini ? MINI_BASE_W : FULL_BASE_W), 1, mini ? 2.6 : 2.4);
+    const vw = cw / zoom, vh = chh / zoom;   // логический размер рисунка
+    dpr = d * zoom;
     lwDev = Math.max(1, Math.round(dpr)); lw = lwDev / dpr;
     lwEmDev = Math.max(1, Math.round(dpr * 1.5 - 0.01)); lwEm = lwEmDev / dpr;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1222,8 +1242,8 @@ export function createTrackingHud(opts) {
       mirror = pose.mirror !== false;
     }
     const aspect = frameW / frameH;
-    if (cw / chh > aspect) { rh = chh; rw = chh * aspect; rx = (cw - rw) / 2; ry = 0; }
-    else { rw = cw; rh = cw / aspect; rx = 0; ry = (chh - rh) / 2; }
+    if (vw / vh > aspect) { rh = vh; rw = vh * aspect; rx = (vw - rw) / 2; ry = 0; }
+    else { rw = vw; rh = vw / aspect; rx = 0; ry = (vh - rh) / 2; }
 
     // ---- поза
     const lms = pose && Array.isArray(pose.landmarks) ? pose.landmarks : null;
@@ -1249,6 +1269,7 @@ export function createTrackingHud(opts) {
     const gest = dbg && isObj(dbg.gesture) ? dbg.gesture : null;
     const attack = !!(input && input.attack);
     const shield = !!(input && input.shield);
+    curAttack = attack; curShield = shield;
     const rUp = present && (attack || !!(aR && aR.raised === true));
     const lUp = present && (shield || !!(aL && aL.raised === true));
     const both = rUp && lUp;
@@ -1297,6 +1318,8 @@ export function createTrackingHud(opts) {
       ctx.clip();
 
       if (!mini) drawViewfinder(1);
+      // колонка данных — под скелетом и рамками: при крупном рисунке она не закрывает поднятую руку
+      if (!mini) drawData(st, status, dbg, present, now, rm);
       if (!stickMode) drawNeutral(dbg, input, mini);
       if (stick && stickMode) drawStick(stick, now, rm, mini);
       drawConstellation(rUp, lUp, mini);
@@ -1304,8 +1327,8 @@ export function createTrackingHud(opts) {
       const pulseOn = both && !rm;
       const pulse = pulseOn ? (mini ? 0.8 : 1.6) * (0.5 + 0.5 * Math.sin(now * 0.02)) : 0;
       const calib = st === 'calibrating';
-      const rCol = rUp ? (blocked && !attack && !both ? STEEL : GOLD_HI) : STEEL;
-      const lCol = lUp ? (blocked && !shield && !both ? STEEL : BLUE) : STEEL;
+      const rCol = rUp && blocked && !attack && !both ? STEEL : RIGHT_C;
+      const lCol = lUp && blocked && !shield && !both ? STEEL : LEFT_C;
       const tCol = calib || dashK > 0 ? BLUE : STEEL;
       drawBox(torso, tCol, calib || dashK > 0, 0, now, rm, mini);
       drawBox(head, STEEL, false, 0, now, rm, mini);
@@ -1332,12 +1355,11 @@ export function createTrackingHud(opts) {
 
       drawTag(torso, tCol, BLUE, now, rm, mini);
       drawTag(head, STEEL, STEEL, now, rm, mini);
-      if (!hL) drawTag(lHand, lCol, lCol === STEEL ? STEEL : BLUE, now, rm, mini);
-      if (!hR) drawTag(rHand, rCol, rCol === STEEL ? STEEL : GOLD_HI, now, rm, mini);
+      if (!hL) drawTag(lHand, lCol, lCol, now, rm, mini);
+      if (!hR) drawTag(rHand, rCol, rCol, now, rm, mini);
 
       if (calib && status) drawCalib(status, now, rm, mini);
       if (lostAlpha > 0.01) drawSearch(st, status, lostAlpha, now, rm, mini);
-      if (!mini) drawData(st, status, dbg, present, now, rm);
     } finally {
       ctx.restore();
       ctx.globalAlpha = 1;

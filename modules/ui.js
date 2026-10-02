@@ -18,14 +18,20 @@
  *   onSettings(patch)           patch — часть settings, например {volume:0.4}
  *   onDebug(nextEnabled:boolean)
  *   [ASHEN_V2] onOath({from})  onTraining({from})  onBuyUpgrade(id)  onBack()  onExercise('pushups'|'squats')
+ *   [ТВИСТ «ОШИБКА»] onTechnique({from})  onTechniqueGesture(id)  onTechniqueDemo(on); viewModel.technique — вид тренажёра
+ *     (modules/techniqueTrainer.js), viewModel.coach — итог боя { accuracy, groups[], top3[], compare }
  *   viewModel.progress = { points, earned, pushups, squats, embers[], emberTotal, upgrades[{id,name,level,max,cost,canBuy,now,next}] }
  *   viewModel.training = { exercise, reps, total, state, message, depth, lastOk, sinceRepMs,
  *     приседания: attempts, knee, view, lastHint{code,text,tMs}, sinceHintMs, faults{}, formScore, topFault{code,text,count}, debugSim }
  */
 
+import { createTutorialTrainer, TRAINER_STEPS } from '../core/tutorialTrainer.js';
+import { COACH_GROUPS, hintPictogram } from '../core/gestureCoach.js'; // [ТВИСТ «ОШИБКА»] итоги: жесты и пиктограммы
+import { createTechniqueScreen } from './techniqueTrainer.js';            // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
+
 export const API_VERSION = 'ASHEN_V1';
 
-const SCREENS = ['menu', 'camera', 'calibration', 'tutorial', 'playing', 'paused', 'victory', 'defeat', 'error', 'oath', 'training'];
+const SCREENS = ['menu', 'camera', 'calibration', 'tutorial', 'playing', 'paused', 'victory', 'defeat', 'error', 'oath', 'training', 'technique'];
 const TRACK_STATES = ['idle', 'loading', 'permission', 'calibrating', 'ready', 'lost', 'error'];
 const CAMERA_RUNNING = ['ready', 'lost', 'calibrating'];
 const CAMERA_STARTING = ['permission', 'loading'];
@@ -60,6 +66,7 @@ const SCREEN_ANNOUNCE = {
   error: 'Ошибка',
   oath: 'Клятва героя: улучшения',
   training: 'Тренировка клятвы',
+  technique: 'Тренажёр техники',
 };
 
 const DEBUG_KEYS_TEXT =
@@ -197,7 +204,23 @@ const ICONS = {
   pause: `<svg ${SVG24}><path d="M9 6.5v11M15 6.5v11"/></svg>`,
   check: `<svg ${SVG24}><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`,
   warn: `<svg ${SVG24}><path d="M12 4 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.01"/></svg>`,
+  // [ONBOARD] руки вниз — для экрана камеры
+  armsdown:
+    `<svg ${SVG24}><circle cx="12" cy="5.6" r="2.4"/><path d="M7.5 20.5v-6.8c0-2 2-3.3 4.5-3.3s4.5 1.3 4.5 3.3v6.8"/>` +
+    '<path d="M3.5 11v7M2 16.6l1.5 1.5L5 16.6M20.5 11v7M19 16.6l1.5 1.5 1.5-1.5"/></svg>',
+  book: `<svg ${SVG24}><path d="M4 5.5C6.8 4.6 9.4 4.9 12 6.6c2.6-1.7 5.2-2 8-1.1v13c-2.8-.9-5.4-.6-8 1.1-2.6-1.7-5.2-2-8-1.1z"/><path d="M12 6.6v13"/></svg>`,
 };
+
+// [ONBOARD] рамка-силуэт поверх превью камеры (4:3): голова — кольцо прогресса калибровки, плечи, кисти
+const ONB_FRAME_SVG =
+  '<svg class="ao-onb__svg" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">' +
+  '<path class="ao-onb__body" d="M58 300 C62 236 92 204 150 196 C170 193 181 186 184 168 L216 168 C219 186 230 193 250 196 C308 204 338 236 342 300"/>' +
+  '<circle class="ao-onb__face" cx="200" cy="112" r="46"/>' +
+  '<circle class="ao-onb__ring" cx="200" cy="112" r="56" pathLength="100" transform="rotate(-90 200 112)"/>' +
+  '<path class="ao-onb__tick" d="M181 113l13 13 26-28"/>' +
+  '<circle class="ao-onb__hand" data-hand="left" cx="110" cy="268" r="17"/>' +
+  '<circle class="ao-onb__hand" data-hand="right" cx="290" cy="268" r="17"/>' +
+  '</svg>';
 
 /* Пиктограмма сидящего игрока. Вид со спины: правая рука фигуры справа. */
 function figureGroup({ cx = 60, base = 86, s = 1, lean = 0, left = 'down', right = 'down', hi = {}, live = {} }) {
@@ -353,6 +376,135 @@ TUTORIAL.push({
   svg: svgWrap(palmFlameFigure()),
 });
 
+/* [НОВИЧОК] В «Новичке» карточки обучения — только про базовые жесты; лук и магия рукой скрыты.
+   Поле novice — тексты для «Новичка», novice.auto — для «Новичка» с «Автоходом» (герой идёт сам). */
+{
+  const T = Object.fromEntries(TUTORIAL.map((it) => [it.key, it]));
+  T.strafe.novice = { auto: {
+    title: 'Герой идёт сам',
+    gesture: '«Автоход» ведёт героя к Регенту и вокруг него. Вам — только сражаться.',
+    effect: 'Левая рука свободна для щита и рывка. Вести героя рукой — выключите «Автоход» в меню.',
+  } };
+  T.hands.novice = {
+    title: 'Огонь и щит',
+    gesture: 'Правая: «OK» — кольцо из большого и указательного — снаряды. Левая: толкните раскрытую ладонь к камере — щит.',
+    effect: 'Щит держится, пока ладонь впереди. Уберите ладонь назад — щит опущен.',
+  };
+  T.both.novice = {
+    title: 'Кулак — выброс',
+    gesture: 'Сожмите правый кулак, подержите секунду и резко раскройте.',
+    effect: 'Взрыв энергии по Регенту. Чем дольше держали кулак, тем сильнее.',
+  };
+  T.conjure.novice = {
+    title: 'Сфера двумя руками',
+    gesture: 'Ладони друг к другу, будто держите мяч. Потом толкните обе ладони к камере.',
+    effect: 'Сфера летит в Регента. Чем дольше лепили, тем сильнее.',
+  };
+  T.bow.masterOnly = true;
+  T.handMagic.masterOnly = true;
+}
+/* ------------------------------------------------- [ТРЕНАЖЁР] пиктограммы
+ * «Научись за 60 секунд» (логика — core/tutorialTrainer.js). Кисть нарисована так, как игрок видит
+ * себя в зеркальном превью: ладонь к камере, у ЛЕВОЙ руки большой палец справа. Правая — отражение.
+ * Силуэт в два прохода: сначала все контуры (широкая тёмная линия), затем «кожа» поверх — без швов. */
+
+const HAND_FINGERS = [
+  ['M80 106 L70 62', 13], ['M94 101 L90 48', 14], ['M108 100 L110 44', 14], ['M122 102 L130 54', 14],
+];
+const HAND_THUMB = ['M126 146 L146 126 L158 104', 15];
+const HAND_PALM = 'M70 106 Q70 96 80 96 H124 Q134 96 134 106 L135 140 Q135 164 110 165 H92 Q68 164 68 140 Z';
+const HAND_SLEEVE = '<path class="hd-sleeve" d="M80 214 L84 160 H120 L124 214 Z"/><path class="hd-cuff" d="M83 170 H121"/>';
+function handPass(strokes, palm, cls) {
+  let s = strokes.map(([d, w]) => `<path class="${cls}" d="${d}" stroke-width="${cls === 'hd-o' ? w + 6 : w}"/>`).join('');
+  if (palm) s += `<path class="${cls} hd-palm" d="${palm}"/>`;
+  return s;
+}
+function handShape(strokes, palm, extra = '') {
+  return HAND_SLEEVE + handPass(strokes, palm, 'hd-o') + handPass(strokes, palm, 'hd-s') + extra;
+}
+const HAND_OPEN = handShape([...HAND_FINGERS, HAND_THUMB], HAND_PALM,
+  '<path class="hd-crease" d="M84 136 Q100 144 122 132"/>');
+// «OK»: большой и указательный сомкнуты в кольцо, три пальца вверх
+const HAND_OK = handShape(
+  [HAND_FINGERS[0], HAND_FINGERS[1], HAND_FINGERS[2], ['M122 102 L134 90', 14], ['M126 146 L144 120', 15]],
+  HAND_PALM,
+  '<circle class="hd-o" cx="146" cy="104" r="14" stroke-width="17" fill="none"/>' +
+    '<circle class="hd-s" cx="146" cy="104" r="14" stroke-width="11" fill="none"/>' +
+    '<circle class="hd-ring" cx="146" cy="104" r="7.5"/>',
+);
+// кулак: костяшки сверху, большой палец поперёк
+const HAND_FIST =
+  HAND_SLEEVE +
+  '<path class="hd-o hd-palm" d="M70 112 Q70 92 88 92 H118 Q136 92 136 112 L136 142 Q136 164 112 165 H92 Q70 164 70 142 Z"/>' +
+  '<path class="hd-s hd-palm" d="M70 112 Q70 92 88 92 H118 Q136 92 136 112 L136 142 Q136 164 112 165 H92 Q70 164 70 142 Z"/>' +
+  '<path class="hd-crease" d="M86 94 V112 M102 92 V112 M118 94 V112 M76 116 H132"/>' +
+  '<path class="hd-o" d="M136 142 L100 130" stroke-width="20"/><path class="hd-s" d="M136 142 L100 130" stroke-width="14"/>';
+const handG = (inner, side, cls = '') =>
+  `<g class="hd ${cls}"${side === 'right' ? ' transform="translate(208 0) scale(-1 1)"' : ''}>${inner}</g>`;
+const picWrap = (id, inner) =>
+  `<svg class="ao-pic ao-pic--${id}" viewBox="0 0 208 220" fill="none" stroke-linecap="round" stroke-linejoin="round" ` +
+  `aria-hidden="true" focusable="false">${inner}</svg>`;
+
+// Крупная анимированная пиктограмма шага (CSS-анимации .pic-* в ui.css; при «меньше движения» — ключевая поза).
+const TRAINER_PICS = {
+  // 1. левая ладонь поднимается к линии груди и держится
+  walk: picWrap('walk',
+    '<g class="pic-body"><circle cx="104" cy="34" r="19"/><path d="M28 132 Q34 74 104 70 Q174 74 180 132"/></g>' +
+    '<path class="pic-line" d="M8 104 H200"/><text class="pic-lab" x="200" y="96" text-anchor="end">грудь</text>' +
+    '<g class="pic-rise"><g transform="translate(-4 10) scale(0.72)">' + handG(HAND_OPEN, 'left') + '</g></g>' +
+    '<path class="pic-arrow pic-arrow--up" d="M158 196 V146 M147 158 L158 146 L169 158"/>'),
+  // 2. левая ладонь резко толкается к камере (растёт), волны толчка
+  shield: picWrap('shield',
+    '<g class="pic-waves"><path d="M40 52 Q20 104 40 156"/><path d="M168 52 Q188 104 168 156"/>' +
+    '<path d="M24 36 Q-2 104 24 172"/><path d="M184 36 Q210 104 184 172"/></g>' +
+    '<g class="pic-push"><g transform="translate(-3 -2) scale(0.95)">' + handG(HAND_OPEN, 'left') + '</g></g>' +
+    '<text class="pic-lab" x="104" y="214" text-anchor="middle">толчок к камере</text>'),
+  // 3. правая: ладонь → «OK» (кольцо), из кольца летит снаряд
+  shot: picWrap('shot',
+    '<g transform="translate(14 0) scale(0.95)"><g class="pic-a">' + handG(HAND_OPEN, 'right') + '</g>' +
+    '<g class="pic-b">' + handG(HAND_OK, 'right') + '</g></g>' +
+    '<g class="pic-bolt"><circle cx="72" cy="98" r="9"/><path d="M80 92 L102 78 M81 101 L106 94"/></g>'),
+  // 4. правый кулак: кольцо заряда заполняется → резко раскрыть, лучи выброса
+  burst: picWrap('burst',
+    '<circle class="pic-charge-bg" cx="104" cy="124" r="84"/><circle class="pic-charge" cx="104" cy="124" r="84" pathLength="100"/>' +
+    '<g transform="translate(8 6) scale(0.92)"><g class="pic-a">' + handG(HAND_FIST, 'right') + '</g>' +
+    '<g class="pic-b">' + handG(HAND_OPEN, 'right') + '</g></g>' +
+    '<g class="pic-rays"><path d="M100 28 V8 M158 46 L172 30 M42 46 L28 30 M178 104 H200 M22 104 H2"/></g>'),
+};
+// Маленькие (статичные) — для полосы шагов, итога и «Книги заклинаний».
+const TRAINER_MINI = {
+  walk: picWrap('mini', '<path class="pic-line" d="M8 104 H200"/><g transform="translate(14 22) scale(0.82)">' + handG(HAND_OPEN, 'left') + '</g>'),
+  shield: picWrap('mini', '<g class="pic-waves pic-waves--on"><path d="M40 52 Q20 104 40 156"/><path d="M168 52 Q188 104 168 156"/></g><g transform="translate(14 0) scale(0.86)">' + handG(HAND_OPEN, 'left') + '</g>'),
+  shot: picWrap('mini', '<g transform="translate(14 0) scale(0.86)">' + handG(HAND_OK, 'right') + '</g>'),
+  burst: picWrap('mini', '<g transform="translate(14 0) scale(0.86)">' + handG(HAND_FIST, 'right') + '</g>'),
+};
+
+// Манекен: герой слева, соломенное чучело справа. Реакции — классы .is-live / .is-ok и data-step (ui.css).
+const TRAINER_DUMMY_SVG =
+  '<svg class="ao-mq" viewBox="-110 0 740 112" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+  '<path class="mq-ground" d="M-110 98 H630"/>' +
+  '<path class="mq-ticks" d="M-122 106 h18 M-58 106 h18 M6 106 h18 M70 106 h18 M134 106 h18 M198 106 h18 M262 106 h18 M326 106 h18 M390 106 h18 M454 106 h18 M518 106 h18 M582 106 h18 M646 106 h18"/>' +
+  // чучело
+  '<g class="mq-dummy"><path class="mq-post" d="M420 98 V40"/><path class="mq-post" d="M394 56 H446"/>' +
+  '<ellipse class="mq-straw" cx="420" cy="62" rx="15" ry="22"/><circle class="mq-straw" cx="420" cy="30" r="11"/>' +
+  '<circle class="mq-target" cx="420" cy="62" r="7"/><circle class="mq-target" cx="420" cy="62" r="2.2"/></g>' +
+  '<text class="mq-dmg" x="462" y="30" text-anchor="middle">−12</text>' +
+  '<text class="mq-dmg mq-dmg--big" x="466" y="30" text-anchor="middle">−40</text>' +
+  // камешек от чучела — в щит
+  '<circle class="mq-pebble" cx="400" cy="58" r="5"/>' +
+  // герой
+  '<g class="mq-hero">' +
+  '<path class="mq-leg mq-leg--a" d="M114 98 L120 74"/><path class="mq-leg mq-leg--b" d="M128 98 L122 74"/>' +
+  '<path class="mq-body" d="M106 76 L136 76 L131 44 L111 44 Z"/><circle class="mq-head" cx="121" cy="32" r="9.5"/>' +
+  '<path class="mq-arm" d="M130 50 L150 60"/><circle class="mq-palm" cx="152" cy="60" r="4"/>' +
+  '<circle class="mq-charge" cx="152" cy="60" r="16"/>' +
+  '<path class="mq-shield" d="M162 26 Q186 60 162 94"/>' +
+  '<text class="mq-block" x="178" y="20" text-anchor="middle">Блок!</text>' +
+  '</g>' +
+  '<circle class="mq-bolt" cx="156" cy="60" r="7"/>' +
+  '<circle class="mq-wave" cx="152" cy="60" r="18"/>' +
+  '</svg>';
+
 /* Карта видимых точек для калибровки (вид со спины, как в пиктограммах). */
 const BODY_MAP_SVG =
   '<svg class="ao-bodymap__svg" viewBox="0 0 100 84" fill="none" stroke-linecap="round" stroke-linejoin="round" ' +
@@ -379,8 +531,12 @@ function normSettings(s) {
     reducedMotion: typeof o.reducedMotion === 'boolean' ? o.reducedMotion : DEFAULT_SETTINGS.reducedMotion,
     sensitivity: isNum(o.sensitivity) ? clamp(o.sensitivity, 0.5, 2) : DEFAULT_SETTINGS.sensitivity,
     moveMode: o.moveMode === 'stick' ? 'stick' : 'steer', // [V5] по умолчанию «Руль»
-    startZone: o.startZone === 'forest' ? 'forest' : 'arena', // [FOREST] место старта
+    startZone: o.startZone === 'forest' || o.startZone === 'edge' ? o.startZone : 'arena', // [FOREST] место старта; [ONBOARD] 'edge' — у края арены
+    gestureMode: o.gestureMode === 'master' ? 'master' : 'novice', // [НОВИЧОК] набор жестов
+    autoWalk: o.autoWalk !== false,                                 // [НОВИЧОК] автоход
+    difficulty: o.difficulty === 'normal' ? 'normal' : 'easy', // [FEEL] сложность боя с Регентом
     hero: HERO_OPTIONS.some(([v]) => v === o.hero) ? o.hero : DEFAULT_SETTINGS.hero,
+    muted: o.muted === true, // [SFX] «Без звука» (клавиша M)
   };
 }
 
@@ -452,6 +608,100 @@ function normCosts(c) {
   for (const k of ['bolt', 'shield', 'burst']) if (isNum(c[k]) && c[k] > 0) out[k] = c[k];
   return out;
 }
+
+/* ------------------------------------------------- [ПРОЕКТОР] распознанные жесты
+ * Для подписей под превью камеры, шпаргалки и режима презентации: что именно распознала игра
+ * у каждой руки. Поля берутся из сырого InputFrame (vision.read + handZone.apply в main.js);
+ * normInput выше их не пропускает, и его потребители (обучение, пауза) не меняются. */
+
+const RUNE_RU = { ignis: 'ИГНИС ▲', fulgur: 'ФУЛЬГУР ϟ', orbis: 'ОРБИС ○', stella: 'СТЕЛЛА ★', spira: 'СПИРА @', lemnis: 'ЛЕМНИСКА ∞', caret: 'АКУС ^', vee: 'МЕССИС V', clepsydra: 'КЛЕПСИДРА ⧗', alpha: 'АЛЬФА ℓ' };
+const SIGIL_RU = { clap: 'ХЛОПОК', gate: 'ВРАТА', frame: 'РАМКА', delta: 'ДЕЛЬТА', cor: 'СЕРДЦЕ' };
+const SHAPE_RU = { pinch: 'ЩЕПОТЬ', point: 'УКАЗАТЕЛЬНЫЙ', fist: 'КУЛАК', open: 'ЛАДОНЬ', victory: 'V', unknown: 'В КАДРЕ' };
+const READ_ERR_MS = 4200;      // «ОШИБКА» держится столько же, сколько карточка подсказки battleHud
+const CHEAT_KEY = 'ashen-oath.cheat.v1';
+
+function normGestures(v) {
+  if (!v || typeof v !== 'object') return null;
+  const debug = v.source === 'debug';
+  if (v.valid !== true) return debug ? { source: 'debug', empty: true } : null;
+  const H = v.hands && typeof v.hands === 'object' ? v.hands : null;
+  const hand = (h) => (h && typeof h === 'object' && typeof h.shape === 'string'
+    ? { shape: SHAPE_RU[h.shape] ? h.shape : 'unknown', palm: typeof h.palmFacing === 'string' ? h.palmFacing : '', charge: clamp(num(h.charge), 0, 1) }
+    : null);
+  const st = v.stick && typeof v.stick === 'object' ? v.stick : null;
+  const bow = v.bow && typeof v.bow === 'object' ? v.bow : null;
+  const hs = v.handSpell && typeof v.handSpell === 'object' ? v.handSpell : null;
+  const dd = v.dashDir && typeof v.dashDir === 'object' && (num(v.dashDir.x) || num(v.dashDir.z)) ? { x: num(v.dashDir.x), z: num(v.dashDir.z) }
+    : num(v.dash) !== 0 ? { x: Math.sign(num(v.dash)), z: 0 } : null;
+  const hint = v.hint && typeof v.hint === 'object' && typeof v.hint.text === 'string' && v.hint.text
+    ? { code: String(v.hint.code || ''), gesture: String(v.hint.gesture || ''), text: v.hint.text.slice(0, 220), side: v.hint.side === 'left' || v.hint.side === 'right' ? v.hint.side : null, tMs: num(v.hint.tMs, 0) }
+    : null;
+  return {
+    source: debug ? 'debug' : 'cv',
+    available: !!(H && H.available),
+    left: hand(H && H.left),
+    right: hand(H && H.right),
+    drawing: !!(H && H.drawing),
+    attack: v.attack === true,
+    shield: v.shield === true,
+    burst: v.burst === true,
+    burstBoth: v.burstHand === 'both',
+    spark: v.spark === true,
+    slash: !!v.slash,
+    parry: v.parry === true,
+    sigil: typeof v.sigil === 'string' && v.sigil ? v.sigil : null,
+    rune: typeof v.rune === 'string' && v.rune ? v.rune : null,
+    dashDir: dd,
+    conjure: v.conjure && typeof v.conjure === 'object' ? (v.conjure.kind === 'prism' ? 'prism' : 'orb') : null,
+    thrown: !!(v.throw && typeof v.throw === 'object'),
+    stick: st ? {
+      mode: st.mode === 'steer' ? 'steer' : 'stick', engaged: st.engaged === true,
+      gait: st.gait === 'run' || st.gait === 'walk' ? st.gait : 'idle',
+      turn: clamp(num(st.turn, num(st.x)), -1, 1), x: clamp(num(st.x), -1, 1), z: clamp(num(st.z), -1, 1),
+    } : null,
+    moveX: clamp(num(v.moveX), -1, 1),
+    moveZ: clamp(num(v.moveZ), -1, 1),
+    charge: clamp(num(v.charge), 0, 1),
+    bowActive: !!(bow && bow.active),
+    bowDraw: bow ? clamp(num(bow.draw), 0, 1) : 0,
+    bowRelease: !!(bow && bow.release),
+    spell: !!(hs && (hs.phase === 'form' || hs.phase === 'hold')),
+    spellThrow: !!(hs && hs.phase === 'throw'),
+    hint,
+  };
+}
+
+/* Пиктограммы базовых жестов (36×36, контур currentColor). Рука — «прихватка»: ладонь + пальцы толстыми штрихами. */
+const SVG36 = 'viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"';
+const PALM = (dx = 0, dy = 0) =>
+  `<g transform="translate(${dx} ${dy})"><rect x="11" y="17" width="13" height="12" rx="4.2" fill="currentColor" fill-opacity=".2"/>` +
+  '<path d="M13 17.5V9.5M16.3 17V7.5M19.6 17V8.3M22.6 18V11.5" stroke-width="2.8"/><path d="M11.3 22.5 8.2 18.8" stroke-width="2.8"/></g>';
+const FIST = (dx = 0, dy = 0) =>
+  `<g transform="translate(${dx} ${dy})"><rect x="10.5" y="13" width="15" height="14" rx="4.8" fill="currentColor" fill-opacity=".2"/>` +
+  '<path d="M14.3 13.4v4M18 13.4v4M21.7 13.4v4" stroke-width="1.4"/><path d="M10.8 21h6.4" stroke-width="2.4"/></g>';
+const GESTURE_ICONS = {
+  // ход «рулём»: ладонь у груди, дуга-руль над ней
+  move: `<svg ${SVG36}>${PALM(0, 4)}<path d="M8 8.5q10-6.5 20 0" /><path d="M8 8.5l.4-3.4M8 8.5l3.3.6M28 8.5l-.4-3.4M28 8.5l-3.3.6"/></svg>`,
+  // щит: ладонь толкается к камере — волны впереди
+  shield: `<svg ${SVG36}>${PALM(-3, 1)}<path d="M26.5 12c2.2 3.6 2.2 8.4 0 12M30 9c3.4 5.4 3.4 12.6 0 18"/></svg>`,
+  // рывок: ладонь и линии скорости
+  dash: `<svg ${SVG36}>${PALM(4, 1)}<path d="M3 15h6M2 20h7M3.5 25h5"/></svg>`,
+  // «OK»: кольцо большого и указательного, три пальца вверх
+  bolt: `<svg ${SVG36}><circle cx="13" cy="16" r="4.4" stroke-width="2.4"/><path d="M18.5 18V8M21.8 18.5V9M25 19.5V11.5" stroke-width="2.8"/>` +
+    '<path d="M9.5 19.5c.4 5.6 3.8 9 8.6 9 4.6 0 7.6-3.2 7.6-7.6v-1.4" fill="currentColor" fill-opacity=".2"/><path d="M30 7l3-2M30.5 11.5h3.2" /></svg>',
+  // выброс: кулак → ладонь, лучи
+  burst: `<svg ${SVG36}>${PALM(0, 3)}<path d="M18 2.5v3.6M7 6.5l2.4 2.4M29 6.5l-2.4 2.4M3.5 15.5h3.4M29 15.5h3.4"/></svg>`,
+  // искра: из кулака выпрямлен указательный, у кончика — вспышка
+  spark: `<svg ${SVG36}>${FIST(0, 6)}<path d="M14.3 19.5V8.5" stroke-width="2.8"/><path d="M14.3 2.2v2.4M9.8 4.2l1.6 1.6M18.8 4.2l-1.6 1.6M8.6 8.4h2.2M17.8 8.4H20"/></svg>`,
+};
+const CHEAT_ITEMS = [
+  { key: 'move', side: 'left', name: 'Ход', how: 'левая ладонь у груди', howStick: 'левая рука — джойстик' },
+  { key: 'shield', side: 'left', name: 'Щит', how: 'толкни ладонь к камере' },
+  { key: 'dash', side: 'left', name: 'Рывок', how: 'резкий дёрг левой' },
+  { key: 'bolt', side: 'right', name: 'Снаряд', how: '«OK» правой' },
+  { key: 'burst', side: 'right', name: 'Выброс', how: 'кулак → резко ладонь' },
+  { key: 'spark', side: 'right', name: 'Искра', how: 'щелчок указательным' },
+];
 
 /* ------------------------------------------------------------ descriptions */
 
@@ -627,13 +877,15 @@ function telegraphText(tg) {
   }
 }
 
+// Совет после поражения. Управление — как в подсказках core/gestureCoach.js (shield_push/shield_palm,
+// ok_ring_open/ok_fingers) и на плитках HUD: щит — толчок левой ладонью к камере, снаряд — «OK» правой.
 function defeatTip(stats, snap) {
-  if (num(stats.blocks) === 0) return 'Поднятая левая рука держит щит: он гасит атаки, которые можно блокировать.';
-  if (num(stats.dodges) === 0) return 'Резко дёрните левой рукой в сторону и верните её — рывок: им можно уйти из зоны удара.';
+  if (num(stats.blocks) === 0) return 'Щит: резко толкните раскрытую левую ладонь к камере, ладонью вперёд, и держите её так. Он гасит атаки, которые можно блокировать. Просто поднятая рука щит не ставит.';
+  if (num(stats.dodges) === 0) return 'Рывок: резко дёрните левой рукой в сторону и верните её — так можно уйти из зоны удара.';
   if (snap && snap.boss && snap.boss.stage === 2) {
     return 'После половины здоровья страж усиливается. Следите за замахом и не стойте в зоне удара.';
   }
-  return 'Держите правую руку поднятой между атаками Регента: снаряды летят, пока рука поднята.';
+  return 'Снаряды летят, пока правая рука держит «OK»: кончики большого и указательного сомкнуты в кольцо, остальные три пальца выпрямлены. Стреляйте между атаками Регента.';
 }
 
 /* ================================================================ createUI */
@@ -651,7 +903,20 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     confidenceFair: num(options.confidenceFair, 0.4),
     keyboardPause: options.keyboardPause !== false,
     showVolume: options.showVolume !== false, // false — звук выключен в сборке, ползунок не показываем
+    quickStart: options.quickStart === true,  // [ONBOARD] «Играть»; экран камеры с рамкой-силуэтом и автокалибровкой (ведёт main.js)
+    // [ТРЕНАЖЁР] прежний экран обучения из карточек вместо «Научись за 60 секунд»
+    tutorialCards: options.tutorialCards === true || /[?&]tutorial=cards\b/.test((win.location && win.location.search) || ''),
   };
+
+  // [ONBOARD] стили быстрого входа — отдельным файлом рядом с ui.css (как netLobby.css)
+  if (cfg.quickStart && !doc.getElementById('ao-onboard-css')) {
+    try {
+      const l = doc.createElement('link');
+      l.id = 'ao-onboard-css'; l.rel = 'stylesheet';
+      l.href = new URL('./ui-onboard.css', import.meta.url).href;
+      (doc.head || doc.documentElement).appendChild(l);
+    } catch (e) { console.warn('[ui] ui-onboard.css', e); }
+  }
 
   let disposed = false;
   const cleanups = [];
@@ -674,6 +939,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     focusPending: false,
     errorKey: null,
     errorInfo: explainError(''),
+    // [ПРОЕКТОР] подписи жестов: защёлка импульсов по рукам, активная «ОШИБКА», когда сработал жест шпаргалки
+    read: { left: null, right: null, err: null, errKey: '', fired: {}, view: null },
+    cheatHidden: false,
+    present: false,
   };
 
   /* ---------------------------------------------------------- plumbing */
@@ -899,7 +1168,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const value = el('output', { class: 'ao-field__value', for: id });
     const hint = o.hint ? el('div', { class: 'ao-field__hint', id: `${id}-hint`, text: o.hint }) : null;
     if (hint) input.setAttribute('aria-describedby', `${id}-hint`);
-    const field = el('div', { class: 'ao-field' }, el('div', { class: 'ao-field__head' }, el('label', { for: id, text: o.label }), value), input, hint);
+    const field = el('div', { class: 'ao-field' }, el('div', { class: 'ao-field__head' }, el('label', { for: id, text: o.label }), value, o.head || null), input, hint);
     let lastSent = null;
     const paint = (v) => {
       const text = o.format(v);
@@ -1036,18 +1305,58 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     return fs;
   }
 
+  // [НОВИЧОК] «Жесты»: Новичок (только базовые) / Мастер (все) + «Автоход» — на виду, рядом с «Начать»
+  const GESTURE_OPTIONS = [['novice', 'Новичок'], ['master', 'Мастер']];
+  function buildGestureMode(prefix) {
+    const name = `${uid}-${prefix}-gesturemode`;
+    const seg = el('div', { class: 'ao-seg' });
+    const hintId = `${name}-hint`;
+    const hint = el('div', { class: 'ao-field__hint', id: hintId });
+    const TIPS = {
+      novice: 'Только базовые жесты: щит, рывок, «OK», кулак → выброс, сфера',
+      master: 'Все жесты: ещё руны, «Искра», рассечение, парирование, печати, лук, магия рукой',
+    };
+    const autoId = `${name}-auto`;
+    const auto = el('input', { type: 'checkbox', id: autoId, class: 'ao-check__input' });
+    const autoLabel = el('label', { class: 'ao-check', for: autoId, title: 'Герой сам идёт к Регенту и обходит его по кругу — вы только сражаетесь, левая рука свободна для щита и рывка' }, auto, el('span', { text: 'Автоход' }));
+    const fs = el('fieldset', { class: 'ao-field ao-fieldset', 'aria-describedby': hintId },
+      el('legend', { class: 'ao-field__legend', text: 'Жесты' }),
+      el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center' }, seg, autoLabel), hint);
+    const inputs = [];
+    for (const [value, label] of GESTURE_OPTIONS) {
+      const input = el('input', { type: 'radio', name, value, class: 'ao-seg__input' });
+      inputs.push(input);
+      seg.append(el('label', { class: 'ao-seg__opt', title: TIPS[value] }, input, el('span', { class: 'ao-seg__label', text: label })));
+      listen(input, 'change', () => { if (input.checked) invoke('onSettings', { gestureMode: value }); });
+    }
+    listen(auto, 'change', () => invoke('onSettings', { autoWalk: auto.checked }));
+    const ctl = {
+      sync(settings, force) {
+        const m = settings.gestureMode === 'master' ? 'master' : 'novice';
+        setText(hint, `${TIPS[m]}${settings.autoWalk !== false ? '. Автоход ведёт героя к Регенту и вокруг него.' : '.'}`);
+        if (!force && fs.contains(doc.activeElement)) return;
+        for (const i of inputs) { const on = i.value === m; if (i.checked !== on) i.checked = on; }
+        if (auto.checked !== (settings.autoWalk !== false)) auto.checked = settings.autoWalk !== false;
+      },
+    };
+    listen(fs, 'focusout', (e) => { if (!fs.contains(e.relatedTarget) && state.settings) ctl.sync(state.settings, true); });
+    controls.push(ctl);
+    return fs;
+  }
+
   // [FOREST] «Место старта»: Пепельное плато (у арены) / Сияющий лес (у врат леса)
-  const ZONE_OPTIONS = [['arena', 'Пепельное плато'], ['forest', 'Сияющий лес']];
+  // [ONBOARD] 'edge' — сразу у края арены (бой через секунды), 'arena' — прежняя прогулка от плато
+  const ZONE_OPTIONS = [['edge', 'У арены'], ['arena', 'Пепельное плато'], ['forest', 'Сияющий лес']];
   function buildStartZone(prefix) {
     const name = `${uid}-${prefix}-startzone`;
     const seg = el('div', { class: 'ao-seg' });
     const fs = el('fieldset', { class: 'ao-field ao-fieldset' }, el('legend', { class: 'ao-field__legend', text: 'Место старта' }), seg);
     const inputs = [];
-    const TIPS = { arena: 'У арены Регента, на пепельном плато', forest: 'У эльфийских врат Сияющего леса, к северу от арены' };
+    const TIPS = { edge: 'Сразу на краю арены Регента — бой через пару секунд', arena: 'На пепельном плато: дойти до арены Регента пешком', forest: 'У эльфийских врат Сияющего леса, к северу от арены' };
     for (const [value, label] of ZONE_OPTIONS) {
       const input = el('input', { type: 'radio', name, value, class: 'ao-seg__input' });
       inputs.push(input);
-      const short = prefix === 'menu' && value === 'arena' ? 'Плато' : label;   // в меню — коротко, чтобы встать в ряд
+      const short = prefix === 'menu' ? ({ arena: 'Плато', forest: 'Лес' }[value] || label) : label;   // в меню — коротко, чтобы встать в ряд
       seg.append(el('label', { class: 'ao-seg__opt', title: `${label}: ${TIPS[value]}` }, input, el('span', { class: 'ao-seg__label', text: short })));
       listen(input, 'change', () => { if (input.checked) invoke('onSettings', { startZone: value }); });
     }
@@ -1062,11 +1371,37 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     return fs;
   }
 
+  // [FEEL] «Сложность»: Лёгкая (Регент на 30% слабее, по умолчанию) / Обычная. Действует со следующего боя.
+  const DIFFICULTY_OPTIONS = [['easy', 'Лёгкая'], ['normal', 'Обычная']];
+  function buildDifficulty(prefix) {
+    const name = `${uid}-${prefix}-difficulty`;
+    const seg = el('div', { class: 'ao-seg' });
+    const fs = el('fieldset', { class: 'ao-field ao-fieldset' }, el('legend', { class: 'ao-field__legend', text: 'Сложность' }), seg);
+    const inputs = [];
+    const TIPS = { easy: 'Для первого боя: у Регента на 30% меньше здоровья и урона', normal: 'Полная сила Регента' };
+    for (const [value, label] of DIFFICULTY_OPTIONS) {
+      const input = el('input', { type: 'radio', name, value, class: 'ao-seg__input' });
+      inputs.push(input);
+      seg.append(el('label', { class: 'ao-seg__opt', title: `${label}: ${TIPS[value]}` }, input, el('span', { class: 'ao-seg__label', text: label })));
+      listen(input, 'change', () => { if (input.checked) invoke('onSettings', { difficulty: value }); });
+    }
+    const ctl = {
+      sync(settings, force) {
+        if (!force && fs.contains(doc.activeElement)) return;
+        for (const i of inputs) { const on = i.value === settings.difficulty; if (i.checked !== on) i.checked = on; }
+      },
+    };
+    listen(fs, 'focusout', (e) => { if (!fs.contains(e.relatedTarget) && state.settings) ctl.sync(state.settings, true); });
+    controls.push(ctl);
+    return fs;
+  }
+
   function buildSettings(keys, prefix) {
     const wrap = el('div', { class: 'ao-settings' });
     for (const key of keys) {
       if (key === 'quality') wrap.append(buildQuality(prefix));
       else if (key === 'moveMode') wrap.append(buildMoveMode(prefix));
+      else if (key === 'gestureMode') wrap.append(buildGestureMode(prefix));   // [НОВИЧОК]
       else if (key === 'startZone') { // [FOREST] в одном ряду с «Управлением движением» (меню 1366×650 не растёт)
         const zs = buildStartZone(prefix), prev = wrap.lastElementChild;
         if (prev && keys[keys.indexOf(key) - 1] === 'moveMode') { const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 16px;align-items:flex-end' }); wrap.replaceChild(row, prev); row.append(prev, zs); }
@@ -1074,9 +1409,19 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       }
       else if (key === 'volume' && !cfg.showVolume) continue;
       else if (key === 'volume') {
+        // [SFX] «Без звука» — в строке громкости, чтобы меню 1366×650 не выросло; то же делает клавиша M
+        const mute = el('button', { type: 'button', class: 'ao-mute', 'aria-pressed': 'false', title: 'Выключить звук — клавиша M', text: 'Без звука · M' });
+        listen(mute, 'click', () => invoke('onSettings', { muted: !(state.settings && state.settings.muted) }));
+        controls.push({
+          sync(st) {
+            const m = !!(st && st.muted);
+            setAttr(mute, 'aria-pressed', m ? 'true' : 'false');
+            setText(mute, m ? 'Звук выключен · M' : 'Без звука · M');
+          },
+        });
         wrap.append(
           buildRange({
-            key: 'volume', prefix, label: 'Громкость', min: 0, max: 100, step: 5,
+            key: 'volume', prefix, label: 'Громкость', min: 0, max: 100, step: 5, head: mute,
             toRaw: (v) => Math.round(v * 100), fromRaw: (r) => r / 100, format: (v) => `${Math.round(v * 100)}%`,
           }),
         );
@@ -1088,7 +1433,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
             toRaw: (v) => Math.round(v * 100), fromRaw: (r) => r / 100, format: (v) => `${v.toFixed(2).replace('.', ',')}×`,
           }),
         );
-      } else if (key === 'reducedMotion') wrap.append(buildMotion(prefix));
+      } else if (key === 'difficulty') wrap.append(buildDifficulty(prefix)); // [FEEL]
+      else if (key === 'reducedMotion') {
+        const mo = buildMotion(prefix), prev = wrap.lastElementChild;
+        // [FEEL] в одном ряду со «Сложностью» (меню не растёт по высоте)
+        if (prev && keys[keys.indexOf(key) - 1] === 'difficulty') { const row = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 22px;align-items:flex-end' }); wrap.replaceChild(row, prev); row.append(prev, mo); }
+        else wrap.append(mo);
+      }
     }
     return wrap;
   }
@@ -1115,12 +1466,20 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
 
   const menu = (() => {
     const hid = `${uid}-menu-h`;
-    const start = btn('Начать', () => invoke('onStart', { from: 'menu' }), { variant: 'primary', size: 'lg' });
+    // [ONBOARD] одна большая кнопка «Играть»: камера, калибровка и обучение дальше идут сами
+    const start = btn(cfg.quickStart ? 'Играть' : 'Начать', () => invoke('onStart', { from: 'menu' }), { variant: 'primary', size: cfg.quickStart ? 'xl' : 'lg' });
     const oathBtn = btn('Клятва героя', () => invoke('onOath', { from: 'menu' }), { variant: 'secondary' });
     const netBtn = btn('Онлайн-дуэль', () => invoke('onNet', { from: 'menu' }), { variant: 'secondary' }); // [NET] экран лобби — modules/netLobby.js
+    const bookM = localBtn('Книга заклинаний', (e) => openBook(e && e.currentTarget), { iconName: 'book' }); // [ТРЕНАЖЁР] все жесты
+    // [ТВИСТ «ОШИБКА»] тренажёр: чек-лист условий жеста вживую — твист за 20 секунд
+    const techBtn = btn('Тренажёр техники', () => invoke('onTechnique', { from: 'menu' }), { variant: 'secondary' });
+    techBtn.node.classList.add('ao-menu__tech');
     const oathPts = el('span', { class: 'ao-oathpts', hidden: true });
     const dbg = el('button', { type: 'button', class: 'ao-toggle', 'aria-pressed': 'false' }, el('span', { class: 'ao-toggle__track', 'aria-hidden': 'true' }), el('span', { class: 'ao-toggle__label', text: 'Отладка с клавиатуры' }));
     listen(dbg, 'click', () => invoke('onDebug', !state.debug));
+    // [ПРОЕКТОР] режим презентации для питча через проектор (то же, что клавиша P)
+    const presentBtn = el('button', { type: 'button', class: 'ao-toggle ao-toggle--present', 'aria-pressed': 'false', 'aria-keyshortcuts': 'P', 'data-ui-local': '' }, el('span', { class: 'ao-toggle__track', 'aria-hidden': 'true' }), el('span', { class: 'ao-toggle__label', text: 'Режим презентации · P' }));
+    listen(presentBtn, 'click', () => setPresent(!state.present));
     const dbgKeys = el('p', { class: 'ao-debugkeys', hidden: true, text: DEBUG_KEYS_TEXT });
     const title = el(
       'h1',
@@ -1135,10 +1494,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       title,
       el('p', { class: 'ao-subtitle', text: 'Бой с Регентом Нимба' }),
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
-      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts, netBtn.node /* [NET] */), el('p', { class: 'ao-note', text: 'Играется сидя. Нужны веб-камера, Chrome или Edge и устойчивый стул.' })),
+      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, techBtn.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode'], 'menu')), // [НОВИЧОК] режим жестов — на виду
       buildHeroPick('menu'),
-      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'reducedMotion'], 'menu')),
-      el('div', { class: 'ao-menu__foot' }, dbg, dbgKeys),
+      el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'difficulty', 'reducedMotion'], 'menu')),
+      el('div', { class: 'ao-menu__foot' }, el('div', { class: 'ao-menu__toggles' }, dbg, presentBtn), dbgKeys),
     );
     return {
       section: screenSection('menu', panel, hid),
@@ -1146,6 +1505,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       focus: () => start.node,
       update(ctx) {
         setAttr(dbg, 'aria-pressed', ctx.debug ? 'true' : 'false');
+        setAttr(presentBtn, 'aria-pressed', state.present ? 'true' : 'false');
         setHidden(dbgKeys, !ctx.debug);
         const pts = ctx.vm.progress && isNum(ctx.vm.progress.points) ? ctx.vm.progress.points : 0;
         setText(oathPts, pts > 0 ? `${pts} ${plural(pts, 'очко', 'очка', 'очков')}` : '');
@@ -1201,9 +1561,68 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       err.node,
       el('div', { class: 'ao-actions' }, enable.node, next.node, skip.node, el('span', { class: 'ao-spacer' }), back.node),
     );
+    // [ONBOARD] быстрый экран: живое превью с рамкой-силуэтом (зелёная — плечи и кисти в кадре), кольцо
+    // калибровки вокруг головы, три подсказки-иконки. Камеру, калибровку и переход дальше ведёт main.js.
+    const quick = cfg.quickStart ? (() => {
+      const frame = el('div', { class: 'ao-onb__frame', 'data-fit': 'off', html: ONB_FRAME_SVG });
+      const ring = frame.querySelector('.ao-onb__ring');
+      const hands = {};
+      frame.querySelectorAll('[data-hand]').forEach((n) => { hands[n.getAttribute('data-hand')] = n; });
+      const sub = el('p', { class: 'ao-onb__sub' });
+      const stage = el('div', { class: 'ao-onb__stage' }, host, frame);
+      const tip = (iconName, text) => el('li', { class: 'ao-onb__tip' }, icon(iconName, 'ao-onb__tipicon'), el('span', { text }));
+      const tips = el('ul', { class: 'ao-onb__tips' },
+        tip('frame', 'Плечи и кисти — в рамке'),
+        tip('armsdown', 'Руки вниз, замрите на 1,5 с'),
+        tip('lock', 'Видео остаётся на компьютере'));
+      setAttr(h, 'aria-live', 'polite');
+      const node = el('div', { class: 'ao-panel ao-panel--camera ao-panel--onb ao-frame' },
+        el('div', { class: 'ao-onb__head' }, h, sub), stage, tips, err.node,
+        el('div', { class: 'ao-actions ao-actions--onb' }, enable.node, next.node, skip.node, el('span', { class: 'ao-spacer' }), back.node));
+      return { node, frame, ring, hands, sub };
+    })() : null;
     let running = false;
+    // [ONBOARD] состояние рамки и подписи: off → none (никого) → partial (плечи без кистей) → ok; кольцо — калибровка
+    function updateQuick(ctx, st, pend) {
+      const q = quick, tr = ctx.tr, parts = tr.parts || {};
+      const shoulders = running && st !== 'lost' && parts.leftShoulder === true && parts.rightShoulder === true;
+      const wristL = shoulders && parts.leftWrist === true, wristR = shoulders && parts.rightWrist === true;
+      const calibrating = st === 'calibrating';
+      const done = running && !calibrating && ctx.calibrated === true;
+      const fit = !running ? 'off' : !shoulders ? 'none' : wristL && wristR ? 'ok' : 'partial';
+      setAttr(q.frame, 'data-fit', fit);
+      setAttr(q.node, 'data-state', st === 'error' ? 'error' : null);   // ошибка: превью меньше, подсказки скрыты — «Повторить» в кадре
+      setAttr(q.hands.left, 'data-on', wristL ? 'true' : 'false');
+      setAttr(q.hands.right, 'data-on', wristR ? 'true' : 'false');
+      const prog = calibrating ? clamp(num(tr.progress), 0, 1) : done && shoulders ? 1 : 0;
+      setStyle(q.ring, 'stroke-dashoffset', String(Math.round((1 - prog) * 1000) / 10));
+      setAttr(q.frame, 'data-ring', calibrating ? 'run' : done && shoulders ? 'done' : 'off');
+      const hint = String(tr.message || '');
+      const rel = ctx.vm.tracking && ctx.vm.tracking.debug && ctx.vm.tracking.debug.reliability;
+      const scale = running && rel ? rel.scaleWarning : null;   // 'far' | 'near' — масштаб не совпал с сохранённой калибровкой
+      let title, sub = '';
+      if (ctx.debug) { title = 'Отладка с клавиатуры'; sub = 'Камера не нужна: «Продолжить без камеры».'; }
+      else if (st === 'error') title = 'Камера не включилась';
+      else if (st === 'permission') { title = 'Разрешите камеру'; sub = 'Запрос — у адресной строки браузера.'; }
+      else if (st === 'loading') { title = 'Загружаем распознавание…'; sub = tr.progress !== null && tr.progress > 0 && tr.progress < 1 ? pct(tr.progress) : ''; }
+      else if (!running) { title = pend ? 'Включаем камеру…' : 'Камера выключена'; sub = pend ? '' : 'Нажмите «Включить камеру».'; }
+      else if (scale === 'far') { title = 'Сядьте ближе'; sub = 'Или замрите на 1,5 с — игра подстроится.'; }
+      else if (scale === 'near') { title = 'Отодвиньтесь'; sub = 'Или замрите на 1,5 с — игра подстроится.'; }
+      else if (!shoulders) { title = 'Сядьте в рамку'; sub = 'Чтобы плечи и кисти попали в кадр.'; }
+      else if (calibrating && /опустите/i.test(hint)) { title = 'Опустите руки'; sub = 'И замрите на полторы секунды.'; }
+      else if (calibrating) { title = prog > 0.02 ? 'Замрите…' : 'Сядьте ровно'; sub = prog > 0.02 ? pct(prog) : 'Руки вниз.'; }
+      else if (done) { title = 'Готово!'; sub = wristL && wristR ? 'Начинаем…' : 'Начинаем… Держите кисти в кадре.'; }
+      else if (fit === 'partial') { title = 'Покажите кисти'; sub = 'Опустите руки так, чтобы кисти были в кадре.'; }
+      else { title = 'Сядьте ровно'; sub = 'Руки вниз.'; }
+      setText(h, title);
+      setText(q.sub, sub);
+      setHidden(q.sub, !sub);
+      // кнопки: «Включить камеру» — только если камера выключена или упала; «Далее» — если калибровка уже есть
+      setBtn(enable, { hidden: running || ctx.debug || pend || CAMERA_STARTING.includes(st) });
+      setBtn(next, { hidden: !(done && shoulders) || ctx.debug, label: 'Далее' });
+    }
     return {
-      section: screenSection('camera', panel, hid),
+      section: screenSection('camera', quick ? quick.node : panel, hid),
       heading: h,
       host,
       focus: () => (running ? next.node : enable.node),
@@ -1239,6 +1658,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setBtn(next, { hidden: !running });
         setBtn(skip, { hidden: !ctx.debug || running });
         setAttr(host, 'data-tone', describeTracking(ctx.tr, cfg).tone);
+        if (quick) updateQuick(ctx, st, pend || !!(ctx.vm.onboard && ctx.vm.onboard.starting));
       },
     };
   })();
@@ -1423,9 +1843,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
 
   /* ------------------------------------------------------------ TUTORIAL */
 
-  const tutorial = (() => {
-    const hid = `${uid}-tut-h`;
-    const h = heading('h2', hid, 'Как управлять', 'ao-h2');
+  // Карточки «Как управлять» (7 штук, ~35 вводов): теперь живут в «Книге заклинаний» (раздел
+  // «Продвинутые») и в прежнем экране обучения — он выключен по умолчанию (?tutorial=cards).
+  function buildTutCards() {
     const cards = {};
     const grid = el('div', { class: 'ao-tut-grid' });
     for (const item of TUTORIAL) {
@@ -1463,20 +1883,53 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       cards[item.key] = { card, chip, chipText, lean, item, figEl, titleEl, gestEl, effEl, mode: 'steer' };
       grid.append(card);
     }
+    return { grid, cards };
+  }
+  // [V5] тексты карточки движения — под выбранную схему («Руль» / «Джойстик»)
+  // [НОВИЧОК] opts.novice — тексты базовых жестов, карточки masterOnly скрыты; без opts — все жесты («Книга заклинаний»)
+  function syncTutCards(cards, ctx, opts = {}) {
+    const moveMode = ctx.settings && ctx.settings.moveMode === 'stick' ? 'stick' : 'steer';
+    const novice = !!opts.novice, autoWalk = !!opts.autoWalk;
+    const mkey = `${moveMode}|${novice}|${autoWalk}`;
+    for (const c of Object.values(cards)) {
+      if (c.mode === mkey) continue;
+      c.mode = mkey;
+      setHidden(c.card, novice && !!c.item.masterOnly);
+      let v = moveMode === 'stick' && c.item.stick ? { ...c.item, ...c.item.stick } : c.item;
+      if (novice && c.item.novice) v = { ...v, ...c.item.novice, ...(autoWalk && c.item.novice.auto ? c.item.novice.auto : {}) };
+      setText(c.titleEl, v.title); setText(c.gestEl, v.gesture); setText(c.effEl, v.effect);
+      c.figEl.innerHTML = v.svg; // только статические строки этого модуля
+    }
+  }
+
+  // Прежний экран обучения «Как управлять» (стена карточек с живыми отметками). Выключен по умолчанию.
+  const buildCardsTutorial = () => {
+    const hid = `${uid}-tut-h`;
+    const h = heading('h2', hid, 'Как управлять', 'ao-h2');
+    const { grid, cards } = buildTutCards();
     const host = el('div', { class: 'ao-slothost' });
     const status = statusLine();
     const ready = el('p', { class: 'ao-msg' });
+    // [НОВИЧОК] подзаголовок — под режим жестов и автоход
+    const LEADS = {
+      master: 'Левая рука ведёт героя, обе руки колдуют — всё сидя и без большой амплитуды.',
+      novice: 'Левая рука ведёт героя, руки сражаются — пять базовых жестов, сидя или стоя.',
+      auto: 'Герой идёт сам — вы только сражаетесь: щит, рывок, снаряды, выброс и сфера.',
+    };
+    const lead = el('p', { class: 'ao-lead', text: LEADS.master });
     // [ТВИСТ «ОШИБКА»] почти-правильный жест на обучении: что не так и как исправить
     const coachHead = el('span', { class: 'ao-tut-coach__head' });
     const coachText = el('span', { class: 'ao-tut-coach__text' });
-    const coach = el('div', { class: 'ao-tut-coach', role: 'status', 'aria-live': 'polite', hidden: true }, coachHead, coachText);
+    const coachPic = el('span', { class: 'ao-tut-coach__pic', 'aria-hidden': 'true' });   // «как сейчас → как надо»
+    const coach = el('div', { class: 'ao-tut-coach', role: 'status', 'aria-live': 'polite', hidden: true }, coachPic, el('span', { class: 'ao-tut-coach__body' }, coachHead, coachText));
+    let coachPicCode = '';
     const start = btn('В бой', () => invoke('onStart', { from: 'tutorial' }), { variant: 'primary', size: 'lg' });
     const recal = btn('Перекалибровать', pressCalibrate);
     const back = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
     const panel = el(
       'div',
       { class: 'ao-panel ao-panel--tutorial ao-frame' },
-      el('div', { class: 'ao-head' }, h, el('p', { class: 'ao-lead', text: 'Левая рука ведёт героя, обе руки колдуют — всё сидя и без большой амплитуды.' })),
+      el('div', { class: 'ao-head' }, h, lead),
       grid,
       el(
         'div',
@@ -1489,8 +1942,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           ready,
           coach,
           el('p', { class: 'ao-note', text: 'Остановить бой: кнопка «Пауза» в углу экрана или Esc. Если выйти из кадра, бой встанет на паузу сам.' }),
-          el('div', { class: 'ao-actions ao-actions--inline' }, start.node, recal.node, el('span', { class: 'ao-spacer' }), back.node),
         ),
+        // [ПРОЕКТОР] кнопки — отдельной колонкой справа, чтобы «В бой» не уходила под край на 1366×768
+        el('div', { class: 'ao-actions ao-actions--inline ao-tut-actions' }, start.node, recal.node, el('span', { class: 'ao-spacer' }), back.node),
       ),
     );
     const setChip = (c, st, text) => {
@@ -1509,8 +1963,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       },
       update(ctx) {
         const st = ctx.tr.status;
-        const canStart = ctx.debug || (st === 'ready' && ctx.calibrated !== false);
-        setBtn(start, { disabled: !canStart });
+        // [ONBOARD] доступность «В бой» — те же условия, что у main.js (gate); причина — прямо на кнопке
+        const gate = ctx.vm.gate && typeof ctx.vm.gate === 'object' ? ctx.vm.gate : null;
+        const canStart = ctx.debug || (gate ? gate.ok === true : st === 'ready' && ctx.calibrated !== false);
+        setBtn(start, { disabled: !canStart, label: canStart || !gate || !gate.reason ? 'В бой' : gate.reason });
         setBtn(recal, { hidden: ctx.debug });
         paintStatus(status, ctx.debug ? DEBUG_INFO : describeTracking(ctx.tr, cfg), ctx.debug ? '' : ctx.tr.message);
         let text;
@@ -1519,17 +1975,14 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         else if (ctx.calibrated === false) text = 'Нужна калибровка. Нажмите «Перекалибровать».';
         else if (st === 'lost') text = 'Камера не видит позу. Кнопка «В бой» станет доступна, когда трекинг восстановится.';
         else if (st === 'calibrating') text = 'Идёт калибровка.';
+        else if (gate && gate.reason) text = `${gate.reason}.`;   // [ONBOARD]
         else text = 'Камера ещё не готова.';
         setText(ready, text);
-        // [V5] тексты карточки движения — под выбранную схему («Руль» / «Джойстик»)
-        const moveMode = ctx.settings && ctx.settings.moveMode === 'stick' ? 'stick' : 'steer';
-        for (const c of Object.values(cards)) {
-          if (!c.item.stick || c.mode === moveMode) continue;
-          c.mode = moveMode;
-          const v = moveMode === 'stick' ? { ...c.item, ...c.item.stick } : c.item;
-          setText(c.titleEl, v.title); setText(c.gestEl, v.gesture); setText(c.effEl, v.effect);
-          c.figEl.innerHTML = v.svg; // только статические строки этого модуля
-        }
+        // [V5] тексты карточек — под схему движения; [НОВИЧОК] и под режим жестов: лук и магия рукой скрыты
+        const novice = !(ctx.settings && ctx.settings.gestureMode === 'master');
+        const autoWalk = !(ctx.settings && ctx.settings.autoWalk === false);
+        syncTutCards(cards, ctx, { novice, autoWalk });
+        setText(lead, !novice ? LEADS.master : autoWalk ? LEADS.auto : LEADS.novice);
 
         const inp = ctx.input;
         const liveCv = !!inp && inp.source === 'cv' && !ctx.debug;
@@ -1541,6 +1994,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           const side = t.hint.side === 'left' ? ' · левая рука' : t.hint.side === 'right' ? ' · правая рука' : '';
           setText(coachHead, `Ошибка · ${t.hint.gesture}${side}`);
           setText(coachText, t.hint.text);
+          if (t.hint.code !== coachPicCode) { coachPicCode = t.hint.code || ''; coachPic.innerHTML = hintPictogram(coachPicCode, { width: 126, height: 54, labels: true }); }
         }
         if (liveCv && inp.valid) {
           if (inp.moveX <= -STRAFE_SEEN) t.left = true;
@@ -1618,7 +2072,361 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         }
       },
     };
+  };
+
+  /* ------------------------------------------------ [ТРЕНАЖЁР] «Научись за 60 секунд» */
+  // Экран обучения по умолчанию: 4 базовых жеста по одному (логика шагов — core/tutorialTrainer.js).
+  // Крупная анимированная кисть рядом с живым превью камеры (скелет кисти рисует trackingHud на overlay),
+  // «✓ Распознано!» и реакция манекена, подсказка «ОШИБКА» прямо под кистью, «Пропустить», прогресс «2 / 4».
+  // В «Отладке с клавиатуры» шаги проходятся клавишами боя: W, K, J, L (H — пример подсказки «ОШИБКА»).
+  // Кнопки, которые меняют только сам экран, помечены data-ui-local (в игру ничего не передают).
+
+  const STEP_SHORT = { walk: 'Ход', shield: 'Щит', shot: 'Выстрел', burst: 'Выброс' };
+  const LIVE_TEXT = {
+    walk: ['Ладонь — на уровень груди', 'Герой идёт — держи ещё…'],
+    shield: ['Толкни ладонь к камере', 'Щит поднят — держи…'],
+    shot: ['Сомкни пальцы в кольцо «OK»', '«OK» есть — держи…'],
+    burst: ['Сожми кулак — копится заряд', 'Держи кулак — заряд копится…', 'Заряд есть — теперь резко раскрой!'],
+  };
+  const BURST_READY = 0.35; // заряд, после которого раскрытие кулака даёт выброс (minCharge распознавателя — 0,3)
+  function lowerFirst(t) { return t ? t[0].toLowerCase() + t.slice(1) : ''; }
+  function localBtn(label, onPress, opts) {
+    const b = btn(label, onPress, opts);
+    b.node.setAttribute('data-ui-local', '');
+    return b;
+  }
+
+  const trainer = (() => {
+    const tr = createTutorialTrainer();
+    const hid = `${uid}-tut-h`;
+    const h = heading('h2', hid, 'Научись за 60 секунд', 'ao-h2');
+    const pills = TRAINER_STEPS.map((st, i) =>
+      el('li', { class: 'ao-trn-pill', 'data-state': 'todo' },
+        el('span', { class: 'ao-trn-pill__n', 'aria-hidden': 'true', text: String(i + 1) }),
+        el('span', { class: 'ao-trn-pill__t', text: STEP_SHORT[st.id] || st.title })));
+    const steps = el('ol', { class: 'ao-trn-steps', 'aria-label': 'Шаги обучения' }, pills);
+    const count = el('span', { class: 'ao-trn-count' });
+    const skipAll = localBtn('Пропустить обучение', () => { tr.skipAll(win.performance.now()); }, { variant: 'quiet' });
+
+    // левая колонка: какая рука, что сделать, крупная кисть, подсказка/«ОШИБКА»
+    const handEl = el('p', { class: 'ao-trn-hand' });
+    const titleEl = el('h3', { class: 'ao-trn-title' });
+    const effectEl = el('p', { class: 'ao-trn-effect' });
+    const keyEl = el('p', { class: 'ao-trn-key', hidden: true });
+    const picEl = el('div', { class: 'ao-trn-pic' });
+    const tipEl = el('p', { class: 'ao-trn-tip' });
+    const coachHead = el('span', { class: 'ao-tut-coach__head' });
+    const coachText = el('span', { class: 'ao-tut-coach__text' });
+    const coach = el('div', { class: 'ao-tut-coach ao-trn-coach', role: 'status', 'aria-live': 'polite', hidden: true }, coachHead, coachText);
+    // подсказка «ОШИБКА» — прямо под кистью (место под неё зарезервировано: экран не прыгает)
+    const gesture = el('div', { class: 'ao-trn-gesture' },
+      el('div', { class: 'ao-trn-what' }, handEl, titleEl, effectEl, keyEl, tipEl),
+      el('div', { class: 'ao-trn-picol' }, picEl, el('div', { class: 'ao-trn-say' }, coach)));
+
+    // правая колонка: живое превью камеры, шкала удержания/заряда, статус трекинга
+    const host = el('div', { class: 'ao-slothost' });
+    const capKey = el('kbd', { class: 'ao-trn-keycap__key' });
+    const capText = el('span', { class: 'ao-trn-keycap__text' });
+    const keycap = el('div', { class: 'ao-trn-keycap', hidden: true, 'aria-hidden': 'true' },
+      el('span', { class: 'ao-trn-keycap__lab', text: 'Отладка с клавиатуры' }), capKey, capText,
+      el('span', { class: 'ao-trn-keycap__lab', text: 'H — пример подсказки «ОШИБКА»' }));
+    const meterLab = el('span', { class: 'ao-trn-meter__lab' });
+    const meterM = meter('Прогресс жеста', 'ao-trn-meter__bar');
+    const status = statusLine();
+    const meterBox = el('div', { class: 'ao-trn-meter' }, meterLab, meterM.node);
+    const camCol = el('div', { class: 'ao-trn-cam' }, el('div', { class: 'ao-trn-camwrap' }, host, keycap), meterBox, status.node);
+
+    const okSub = el('span', { class: 'ao-trn-ok__sub' });
+    const okBadge = el('div', { class: 'ao-trn-ok', hidden: true, role: 'status' },
+      el('span', { class: 'ao-trn-ok__badge' }, el('span', { class: 'ao-trn-ok__mark', 'aria-hidden': 'true', text: '✓' }), el('span', { text: 'Распознано!' })), okSub);
+    const stage = el('div', { class: 'ao-trn-stage' }, gesture, camCol, okBadge);
+    const mainCol = (node) => stage.insertBefore(node, camCol); // итог встаёт на место карточки жеста
+    const mq = el('div', { class: 'ao-trn-mq', 'data-step': 'walk', html: TRAINER_DUMMY_SVG });
+
+    // итог после 4 шагов
+    const doneLead = el('p', { class: 'ao-lead' });
+    const sums = TRAINER_STEPS.map((st) => {
+      const state = el('span', { class: 'ao-trn-sum__state' });
+      const g = el('span', { class: 'ao-trn-sum__g' });
+      const node = el('li', { class: 'ao-trn-sum', 'data-state': 'ok' },
+        el('div', { class: 'ao-trn-sum__pic', html: TRAINER_MINI[st.id] }),
+        el('strong', { class: 'ao-trn-sum__t', text: `${st.effect}` }), g, state);
+      return { node, state, g, st };
+    });
+    const doneView = el('div', { class: 'ao-trn-done', hidden: true },
+      el('h3', { class: 'ao-trn-done__h', text: 'Готово! Четыре жеста — и ты в бою' }), doneLead,
+      el('ol', { class: 'ao-trn-sums' }, sums.map((x) => x.node)),
+      el('p', { class: 'ao-note', text: 'Рывок, руны, печати, лук и стихии — в «Книге заклинаний» (меню и пауза). Пауза в бою — кнопка в углу или Esc.' }));
+    mainCol(doneView);
+
+    const ready = el('p', { class: 'ao-msg ao-trn-ready' });
+    const start = btn('В бой', () => invoke('onStart', { from: 'tutorial' }), { variant: 'primary', size: 'lg' });
+    const skip = localBtn('Пропустить', () => { tr.skip(win.performance.now()); });
+    const again = localBtn('Пройти ещё раз', () => { tr.restart(win.performance.now()); h.focus({ preventScroll: true }); });
+    const recal = btn('Перекалибровать', pressCalibrate);
+    const bookBtn = localBtn('Книга заклинаний', (e) => openBook(e && e.currentTarget));
+    const back = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
+    const panel = el(
+      'div',
+      { class: 'ao-panel ao-panel--tutorial ao-panel--trainer ao-frame' },
+      el('div', { class: 'ao-trn-head' }, h, steps, count, el('span', { class: 'ao-spacer' }), skipAll.node),
+      stage,
+      mq,
+      el('div', { class: 'ao-trn-foot' }, ready,
+        el('div', { class: 'ao-actions ao-actions--inline' }, start.node, skip.node, again.node, recal.node, bookBtn.node, el('span', { class: 'ao-spacer' }), back.node)),
+    );
+
+    let shownSeq = -1;
+    let shownMode = '';
+    let wasDone = false;
+    // тренажёр пройден (или пропущен) в этой сессии: при новом входе (дуэль, «Начать» из меню,
+    // перекалибровка) — сразу итог с «В бой»; «Пройти ещё раз» — снова с шага 1.
+    // Только в том же режиме ввода: пройденное клавишами не засчитывается камере.
+    let passedDebug = null;
+    function paintStep(step, moveMode) {
+      const v = step.stick && moveMode === 'stick' ? { ...step, ...step.stick } : step;
+      setAttr(gesture, 'data-side', step.side);
+      setText(handEl, step.hand);
+      setText(titleEl, v.title);
+      setText(effectEl, `→ ${step.effect}`);
+      setText(tipEl, v.tip);
+      setText(keyEl, `Клавиатура: ${step.keyText}`);
+      setText(capKey, step.key);
+      setText(capText, step.keyText);
+      setAttr(mq, 'data-step', step.id);
+      picEl.innerHTML = TRAINER_PICS[step.id] || ''; // только статические строки этого модуля; новая разметка — анимация с начала
+    }
+    return {
+      section: screenSection('tutorial', panel, hid),
+      heading: h,
+      host,
+      // фокус — на заголовок: пробел/Enter в отладке не должны случайно нажать «Пропустить»
+      focus: () => (tr.done ? start.node : h),
+      reset() {
+        if (!(tr.done && passedDebug === state.debug)) tr.restart(win.performance.now());
+        shownSeq = -1;
+        wasDone = tr.done;
+        state.tut.hint = null;
+      },
+      update(ctx) {
+        const moveMode = ctx.settings && ctx.settings.moveMode === 'stick' ? 'stick' : 'steer';
+        const raw = ctx.vm && ctx.vm.input && typeof ctx.vm.input === 'object' ? ctx.vm.input : null;
+        // в отладке — только клавиатура, иначе — только камера
+        const input = raw && (ctx.debug ? raw.source === 'debug' : raw.source === 'cv') ? raw : null;
+        const v = tr.update(input, ctx.now, { moveMode });
+        const step = v.step;
+        if (v.done && !wasDone) passedDebug = ctx.debug;
+
+        // шапка: шаги и «2 / 4»
+        setText(count, `${v.number} / ${v.total}`);
+        setAttr(steps, 'aria-label', v.done ? 'Обучение пройдено' : `Шаг ${v.number} из ${v.total}`);
+        pills.forEach((p, i) => {
+          const r = v.results[i];
+          setAttr(p, 'data-state', r === 'ok' ? 'ok' : r === 'skip' ? 'skip' : !v.done && i === v.index ? 'now' : 'todo');
+        });
+        setHidden(skipAll.node, v.done);
+
+        if (v.seq !== shownSeq || moveMode !== shownMode) {
+          const stepChanged = v.seq !== shownSeq;
+          shownSeq = v.seq;
+          shownMode = moveMode;
+          if (step && (v.phase === 'try' || !picEl.firstChild)) paintStep(step, moveMode);
+          if (stepChanged && v.phase === 'ok') announce(`Распознано: ${step.effect}.`);
+          else if (stepChanged && v.phase === 'try') announce(`Шаг ${v.number} из ${v.total}: ${step.hand.toLowerCase()}, ${step.title}.`);
+          else if (stepChanged && v.done) announce('Обучение пройдено. Кнопка «В бой».');
+        }
+        setText(okSub, step ? `${step.effect}!` : '');
+        setHidden(okBadge, v.phase !== 'ok');
+        setClass(stage, 'is-ok', v.phase === 'ok');
+        setClass(gesture, 'is-live', v.live);
+        setClass(mq, 'is-live', v.live);
+        setClass(mq, 'is-ok', v.phase === 'ok');
+        setStyle(mq, '--lv', (Math.round(v.level * 20) / 20).toFixed(2));
+
+        // шкала: удержание (ход, щит, «OK») или заряд кулака (выброс)
+        if (step) {
+          const lt = LIVE_TEXT[step.id] || ['', ''];
+          const li = !v.live ? 0 : step.id === 'burst' && v.level >= BURST_READY ? 2 : 1;
+          setText(meterLab, v.phase === 'ok' ? `${step.effect} — готово` : lt[li] || lt[1]);
+          paintMeter(meterM, v.progress);
+          setAttr(meterM.node, 'aria-label', step.holdMs > 0 ? 'Удержание жеста' : 'Заряд кулака');
+        }
+
+        // «ОШИБКА»: что не так и как исправить — на месте совета под кистью
+        const hint = v.hint;
+        setHidden(coach, !hint);
+        if (hint) {
+          const side = hint.side === 'left' ? ' · левая рука' : hint.side === 'right' ? ' · правая рука' : '';
+          setText(coachHead, `Ошибка · ${hint.gesture}${side}`);
+          setText(coachText, hint.text);
+        }
+
+        // отладка: какой клавишей проходится шаг
+        setHidden(keyEl, !ctx.debug || !step);
+        setHidden(keycap, !ctx.debug || !step);
+        const info = ctx.debug ? DEBUG_INFO : describeTracking(ctx.tr, cfg);
+        paintStatus(status, info, ctx.debug ? '' : ctx.tr.message);
+        setAttr(host, 'data-tone', v.phase === 'ok' ? 'good' : info.tone);
+        setClass(skip.node, 'is-stuck', v.stuck);
+
+        // итог: вместо карточки жеста; превью камеры остаётся
+        setHidden(gesture, v.done);
+        setHidden(mq, v.done);
+        setHidden(meterBox, v.done);
+        setHidden(doneView, !v.done);
+        setClass(stage, 'is-done', v.done);
+        if (v.done) {
+          sums.forEach((x, i) => {
+            const r = v.results[i];
+            const sv = x.st.stick && moveMode === 'stick' ? { ...x.st, ...x.st.stick } : x.st;
+            setText(x.g, `${x.st.hand}: ${lowerFirst(sv.title)}`);
+            setAttr(x.node, 'data-state', r === 'ok' ? 'ok' : 'skip');
+            setText(x.state, r === 'ok' ? '✓ получилось' : 'пропущено');
+          });
+          setText(doneLead, v.skipped
+            ? `Получилось ${v.recognized} из ${v.total}. Пропущенное можно потренировать в бою или пройти ещё раз.`
+            : 'Все четыре жеста распознаны. Ходи левой ладонью, щит — толчком, «OK» стреляет, кулак → ладонь — выброс.');
+        }
+
+        const st = ctx.tr.status;
+        const canStart = ctx.debug || (st === 'ready' && ctx.calibrated !== false);
+        setBtn(start, { hidden: !v.done && !ctx.debug, disabled: !canStart });
+        setClass(start.node, 'ao-btn--primary', v.done);
+        setClass(start.node, 'ao-btn--secondary', !v.done);
+        setBtn(skip, { hidden: v.done });
+        setBtn(again, { hidden: !v.done });
+        setBtn(recal, { hidden: ctx.debug || !v.done });
+        setBtn(bookBtn, { hidden: !v.done });
+        let text = '';
+        if (v.done) {
+          if (ctx.debug) text = 'Бой начнётся с управлением с клавиатуры. Это режим отладки, камера в нём не управляет героем.';
+          else if (canStart) text = 'Трекинг готов. Начинайте, когда удобно сели.';
+          else if (ctx.calibrated === false) text = 'Нужна калибровка. Нажмите «Перекалибровать».';
+          else if (st === 'lost') text = 'Камера не видит позу. Кнопка «В бой» станет доступна, когда трекинг восстановится.';
+          else if (st === 'calibrating') text = 'Идёт калибровка.';
+          else text = 'Камера ещё не готова.';
+        } else if (ctx.debug) text = `Отладка: ${step ? step.keyText : ''} — шаг засчитается. Это клавиатура, а не трекинг.`;
+        else if (st === 'lost') text = 'Камера не видит позу — вернитесь в кадр, чтобы были видны плечи и кисти.';
+        else if (st !== 'ready' && st !== 'calibrating') text = 'Камера ещё не готова.';
+        else if (input && input.valid && input.hands && input.hands.available === false) text = 'Камера не видит кистей — поднимите руки ладонями в кадр.';
+        else if (v.stuck) text = 'Не выходит? Нажмите «Пропустить» — жест можно повторить позже, в бою.';
+        setText(ready, text);
+        setHidden(ready, !text);
+
+        // все шаги пройдены — фокус на «В бой» (если фокус был в панели и кнопка исчезла)
+        if (v.done && !wasDone) {
+          const a = doc.activeElement;
+          if (!a || a === doc.body || panel.contains(a)) later(() => { if (state.screen === 'tutorial' && !start.node.hidden) start.node.focus({ preventScroll: true }); }, 0);
+        }
+        wasDone = v.done;
+      },
+    };
   })();
+
+  /* ------------------------------------------------ [ТРЕНАЖЁР] «Книга заклинаний» */
+  // Поверх меню, паузы или обучения: базовые жесты тренажёра и прежние карточки «Как управлять»
+  // (раздел «Продвинутые: руны, печати, лук, магия»). Esc или «Закрыть» — назад, фокус возвращается.
+  const book = (() => {
+    const hid = `${uid}-book-h`;
+    const h = heading('h2', hid, 'Книга заклинаний', 'ao-h2');
+    const close = localBtn('Закрыть', () => closeBook());
+    const TABS = [['basic', 'Базовые: 4 жеста'], ['adv', 'Продвинутые: руны, печати, лук, магия']];
+    const tabs = {};
+    const tabList = el('div', { class: 'ao-book-tabs', role: 'tablist', 'aria-label': 'Разделы книги' });
+    const basicCards = TRAINER_STEPS.map((st) => {
+      const t = el('h3', { class: 'ao-h3' });
+      const tip = el('p', { class: 'ao-tut-gesture' });
+      const key = el('p', { class: 'ao-book-card__key', hidden: true, text: `Отладка: ${st.keyText}` });
+      const node = el('article', { class: 'ao-book-card', 'data-side': st.side },
+        el('div', { class: 'ao-book-card__pic', html: TRAINER_MINI[st.id] }), el('p', { class: 'ao-trn-hand', text: st.hand }), t, tip, key);
+      return { st, t, tip, key, node };
+    });
+    const paintBasic = (moveMode, debug) => {
+      for (const c of basicCards) {
+        const v = c.st.stick && moveMode === 'stick' ? { ...c.st, ...c.st.stick } : c.st;
+        setText(c.t, `${v.title} → ${lowerFirst(v.effect)}`);
+        setText(c.tip, v.tip);
+        setHidden(c.key, !debug);
+      }
+    };
+    paintBasic('steer', false);
+    const basic = el('div', { class: 'ao-book-basic' }, basicCards.map((c) => c.node));
+    const { grid, cards } = buildTutCards();
+    const panes = {
+      basic: el('div', { class: 'ao-book-pane', role: 'tabpanel', id: `${uid}-book-basic`, 'aria-labelledby': `${uid}-book-tab-basic` },
+        el('p', { class: 'ao-lead', text: 'Эти жесты учит тренажёр «Научись за 60 секунд» перед боем. Их хватает, чтобы победить.' }), basic),
+      adv: el('div', { class: 'ao-book-pane', role: 'tabpanel', id: `${uid}-book-adv`, 'aria-labelledby': `${uid}-book-tab-adv`, hidden: true },
+        el('p', { class: 'ao-lead', text: 'Рывок, искра, рассечение, парирование, руны ▲ ϟ ○ ★ @ ∞ ^ V ⧗ ℓ, печати двумя руками, лук и стихии.' }), grid),
+    };
+    for (const [key, label] of TABS) {
+      const t = el('button', { type: 'button', class: 'ao-book-tab', role: 'tab', id: `${uid}-book-tab-${key}`, 'aria-controls': `${uid}-book-${key}`, 'aria-selected': key === 'basic' ? 'true' : 'false', 'data-ui-local': '', text: label });
+      listen(t, 'click', () => selectTab(key));
+      tabs[key] = t;
+      tabList.append(t);
+    }
+    function selectTab(key) {
+      for (const k of Object.keys(tabs)) {
+        tabs[k].setAttribute('aria-selected', k === key ? 'true' : 'false');
+        panes[k].hidden = k !== key;
+      }
+    }
+    const dbgKeys = el('p', { class: 'ao-debugkeys', hidden: true, text: DEBUG_KEYS_TEXT });
+    const panel = el('div', { class: 'ao-panel ao-panel--book ao-frame', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': hid },
+      el('div', { class: 'ao-book-head' }, h, el('span', { class: 'ao-spacer' }), close.node),
+      tabList, panes.basic, panes.adv, dbgKeys);
+    const section = el('section', { class: 'ao-screen ao-screen--book', 'data-screen': 'book', hidden: true }, panel);
+    let opener = null;
+    let inerted = [];
+    // aria-modal: Tab не уходит за книгу — остальной интерфейс (кроме объявлений и метки DEBUG) inert
+    const setInert = (on) => {
+      if (on) {
+        inerted = Array.from(section.parentNode ? section.parentNode.children : []).filter((n) => n !== section && !n.inert && !n.classList.contains('ao-sr') && !n.classList.contains('ao-debug'));
+        for (const n of inerted) n.inert = true;
+      } else {
+        for (const n of inerted) n.inert = false;
+        inerted = [];
+      }
+    };
+    return {
+      section,
+      get open() { return !section.hidden; },
+      show(from) {
+        if (!section.hidden) return; // уже открыта: не теряем список inert и кнопку возврата фокуса
+        opener = from || doc.activeElement;
+        paintBasic(state.settings && state.settings.moveMode === 'stick' ? 'stick' : 'steer', state.debug);
+        selectTab('basic');
+        section.hidden = false;
+        setInert(true);
+        announce('Книга заклинаний');
+        close.node.focus({ preventScroll: true });
+      },
+      hide(restoreFocus = true) {
+        if (section.hidden) return;
+        section.hidden = true;
+        setInert(false);
+        const o = opener;
+        opener = null;
+        if (restoreFocus && o && typeof o.focus === 'function' && o.isConnected && o.getClientRects().length) o.focus({ preventScroll: true });
+      },
+      update(ctx) {
+        if (section.hidden) return;
+        setHidden(dbgKeys, !ctx.debug);
+        paintBasic(ctx.settings && ctx.settings.moveMode === 'stick' ? 'stick' : 'steer', ctx.debug);
+        syncTutCards(cards, ctx);
+      },
+    };
+  })();
+  function openBook(from) { book.show(from); }
+  function closeBook(restoreFocus = true) { book.hide(restoreFocus); }
+  listen(win, 'keydown', (e) => {
+    if (disposed || e.key !== 'Escape' || !book.open) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    closeBook();
+  }, true);
+
+  // По умолчанию обучение — тренажёр; прежний экран карточек: ?tutorial=cards или options.tutorialCards.
+  const tutorial = cfg.tutorialCards ? buildCardsTutorial() : trainer;
 
   /* -------------------------------------------------------------- PAUSED */
 
@@ -1630,9 +2438,15 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const status = statusLine();
     const hint = el('p', { class: 'ao-note', hidden: true });
     const resume = btn('Продолжить бой', () => invoke('onResume'), { variant: 'primary', size: 'lg' });
+    // [ONBOARD] автопродолжение после потери трекинга: крупный отсчёт 3-2-1
+    const countNum = el('span', { class: 'ao-countdown__num' });
+    const countdown = el('div', { class: 'ao-countdown', hidden: true, 'aria-hidden': 'true' }, countNum);
+    host.append(countdown);   // поверх превью: слот камеры встаёт рядом (moveSlot), отсчёт — выше по z-index
     const recal = btn('Перекалибровать', pressCalibrate);
     const restart = btn('Начать бой заново', () => invoke('onRestart'));
     const oathP = btn('Клятва героя', () => invoke('onOath', { from: 'paused' }));
+    const bookP = localBtn('Книга заклинаний', (e) => openBook(e && e.currentTarget), { iconName: 'book' }); // [ТРЕНАЖЁР]
+    const bookWrap = el('div', { class: 'ao-pause-book' }, bookP.node); // при потере трекинга прячется: сначала — вернуться в кадр
     const exit = btn('Выйти в меню', () => invoke('onExit'), { variant: 'quiet' });
     const dbgKeys = el('p', { class: 'ao-debugkeys', hidden: true, text: DEBUG_KEYS_TEXT });
     const panel = el(
@@ -1642,8 +2456,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el(
         'div',
         { class: 'ao-cols' },
-        el('div', { class: 'ao-col ao-col--media' }, host, status.node, hint),
-        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
+        el('div', { class: 'ao-col ao-col--media' }, host, status.node, hint, bookWrap),
+        el('div', { class: 'ao-col' }, el('h3', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['gestureMode', 'moveMode', 'volume', 'sensitivity', 'quality', 'reducedMotion'], 'pause')),
       ),
       dbgKeys,
       el('div', { class: 'ao-actions' }, resume.node, recal.node, restart.node, oathP.node, el('span', { class: 'ao-spacer' }), exit.node),
@@ -1655,6 +2469,12 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         'Камера перестала видеть позу, поэтому бой встал на паузу. Вернитесь в кадр так, чтобы были видны голова, плечи, локти и кисти, и проверьте свет. Если поза сбилась, перекалибруйте.',
       ],
       restored: ['Трекинг восстановлен', 'Сядьте в нейтральную позу и опустите руки. Бой продолжится только после нажатия «Продолжить бой».'],
+    };
+    // [ONBOARD] быстрый поток: пауза из-за потери трекинга снимается сама (пауза игрока — по-прежнему кнопкой)
+    const COPY_AUTO = {
+      ...COPY,
+      lost: ['Трекинг потерян', 'Вернитесь в кадр: плечи и кисти. Бой продолжится сам — мышь не нужна.'],
+      restored: ['Трекинг восстановлен', 'Сидите ровно, руки вниз — бой продолжится сам.'],
     };
     return {
       section: screenSection('paused', panel, hid),
@@ -1672,13 +2492,23 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           state.pause.variant = variant;
         }
         setAttr(panel, 'data-variant', variant);
-        setText(h, COPY[variant][0]);
-        setText(lead, COPY[variant][1]);
+        setHidden(bookWrap, variant === 'lost');
+        const T = cfg.quickStart && ctx.vm.pauseReason === 'tracking' ? COPY_AUTO : COPY;
+        setText(h, T[variant][0]);
+        // [ONBOARD] отсчёт автопродолжения (main.js: тело снова в кадре → 3-2-1 → бой)
+        const leftMs = isNum(ctx.vm.autoResumeMs) ? ctx.vm.autoResumeMs : null;
+        const counting = leftMs !== null && !ctx.debug;
+        const countN = counting ? Math.max(1, Math.ceil(leftMs / 1000)) : 0;
+        setHidden(countdown, !counting);
+        if (counting) setText(countNum, String(countN));
+        setText(lead, counting ? `Вы снова в кадре — бой продолжится через ${countN}…` : T[variant][1]);
         paintStatus(status, ctx.debug ? DEBUG_INFO : describeTracking(ctx.tr, cfg), ctx.debug ? '' : ctx.tr.message);
-        const canResume = ctx.debug || (st === 'ready' && ctx.calibrated !== false);
-        setBtn(resume, { disabled: !canResume });
+        // [ONBOARD] доступность «Продолжить бой» — те же условия, что у main.js; причина — на кнопке
+        const gate = ctx.vm.gate && typeof ctx.vm.gate === 'object' ? ctx.vm.gate : null;
+        const canResume = ctx.debug || (gate ? gate.ok === true : st === 'ready' && ctx.calibrated !== false);
+        setBtn(resume, { disabled: !canResume, label: canResume || !gate || !gate.reason ? 'Продолжить бой' : gate.reason });
         let hintText = '';
-        if (!canResume) {
+        if (!canResume && !gate) {
           if (ctx.calibrated === false && st === 'ready') hintText = 'Нужна калибровка: нажмите «Перекалибровать».';
           else if (bad) hintText = 'Кнопка «Продолжить бой» станет доступна, когда камера снова увидит плечи и кисти.';
           else hintText = 'Камера ещё не готова.';
@@ -1694,10 +2524,81 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
 
   /* ------------------------------------------------------------- RESULTS */
 
+  // [ТВИСТ «ОШИБКА»] блок «Техника жестов»: общая точность и сравнение с прошлым боем, столбики точности
+  // по каждому жесту, три самые частые ошибки с пиктограммой «как сейчас → как надо» и советом.
+  const LEGACY_RESULT_COACH = false;   // прежние строка «Точность жестов» и строка частой ошибки (выключены)
+  function deltaText(d) {
+    if (!isNum(d) || d === 0) return { text: d === 0 ? '= как в прошлом бою' : '', tone: 'same' };
+    return { text: `${d > 0 ? '▲ +' : '▼ −'}${Math.abs(Math.round(d))}`, tone: d > 0 ? 'up' : 'down' };
+  }
+  function techBlock() {
+    const accNum = el('strong', { class: 'ao-tech__accv', text: '—' });
+    const accDelta = el('span', { class: 'ao-tech__delta' });
+    const accNote = el('span', { class: 'ao-tech__note' });
+    const bars = el('div', { class: 'ao-tech__bars', role: 'list' });
+    const errs = el('ol', { class: 'ao-tech__errs' });
+    const empty = el('p', { class: 'ao-note ao-tech__empty', hidden: true, text: 'В этом бою жесты не распознавались. Отработайте их в «Тренажёре техники» — он показывает, какое условие жеста не выполнено.' });
+    const errsHead = el('h3', { class: 'ao-tech__h', text: 'Что исправить' });
+    const node = el('section', { class: 'ao-tech', 'aria-label': 'Техника жестов' },
+      el('div', { class: 'ao-tech__col' },
+        el('h3', { class: 'ao-tech__h', text: 'Точность жестов' }),
+        el('div', { class: 'ao-tech__acc' }, accNum, el('span', { class: 'ao-tech__accside' }, accDelta, accNote)),
+        bars, empty),
+      el('div', { class: 'ao-tech__col ao-tech__col--errs' }, errsHead, errs));
+    let key = '';
+    return {
+      node,
+      paint(c) {
+        const k = c ? JSON.stringify([c.accuracy, c.good, c.mistakes, c.groups, c.top3 && c.top3.map((e) => [e.code, e.count]), c.compare]) : '';
+        if (k === key) return;
+        key = k;
+        const has = !!c && isNum(c.accuracy);
+        setText(accNum, has ? `${c.accuracy}%` : '—');
+        setClass(accNum, 'is-good', has && c.accuracy >= 75);
+        setClass(accNum, 'is-bad', has && c.accuracy < 50);
+        const cmp = c && c.compare;
+        const d = cmp ? deltaText(cmp.accuracyDelta) : { text: '', tone: 'same' };
+        setText(accDelta, d.text);
+        setAttr(accDelta, 'data-tone', d.tone);
+        setHidden(accDelta, !d.text);
+        setText(accNote, has
+          ? `${c.good} из ${c.good + c.mistakes} жестов без ошибки${cmp ? ` · прошлый бой ${cmp.prevAccuracy}%` : ' · первый бой: сравнение появится в следующем'}`
+          : '');
+        const groups = c && Array.isArray(c.groups) ? c.groups : [];
+        bars.replaceChildren(...groups.slice(0, 7).map((g) => {
+          const gd = cmp && cmp.groups ? deltaText(cmp.groups[g.id]) : { text: '', tone: 'same' };
+          const tone = g.accuracy >= 75 ? 'good' : g.accuracy >= 50 ? 'warn' : 'bad';
+          return el('div', { class: 'ao-gbar', role: 'listitem', 'data-tone': tone, 'aria-label': `${g.title}: ${g.accuracy}%, ${g.good} из ${g.good + g.mistakes}` },
+            el('span', { class: 'ao-gbar__name', text: g.title }),
+            el('span', { class: 'ao-gbar__track', 'aria-hidden': 'true' }, el('span', { class: 'ao-gbar__fill', style: `width:${clamp(g.accuracy, 0, 100)}%` })),
+            el('span', { class: 'ao-gbar__v', text: `${g.accuracy}%` }),
+            el('span', { class: 'ao-gbar__n', text: `${g.good}/${g.good + g.mistakes}` }),
+            el('span', { class: 'ao-gbar__d', 'data-tone': gd.tone, text: gd.tone === 'same' ? '' : gd.text }));
+        }));
+        setHidden(empty, groups.length > 0);
+        const top = c && Array.isArray(c.top3) ? c.top3 : [];
+        setHidden(errsHead, !top.length);
+        errs.replaceChildren(...top.map((e) => {
+          const g = COACH_GROUPS[e.group];
+          return el('li', { class: 'ao-err' },
+            el('div', { class: 'ao-err__pic', 'aria-hidden': 'true', html: hintPictogram(e.code, { width: 150, height: 64, labels: true }) }),
+            el('div', { class: 'ao-err__body' },
+              el('div', { class: 'ao-err__head' },
+                el('strong', { class: 'ao-err__gest', text: e.gesture || (g && g.title) || '' }),
+                el('span', { class: 'ao-err__count', text: `×${e.count}` })),
+              el('p', { class: 'ao-err__fix', text: e.fix || '' }),
+              el('p', { class: 'ao-err__text', text: e.text || '' })));
+        }));
+        if (!top.length && has) errs.replaceChildren(el('li', { class: 'ao-err ao-err--clean' }, el('p', { class: 'ao-err__fix', text: 'Ошибок не было — чистая техника!' })));
+        setHidden(errs, !top.length && !has);
+      },
+    };
+  }
+
   function resultScreen(kind) {
     const win_ = kind === 'victory';
     const hid = `${uid}-${kind}-h`;
-    const h = heading('h2', hid, win_ ? 'Регент повержен' : 'Вы пали', 'ao-h1');
+    const h = heading('h2', hid, win_ ? 'Регент повержен' : 'Хорошая попытка!', 'ao-h1');
     const summary = el('p', { class: 'ao-lead' });
     const rows = {};
     const stats = el('dl', { class: 'ao-stats' });
@@ -1712,25 +2613,31 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     ];
     for (const [key, label] of ROWS) {
       const dd = el('dd', { class: 'ao-stat__v', text: '—' });
-      stats.append(el('div', { class: 'ao-stat' }, el('dt', { class: 'ao-stat__k', text: label }), dd));
+      const row = el('div', { class: 'ao-stat' }, el('dt', { class: 'ao-stat__k', text: label }), dd);
+      if (key === 'accuracy' && !LEGACY_RESULT_COACH) row.hidden = true;   // точность — в блоке «Техника жестов»
+      stats.append(row);
       rows[key] = dd;
     }
     const tip = el('p', { class: 'ao-tip', hidden: true });
-    // [ТВИСТ «ОШИБКА»] самая частая ошибка жеста за бой и как её исправить
+    // [ТВИСТ «ОШИБКА»] прежняя строка «самая частая ошибка» (LEGACY_RESULT_COACH) и новый блок техники
     const coachTip = el('p', { class: 'ao-tip ao-tip--coach', hidden: true });
-    const again = btn('Сразиться снова', () => invoke('onRestart'), { variant: 'primary', size: 'lg' });
+    const tech = techBlock();
+    // [FEEL] поражение — дружелюбно: «Ещё раз» сразу, без упрёков
+    const again = btn(win_ ? 'Сразиться снова' : 'Ещё раз', () => invoke('onRestart'), { variant: 'primary', size: 'lg' });
+    const techR = btn('Тренажёр техники', () => invoke('onTechnique', { from: kind }));
     const oathR = btn('Клятва героя', () => invoke('onOath', { from: kind }));
     const exit = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
     const panel = el(
       'div',
-      { class: `ao-panel ao-panel--result ao-panel--${kind} ao-frame` },
+      { class: `ao-panel ao-panel--result ao-panel--${kind} ao-frame ao-has-tech` },
       el('div', { class: 'ao-result__mark', html: ICONS.sigil, 'aria-hidden': 'true' }),
       h,
       summary,
       stats,
+      tech.node,
       coachTip,
       tip,
-      el('div', { class: 'ao-actions ao-actions--center' }, again.node, oathR.node, exit.node),
+      el('div', { class: 'ao-actions ao-actions--center' }, again.node, techR.node, oathR.node, exit.node),
     );
     return {
       section: screenSection(kind, panel, hid),
@@ -1738,6 +2645,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       focus: () => again.node,
       update(ctx) {
         const s = ctx.snap;
+        tech.paint(ctx.coach);
         if (!s) {
           for (const dd of Object.values(rows)) setText(dd, '—');
           setText(summary, win_ ? 'Бой окончен победой.' : 'Бой окончен.');
@@ -1754,21 +2662,24 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setText(rows.blocks, fmtInt(st.blocks));
         const c = ctx.coach;
         setText(rows.accuracy, c && Number.isFinite(c.accuracy) ? `${c.accuracy}%  ·  ${c.good} из ${c.good + c.mistakes} жестов без ошибки` : '—');
-        if (c && c.top) {
+        if (LEGACY_RESULT_COACH && c && c.top) {
           setText(coachTip, `Чаще всего не получалось: ${c.top.gesture} (×${c.top.count}). ${c.top.text}.`);
           setHidden(coachTip, false);
         } else setHidden(coachTip, true);
         if (win_) {
           const maxHp = Math.max(1, num(p.maxHp, 1));
           setText(rows.remain, `${Math.ceil(clamp(num(p.hp), 0, maxHp))} из ${Math.round(maxHp)}`);
-          setText(summary, num(st.damageTaken) === 0 ? 'Бой без единого пропущенного удара.' : 'Обет исполнен: страж больше не поднимется.');
+          setText(summary, `Победа за ${fmtClock(s.time)}. ${num(st.damageTaken) === 0 ? 'Бой без единого пропущенного удара.' : 'Обет исполнен: страж больше не поднимется.'}`);
           setHidden(tip, true);
         } else {
           const maxHp = Math.max(1e-6, num(b.maxHp, 1));
           const left = clamp(num(b.hp) / maxHp, 0, 1);
           setText(rows.remain, pct(left));
+          // [FEEL] дружелюбный итог: заголовок по прогрессу, совет про «Лёгкую» сложность
+          setText(h, left <= 0.5 ? 'Почти получилось!' : 'Хорошая попытка!');
           let text = `Регент устоял: у него осталось ${pct(left)} здоровья.`;
           if (b.stage === 2) text += ' Вы довели бой до второй стадии.';
+          text += ctx.settings.difficulty === 'normal' ? ' На «Лёгкой» сложности (меню → Настройки) Регент на 30% слабее.' : ' Новый бой — с полным здоровьем.';
           setText(summary, text);
           setText(tip, defeatTip(st, s));
           setHidden(tip, false);
@@ -2049,6 +2960,174 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     };
   })();
 
+  /* ------------------------------------------- [ПРОЕКТОР] что распознала игра */
+
+  // Импульсы (рывок, выброс, искра…) живут один кадр — подпись держится IMPULSE_LATCH_MS.
+  function latchSide(side, text, now) { state.read[side] = { text, tone: 'fire', until: now + IMPULSE_LATCH_MS }; }
+  function liveLeft(g) {
+    if (!g || g.empty) return g && g.source === 'debug' ? { text: 'КЛАВИАТУРА', tone: 'off' } : { text: 'НЕ ВИДНА', tone: 'off' };
+    if (g.conjure) return { text: g.conjure === 'prism' ? 'ПРИЗМА' : 'СФЕРА', tone: 'go' };
+    if (g.bowActive) return { text: 'ЛУК', tone: 'go' };
+    if (g.shield) return { text: 'ЩИТ', tone: 'go' };
+    const st = g.stick;
+    if (st && st.engaged) {
+      const turn = st.mode === 'steer' ? st.turn : st.x;
+      const arrow = turn > 0.25 ? ' →' : turn < -0.25 ? ' ←' : '';
+      if (st.mode === 'stick') return { text: Math.hypot(st.x, st.z) > 0.15 ? `ХОД${arrow}` : 'ДЖОЙСТИК', tone: 'go' };
+      if (st.gait === 'run') return { text: `БЕГ${arrow}`, tone: 'go' };
+      if (st.gait === 'walk') return { text: `ХОД${arrow}`, tone: 'go' };
+      return { text: arrow ? `ПОВОРОТ${arrow}` : 'РУЛЬ', tone: 'go' };
+    }
+    if (g.source === 'debug' && (Math.abs(g.moveZ) > 0.15 || Math.abs(g.moveX) > 0.15)) return { text: Math.abs(g.moveX) > Math.abs(g.moveZ) ? (g.moveX > 0 ? 'ПОВОРОТ →' : 'ПОВОРОТ ←') : 'ХОД', tone: 'go' };
+    const h = g.left;
+    if (!h) return g.source === 'debug' ? { text: 'КЛАВИАТУРА', tone: 'off' } : { text: 'НЕ ВИДНА', tone: 'off' };
+    return { text: SHAPE_RU[h.shape] || 'В КАДРЕ', tone: 'idle' };
+  }
+  function liveRight(g) {
+    if (!g || g.empty) return g && g.source === 'debug' ? { text: 'КЛАВИАТУРА', tone: 'off' } : { text: 'НЕ ВИДНА', tone: 'off' };
+    if (g.conjure) return { text: g.conjure === 'prism' ? 'ПРИЗМА' : 'СФЕРА', tone: 'go' };
+    if (g.spell) return { text: 'МАГИЯ: СГУСТОК', tone: 'go' };
+    if (g.bowActive) return { text: g.bowDraw > 0.05 ? `ТЕТИВА ${Math.round(g.bowDraw * 100)}%` : 'ЛУК: ЩЕПОТЬ', tone: 'go' };
+    if (g.attack) return { text: 'OK → ВЫСТРЕЛ', tone: 'go' };
+    const h = g.right;
+    if (!h) return g.source === 'debug' ? { text: 'КЛАВИАТУРА', tone: 'off' } : { text: 'НЕ ВИДНА', tone: 'off' };
+    if (h.shape === 'fist') {
+      const c = Math.max(h.charge, g.charge);
+      return c > 0.05 ? { text: `КУЛАК · ЗАРЯД ${Math.round(c * 100)}%`, tone: c >= 0.3 ? 'go' : 'idle' } : { text: 'КУЛАК', tone: 'idle' };
+    }
+    if (g.drawing) return { text: 'РИСУЕТ РУНУ', tone: 'go' };
+    if (h.shape === 'pinch') return { text: 'OK', tone: 'idle' };
+    return { text: SHAPE_RU[h.shape] || 'В КАДРЕ', tone: 'idle' };
+  }
+  function computeReadout(ctx) {
+    const R = state.read;
+    const now = ctx.now;
+    const g = normGestures(ctx.vm && ctx.vm.input);
+    const fired = R.fired;
+    // подписи защёлкиваются на любом экране с превью (обучение — там жюри пробует жесты), шпаргалка — только в бою
+    const live = g && !g.empty && ctx.screen !== 'menu' && ctx.screen !== 'error';
+    const fight = live && ctx.screen === 'playing';
+    if (live) {
+      if (g.parry) { latchSide('left', 'ПАРИРОВАНИЕ', now); if (fight) fired.parry = now; }
+      if (g.dashDir) { latchSide('left', g.dashDir.x > 0.3 ? 'РЫВОК →' : g.dashDir.x < -0.3 ? 'РЫВОК ←' : 'РЫВОК', now); if (fight) fired.dash = now; }
+      if (g.burst) { latchSide('right', 'ВЫБРОС!', now); if (g.burstBoth) latchSide('left', 'ВЫБРОС!', now); if (fight) fired.burst = now; }
+      if (g.rune) latchSide('right', `РУНА ${RUNE_RU[g.rune] || g.rune.toUpperCase()}`, now);
+      if (g.spark) { latchSide('right', 'ИСКРА', now); if (fight) fired.spark = now; }
+      if (g.slash) latchSide('right', 'РАССЕЧЕНИЕ', now);
+      if (g.sigil) { const t = `ПЕЧАТЬ ${SIGIL_RU[g.sigil] || g.sigil.toUpperCase()}`; latchSide('left', t, now); latchSide('right', t, now); }
+      if (g.thrown) { latchSide('left', 'БРОСОК ЧАР', now); latchSide('right', 'БРОСОК ЧАР', now); }
+      if (g.bowRelease) latchSide('right', 'ВЫСТРЕЛ ИЗ ЛУКА', now);
+      if (g.spellThrow) latchSide('right', 'МАГИЯ: БРОСОК', now);
+    }
+    if (fight) {
+      if (g.attack) fired.bolt = now;
+      if (g.shield) fired.shield = now;
+      if ((g.stick && g.stick.engaged && (g.stick.gait !== 'idle' || Math.abs(g.stick.turn) > 0.25 || (g.stick.mode === 'stick' && Math.hypot(g.stick.x, g.stick.z) > 0.15)))
+        || (g.source === 'debug' && (Math.abs(g.moveZ) > 0.15 || Math.abs(g.moveX) > 0.15))) fired.move = now;
+    }
+    if (g && g.hint) {
+      const key = `${g.hint.code}|${g.hint.tMs}|${g.hint.text}`;
+      if (key !== R.errKey) { R.errKey = key; R.err = { ...g.hint, until: now + READ_ERR_MS }; }
+    }
+    if (['menu', 'error', 'victory', 'defeat', 'oath'].includes(ctx.screen)) R.err = null;
+    const pick = (side, liveText) => (R[side] && now < R[side].until ? R[side] : liveText(g));
+    const err = R.err && now < R.err.until ? R.err : null;
+    R.view = { left: pick('left', liveLeft), right: pick('right', liveRight), err, debug: ctx.debug };
+    return R.view;
+  }
+
+  // Подписи «ЛЕВАЯ: ЩИТ» / «ПРАВАЯ: OK → ВЫСТРЕЛ» и строка «ОШИБКА» — под превью в доке и в режиме презентации.
+  function readoutView(extraCls = '') {
+    const row = (side, label) => {
+      const v = el('span', { class: 'ao-gread__v' });
+      const node = el('p', { class: 'ao-gread__row', 'data-side': side, 'data-tone': 'off' }, el('span', { class: 'ao-gread__k', text: `${label}:` }), ' ', v);
+      return { node, v };
+    };
+    const L = row('left', 'ЛЕВАЯ');
+    const Rr = row('right', 'ПРАВАЯ');
+    const errHead = el('span', { class: 'ao-gread__errhead' });
+    const errText = el('span', { class: 'ao-gread__errtext' });
+    const err = el('p', { class: 'ao-gread__err', hidden: true }, errHead, ' ', errText);
+    const node = el('div', { class: `ao-gread ${extraCls}`.trim(), 'aria-hidden': 'true' }, L.node, Rr.node, err);
+    return {
+      node,
+      paint(r) {
+        if (!r) return;
+        setText(L.v, r.left.text);
+        setAttr(L.node, 'data-tone', r.err && r.err.side === 'left' ? 'err' : r.left.tone);
+        setText(Rr.v, r.right.text);
+        setAttr(Rr.node, 'data-tone', r.err && r.err.side === 'right' ? 'err' : r.right.tone);
+        setHidden(err, !r.err);
+        if (r.err) {
+          const side = r.err.side === 'left' ? ' · левая' : r.err.side === 'right' ? ' · правая' : '';
+          setText(errHead, `ОШИБКА · ${r.err.gesture || 'жест'}${side}`);
+          setText(errText, r.err.text);
+        }
+      },
+    };
+  }
+
+  // Шпаргалка боя: базовые жесты. Сработавший подсвечивается, на перезарядке и без энергии — тускнеет. Tab — скрыть.
+  function cheatSheet() {
+    const items = {};
+    const list = el('ul', { class: 'ao-cheat__list' });
+    for (const it of CHEAT_ITEMS) {
+      const how = el('span', { class: 'ao-cheat__how', text: it.how });
+      const time = el('span', { class: 'ao-cheat__time' });
+      const fill = el('span', { class: 'ao-cheat__cd', 'aria-hidden': 'true' });
+      const node = el(
+        'li',
+        { class: 'ao-cheat__item', 'data-key': it.key, 'data-side': it.side, 'data-state': 'ready' },
+        el('span', { class: 'ao-cheat__icon', 'aria-hidden': 'true', html: GESTURE_ICONS[it.key] }),
+        el('span', { class: 'ao-cheat__text' }, el('span', { class: 'ao-cheat__name', text: it.name }), how),
+        time,
+        fill,
+      );
+      items[it.key] = { node, how, time, fill, it, mode: 'steer' };
+      list.append(node);
+    }
+    const node = el(
+      'aside',
+      { class: 'ao-cheat', 'aria-label': 'Шпаргалка жестов' },
+      el('p', { class: 'ao-cheat__head' },
+        el('span', { class: 'ao-cheat__lg' }, el('span', { class: 'ao-cheat__sw', 'data-side': 'left' }), 'левая — движение'),
+        el('span', { class: 'ao-cheat__lg' }, el('span', { class: 'ao-cheat__sw', 'data-side': 'right' }), 'правая — магия')),
+      list,
+      el('p', { class: 'ao-cheat__foot', text: 'Tab — скрыть' }),
+    );
+    const pill = el('p', { class: 'ao-cheat-pill', hidden: true, text: 'Tab — шпаргалка жестов' });
+    const FIRE_MS = { move: 250, shield: 250, bolt: 250, dash: IMPULSE_LATCH_MS, burst: IMPULSE_LATCH_MS, spark: IMPULSE_LATCH_MS };
+    const CD = { dash: 'dash', burst: 'burst', spark: 'spark' };
+    return {
+      node,
+      pill,
+      paint(ctx, energy, alive) {
+        const hidden = state.cheatHidden;
+        setHidden(node, hidden);
+        setHidden(pill, !hidden);
+        if (hidden) return;
+        const fired = state.read.fired;
+        const cd = (ctx.snap && ctx.snap.cooldowns) || {};
+        const costs = cfg.abilityCosts;
+        const moveMode = ctx.settings && ctx.settings.moveMode === 'stick' ? 'stick' : 'steer';
+        for (const c of Object.values(items)) {
+          const k = c.it.key;
+          if (k === 'move' && c.mode !== moveMode) { c.mode = moveMode; setText(c.how, moveMode === 'stick' ? c.it.howStick : c.it.how); }
+          let st = 'ready', frac = 0, tt = '';
+          const rem = CD[k] ? Math.max(0, num(cd[`${CD[k]}Remaining`])) : 0;
+          const tot = CD[k] ? num(cd[`${CD[k]}Total`]) : 0;
+          if (!alive) st = 'off';
+          else if (ctx.now - num(fired[k], -1e9) < FIRE_MS[k]) st = 'active';
+          else if (rem > 0.05) { st = 'cooldown'; frac = tot > 0 ? clamp(rem / tot, 0, 1) : 0; tt = rem >= 1 ? `${Math.ceil(rem)} с` : ''; }
+          else if (isNum(costs[k]) && energy < costs[k]) { st = 'low'; tt = 'мало энергии'; }
+          setAttr(c.node, 'data-state', st);
+          setStyle(c.fill, 'transform', `scaleX(${(Math.round(frac * 100) / 100).toFixed(2)})`);
+          setText(c.time, tt);
+        }
+      },
+    };
+  }
+
   /* ----------------------------------------------------------------- HUD */
 
   const hud = (() => {
@@ -2078,7 +3157,22 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       return { node, cd, time, name, hint };
     };
     const STATE_WORD = { ready: 'готово', active: 'активно', cooldown: 'перезарядка', low: 'мало энергии', off: 'недоступно' };
+    // [FEEL] вспышка плитки при срабатывании (переход в «активно» или из готовности в перезарядку)
+    // и короткий отблеск, когда перезарядка закончилась. CSS-анимация: «Уменьшенное движение» её гасит.
+    const flashTile = (t, cls) => {
+      for (const c of ['is-flash', 'is-ready']) { t.node.classList.remove(c); cancel(t[c]); t[c] = 0; } // одна вспышка за раз
+      void t.node.offsetWidth; // перезапуск анимации
+      t.node.classList.add(cls);
+      cancel(t[cls]);
+      t[cls] = later(() => t.node.classList.remove(cls), 520);
+    };
     const paintTile = (t, st, cdFrac, timeText) => {
+      const prev = t.state;
+      if (prev && prev !== st) {
+        if ((st === 'active' && prev !== 'active') || (st === 'cooldown' && (prev === 'ready' || prev === 'low'))) flashTile(t, 'is-flash');
+        else if (prev === 'cooldown' && st === 'ready') flashTile(t, 'is-ready');
+      }
+      t.state = st;
       setAttr(t.node, 'data-state', st);
       setStyle(t.node, '--ao-cd', cdFrac.toFixed(3));
       setText(t.time, timeText);
@@ -2099,11 +3193,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     );
     const dockHost = el('div', { class: 'ao-cvdock__slot' });
     const dockStatus = statusLine('ao-status--compact');
-    const dock = el('div', { class: 'ao-cvdock' }, dockHost, dockStatus.node);
+    const dockRead = readoutView();   // [ПРОЕКТОР] «ЛЕВАЯ: ЩИТ» / «ПРАВАЯ: OK → ВЫСТРЕЛ» под превью
+    const dock = el('div', { class: 'ao-cvdock' }, dockHost, dockRead.node, dockStatus.node);
+    const cheat = cheatSheet();       // [ПРОЕКТОР] шпаргалка жестов, Tab
     const pauseBtn = btn('Пауза', () => invoke('onPause', { reason: 'user' }), { variant: 'secondary', iconName: 'pause' });
     pauseBtn.node.classList.add('ao-pausebtn');
     pauseBtn.node.setAttribute('aria-keyshortcuts', 'Escape');
-    const node = el('div', { class: 'ao-hud', hidden: true }, boss, hero, dock, pauseBtn.node);
+    const node = el('div', { class: 'ao-hud', hidden: true }, boss, hero, cheat.node, cheat.pill, dock, pauseBtn.node);
 
     return {
       node,
@@ -2185,7 +3281,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           const info = ctx.debug ? DEBUG_INFO : describeTracking(ctx.tr, cfg);
           paintStatus(dockStatus, info, '');
           setAttr(dockHost, 'data-tone', info.tone);
+          // [ПРОЕКТОР] подписи жестов и красная рамка «ОШИБКИ»
+          const r = state.read.view;
+          dockRead.paint(r);
+          setAttr(dock, 'data-err', r && r.err ? 'on' : null);
         }
+        cheat.paint(ctx, energy, alive);
+        setClass(node, 'is-cheat', !state.cheatHidden);
       },
     };
   })();
@@ -2198,19 +3300,82 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     state.bannerTimer = later(() => setHidden(banner, true), BANNER_MS);
   }
 
+  /* -------------------------------------------- [ПРОЕКТОР] режим презентации
+   * Клавиша P или ?present в адресе: экран делится 40/60 — слева большая зеркальная камера со скелетом
+   * и крупными подписями жестов, справа игра (html.ao-present сдвигает #ao-app и .ao-ui вправо; main.js
+   * берёт размер рендера с канваса и получает событие resize). Для живого питча через проектор. */
+
+  // в меню и на экране ошибки камера выключена — там слот паркуется, панель показывает подсказку
+  const PRESENT_SCREENS = ['camera', 'calibration', 'tutorial', 'playing', 'paused', 'training', 'victory', 'defeat', 'oath'];
+  const present = (() => {
+    const host = el('div', { class: 'ao-slothost ao-pres__cam' });
+    const read = readoutView('ao-gread--big');
+    const status = statusLine();
+    const idle = el('p', { class: 'ao-pres__idle' });
+    const keyHint = el('span', { class: 'ao-pres__key', text: 'P — выйти' });
+    const node = el(
+      'aside',
+      { class: 'ao-pres', 'aria-label': 'Режим презентации: камера и распознанные жесты', hidden: true },
+      el('div', { class: 'ao-pres__head' }, el('span', { class: 'ao-pres__title', text: 'Что видит камера' }), keyHint),
+      host,
+      idle,
+      read.node,
+      el('p', { class: 'ao-pres__legend' },
+        el('span', { class: 'ao-cheat__lg' }, el('span', { class: 'ao-cheat__sw', 'data-side': 'left' }), 'левая кисть — движение'),
+        el('span', { class: 'ao-cheat__lg' }, el('span', { class: 'ao-cheat__sw', 'data-side': 'right' }), 'правая — магия')),
+      status.node,
+    );
+    return {
+      node,
+      host,
+      update(ctx) {
+        const info = ctx.debug ? DEBUG_INFO : describeTracking(ctx.tr, cfg);
+        paintStatus(status, info, ctx.debug ? '' : ctx.tr.message);
+        setAttr(host, 'data-tone', info.tone);
+        const shown = slot.parentNode === host;
+        setHidden(idle, shown);
+        if (!shown) setText(idle, CAMERA_RUNNING.includes(ctx.tr.status) ? 'Камера на паузе — превью вернётся в бою.' : 'Камера включится после «Начать» — здесь будет видно, что распознаёт игра.');
+        // в бою и обучении с отладкой P — «призма» (core/debugInput.js), режим переключает Shift+P
+        setText(keyHint, ctx.debug && (ctx.screen === 'playing' || ctx.screen === 'tutorial') ? 'Shift+P — выйти' : 'P — выйти');
+        read.paint(state.read.view);
+        setAttr(node, 'data-err', state.read.view && state.read.view.err ? 'on' : null);
+      },
+    };
+  })();
+
   /* ----------------------------------------------------------- assembly */
 
-  const screens = { menu, camera, calibration: calib, tutorial, paused, victory, defeat, error: errorScr, oath, training };
-  const slotHosts = { camera: camera.host, calibration: calib.host, tutorial: tutorial.host, paused: paused.host, playing: hud.dockHost, training: training.host };
+  // [ТВИСТ «ОШИБКА»] «Тренажёр техники» (modules/techniqueTrainer.js): DOM строится помощниками этого модуля
+  const technique = createTechniqueScreen({
+    uid, el, btn, setBtn, listen, heading, screenSection, statusLine, paintStatus, setText, setHidden, setAttr, setClass, setStyle,
+    invoke, announce, pressEnable, describe: (tr) => describeTracking(tr, cfg), cameraStarting: CAMERA_STARTING, debugInfo: DEBUG_INFO,
+  });
+  const screens = { menu, camera, calibration: calib, tutorial, paused, victory, defeat, error: errorScr, oath, training, technique };
+  const slotHosts = { camera: camera.host, calibration: calib.host, tutorial: tutorial.host, paused: paused.host, playing: hud.dockHost, training: training.host, technique: technique.host };
 
   ui.append(backdrop, hud.node, banner);
   for (const scr of Object.values(screens)) ui.append(scr.section);
-  ui.append(debugBadge, park, live, liveAlert);
+  ui.append(book.section); // [ТРЕНАЖЁР] «Книга заклинаний» — поверх меню, паузы и обучения
+  ui.append(present.node, debugBadge, park, live, liveAlert);
   root.appendChild(ui);
 
   function moveSlot(screen) {
-    const host = slotHosts[screen] || park;
+    const inPresent = state.present && PRESENT_SCREENS.includes(screen);
+    const host = inPresent ? present.host : slotHosts[screen] || park;
     if (slot.parentNode !== host) host.appendChild(slot);
+    // trackingHud читает режим рисунка у слота: в большой панели презентации — полный «tracking edit»
+    setAttr(slot, 'data-hud-mode', inPresent ? 'full' : null);
+  }
+
+  function setPresent(on) {
+    const next = !!on;
+    if (state.present === next) return;
+    state.present = next;
+    setClass(doc.documentElement, 'ao-present', next);
+    setHidden(present.node, !next);
+    if (state.screen) moveSlot(state.screen);
+    try { win.dispatchEvent(new win.Event('resize')); } catch (err) { /* без resize рендер подстроится на следующем изменении окна */ }
+    announce(next ? 'Режим презентации включён' : 'Режим презентации выключен');
   }
 
   function enterScreen(screen) {
@@ -2225,6 +3390,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       setHidden(banner, true);
     }
     if (screen === 'tutorial' && prev !== 'tutorial') tutorial.reset();
+    if (book.open) closeBook(false);
     if (screen === 'paused' && prev !== 'paused') {
       state.pause.sawLost = false;
       state.pause.variant = null;
@@ -2248,7 +3414,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   function syncSettings(s) {
-    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}`; // [FOREST] + startZone
+    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}|${s.gestureMode}|${s.autoWalk}|${s.difficulty}|${s.muted}`; // [FOREST] + startZone, [НОВИЧОК] + жесты, [FEEL] + difficulty, [SFX] + muted
     state.settings = s;
     if (key === state.settingsKey) return;
     state.settingsKey = key;
@@ -2292,6 +3458,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     error: (ctx) => errorScr.update(ctx),
     oath: (ctx) => oath.update(ctx),
     training: (ctx) => training.update(ctx),
+    technique: (ctx) => technique.update(ctx),
   };
 
   function update(viewModel) {
@@ -2326,7 +3493,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     setClass(ui, 'ao-reduced-motion', ctx.settings.reducedMotion);
     setClass(doc.documentElement, 'ao-bdo', !(vm.settings && vm.settings.bdoUi === false)); // [BDO] стиль Black Desert (настройка bdoUi)
     syncSettings(ctx.settings);
+    computeReadout(ctx);   // [ПРОЕКТОР] до экранов: подписи нужны HUD и панели презентации
     UPDATERS[screen](ctx);
+    book.update(ctx);
+    if (state.present) present.update(ctx);
     if (state.focusPending) {
       state.focusPending = false;
       focusScreen(screen);
@@ -2334,6 +3504,35 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   /* ------------------------------------------------------------ keyboard */
+
+  // [ПРОЕКТОР] Tab в бою — скрыть/показать шпаргалку; P — режим презентации (в бою с отладкой P — «призма»,
+  // там режим переключает Shift+P). В полях ввода (лобби дуэли) клавиши не перехватываются.
+  const typingTarget = (t) => !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''));
+  // Tab остаётся навигацией, если фокус на чужой кнопке (итоги дуэли modules/pvp.js и т. п.) или открыто окно дуэли
+  const tabFree = () => {
+    const a = doc.activeElement;
+    if (a && a !== doc.body && a !== doc.documentElement && !hud.node.contains(a)) return false;
+    const m = doc.querySelector('.pvp-modal');
+    return !(m && m.getClientRects().length);
+  };
+  listen(win, 'keydown', (e) => {
+    if (disposed || e.repeat || e.ctrlKey || e.metaKey || e.altKey || typingTarget(e.target)) return;
+    if (e.key === 'Tab' && state.screen === 'playing' && tabFree()) {
+      e.preventDefault();
+      state.cheatHidden = !state.cheatHidden;
+      try { win.localStorage.setItem(CHEAT_KEY, state.cheatHidden ? 'hidden' : 'shown'); } catch (err) { /* хранилище недоступно */ }
+      return;
+    }
+    if (e.code === 'KeyP') {
+      if (state.debug && !e.shiftKey && (state.screen === 'playing' || state.screen === 'tutorial')) return;
+      setPresent(!state.present);
+    }
+  });
+  try { state.cheatHidden = win.localStorage.getItem(CHEAT_KEY) === 'hidden'; } catch (err) { state.cheatHidden = false; }
+  try {
+    const q = new win.URLSearchParams(win.location.search);
+    if (q.has('present') && !/^(0|false|off)$/i.test(q.get('present') || '')) setPresent(true);
+  } catch (err) { /* без адреса — обычный режим */ }
 
   listen(win, 'keydown', (e) => {
     if (disposed || !cfg.keyboardPause) return;
@@ -2357,6 +3556,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     }
     for (const id of timers) win.clearTimeout(id);
     timers.clear();
+    if (state.present) {
+      setClass(doc.documentElement, 'ao-present', false);   // через кеш setClass: следующий экземпляр UI включит режим снова
+      try { win.dispatchEvent(new win.Event('resize')); } catch (err) { /* ignore */ }
+    }
     ui.remove();
   }
 

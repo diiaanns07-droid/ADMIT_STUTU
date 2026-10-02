@@ -21,7 +21,7 @@
 // heroRoot не задан — экземпляр создаёт свой root (для удалённого игрока) и сам ставит его по snapLike.player.
 // snapLike: нужен только { player: { position, yaw, velocity, action, hp, … как в snapshot } }.
 
-import { loadVRM, loadHumanoidGLB, retargetClip } from './vrmKit.js';
+import { loadVRM, loadHumanoidGLB, retargetClip, createGltfLoader } from './vrmKit.js';
 
 // Карточки героев: имя, класс, стихия и три строки описания — для меню №8 и витрины (heroShowcase).
 export const HEROES = Object.freeze({
@@ -128,14 +128,50 @@ export function configureHeroes(patch = {}) { defaults = { ...defaults, ...patch
 
 function loadGltf(url) {
   if (!gltfCache.has(url)) {
-    if (!gltfLoaderP) gltfLoaderP = import('three/addons/loaders/GLTFLoader.js').then((m) => new m.GLTFLoader());
-    const p = gltfLoaderP.then((l) => l.loadAsync(url));
+    if (!gltfLoaderP) { gltfLoaderP = createGltfLoader(); gltfLoaderP.catch(() => { gltfLoaderP = null; }); } // [LOAD] с распаковщиком meshopt; ошибка — повторить позже
+    // [LOAD] байты качаются сразу, не дожидаясь модулей загрузчика (они грузятся после main.js)
+    const p = Promise.all([gltfLoaderP, fetchBytes(url)]).then(([l, buf]) => l.parseAsync(buf, url.slice(0, url.lastIndexOf('/') + 1)));
     p.catch(() => gltfCache.delete(url));
     gltfCache.set(url, p);
   }
   return gltfCache.get(url);
 }
 const tick = () => new Promise((r) => setTimeout(r, 0));
+// [LOAD] всё, что герою нужно после модели, — заранее и параллельно с её загрузкой: модули оболочки
+// (dressUp ждал их по очереди, после модели), перенос клипов и библиотека клипов. Ошибки здесь не
+// важны: те же import() ниже повторят загрузку и обработают ошибку как раньше.
+let dressModsP = null;
+function prefetchHeroDeps(libUrls) {
+  if (!dressModsP) {
+    dressModsP = Promise.all([import('./heroShading.js'), import('./heroGear.js'), import('./heroAura.js'), import('./heroGhost.js'), import('three/addons/utils/SkeletonUtils.js'), import('@pixiv/three-vrm')]);
+    dressModsP.catch(() => { dressModsP = null; });
+  }
+  if (libUrls && libUrls.kaykit) loadGltf(libUrls.kaykit).catch(() => {});
+}
+
+// [LOAD] байты GLB-моделей героев: url → Promise<ArrayBuffer>. Кладёт setHero и предзагрузка витрины
+// (prefetch: в простое, когда выбранный герой уже стоит; при выходе из меню отменяется — канал нужен
+// MediaPipe). Отменённая или упавшая загрузка из кэша убирается.
+// Запись { p, ctl, keep }: у каждой загрузки свой AbortController; keep — модель ждёт герой (setHero,
+// клипы, соперник в дуэли): отмена предзагрузки такую загрузку не трогает.
+const glbBytes = new Map();
+function fetchBytes(url, signal) {
+  let e = glbBytes.get(url);
+  if (!e) {
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const cur = e = { ctl, keep: false, p: null };
+    e.p = fetch(url, ctl ? { signal: ctl.signal } : undefined).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); });
+    e.p.catch(() => { if (glbBytes.get(url) === cur) glbBytes.delete(url); });
+    glbBytes.set(url, e);
+  }
+  if (!signal) e.keep = true;
+  else if (!e.keep && e.ctl) {
+    const cur = e;
+    if (signal.aborted) cur.ctl.abort();
+    else signal.addEventListener('abort', () => { if (!cur.keep) cur.ctl.abort(); }, { once: true });
+  }
+  return e.p;
+}
 
 // Перенос всех клипов на VRM (кусками, чтобы не было длинного кадра) + длина шага клипов ходьбы.
 async function buildClips(THREE, vrm, key, libUrls) {
@@ -308,7 +344,12 @@ export function createHeroModel({
     if (!def.vrm && !def.glb) { S.ready = !!heroBody; return; }
     try {
       const url = def.glb ? new URL(def.glb, heroesBase).href : new URL(def.vrm, new URL(vrmUrl, base)).href;
-      const vrm = def.glb ? await loadHumanoidGLB(THREE, url) : await loadVRM(THREE, url);
+      prefetchHeroDeps(libUrls);   // [LOAD] клипы и модули оболочки — параллельно с моделью
+      // [LOAD] байты GLB — через общий кэш (предзагрузка витрины, возврат к прежнему герою — без сети);
+      // не скачались (отмена предзагрузки, ошибка) — загрузчик попробует сам
+      const pre = def.glb ? await fetchBytes(url).catch(() => null) : null;
+      if (S.disposed || token !== S.token) return;   // пока качали, выбрали другого героя — дальше не грузим
+      const vrm = def.glb ? await loadHumanoidGLB(THREE, url, undefined, pre) : await loadVRM(THREE, url);
       if (def.recolor) await recolorHero(vrm, def.recolor, def.makeup || null);
       if (def.hide) vrm.scene.traverse((o) => { if (o.isMesh && def.hide.some((n) => o.name.startsWith(n))) o.visible = false; });
       if (def.brows) thinBrows(vrm, def.brows);
@@ -355,6 +396,8 @@ export function createHeroModel({
           lower[name] = mixer.clipAction(lowerClips.get(clip));
         }
       }
+      // [LOAD] до первой позы Idle модель не видна: иначе, пока надевается оболочка, на витрине стоит T-поза
+      wrapG.visible = false;
       root.add(wrapG);
       const H = vrm.humanoid;
       const nb = (n) => H.getNormalizedBoneNode(n);
@@ -374,6 +417,7 @@ export function createHeroModel({
       showProcedural(false);
       for (const n of LOCO) if (full[n]) { full[n].play(); full[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); if (lower[n]) { lower[n].play(); lower[n].setEffectiveWeight(0); } }
       mixer.update(0);
+      wrapG.visible = true;   // [LOAD] герой появляется сразу в позе Idle
       parentAnchors();
       if (S.lod) { const l = S.lod; S.lod = -1; applyLod(l); }   // LOD, заданный до загрузки
       S.ready = true;
@@ -1199,10 +1243,19 @@ export function createHeroModel({
     if (ownRoot && root.parent) root.parent.remove(root);
   }
 
+  // [LOAD] скачать модели героев меню заранее (по одной, чтобы не забивать канал); signal — отмена
+  function prefetch(ids = HERO_ORDER, { signal } = {}) {
+    const urls = [...new Set(ids.map((id) => HEROES[id] && HEROES[id].glb).filter(Boolean).map((f) => new URL(f, heroesBase).href))];
+    let chain = Promise.resolve();
+    for (const u of urls) chain = chain.then(() => (signal && signal.aborted ? null : fetchBytes(u, signal)));
+    return chain.then(() => true, () => false);
+  }
+
   parentAnchors();
   setHero(hero);
 
   return {
+    prefetch,
     root, update, setHero, setPose, setMirror, getAnchors, setShading, setQuality, setLod, setStance, dispose,
     menuStance: (id) => (HEROES[id] && HEROES[id].menuStance) || null,
     menuPose: (id) => (HEROES[id] && HEROES[id].menuPose) || null,

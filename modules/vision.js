@@ -22,14 +22,119 @@ import { createInputRecorder } from '../core/inputRecorder.js'; // [CONTROLS] з
 // Версия проверена по реестру npm 28.09.2026.
 // Главный сборщик может передать свои URL через config.mediaPipe — тогда эти не используются.
 // [№1, интеграция] 0.10.35 вместо 1.0.1: бандл 1.0.x отправляет метрики на odml.pa.googleapis.com/v1/log.
+// [OFFLINE] По умолчанию всё берётся из vendor/ рядом с игрой (tools/vendor_update.mjs) — работает без интернета.
+// Пути vendor/ повторяют CDN; если локальные файлы не загрузились, loadEngine повторяет попытку с CDN (cdnFallback).
 export const MEDIAPIPE_VERSION = '0.10.35';
-export const DEFAULT_MEDIAPIPE = Object.freeze({
+const VENDOR_URL = (() => { try { return new URL('../vendor/', import.meta.url).href; } catch { return 'vendor/'; } })();
+export const CDN_MEDIAPIPE = Object.freeze({
   moduleUrl: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/vision_bundle.mjs`,
   wasmRoot: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`,
   modelUrl: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-  // [№1] модель кистей (21 точка на кисть); та же версия WASM/библиотеки
   handModelUrl: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
 });
+export const DEFAULT_MEDIAPIPE = Object.freeze({
+  moduleUrl: `${VENDOR_URL}npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/vision_bundle.mjs`,
+  wasmRoot: `${VENDOR_URL}npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`,
+  modelUrl: `${VENDOR_URL}mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
+  // [№1] модель кистей (21 точка на кисть); та же версия WASM/библиотеки
+  handModelUrl: `${VENDOR_URL}mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+});
+// [OFFLINE] локальный URL из vendor/ → тот же файл на CDN (для остальных URL — null)
+export function cdnTwinUrl(url) {
+  const u = String(url || '');
+  let i = u.indexOf('/vendor/npm/');
+  if (i >= 0) return 'https://cdn.jsdelivr.net/npm/' + u.slice(i + 12);
+  i = u.indexOf('/vendor/mediapipe-models/');
+  if (i >= 0) return 'https://storage.googleapis.com/mediapipe-models/' + u.slice(i + 25);
+  return null;
+}
+// На CDN уходят только те файлы, которых нет локально (HEAD не 2xx или нет ответа): если в vendor/
+// не хватает одной модели, библиотека и WASM остаются свои.
+async function cdnTwinMediaPipe(mp) {
+  if (!mp) return null;
+  const probe = async (u) => {
+    try { const r = await fetch(u, { method: 'HEAD', cache: 'no-store' }); return r.ok; } catch { return false; }
+  };
+  const tw = { ...mp };
+  let changed = false;
+  for (const k of ['moduleUrl', 'wasmRoot', 'modelUrl', 'handModelUrl']) {
+    const t = mp[k] ? cdnTwinUrl(mp[k]) : null;
+    if (!t) continue;
+    if (await probe(k === 'wasmRoot' ? `${mp[k]}/vision_wasm_internal.wasm` : mp[k])) continue;
+    tw[k] = t;
+    changed = true;
+  }
+  // модуль и WASM — одной версии из одного места
+  if (tw.moduleUrl !== mp.moduleUrl || tw.wasmRoot !== mp.wasmRoot) {
+    tw.moduleUrl = cdnTwinUrl(mp.moduleUrl) || tw.moduleUrl;
+    tw.wasmRoot = cdnTwinUrl(mp.wasmRoot) || tw.wasmRoot;
+  }
+  return changed ? tw : null;
+}
+
+// [OFFLINE] Предзагрузка MediaPipe, пока человек в меню: модуль, WASM (вариант для worker) и модели качаются
+// с низким приоритетом заранее — тогда «Разрешить камеру» не ждёт ~25 МБ. Файлы оседают в кэше
+// service worker (sw.js, cache-first), без него — в HTTP-кэше. Повторный вызов с теми же URL не качает заново.
+// opts: { onProgress({ loaded, total, file, done }), signal, priority: 'low' }. Ошибки не бросает: { ok, errors }.
+const preloadSeen = new Map();
+export function mediaPipePreloadList(mp, extraModels = []) {
+  const r = resolveMediaPipe(mp);
+  const list = [r.moduleUrl, `${r.wasmRoot}/vision_wasm_module_internal.js`, `${r.wasmRoot}/vision_wasm_module_internal.wasm`];
+  if (r.handModelUrl) list.push(r.handModelUrl);
+  list.push(r.modelUrl);
+  for (const m of extraModels) if (m) list.push(resolveMediaPipe({ ...mp, modelUrl: m }).modelUrl);
+  return [...new Set(list)];
+}
+export async function preloadMediaPipe(urls, opts = {}) {
+  const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+  const list = Array.isArray(urls) ? urls : mediaPipePreloadList(urls);
+  const sizes = new Map(list.map((u) => [u, 0]));
+  const loaded = new Map(list.map((u) => [u, 0]));
+  const errors = [];
+  let file = null;
+  const emit = (done = false) => {
+    if (!onProgress) return;
+    let total = 0, got = 0;
+    for (const u of list) { const sz = sizes.get(u) || 0; total += sz; got += Math.min(loaded.get(u) || 0, sz || Infinity); }
+    try { onProgress({ loaded: got, total, file, done, files: list.length }); } catch { /* ignore */ }
+  };
+  for (const url of list) {
+    if (opts.signal && opts.signal.aborted) break;
+    file = url.split('/').pop();
+    if (preloadSeen.has(url)) { const n = preloadSeen.get(url); sizes.set(url, n); loaded.set(url, n); emit(); continue; }
+    try {
+      const init = { priority: opts.priority || 'low', credentials: 'same-origin' };
+      if (opts.signal) init.signal = opts.signal;
+      const res = await fetch(url, init);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const len = +res.headers.get('content-length') || 0;
+      sizes.set(url, len);
+      if (res.body && typeof res.body.getReader === 'function') {
+        const rd = res.body.getReader();
+        let n = 0;
+        for (;;) {
+          const { done, value } = await rd.read();
+          if (done) break;
+          n += value.byteLength;
+          loaded.set(url, n);
+          if (!len) sizes.set(url, n);
+          emit();
+        }
+        sizes.set(url, Math.max(len, n));
+      } else {
+        const b = await res.arrayBuffer();
+        sizes.set(url, b.byteLength);
+        loaded.set(url, b.byteLength);
+      }
+      preloadSeen.set(url, sizes.get(url));
+      emit();
+    } catch (e) {
+      errors.push(`${file}: ${(e && e.message) || e}`);
+    }
+  }
+  emit(true);
+  return { ok: errors.length === 0, errors, files: list.length };
+}
 
 // Индексы MediaPipe Pose (33 точки). «Левое/правое» — стороны самого человека.
 export const LANDMARK = Object.freeze({
@@ -52,6 +157,9 @@ export const DEFAULT_VISION_CONFIG = Object.freeze({
   torsoMove: false,
   // [V5] схема движения левой рукой: 'steer' — «Руль» (core/steerStick.js), 'stick' — джойстик (core/leftStick.js)
   moveMode: 'steer',
+  // [НОВИЧОК] набор жестов: 'master' — все; 'novice' — только базовые (core/handGestures.js, GESTURE_PROFILES).
+  // Игра по умолчанию включает «Новичка» (config.defaultSettings.gestureMode); модуль сам по себе — «Мастер».
+  gestureMode: 'master',
   // Маппинг
   mirror: true,            // true: наклон игрока к СВОЕЙ правой стороне → moveX>0 (как в зеркальном превью)
   swapHands: false,        // для камер/драйверов, которые сами зеркалят поток
@@ -140,6 +248,7 @@ export const DEFAULT_VISION_CONFIG = Object.freeze({
   // Движок и производительность
   useWorker: 'auto',       // 'auto' | 'off' (или false)
   workerUrl: null,         // по умолчанию ./vision-worker.js рядом с vision.js
+  cdnFallback: true,       // [OFFLINE] локальные файлы MediaPipe (vendor/) не загрузились — повторить с CDN
   workerInitTimeoutMs: 30000, // без сообщений от worker дольше — откат в главный поток
   workerFrameTimeoutMs: 2500,
   delegate: 'GPU',         // 'GPU' (с откатом на CPU) | 'CPU'
@@ -162,6 +271,14 @@ export const DEFAULT_VISION_CONFIG = Object.freeze({
   minHandPresenceConfidence: 0.5,
   minHandTrackingConfidence: 0.5,
   handGestures: Object.freeze({}), // патч DEFAULT_HAND_CONFIG
+  // [СТОЯ] игрок стоит: бёдра и колени видны, колени заметно ниже бёдер (бедро вертикально).
+  // Сидя бедро идёт к камере — колено в кадре почти на уровне бедра (или его не видно за столом).
+  standHipVis: 0.6,
+  standKneeVis: 0.5,
+  standTorsoMin: 1.0,      // (бёдра − плечи) / ширина плеч не меньше — это правда корпус
+  standKneeDrop: 1.05,     // (колени − бёдра) / ширина плеч не меньше — бедро вертикально (сидя ≲ 0.8)
+  standOnMs: 700,          // признаки держатся столько — «стоит»
+  standOffMs: 1200,        // признаков нет столько — «сидит»
   camera: Object.freeze({ width: 640, height: 480, frameRate: 30, deviceId: null }),
   mediaPipe: DEFAULT_MEDIAPIPE,
 });
@@ -234,6 +351,30 @@ function copyLandmarks(pose) {
     if (p) out[i] = { x: p.x, y: p.y, z: p.z, visibility: p.visibility };
   }
   return out;
+}
+
+// [СТОЯ] Детектор позы «стоит» по 33 точкам позы (чистая логика). update(landmarks, tMs, aspect) → boolean.
+export function createStandingDetector(configPatch = {}) {
+  const c = mergeVisionConfig(DEFAULT_VISION_CONFIG, configPatch);
+  let on = false, evSince = null, noSince = null, last = null;
+  const vis = (p, v) => p && finite(p.x) && finite(p.y) && (!finite(p.visibility) || p.visibility >= v);
+  function update(lms, tMs, aspect = 4 / 3) {
+    let ev = false;
+    last = null;
+    if (Array.isArray(lms) && vis(lms[11], 0.5) && vis(lms[12], 0.5) && vis(lms[23], c.standHipVis) && vis(lms[24], c.standHipVis)
+      && vis(lms[25], c.standKneeVis) && vis(lms[26], c.standKneeVis)) {
+      const sw = Math.hypot((lms[11].x - lms[12].x) * aspect, lms[11].y - lms[12].y);
+      if (sw > 1e-3) {
+        const shY = (lms[11].y + lms[12].y) / 2, hipY = (lms[23].y + lms[24].y) / 2, knY = (lms[25].y + lms[26].y) / 2;
+        last = { torso: (hipY - shY) / sw, kneeDrop: (knY - hipY) / sw };
+        ev = last.torso >= c.standTorsoMin && last.kneeDrop >= c.standKneeDrop && knY <= 1.02;
+      }
+    }
+    if (ev) { noSince = null; if (evSince === null) evSince = tMs; if (!on && tMs - evSince >= c.standOnMs) on = true; }
+    else { evSince = null; if (noSince === null) noSince = tMs; if (on && tMs - noSince >= c.standOffMs) on = false; }
+    return on;
+  }
+  return { update, get standing() { return on; }, getDebug: () => ({ standing: on, ...(last ? { torso: r3(last.torso), kneeDrop: r3(last.kneeDrop) } : {}) }), reset() { on = false; evSince = null; noSince = null; last = null; } };
 }
 
 // ─────────────────────── 1. интерпретатор поз ───────────────────────
@@ -912,6 +1053,30 @@ export function createPoseInterpreter(configPatch = {}) {
     blockGestures('calibration');
   }
 
+  // [ONBOARD] сохранённая калибровка (localStorage, main.js): нейтральная поза прошлого входа.
+  // Числа проверяются; формат кадра сверяет onFrameSize на первом кадре (другой — калибровка сбрасывается).
+  function importBaseline(src) {
+    if (!src || typeof src !== 'object' || (calib && !calib.result)) return false;
+    const rr = src.restRise && typeof src.restRise === 'object' ? src.restRise : {};
+    const opt = (v) => (finite(v) ? v : null);
+    const b = {
+      cx: src.cx, cy: src.cy, width: src.width, aspect: src.aspect,
+      frameW: src.frameW | 0, frameH: src.frameH | 0,
+      noise: finite(src.noise) ? Math.max(cfg.minNoise, src.noise) : cfg.minNoise,
+      widthNoise: finite(src.widthNoise) ? Math.max(cfg.minNoise, src.widthNoise) : cfg.minNoise,
+      noseGap: opt(src.noseGap), restRise: { right: opt(rr.right), left: opt(rr.left) },
+      samples: src.samples | 0, tMs: nowMs(), restored: true,
+    };
+    if (![b.cx, b.cy, b.width, b.aspect].every(finite) || !(b.width >= cfg.minShoulderWidth) || !(b.aspect > 0.3 && b.aspect < 4)) return false;
+    if (frame.w > 0 && frame.h > 0 && Math.abs(frame.w / frame.h - b.aspect) / b.aspect > 0.02) return false;
+    baseline = b;
+    track.calibrationInvalid = null;
+    recompute();
+    resetMotion('calibration-restored');
+    blockGestures('calibration-restored');
+    return true;
+  }
+
   recompute();
   resetMotion('init');
 
@@ -932,6 +1097,7 @@ export function createPoseInterpreter(configPatch = {}) {
     clearCalibration: () => { baseline = null; recompute(); resetMotion('calibration-cleared'); },
     setActive: (v) => { active = !!v; if (!active) { pulses.dash = null; pulses.burst = null; } },
     getBaseline: () => (baseline ? { ...baseline, restRise: { ...baseline.restRise } } : null),
+    importBaseline, // [ONBOARD]
     getDerived: () => ({ ...derived }),
     getConfig: () => mergeVisionConfig(cfg, {}),
   };
@@ -1002,6 +1168,7 @@ export async function createVision(options = {}) {
   const handsInterp = hi && typeof hi.read === 'function' && typeof hi.push === 'function'
     ? hi : createHandGestures(cfg.handGestures || {});
   let lastPose = null;      // { tMs, frameW, frameH, mirror, landmarks[33] } — для трекинг-HUD
+  const standDet = createStandingDetector(cfg);   // [СТОЯ] игрок стоит (бёдра и колени в кадре)
   let lastBody = null;      // [V3.1] последняя надёжная середина плеч {x, y, t}
   let handTap = null;       // [HAND] core/handZone.js: наблюдения кистей для лука и магии рукой
   let recorder = null;      // [CONTROLS] core/inputRecorder.js: запись того же наблюдения (?rec=1 в main.js)
@@ -1027,6 +1194,12 @@ export async function createVision(options = {}) {
     try { handsInterp.configure({ moveMode: cfg.moveMode === 'stick' ? 'stick' : 'steer' }); } catch { /* ignore */ }
   }
   applyMoveMode();
+  // [НОВИЧОК] профиль жестов (настройка «Жесты: Новичок / Мастер»)
+  function applyGestureMode() {
+    if (!handsInterp || typeof handsInterp.configure !== 'function') return;
+    try { handsInterp.configure({ profile: cfg.gestureMode === 'novice' ? 'novice' : 'master' }); } catch { /* ignore */ }
+  }
+  applyGestureMode();
   let handsStatus = { enabled: !!cfg.hands, ready: false, error: null, delegate: null };
 
   const st = { status: 'idle', message: 'Камера не включена', progress: 0, emittedProgress: 0, code: null };
@@ -1096,6 +1269,7 @@ export async function createVision(options = {}) {
         ...interp.getDebug(now),
         frameAgeMs: r1(tr.frameAgeMs),
         bodyVisible: tr.bodyVisible,
+        stand: standDet.getDebug(),   // [СТОЯ]
         inferenceHz: arr.length >= 2 ? r1(perf.hz) : null,
         inferMs: r1(perf.inferMs),
         latencyMs: r1(perf.latencyMs),
@@ -1281,8 +1455,23 @@ export async function createVision(options = {}) {
     return enginePromise;
   }
 
+  // [OFFLINE] сначала vendor/ (работает без интернета); не вышло — те же файлы с CDN
   async function loadEngine() {
-    mpResolved = resolveMediaPipe(cfg.mediaPipe);
+    try {
+      return await loadEngineFrom(resolveMediaPipe(cfg.mediaPipe));
+    } catch (e) {
+      // только ошибки загрузки файлов (404, нет сети, модуль не импортировался), а не отказ GPU/модели
+      const loadErr = /fetch|import|load|network|HTTP|404|wasm|скрипт worker/i.test(String((e && e.message) || e));
+      const twin = cfg.cdnFallback === false || !loadErr ? null : await cdnTwinMediaPipe(mpResolved);
+      if (!twin || disposed) throw e;
+      console.warn('[vision] локальные файлы MediaPipe не загрузились — пробуем CDN:', (e && e.message) || e);
+      workerFallbackReason = null;
+      return loadEngineFrom(resolveMediaPipe(twin));
+    }
+  }
+
+  async function loadEngineFrom(resolved) {
+    mpResolved = resolved;
     const sup = workerSupport();
     const wantWorker = !(cfg.useWorker === false || cfg.useWorker === 'off');
     if (wantWorker && sup.ok) {
@@ -1692,6 +1881,7 @@ export async function createVision(options = {}) {
     // [PERF] кадр с уверенной кистью: закрытые руками плечи не считаются потерей трекинга
     if (Array.isArray(hands) && hands.some((hd) => hd && Array.isArray(hd.landmarks) && hd.landmarks.length && !(finite(hd.score) && hd.score < 0.5))) interp.noteHands(tMs);
     interp.pushObservation({ tMs, frameW: w, frameH: h, landmarks: lms });
+    const standing = standDet.update(lms, tMs, h > 0 ? w / h : 4 / 3);   // [СТОЯ]
     lastPose = { tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, landmarks: lms };
     if (cfg.hands) {
       const wr = (i) => (lms && lms[i] ? { x: lms[i].x, y: lms[i].y, visibility: lms[i].visibility } : null);
@@ -1708,7 +1898,7 @@ export async function createVision(options = {}) {
         sw = h > 0 ? Math.hypot((lms[11].x - lms[12].x) * (w / h), lms[11].y - lms[12].y) : null;
         lastBody = { ...body, sw, t: tMs };
       } else if (lastBody && tMs - lastBody.t <= 700) { body = { x: lastBody.x, y: lastBody.y }; sw = lastBody.sw; }
-      const handObs = { tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, hands: Array.isArray(hands) ? hands : [], poseWrists: { left: wr(15), right: wr(16) }, bodyCenter: body, shoulderWidth: sw };
+      const handObs = { tMs, frameW: w, frameH: h, mirror: !!cfg.mirror, hands: Array.isArray(hands) ? hands : [], poseWrists: { left: wr(15), right: wr(16) }, bodyCenter: body, shoulderWidth: sw, standing };
       handsInterp.push(handObs);
       if (recorder) { try { recorder.add(handObs); } catch (e) { /* [CONTROLS] запись не ломает трекинг */ } }
       // [HAND] лук и магия рукой (core/handZone.js): то же наблюдение + поза (плечи, уши)
@@ -1904,6 +2094,25 @@ export async function createVision(options = {}) {
     return new Promise((resolve, reject) => { calibWaiter = { resolve, reject }; });
   }
 
+  // [ONBOARD] калибровка между входами: getCalibration() → объект для JSON (null — не откалибровано),
+  // setCalibration(data) → true, если поза принята (пока идёт калибровка — false).
+  const CALIB_FORMAT = 1;
+  function getCalibration() {
+    const b = interp.getBaseline();
+    if (!b) return null;
+    const pick = ['cx', 'cy', 'width', 'aspect', 'frameW', 'frameH', 'noise', 'widthNoise', 'noseGap', 'samples'];
+    const out = {};
+    for (const k of pick) out[k] = b[k];
+    out.restRise = { right: b.restRise.right, left: b.restRise.left };
+    return { v: CALIB_FORMAT, savedAt: Date.now(), baseline: out };
+  }
+  function setCalibration(data) {
+    if (disposed || !data || typeof data !== 'object' || data.v !== CALIB_FORMAT) return false;
+    const ok = interp.importBaseline(data.baseline);
+    if (ok) { stickyNote = null; updateTrackingStatus(nowMs()); }
+    return ok;
+  }
+
   // [№1, «Перстни»] Слияние: кисть, которую видно, заменяет жест «поднятой рукой» своей стороны
   // (иначе рисование руны поднятой правой рукой стреляло бы). Нет кистей — прежнее управление позой.
   // [conjure/throw] Контракт HandIntent: conjure — удержание «лепки» двумя руками, throw — импульс.
@@ -1972,6 +2181,13 @@ export async function createVision(options = {}) {
       out.rune = null; out.runeScore = 0; out.parry = false; out.slash = null;
     }
     if (out.burst) { out.attack = false; out.spark = false; }
+    if (cfg.gestureMode === 'novice') {
+      // [НОВИЧОК] страховка поверх профиля распознавателя: импульсы выключенных жестов не уходят в бой
+      out.spark = false; out.slash = null; out.parry = false; out.sigil = null;
+      out.rune = null; out.runeScore = 0; out.runeFizzle = false;
+    }
+    out.gestureMode = cfg.gestureMode === 'novice' ? 'novice' : 'master';
+    out.standing = standDet.standing;   // [СТОЯ] игрок стоит
     out.hands = {
       available: h.available,
       left: L ? { shape: L.shape, palmFacing: L.palmFacing, charge: L.charge, center: L.center } : null,
@@ -1993,6 +2209,7 @@ export async function createVision(options = {}) {
     if (patch.handGestures) handsInterp.configure(patch.handGestures);
     if ('sensitivity' in patch) applyStickSensitivity();
     if ('moveMode' in patch) applyMoveMode();
+    if ('gestureMode' in patch) applyGestureMode();
     if ('overlay' in patch && !cfg.overlay) clearOverlay();
     if ('mediaPipe' in patch && engine) console.warn('[vision] новые URL MediaPipe применятся после dispose/createVision');
     updateMinInterval();
@@ -2012,6 +2229,7 @@ export async function createVision(options = {}) {
     rejectCalibration('stopped', 'Калибровка прервана: камера остановлена');
     interp.resetMotion('stopped');
     handsInterp.reset('stopped');
+    standDet.reset();
     lastPose = null;
     lastBody = null;
     clearOverlay();
@@ -2068,5 +2286,5 @@ export async function createVision(options = {}) {
     }
   }
 
-  return { start, calibrate, read, getStatus, configure, stop, dispose, getPose, getHands, getStick, setHandTap /* [HAND] */, startRecording, takeRecording, stopRecording, recordingSize, setPoseModel /* [PERF] */ };
+  return { start, calibrate, read, getStatus, configure, stop, dispose, getPose, getHands, getStick, setHandTap /* [HAND] */, startRecording, takeRecording, stopRecording, recordingSize, setPoseModel /* [PERF] */, getCalibration, setCalibration /* [ONBOARD] */ };
 }

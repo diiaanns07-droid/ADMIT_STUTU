@@ -24,13 +24,17 @@ import { createUI } from './modules/ui.js';
 import { createVision } from './modules/vision.js';
 import { createTrackingHud } from './core/trackingHud.js';
 import { createBattleHud } from './core/battleHud.js';
-import { createCoachStats, hintInfo } from './core/gestureCoach.js';
+import { createCoachStats, hintInfo, noteHint, getActiveHint, createCoachHistory, compareCoach } from './core/gestureCoach.js';
 import { createProgression } from './core/progression.js';
 import { createPushupCounter } from './core/pushupCounter.js';
 import { createSquatCounter, topSquatFault, synthSquatPose } from './core/squatCounter.js';
 import { createHandZone, createHeroBowPose } from './core/handZone.js'; // [HAND] лук и магия рукой
 import { createPerfTuner } from './core/perfTuner.js'; // [PERF] автоподстройка под железо
 import { createPerfHud } from './core/perfHud.js';     // [PERF] F3 — кадры и трекинг
+import { feelOfEvents, FEEL_TIME } from './core/gameFeel.js';     // [FEEL] остановка кадра, замедление, тряска по силе удара
+import { createCueTracker } from './modules/sfx.js';    // [SFX] «✓ Распознано» и «ОШИБКА» на обучении и в бою
+import { createCoachOverlay } from './core/coachOverlay.js'; // [ТВИСТ «ОШИБКА»] подсветка ошибки на превью камеры
+import { createTechniqueTrainer } from './modules/techniqueTrainer.js'; // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
 
@@ -63,12 +67,15 @@ function sanitizeSettings(patch, base) {
   if (Number.isFinite(+patch.volume) && patch.volume !== null && patch.volume !== '') out.volume = Math.max(0, Math.min(1, +patch.volume));
   if (Number.isFinite(+patch.sensitivity) && patch.sensitivity !== null && patch.sensitivity !== '') out.sensitivity = Math.max(0.5, Math.min(2, +patch.sensitivity));
   if ('reducedMotion' in patch) out.reducedMotion = !!patch.reducedMotion;
+  if (patch.difficulty === 'easy' || patch.difficulty === 'normal') out.difficulty = patch.difficulty; // [FEEL] сложность боя с Регентом
+  if ('muted' in patch) out.muted = patch.muted === true; // [SFX] «Без звука» (кнопка в меню и паузе, клавиша M)
   if (patch.moveMode === 'steer' || patch.moveMode === 'stick') out.moveMode = patch.moveMode; // [V5] «Руль» / «Джойстик»
   if (typeof patch.hero === 'string' && HEROES[patch.hero]) out.hero = patch.hero;
   // [HERO] C1: шейдинг героев
   if (patch.heroShading === 'realistic' || patch.heroShading === 'anime') out.heroShading = patch.heroShading;
-  // [FOREST] место старта: Пепельное плато / Сияющий лес
-  if (patch.startZone === 'arena' || patch.startZone === 'forest') out.startZone = patch.startZone;
+  // [FOREST] место старта: Пепельное плато / Сияющий лес; [ONBOARD] 'edge' — сразу у края арены
+  if (patch.startZone === 'edge' || patch.startZone === 'arena' || patch.startZone === 'forest') out.startZone = patch.startZone;
+  if (patch.startZoneV >= 2) out.startZoneV = 2;
   // [NET] имя в онлайн-дуэли и IP ретранслятора LAN
   if (typeof patch.netName === 'string') out.netName = patch.netName.replace(/[<>\u0000-\u001f]/g, '').trim().slice(0, 16);
   if (typeof patch.netLanHost === 'string') out.netLanHost = patch.netLanHost.replace(/[^0-9A-Za-z.:\-]/g, '').slice(0, 64);
@@ -78,6 +85,12 @@ function sanitizeSettings(patch, base) {
   if ('bdoUi' in patch) out.bdoUi = patch.bdoUi !== false;
   // [HAND] лук и магия рукой
   if ('handCombat' in patch) out.handCombat = patch.handCombat !== false;
+  // [НОВИЧОК] набор жестов и автоход; смена режима ставит автоход по умолчанию режима (если его не задали явно)
+  if (patch.gestureMode === 'novice' || patch.gestureMode === 'master') {
+    if (patch.gestureMode !== base.gestureMode && !('autoWalk' in patch)) out.autoWalk = patch.gestureMode === 'novice';
+    out.gestureMode = patch.gestureMode;
+  }
+  if ('autoWalk' in patch) out.autoWalk = patch.autoWalk !== false;
   return out;
 }
 function loadSettings() {
@@ -85,9 +98,13 @@ function loadSettings() {
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); } catch (e) { /* хранилище недоступно */ }
   // [PERF] сохранения до автоподстройки: прежний «средний» уровень был значением по умолчанию — переводим в «Авто»
   if (saved && typeof saved === 'object' && !('qualityAuto' in saved)) saved = { ...saved, qualityAuto: true };
+  // [ONBOARD] старт у края арены стал значением по умолчанию: прежнее «Плато» было умолчанием, а не выбором
+  if (saved && typeof saved === 'object' && !(saved.startZoneV >= 2)) saved = { ...saved, startZone: saved.startZone === 'forest' ? 'forest' : 'edge', startZoneV: 2 };
   return sanitizeSettings(saved, config.defaultSettings);
 }
 function saveSettings(s) { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) { /* ignore */ } }
+// [НОВИЧОК] лук и магия рукой камерой — только в «Мастере»; «Отладка с клавиатуры» — как раньше, со всеми жестами
+const handCombatOn = () => settings.handCombat !== false && (app.debug || settings.gestureMode !== 'novice');
 
 // Живой объект настроек: world/effects читают его через config.settings.
 const settings = loadSettings();
@@ -111,6 +128,11 @@ renderer.shadowMap.type = THREE.PCFShadowMap;
 // ?uncapped=1 — без предела кадров (замеры QA), ?pose=lite|full — модель позы вручную.
 const PERF_Q = new URLSearchParams(location.search);
 const UNCAPPED = PERF_Q.get('uncapped') === '1';
+// [ONBOARD] быстрый вход: «Играть» → камера с автокалибровкой → обучение → бой у края арены.
+// ?demo — для живой презентации: без меню, сразу камера → бой; ?classic=1 — прежний поток экранов с кнопками.
+const DEMO = PERF_Q.has('demo') && PERF_Q.get('demo') !== '0';
+const CLASSIC = PERF_Q.get('classic') === '1' && !DEMO;
+const QUICK = !CLASSIC;
 let perfTuner = null;
 try {
   perfTuner = createPerfTuner({ renderer });
@@ -123,8 +145,11 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(config.camera.fov, 1, 0.1, 1200); // небо затмения ~900 м, шпили до ~700 м
 scene.add(camera);
 
+// [ПРОЕКТОР] размер игровой области — по канвасу: в режиме презентации (ui.js, html.ao-present) это правые 60 % окна
+function viewW() { return canvas.clientWidth || window.innerWidth; }
+function viewH() { return canvas.clientHeight || window.innerHeight; }
 function resize() {
-  const w = window.innerWidth, h = window.innerHeight;
+  const w = viewW(), h = viewH();
   renderer.setSize(w, h, false);
   camera.aspect = w / Math.max(1, h);
   camera.updateProjectionMatrix();
@@ -145,10 +170,15 @@ const app = {
   lostTime: 0,
   lastInput: null,
   resumeAt: 0,               // performance.now(), до которого бой после продолжения стоит
-  intro: { t: 0, duration: 5, awakened: false }, // screen 'intro': облёт камеры, пробуждение стража
+  intro: { t: 0, duration: 1.8, awakened: false, skip: false }, // screen 'intro': облёт камеры, пробуждение стража; [ONBOARD] 1,8 с, пропуск
   introShown: false,         // интро показывается при первом бое после меню, не на каждом повторе
   resumableFight: false,     // камера упала во время паузы: после переподключения вернуться в бой
   nav: [],                   // [ASHEN_V2] стек возврата для экранов «Клятва героя» и «Тренировка»
+  // [ONBOARD] экран камеры сам включает камеру, калибрует и идёт дальше; autoResume — отсчёт 3-2-1 после потери трекинга
+  onb: { autoEnabled: false, calibP: null, retryAt: 0, okSince: null, restored: false, calibratedAt: 0 },
+  autoResume: null,          // { at, badSince } — performance.now() продолжения боя
+  gate: { ok: true, reason: '', since: 0, flashUntil: 0 }, // причина недоступности «В бой»/«Продолжить» для кнопок UI
+  outroAt: 0,                // [FEEL] performance.now() исхода боя: экран итогов — после замедленного финала
 };
 
 // [ASHEN_V2] мир создаётся первым: его раскладка (коллайдеры, земля, арена, старт) нужна бою и камере.
@@ -182,7 +212,7 @@ import('./core/postfx.js').then((m) => {
   try {
     postfx = m.createPostFX({ THREE, renderer, scene, camera, quality: settings.quality });
     postfx.setReducedMotion(!!settings.reducedMotion);
-    postfx.setSize(window.innerWidth, window.innerHeight, renderer.getPixelRatio());
+    postfx.setSize(viewW(), viewH(), renderer.getPixelRatio());
   } catch (e) { console.warn('[ASHEN] postfx недоступен, обычный рендер:', e); postfx = null; }
 }).catch((e) => console.warn('[ASHEN] core/postfx.js не загружен, обычный рендер:', e && e.message));
 const rig = createCameraRig(config.camera);
@@ -193,6 +223,9 @@ const combatCfg = typeof combat.getConfig === 'function' ? combat.getConfig() : 
 const progression = createProgression();
 const pushups = createPushupCounter();
 const squats = createSquatCounter();
+// [ТВИСТ «ОШИБКА»] «Тренажёр техники»: чек-лист условий жеста вживую (свои счётчики упражнений, очков не даёт)
+const trainer = createTechniqueTrainer();
+let techView = null;
 // exercise: 'pushups' | 'squats'. sim — клавиатурная имитация приседа в DEBUG (без камеры).
 const train = { reps: 0, lastPoseT: -1, lastRepAt: -1e9, exercise: 'pushups', hintRef: null, hintAt: -1e9, sim: { k: 0, t: 0, keys: new Set() } };
 function resetTraining() {
@@ -259,7 +292,33 @@ function forestZoneEvents(events, snap) {
 function applyStartZone() {
   if (typeof combat.setSpawn !== 'function' || !worldLayout || !worldLayout.spawns) return;
   if (app.netInfo && app.netInfo.spawn) { combat.setSpawn(app.netInfo.spawn); return; } // [NET] дуэль по сети: своя точка поляны
+  if (settings.startZone === 'edge') { combat.setSpawn(edgeSpawn()); return; }   // [ONBOARD] сразу у края арены
   combat.setSpawn(settings.startZone === 'forest' ? worldLayout.spawns.forest : null);
+}
+// [ONBOARD] точка у края арены со стороны камеры (+Z), лицом к Регенту: внутри круга бой начинается сразу,
+// снаряд долетает до стража за ~0,5 с. Свободное от коллайдеров место ищется так же, как старт world.js.
+let _edgeSpawn;
+function edgeSpawn() {
+  if (_edgeSpawn !== undefined) return _edgeSpawn;
+  _edgeSpawn = null;
+  const A = worldLayout && worldLayout.arena;
+  if (!A || !Number.isFinite(A.r)) return null;
+  const cols = Array.isArray(worldLayout.colliders) ? worldLayout.colliders : [];
+  const free = (x, z) => cols.every((c) => {
+    if (c.type === 'circle') return Math.hypot(x - c.x, z - c.z) > c.r + 0.9;
+    if (c.type !== 'segment') return true;
+    const ex = c.bx - c.ax, ez = c.bz - c.az, L2 = ex * ex + ez * ez || 1;
+    const u = Math.max(0, Math.min(1, ((x - c.ax) * ex + (z - c.az) * ez) / L2));
+    return Math.hypot(x - c.ax - ex * u, z - c.az - ez * u) > c.r + 0.9;
+  }) && (typeof worldLayout.isWalkable !== 'function' || worldLayout.isWalkable(x, z));
+  for (const k of [0.82, 0.78, 0.74, 0.86, 0.7]) {
+    for (const deg of [0, 6, -6, 12, -12, 20, -20]) {
+      const a = deg * Math.PI / 180, r = A.r * k;
+      const x = A.x + Math.sin(a) * r, z = A.z + Math.cos(a) * r;
+      if (free(x, z)) { _edgeSpawn = { x, z, yaw: Math.atan2(A.x - x, A.z - z) }; return _edgeSpawn; }
+    }
+  }
+  return null;
 }
 function unlitEmbers() {
   if (!worldLayout || !Array.isArray(worldLayout.pois)) return null;
@@ -320,17 +379,50 @@ function trackingReady() {
 }
 function canResume() { return app.debug || trackingReady(); }
 
+// [ONBOARD] почему нельзя в бой прямо сейчас — те же условия, что trackingReady(); причина видна на кнопке
+// «В бой» / «Продолжить бой» (раньше UI включал кнопку по статусу ready, а main молча отказывал без плеч).
+function gateNow() {
+  if (app.debug) return '';
+  const s = visionStatus();
+  if (!vision || s.status === 'idle') return 'Камера выключена';
+  if (s.status === 'error') return 'Камера не работает';
+  if (s.status === 'permission' || s.status === 'loading') return 'Камера запускается…';
+  if (s.status === 'calibrating') return 'Идёт калибровка…';
+  if (!s.calibrated) return 'Нужна калибровка';
+  const scale = s.debug && s.debug.reliability ? s.debug.reliability.scaleWarning : null;   // сохранённая калибровка с другого расстояния
+  if (scale === 'far') return 'Сядьте ближе к камере';
+  if (scale === 'near') return 'Отодвиньтесь от камеры';
+  if (s.status === 'lost' || (s.debug && s.debug.bodyVisible === false)) return 'Не вижу плечи — сядьте в кадр';
+  return '';
+}
+// Показ причины с задержкой 0,35 с: короткое моргание трекинга не дёргает надпись. После отказа по нажатию — сразу.
+function gateTick(now) {
+  const g = app.gate, reason = gateNow();
+  if (!reason) { g.ok = true; g.reason = ''; g.since = 0; return; }
+  if (!g.since) g.since = now;
+  if (now - g.since >= 350 || now < g.flashUntil || !g.ok) { g.ok = false; g.reason = reason; }
+}
+function gateRefuse() {
+  const g = app.gate, now = performance.now();
+  g.flashUntil = now + 1500; g.since = g.since || now;
+  gateTick(now);
+  renderUI();
+}
+
 // ---------------------------------------------------------------- переходы
 function setScreen(screen) {
   if (app.screen === screen) return;
   app.screen = screen;
   if (screen !== 'paused') app.pauseReason = null;
   if (screen !== 'playing') debugInput.clear();
+  if (screen === 'camera') { app.onb.autoEnabled = false; app.onb.okSince = null; }   // [ONBOARD] экран камеры сам включит камеру
+  screenAudio(screen);
   renderUI();
 }
 
 function resetFight() {
   applyStartZone();            // [FOREST] место старта
+  if (typeof combat.setDifficulty === 'function') { try { combat.setDifficulty(settings.difficulty); } catch (e) { console.warn('[FEEL] сложность', e); } } // [FEEL] HP и урон Регента
   combat.reset();              // сбрасывает и bossBrain
   world.reset();
   effects.reset();
@@ -342,6 +434,8 @@ function resetFight() {
   lastSnapshot = combat.getSnapshot();
   rig.reset(rigState(lastSnapshot, ZERO));
   app.lostTime = 0;
+  app.outroAt = 0;             // [FEEL] финал и замедление прошлого боя не переходят в новый
+  timeFx.slowUntil = 0; timeFx.stopUntil = 0;
 }
 
 // [ASHEN_V2] состояние камеры из снимка: вне арены — камера исследования, в арене — lock-on.
@@ -352,6 +446,7 @@ function rigState(snap, impulse) {
     engaged: P.encounter !== 'explore', impulse, colliders: worldLayout ? worldLayout.colliders : null,
     groundY: worldLayout ? worldLayout.groundY : null,   // [ASHEN_V3] камера над рельефом большой карты
     steer: P.moveMode === 'steer',                        // [V5] «Руль»: камера держится за спиной героя
+    reducedMotion: !!settings.reducedMotion,              // [FEEL] без тряски камеры
   };
 }
 
@@ -359,30 +454,151 @@ function startFight() {
   if (pvpCtl && pvpCtl.active && pvpCtl.inMatch) { app.introShown = true; setScreen('playing'); return; } // [PVP] матч идёт: вернуться в бой без сброса
   resetFight();
   battleHud.reset();
-  coachStats.reset();
+  resetCoach();
   app.resumableFight = false;
   app.resumeAt = 0;
   effects.setVolume(gameVolume());
   if (!app.introShown && settings.startZone !== 'forest') {   // [FOREST] облёт интро — только у арены
     app.introShown = true;
-    app.intro = { t: 0, duration: settings.reducedMotion ? 2.6 : 5, awakened: false };
+    // [ONBOARD] облёт 1,8 с (было 5 с): первый удар успевает за 3 с после «В бой»; любая клавиша, клик или жест — пропустить
+    app.intro = { t: 0, duration: CLASSIC ? (settings.reducedMotion ? 2.6 : 5) : settings.reducedMotion ? 1.5 : 1.8, awakened: false, skip: false };
     setScreen('intro');
     return;
   }
   setScreen('playing');
 }
 
+// [ONBOARD] пропуск интро: клавиша, клик/касание или жест (кадр ввода с действием или заметным движением рук)
+const INTRO_GESTURE_AFTER = 0.35;   // с: поза, с которой нажали «В бой», интро сразу не обрывает
+function introGesture(input) {
+  if (!input || !input.valid || input.source === 'debug') return false;
+  const b = input.bow, h = input.handSpell;
+  return !!(input.attack || input.shield || input.burst || input.dash || input.dashDir || input.spark || input.slash ||
+    input.parry || input.rune || input.sigil || input.conjure || input.throw || (b && b.active) ||
+    (h && h.phase && h.phase !== 'idle') || Math.abs(input.moveX || 0) > 0.35 || Math.abs(input.moveZ || 0) > 0.35);
+}
+function skipIntro() { if (app.screen === 'intro') app.intro.skip = true; }
+window.addEventListener('keydown', (e) => {
+  if (app.screen !== 'intro' || e.repeat || ['Shift', 'Control', 'Alt', 'Meta', 'F8', 'F3'].includes(e.key)) return;
+  skipIntro();
+});
+window.addEventListener('pointerdown', () => skipIntro(), true);
+let introHint = null;
+function showIntroHint(on) {
+  if (on && !introHint) {
+    introHint = document.createElement('div');
+    introHint.className = 'ao-introskip';
+    introHint.textContent = 'Пропустить — любая клавиша, клик или жест';
+    document.body.appendChild(introHint);
+  }
+  if (introHint) introHint.hidden = !on;
+}
+
+// [ONBOARD] экран камеры без кнопок: камера включается сама; плечи в кадре → калибровка (vision ждёт 1,5 с
+// неподвижности, прогресс — кольцо на превью); откалиброван (сейчас или из сохранения) и плечи видны
+// ONB_ADVANCE_MS → дальше: обучение, в ?demo — сразу бой, после отвала камеры посреди боя — пауза с автопродолжением.
+const ONB_ADVANCE_MS = 500;
+const ONB_RETRY_MS = 900;
+function onboardTick(now) {
+  const o = app.onb;
+  if (!QUICK || app.screen !== 'camera' || app.debug) { o.okSince = null; return; }
+  const s = visionStatus();
+  if (!o.autoEnabled && (!vision || s.status === 'idle') && !app.error) { o.autoEnabled = true; enableCamera(); return; }
+  if (!vision || !(s.status === 'ready' || s.status === 'lost' || s.status === 'calibrating')) { o.okSince = null; return; }
+  const body = !!(s.debug && s.debug.bodyVisible);
+  if (s.status === 'calibrating') { o.okSince = null; return; }
+  if (!s.calibrated) {
+    o.okSince = null;
+    if (body && !o.calibP && now >= o.retryAt) {
+      o.calibP = calibrateAndSave()
+        .catch(() => { o.retryAt = performance.now() + ONB_RETRY_MS; })   // таймаут/перезапуск — новая попытка, когда плечи снова видны
+        .finally(() => { o.calibP = null; });
+    }
+    return;
+  }
+  if (s.status === 'ready' && body) {
+    if (o.okSince === null) o.okSince = now;
+    if (now - o.okSince >= ONB_ADVANCE_MS) leaveCamera();
+  } else o.okSince = null;
+}
+function leaveCamera() {
+  app.onb.okSince = null;
+  if (app.resumableFight) {
+    // пауза игрока (Esc) остаётся паузой игрока; автопродолжение — только после потери трекинга
+    const why = app.resumableReason === 'user' ? 'user' : 'tracking';
+    app.resumableFight = false; app.resumableReason = null;
+    app.pauseReason = why; setScreen('paused'); app.pauseReason = why;
+    return;
+  }
+  if (DEMO || (pvpCtl && pvpCtl.active && pvpCtl.inMatch)) { startFight(); return; }   // [PVP] дуэль уже идёт — обратно в бой
+  setScreen('tutorial');
+}
+
+// [ONBOARD] пауза «Трекинг потерян» снимается сама: тело снова в кадре → отсчёт 3-2-1 → бой.
+// Кратковременное пропадание плеч (<0,3 с) отсчёт не сбрасывает. Пауза игрока (Esc, «Пауза») — только кнопкой.
+const AUTO_RESUME_MS = 3000;
+function autoResumeTick(now) {
+  const auto = QUICK && !app.debug && app.screen === 'paused' && app.pauseReason === 'tracking';
+  if (!auto) { app.autoResume = null; return; }
+  const r = app.autoResume;
+  if (trackingReady()) {
+    if (!r) { app.autoResume = { at: now + AUTO_RESUME_MS, badSince: 0 }; return; }
+    r.badSince = 0;
+    if (now >= r.at) callbacks.onResume({ auto: true });
+  } else if (r) {
+    if (!r.badSince) r.badSince = now;
+    if (now - r.badSince > 300) app.autoResume = null;
+  }
+}
+
 function pause(reason) {
   if (app.screen !== 'playing') return;
+  if (app.outroAt) return;     // [FEEL] бой уже окончен: замедленный финал не ставится на паузу
   setScreen('paused');
   app.pauseReason = reason || 'user';
-  effects.setVolume(0); // петли щита/полёта орбов не звучат всю паузу
-  renderUI();
+  renderUI();                // [SFX] звук паузы — в screenAudio(): петли щита/полёта орбов молчат всю паузу
 }
 
 const AUDIO_ON = !(config.audio && config.audio.enabled === false);
-const gameVolume = () => (AUDIO_ON ? settings.volume : 0);
+const gameVolume = () => (AUDIO_ON && !settings.muted ? settings.volume : 0);
 function unlockAudio() { if (!AUDIO_ON) return; try { effects.unlockAudio().catch(() => {}); } catch (e) { /* ignore */ } }
+// [SFX] Громкость по экрану: пока бой приостановлен (пауза, «Клятва героя»/«Тренировка» из паузы, переподключение
+// камеры посреди боя), боевые звуки и петли молчат — снимок боя заморожен, и щит/орбы иначе гудели бы без конца;
+// проба громкости и интерфейс слышны. На остальных экранах звук возвращается (раньше выход из паузы в меню
+// оставлял игру без звука).
+function screenAudio(screen) {
+  try {
+    const suspended = screen === 'paused' || (screen !== 'playing' && (app.resumableFight || app.nav.includes('paused')));
+    if (effects && typeof effects.setAudioPaused === 'function') { effects.setAudioPaused(suspended); effects.setVolume(gameVolume()); }
+    else effects.setVolume(screen === 'paused' ? 0 : gameVolume());
+    if (screen === 'tutorial') sfxCues.reset();
+  } catch (e) { /* до инициализации звука */ }
+}
+const sfxCues = createCueTracker();
+function cue(name) { if (name && AUDIO_ON && effects && typeof effects.cue === 'function') { try { effects.cue(name); } catch (e) { /* ignore */ } } }
+let previewTimer = 0;
+function previewVolume() { clearTimeout(previewTimer); previewTimer = setTimeout(() => cue('ui_ok'), 120); } // проба после остановки ползунка
+// [SFX] AudioContext разблокируется первым же кликом или клавишей (браузер не даёт звук без жеста игрока)
+for (const type of ['pointerdown', 'keydown', 'touchstart']) window.addEventListener(type, () => unlockAudio(), { capture: true, passive: true });
+// [SFX] M — «Без звука». В отладочном бою M занят огненным шаром (core/handZone.js, capture + preventDefault).
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyM' || e.repeat || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.tagName === 'TEXTAREA' || t.isContentEditable || (t.tagName === 'INPUT' && !['range', 'checkbox', 'radio', 'button'].includes(t.type)))) return;
+  callbacks.onSettings({ muted: !settings.muted });
+});
+// [SFX] «✓ Распознано»: карточка обучения перешла в data-state=seen (атрибут меняется только на переходе)
+if (typeof MutationObserver === 'function' && uiRoot) {
+  new MutationObserver((records) => {
+    if (app.screen !== 'tutorial') return;
+    for (const r of records) {
+      const t = r.target;
+      if (r.oldValue === 'seen' || !t.classList || !t.classList.contains('ao-chip') || t.getAttribute('data-state') !== 'seen') continue;
+      const card = t.closest('.ao-tut-card');
+      cue(sfxCues.chip(card && card.dataset ? card.dataset.key : null));
+    }
+  }).observe(uiRoot, { subtree: true, attributes: true, attributeFilter: ['data-state'], attributeOldValue: true });
+}
 
 const REC_ON = /[?&]rec=1\b/.test(location.search); // [CONTROLS] запись кистей (см. saveRecording)
 
@@ -425,10 +641,11 @@ async function ensureVision() {
   if (vision) return vision;
   if (!visionPromise) {
     visionPromise = createVision({
-      video, overlayCanvas: overlay, config: { ...config.vision, ...visionProfile(), sensitivity: settings.sensitivity, moveMode: settings.moveMode },
+      video, overlayCanvas: overlay, config: { ...config.vision, ...visionProfile(), sensitivity: settings.sensitivity, moveMode: settings.moveMode, gestureMode: settings.gestureMode },
       onStatus: (s) => { lastVisionStatus = s; },
     }).then((v) => {
       vision = v;
+      restoreCalibration(v);   // [ONBOARD] прошлая калибровка — экран камеры её не повторяет
       if (handZone && typeof v.setHandTap === 'function') v.setHandTap((o) => handZone.pushObs(o)); // [HAND]
       // [CONTROLS] запись кистей всегда: последние 90 с (≈3 МБ в памяти) — F8 сохраняет их файлом, когда
       // что-то пошло не так (щит встал сам, герой споткнулся). ?rec=1 — длинная запись (10 мин) и значок.
@@ -439,6 +656,29 @@ async function ensureVision() {
   return visionPromise;
 }
 
+// [ONBOARD] калибровка между входами: результат — в localStorage, при следующем запуске камеры он подставляется
+// в vision (формат кадра сверяется на первом кадре). «Перекалибровать» в паузе записывает новую.
+const CALIB_KEY = 'ashen-oath.calibration.v1';
+function loadCalibration() { try { return JSON.parse(localStorage.getItem(CALIB_KEY) || 'null'); } catch (e) { return null; } }
+function saveCalibration() {
+  if (!vision || typeof vision.getCalibration !== 'function') return;
+  try { const c = vision.getCalibration(); if (c) localStorage.setItem(CALIB_KEY, JSON.stringify(c)); } catch (e) { /* хранилище недоступно */ }
+}
+function restoreCalibration(v) {
+  if (!QUICK || typeof v.setCalibration !== 'function') return false;
+  const c = loadCalibration();
+  let ok = false;
+  try { ok = !!(c && v.setCalibration(c)); } catch (e) { ok = false; }
+  app.onb.restored = ok;
+  return ok;
+}
+function calibrateAndSave() {
+  app.onb.calibratedAt = 0;
+  return vision.calibrate().then((r) => { saveCalibration(); app.onb.calibratedAt = performance.now(); return r; });
+}
+
+// [ONBOARD] камера нужна на экранах камеры, калибровки, обучения, тренировки и в бою/паузе — не в меню и не в DEBUG
+function cameraWanted() { return !app.debug && app.screen !== 'menu' && app.screen !== 'oath' && app.screen !== 'error'; }
 async function enableCamera() {
   unlockAudio();
   app.error = null;
@@ -446,8 +686,13 @@ async function enableCamera() {
   try {
     const v = await ensureVision();
     try { await v.start(); }
-    catch (e) { if (e && e.code === 'aborted') await v.start(); else throw e; }
-    if (app.resumableFight && app.screen === 'camera') setScreen('calibration');
+    catch (e) {
+      if (!(e && e.code === 'aborted')) throw e;
+      if (!cameraWanted()) return;   // [ONBOARD] «В меню» / DEBUG, пока камера запускалась: не включать её снова
+      await v.start();
+    }
+    if (!cameraWanted()) { v.stop(); return; }
+    if (!QUICK && app.resumableFight && app.screen === 'camera') setScreen('calibration');   // [ONBOARD] в быстром потоке дальше ведёт onboardTick
   } catch (e) {
     // Ошибки камеры/модели vision показывает статусом error; UI выводит их на экране камеры.
     console.warn('[ASHEN] камера:', e && e.code, e && e.message);
@@ -459,19 +704,24 @@ const callbacks = {
   onStart(arg = {}) {
     unlockAudio();
     const from = arg && arg.from;
-    if (from === 'menu') { setScreen('camera'); return; }
+    if (from === 'menu') {
+      setScreen('camera');
+      if (QUICK && !app.debug) { app.onb.autoEnabled = true; enableCamera(); }   // [ONBOARD] «Играть» сразу запрашивает камеру — без второго клика
+      return;
+    }
     if (from === 'camera') {
       if (arg.debug && app.debug) { setScreen('tutorial'); return; }
+      if (QUICK && trackingReady()) { leaveCamera(); return; }   // [ONBOARD] калибровка уже есть — дальше
       setScreen('calibration');
       return;
     }
     if (from === 'calibration') {
-      if (app.resumableFight) { app.resumableFight = false; app.pauseReason = 'tracking'; setScreen('paused'); return; }
+      if (app.resumableFight) { const why = app.resumableReason === 'user' ? 'user' : 'tracking'; app.resumableFight = false; app.resumableReason = null; app.pauseReason = why; setScreen('paused'); return; }
       setScreen('tutorial');
       return;
     }
     if (from === 'tutorial') {
-      if (!app.debug && !trackingReady()) return; // UI и так держит кнопку неактивной
+      if (!app.debug && !trackingReady()) { gateRefuse(); return; } // [ONBOARD] причина — на кнопке
       startFight();
     }
   },
@@ -482,26 +732,29 @@ const callbacks = {
     unlockAudio();
     if (app.debug) return Promise.resolve(true);
     if (!vision) return Promise.reject(new Error('Сначала включите камеру'));
-    return vision.calibrate();
+    return calibrateAndSave();
   },
 
   onPause() { pause('user'); },
 
-  onResume() {
-    if (app.screen !== 'paused' || !canResume()) return;
+  onResume(arg) {
+    if (app.screen !== 'paused') return;
+    if (!canResume()) { gateRefuse(); return; }   // [ONBOARD] причина — на кнопке
+    const auto = !!(arg && arg.auto);
+    app.autoResume = null;
     readInput();               // сжечь импульсы, накопившиеся за паузу
     debugInput.clear();
     app.lostTime = 0;
-    app.resumeAt = performance.now() + config.tracking.resumeGraceSec * 1000;
-    effects.setVolume(gameVolume());
-    setScreen('playing');
+    // [ONBOARD] после отсчёта 3-2-1 враг уже дал время сесть — без дополнительной заминки
+    app.resumeAt = performance.now() + (auto ? 0 : config.tracking.resumeGraceSec * 1000);
+    setScreen('playing');      // [SFX] громкость вернёт screenAudio()
   },
 
   onRestart() {
     unlockAudio();
     if (app.screen === 'error') { location.reload(); return; }
     if (pvpCtl && pvpCtl.active) { if (app.screen === 'paused' && canResume()) callbacks.onResume(); return; } // [PVP] в дуэли «заново» = продолжить (без лечения посреди раунда)
-    if (!app.debug && !trackingReady()) { resetFight(); setScreen(vision ? 'calibration' : 'camera'); return; }
+    if (!app.debug && !trackingReady()) { resetFight(); setScreen(vision && !QUICK ? 'calibration' : 'camera'); return; }   // [ONBOARD] калибрует экран камеры
     startFight();
   },
 
@@ -511,6 +764,9 @@ const callbacks = {
     if (heroModel && next.heroShading !== settings.heroShading) { try { heroModel.setShading(next.heroShading); configureHeroes({ shading: next.heroShading }); } catch (e) { /* ignore */ } } // [HERO]
     const motionChanged = next.reducedMotion !== settings.reducedMotion;
     const zoneChanged = next.startZone !== settings.startZone;   // [FOREST]
+    // [SFX] сдвинули ползунок — звук включается обратно и звучит проба новой громкости
+    const volumeMoved = patch && 'volume' in patch && next.volume !== settings.volume;
+    if (volumeMoved && next.volume > 0 && !('muted' in patch)) next.muted = false;
     Object.assign(settings, next); // мутация на месте: config.settings === settings
     if (zoneChanged && app.screen === 'menu') { try { resetFight(); } catch (e) { console.warn('[ASHEN] startZone', e); } }   // [FOREST] герой в меню — у выбранного места старта
     applySettings();
@@ -518,12 +774,14 @@ const callbacks = {
     if (motionChanged && postfx) { try { postfx.setReducedMotion(!!settings.reducedMotion); } catch (e) { /* ignore */ } }
     saveSettings(settings);
     renderUI();
+    if (volumeMoved || (patch && patch.muted === false)) previewVolume();
   },
 
   onDebug(enabled) {
     const on = enabled === undefined ? !app.debug : !!enabled;
     app.debug = on;
     debugInput.setEnabled(on);
+    if (on) trainer.setDemo(true);        // [ТВИСТ «ОШИБКА»] тренажёр без камеры — демо
     if (on && vision) vision.stop();      // в DEBUG камера не используется и выключается
     renderUI();
   },
@@ -542,6 +800,16 @@ const callbacks = {
     resetTraining();
     renderUI();
   },
+  // [ТВИСТ «ОШИБКА»] «Тренажёр техники»: камера включается сразу; в отладке с клавиатуры — демо без камеры
+  onTechnique() {
+    unlockAudio();
+    trainer.reset();
+    trainer.setDemo(app.debug);
+    openSub('technique');
+    if (!app.debug) enableCamera();
+  },
+  onTechniqueGesture(id) { trainer.select(id); renderUI(); },
+  onTechniqueDemo(on) { if (app.debug) return; trainer.setDemo(on); renderUI(); },
   onBuyUpgrade(id) { if (progression.buy(id).ok) renderUI(); },
   onBack() {
     const to = app.nav.pop() || 'menu';
@@ -556,6 +824,7 @@ const callbacks = {
     app.nav = [];
     app.resumableFight = false;
     app.introShown = false;
+    app.autoResume = null;                // [ONBOARD]
     if (vision) vision.stop();            // в меню камера выключается (калибровка сохраняется в vision)
     resetFight();
     lastSnapshot = null;
@@ -605,6 +874,7 @@ const ui = make('ui.js', () => createUI({
   callbacks,
   options: {
     keyboardPause: false,
+    quickStart: QUICK,          // [ONBOARD] экран камеры с рамкой-силуэтом и автокалибровкой; false (?classic=1) — прежний
     showVolume: !(config.audio && config.audio.enabled === false),
     abilityCosts: combatCfg ? {
       bolt: combatCfg.bolt.energyCost,
@@ -621,6 +891,11 @@ if (slot) { slot.appendChild(video); slot.appendChild(overlay); }
 // Трекинг-HUD («tracking edit»: рамки, координаты, скелет кистей, след руны) рисует на overlay;
 // собственный overlay vision выключен (config.vision.overlay=false).
 const trackingHud = createTrackingHud({ canvas: overlay });
+// [ТВИСТ «ОШИБКА»] свой слой поверх overlay: точки, которые надо исправить (getActiveHint) и условия тренажёра.
+// COACH_OVERLAY = false — выключить (например, если подсветку рисует сам трекинг-HUD).
+const COACH_OVERLAY = true;
+let coachOverlay = null;
+if (COACH_OVERLAY && slot) { try { coachOverlay = createCoachOverlay({ slot }); } catch (e) { console.warn('[ASHEN] coachOverlay', e); coachOverlay = null; } }
 // [HAND] лук и магия рукой: связка ввода (core/handZone.js), поза героя, оверлей на превью камеры,
 // простые 3D-заглушки (modules/handVisuals.js; их заменит №7 [VFX]). Любая ошибка — игра без них.
 let handZone = null, heroBowPose = null, handFx = null, handVisuals = null;
@@ -657,6 +932,18 @@ import('./modules/handVisuals.js').then((m) => { try { handVisuals = m.createHan
 const battleHud = createBattleHud({ canvas: hudCanvas });
 // [ТВИСТ «ОШИБКА»] удачные жесты и подсказки за бой → точность и частая ошибка на экране итогов
 const coachStats = createCoachStats();
+// итог боя для экрана итогов: точность по жестам, топ-3 ошибок и сравнение с прошлым боем (localStorage)
+let coachHistory = null;
+try { coachHistory = createCoachHistory(window.localStorage); } catch (e) { coachHistory = createCoachHistory(null); }
+const coachEdge = { attack: false, shield: false };   // начало удержания «OK» и щита — удачный жест
+let coachEnd = null;                                   // { ...summary, prev, compare } — замораживается в конце боя
+function finishCoach() {
+  if (coachEnd) return;
+  const s = coachStats.summary();
+  const prev = coachHistory ? coachHistory.push(s, Date.now()) : null;
+  coachEnd = { ...s, prev, compare: compareCoach(s, prev) };
+}
+function resetCoach() { coachStats.reset(); coachEnd = null; coachEdge.attack = false; coachEdge.shield = false; }
 // [PVP] дуэль игрок против игрока (modules/pvp.js, №3): грузится динамически; при ошибке — обычный бой.
 // ?pvp=local — две вкладки одного браузера (DEBUG, клавиатура). Лобби №2: window.__ashenPvp.start(net, {name, hero}).
 let pvpCtl = null;
@@ -665,7 +952,7 @@ import('./modules/pvp.js').then((m) => {
     pvpCtl = m.createPvpController({
       THREE, scene, camera, combat, config, settings, arena: worldLayout && worldLayout.arena,
       host: {
-        startFight() { resetFight(); battleHud.reset(); coachStats.reset(); app.resumableFight = false; app.resumeAt = 0; app.introShown = true; setScreen('playing'); },
+        startFight() { resetFight(); battleHud.reset(); resetCoach(); app.resumableFight = false; app.resumeAt = 0; app.introShown = true; setScreen('playing'); },
         exitToMenu() { callbacks.onExit(); },
         setDebug(on) { callbacks.onDebug(on); },
         isDebug: () => app.debug,
@@ -688,7 +975,7 @@ import('./modules/pvp.js').then((m) => {
 const _proj = new THREE.Vector3();
 function projectToScreen(p) {
   _proj.set(p.x, p.y, p.z).project(camera);
-  return { x: (_proj.x + 1) * 0.5 * window.innerWidth, y: (1 - _proj.y) * 0.5 * window.innerHeight, behind: _proj.z > 1 };
+  return { x: (_proj.x + 1) * 0.5 * viewW(), y: (1 - _proj.y) * 0.5 * viewH(), behind: _proj.z > 1 };
 }
 video.style.transform = config.vision.mirror === false ? 'none' : 'scaleX(-1)';
 
@@ -721,8 +1008,8 @@ function applySettings() {
     if (postfx) { try { postfx.setQuality(settings.quality); } catch (e) { /* ignore */ } }
     if (heroModel && heroModel.setQuality) { try { heroModel.setQuality(settings.quality); configureHeroes({ quality: settings.quality }); } catch (e) { /* ignore */ } } // [HERO]
   }
-  effects.setVolume(app.screen === 'paused' ? 0 : gameVolume());
-  if (vision) vision.configure({ sensitivity: settings.sensitivity, moveMode: settings.moveMode });
+  screenAudio(app.screen);
+  if (vision) vision.configure({ sensitivity: settings.sensitivity, moveMode: settings.moveMode, gestureMode: settings.gestureMode });
   if (typeof debugInput.setMoveMode === 'function') debugInput.setMoveMode(settings.moveMode); // [V5] WASD как «Руль»
 }
 
@@ -772,12 +1059,29 @@ function heroPoseFromInput(input) {
 
 // ---------------------------------------------------------------- трекинг-HUD
 function drawTracking(now, input) {
-  if (app.debug || !vision) { trackingHud.clear(); return; }
-  const mini = app.screen === 'playing';
+  if (app.debug || !vision) { trackingHud.clear(); drawCoachOverlay(now, null, null); return; }
+  // [ПРОЕКТОР] режим рисунка задаёт слот камеры ui.js (data-hud-mode: панель презентации — 'full'), иначе — экран
+  const forced = overlay.parentNode && overlay.parentNode.getAttribute ? overlay.parentNode.getAttribute('data-hud-mode') : null;
+  const mode = forced === 'full' || forced === 'mini' ? forced : app.screen === 'playing' ? 'mini' : 'full';
   let hands = null, pose = null;
   try { hands = vision.getHands(); pose = vision.getPose(); } catch (e) { /* ignore */ }
-  trackingHud.draw(now, { pose, status: visionStatus(), input, settings, mode: mini ? 'mini' : 'full', hands });
-  if (handFx && handZone && settings.handCombat !== false) { try { handFx.draw(now, { ...handZone.overlay(now), pose, settings, mode: mini ? 'mini' : 'full' }); } catch (e) { /* [HAND] оверлей не критичен */ } } // [HAND]
+  trackingHud.draw(now, { pose, status: visionStatus(), input, settings, mode, hands });
+  if (handFx && handZone && handCombatOn()) { try { handFx.draw(now, { ...handZone.overlay(now), pose, settings, mode }); } catch (e) { /* [HAND] оверлей не критичен */ } } // [HAND]
+  drawCoachOverlay(now, hands, pose, mode);
+}
+// [ТВИСТ «ОШИБКА»] подсказка в бою и на обучении — на превью камеры
+function drawCoachOverlay(now, hands, pose, mode) {
+  if (!coachOverlay) return;
+  try {
+    if (app.screen === 'technique' && techView) {
+      // тренажёр: точки условий жеста; в демо — синтетическая кисть/поза вместо камеры
+      const demo = techView.demo;
+      coachOverlay.draw(now, { hands: demo ? techView.synthHands : hands, pose: demo ? techView.synthPose : pose, marks: techView.marks, skeleton: demo, mode: 'full', reducedMotion: settings.reducedMotion });
+      return;
+    }
+    const show = app.screen === 'playing' || app.screen === 'tutorial';
+    coachOverlay.draw(now, { hands, pose, hint: show ? getActiveHint(now) : null, mode: mode || (app.screen === 'playing' ? 'mini' : 'full'), reducedMotion: settings.reducedMotion });
+  } catch (e) { /* не критично */ }
 }
 
 // ---------------------------------------------------------------- UI
@@ -794,7 +1098,13 @@ function renderUI() {
     pauseReason: app.pauseReason,
     progress: { ...progression.getView(), emberTotal: EMBER_TOTAL },
     training: app.screen === 'training' ? trainingView() : null,
-    coach: app.screen === 'victory' || app.screen === 'defeat' ? coachStats.summary() : null, // [ТВИСТ «ОШИБКА»] итог
+    technique: app.screen === 'technique' ? techView : null,
+    coach: app.screen === 'victory' || app.screen === 'defeat' ? (coachEnd || coachStats.summary()) : null, // [ТВИСТ «ОШИБКА»] итог, сравнение с прошлым боем
+    // [ONBOARD] причина на кнопках «В бой»/«Продолжить бой»; отсчёт автопродолжения; калибровка из сохранения
+    gate: { ok: app.gate.ok, reason: app.gate.reason },
+    autoResumeMs: app.autoResume ? Math.max(0, app.autoResume.at - performance.now()) : null,
+    onboard: { quick: QUICK, restored: app.onb.restored, demo: DEMO,
+      starting: app.screen === 'camera' && app.onb.autoEnabled && !app.error && (!vision || visionStatus().status === 'idle') }, // камера уже запрошена
   });
 }
 function trainingView() {
@@ -882,22 +1192,27 @@ function adaptEvents(events) {
 
 // ---------------------------------------------------------------- темп: замедление и стоп-кадр
 // Боевое время масштабируется (combat/world/effects), камера и CV живут в реальном времени.
-const timeFx = { slowUntil: 0, slowScale: 0.3, stopUntil: 0 };
+// [FEEL] правила — core/gameFeel.js (прежние стоп-кадры и замедление идеального рывка сохранены там же):
+// сильные удары по Регенту — остановка кадра 60–90 мс, парирование — замедление 0,3 с, тряска камеры по
+// силе урона. «Уменьшенное движение»: без тряски, остановка кадра короче.
+const timeFx = { slowUntil: 0, slowScale: 0.3, slowMs: 650, stopUntil: 0 };
 function timeEvents(events, now) {
-  for (const e of events) {
-    if (e.type === 'perfect_dodge') timeFx.slowUntil = now + 650;
-    else if (e.type === 'rune_cast' || e.type === 'burst' || e.type === 'boss_phase' || e.type === 'sigil_cast') timeFx.stopUntil = Math.max(timeFx.stopUntil, now + 80);
-    else if (e.type === 'player_hit' && e.data && e.data.amount >= 20) timeFx.stopUntil = Math.max(timeFx.stopUntil, now + 60);
-  }
+  if (!events.length) return;
+  const f = feelOfEvents(events, { reducedMotion: !!settings.reducedMotion });
+  if (f.stopMs > 0) timeFx.stopUntil = Math.max(timeFx.stopUntil, now + f.stopMs);
+  if (f.slowMs > 0 && now + f.slowMs >= timeFx.slowUntil) { timeFx.slowUntil = now + f.slowMs; timeFx.slowMs = f.slowMs; timeFx.slowScale = f.slowScale; }
+  if (f.shake > 0 && typeof rig.shake === 'function') rig.shake(f.shake);
 }
 function timeScale(now) {
   if (now < timeFx.stopUntil) return 0.04;
   if (now < timeFx.slowUntil) {
-    const left = (timeFx.slowUntil - now) / 650;
+    const left = (timeFx.slowUntil - now) / Math.max(1, timeFx.slowMs);
     return timeFx.slowScale + (1 - timeFx.slowScale) * Math.max(0, 1 - left * 1.6); // плавный выход
   }
   return 1;
 }
+// [FEEL] финал боя: последний удар замедлен, HUD пишет «ПОБЕДА» / «РЕГЕНТ УСТОЯЛ», потом — экран итогов.
+const OUTRO = { victoryMs: 1700, defeatMs: 1200, victoryScale: 0.25, defeatScale: 0.45 };
 
 // ---------------------------------------------------------------- [ТВИСТ «ОШИБКА»]
 // Импульсы удачных жестов и коды подсказок из распознавателя → статистика боя.
@@ -912,6 +1227,11 @@ function trackCoach(input) {
   if (input.sigil) coachStats.success('sigil');
   if (input.bow && input.bow.release) coachStats.success('bow');                        // [HAND]
   if (input.handSpell && input.handSpell.phase === 'throw') coachStats.success('hand_spell'); // [HAND]
+  // «OK» и щит — удержания: удача — момент, когда жест распознан (а не каждый кадр удержания)
+  const atk = !!input.attack, shd = !!input.shield;
+  if (atk && !coachEdge.attack) coachStats.success('attack');
+  if (shd && !coachEdge.shield) coachStats.success('shield');
+  coachEdge.attack = atk; coachEdge.shield = shd;
   if (input.hint && input.hint.code) coachStats.mistake(input.hint.code);
 }
 function coachView(input) {
@@ -972,7 +1292,7 @@ function precompileTick() {
   if (hk !== precomp.heroKey) { precomp.heroKey = hk; if (heroModel && heroModel.ready) schedulePrecompile('герой'); }
   if (!precomp.fight && app.screen === 'playing') { precomp.fight = true; schedulePrecompile('бой'); }
 }
-const CALM_SCREENS = new Set(['menu', 'paused', 'camera', 'calibration', 'tutorial', 'oath', 'training', 'victory', 'defeat']);
+const CALM_SCREENS = new Set(['menu', 'paused', 'camera', 'calibration', 'tutorial', 'oath', 'training', 'technique', 'victory', 'defeat']);
 let perfHud = null;
 try { perfHud = createPerfHud({ root: document.body }); } catch (e) { console.warn('[PERF] панель', e); }
 if (perfTuner) perfTuner.onChange((why, st) => {
@@ -994,26 +1314,30 @@ function frame(now) {
 
   const input = readInput();
   // [HAND] лук и магия рукой → input.bow / input.handSpell; конфликтующие жесты гасятся (C2)
-  if (handZone) { try { handZone.apply(input, now, { debug: app.debug, playing: app.screen === 'playing', enabled: settings.handCombat !== false }); } catch (e) { console.warn('[HAND] apply', e); } }
+  if (handZone) { try { handZone.apply(input, now, { debug: app.debug, playing: app.screen === 'playing', enabled: handCombatOn() }); } catch (e) { console.warn('[HAND] apply', e); } }
   // [ТВИСТ «ОШИБКА»] код подсказки → жест и текст исправления (для HUD, обучения и итогов)
-  if (input && input.hint && hintInfo(input.hint.code)) input.hint = { ...input.hint, ...hintInfo(input.hint.code) };
+  if (input && input.hint && hintInfo(input.hint.code)) { input.hint = { ...input.hint, ...hintInfo(input.hint.code) }; noteHint(input.hint, now); }
+  if (input && input.hint && (app.screen === 'tutorial' || app.screen === 'playing')) cue(sfxCues.hint(input.hint, now)); // [SFX] мягкий «тук»
   app.lastInput = input;
   let events = NO_EVENTS;
 
   if (app.screen === 'intro') {
     const I = app.intro;
-    I.t += dtReal;
+    I.t += Math.min(raw, config.loop.stallSec);   // [ONBOARD] настенное время (тяжёлый первый кадр — не больше stallSec): облёт не растягивается на слабом ноутбуке
     lastSnapshot = combat.getSnapshot();
-    if (!I.awakened && I.t >= I.duration * 0.3) {
+    if (!app.debug && I.t >= INTRO_GESTURE_AFTER && introGesture(input)) I.skip = true;   // [ONBOARD]
+    if (!I.awakened && (I.t >= I.duration * 0.3 || I.skip)) {
       I.awakened = true; // «пробуждение»: рёв стража у world, волна и звук у effects (урона нет)
       events = [{ id: `intro-awaken-${Math.round(now)}`, type: 'boss_phase', position: { ...lastSnapshot.boss.position, y: 3 }, data: { stage: 1, awaken: true } }];
     }
-    if (I.t >= I.duration) { rig.reset(lastSnapshot.player.position, lastSnapshot.boss.position); readInput(); setScreen('playing'); } // из облёта — в lock-on, дальше камера сама перейдёт в explore
+    // [ONBOARD] пропуск в тот же кадр, что и «пробуждение», — переход на следующий кадр, чтобы world/effects получили событие
+    if (I.t >= I.duration || (I.skip && events === NO_EVENTS)) { rig.reset(lastSnapshot.player.position, lastSnapshot.boss.position); readInput(); setScreen('playing'); } // из облёта — в lock-on, дальше камера сама перейдёт в explore
   }
+  showIntroHint(QUICK && app.screen === 'intro');
 
   if (app.screen === 'playing') {
     let frozen = false;
-    if (!app.debug) {
+    if (!app.debug && !app.outroAt) {   // [FEEL] в замедленном финале потеря трекинга не ставит паузу
       const vs = visionStatus();
       const bodyHidden = !!(vs && vs.debug && vs.debug.bodyVisible === false);
       // [V3.1] рука, уведённая вперёд/вправо, закрывает плечо — видимость плеч падает. Если кисти
@@ -1028,12 +1352,15 @@ function frame(now) {
       } else app.lostTime = 0;
     }
     if (now < app.resumeAt) frozen = true;
-    if (app.screen === 'playing' && !frozen) trackCoach(input);
+    if (app.screen === 'playing' && !frozen && !app.outroAt) trackCoach(input);   // [FEEL] после исхода жесты не считаются
     if (app.screen === 'playing' && dt > 0 && !frozen) {
       // [ASHEN_V2] стик — в осях камеры: «вперёд на стике» = «вперёд на экране»
       if (Number.isFinite(rig.inputYaw)) input.viewYaw = rig.inputYaw;   // [V3] курс управления без плечевого сдвига
       else if (Number.isFinite(rig.yaw)) input.viewYaw = rig.yaw;
       input.moveMode = settings.moveMode;   // [V5] «Руль»: moveX — поворот героя, moveZ — вперёд по его курсу
+      // [НОВИЧОК] combat гасит импульсы выключенных жестов и ведёт героя сам (автоход); клавиатура и дуэль — как раньше
+      input.gestureMode = app.debug ? 'master' : settings.gestureMode;
+      input.autoWalk = settings.autoWalk !== false && !app.debug && !(pvpCtl && pvpCtl.active);
       let inputC = input;
       if (pvpCtl && pvpCtl.active) { try { inputC = pvpCtl.beforeUpdate(input); } catch (e) { console.error('[PVP] beforeUpdate', e); } } // [PVP] фазы раунда, оглушение, соперник
       try { combat.update(dt, inputC); } catch (e) { console.error('[ASHEN] combat.update', e); }
@@ -1044,8 +1371,17 @@ function frame(now) {
     lastSnapshot = combat.getSnapshot();
     events = checkEmbers(lastSnapshot, events);
     events = forestZoneEvents(events, lastSnapshot);   // [FOREST]
-    if (lastSnapshot.status === 'victory') setScreen('victory');
-    else if (lastSnapshot.status === 'defeat') setScreen('defeat');
+    if (lastSnapshot.status === 'victory' || lastSnapshot.status === 'defeat') finishCoach();   // [ТВИСТ «ОШИБКА»] итог — в историю (один раз; жесты финала уже не считаются)
+    if (lastSnapshot.status === 'victory' || lastSnapshot.status === 'defeat') {
+      // [FEEL] экран итогов — после замедленного финала (в дуэли и при «Уменьшенном движении» — короче)
+      const win = lastSnapshot.status === 'victory';
+      const hold = pvpCtl && pvpCtl.active ? 0 : (win ? OUTRO.victoryMs : OUTRO.defeatMs) * (settings.reducedMotion ? 0.6 : 1);
+      if (!app.outroAt) {
+        app.outroAt = now;
+        if (hold > 0) { timeFx.slowUntil = now + hold; timeFx.slowMs = hold; timeFx.slowScale = win ? OUTRO.victoryScale : OUTRO.defeatScale; }
+      }
+      if (now - app.outroAt >= hold) { app.outroAt = 0; setScreen(win ? 'victory' : 'defeat'); }
+    }
   }
 
   // [ASHEN_V2] тренировка: поза → счётчик отжиманий → очки клятвы
@@ -1076,10 +1412,28 @@ function frame(now) {
     if (got.length) { train.reps += got.length; train.lastRepAt = now; progression.addPushups(got.length); }
   }
 
+  // [ТВИСТ «ОШИБКА»] тренажёр техники: условия из распознавателя (vision → handGestures.checks), поза — счётчикам
+  if (app.screen === 'technique') {
+    let live = null;
+    // пока камера и модель включаются (несколько секунд) — демо, чтобы твист был виден сразу
+    const vst = vision ? visionStatus().status : 'idle';
+    trainer.setAuto(!app.debug && !(vst === 'ready' || vst === 'lost' || vst === 'calibrating'));
+    if (!app.debug && vision) {
+      try {
+        const vs = visionStatus();
+        const hg = vs && vs.debug && vs.debug.handGestures;
+        live = { checks: hg && hg.checks ? hg.checks : null, hands: vision.getHands(), pose: vision.getPose() };
+      } catch (e) { live = null; }
+    }
+    try { techView = trainer.frame(now, live); } catch (e) { console.warn('[ASHEN] тренажёр', e); techView = null; }
+  } else techView = null;
+
   if (app.screen === 'paused' && !app.debug && vision) {
     const vs = visionStatus();
-    if (vs.status === 'error' || vs.status === 'idle') { app.resumableFight = true; setScreen('camera'); }
+    if (vs.status === 'error' || vs.status === 'idle') { app.resumableFight = true; app.resumableReason = app.pauseReason || 'tracking'; setScreen('camera'); }   // [ONBOARD] причина паузы — после переподключения
   }
+  // [ONBOARD] экран камеры ведёт сам, пауза «Трекинг потерян» снимается сама, причина недоступности кнопок
+  try { onboardTick(now); autoResumeTick(now); gateTick(now); } catch (e) { console.warn('[ONBOARD]', e); }
 
   if (typeof world.setMirror === 'function') {
     try { world.setMirror(app.debug ? null : mirrorFromPose(input, now)); } catch (e) { /* ignore */ }
@@ -1095,7 +1449,7 @@ function frame(now) {
   if (effects.setInput) effects.setInput(input); // [VFX] след руны в воздухе, свечение ладоней
   if (heroBowPose) { try { heroBowPose.update(dt, { root: world.hero && world.hero.root, heroModel, snap: lastSnapshot }); } catch (e) { /* [HAND] */ } } // [HAND] поза лука/ладони
   try { effects.update(dt, fxSnap, fxEvents); } catch (e) { console.error('[ASHEN] effects.update', e); } // [NET] fxSnap/fxEvents
-  if (effects.takeHitStop && app.screen === 'playing') { const hs = effects.takeHitStop(); if (hs > 0) timeFx.stopUntil = Math.max(timeFx.stopUntil, now + hs); } // [VFX] хит-стоп по силе удара
+  if (effects.takeHitStop && app.screen === 'playing') { const hs = Math.min(effects.takeHitStop(), settings.reducedMotion ? FEEL_TIME.reducedStopMaxMs : Infinity); if (hs > 0) timeFx.stopUntil = Math.max(timeFx.stopUntil, now + hs); } // [VFX] хит-стоп по силе удара; [FEEL] «Уменьшенное движение» — не дольше 40 мс
   if (handVisuals && effects.linkHandVisuals) effects.linkHandVisuals(handVisuals); // [VFX] стрелы/сгустки/попадания — V6, лук — №6
   if (handVisuals) { try { handVisuals.update(dt, fxSnap, fxEvents, handAnchors()); } catch (e) { /* [HAND] */ } } // [HAND] (fxSnap — со стрелами соперника)
 
@@ -1144,7 +1498,7 @@ function frame(now) {
   drawTracking(now, input);
   battleHud.frame({
     dtReal, timeScale: ts, screen: app.screen, snapshot: lastSnapshot, events, input: app.debug ? null : input,
-    project: projectToScreen, viewport: { w: window.innerWidth, h: window.innerHeight },
+    project: projectToScreen, viewport: { w: viewW(), h: viewH() },
     intro: { active: app.screen === 'intro', t: app.intro.t, duration: app.intro.duration },
     settings, resumeLeftMs: app.screen === 'playing' ? Math.max(0, app.resumeAt - now) : 0,
     pois: unlitEmbers(),
@@ -1168,7 +1522,9 @@ function frame(now) {
 
 applySettings();
 resize();
-if (settings.startZone === 'forest') { try { resetFight(); } catch (e) { console.warn('[ASHEN] startZone', e); } }   // [FOREST] в меню герой у врат леса
+if (settings.startZone !== 'arena') { try { resetFight(); } catch (e) { console.warn('[ASHEN] startZone', e); } }   // [FOREST] в меню герой у врат леса; [ONBOARD] у края арены
+// [ONBOARD] ?demo — живая презентация: без меню сразу экран камеры (камера и калибровка — сами), затем бой
+if (DEMO) { setScreen('camera'); app.onb.autoEnabled = true; enableCamera(); }
 renderUI();
 requestAnimationFrame(frame);
 boot.done();
@@ -1195,6 +1551,8 @@ window.__ASHEN__ = Object.freeze({
   progress: () => progression.getView(),
   pushups: () => pushups.getDebug(),
   coach: () => coachStats.summary(),
+  coachEnd: () => (coachEnd ? JSON.parse(JSON.stringify(coachEnd)) : null), // [ТВИСТ «ОШИБКА»] итог боя со сравнением
+  activeHint: () => { const a = getActiveHint(); return a ? { ...a, pictogram: a.pictogram ? a.pictogram.length : 0 } : null; },
   hero: () => (heroModel ? heroModel.state() : null),
   heroShowcase: () => (heroShowcase ? { weight: heroShowcase.weight, zoom: +heroShowcase.zoom.toFixed(2), lights: heroShowcase.group.children.filter((o) => o.isLight).map((l) => [l.name, +l.intensity.toFixed(1)]) } : null), // [HERO] QA
   heroAnchors: () => { if (!heroModel || !heroModel.getAnchors) return null; const a = heroModel.getAnchors(), v = new THREE.Vector3(); return Object.fromEntries(Object.entries(a).map(([k, o]) => { o.getWorldPosition(v); return [k, { x: +v.x.toFixed(3), y: +v.y.toFixed(3), z: +v.z.toFixed(3), attached: !!o.parent }]; })); }, // [HERO] C5
@@ -1204,6 +1562,7 @@ window.__ASHEN__ = Object.freeze({
   fx: () => { try { return JSON.parse(JSON.stringify(effects.getDebugInfo())); } catch (e) { return null; } }, // [VFX] QA: частицы и слой V6
   heroStep: (dt, snap, events) => { if (heroModel) heroModel.update(dt, snap, events || []); return heroModel ? heroModel.state() : null; }, // QA: шаг анимации без rAF
   squats: () => squats.getDebug(),
+  technique: () => (techView ? JSON.parse(JSON.stringify({ ...techView, synthHands: null, synthPose: null, focus: techView.focus ? { ...techView.focus, pictogram: !!techView.focus.pictogram } : null })) : null), // [ТВИСТ «ОШИБКА»] QA тренажёра
   pvp: () => (pvpCtl ? pvpCtl.debug() : null),   // [PVP] QA: фаза, счёт, статистика дуэли
   zoneMood: (m) => { try { world.atmosphere.setZoneMood(m); return true; } catch (e) { return false; } }, // [BDO] QA: настроение зоны
   heroMax: () => { const c = typeof combat.getEffectiveConfig === 'function' ? combat.getEffectiveConfig() : null; return c ? { hp: c.player.maxHp, energy: c.player.maxEnergy } : null; },

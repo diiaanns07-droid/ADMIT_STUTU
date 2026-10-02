@@ -9,7 +9,7 @@
  *  - не меняет camera.position (getCameraImpulse() только возвращает смещение);
  *  - все объекты висят на одном root-группе, удаляемой в dispose();
  *  - частицы, вспышки, кольца, телеграфы и снаряды берутся из пулов фиксированного размера;
- *  - звук синтезируется Web Audio, AudioContext создаётся только в unlockAudio().
+ *  - звук: сэмплы assets/sfx (modules/sfx.js) поверх синтеза Web Audio; AudioContext создаётся только в unlockAudio().
  *
  * [v2] Сотворение и бросок (контракт 6):
  *  - snapshot.player.conjure {kind:'orb'|'prism', size, charge} — заклинание между руками героя:
@@ -28,6 +28,8 @@ export const API_VERSION = 'ASHEN_V1';
 
 // [VFX] V6 «больше магии»: новые эффекты — в modules/fx/*.js, поверх этого модуля (откат — настройка fxMagic:false).
 import { createFxV6 } from './fx/index.js';
+// [SFX] звук на сэмплах (assets/sfx, tools/sfx_bake.mjs) и «режиссёр» событий боя; синтез ниже — запасной
+import { SFX, SFX_ALIAS, SFX_SYNTH_FALLBACK, SFX_DIR, WINDUP_SFX, sfxForEvent, createSampleBank, createStepper } from './sfx.js';
 
 const TAU = Math.PI * 2;
 const EMPTY_OBJ = Object.freeze({});
@@ -1297,13 +1299,59 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
   }
 
   // ---------------------------------------------------------------- звук
-  const initialVolume = clamp01(num(liveSetting('volume'), 0.8));
+  const initialVolume = clamp01(num(liveSetting('volume'), 0.5));
+  // [SFX] config.audio: samples:false — только синтез (как раньше); director:false — звук из визуальных обработчиков
+  const audioCfg = cfg.audio && typeof cfg.audio === 'object' ? cfg.audio : {};
   const audio = createAudioEngine({
     panFor, distGain,
     volume: initialVolume,
-    maxVoices: clamp(Math.floor(num(eff0.maxVoices, 20)), 6, 48),
+    maxVoices: clamp(Math.floor(num(eff0.maxVoices, num(audioCfg.maxVoices, 20))), 6, 48),
     warnOnce,
+    samples: audioCfg.samples === false ? null : { dir: typeof audioCfg.dir === 'string' ? audioCfg.dir : SFX_DIR },
+    director: audioCfg.director !== false,
   });
+  const sfxDirector = audioCfg.director !== false;
+  const stepper = createStepper();
+  const _sfxP = new V3();
+  let matchEndPlayed = false;
+  // [SFX] звук события боя — один на действие, независимо от того, какой слой (V6 или старый) рисует эффект
+  function playEventSfx(type, ev, d) {
+    const list = sfxForEvent(type, d);
+    if (!list) return;
+    const remote = d && d.remote === true;
+    const p = hasVec(ev.position) ? _sfxP.set(ev.position.x, ev.position.y, ev.position.z) : chestOf(_sfxP);
+    if (type === 'pvp_round') {
+      // дуэль: фанфары исхода — один раз за матч (второй match_end приходит при взаимной технической победе)
+      if (d.phase === 'countdown') matchEndPlayed = false;
+      if (d.phase === 'match_end') { if (matchEndPlayed) return; matchEndPlayed = true; }
+    }
+    if (type === 'victory' || type === 'defeat' || (type === 'pvp_round' && d.phase === 'match_end')) { audio.stopLoops(); audio.duck(0.5, 3); }
+    for (const [name, param] of list) {
+      let pr = param;
+      if (name === 'dash') {
+        // сторона рывка относительно взгляда камеры → панорама свиста
+        const dd = d.direction ?? d.dir;
+        let sign = 0;
+        if (isNum(dd)) sign = dd >= 0 ? 1 : -1;
+        else if (hasVec(dd)) sign = dd.x * fi.right.x + dd.z * fi.right.z >= 0 ? 1 : -1;
+        pr = { sign: remote ? 0 : sign };
+      }
+      // соперник тише своего героя; синтезу (у него свои параметры) объект громкости не передаём
+      if (remote && SFX[name] && pr && typeof pr === 'object') pr = { ...pr, gain: num(pr.gain, 1) * 0.8 };
+      else if (remote && SFX[name] && pr === undefined) pr = { gain: 0.8 };
+      audio.play(name, p, pr);
+    }
+  }
+  // [SFX] шаги по снимку: скорость героя по земле → каденс; во время рывка и вне боя/прогулки — тишина
+  function syncSteps(dt) {
+    const pl = snap && snap.player;
+    if (!pl || !sfxDirector) return;
+    const v = pl.velocity; // в снимке {x, z} без y
+    const speed = isNum(pl.speed) ? pl.speed : v && isNum(v.x) && isNum(v.z) ? Math.hypot(v.x, v.z) : 0;
+    const onGround = fi.status === 'playing' && pl.action !== 'dash' && pl.action !== 'dead' && !(pl.airborne === true);
+    const k = stepper.tick(dt, speed, onGround);
+    if (k > 0) audio.play('step', playerGround(_sfxP), { gain: k });
+  }
 
   // ---------------------------------------------------------------- [VFX] слой V6 (modules/fx)
   // Якоря героя: C5 heroModel.getAnchors() (Object3D) → world.getAnchors() (точки) → расчёт по снимку.
@@ -1367,7 +1415,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
         onShake: (v) => addTrauma(v), onKick: (dir, disp) => addKick(_an.copy(dir), disp),
         anchor: resolveAnchor,
         groundY: (x, z, fb) => (typeof groundFn === 'function' ? groundFn(x, z) : fb),
-        legacy: { flash: (...a) => fxFlash(...a), ring: (...a) => fxRing(...a), wall: (...a) => fxWall(...a), sparks: (...a) => sparks(...a), audio: (n, p, x) => audio.play(n, p, x), RAW, PAL },
+        legacy: { flash: (...a) => fxFlash(...a), ring: (...a) => fxRing(...a), wall: (...a) => fxWall(...a), sparks: (...a) => sparks(...a), audio: (n, p, x) => audio.fx(n, p, x), RAW, PAL },
       });
       flashLight.visible = false; // свет вспышек — пул V6
     } catch (e) { v6 = null; warnOnce('v6', 'слой V6 не создан, старые эффекты:', e); }
@@ -2047,7 +2095,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     sparks(feet, { pool: dust, dir: _w4, count: 8, flat: true, speed: [0.8, 2.2], rgb: RAW.dust, life: 0.7, size: 0.1, sizeEnd: 0.2, gravity: 0.6, drag: 2.5, alpha: 0.55 });
     lightFlash(p, aHex, 0.6 + 0.6 * power, 0.3);
     addKick(_q, 0.02 + 0.03 * size); addTrauma(0.05 + 0.1 * power);
-    audio.play('throw', p, { size, power, prism });
+    audio.fx('throw', p, { size, power, prism });
   }
 
   // ---------------------------------------------------------------- снаряд-заклинание в полёте
@@ -2149,7 +2197,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     }
     lightFlash(p, aHex, 1.0 + 1.2 * s, 0.5 + 0.3 * s);
     addTrauma(0.18 + 0.32 * s); addKick(dir, 0.03 + 0.04 * s);
-    audio.play(prism ? 'prismImpact' : 'sphereImpact', p, s);
+    audio.fx(prism ? 'prismImpact' : 'sphereImpact', p, s);
   }
 
   // ---------------------------------------------------------------- снаряды
@@ -2644,7 +2692,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     fxFlash(p, PAL.heroCore, 0.12, 0.3, 0.09);
     sparks(p, { dir: fi.fwd, count: 4, spread: 0.6, speed: [1.2, 2.6], rgb: RAW.heroAmber, life: 0.28, size: 0.05, essential: true, drag: 3 });
     sparks(p, { count: 10, spread: 1, speed: [0.4, 1.4], rgb: RAW.heroGold, life: 0.45, size: 0.04, gravity: -0.3, drag: 2 });
-    audio.play('cast', p);
+    audio.fx('cast', p);
   }
 
   function onProjectileImpact(ev, d) {
@@ -2680,7 +2728,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       if (p.distanceTo(fi.boss) < 4.5) {
         sparks(p, { pool: dust, count: 6, spread: 1, speed: [0.5, 1.8], rgb: RAW.dustLight, life: 0.8, size: 0.06, gravity: 6, drag: 1 });
       }
-      audio.play('boltImpact', p);
+      audio.fx('boltImpact', p);
     } else {
       fxFlash(p, PAL.guardCold, 0.5, 1.8, 0.22, { stretch: ang !== null ? 1.8 : 1, rotation: ang ?? undefined });
       fxFlash(p, PAL.guardCore, 0.3, 0.8, 0.12, { flare: true });
@@ -2688,7 +2736,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       sparks(p, { count: 16, speed: [0.5, 2], rgb: RAW.guardCore, life: 0.6, size: 0.04, drag: 2 });
       if (p.y < GROUND_Y + 1.2) fxRing(p, 0.2, 1.6, 0.35, RAW.guardCold, RAW.guardCore, 0.8, 3);
       lightFlash(p, PAL.guardCold, 0.5, 0.3);
-      audio.play('orbImpact', p);
+      audio.fx('orbImpact', p);
     }
   }
 
@@ -2713,7 +2761,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     lightFlash(p, PAL.heroAmber, 0.6, 0.35);
     _q.copy(fi.fwd).negate();
     addKick(_q, 0.03); addTrauma(0.08);
-    audio.play('block', p);
+    audio.fx('block', p);
   }
 
   function onPlayerHit(ev, d) {
@@ -2726,7 +2774,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     sparks(p, { dir: _dir, count: 10, spread: 1, speed: [1.5, 4], rgb: RAW.hitEmber, life: 0.45, size: 0.05, essential: true, gravity: 3, drag: 2 });
     sparks(p, { pool: dust, count: 8, speed: [0.5, 1.5], rgb: RAW.dust, life: 0.7, size: 0.07, gravity: 2, drag: 1.5 });
     addTrauma(0.32); addKick(_dir, 0.04);
-    audio.play('playerHit', p);
+    audio.fx('playerHit', p);
   }
 
   function onBossHit(ev, d) {
@@ -2740,7 +2788,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     sparks(p, { pool: dust, count: Math.round(12 * big), speed: [0.4, 1.6], rgb: RAW.dust, life: 1.0, size: 0.09, gravity: 3, drag: 1.5 });
     fxFlash(p, PAL.guardCold, 0.3, 0.9 * big, 0.16, { pull: 0.5 });
     if (amount >= 25) { addTrauma(0.1); lightFlash(p, PAL.guardCold, 0.5, 0.3); }
-    audio.play('bossHit', p, amount);
+    audio.fx('bossHit', p, amount);
   }
 
   function onBossWindup(ev, d) {
@@ -2750,7 +2798,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     const dur = clamp(num(d.windup, num(d.duration, tv ? tv.info.duration : 0.9)), 0.3, 2.5);
     const n = Math.round((kind === 'orb' ? 22 : 16) * Q.decor);
     for (let i = 0; i < n; i++) gatherMote(c, RAW.guardCold, 1.4, 2.6, Math.min(dur, 0.9), 0.07, false);
-    audio.play('windup', c, { kind, dur });
+    audio.fx('windup', c, { kind, dur });
   }
 
   function onBossImpact(ev, d) {
@@ -2764,7 +2812,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
         // Событие пришло в точке разрыва сферы, а не выпуска.
         fxFlash(o, PAL.guardCold, 0.6, 2.2, 0.25, { flare: true });
         sparks(o, { count: 12, speed: [1, 4], rgb: RAW.guardCold, life: 0.45, size: 0.06, essential: true, drag: 2 });
-        audio.play('orbImpact', o);
+        audio.fx('orbImpact', o);
         return;
       }
       if (tv) _dir.set(tv.info.target.x - o.x, 0, tv.info.target.z - o.z); else _dir.copy(fi.fwd).negate();
@@ -2772,7 +2820,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       _dir.normalize();
       fxFlash(o, PAL.guardCore, 0.5, 1.8, 0.2, { flare: true });
       sparks(o, { dir: _dir, count: 8, spread: 0.5, speed: [3, 6], rgb: RAW.guardCold, life: 0.3, size: 0.05, essential: true, drag: 3 });
-      audio.play('orbLaunch', o);
+      audio.fx('orbLaunch', o);
       return;
     }
     if (kind === 'nova') {
@@ -2787,7 +2835,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       lightFlash(_r, PAL.guardCold, 1.1, 0.5);
       const dPl = Math.hypot(c.x - fi.player.x, c.z - fi.player.z);
       addTrauma(0.3 * (dPl < R + 1 ? 1 : 0.5));
-      audio.play('nova', c);
+      audio.fx('nova', c);
       return;
     }
     // slam
@@ -2805,7 +2853,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     const dPl = Math.hypot(c.x - fi.player.x, c.z - fi.player.z);
     addTrauma(0.45 * clamp(1.2 - dPl / 8, 0.25, 1));
     _dir.set(0, -1, 0); addKick(_dir, 0.05 * clamp(1.2 - dPl / 8, 0.25, 1));
-    audio.play('slam', c);
+    audio.fx('slam', c);
   }
 
   function onBossPhase(ev, d) {
@@ -2820,7 +2868,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     sparks(c, { dir: _dir, count: 50, spread: 1.6, speed: [0.5, 2.5], rgb: RAW.guardCold, life: 1.6, size: 0.05, gravity: -0.3, drag: 1, jitter: 1.5 });
     lightFlash(c, PAL.guardCold, 1.4, 1.2);
     addTrauma(0.25);
-    audio.play('phase', c);
+    audio.fx('phase', c);
   }
 
   function onBurst(ev, d) {
@@ -2840,7 +2888,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     sparks(c, { count: 40, flat: true, speed: [maxR * 0.6, maxR * 1.6], rgb: RAW.heroGold, life: 0.7, size: 0.05, drag: 2.5, gravity: -0.2 });
     lightFlash(c, PAL.heroAmber, 1.0, 0.7);
     addTrauma(0.18); _dir.set(0, 1, 0); addKick(_dir, 0.02);
-    audio.play('burst', c);
+    audio.fx('burst', c);
   }
 
   // [ASHEN_V2] «Рассечение»: веер вытянутых бликов по дуге перед героем в сторону взмаха;
@@ -2876,7 +2924,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     }
     _dir.copy(fi.right).multiplyScalar(sgn);
     addKick(_dir, 0.025);
-    audio.play('cast', o);
+    audio.fx('cast', o);
   }
 
   // [ASHEN_V2] парирование: удача — холодно-золотой хлопок в точке отражения; промах — тусклая вспышка у левой руки.
@@ -2891,7 +2939,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       sparks(p, { dir: fi.fwd, count: 12, spread: 1.6, speed: [1, 3.5], rgb: RAW.guardCold, life: 0.45, size: 0.04, gravity: 1, drag: 2 });
       lightFlash(p, PAL.heroAmber, 0.9, 0.35);
       addTrauma(0.12);
-      audio.play('block', p);
+      audio.fx('block', p);
     } else {
       const p = handOf(_p, -1);
       fxFlash(p, PAL.heroGold, 0.15, 0.55, 0.16, { opacity: 0.45 });
@@ -2910,7 +2958,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     sparks(c, { dir: _dir, count: 40, spread: 1.2, speed: [0.6, 2.4], rgb: RAW.heroGold, life: 1.6, size: 0.045, gravity: -0.3, drag: 0.8, jitter: 0.8 });
     lightFlash(c, PAL.heroAmber, 1.1, 0.9);
     addTrauma(0.06);
-    audio.play('burst', c);
+    audio.fx('burst', c);
   }
 
   // [ASHEN_V3] печати двумя руками
@@ -2936,7 +2984,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
         fxFlash(b, PAL.guardCore, 0.8, 3.6, 0.4, { flare: true, opacity: 1, pull: 0.6 });
         sparks(b, { count: 20, speed: [2, 6], rgb: RAW.guardCore, life: 0.6, size: 0.06, essential: true, drag: 2 });
       }
-      audio.play('nova', c);
+      audio.fx('nova', c);
     } else if (k === 'gate') {
       // врата: золотые створки расходятся от героя, купол поднимается
       sig.domePulse = 1;
@@ -2948,7 +2996,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       sparks(_q, { dir: _dir, count: 36, spread: 0.6, speed: [1.5, 4], rgb: RAW.heroGold, life: 1.0, size: 0.05, essential: true, gravity: -0.3, drag: 1.2 });
       lightFlash(c, PAL.heroAmber, 0.9, 0.6);
       addTrauma(0.08);
-      audio.play('shieldUp', c);
+      audio.fx('shieldUp', c);
     } else if (k === 'delta') {
       // дельта: треугольник вспыхивает у рук, луч начнётся с sigil_hit
       for (let i = 0; i < 3; i++) {
@@ -2957,7 +3005,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
         fxFlash(_ln, PAL.heroCore, 0.2, 0.9, 0.5, { flare: true, opacity: 0.9, pull: 0.2 });
       }
       lightFlash(c, PAL.heroAmber, 1.0, 0.8);
-      audio.play('cast', c);
+      audio.fx('cast', c);
     } else if (k === 'cor') {
       // кор: сердце из вспышек над героем, золотое кольцо, оберег
       const cc = chestOf(_r);
@@ -2969,7 +3017,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       fxRing(playerGround(_q), 0.3, 2.4, 1.0, RAW.heroGold, RAW.heroCore, 0.7, 3);
       if (Q.shell) fxShell(cc, 0.4, 1.35, 0.7, RAW.heroGold, 0.5);
       lightFlash(cc, PAL.heroGold, 0.9, 0.8);
-      audio.play('cast', cc);
+      audio.fx('cast', cc);
     } else if (k === 'frame') {
       // рамка: золотой прицел на ядре Регента, линия от героя к цели
       const to = hasVec(d.to) ? d.to : bossCoreOf(_r);
@@ -2981,7 +3029,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       fxFlash(to, PAL.heroCore, 0.6, 3.2, 0.45, { flare: true, opacity: 0.9, pull: 0.6 });
       lightFlash(to, PAL.heroAmber, 0.8, 0.4);
       addTrauma(0.05);
-      audio.play('cast', c);
+      audio.fx('cast', c);
     }
   }
 
@@ -2999,7 +3047,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     sparks(chestOf(_q), { dir: _dir, count: 6, spread: 0.5, speed: [2, 4], rgb: RAW.heroGold, life: 0.3, size: 0.05, essential: true, drag: 3 });
     cameraRight(_r).multiplyScalar(sign);
     addKick(_r, 0.045);
-    audio.play('dash', chestOf(_q), sign);
+    audio.fx('dash', chestOf(_q), sign);
   }
 
   function onOutcome(kind) {
@@ -3016,14 +3064,14 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       sparks(c, { dir: _dir, count: 60, spread: 1.5, speed: [0.3, 1.4], rgb: RAW.guardCold, life: 2.8, size: 0.05, gravity: -0.15, drag: 0.5, jitter: 1.8 });
       sparks(chestOf(_r), { dir: _dir, count: 20, spread: 1.2, speed: [0.3, 1], rgb: RAW.heroGold, life: 2, size: 0.04, gravity: -0.1, drag: 0.8, jitter: 0.5 });
       lightFlash(c, PAL.guardCold, 1.1, 1.8);
-      audio.play('victory', c);
+      audio.fx('victory', c);
       audio.duck(0.55, 3);
     } else {
       const c = chestOf(_p);
       sparks(c, { count: 10, speed: [0.3, 1.2], rgb: RAW.heroEmber, life: 1.4, size: 0.05, essential: true, gravity: 1.2, drag: 1 });
       sparks(c, { count: 26, speed: [0.2, 0.8], rgb: RAW.hitEmber, life: 1.8, size: 0.04, gravity: 0.8, drag: 1, jitter: 0.4 });
       fxRing(playerGround(_q), 0.3, 2.2, 1.2, RAW.heroEmber, RAW.heroAmber, 0.45, 3);
-      audio.play('defeat', c);
+      audio.fx('defeat', c);
       audio.duck(0.5, 3);
     }
   }
@@ -3046,7 +3094,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       sparks(to, { count: 50, speed: [1, 5], rgb: RAW.heroEmber, life: 1.1, size: 0.05, drag: 1.5, gravity: 1.5 });
       lightFlash(to, PAL.heroAmber, 1.2, 0.6);
       addTrauma(0.25);
-      audio.play('burst', to);
+      audio.fx('burst', to);
     } else if (rune === 'fulgur') {
       // молния: зигзаг холодных вспышек сверху на стража + кольцо на земле
       const top = { x: to.x + 0.4, y: to.y + 7, z: to.z - 0.3 };
@@ -3069,7 +3117,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       sparks(to, { count: 40, speed: [0.5, 2.5], rgb: RAW.guardCold, life: 2.5, size: 0.04, drag: 0.6, jitter: 1.2 });
       lightFlash(to, PAL.guardCold, 1.4, 0.5);
       addTrauma(0.3);
-      audio.play('nova', to);
+      audio.fx('nova', to);
     } else if (rune === 'orbis') {
       // лечение и оберег: золотое кольцо у ног, оболочка, восходящие искры
       const feet = playerGround(_q);
@@ -3081,14 +3129,14 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       _dir.set(0, 1, 0);
       sparks(feet, { dir: _dir, count: 30, spread: 0.9, speed: [0.8, 2.2], rgb: RAW.heroGold, life: 1.4, size: 0.05, essential: true, gravity: -0.4, drag: 0.8, jitter: 0.6 });
       lightFlash(c, PAL.heroGold, 0.8, 0.8);
-      audio.play('cast', c);
+      audio.fx('cast', c);
     } else if (rune === 'stella') {
       // звездопад: звезда вспыхивает высоко над Регентом, метеоры — по событиям rune_hit
       _ln.x = to.x; _ln.y = to.y + 9; _ln.z = to.z;
       fxFlash(_ln, PAL.heroCore, 0.6, 3.4, 0.9, { flare: true, opacity: 0.9, pull: 0.2 });
       sparks(_ln, { count: 24, speed: [1, 4], rgb: RAW.heroGold, life: 1.2, size: 0.06, essential: true, drag: 1 });
       fxFlash(from, PAL.heroAmber, 0.3, 1.2, 0.3, { opacity: 0.8 });
-      audio.play('cast', from);
+      audio.fx('cast', from);
     } else if (rune === 'spira') {
       // вихрь: спираль искр у ног, кольца; дальше вихрь держится по снимку (syncSigils)
       sig.vortexPulse = 1;
@@ -3099,7 +3147,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
         _ln.x = feet.x + Math.sin(a) * r; _ln.y = GROUND_Y + 0.3 + i * 0.06; _ln.z = feet.z + Math.cos(a) * r;
         fxFlash(_ln, i % 2 ? PAL.guardCold : PAL.heroCore, 0.12, 0.5, 0.25 + i * 0.02, { opacity: 0.8, pull: 0.1 });
       }
-      audio.play('nova', feet);
+      audio.fx('nova', feet);
     } else if (rune === 'lemnis') {
       // вечность: знак ∞ из вспышек над героем, лечение идёт по снимку
       const c = chestOf(_p);
@@ -3110,11 +3158,11 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
         fxFlash(_ln, PAL.heroGold, 0.12, 0.4, 0.6 + i * 0.02, { opacity: 0.8, pull: 0.1 });
       }
       fxRing(playerGround(_q), 0.3, 2.2, 1.0, RAW.heroGold, RAW.heroCore, 0.6, 3);
-      audio.play('cast', c);
+      audio.fx('cast', c);
     } else if (rune === 'caret') {
       fxFlash(from, PAL.heroCore, 0.3, 1.4, 0.25, { flare: true, opacity: 0.9, pull: 0.2 });
       sparks(from, { dir: fi.fwd, count: 12, spread: 0.5, speed: [3, 7], rgb: RAW.heroAmber, life: 0.35, size: 0.05, essential: true, drag: 3 });
-      audio.play('cast', from);
+      audio.fx('cast', from);
     } else if (rune === 'vee') {
       // жатва: тёмно-красный луч от Регента к герою, вспышка лечения
       const b = hasVec(d.from) ? d.from : bossCoreOf(_q), c = chestOf(_p);
@@ -3127,7 +3175,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       fxFlash(c, PAL.heroGold, 0.3, 1.6, 0.5, { opacity: 0.7 });
       lightFlash(b, PAL.hitEmber, 0.9, 0.4);
       addTrauma(0.12);
-      audio.play('burst', b);
+      audio.fx('burst', b);
     } else if (rune === 'clepsydra') {
       // время: холодные кольца вокруг Регента, песок-искры падают; замедление держится по снимку
       _q.set(to.x, GROUND_Y, to.z);
@@ -3136,7 +3184,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       fxFlash(_ln, PAL.guardCore, 0.8, 4.0, 0.8, { flare: true, opacity: 0.7, pull: 0.6 });
       _dir.set(0, -1, 0);
       sparks(_ln, { dir: _dir, count: 40, spread: 0.6, speed: [0.5, 2], rgb: RAW.guardCold, life: 1.8, size: 0.05, essential: true, gravity: 0.6, drag: 0.5 });
-      audio.play('nova', to);
+      audio.fx('nova', to);
     } else if (rune === 'alpha') {
       // начало: белая вспышка, откаты сброшены — кольцо и восходящий столб
       const c = chestOf(_p);
@@ -3145,7 +3193,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       _dir.set(0, 1, 0);
       sparks(c, { dir: _dir, count: 30, spread: 0.3, speed: [2, 6], rgb: RAW.heroCore, life: 0.8, size: 0.05, essential: true, gravity: -0.5, drag: 1.2 });
       lightFlash(c, PAL.heroCore, 1.0, 0.5);
-      audio.play('cast', c);
+      audio.fx('cast', c);
     }
   }
   // [ASHEN_V3] удар луча «Дельты»: полоса от героя к Регенту
@@ -3259,6 +3307,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
         warnOnce('ev-noid', 'событие без id — обработано, но дедупликация невозможна:', ev.type);
       }
       const d = ev.data && typeof ev.data === 'object' ? ev.data : EMPTY_OBJ;
+      if (sfxDirector) { try { playEventSfx(ev.type, ev, d); } catch (err) { warnOnce('sfx-ev:' + ev.type, 'звук события', ev.type, err); } }
       try { handleEvent(ev.type, ev, d); stats.events++; } catch (err) {
         stats.errors++;
         warnOnce('ev-err:' + ev.type, 'ошибка обработки события', ev.type, err);
@@ -3338,6 +3387,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     syncProjectiles(dt);
     syncTelegraphs(dt);
     syncDash(dt);
+    syncSteps(dt);
     syncAmbientFx(dt);
     checkFallbacks();
     arcCommit();
@@ -3442,6 +3492,9 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
     update,
     unlockAudio: () => (disposed ? Promise.resolve(false) : audio.unlock()),
     setVolume: (value) => { if (!disposed) audio.setVolume(value); },
+    // [SFX] интерфейсный звук вне боя: 'ui_ok' («✓ Распознано»), 'ui_error' («ОШИБКА»), проба громкости
+    cue: (name) => { if (!disposed && typeof name === 'string') audio.play(name, null); },
+    setAudioPaused: (p) => { if (!disposed) audio.setPaused(p); },
     setQuality,
     getCameraImpulse,
     reset,
@@ -3475,14 +3528,28 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
 }
 
 // ================================================================== звук (Web Audio)
-// Весь звук синтезируется: шумовые буферы, фильтры, огибающие, сгенерированная реверберация.
+// [SFX] Основной звук — сэмплы assets/sfx (modules/sfx.js): один AudioBufferSourceNode на звук, случайная высота
+// и громкость, лимит голосов по категориям. Синтез ниже (шумовые буферы, фильтры, огибающие) остаётся для звуков
+// без сэмпла (замах и удары Регента, сотворение) и как запасной, если файлы не загрузились.
+// Цепочка: шины sfx/ui/эмбиент/ревер → компрессор → громкость → лимитер → выход.
 // AudioContext создаётся только в unlock() (вызывать из обработчика пользовательского действия).
 
-function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices, warnOnce }) {
+// [SFX] Имена, которые при включённом режиссёре звучат только из sfxForEvent (по событиям боя): вызовы этих
+// звуков из визуальных обработчиков (старых и V6) молчат, иначе одно действие звучало бы дважды или не так.
+const DIRECTOR_NAMES = new Set([
+  'cast', 'boltImpact', 'orbImpact', 'orbLaunch', 'block', 'playerHit', 'bossHit', 'windup', 'slam', 'nova', 'phase',
+  'burst', 'dash', 'victory', 'defeat', 'throw', 'sphereImpact', 'prismImpact', 'shieldUp',
+  'conjureStart', 'fizzle', // сгусток в ладони (hand_spell_form/cancel); сотворение двумя руками звучит по снимку через play()
+]);
+
+function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices, warnOnce, samples = null, director = false }) {
   const AC = (typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext))
     || (typeof globalThis !== 'undefined' && globalThis.AudioContext) || null;
 
   let ctx = null, comp = null, master = null, sfxBus = null, ambBus = null, revIn = null, revOut = null, conv = null;
+  let uiBus = null, limiter = null, bank = null, bankP = null, ambSrc = null, ambGain = null; // [SFX]
+  let paused = false; // [SFX] пауза: петли и боевые звуки молчат, интерфейсные (проба громкости) — слышны
+  const lastAt = new Map(); // [SFX] время последнего запуска звука (sfx.gap)
   let noise = null;
   let volume = clamp01(initialVolume);
   let disposed = false;
@@ -3493,14 +3560,18 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
   const ambientSources = [];
   const voices = [];
   const loops = new Map();
-  const AMB_LEVEL = 0.2;
+  const AMB_LEVEL = 0.3; // [SFX] ветер над плато слышен между ударами, но тише любого действия
   const LIMITS = {
     cast: 3, impact: 4, launch: 2, block: 2, dash: 2, windup: 2, heavy: 2, hit: 3,
     phase: 1, burst: 1, outcome: 1, shield: 2, orbLoop: 2, shieldHum: 1,
     conjure: 1, spellLoop: 2, throw: 2, spellHit: 2, cue: 2,
+    step: 2, slash: 2, shot: 3, spark: 3, hurt: 2, rune: 2, ui: 2, // [SFX]
   };
 
-  const gainFor = (v) => v * v; // квадратичная кривая: слайдер 0..1 ощущается ровнее; 0 → ровно 0
+  // [SFX] кривая слайдера: 0.5 → −9 дБ, 1 → 0 дБ; 0 → ровно 0. MAKEUP — компенсация компрессора (+5 дБ):
+  // на 50% «бабах» выброса даёт пик около −7 дБ и слышен на динамиках ноутбука, на 100% пики держит лимитер.
+  const MAKEUP = 1.8;
+  const gainFor = (v) => (v > 0 ? Math.pow(v, 1.5) * MAKEUP : 0);
   const T = () => ctx.currentTime + 0.005;
 
   function makeNoise(kind) {
@@ -3545,11 +3616,17 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
   function build() {
     ctx = new AC({ latencyHint: 'interactive' });
     comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -16; comp.knee.value = 10; comp.ratio.value = 5;
-    comp.attack.value = 0.004; comp.release.value = 0.2;
+    // [SFX] мягче, чем было (−16 дБ, 5:1): склеивает микс, но не сплющивает большие удары
+    comp.threshold.value = -20; comp.knee.value = 12; comp.ratio.value = 3;
+    comp.attack.value = 0.005; comp.release.value = 0.25;
     master = ctx.createGain(); master.gain.value = gainFor(volume);
-    comp.connect(master); master.connect(ctx.destination);
+    // [SFX] лимитер после громкости: на 100% «бабах» выброса не клиппует
+    limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -2; limiter.knee.value = 0; limiter.ratio.value = 20;
+    limiter.attack.value = 0.001; limiter.release.value = 0.12;
+    comp.connect(master); master.connect(limiter); limiter.connect(ctx.destination);
     sfxBus = ctx.createGain(); sfxBus.gain.value = 0.9; sfxBus.connect(comp);
+    uiBus = ctx.createGain(); uiBus.gain.value = 0.9; uiBus.connect(comp);
     ambBus = ctx.createGain(); ambBus.gain.value = 0; ambBus.connect(comp);
     conv = ctx.createConvolver(); conv.buffer = makeIR();
     revIn = ctx.createGain(); revIn.gain.value = 1;
@@ -3559,9 +3636,21 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
   }
 
   function startAmbient() {
-    if (ambientStarted || !ctx) return;
+    if (ambientStarted || !ctx || disposed) return;
     ambientStarted = true;
     const t = ctx.currentTime;
+    // [SFX] записанная петля ветра над плато (24 с, бесшовная) вместо синтеза
+    const amb = bank && bank.get('ambient');
+    if (amb) {
+      const al = SFX.ambient.len && SFX.ambient.len < amb.duration ? SFX.ambient.len : amb.duration;
+      ambSrc = ctx.createBufferSource(); ambSrc.buffer = amb; ambSrc.loop = true; ambSrc.loopStart = 0; ambSrc.loopEnd = al;
+      ambGain = ctx.createGain(); ambGain.gain.value = SFX.ambient.gain;
+      ambSrc.connect(ambGain); ambGain.connect(ambBus);
+      ambSrc.start(t, Math.random() * al);
+      ambBus.gain.setValueAtTime(0, t);
+      ambBus.gain.linearRampToValueAtTime(AMB_LEVEL, t + 2.5);
+      return;
+    }
     const add = (...n) => { ambientNodes.push(...n); };
     const src = (node) => { ambientSources.push(node); ambientNodes.push(node); return node; };
     // Ветер: розовый шум через полосовой фильтр с медленно плывущей частотой и громкостью.
@@ -3621,7 +3710,11 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
       try {
         if (!ctx) build();
         if (ctx.state === 'suspended') await ctx.resume();
-        startAmbient();
+        // [SFX] сэмплы грузятся один раз (≈0.8 МБ); эмбиент стартует, когда петля готова (или синтезом, если нет)
+        if (!bankP) {
+          bank = samples ? createSampleBank(ctx, { dir: samples.dir || SFX_DIR, onError: (url, e) => warnOnce('sfx-load', 'звук не загрузился — вместо него синтез:', url, e && e.message) }) : null;
+          bankP = (bank ? bank.load() : Promise.resolve(false)).catch(() => false).then(() => { startAmbient(); });
+        }
         if (volume <= 0) scheduleSuspend();
         return ctx.state === 'running' || volume <= 0;
       } catch (err) {
@@ -3671,10 +3764,12 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
     for (const s of v.sources) { try { s.stop(t + f + 0.01); } catch (e) { /* ignore */ } }
     v.end = Math.min(v.end, t + f + 0.02);
   }
-  function voice(cat, pos, gain, reverb, dur, loop) {
+  function voice(cat, pos, gain, reverb, dur, loop, opt) {
     if (!ctx || disposed || volume <= 0 || ctx.state !== 'running') return null;
     if (voices.length >= maxVoices * 2) return null; // жёсткий потолок вместе с затухающими голосами
-    const lim = LIMITS[cat] || 3;
+    const ui = !!(opt && opt.ui);
+    if (paused && !ui) return null;
+    const lim = (opt && opt.lim) || LIMITS[cat] || 3;
     const now = ctx.currentTime;
     let same = 0, oldestSame = null, live = 0, oldestAny = null, burst = 0;
     for (const v of voices) {
@@ -3695,20 +3790,20 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
     }
     const t = ctx.currentTime;
     const out = ctx.createGain();
-    out.gain.value = gain * distGain(pos);
+    out.gain.value = gain * (ui ? 1 : distGain(pos));
     const nodes = [out];
     let tail = out, panner = null;
-    if (typeof ctx.createStereoPanner === 'function') {
+    if (!ui && typeof ctx.createStereoPanner === 'function') {
       panner = ctx.createStereoPanner();
       panner.pan.value = panFor(pos);
       out.connect(panner); tail = panner; nodes.push(panner);
     }
-    tail.connect(sfxBus);
+    tail.connect(ui ? uiBus : sfxBus);
     if (reverb > 0) {
       const s = ctx.createGain(); s.gain.value = reverb;
       tail.connect(s); s.connect(revIn); nodes.push(s);
     }
-    const v = { cat, t0: t, end: t + dur, loop: !!loop, out, panner, nodes, sources: [], ended: 0, stopping: false, done: false };
+    const v = { cat, t0: t, end: t + dur, loop: !!loop, out, panner, nodes, sources: [], ended: 0, stopping: false, done: false, panT: t, pan: panner ? panner.pan.value : 0 };
     voices.push(v);
     return v;
   }
@@ -4134,22 +4229,92 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
     sphereFlight: ['spellLoop', 0.45, 0.2], prismFlight: ['spellLoop', 0.45, 0.3],
   };
 
+  // [SFX] Сэмпл: один BufferSource в голос; высота и громкость слегка случайны, чтобы повторы не надоедали.
+  // p: { gain, rate, sign } — множитель громкости, базовая скорость (высота), направление рывка (панорама).
+  const rndSym = () => Math.random() * 2 - 1;
+  function playSample(name, pos, p) {
+    const s = SFX[name], b = bank && bank.get(name);
+    if (!s || !b) return false;
+    const now = ctx.currentTime;
+    if (s.gap) {
+      const prev = lastAt.get(name);
+      if (prev !== undefined && now - prev < s.gap) return true; // слишком часто — проглатываем, а не синтезируем
+      lastAt.set(name, now);
+    }
+    const o = p && typeof p === 'object' ? p : null;
+    const rate = clamp(num(o && o.rate, 1) * Math.pow(2, rndSym() * (s.pitch || 0) / 12), 0.5, 2);
+    const g = s.gain * clamp(num(o && o.gain, 1), 0, 2) * Math.pow(10, rndSym() * (s.vol || 0) / 20);
+    const v = voice(s.cat || 'cue', pos, g, s.rev || 0, b.duration / rate + 0.05, false, { lim: s.lim, ui: s.ui });
+    if (!v) return true;
+    const src = ctx.createBufferSource();
+    src.buffer = b; src.playbackRate.value = rate;
+    src.connect(v.out); addSource(v, src);
+    const t = T();
+    // замах Регента: пик нарастания (s.hit) совпадает с ударом через o.dur секунд
+    const offset = s.hit && o && isNum(o.dur) ? clamp(s.hit - o.dur * rate, 0, s.hit) : 0;
+    if (v.panner && o && isNum(o.sign) && o.sign !== 0) {
+      // рывок: свист пролетает поперёк, в сторону рывка
+      const sg = o.sign > 0 ? 1 : -1;
+      v.panner.pan.setValueAtTime(clamp(v.pan - sg * 0.35, -1, 1), t);
+      v.panner.pan.linearRampToValueAtTime(clamp(v.pan + sg * 0.55, -1, 1), t + 0.35);
+    }
+    src.start(t, offset);
+    return true;
+  }
   function play(name, pos, param) {
     if (!ctx || disposed || volume <= 0 || ctx.state !== 'running') return;
-    const fn = S[name];
+    // [SFX] сначала сэмпл (по своему имени или по прежнему через SFX_ALIAS), затем синтез
+    const sName = SFX[name] ? name
+      : name === 'windup' ? WINDUP_SFX[(param && param.kind) || 'slam'] || WINDUP_SFX.slam
+      : (bank ? SFX_ALIAS[name] : null);
+    if (sName && bank && bank.has(sName)) {
+      try { if (playSample(sName, pos, param)) return; } catch (err) { warnOnce('smp:' + sName, 'ошибка сэмпла', sName, err); }
+    }
+    const fn = S[name] || S[SFX_SYNTH_FALLBACK[name]];
     if (!fn) return;
-    try { fn(pos, param); } catch (err) { warnOnce('sfx:' + name, 'ошибка синтеза звука', name, err); }
+    // параметры режиссёра → сигнатура рецепта: у рывка — знак стороны, у прочих сэмплов синтезу параметры не нужны
+    const sp = name === 'dash' && param && isNum(param.sign) ? param.sign : (SFX[name] ? undefined : param);
+    try { fn(pos, sp); } catch (err) { warnOnce('sfx:' + name, 'ошибка синтеза звука', name, err); }
+  }
+  // [SFX] Звук из визуального обработчика события: при включённом режиссёре такие звуки даёт sfxForEvent.
+  function fx(name, pos, param) {
+    if (director && DIRECTOR_NAMES.has(name)) return;
+    play(name, pos, param);
+  }
+  // [SFX] Петля из сэмпла (гул щита): BufferSource с loop, мягкий вход.
+  function sampleLoop(sName, pos) {
+    const s = SFX[sName], b = bank && bank.get(sName);
+    if (!s || !b) return null;
+    const v = voice(s.cat || 'cue', pos, s.gain, s.rev || 0, 1e6, true, { lim: s.lim });
+    if (!v) return null;
+    const t = ctx.currentTime;
+    const ln = s.len && s.len < b.duration ? s.len : b.duration; // без паддинга декодера в конце
+    const src = ctx.createBufferSource(); src.buffer = b; src.loop = true; src.loopStart = 0; src.loopEnd = ln;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + 0.18);
+    src.connect(g); g.connect(v.out); v.nodes.push(g); addSource(v, src);
+    src.start(t, Math.random() * ln);
+    return v;
   }
   // Петля живёт, пока её подтверждают каждый кадр; вызов идемпотентен.
   function loop(key, kind, pos) {
-    if (!ctx || disposed) return;
+    if (!ctx || disposed || paused) return;
     const ex = loops.get(key);
     if (ex) {
       if (ex.done || ex.stopping) { loops.delete(key); }
       else {
-        if (ex.panner) ex.panner.pan.setTargetAtTime(panFor(pos), ctx.currentTime, 0.05);
+        // [SFX] панораму двигаем не чаще 10 раз в секунду и только при заметном сдвиге — без лавины автоматизаций
+        if (ex.panner && pos) {
+          const now = ctx.currentTime, pn = panFor(pos);
+          if (now - ex.panT > 0.1 && Math.abs(pn - ex.pan) > 0.02) { ex.panT = now; ex.pan = pn; ex.panner.pan.setTargetAtTime(pn, now, 0.05); }
+        }
         return;
       }
+    }
+    const sName = bank ? SFX_ALIAS[kind] : null;
+    if (sName && SFX[sName] && SFX[sName].loop && bank.has(sName)) {
+      const v = sampleLoop(sName, pos);
+      if (v) loops.set(key, v);
+      return;
     }
     const c = LOOP_CFG[kind];
     if (!c) return;
@@ -4174,6 +4339,22 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
     stopLoops();
     for (const v of voices.slice()) stopVoice(v, 0.05);
   }
+  // [SFX] Пауза: гасим петли и боевые голоса, шина эффектов в ноль, эмбиент тише; интерфейсная шина работает.
+  function setPaused(p) {
+    p = !!p;
+    if (p === paused) return;
+    paused = p;
+    if (!ctx || !sfxBus || ctx.state === 'closed') return;
+    const t = ctx.currentTime;
+    if (p) {
+      stopLoops();
+      for (const v of voices.slice()) if (v.cat !== 'ui' && v.cat !== 'outcome') stopVoice(v, 0.08);
+    }
+    sfxBus.gain.cancelScheduledValues(t);
+    sfxBus.gain.setValueAtTime(sfxBus.gain.value, t);
+    sfxBus.gain.linearRampToValueAtTime(p ? 0 : 0.9, t + 0.12);
+    if (ambientStarted) duck(p ? 0.4 : 1, 0.5);
+  }
   function duck(level, time) {
     if (!ctx || !ambBus || !ambientStarted) return;
     const t = ctx.currentTime;
@@ -4195,6 +4376,7 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
       available: !!AC, created: !!ctx, state: ctx ? ctx.state : 'none',
       volume, voices: voices.length, activeVoices: voices.filter((v) => !v.stopping && !v.done).length,
       maxVoices, loops: loops.size, ambient: ambientStarted,
+      ambientSample: !!ambSrc, director, paused, samples: bank ? bank.stats() : null, // [SFX]
       categories: voices.reduce((m, v) => { m[v.cat] = (m[v.cat] || 0) + 1; return m; }, {}),
     };
   }
@@ -4210,10 +4392,12 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
     for (const s of ambientSources) { try { s.stop(); } catch (e) { /* ignore */ } }
     for (const n of ambientNodes) { try { n.disconnect(); } catch (e) { /* ignore */ } }
     ambientSources.length = 0; ambientNodes.length = 0;
-    for (const n of [sfxBus, ambBus, revIn, conv, revOut, comp, master]) { if (n) { try { n.disconnect(); } catch (e) { /* ignore */ } } }
+    if (ambSrc) { try { ambSrc.stop(); } catch (e) { /* ignore */ } }
+    for (const n of [ambSrc, ambGain, sfxBus, uiBus, ambBus, revIn, conv, revOut, comp, master, limiter]) { if (n) { try { n.disconnect(); } catch (e) { /* ignore */ } } }
+    ambSrc = null; ambGain = null;
     if (ctx && ctx.state !== 'closed') ctx.close().catch(() => {});
     ctx = null; noise = null;
   }
 
-  return { unlock, setVolume, play, loop, loopStop, loopCtl, stopLoops, stopAll, duck, update, state, dispose };
+  return { unlock, setVolume, setPaused, play, fx, loop, loopStop, loopCtl, stopLoops, stopAll, duck, update, state, dispose };
 }

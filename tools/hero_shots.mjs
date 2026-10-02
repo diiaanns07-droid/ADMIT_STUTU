@@ -98,7 +98,7 @@ try {
     const ctx = await browser.newContext({ viewport: { width: W, height: H } });
     await routeVendor(ctx);
     const settings = { hero, quality: argOf('--quality', 'medium') };
-    if (argOf('--zone')) settings.startZone = argOf('--zone');
+    if (argOf('--zone')) { settings.startZone = argOf('--zone'); settings.startZoneV = 2; }   // startZoneV: без него main.js переводит старое «arena» в «edge»
     if (SHADING) settings.heroShading = SHADING;
     await ctx.addInitScript((s) => { try { localStorage.setItem('ashen-oath.settings.v1', JSON.stringify(s)); } catch (e) { /* ignore */ } }, settings);
     if (INIT) await ctx.addInitScript({ content: INIT });
@@ -162,7 +162,7 @@ try {
     if (!argv.includes('--no-battle')) {
       const click = (label) => page.evaluate((l) => { const b = [...document.querySelectorAll('button')].find((x) => x.offsetParent !== null && x.textContent.trim() === l); if (b) b.click(); return !!b; }, label);
       await click('Отладка с клавиатуры'); await sleep(150);
-      await click('Начать'); await sleep(250);
+      await click('Играть'); await sleep(250);
       await click('Продолжить без камеры (DEBUG)'); await sleep(400);
       await click('В бой');
       await page.waitForFunction(() => __ASHEN__.screen === 'playing', null, { timeout: 20000 }).catch(() => {});

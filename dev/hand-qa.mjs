@@ -70,7 +70,7 @@ try {
   // программный рендер даёт 2–4 кадра/с: каждый кадр длиннее loop.stallSec (0,25 с) считался бы разрывом и время
   // боя стояло бы. Для теста поднимаем порог через тот же модуль config.js (объект общий с main.js).
   await page.evaluate(() => import('./config.js').then((m) => { m.config.loop.stallSec = 30; }));
-  console.log('  клики:', await click('Отладка с клавиатуры'), await click('Начать'));
+  console.log('  клики:', await click('Отладка с клавиатуры'), await click('Играть'));
   await sleep(300);
   console.log('  клики:', await click('Продолжить без камеры (DEBUG)'));
   await sleep(500);

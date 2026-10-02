@@ -338,7 +338,7 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, h
     setModelGhost(vrmOn ? model : null, lost && vrmOn);
     if (ghosted) ghostMat.opacity = 0.2 + 0.1 * Math.sin(S.t * 4);
     ghost.group.visible = lost && !vrmOn;
-    if (model) model.visible = true;
+    if (model) model.visible = vrmOn;   // [LOAD] пока модель не готова (T-поза) — процедурное тело
     body.group.visible = !lost && !vrmOn;
     const sp = Math.hypot(s.vx, s.vz);
     if (lost) animateBody(ghost, dt, null, 0);

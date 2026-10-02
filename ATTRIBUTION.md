@@ -1,7 +1,8 @@
 # ATTRIBUTION
 
 ## Сторонние библиотеки
-Загружаются с CDN при запуске, в архив не входят.
+Копии лежат в `vendor/` (пути повторяют CDN, собираются `tools/vendor_update.mjs`) и раздаются вместе
+с игрой — интернет не нужен. Указанный источник — откуда взяты файлы и запасной адрес, если локальный не загрузился.
 
 | Компонент | Версия | Источник | Лицензия |
 |---|---|---|---|
@@ -10,6 +11,8 @@
 | Pose Landmarker (lite, float16, v1) | 1 | https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task | модель Google MediaPipe; условия — в карточке модели на developers.google.com/edge/mediapipe |
 | Pose Landmarker (full, float16, v1) [PERF] | 1 | https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task (грузится вместо lite только на дискретной видеокарте, core/perfTuner.js) | модель Google MediaPipe; условия — в карточке модели |
 | Hand Landmarker (float16, v1) | 1 | https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task | модель Google MediaPipe; условия — в карточке модели |
+| @pixiv/three-vrm | 3.5.5 | https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/ | MIT, © 2019-2026 pixiv Inc. |
+| Шрифты Forum, Cinzel, Alegreya Sans, Cormorant Garamond (woff2, латиница и кириллица) | Google Fonts | https://fonts.google.com/ → `vendor/fonts/` | SIL Open Font License 1.1 |
 | PeerJS [NET] | 1.5.5 | https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js (грузится только в режиме «Онлайн-дуэль → Интернет»); сигнальный сервер — облако PeerJS 0.peerjs.com; STUN — stun.l.google.com | MIT, © 2013 Michelle Bu, Eric Zhang and PeerJS contributors |
 
 MediaPipe 1.0.x **сознательно не используется**: в его JS-бандле есть отправка метрик
@@ -24,6 +27,7 @@ MediaPipe 1.0.x **сознательно не используется**: в е�
 | `modules/combat.js` | №4 | руны, сила выброса, комбо, идеальный рывок, оберег, оглушение |
 | `modules/boss.js` | №5 | нет |
 | `modules/effects.js` | №6 | обработчики rune_cast, perfect_dodge, ward_end; размеры свечения чар и волн броска под порог bloom 1.0 |
+| `modules/sfx.js`, `tools/sfx_bake.mjs`, `tools/sfx_dsp.mjs`, `assets/sfx/*` | [SFX] | новые: звук на сэмплах, «режиссёр» событий боя, кнопка «Без звука» и клавиша M |
 | `modules/ui.js`, `modules/ui.css` | №7 | тексты обучения/плиток под пальцы; русские ключевые слова ошибок; `@media (max-height: 680px)`; имя босса «Регент Нимба»; карточка «Чары двумя руками», сетка обучения 3+2 |
 | `main.js`, `config.js`, `core/*` (cameraRig, debugInput, handGestures, trackingHud, battleHud), `index.html`, `styles.css`, `serve_game.py`, `START_GAME.cmd`, `tools/*` | №1 | — |
 | `net/*`, `modules/remotePlayer.js`, `modules/netLobby.js`, `modules/netLobby.css`, `tools/relay.py`, `START_ONLINE_HOST.cmd` | №2 [NET] | новые (онлайн-дуэль) |
@@ -43,7 +47,7 @@ MediaPipe 1.0.x **сознательно не используется**: в е�
 - `assets/vroid/*.vrm` — ранние образцы **VRoid Studio** (pixiv), выпущенные под **CC0 1.0**:
   AvatarSample_F (эльфийка), Darkness (тёмная чародейка), AvatarSample_E и _G (жительницы деревни).
   Источник и условия — `assets/vroid/LICENSE.md`. Текстуры уменьшены (`tools/shrink_vrm.py`).
-  Загрузка — **@pixiv/three-vrm 3.5.5** (MIT, с cdn.jsdelivr.net): физика волос и одежды, моргание.
+  Загрузка — **@pixiv/three-vrm 3.5.5** (MIT, копия в `vendor/`): физика волос и одежды, моргание.
 - `assets/quaternius/human.glb`, `woman.glb` — «Animated Human» и «Animated Woman» от **Quaternius**
   (CC0 1.0, Poly Pizza; ссылки — `assets/quaternius/LICENSE.md`). Их анимации (шаг, бег, удар, прыжок,
   смерть, сидя…) переносятся на VRM-персонажей по направлениям костей (`modules/vrmKit.js`).
@@ -54,10 +58,19 @@ MediaPipe 1.0.x **сознательно не используется**: в е�
   (Kay Lousberg, **CC0 1.0**), меши убраны. Источники и ссылки на лицензии — `assets/heroes/LICENSE.md`.
   Снаряжение (плащи, посохи, лук, наплечники, пояса) — процедурное (`modules/heroGear.js`).
 
+## Звук (в архиве, собственный)
+`assets/sfx/*.ogg` — 40 звуков игры (шаги, щит, выстрел, искра, рассечение, выброс, руны, попадания, рывок,
+парирование, «Распознано», «ОШИБКА», фанфары, эмбиент арены). Чужих сэмплов и записей нет: все звуки синтезированы
+офлайн нашим кодом (`tools/sfx_dsp.mjs`: генераторы, фильтры, сатурация, модальный синтез металла, ревербация;
+рецепты — `tools/sfx_bake.mjs`), закодированы в Ogg Vorbis через ffmpeg (libvorbis). Передаются в общественное
+достояние на условиях **CC0 1.0**. Пересобрать: `node tools/sfx_bake.mjs` (нужен ffmpeg).
+Звуки без файла (замах и удары Регента, сотворение сферы) и запасной вариант на случай, если файл не загрузился,
+синтезируются прямо в браузере через Web Audio (`modules/effects.js`).
+
 ## Собственные ресурсы
 Геометрия мира процедурная (включая Регента, колоссов, шпили и эльфийскую деревню), небо с затмением и туман — шейдеры,
-остальные текстуры рисуются на Canvas во время запуска, звук синтезируется через Web Audio.
-Внешние модели — только герои и эльфы (CC0, см. выше); шрифтов и звуковых файлов нет.
+остальные текстуры рисуются на Canvas во время запуска, звуки — свои (см. «Звук» выше).
+Внешние модели — только герои и эльфы (CC0, см. выше); шрифтов нет.
 Ресурсы коммерческих игр не используются. Арт-дирекшн — документы команды (визуальная библия, спецификации жестов).
 
 ## Референсы настроения

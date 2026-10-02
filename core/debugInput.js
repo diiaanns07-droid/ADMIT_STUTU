@@ -8,12 +8,16 @@
 //   K — щит (удержание), F — парирование, L — выброс (обе руки),
 //   O / P (удерживать) — слепить сферу / призму, отпустить — бросить;
 //   [V3] Z — печать «Хлопок», X — «Врата», C — «Рамка», V — «Дельта», B — «Кор»; 1…9, 0 — десять рун правой руки (RUNE_KEYS);
-//   H — следующая подсказка режима «ОШИБКА» (показ твиста без камеры; коды — core/gestureCoach.js).
+//   H — следующая подсказка режима «ОШИБКА» (показ твиста без камеры; по кругу все коды core/gestureCoach.js).
 // Импульсы создаются только на первое нажатие (event.repeat игнорируется) и потребляются read().
 // В режиме CV main.js этот адаптер не опрашивает.
 
+import { COACH_HINTS } from './gestureCoach.js';
+
 const SIGIL_KEYS = { KeyZ: 'clap', KeyX: 'gate', KeyC: 'frame', KeyV: 'delta', KeyB: 'cor' };
 const DEMO_HINTS = ['ok_ring_open', 'steer_low', 'shield_palm', 'burst_short', 'rune_open', 'orb_facing', 'slash_slow', 'parry_slow', 'steer_lean', 'hand_far'];
+// H листает все подсказки: сначала самые показательные (DEMO_HINTS), затем остальные коды core/gestureCoach.js
+const ALL_HINTS = [...DEMO_HINTS, ...Object.keys(COACH_HINTS).filter((c) => !DEMO_HINTS.includes(c))];
 // руны правой руки по цифрам (порядок совпадает с RUNE_IDS боя; лишние цифры ничего не делают)
 export const RUNE_KEYS = ['ignis', 'fulgur', 'orbis', 'stella', 'spira', 'lemnis', 'caret', 'vee', 'clepsydra', 'alpha'];
 const DIGITS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0'];
@@ -62,6 +66,7 @@ export function createDebugInput(target = window) {
     if (!enabled || isTyping(e)) return;
     const code = e.code;
     if (!KEYS.includes(code)) return;
+    if (code === 'KeyP' && e.shiftKey) return;   // [ПРОЕКТОР] Shift+P — режим презентации (modules/ui.js), не «призма»
     if (code === 'Space' && e.target && e.target.tagName === 'BUTTON') return; // пробел на кнопке — это нажатие кнопки
     e.preventDefault();
     if (e.repeat) return;              // подавление автоповтора
@@ -76,7 +81,7 @@ export function createDebugInput(target = window) {
     if (code === 'KeyL') pendingBurst = true;
     if (code === 'KeyU') pendingSpark = true;
     if (code === 'KeyF') pendingParry = true;
-    if (code === 'KeyH') { pendingHint = { code: DEMO_HINTS[hintIdx % DEMO_HINTS.length], side: null, guess: null, tMs: performance.now() }; hintIdx++; }
+    if (code === 'KeyH') { pendingHint = { code: ALL_HINTS[hintIdx % ALL_HINTS.length], side: null, guess: null, tMs: performance.now() }; hintIdx++; }
     if (SIGIL_KEYS[code]) pendingSigil = SIGIL_KEYS[code];
     { const i = DIGITS.indexOf(code); if (i >= 0 && RUNE_KEYS[i]) pendingRune = RUNE_KEYS[i]; }
     if (code === 'KeyI') {

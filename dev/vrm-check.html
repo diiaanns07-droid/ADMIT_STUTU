@@ -8,8 +8,7 @@
 </head><body><div id="info">загрузка…</div>
 <script type="module">
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { loadVRM, retargetClip } from '../modules/vrmKit.js';
+import { loadVRM, retargetClip, createGltfLoader } from '../modules/vrmKit.js'; // модели сжаты meshopt — загрузчик с распаковщиком
 import { clone as skClone } from 'three/addons/utils/SkeletonUtils.js';
 const q = new URLSearchParams(location.search);
 const dir = q.get('dir') || '../assets/vroid_src/';
@@ -23,8 +22,8 @@ const cam = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.1, 100);
 cam.position.set(0, 1.3, 7.5); cam.lookAt(0, 0.9, 0);
 scene.add(new THREE.HemisphereLight(0xdde6ff, 0x404040, 1.8));
 const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(2, 4, 5); scene.add(sun);
-const src = await new GLTFLoader().loadAsync('../assets/quaternius/woman.glb');
-const srcH = await new GLTFLoader().loadAsync('../assets/quaternius/human.glb');
+const src = await (await createGltfLoader()).loadAsync('../assets/quaternius/woman.glb');
+const srcH = await (await createGltfLoader()).loadAsync('../assets/quaternius/human.glb');
 const all = [...src.animations, ...srcH.animations];
 const findClip = (n) => all.find((c) => c.name.split('|').pop() === n) || all.find((c) => c.name.split('|').pop() === n + 'ing');
 const mixers = [], vrms = [], info = [];

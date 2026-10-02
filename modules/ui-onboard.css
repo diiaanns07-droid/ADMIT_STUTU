@@ -1,0 +1,190 @@
+/* ASHEN OATH — [ONBOARD] быстрый вход: кнопка «Играть», экран камеры с рамкой-силуэтом,
+   кольцо калибровки, отсчёт автопродолжения на паузе, подсказка пропуска интро.
+   Подключается из ui.js только в быстром потоке (options.quickStart). */
+
+/* ------------------------------------------------------------ меню: «Играть» */
+.ao-btn--xl {
+  min-height: 3.9rem;
+  padding: 0.75rem 3rem;
+  font-size: 1.45rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.ao-menu__row > .ao-btn--xl {
+  flex: 1 0 100%;
+}
+
+/* ------------------------------------------------------------ экран камеры */
+.ao-panel--onb {
+  max-width: min(46rem, 96vw);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.ao-onb__head {
+  min-height: 4.1rem;
+  margin-bottom: 0.35rem;
+}
+.ao-onb__head .ao-h2 {
+  margin-bottom: 0.2rem;
+  font-size: clamp(1.8rem, 1.6vw + 1.1rem, 2.5rem);
+}
+.ao-onb__sub {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--ao-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ao-onb__stage {
+  position: relative;
+  width: min(100%, calc(52vh * 4 / 3));
+  margin: 0.2rem auto 0.9rem;
+}
+.ao-onb__stage > .ao-slothost {
+  width: 100%;
+}
+.ao-onb__frame {
+  --onb-c: rgba(236, 226, 204, 0.82);
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.ao-onb__frame[data-fit='off'] { --onb-c: rgba(236, 226, 204, 0.32); }
+.ao-onb__frame[data-fit='partial'] { --onb-c: var(--ao-warn); }
+.ao-onb__frame[data-fit='ok'] { --onb-c: var(--ao-good); }
+.ao-onb__svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+.ao-onb__body,
+.ao-onb__face,
+.ao-onb__hand {
+  fill: none;
+  stroke: var(--onb-c);
+  stroke-width: 3;
+  stroke-dasharray: 9 7;
+  stroke-linecap: round;
+  transition: stroke 0.2s ease, fill 0.2s ease;
+}
+.ao-onb__frame[data-fit='ok'] .ao-onb__body,
+.ao-onb__frame[data-fit='ok'] .ao-onb__face {
+  stroke-dasharray: none;
+  stroke-width: 4;
+  filter: drop-shadow(0 0 6px rgba(143, 183, 132, 0.75));
+}
+.ao-onb__hand[data-on='true'] {
+  stroke: var(--ao-good);
+  stroke-dasharray: none;
+  fill: rgba(143, 183, 132, 0.28);
+}
+.ao-onb__ring {
+  fill: none;
+  stroke: var(--ao-good);
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  opacity: 0;
+  transition: stroke-dashoffset 0.12s linear, opacity 0.2s ease;
+  filter: drop-shadow(0 0 5px rgba(143, 183, 132, 0.8));
+}
+.ao-onb__frame[data-ring='run'] .ao-onb__ring,
+.ao-onb__frame[data-ring='done'] .ao-onb__ring {
+  opacity: 1;
+}
+.ao-onb__tick {
+  fill: none;
+  stroke: var(--ao-good);
+  stroke-width: 9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.ao-onb__frame[data-ring='done'] .ao-onb__tick {
+  opacity: 1;
+}
+.ao-onb__tips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem 2rem;
+}
+.ao-onb__tip {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.98rem;
+  color: var(--ao-text);
+}
+.ao-onb__tipicon {
+  width: 1.9rem;
+  height: 1.9rem;
+  flex: none;
+  color: var(--ao-gold);
+}
+.ao-onb__tipicon svg {
+  width: 100%;
+  height: 100%;
+}
+.ao-actions--onb {
+  align-self: stretch;
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+}
+/* ошибка камеры: превью меньше, подсказки скрыты — текст ошибки и «Повторить» помещаются без прокрутки */
+.ao-panel--onb[data-state='error'] .ao-onb__stage { width: min(100%, calc(24vh * 4 / 3)); }
+.ao-panel--onb[data-state='error'] .ao-onb__tips { display: none; }
+@media (max-height: 640px) {
+  .ao-onb__stage { width: min(100%, calc(44vh * 4 / 3)); }
+  .ao-onb__head { min-height: 0; }
+}
+
+/* ------------------------------------------------------------ пауза: отсчёт 3-2-1 (внутри превью) */
+.ao-countdown {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  background: rgba(8, 9, 11, 0.42);
+  pointer-events: none;
+}
+.ao-countdown[hidden] {
+  display: none;
+}
+.ao-countdown__num {
+  font-family: var(--ao-font-display);
+  font-size: clamp(4.5rem, 14vh, 8rem);
+  line-height: 1;
+  color: var(--ao-gold-hi);
+  text-shadow: 0 0 22px rgba(227, 199, 146, 0.65), 0 2px 0 rgba(0, 0, 0, 0.8);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------ интро: подсказка пропуска */
+.ao-introskip {
+  position: fixed;
+  left: 50%;
+  bottom: 6vh;
+  transform: translateX(-50%);
+  z-index: 40;
+  padding: 0.45rem 1.1rem;
+  font: 600 0.95rem/1.3 var(--ao-font-ui, system-ui, sans-serif);
+  color: #f3e6c8;
+  background: rgba(10, 9, 8, 0.62);
+  border: 1px solid rgba(216, 179, 106, 0.55);
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+.ao-introskip[hidden] {
+  display: none;
+}

@@ -103,7 +103,7 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     try { U.used = localStorage.getItem('ashen-oath.showcase-hint') === '1'; } catch (e) { /* ignore */ }
   }
   // подсказка в углу (пока игрок ни разу не приблизил/не повернул героя)
-  let hint = null;
+  let hint = null, summon = null;
   if (dom && typeof document !== 'undefined' && dom.parentElement) {
     hint = document.createElement('div');
     hint.className = 'ao-showcase-hint';
@@ -111,8 +111,39 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     hint.setAttribute('aria-hidden', 'true');
     Object.assign(hint.style, { position: 'absolute', right: '18px', bottom: '14px', fontSize: '13px', lineHeight: '1.3', fontFamily: 'inherit', letterSpacing: '0.04em', color: 'rgba(232,220,192,0.72)', textShadow: '0 1px 3px rgba(0,0,0,0.8)', pointerEvents: 'none', opacity: '0', transition: 'opacity 0.6s ease', zIndex: '1' });
     dom.parentElement.appendChild(hint);
+    // [LOAD] пока модель героя грузится — подпись у рунного круга (сам круг в это время пульсирует).
+    // z-index 11: слой интерфейса .ao-ui (fixed, z-index 10) лежит поверх холста и затемнил бы её.
+    summon = document.createElement('div');
+    summon.className = 'ao-showcase-summon';
+    summon.textContent = 'Призыв героя…';
+    summon.setAttribute('aria-hidden', 'true');
+    Object.assign(summon.style, { position: 'absolute', left: '63%', bottom: '9%', transform: 'translateX(-50%)', fontSize: '15px', letterSpacing: '0.18em', fontFamily: 'inherit', color: 'rgba(240,214,170,0.85)', textShadow: '0 0 10px rgba(255,170,90,0.55), 0 1px 3px rgba(0,0,0,0.9)', pointerEvents: 'none', opacity: '0', transition: 'opacity 0.4s ease', zIndex: '11', whiteSpace: 'nowrap' });
+    dom.parentElement.appendChild(summon);
   }
   const heroes = () => (heroModel && heroModel.heroes) || null;
+
+  // [LOAD] выбранный герой стоит на витрине 2,5 с — в простое скачиваем модели остальных героев меню,
+  // чтобы смена героя не ждала сети. Ушли из меню (камера, бой) или грузится выбранный герой — отмена
+  // (канал нужен MediaPipe и ему); то, что уже ждёт герой, heroModel не отменяет.
+  // Экономия трафика в браузере (Save-Data) — без предзагрузки.
+  // Время — по часам (performance.now): dt кадра main.js режет до 1/20 с и на слабом железе отстаёт.
+  const PF = { since: 0, ctl: null, done: false };
+  const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  function prefetchHeroes(dt, active) {
+    if (!active || !heroModel || !heroModel.ready) { if (PF.ctl) { if (PF.ctl.abort) PF.ctl.abort(); PF.ctl = null; } PF.since = 0; return; }
+    if (PF.done || PF.ctl || typeof heroModel.prefetch !== 'function') return;
+    if (typeof navigator !== 'undefined' && navigator.connection && navigator.connection.saveData) { PF.done = true; return; }
+    if (!PF.since) PF.since = nowMs();
+    if (nowMs() - PF.since < 2500) return;
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    PF.ctl = ctl || {};
+    const go = () => {
+      if (PF.ctl !== (ctl || PF.ctl)) return;
+      // завершилась не отменой (успех или ошибка сети) — больше не повторяем
+      heroModel.prefetch(undefined, { signal: ctl ? ctl.signal : undefined }).then(() => { if (PF.ctl === (ctl || PF.ctl)) { PF.ctl = null; PF.done = true; } });
+    };
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 2000 }); else setTimeout(go, 0);
+  }
 
   function place() {
     const hp = heroRoot.position, yaw = heroRoot.rotation.y;
@@ -135,6 +166,12 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     // щипок на тач-экране: в меню жесты холста наши (не масштаб страницы), в бою — как было
     if (dom && dom.style && S.touchA !== S.active) { S.touchA = S.active; dom.style.touchAction = S.active ? 'none' : ''; }
     if (hint) { const show = active && !U.used && S.t > 3 ? '1' : '0'; if (hint.style.opacity !== show) hint.style.opacity = show; }
+    // [LOAD] герой ещё грузится: подпись через 0,4 с по часам (без мигания при быстрой смене) и пульс круга
+    const loading = !!(active && heroModel && !heroModel.ready);
+    if (!loading) S.loadSince = 0; else if (!S.loadSince) S.loadSince = nowMs();
+    S.loadT = loading ? (nowMs() - S.loadSince) / 1000 + 1e-3 : 0;
+    if (summon) { const show = S.loadT > 0.4 ? '1' : '0'; if (summon.style.opacity !== show) summon.style.opacity = show; }
+    prefetchHeroes(dt, active);
     const want = active ? 1 : 0;
     if (S.t === dt && active) S.w = 1;               // первый кадр в меню — сразу полный свет
     S.w += (want - S.w) * (1 - Math.exp(-(active ? 3 : 6) * dt));
@@ -180,7 +217,7 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     place();
     // появление героя: рунный круг вспыхивает вместе с аурой
     const ap = heroModel && heroModel.appear ? heroModel.appear : 0;
-    pool.material.uniforms.uK.value = 0.9 * w * (1 + 1.4 * ap * ap);
+    pool.material.uniforms.uK.value = 0.9 * w * (1 + 1.4 * ap * ap) * (S.loadT > 0 ? 1.25 + 0.35 * Math.sin(S.t * 3.2) : 1);
     pool.material.uniforms.uTime.value = S.t;
     // цвет круга — стихия выбранного героя
     const fxc = heroModel && heroModel.heroFx ? heroModel.heroFx(heroModel.hero) : null;
@@ -241,12 +278,14 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
   }
 
   function dispose() {
+    if (PF.ctl && PF.ctl.abort) PF.ctl.abort();
     scene.remove(group);
     if (dom && dom.removeEventListener) {
       dom.removeEventListener('wheel', onWheel); dom.removeEventListener('pointerdown', onDown); dom.removeEventListener('pointermove', onMove);
       dom.removeEventListener('pointerup', onUp); dom.removeEventListener('pointercancel', onUp); dom.removeEventListener('dblclick', onDbl);
     }
     if (hint && hint.parentElement) hint.parentElement.removeChild(hint);
+    if (summon && summon.parentElement) summon.parentElement.removeChild(summon);
     pool.geometry.dispose(); pool.material.dispose();
     if (HL && HL.heroKeyColor.value) { HL.heroKeyColor.value.setRGB(0, 0, 0); HL.heroRimColor.value.setRGB(0, 0, 0); HL.heroFillColor.value.setRGB(0, 0, 0); }
   }

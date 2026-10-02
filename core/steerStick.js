@@ -74,6 +74,11 @@ export const DEFAULT_STEER_CONFIG = Object.freeze({
   glitchSpeed: 6,          //   …и быстрее стольких sw/с — кадр откладывается до следующего
   glitchMaxGapMs: 250,     //   сравниваем только с недавним кадром; отложенный кадр ждёт кисть не дольше
   glitchDtCapMs: 66,       //   скорость скачка — по времени не больше двух кадров (после пропуска трекера)
+  // [НИЗКАЯ ЧАСТОТА] на 6–10 Гц резкий дёрг (рывок) — это один кадр «снаружи», как и выброс трекинга.
+  // Их различает запястье ПОЗЫ (отдельная модель): при настоящем дёрге оно уходит туда же, при сбое
+  // модели кисти — стоит. Подтверждённый скачок не выбрасывается (только на низкой частоте).
+  glitchConfirmDtMs: 55,   //   кадр камеры длиннее — частота низкая
+  glitchConfirm: 0.5,      //   запястье прошло в сторону скачка хотя бы эту долю его длины
   // фильтры
   posTauMs: 60,            // (прежний фильтр центра ладони; с V6 — One Euro ниже)
   // [V6] One Euro для центра ладони: рука стоит — сильное сглаживание (руль не дрожит),
@@ -200,7 +205,11 @@ export function createSteerStick(configPatch = {}) {
       const lowered = (R.y - h.y) / W < cfg.walkOff;
       // скорость — по времени не больше двух кадров: после пропуска трекера скачок судим по расстоянию
       const dtG = Math.min(cfg.glitchDtCapMs, Math.max(10, t - s.gateRef.t)) / 1000;
-      if (!lowered && d > cfg.glitchJump && d / dtG > cfg.glitchSpeed) {
+      // [НИЗКАЯ ЧАСТОТА] запястье позы ушло туда же, куда кисть, — это движение руки, а не сбой
+      const G0 = s.gateRef, wr = obs.wrist && fin(obs.wrist.x) && fin(obs.wrist.y) ? obs.wrist : null;
+      const confirmed = s.frameDt >= cfg.glitchConfirmDtMs && wr && fin(G0.wx) && d > 1e-6
+        && ((wr.x - G0.wx) * (h.x - G0.x) + (wr.y - G0.wy) * (h.y - G0.y)) / (d * W) / W >= cfg.glitchConfirm * d;
+      if (!lowered && !confirmed && d > cfg.glitchJump && d / dtG > cfg.glitchSpeed) {
         s.suspect = { obs, jump: d, ref: { x: s.gateRef.x, y: s.gateRef.y }, down: h.y - s.gateRef.y > 0.7 * Math.abs(h.x - s.gateRef.x) };
         return;
       }
@@ -232,7 +241,8 @@ export function createSteerStick(configPatch = {}) {
     const W = sw(), R = ref();
 
     let h = obs.hand && fin(obs.hand.x) && fin(obs.hand.y) ? obs.hand : null;
-    if (h) s.gateRef = { x: h.x, y: h.y, t };
+    const wr0 = obs.wrist && fin(obs.wrist.x) && fin(obs.wrist.y) ? obs.wrist : null;
+    if (h) s.gateRef = { x: h.x, y: h.y, t, wx: wr0 ? wr0.x : NaN, wy: wr0 ? wr0.y : NaN };
 
     // источник: кисть; кулак/смаз посреди кадра — запястье позы со смещением к ладони
     const wr = obs.wrist && fin(obs.wrist.x) && fin(obs.wrist.y) ? obs.wrist : null;
