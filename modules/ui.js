@@ -2188,6 +2188,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   const STEP_SHORT = { walk: 'Ход', shield: 'Щит', shot: 'Выстрел', burst: 'Выброс' };
   const LIVE_TEXT = {
     walk: ['Ладонь — на уровень груди', 'Герой идёт — держи ещё…'],
+    walkStick: ['Подними руку, замри — и сдвинь вверх', 'Герой идёт — держи ещё…'], // схема «Джойстик»
     shield: ['Толкни ладонь к камере', 'Щит поднят — держи…'],
     shot: ['Сомкни пальцы в кольцо «OK»', '«OK» есть — держи…'],
     burst: ['Сожми кулак — копится заряд', 'Держи кулак — заряд копится…', 'Заряд есть — теперь резко раскрой!'],
@@ -2349,7 +2350,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
 
         // шкала: удержание (ход, щит, «OK») или заряд кулака (выброс)
         if (step) {
-          const lt = LIVE_TEXT[step.id] || ['', ''];
+          const lt = (step.id === 'walk' && moveMode === 'stick' ? LIVE_TEXT.walkStick : LIVE_TEXT[step.id]) || ['', ''];
           const li = !v.live ? 0 : step.id === 'burst' && v.level >= BURST_READY ? 2 : 1;
           setText(meterLab, v.phase === 'ok' ? `${step.effect} — готово` : lt[li] || lt[1]);
           paintMeter(meterM, v.progress);
