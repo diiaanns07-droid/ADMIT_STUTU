@@ -2810,7 +2810,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       listen(input, 'change', () => { if (input.checked) invoke('onSettings', { gestureMode: value }); });
     }
     const modeHint = el('span', { class: 'ao-field__hint ao-train__modehint' });
-    const modeField = el('fieldset', { class: 'ao-field ao-fieldset ao-train__mode', hidden: true }, el('legend', { class: 'ao-field__legend', text: 'Судья' }), modeSeg, modeHint);
+    const modeField = el('fieldset', { class: 'ao-field ao-fieldset ao-train__mode', hidden: true, title: 'Тот же переключатель «Новичок / Мастер», что у жестов в бою' }, el('legend', { class: 'ao-field__legend', text: 'Судья' }), modeSeg, modeHint);
     const count = el('strong', { class: 'ao-train__count', text: '0' });
     const countLabel = el('span', { class: 'ao-train__label', text: 'отжиманий за подход' });
     const good = el('span', { class: 'ao-train__good', 'aria-hidden': 'true', hidden: true, text: 'Чисто! +1' });
