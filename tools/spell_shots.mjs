@@ -110,6 +110,7 @@ try {
     return route.fulfill({ response: r, body, headers: { ...r.headers(), 'content-type': 'text/javascript' } });
   });
   const page = await ctx.newPage();
+  page.setDefaultTimeout(300000);   // программный рендер под нагрузкой: кадр и снимок могут идти десятки секунд
   page.on('pageerror', (e) => report.errors.push(String(e && e.message).slice(0, 300)));
   page.on('console', (m) => { if (m.type() === 'error') report.errors.push(('[console] ' + m.text()).slice(0, 300)); });
   const btn = (text) => page.locator('button:visible', { hasText: text }).first();
