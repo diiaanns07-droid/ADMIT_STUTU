@@ -457,6 +457,7 @@ void main() {
   vec3 rail = uRuneBase * 0.55;
   for ( int i = 0; i < 4; i ++ ) {
     vec4 w = uRuneW[ i ];
+    if ( w.z <= 0.0 ) continue;   // пустая волна — без работы (ветка по uniform, бесплатна)
     vec4 c = uRuneC[ i ];
     float dg = abs( fract( gu - w.x + 0.5 ) - 0.5 );
     float dr = abs( fract( vRuneUv.x - w.x + 0.5 ) - 0.5 );
@@ -484,7 +485,7 @@ const LAVA_VERT = /* glsl */`
   }`;
 const LAVA_FRAG = /* glsl */`
 #ifdef USE_EMISSIVEMAP
-  {
+  if ( kinoLavaP.z > 0.0 ) {   // в фазе 1 лавы нет — ничего не считаем
     float kinoCore = smoothstep( 0.25, 0.85, emissiveColor.r );
     float kinoHalo = sqrt( emissiveColor.r ) * 0.35;
     float kinoA = kinoLavaP.z;
@@ -4318,7 +4319,10 @@ float ashPuddle( vec2 xz ) {
           if (a[k + 1] > acy + ASH_TOP) a[k + 1] = acy - 1 + hash3(sd, i, 1, 9) * ASH_TOP;
         }
       }
-      ashGeo.attributes.position.needsUpdate = true;
+      // [W3-КИНО] на GPU — только живой диапазон (буфер с запасом под густой пепел фазы 2)
+      const ashP = ashGeo.attributes.position;
+      ashP.clearUpdateRanges(); ashP.addUpdateRange(0, n * 3);
+      ashP.needsUpdate = true;
     }
     waterU.uWT.value = time * (wc.reducedMotion ? 0.35 : 1);
     if (camera) for (const g of lakeGlints) {
@@ -4511,7 +4515,11 @@ float ashPuddle( vec2 xz ) {
       // front 0..1 | null — фронт трещин от ядра (null — снова сам world); boost 0..4 — накал поверх базы.
       // Пока задан front, лава не гаснет вместе с телом (угасание смерти не применяется).
       setLava(front, boost) {
-        if (front === null || front === undefined || !Number.isFinite(front)) { kino.lavaFront = null; kino.lavaBoost = 0; return; }
+        if (front === null || front === undefined || !Number.isFinite(front)) {
+          // ручной фронт уже дошёл до края — база подхватывает с полного фронта, без второго пробега
+          if (kino.lavaFront !== null && kino.lavaFront > 0.99) kino.p2T = Math.max(kino.p2T, 1.4);
+          kino.lavaFront = null; kino.lavaBoost = 0; return;
+        }
         kino.lavaFront = clamp(front, 0, 1);
         kino.lavaBoost = clamp(num(boost, 0), 0, 4);
       },

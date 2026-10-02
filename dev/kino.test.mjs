@@ -180,6 +180,14 @@ await test('переход в фазу 2: замедление 1,5 с, лава 
   ok(fronts[0] < 0.1 && Math.max(...fronts) > 0.99, 'фронт лавы 0 → 1');
   ok(W.lava[W.lava.length - 1][0] === null, 'управление лавой вернулось world');
   ok(Math.max(...W.boosts) > 0.99, 'небо багровеет рывком');
+  // пауза посреди сцены замораживает её (рёв, рамка и наезд не «проигрываются» за панелью паузы)
+  const fin3 = createBossFinale({ THREE, scene: new THREE.Scene(), world: makeWorld().world, quality: 'medium' });
+  fin3.update(1 / 60, 1 / 60, s2, [{ id: 'p1', type: 'boss_phase', data: { stage: 2 } }], 'playing');
+  for (let t = 0; t < 3; t += 1 / 60) fin3.update(0, 1 / 60, s2, [], 'paused');
+  ok(fin3.active && fin3.debug().phase < 0.05, 'сцена стоит на паузе ' + fin3.debug().phase);
+  for (let t = 0; t < 1.6; t += 1 / 60) fin3.update(1 / 60, 1 / 60, s2, [], 'playing');
+  ok(!fin3.active, 'после паузы доигрывается');
+  fin3.dispose();
   // повтор того же события и пробуждение во вступлении — не запускают сцену
   fin.update(1 / 60, 1 / 60, s2, [{ id: 'e1', type: 'boss_phase', data: { stage: 2 } }, { id: 'x', type: 'boss_phase', data: { stage: 1, awaken: true } }]);
   ok(!fin.active, 'дубликат/пробуждение игнорируются');
@@ -208,6 +216,12 @@ await test('гибель Регента: перегрев → осколки и 
   // осколки падают и остывают, но остаются лежать
   for (let t = 0; t < 8; t += 1 / 60) fin.update(1 / 60, 1 / 60, sv, []);
   ok(fin.debug().shards > 0, 'осколки лежат');
+  // выход в меню после победы — осколки убраны
+  fin.update(1 / 60, 1 / 60, sv, [], 'menu');
+  ok(fin.debug().shards === 0 && fin.debug().death === null, 'меню убирает финал');
+  fin.update(1 / 60, 1 / 60, sv, [{ id: 'v2', type: 'victory', data: {} }], 'playing');
+  for (let t = 0; t < 1; t += 1 / 60) fin.update(1 / 60, 1 / 60, sv, [], 'victory');
+  ok(fin.debug().shards > 0, 'новая победа — снова осколки');
   // новый бой: Регент жив, стадия 1 — всё сброшено
   fin.update(1 / 60, 1 / 60, snapOf(), []);
   const r = fin.debug();

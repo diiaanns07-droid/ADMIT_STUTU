@@ -663,7 +663,7 @@ export function createAtmosphere({ THREE, scene, renderer, camera, parent, G, M,
   };
   const hazeMat = Mx(new THREE.ShaderMaterial({
     uniforms: hazeUniforms, vertexShader: HAZE_VERT, fragmentShader: HAZE_FRAG,
-    transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
+    transparent: true, depthWrite: false, side: THREE.FrontSide, fog: false,   // камера всегда над слоями: одна сторона — один draw call
   }));
   const hazeMesh = new THREE.Mesh(Gx(hazeGeo), hazeMat);
   hazeMesh.name = 'ground-haze';

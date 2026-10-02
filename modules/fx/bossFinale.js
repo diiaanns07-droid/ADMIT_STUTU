@@ -8,10 +8,10 @@
 //     (замедление и экран итогов — как были), осколки остывают и лежат на полу до следующего боя.
 //
 // export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotion, quality })
-//   -> { update(dt, dtReal, snap, events), timeScale(), applyCamera(camera, dtReal), reset(), dispose(),
+//   -> { update(dt, dtReal, snap, events, screen?), timeScale(), applyCamera(camera, dtReal), reset(), dispose(),
 //        get active(), debug() }
 //   dt — боевое (замедленное) время: осколки и пепел летят в нём (зависают в замедлении, как в трейлере);
-//   dtReal — настенное: тайминги сцен, камера, экранные импульсы.
+//   dtReal — настенное: тайминги сцен, камера, экранные импульсы. screen — экран main: в меню всё убирается.
 //   timeScale() — множитель боевого времени на время сцены перехода (main умножает dt; HUD «SLOW» не видит).
 //   applyCamera(camera) — после того как main поставил камеру риг-а: смешивает её с кинокамерой сцены.
 //   world: world.bossFx { setLava(front, boost), shatter(), body, origin(out) } и world.atmosphere
@@ -223,7 +223,7 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     // лава бежит от ядра по броне, накал с горбом в момент рёва
     const front = sstep(F.sweep[0], F.sweep[1], t);
     const heat = 0.6 + 1.3 * Math.exp(-Math.pow((t - F.roarAt - 0.1) / 0.35, 2));
-    setLava(front, heat * (1 - sstep(1.2, F.dur, t)) + 0.6 * sstep(1.2, F.dur, t));
+    setLava(front, heat * (1 - sstep(1.1, F.dur, t)));   // к концу накал = база world, фронт = 1 — передача без скачка
     // небо багровеет рывком и остаётся (atmosphere.red догонит позже)
     st.boost = Math.max(st.boost, sstep(0.05, 0.7, t));
     phaseBoost(st.boost);
@@ -433,12 +433,41 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     if (fade < 0.01 && pf < 0.01) { burst.visible = false; pillar.visible = false; }
   }
 
+  // ---------------------------------------------------------------- прогрев шейдеров
+  // Программы собираются при первом рисовании в том конвейере, где идёт бой (композер HalfFloat на medium/high,
+  // канвас на low): 2 кадра рисуем по одному осколку и угольку далеко под ареной и чёрные спрайты. Повтор —
+  // при смене уровня качества (меняется вариант программы). Пока идёт сцена — не трогаем.
+  const warm = { frames: 0, q: null };
+  function warmTick() {
+    const q = qName();
+    if (q !== warm.q) { warm.q = q; warm.frames = 2; }
+    if (warm.frames <= 0 || st.death || st.shardsLive || st.embersLive) return;
+    warm.frames--;
+    if (warm.frames > 0) {
+      _m.makeTranslation(0, -500, 0);
+      shards.setMatrixAt(0, _m); shards.setColorAt(0, _c.setRGB(0, 0, 0));
+      shards.instanceMatrix.needsUpdate = true; shards.instanceColor.needsUpdate = true;
+      shards.count = 1; shards.visible = true;
+      ePos[0] = 0; ePos[1] = -500; ePos[2] = 0; eCol[0] = eCol[1] = eCol[2] = 0;
+      emberGeo.attributes.position.needsUpdate = true; emberGeo.attributes.color.needsUpdate = true;
+      emberGeo.setDrawRange(0, 1); embers.visible = true;
+      for (const sp of [burst, pillar]) { sp.visible = true; sp.frustumCulled = false; sp.scale.setScalar(0.001); }
+      burstMat.color.setRGB(0, 0, 0); pillarMat.color.setRGB(0, 0, 0);
+    } else {
+      shards.count = 0; shards.visible = false;
+      emberGeo.setDrawRange(0, 0); embers.visible = false;
+      for (const sp of [burst, pillar]) { sp.visible = false; sp.frustumCulled = true; }
+    }
+  }
+
   // ---------------------------------------------------------------- кадр
   st.clock = 0; st.burstT = 0;
-  function update(dt, dtReal, snap, events) {
+  function update(dt, dtReal, snap, events, screen) {
     const d = isNum(dt) ? clamp(dt, 0, 0.1) : 0;
     const dR = isNum(dtReal) ? clamp(dtReal, 0, 0.1) : d;
     st.clock += d;
+    warmTick();
+    if (screen === 'menu') { if (st.phase || st.death || st.boost || st.shardsLive || shards.count) reset(); return; }   // осколки не лежат за витриной меню
     st.pvp = !!(snap && snap.mode === 'pvp');
     if (st.pvp) { if (st.phase || st.death || st.boost) reset(); return; }
     // новый бой: Регент жив и снова на первой стадии — всё вернуть
@@ -458,7 +487,7 @@ export function createBossFinale({ THREE, scene, world, cue, shake, reducedMotio
     }
     // запасной путь: победа без события (снимок уже победный)
     if (!st.death && snap && snap.status === 'victory') startDeath(snap);
-    if (st.phase) updatePhase(dR, snap);
+    if (st.phase) updatePhase(screen === undefined || screen === 'playing' ? dR : 0, snap);   // пауза замораживает сцену
     if (st.death) {
       updateDeath(d, dR, snap);
       st.boost = Math.max(0, st.boost - dR * 0.8);   // рассвет победы сменяет багровое небо
