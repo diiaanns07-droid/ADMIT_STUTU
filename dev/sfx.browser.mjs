@@ -252,6 +252,7 @@ await page.waitForFunction(() => !!window.__stand, null, { timeout: 60000 });
 await page.mouse.click(5, 5);
 await page.waitForFunction((n) => { const a = window.__stand.audio(); return a.created && (!a.samples || a.samples.loaded + a.samples.failed >= n); }, N_FILES, { timeout: 30000 }).catch(() => {});
 await sleep(800);
+if (!LEGACY) { const sa = await audio(); check('стенд: сэмплы загрузились (звуки боя — не запасной синтез)', sa.samples && sa.samples.loaded === N_FILES && sa.samples.failed === 0, JSON.stringify(sa.samples)); }
 // действия: каждое должно запустить хотя бы один звук
 const ACTIONS = [
   ['ходьба (шаги)', 'KeyW', 2200],
@@ -305,11 +306,13 @@ check('выброс — «бабах»: громко, но без клиппин
   check('натиск: выход не клиппует', report.levels.spam.peakDb <= 0.1, JSON.stringify(report.levels.spam));
 }
 clearInterval(watch);
-// после боя голоса освобождаются (узлы отключены, утечек нет)
+// после боя голоса освобождаются (узлы отключены, утечек нет): бой на стенде останавливаем —
+// иначе Регент продолжает атаковать и звучит сам; самый длинный хвост (пробуждение) — 5,2 с
 {
-  await sleep(4500);
+  await page.evaluate(() => { const f = document.getElementById('fight'); if (f) f.checked = false; });
+  await sleep(6000);
   const a = await audio();
-  check('через 4,5 с тишины голоса освобождены', a.voices <= a.loops + 1, JSON.stringify({ voices: a.voices, loops: a.loops, cats: a.categories }));
+  check('через 6 с тишины голоса освобождены', a.voices <= a.loops + 1, JSON.stringify({ voices: a.voices, loops: a.loops, cats: a.categories }));
 }
 const pr = await probe();
 report.created = pr.created;
