@@ -534,7 +534,7 @@ void main() {
 
 // [W4-BOSS] Дым теней вокруг Регента (MeshBasicMaterial + патч alphamap_fragment): два слоя шума текут вверх,
 // у земли и к плечам гаснет, по краям силуэта (скользящий взгляд) — тоже, чтобы не было «стенки цилиндра».
-// w4S: x — время, y — плотность, z — непрозрачность, w — угли фазы 2; цвет — diffuse (почти чёрный).
+// w4S: x — время, y — плотность, z — непрозрачность, w — угли фазы 2; цвет — diffuse (тёмно-лиловый, в фазе 2 — багровый).
 const SHROUD_FRAG = /* glsl */`
 #ifdef USE_ALPHAMAP
   {
@@ -586,8 +586,8 @@ function paintObsidian(size, noise) {
 }
 
 // [W4-BOSS] Маска свечения обсидиана (линейная, тайлится): R — золотые прожилки кинцуги (сердцевина 255, ореол
-// слабее: по сердцевине течёт лава фазы 2), G — руны-каналы (пояса глифов между желобами и узлы-переходы),
-// B — сетка тонких трещин, которая вспыхивает от попаданий. Каналы независимы: рисуем сложением ('lighter').
+// слабее: по сердцевине течёт лава фазы 2), G — руны-каналы (два пояса глифов с ромбами-разделителями и один
+// вертикальный), B — сетка тонких трещин, которая вспыхивает от попаданий. Каналы независимы: рисуем сложением.
 function paintBossGlow(size, seed) {
   const c = makeCanvas(size, size);
   const ctx = c.getContext('2d');
@@ -645,10 +645,17 @@ function paintBossGlow(size, seed) {
   return c;
 }
 
-// [W4-BOSS] Шум для дыма теней и короны затмения (R, тайлится): кэш на модуль — один на все миры.
-let bossNoiseCanvas = null;
+// [W4-BOSS] Процедурные канвасы Регента рисуются один раз на страницу (пересоздание мира — без повторной рисовки);
+// GPU-текстуры из них — свои у каждого мира и освобождаются в dispose().
+const bossCanvasCache = new Map();
+function bossCanvas(key, paint) {
+  let c = bossCanvasCache.get(key);
+  if (!c) { c = paint(); bossCanvasCache.set(key, c); }
+  return c;
+}
+
+// [W4-BOSS] Шум для дыма теней и короны затмения (R, тайлится).
 function bossNoise(seed) {
-  if (bossNoiseCanvas) return bossNoiseCanvas;
   const size = 128, c = makeCanvas(size, size), ctx = c.getContext('2d');
   const img = ctx.createImageData(size, size), d = img.data, nz = makeNoise(seed);
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
@@ -658,7 +665,6 @@ function bossNoise(seed) {
     d[i + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
-  bossNoiseCanvas = c;
   return c;
 }
 
@@ -923,8 +929,8 @@ export function createWorld({ THREE, scene, renderer, camera, config = {} } = {}
   }
   // [W4-BOSS] Обсидиан Регента: альбедо 256² (почти однотонное стекло — больше не нужно) и маска свечения 512²
   // (прожилки, руны, трещины — нужны чёткие линии; на low тоже 512² — в бюджете).
-  const bossStoneCanvas = paintObsidian(256, makeNoise(wc.seed + 21));
-  const bossCrackCanvas = paintBossGlow(512, wc.seed + 31);
+  const bossStoneCanvas = bossCanvas('obsidian:' + wc.seed, () => paintObsidian(256, makeNoise(wc.seed + 21)));
+  const bossCrackCanvas = bossCanvas('glow:' + wc.seed, () => paintBossGlow(512, wc.seed + 31));
   const clothCanvas = paintCloth(256, makeNoise(wc.seed + 41));
   const sigilC = paintSigil(1024, stoneCanvas, wc.seed + 51);
   const floorCrackCanvas = paintFloorCracks(1024, wc.seed + 61, 3.3 / 9.4);
@@ -933,7 +939,7 @@ export function createWorld({ THREE, scene, renderer, camera, config = {} } = {}
   const texFloor = tex(floorCanvas, { aniso: 8 });
   const texBossStone = tex(bossStoneCanvas);
   const texBossCrack = tex(bossCrackCanvas, { srgb: false });   // [W4-BOSS] маска — линейная
-  const texBossNoise = tex(bossNoise(wc.seed + 91), { srgb: false, aniso: 1 });   // [W4-BOSS] дым теней, корона затмения
+  const texBossNoise = tex(bossCanvas('noise:' + wc.seed, () => bossNoise(wc.seed + 91)), { srgb: false, aniso: 1 });   // [W4-BOSS] дым теней, корона затмения
   const texCloth = tex(clothCanvas);
   const texSigil = tex(sigilC.albedo, { repeat: false, aniso: 8 });
   const texSigilGlow = tex(sigilC.glow, { repeat: false, aniso: 8 });
@@ -998,7 +1004,7 @@ export function createWorld({ THREE, scene, renderer, camera, config = {} } = {}
   matSeal.color.multiplyScalar(2.2); // слабые точки: холодный бело-бирюзовый, пульс 1.2 Гц
   const matBossCore = std({ color: 0x2a2010, emissive: 0xffe2a8, emissiveIntensity: 2.4, roughness: 0.35, flatShading: true }); // «украденное солнце»
   // [W4-BOSS] глаза-угли: раскалённая сердцевина (HDR) → оранжевый → тёмно-багровый край, мерцание — в updateBoss
-  const texEmberEyes = tex(paintEmberEyes(128, 32), { repeat: false });
+  const texEmberEyes = tex(bossCanvas('eyes', () => paintEmberEyes(128, 32)), { repeat: false });
   const matBossEyes = M(new THREE.MeshBasicMaterial({ color: 0xffffff, map: texEmberEyes, fog: false }));
   const matEyeGlow = M(new THREE.SpriteMaterial({ map: texEmberEyes, color: 0xff8a3a, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
   const matBossRunes = std({ color: 0x3b3128, emissive: 0xffb060, emissiveIntensity: 0.9, roughness: 0.8, flatShading: true });
@@ -3670,8 +3676,9 @@ float ashPuddle( vec2 xz ) {
         e.renderOrder = 1;
         B.eclipse = e;
       }
-      // [W4-BOSS] корона: 15 клинков света (длинные через короткий), у выпавшего сегмента — разрыв; один меш,
-      // цвет в вершинах — от тёмного золота у основания до HDR-белого острия (ловит bloom)
+      // [W4-BOSS] корона: клинки света по кругу (длинные через короткий), у выпавшего сегмента — разрыв; один меш
+      // на вращающемся кольце (разрыв короны идёт вместе с трещиной нимба), цвет в вершинах — от тёмного золота
+      // у основания до яркого острия (ловит bloom)
       {
         const pos = [], col = [];
         const base = [0.42, 0.26, 0.09], mid = [1.1, 0.68, 0.28], tip = [2.2, 1.5, 0.7];
@@ -3695,7 +3702,7 @@ float ashPuddle( vec2 xz ) {
         g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
         g.computeVertexNormals();
         B.crownMat = M(new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }));
-        const cr = part(halo, G(g), B.crownMat, 0, 0, -0.04, { cast: false, receive: false });
+        const cr = part(ring, G(g), B.crownMat, 0, 0, -0.04, { cast: false, receive: false });
         cr.name = 'boss-crown';
       }
       B.halo = halo;
@@ -4975,7 +4982,7 @@ float ashPuddle( vec2 xz ) {
     braziers.forEach((bz, i) => { bz.light.visible = i < q.brazierLights; });
     // [W4-BOSS] Регент: рой осколков (low — нет), дым теней (low — один слой из двух)
     B.swarm.count = q.tier === 0 ? 0 : q.tier === 1 ? 8 : B.swarmP.length;
-    B.swarm.visible = B.swarm.count > 0;
+    B.swarm.visible = B.swarm.count > 0 && !kino.shattered;   // рассыпанное тело (W3) рой не «проявляет»
     { const c = B.shroud.geometry.userData.w4Counts; B.shroud.geometry.setDrawRange(0, q.tier === 0 ? c[0] : c[1]); }
     clothEvery = q.clothNormals;
     matBlob.opacity = moonLight.castShadow ? 0.42 : 0.62;
