@@ -32,11 +32,11 @@ import { createHandZone, createHeroBowPose } from './core/handZone.js'; // [HAND
 import { createPerfTuner } from './core/perfTuner.js'; // [PERF] автоподстройка под железо
 import { createPerfHud } from './core/perfHud.js';     // [PERF] F3 — кадры и трекинг
 import { feelOfEvents, FEEL_TIME } from './core/gameFeel.js';     // [FEEL] остановка кадра, замедление, тряска по силе удара
+import { CHALLENGE, createChallengeBrain, createChallengeSession, createChallengeHud, createTally, createHall, buildResult } from './modules/challenge.js'; // [W3-CHALLENGE]
+import { createPosterCanvas, posterBlob, posterFontsReady, downloadPoster, posterFileName, skeletonFromVision, demoSkeleton } from './modules/posterCard.js'; // [W3-CHALLENGE] постер
 import { createCueTracker } from './modules/sfx.js';    // [SFX] «✓ Распознано» и «ОШИБКА» на обучении и в бою
 import { createCoachOverlay } from './core/coachOverlay.js'; // [ТВИСТ «ОШИБКА»] подсветка ошибки на превью камеры
 import { createTechniqueTrainer } from './modules/techniqueTrainer.js'; // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
-import { CHALLENGE, createChallengeBrain, createChallengeSession, createChallengeHud, createTally, createHall, buildResult } from './modules/challenge.js'; // [W3-CHALLENGE]
-import { createPosterCanvas, posterBlob, posterFontsReady, downloadPoster, posterFileName, skeletonFromVision, demoSkeleton } from './modules/posterCard.js'; // [W3-CHALLENGE] постер
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
 
@@ -1748,13 +1748,13 @@ window.__ASHEN__ = Object.freeze({
   net: () => (netSession ? netSession.debug() : null),             // [NET]
   netSession: () => netSession,                                    // [NET] для тестов и №3
   hand: () => (handZone ? handZone.getDebug() : null), // [HAND] лук и магия рукой
+  challenge: () => ({ phase: chal.session.phase, left: chal.session.timeLeft(), live: { ...chal.live }, seed: bossBrain.challenge, result: chal.result ? JSON.parse(JSON.stringify(chal.result)) : null, hall: chal.hallView.list.map((e) => ({ ...e })), poster: !!chal.posterUrl, shot: chal.shot.has, skeleton: !!chal.skeleton }), // [W3-CHALLENGE] QA
+  challengeFinish: () => chal.session.finishNow(), // [W3-CHALLENGE] QA: конец минуты на следующем кадре (в headless бой почти стоит)
   fx: () => { try { return JSON.parse(JSON.stringify(effects.getDebugInfo())); } catch (e) { return null; } }, // [VFX] QA: частицы и слой V6
   heroStep: (dt, snap, events) => { if (heroModel) heroModel.update(dt, snap, events || []); return heroModel ? heroModel.state() : null; }, // QA: шаг анимации без rAF
   squats: () => squats.getDebug(),
   technique: () => (techView ? JSON.parse(JSON.stringify({ ...techView, synthHands: null, synthPose: null, focus: techView.focus ? { ...techView.focus, pictogram: !!techView.focus.pictogram } : null })) : null), // [ТВИСТ «ОШИБКА»] QA тренажёра
   pvp: () => (pvpCtl ? pvpCtl.debug() : null),   // [PVP] QA: фаза, счёт, статистика дуэли
-  challenge: () => ({ phase: chal.session.phase, left: chal.session.timeLeft(), live: { ...chal.live }, seed: bossBrain.challenge, result: chal.result ? JSON.parse(JSON.stringify(chal.result)) : null, hall: chal.hallView.list.map((e) => ({ ...e })), poster: !!chal.posterUrl, shot: chal.shot.has, skeleton: !!chal.skeleton }), // [W3-CHALLENGE] QA
-  challengeFinish: () => chal.session.finishNow(), // [W3-CHALLENGE] QA: конец минуты на следующем кадре (в headless бой почти стоит)
   zoneMood: (m) => { try { world.atmosphere.setZoneMood(m); return true; } catch (e) { return false; } }, // [BDO] QA: настроение зоны
   heroMax: () => { const c = typeof combat.getEffectiveConfig === 'function' ? combat.getEffectiveConfig() : null; return c ? { hp: c.player.maxHp, energy: c.player.maxEnergy } : null; },
   embers: () => (worldLayout && Array.isArray(worldLayout.pois) ? worldLayout.pois.map((q) => ({ id: q.id, x: q.x, z: q.z, lit: progression.isEmberLit(q.id) })) : []),
