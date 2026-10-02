@@ -54,10 +54,23 @@ const atlasTex = {};    // N → { tex, refs }
 const CUT_V = 0.93;     // где у столбца «ровный срез» кончаются пряди
 function drawAtlas(N) {
   if (atlasData[N]) return atlasData[N];
+  // уменьшенный атлас — из уже нарисованного большого (рамка 2×2): смена качества в бою (perfTuner) не рисует
+  // атлас заново (~0,2 с на главном потоке)
+  const big = atlasData[N * 2];
+  if (big) {
+    const d = new Uint8Array(N * N * 4), M = N * 2;
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const o = (y * N + x) * 4, i0 = (y * 2 * M + x * 2) * 4, i1 = i0 + M * 4;
+      for (let c = 0; c < 4; c++) d[o + c] = (big[i0 + c] + big[i0 + 4 + c] + big[i1 + c] + big[i1 + 4 + c] + 2) >> 2;
+    }
+    atlasData[N] = d;
+    return d;
+  }
   if (typeof document === 'undefined') return null;
   const cv = document.createElement('canvas');
   cv.width = cv.height = N;
   const g = cv.getContext('2d');
+  if (!g) return null;   // холст недоступен (лимит памяти) — запасная клетка в acquireAtlas
   const k = N / 1024, C = N / 4;
   let sd = 20240611;
   const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
@@ -669,7 +682,6 @@ export function buildHair(THREE, ctx) {
       for (let it = 0; it < 22; it++) { const mid = (lo + hi) / 2; if (inside(dirAt(th, mid, d))) lo = mid; else hi = mid; }
       dmax.push(lo + (o.over ?? 0.06));
     }
-    dbg.shell = dmax.map((dm, i) => { const a = angOf(dirAt((i / NT) * Math.PI * 2, dm)); return [+dm.toFixed(2), +a.az.toFixed(2), +a.pol.toFixed(2)]; });
     const base = pos.length / 3, d = V3(), p = V3(), T = V3();
     for (let i = 0; i <= NT; i++) {
       const th = (i / NT) * Math.PI * 2, tri = Math.abs(((i / NT) * (o.rep ?? 7)) % 2 - 1);
@@ -693,7 +705,6 @@ export function buildHair(THREE, ctx) {
 
   // ---------------- причёски
   const lenK = (HO.len || 0.9) / 0.9;
-  const dbg = {};
   // корни карт проявляются плавно: нет видимого «среза» там, где карта начинается
   const rootFade = (t) => Math.min(1, 0.25 + t / 0.07);
   const hiDetail = () => { if (detailFrom.at < 0) detailFrom.at = idx.length; };
@@ -938,7 +949,8 @@ export function buildHair(THREE, ctx) {
   // ---------------- геометрия в осях обёртки героя (holder)
   const W0inv = new THREE.Matrix4().copy(holder.matrixWorld).invert();
   const nm = new THREE.Matrix3().getNormalMatrix(W0inv);
-  const nV = pos.length / 3;
+  const nV = pos.length / 3, nTris = idx.length / 3;
+  const nIdxLow = detailFrom.at >= 0 ? detailFrom.at : idx.length;
   const P32 = new Float32Array(pos), N32 = new Float32Array(nrm), T32 = new Float32Array(ht);
   for (let i = 0; i < nV; i++) {
     hv.fromArray(P32, i * 3).applyMatrix4(W0inv).toArray(P32, i * 3);
@@ -953,9 +965,9 @@ export function buildHair(THREE, ctx) {
   geo.setAttribute('hairW', new THREE.BufferAttribute(new Float32Array(hw), 4));
   geo.setAttribute('hairT', new THREE.BufferAttribute(T32, 3));
   geo.setIndex(nV > 65535 ? new THREE.BufferAttribute(new Uint32Array(idx), 1) : new THREE.BufferAttribute(new Uint16Array(idx), 1));
-  geo.computeBoundingSphere();
-  geo.boundingSphere.radius += 0.35;   // пряди качаются: запас, чтобы не отсекались у края кадра
-  const nIdxLow = detailFrom.at >= 0 ? detailFrom.at : idx.length;
+  // рабочие массивы сборки больше не нужны (живут замыкания — освобождаем содержимое)
+  pos.length = nrm.length = uv.length = col.length = hw.length = ht.length = idx.length = 0;
+  headPts.length = 0; hoodPts.length = 0;
 
   // кости и матрицы привязки: K = (кость в позе сборки)⁻¹ · (обёртка в позе сборки)
   const Kh = new THREE.Matrix4().copy(headBone.matrixWorld).invert().multiply(holder.matrixWorld);
@@ -978,7 +990,7 @@ export function buildHair(THREE, ctx) {
       hairTT: { value: new THREE.Color(HO.color || 0x3a2418).lerp(new THREE.Color(1, 0.95, 0.85), 0.25).multiplyScalar(ST.tt) },
     },
   };
-  // капсулы: корпус (таз → основание шеи), ключицы, руки, череп, колчан; w у A — «покой» (1) или толкать всегда (0)
+  // капсулы: корпус (таз → грудь), руки, ключицы, череп, колчан; w у A — «покой» (1) или толкать всегда (0)
   const bodyCapsDef = [];
   const capOf = (name) => (ctx.bodyCaps || []).find((c) => c.name === name);
   const hipsCap = capOf('hips');
@@ -987,18 +999,25 @@ export function buildHair(THREE, ctx) {
   const LUA = raw('leftUpperArm'), RUA = raw('rightUpperArm');
   const clav = LUA && RUA ? { a: LUA, b: RUA, r: 0.05 } : null;
   const quiverObj = ctx.quiver && ctx.quiver.obj ? ctx.quiver : null;
-  const capW = (bone, off, outv) => (off ? outv.copy(off).applyMatrix4(bone.matrixWorld) : bone.getWorldPosition(outv));
+  // кадр обновляет мировые матрицы один раз: цепочка головы (таз … голова) целиком, остальные кости капсул —
+  // только их собственные звенья ниже этой цепочки (без повторных обходов до корня сцены)
+  const headChain = new Set();
+  for (let o = headBone; o; o = o.parent) headChain.add(o);
+  const tails = [];
+  const addTail = (o) => {
+    if (!o) return;
+    const ch = [];
+    for (let x = o; x && !headChain.has(x); x = x.parent) ch.unshift(x);
+    for (const x of ch) if (!tails.includes(x)) tails.push(x);
+  };
+  for (const c of bodyCapsDef) { addTail(c.a); addTail(c.b); }
+  if (clav) { addTail(clav.a); addTail(clav.b); }
+  if (quiverObj) addTail(quiverObj.obj);
   const _cA = V3(), _cB = V3(), _cs = V3();
 
   // ---------------- материалы и меши
-  const meshCore = new THREE.Mesh(geo, null), meshSoft = new THREE.Mesh(geo, null);
-  meshCore.name = 'hair-core'; meshSoft.name = 'hair-soft';
-  meshSoft.renderOrder = 1;
-  for (const m of [meshCore, meshSoft]) { m.userData.noAO = true; m.userData.hair = U; m.receiveShadow = true; }
-  meshSoft.castShadow = false;
-  holder.add(meshCore, meshSoft);
   const hairC = new THREE.Color(HO.color || 0x3a2418);
-  let tier = null, mats = null, atlasN = 0, lodL = 0;
+  let tier = null, matKey = null, mats = null, atlasN = 0, lodL = 0;
   const CUT = 0.5;
   function makeMats(tq) {
     const N = tq === 'low' ? 512 : 1024;
@@ -1006,20 +1025,28 @@ export function buildHair(THREE, ctx) {
     const phys = tq !== 'low';
     const Cls = phys ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
     const common = { color: hairC.clone(), map: tex, vertexColors: true, side: THREE.DoubleSide, roughness: 0.62, metalness: 0, envMapIntensity: 0.32 };
+    const made = [];
     const fin = (m, soft) => {
+      made.push(m);
       if (atmosphere) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, 0.32); } catch (e) { /* без атмосферы */ } }
       patchHairGloss(THREE, m, U.gloss);
       patchMotion(m, U, false);
       patchAlpha(m, N, soft, CUT);
       return m;
     };
-    const core = fin(new Cls({ ...common, name: 'hair-core', alphaTest: CUT, alphaToCoverage: tq === 'low', ...(phys ? { specularIntensity: 0.35 } : {}) }), false);
-    // мягкая кромка: прозрачный двусторонний материал three рисует в два прохода — один (порядок внутри
-    // причёски задан индексами: от кожи наружу)
-    const soft = tq === 'low' ? null : fin(new Cls({ ...common, name: 'hair-soft', transparent: true, depthWrite: false, forceSinglePass: true, ...(phys ? { specularIntensity: 0.35 } : {}) }), true);
-    const depth = new THREE.MeshDepthMaterial({ name: 'hair-depth', depthPacking: THREE.RGBADepthPacking, map: tex, alphaTest: CUT, side: THREE.DoubleSide });
-    patchMotion(depth, U, true);
-    return { core, soft, depth, N };
+    try {
+      const core = fin(new Cls({ ...common, name: 'hair-core', alphaTest: CUT, alphaToCoverage: tq === 'low', ...(phys ? { specularIntensity: 0.35 } : {}) }), false);
+      // мягкая кромка: прозрачный двусторонний материал three рисует в два прохода — один (порядок внутри
+      // причёски задан индексами: от кожи наружу)
+      const soft = tq === 'low' ? null : fin(new Cls({ ...common, name: 'hair-soft', transparent: true, depthWrite: false, forceSinglePass: true, ...(phys ? { specularIntensity: 0.35 } : {}) }), true);
+      const depth = new THREE.MeshDepthMaterial({ name: 'hair-depth', depthPacking: THREE.RGBADepthPacking, map: tex, alphaTest: CUT, side: THREE.DoubleSide });
+      patchMotion(depth, U, true);
+      return { core, soft, depth, N };
+    } catch (e) {
+      // не собралось — ничего не держим: материалы и ссылка на атлас освобождены
+      freeMats({ core: made[0] || null, soft: made[1] || null, depth: null, N });
+      throw e;
+    }
   }
   function freeMats(m) {
     if (!m) return;
@@ -1030,46 +1057,57 @@ export function buildHair(THREE, ctx) {
     }
     releaseAtlas(m.N);
   }
+  const meshCore = new THREE.Mesh(geo), meshSoft = new THREE.Mesh(geo);
+  meshCore.name = 'hair-core'; meshSoft.name = 'hair-soft';
+  meshSoft.renderOrder = 1;
+  for (const m of [meshCore, meshSoft]) {
+    m.userData.noAO = true; m.userData.hair = U; m.receiveShadow = true;
+    // вершины двигает шейдер (голова, грудь, пружина): сфера покоя не годится для отсечения — смерть,
+    // кувырок, победа уводят голову на метр и больше; герой и так всегда в кадре
+    m.frustumCulled = false;
+  }
+  meshSoft.castShadow = false;
+  // качество: low — свой материал (Standard, 512², один проход); medium и high — общие материалы (Physical,
+  // 1024², ядро + мягкая кромка), high добавляет выбившиеся волоски (детали в конце индексов)
   function setQuality(q) {
     const tq = q === 'low' || q === 'high' ? q : 'medium';
     if (tq === tier) return;
+    const key = tq === 'low' ? 'low' : 'phys';
+    if (key !== matKey) {
+      const next = makeMats(tq);   // бросит — уровень и материалы остаются прежними
+      const old = mats;
+      mats = next; matKey = key; atlasN = next.N;
+      meshCore.material = next.core;
+      meshCore.customDepthMaterial = next.depth;
+      meshSoft.material = next.soft || next.core;
+      freeMats(old);
+    }
     tier = tq;
-    const old = mats;
-    mats = makeMats(tq);
-    atlasN = mats.N;
-    meshCore.material = mats.core;
-    meshCore.customDepthMaterial = mats.depth;
-    meshSoft.material = mats.soft || mats.core;
-    meshSoft.visible = !!mats.soft;
-    // low — без выбившихся волосков (детали в конце индексов)
-    geo.setDrawRange(0, tq === 'low' ? nIdxLow : Infinity);
-    freeMats(old);
+    geo.setDrawRange(0, tq === 'high' ? Infinity : nIdxLow);
     applyVis();
   }
-  setQuality(ctx.quality || 'medium');
 
   // ---------------- пружина (одна на причёску) и кадр
-  const SPR = { x: V3(), v: V3(), a: V3(), va: V3(), pPrev: V3(), vPrev: V3(), qPrev: new THREE.Quaternion(), has: false, wt: 0 };
+  const SPR = { x: V3(), v: V3(), a: V3(), va: V3(), pPrev: V3(), vPrev: V3(), qPrev: new THREE.Quaternion(), has: false };
   const _hp = V3(), _hq = new THREE.Quaternion(), _dq = new THREE.Quaternion(), _w = V3(), _tgt = V3(), _acc = V3(), _tgtA = V3();
-  const _inv = new THREE.Matrix4(), _hs = V3(), _hq2 = new THREE.Quaternion(), _t2 = V3();
+  const _inv = new THREE.Matrix4(), _hs = V3(), _hq2 = new THREE.Quaternion(), _t2 = V3(), _hpos = V3();
   const MAXL = 0.13 * ST.motion, MAXA = 0.4 * ST.motion;
   const perf = { ms: 0 };
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
-  let time = 0;
-  const lowLeftArm = raw('leftLowerArm'), lowRightArm = raw('rightLowerArm');
+  let time = 0, ci = 0, capSc = 1;
+  function putCap(a, b, r, rest) { if (ci >= HAIR_CAPS) return; capA[ci].set(a.x, a.y, a.z, rest); capB[ci].set(b.x, b.y, b.z, r * capSc); ci++; }
   function update(dt) {
     const t0 = now();
     holder.updateWorldMatrix(true, false);
     headBone.updateWorldMatrix(true, false);
-    if (lowLeftArm) lowLeftArm.updateWorldMatrix(true, false);
-    if (lowRightArm) lowRightArm.updateWorldMatrix(true, false);
+    for (let i = 0; i < tails.length; i++) tails[i].updateWorldMatrix(false, false);
     _inv.copy(holder.matrixWorld).invert();
     const Mo = U.motion;
     Mo.hairHead.value.multiplyMatrices(_inv, headBone.matrixWorld).multiply(Kh);
     Mo.hairChest.value.multiplyMatrices(_inv, chestBone.matrixWorld).multiply(Kc);
     // центр черепа (мир) и поворот головы
     _hp.copy(pivotLocal).applyMatrix4(headBone.matrixWorld);
-    headBone.getWorldQuaternion(_hq);
+    headBone.matrixWorld.decompose(_hpos, _hq, _hs);
     const rm = !!(config.settings && config.settings.reducedMotion);
     const gain = (rm ? 0.35 : 1) * ST.motion;
     const jump = SPR.has ? _hp.distanceTo(SPR.pPrev) : 0;
@@ -1105,8 +1143,8 @@ export function buildHair(THREE, ctx) {
       SPR.pPrev.copy(_hp); SPR.qPrev.copy(_hq);
     }
     // в оси обёртки: смещение (масштаб обёртки) и ось поворота (только поворот)
-    holder.getWorldQuaternion(_hq2).invert();
-    holder.getWorldScale(_hs);
+    holder.matrixWorld.decompose(_hpos, _hq2, _hs);
+    _hq2.invert();
     const sc = 1 / (_hs.x || 1);
     Mo.hairLin.value.copy(SPR.x).applyQuaternion(_hq2).multiplyScalar(sc);
     Mo.hairAng.value.copy(SPR.a).applyQuaternion(_hq2);
@@ -1115,13 +1153,12 @@ export function buildHair(THREE, ctx) {
     time += Math.max(0, Math.min(dt, 0.1));
     const wk = (lodL >= 2 ? 0 : 0.012) * (rm ? 0.3 : 1) * sc;
     Mo.hairWind.value.set(0.8 * wk, 0, 0.35 * wk, time);
-    // капсулы тела в осях обёртки
-    let ci = 0;
-    const put = (a, b, r, rest) => { if (ci >= HAIR_CAPS) return; capA[ci].set(a.x, a.y, a.z, rest); capB[ci].set(b.x, b.y, b.z, r * sc); ci++; };
-    for (const c of bodyCapsDef) { capW(c.a, null, _cA).applyMatrix4(_inv); capW(c.b, null, _cB).applyMatrix4(_inv); put(_cA, _cB, c.r, c.rest); }
-    if (clav) { capW(clav.a, null, _cA).addScaledVector(UP, 0.03).applyMatrix4(_inv); capW(clav.b, null, _cB).addScaledVector(UP, 0.03).applyMatrix4(_inv); put(_cA, _cB, clav.r, 1); }
-    _cs.copy(_hp).applyMatrix4(_inv); put(_cs, _cs, skullR, 1);
-    if (quiverObj) { quiverObj.obj.updateWorldMatrix(true, false); _cA.copy(quiverObj.la).applyMatrix4(quiverObj.obj.matrixWorld).applyMatrix4(_inv); _cB.copy(quiverObj.lb).applyMatrix4(quiverObj.obj.matrixWorld).applyMatrix4(_inv); put(_cA, _cB, quiverObj.r, 1); }
+    // капсулы тела в осях обёртки (матрицы уже свежие — позиции прямо из них)
+    ci = 0; capSc = sc;
+    for (const c of bodyCapsDef) { _cA.setFromMatrixPosition(c.a.matrixWorld).applyMatrix4(_inv); _cB.setFromMatrixPosition(c.b.matrixWorld).applyMatrix4(_inv); putCap(_cA, _cB, c.r, c.rest); }
+    if (clav) { _cA.setFromMatrixPosition(clav.a.matrixWorld).addScaledVector(UP, 0.03).applyMatrix4(_inv); _cB.setFromMatrixPosition(clav.b.matrixWorld).addScaledVector(UP, 0.03).applyMatrix4(_inv); putCap(_cA, _cB, clav.r, 1); }
+    _cs.copy(_hp).applyMatrix4(_inv); putCap(_cs, _cs, skullR, 1);
+    if (quiverObj) { _cA.copy(quiverObj.la).applyMatrix4(quiverObj.obj.matrixWorld).applyMatrix4(_inv); _cB.copy(quiverObj.lb).applyMatrix4(quiverObj.obj.matrixWorld).applyMatrix4(_inv); putCap(_cA, _cB, quiverObj.r, 1); }
     for (; ci < HAIR_CAPS; ci++) capB[ci].w = 0;
     perf.ms += (now() - t0 - perf.ms) * 0.1;
   }
@@ -1131,25 +1168,27 @@ export function buildHair(THREE, ctx) {
     meshSoft.visible = !!(mats && mats.soft) && lodL < 2;
   }
   function setLod(l) { lodL = l; applyVis(); }
-  update(0);
-  names.push('hair');
   function dispose() {
     for (const m of [meshCore, meshSoft]) if (m.parent) m.parent.remove(m);
     geo.dispose();
     freeMats(mats); mats = null;
   }
+  // меши — в обёртку героя только когда материалы собраны и первый кадр посчитан; иначе всё освобождаем
+  try {
+    setQuality(ctx.quality || 'medium');
+    update(0);
+  } catch (e) {
+    geo.dispose(); freeMats(mats); mats = null;
+    throw e;
+  }
+  holder.add(meshCore, meshSoft);
+  names.push('hair');
   const api = {
     names, update, setLod, setQuality, dispose, perf,
     capeGap: 0,
     meshes: [meshCore, meshSoft],
-    info: () => ({ style: styleId, verts: nV, tris: idx.length / 3, trisLow: nIdxLow / 3, tier, atlas: atlasN, hood: hoodOn }),
-    probe: () => [[0, 1.8], [0, 2.0], [0, 2.2], [0, 2.3], [0.8, 1.9], [0.8, 2.1], [1.57, 1.2], [1.57, 1.4], [2.4, 1.2]].map(([az, pol]) => {
-      const d = dirOf(az, pol); let cone = 0, n = 0; const q = V3();
-      for (const p of headPts) { q.copy(p).sub(O); const r = q.length(); if (q.divideScalar(r).dot(d) > 0.996) { cone = Math.max(cone, r); n++; } }
-      const a = angOf(d);
-      return { az, pol, skin: +skinR(d).toFixed(4), cone: +cone.toFixed(4), n, ell: +ellR(d).toFixed(4), hp: +hairPol(az).toFixed(3), inside: a.pol < hairPol(a.az) };
-    }).concat([{ polFront, nHead: headPts.length, sk, O: O.toArray().map((x) => +x.toFixed(3)), shell: dbg.shell }]),
+    info: () => ({ style: styleId, verts: nV, tris: nTris, trisLow: nIdxLow / 3, tier, atlas: atlasN, hood: hoodOn }),
   };
-  meshCore.userData.hairApi = api;   // QA: info()/probe() со стенда
+  meshCore.userData.hairApi = api;   // QA: info() со стенда
   return api;
 }

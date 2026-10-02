@@ -115,8 +115,15 @@ for (const style of ['elf', 'hime', 'ponytail']) {
   assert.equal(soft.visible, false, 'LOD 2: один проход');
   assert.equal(core.castShadow, false, 'LOD 2: без тени');
   hair.setLod(0);
+  const physMat = core.material;
+  physMat.addEventListener('dispose', () => disposed.add(physMat));
   hair.setQuality('medium'); hair.setQuality('medium');
   assert.equal(hair.info().tier, 'medium');
+  assert.equal(core.material, physMat, 'medium ↔ high: материалы те же (без пересборки)');
+  assert.ok(g.drawRange.count < g.index.count, 'medium: без выбившихся волосков');
+  hair.setQuality('low');
+  assert.ok(disposed.has(physMat), 'high → low: материалы Physical освобождены');
+  assert.equal(hair.info().atlas, 512, 'low: атлас 512²');
   hair.dispose();
 }
 
@@ -131,7 +138,7 @@ for (const style of ['elf', 'hime', 'ponytail']) {
     return sh;
   };
   const core = hair.meshes[0].material, depth = hair.meshes[0].customDepthMaterial, soft = hair.meshes[1].material;
-  const sc = check(core, THREE.ShaderLib.physical, ['hairMove( hairBase( position ) )', 'objectNormal = normalize( mix(', 'vHairT = normalize', '#define RE_Direct RE_Direct_Hair', 'hairKKSpec( hN, hV, heroKeyDir )', 'normal *= faceDirection', 'hLod']);
+  const sc = check(core, THREE.ShaderLib.physical, ['hairMove( hairBase( position ) )', 'objectNormal = normalize( mix(', 'vHairT = normalize', '#define RE_Direct RE_Direct_Hair', 'hairKKSpec( hN, hV, heroKeyDir )', 'hairVolN *= faceDirection', 'hLod']);
   assert.ok(sc.uniforms.hairSpec1 && sc.uniforms.heroKeyDir, 'юниформы блеска и света витрины');
   check(soft, THREE.ShaderLib.physical, ['discard;', 'RE_Direct_Hair']);
   const sd = check(depth, THREE.ShaderLib.depth, ['hairMove( hairBase( position ) )']);

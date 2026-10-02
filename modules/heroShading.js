@@ -161,6 +161,7 @@ varying vec3 vHairT;
 varying vec2 vHairS;
 float hairGlint = 1.0;   // яркость волоска атласа: блик рвётся по прядям
 float hairShift = 0.0;
+vec3 hairVolN = vec3( 0.0, 0.0, 1.0 );   // нормаль «объёма» причёски — одна на обе стороны карты (только для света)
 vec3 hairKKSpec( vec3 N, vec3 V, vec3 L ) {
   vec3 T = vHairT - N * dot( vHairT, N );
   float tl = length( T );
@@ -179,18 +180,20 @@ vec3 hairTrans( vec3 N, vec3 V, vec3 L, vec3 albedo ) {
 }`)
       .replace('#include <lights_physical_pars_fragment>', `#include <lights_physical_pars_fragment>
 void RE_Direct_Hair( const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight ) {
-  float nl = dot( geometryNormal, directLight.direction );
+  float nl = dot( hairVolN, directLight.direction );
   float wrapD = saturate( ( nl + 0.4 ) / 1.4 );
   reflectedLight.directDiffuse += wrapD * directLight.color * BRDF_Lambert( material.diffuseContribution );
-  reflectedLight.directSpecular += directLight.color * hairKKSpec( geometryNormal, geometryViewDir, directLight.direction );
-  reflectedLight.directDiffuse += directLight.color * hairTrans( geometryNormal, geometryViewDir, directLight.direction, material.diffuseColor );
+  reflectedLight.directSpecular += directLight.color * hairKKSpec( hairVolN, geometryViewDir, directLight.direction );
+  reflectedLight.directDiffuse += directLight.color * hairTrans( hairVolN, geometryViewDir, directLight.direction, material.diffuseColor );
 }
 #undef RE_Direct
 #define RE_Direct RE_Direct_Hair`)
       .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
-  // нормаль «объёма» причёски — одна на обе стороны карты (изнанка не темнеет пятнами)
+  // свет — по нормали «объёма», одной на обе стороны карты (изнанка не темнеет пятнами); френель, кромка и
+  // отражения окружения — по обычной нормали к камере (на изнанке нет полной кромки)
+  hairVolN = normal;
   #ifdef DOUBLE_SIDED
-  normal *= faceDirection;
+  hairVolN *= faceDirection;
   #endif`)
       .replace('#include <map_fragment>', `#include <map_fragment>
   #ifdef USE_MAP
@@ -200,15 +203,15 @@ void RE_Direct_Hair( const in IncidentLight directLight, const in vec3 geometryP
   #endif`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
   {
-    vec3 hN = normal;
+    vec3 hN = hairVolN;
     vec3 hV = normalize( vViewPosition );
     float hNL = dot( hN, heroKeyDir );
     totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * saturate( ( hNL + 0.4 ) / 1.4 );
     totalEmissiveRadiance += heroKeyColor * hairKKSpec( hN, hV, heroKeyDir );
-    float hF = pow( 1.0 - saturate( dot( hN, hV ) ), 4.0 );
+    float hF = pow( 1.0 - saturate( dot( normal, hV ) ), 4.0 );
     totalEmissiveRadiance += heroRimColor * hF * saturate( dot( hN, heroRimDir ) * 0.6 + 0.45 ) * 0.7;
     totalEmissiveRadiance += heroRimColor * hairTrans( hN, hV, heroRimDir, diffuseColor.rgb );
-    totalEmissiveRadiance += diffuseColor.rgb * heroFillColor * ( 0.4 + 0.6 * saturate( dot( hN, hV ) ) );
+    totalEmissiveRadiance += diffuseColor.rgb * heroFillColor * ( 0.4 + 0.6 * saturate( dot( normal, hV ) ) );
   }`);
   };
   const prevKey = mat.customProgramCacheKey;

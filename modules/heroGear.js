@@ -689,7 +689,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   // в вершинном шейдере. Причёска собирается после лука и колчана (пряди их обтекают); капюшон снимается
   // здесь — до каймы капюшона ниже (кайма берётся только у видимого капюшона).
   let hair = null;
-  const hoodBack = opts.hair ? hairHood(vrm, opts.hair) : null;
+  let hoodBack = opts.hair ? hairHood(vrm, opts.hair) : null;
 
   // ---------------- ресницы и моргание (лица Quaternius Regular: глаза — сферы, век-морфов нет)
   // Замер лиц: у женского кромка верхнего века почти по экватору глаза (+0.1…0.17 r), нижнего — на −0.47 r;
@@ -1198,6 +1198,8 @@ export function dressHero(THREE, vrm, opts = {}) {
     } catch (e) { hair = null; if (typeof console !== 'undefined') console.warn('[hair]', e); }
     if (hair) for (const n of hair.names) names.push(n);
   }
+  // причёска не собралась — капюшон обратно (иначе героиня без волос и без капюшона)
+  if (!hair && hoodBack) { hoodBack(); hoodBack = null; }
 
   // ---------------- плащ: ткань (modules/heroCloth.js) — прибит к плечам, падает, развевается на бегу,
   // не проходит сквозь ноги и корпус (капсулы по коже модели); вышитая кайма и герб (heroForge.capeTextures)
@@ -1612,7 +1614,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   let qTier = null;
   function setQuality(q) {
     const tq = q === 'low' || q === 'high' ? q : 'medium';
-    if (hair) hair.setQuality(tq);   // [W4-ВОЛОСЫ]
+    if (hair) { try { hair.setQuality(tq); } catch (e) { /* волосы остаются на прежнем уровне */ } }   // [W4-ВОЛОСЫ]
     if (tq === qTier) return;
     qTier = tq;
     // на 'medium' — sheen у всех и анизотропный блик у волос (главное в образе героинь)
