@@ -3541,7 +3541,9 @@
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
 }
 .ao-cheat {
-  width: clamp(230px, 19vw, 340px);
+  /* [W3-MAGIC] 7-я строка «Врата · Столп»: шпаргалка чуть шире (подписи — в одну строку) и строки ниже,
+     чтобы на 1280×720 и 1024×600 она не наезжала на полосы здоровья */
+  width: clamp(300px, 22vw, 340px);
   padding: 0.45rem 0.5rem 0.35rem;
 }
 .ao-cheat[hidden],
@@ -3595,7 +3597,7 @@
   grid-template-columns: clamp(30px, 2.6vw, 44px) minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.5rem;
-  min-height: clamp(40px, 6.4vh, 60px);
+  min-height: clamp(40px, 6vh, 60px);   /* [W3-MAGIC] было 6.4vh */
   padding: 0.2rem 0.4rem;
   overflow: hidden;
   border-left: 3px solid var(--ao-side);
