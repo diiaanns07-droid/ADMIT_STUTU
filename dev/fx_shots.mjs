@@ -29,7 +29,7 @@ const TIMES = (arg('--times', '0.5') || '0.5').split(',').map(Number).filter((x)
 const OUT = resolve(arg('--out', '/tmp/fx_shots'));
 const [W, H] = (arg('--size', '960x540')).split('x').map(Number);
 const QUALITY = arg('--quality', '');
-const VENDOR = resolve(arg('--vendor', process.env.FX_VENDOR || '/tmp/claude-0/-home-user-ADMIT-STUTU/9bbb049c-276b-5b57-99ba-3d679f5528c8/scratchpad/vendor'));
+const VENDOR = resolve(arg('--vendor', process.env.FX_VENDOR || join(ROOT, 'vendor', 'npm')));
 const BROWSER = [arg('--browser'), '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].filter(Boolean).find((p) => existsSync(p));
 mkdirSync(OUT, { recursive: true });
 
@@ -57,9 +57,9 @@ function serve() {
 // CDN → локальные файлы npm-пакетов.
 function cdnToLocal(url) {
   const m = url.match(/cdn\.jsdelivr\.net\/npm\/three@[^/]+\/(.*)$/);
-  if (m) return join(VENDOR, 'three-0.185.1', 'package', m[1]);
+  if (m) return join(VENDOR, 'three@0.185.1', m[1]);
   const v = url.match(/cdn\.jsdelivr\.net\/npm\/@pixiv\/three-vrm@[^/]+\/(.*)$/);
-  if (v) return join(VENDOR, 'pixiv-three-vrm-3.5.5', 'package', v[1]);
+  if (v) return join(VENDOR, '@pixiv', 'three-vrm@3.5.5', v[1]);
   return null;
 }
 

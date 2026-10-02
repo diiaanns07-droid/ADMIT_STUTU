@@ -3,12 +3,12 @@
 // приёмы, лук и магия ладони по C3, PvP с data.remote, появление/смерть) обрабатывается без исключений,
 // лимиты частиц и хит-стопа соблюдаются, reducedMotion гасит тряску, fxMagic:false — откат к старым эффектам.
 // Нужен three.js как модуль: `three` из node_modules или путь в ASHEN_THREE (иначе SKIP).
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 
 let THREE = null;
 try { THREE = await import('three'); } catch (e) {
-  const cands = [process.env.ASHEN_THREE, '/tmp/claude-0/-home-user-ADMIT-STUTU/9bbb049c-276b-5b57-99ba-3d679f5528c8/scratchpad/vendor/three-0.185.1/package/build/three.module.js'].filter(Boolean);
+  const cands = [process.env.ASHEN_THREE, fileURLToPath(new URL('../vendor/npm/three@0.185.1/build/three.module.min.js', import.meta.url))].filter(Boolean);
   for (const c of cands) { if (existsSync(c)) { try { THREE = await import(pathToFileURL(c).href); break; } catch (e2) { /* skip */ } } }
 }
 if (!THREE) { console.log('SKIP fx: three.js не найден (npm i three или ASHEN_THREE=…/three.module.js)'); process.exit(0); }
