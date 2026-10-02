@@ -48,11 +48,13 @@ void main() {
   float b2 = crack(p * vec2(1.0, 1.3) - vec2(0.0, 0.06), 7.9, 0.14) * 1.4;
   float br = exp(-min(b1, b2) / (w * 0.8)) * smoothstep(0.0, 0.5, uOpen) * 0.55;
   float flick = 0.85 + 0.15 * sin(uTime * 37.0) * sin(uTime * 11.0 + 1.3);
-  float halo = exp(-length(p * vec2(0.55, 2.2)) * 3.0) * uOpen * 0.55;
-  float a = ((core * 2.4 + edge * 0.9 + br) * reveal * flick + halo) * em;
+  float halo = exp(-length(p * vec2(0.55, 2.2)) * 3.0) * uOpen * 0.18;
+  float a = ((core * 1.6 + edge * 0.35 + br * 0.7) * reveal * flick + halo) * em;
   vec3 col = mix(vec3(1.0, 0.72, 0.32), vec3(1.0, 0.97, 0.9), clamp(core, 0.0, 1.0));
-  a = clamp(a, 0.0, 4.0) * uGlow;
-  gl_FragColor = vec4(col * a * 2.2, 0.0);
+  a = clamp(a, 0.0, 3.0) * uGlow;
+  // небо вокруг трещины темнеет (альфа премультиплицированного смешивания) — светлая линия читается на ярком небе
+  float shade = 0.55 * exp(-d / 0.22) * smoothstep(0.0, 0.6, uOpen) * em * (1.0 - clamp(core, 0.0, 1.0));
+  gl_FragColor = vec4(col * a * 1.4, shade);
   ${FX_OUT}
 }`;
 
@@ -108,7 +110,7 @@ uniform float uAmt;
 varying float vRim;
 void main() {
   float a = uAmt * (0.35 + 0.65 * (1.0 - vRim));
-  gl_FragColor = vec4(vec3(1.0, 0.78, 0.4) * a * 0.9, 0.0);
+  gl_FragColor = vec4(vec3(1.0, 0.78, 0.4) * a * 0.5, 0.0);
   ${FX_OUT}
 }`;
 
@@ -118,7 +120,7 @@ uniform float uAmt;
 varying float vRim;
 void main() {
   float f = 1.0 - vRim;
-  vec3 col = mix(vec3(1.0, 0.62, 0.22) * 0.85, vec3(1.0, 0.97, 0.88) * 1.35, smoothstep(0.15, 0.85, f));
+  vec3 col = mix(vec3(1.0, 0.55, 0.16) * 0.6, vec3(1.0, 0.96, 0.86) * 1.12, smoothstep(0.2, 0.9, f));
   gl_FragColor = vec4(col * uAmt, uAmt);
   ${FX_OUT}
 }`;
@@ -202,7 +204,7 @@ export function createUltimateFx({ THREE, scene, camera, getKit = null, groundY 
     side: THREE.BackSide, depthTest: true, fog: false, ...premulBlend(THREE),
   }));
   const glow = new THREE.Mesh(blade.geometry, glowMat);
-  glow.scale.set(2.3, 1.03, 3.2); glow.position.y = -0.12;
+  glow.scale.set(1.7, 1.02, 2.4); glow.position.y = -0.08;
   for (const m of [blade, guard, grip, pommel, glow]) { m.frustumCulled = false; sword.add(m); }
   root.add(sword);
 
@@ -309,7 +311,7 @@ export function createUltimateFx({ THREE, scene, camera, getKit = null, groundY 
     if (camera) { rift.quaternion.copy(camera.quaternion); }
     // столб: тонкий «прицел» перед ударом → широкий столб в момент удара → гаснет
     let pw = 0, pa = 0;
-    if (T < S) { const a = smooth((T - (S - 0.85)) / 0.6); pw = 0.12 * a; pa = 0.5 * a; }
+    if (T < S) { const a = smooth((T - (S - 0.85)) / 0.6); pw = 0.07 * a; pa = 0.3 * a; }
     else { const u = T - S; pw = 0.12 + 0.75 * smooth(u / 0.08) * (1 - smooth((u - 0.12) / 0.5)); pa = (1 - smooth((u - 0.05) / 0.5)) * 0.8; }
     pillar.visible = pa > 0.002;
     pillar.scale.set(Math.max(0.001, pw), RIFT_Y, Math.max(0.001, pw));
