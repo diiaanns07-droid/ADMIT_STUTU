@@ -3,7 +3,8 @@
 // Воспроизведение, микс и лимиты голосов — createAudioEngine в modules/effects.js; этот модуль без DOM
 // и без Web Audio в верхнем уровне, поэтому таблицы и режиссёр проверяются в node (dev/sfx.test.mjs).
 
-export const SFX_DIR = 'assets/sfx/';
+// Папка звуков — относительно этого модуля, а не страницы: игра (index.html) и стенды в dev/ находят одни и те же файлы.
+export const SFX_DIR = (() => { try { return new URL('../assets/sfx/', import.meta.url).href; } catch (e) { return 'assets/sfx/'; } })();
 
 // v — вариантов файла (name_1 … name_v, при v=1 — name.ogg); gain — громкость (до поправки на расстояние),
 // подобрана по громкости в полосе динамиков ноутбука (выше 250 Гц, самые громкие 400 мс): выброс — громче всех,
