@@ -1339,8 +1339,8 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
   function syncSteps(dt) {
     const pl = snap && snap.player;
     if (!pl || !sfxDirector) return;
-    const v = pl.velocity;
-    const speed = hasVec(v) ? Math.hypot(v.x, v.z) : 0;
+    const v = pl.velocity; // в снимке {x, z} без y
+    const speed = isNum(pl.speed) ? pl.speed : v && isNum(v.x) && isNum(v.z) ? Math.hypot(v.x, v.z) : 0;
     const onGround = fi.status === 'playing' && pl.action !== 'dash' && pl.action !== 'dead' && !(pl.airborne === true);
     const k = stepper.tick(dt, speed, onGround);
     if (k > 0) audio.play('step', playerGround(_sfxP), { gain: k });
@@ -3560,8 +3560,10 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
     step: 2, slash: 2, shot: 3, spark: 3, hurt: 2, rune: 2, ui: 2, // [SFX]
   };
 
-  // [SFX] кривая слайдера: 0.5 → −9 дБ (на динамиках ноутбука ещё слышно), 1 → 0 дБ; 0 → ровно 0
-  const gainFor = (v) => (v > 0 ? Math.pow(v, 1.5) : 0);
+  // [SFX] кривая слайдера: 0.5 → −9 дБ, 1 → 0 дБ; 0 → ровно 0. MAKEUP — компенсация компрессора (+5 дБ):
+  // на 50% «бабах» выброса даёт пик около −7 дБ и слышен на динамиках ноутбука, на 100% пики держит лимитер.
+  const MAKEUP = 1.8;
+  const gainFor = (v) => (v > 0 ? Math.pow(v, 1.5) * MAKEUP : 0);
   const T = () => ctx.currentTime + 0.005;
 
   function makeNoise(kind) {
@@ -3606,8 +3608,9 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
   function build() {
     ctx = new AC({ latencyHint: 'interactive' });
     comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -16; comp.knee.value = 10; comp.ratio.value = 5;
-    comp.attack.value = 0.004; comp.release.value = 0.2;
+    // [SFX] мягче, чем было (−16 дБ, 5:1): склеивает микс, но не сплющивает большие удары
+    comp.threshold.value = -20; comp.knee.value = 12; comp.ratio.value = 3;
+    comp.attack.value = 0.005; comp.release.value = 0.25;
     master = ctx.createGain(); master.gain.value = gainFor(volume);
     // [SFX] лимитер после громкости: на 100% «бабах» выброса не клиппует
     limiter = ctx.createDynamicsCompressor();

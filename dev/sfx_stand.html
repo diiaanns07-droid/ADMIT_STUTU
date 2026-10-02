@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHEN OATH — стенд звука (не игра)</title>
+<style>
+  html, body { margin: 0; background: #0e1014; color: #d8d2c4; font: 13px/1.4 system-ui, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  h1 { margin: 0 0 4px; font-size: 18px; color: #e8a14a; font-weight: 600; }
+  h2 { margin: 16px 0 6px; font-size: 12px; color: #9aa4b4; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+  p { margin: 4px 0; color: #b9b1a1; }
+  .row { display: flex; flex-wrap: wrap; gap: 4px; }
+  button { padding: 5px 9px; background: #262a31; color: #d8d2c4; border: 1px solid #454a54; cursor: pointer; font: inherit; border-radius: 3px; }
+  button:hover { background: #333842; }
+  label { display: inline-flex; align-items: center; gap: 6px; margin-right: 14px; }
+  #info { margin-top: 12px; padding: 8px; background: #16181d; border: 1px solid #2a2d33; font: 12px/1.4 ui-monospace, monospace; white-space: pre-wrap; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/" } }
+</script>
+</head>
+<body>
+<main>
+  <h1>Стенд звука ASHEN OATH</h1>
+  <p>Кнопки ниже играют каждый звук отдельно. Клавиатура ведёт настоящий бой (combat.js + boss.js) без картинки, и звук идёт
+     по тем же событиям, что и в игре: W — идти, J — огонь, U — искра, I — рассечение, K — щит, F — парирование,
+     L — выброс, пробел/Q/E — рывок, 1–0 — руны, Z X C V B — печати, H — подсказка «ОШИБКА».</p>
+  <p>Первый клик включает звук (так требует браузер). <code>?legacy=1</code> — прежний синтез без сэмплов.</p>
+  <h2>Громкость</h2>
+  <label>Громкость <input id="vol" type="range" min="0" max="100" value="50"> <span id="volv">50%</span></label>
+  <label><input id="fight" type="checkbox" checked> бой идёт</label>
+  <h2>Звуки</h2>
+  <div class="row" id="sounds"></div>
+  <h2>Синтез старого движка (без сэмпла)</h2>
+  <div class="row" id="synth"></div>
+  <div id="info">звук ещё не включён — кликните в любом месте</div>
+</main>
+<script type="module">
+// Стенд звука: настоящие combat/boss/effects и ввод с клавиатуры (core/debugInput.js), но без мира и героев —
+// бой идёт на полной скорости даже на программном рендере. Для dev/sfx.browser.mjs: window.__stand.
+import * as THREE from 'three';
+import { config } from '../config.js';
+import { createBossBrain } from '../modules/boss.js';
+import { createCombat } from '../modules/combat.js';
+import { createEffects } from '../modules/effects.js';
+import { createDebugInput } from '../core/debugInput.js';
+import { SFX } from '../modules/sfx.js';
+
+const Q = new URLSearchParams(location.search);
+config.settings = { ...config.defaultSettings, volume: 0.5, quality: 'low' };
+if (Q.get('legacy') === '1') config.audio = { ...config.audio, samples: false, director: false };
+if (Q.get('regen') === '1') config.combat = { player: { energyRegen: 400 } }; // тест: энергия не кончается
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(58, 16 / 9, 0.1, 200);
+const effects = createEffects({ THREE, scene, camera, renderer: null, config });
+let combat = null, bossBrain = null;
+function newFight() {
+  config.boss.seed = 20260928;
+  bossBrain = createBossBrain(config);
+  combat = createCombat({ config, bossBrain });
+  effects.reset();
+}
+newFight();
+const input = createDebugInput(window);
+input.setEnabled(true);
+
+const counts = {};
+let last = performance.now();
+function adapt(events) {
+  // как adaptEvents в main.js: на каждый rune_cast — player_cast{rune}, на вылет орба — boss_impact{orb}
+  const out = events.slice();
+  for (const e of events) {
+    if (e.type === 'rune_cast') out.push({ id: `${e.id}-cast`, type: 'player_cast', position: e.position, data: { ability: 'rune', rune: e.data && e.data.rune } });
+    if (e.type === 'boss_projectile' && e.data && e.data.attackKind === 'orb') out.push({ id: `${e.id}-launch`, type: 'boss_impact', position: e.position, data: { attackKind: 'orb', launch: true } });
+  }
+  return out;
+}
+function frame(now) {
+  const dt = Math.min(0.05, Math.max(0, (now - last) / 1000)); last = now;
+  const inp = input.read();
+  let events = [];
+  if (document.getElementById('fight').checked) {
+    combat.update(dt, inp);
+    events = adapt(combat.drainEvents());
+    for (const e of events) counts[e.type] = (counts[e.type] || 0) + 1;
+    const s = combat.getSnapshot();
+    if (s.status !== 'playing') newFight();
+  }
+  const snap = combat.getSnapshot();
+  const p = snap.player.position, b = snap.boss.position;
+  const dx = p.x - b.x, dz = p.z - b.z, l = Math.hypot(dx, dz) || 1;
+  camera.position.set(p.x + dx / l * 4.9, p.y + 2.75, p.z + dz / l * 4.9);
+  camera.lookAt(b.x, b.y + 2, b.z);
+  camera.updateMatrixWorld();
+  effects.update(dt, snap, events);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+const unlock = () => effects.unlockAudio();
+for (const t of ['pointerdown', 'keydown']) window.addEventListener(t, unlock, { capture: true });
+const vol = document.getElementById('vol');
+vol.addEventListener('input', () => { effects.setVolume(vol.value / 100); document.getElementById('volv').textContent = vol.value + '%'; });
+
+const mk = (root, name) => { const b = document.createElement('button'); b.textContent = name; b.onclick = () => effects.cue(name); document.getElementById(root).append(b); };
+for (const name of Object.keys(SFX)) if (!SFX[name].loop) mk('sounds', name);
+for (const name of ['throw', 'sphereImpact', 'prismImpact', 'conjureStart', 'conjureReady', 'fizzle']) mk('synth', name);
+
+setInterval(() => {
+  const a = effects.getDebugInfo().audio;
+  document.getElementById('info').textContent = JSON.stringify({ state: a.state, volume: a.volume, voices: a.voices, loops: a.loops, samples: a.samples, director: a.director, energy: Math.round(combat.getSnapshot().player.energy) });
+}, 300);
+
+window.__stand = {
+  audio: () => effects.getDebugInfo().audio,
+  counts: () => ({ ...counts }),
+  snapshot: () => JSON.parse(JSON.stringify(combat.getSnapshot())),
+  cue: (n) => effects.cue(n),
+  setVolume: (v) => effects.setVolume(v),
+};
+</script>
+</body>
+</html>

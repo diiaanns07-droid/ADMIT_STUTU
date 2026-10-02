@@ -389,13 +389,13 @@ function unlockAudio() { if (!AUDIO_ON) return; try { effects.unlockAudio().catc
 // на любом другом экране звук возвращается (раньше выход из паузы в меню оставлял игру без звука).
 function screenAudio(screen) {
   try {
-    if (typeof effects.setAudioPaused === 'function') { effects.setAudioPaused(screen === 'paused'); effects.setVolume(gameVolume()); }
+    if (effects && typeof effects.setAudioPaused === 'function') { effects.setAudioPaused(screen === 'paused'); effects.setVolume(gameVolume()); }
     else effects.setVolume(screen === 'paused' ? 0 : gameVolume());
     if (screen === 'tutorial') sfxCues.reset();
   } catch (e) { /* до инициализации звука */ }
 }
 const sfxCues = createCueTracker();
-function cue(name) { if (name && AUDIO_ON && typeof effects.cue === 'function') { try { effects.cue(name); } catch (e) { /* ignore */ } } }
+function cue(name) { if (name && AUDIO_ON && effects && typeof effects.cue === 'function') { try { effects.cue(name); } catch (e) { /* ignore */ } } }
 let previewTimer = 0;
 function previewVolume() { clearTimeout(previewTimer); previewTimer = setTimeout(() => cue('ui_ok'), 120); } // проба после остановки ползунка
 // [SFX] AudioContext разблокируется первым же кликом или клавишей (браузер не даёт звук без жеста игрока)

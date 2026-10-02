@@ -4,6 +4,8 @@
 //   --cdn DIR — локальное зеркало npm-пакетов (DIR/node_modules/three, @mediapipe/tasks-vision, @pixiv/three-vrm),
 //               если cdn.jsdelivr.net недоступен. Без флага игра грузит библиотеки из сети.
 //   --out DIR — куда сложить скриншоты меню/паузы и отчёт sfx-report.json.
+//   --legacy  — прежний движок для сравнения: только синтез, звук из визуальных обработчиков
+//               (config.audio.samples=false, director=false); проверки сэмплов пропускаются.
 
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
@@ -18,6 +20,7 @@ const argv = process.argv.slice(2);
 const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 const CDN = arg('--cdn', null);
 const OUT = arg('--out', join(tmpdir(), 'ashen_sfx'));
+const LEGACY = argv.includes('--legacy');
 mkdirSync(OUT, { recursive: true });
 
 function loadPlaywright() {
@@ -72,7 +75,10 @@ await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.fulfill({ status: 2
 // Программный рендер даёт единицы кадров в секунду, а бой идёт по игровому времени (dt ≤ maxDt за кадр):
 // для теста разрешаем крупный шаг, иначе интро и бой тянутся минутами. Звук от этого не зависит.
 await ctx.route(/\/config\.js(\?|$)/, async (route) => {
-  const body = readFileSync(join(ROOT, 'config.js'), 'utf8').replace(/maxDt:\s*1 \/ 20/, 'maxDt: 0.25').replace(/stallSec:\s*0\.25/, 'stallSec: 3');
+  let body = readFileSync(join(ROOT, 'config.js'), 'utf8').replace(/maxDt:\s*1 \/ 20/, 'maxDt: 0.25').replace(/stallSec:\s*0\.25/, 'stallSec: 3');
+  if (LEGACY) body = body.replace(/samples:\s*true,\s*director:\s*true/, 'samples: false, director: false');
+  // энергия восстанавливается мгновенно: каждое действие должно сработать, а не упереться в нехватку энергии
+  body = body.replace(/combat:\s*\{\s*\},/, 'combat: { player: { energyRegen: 400 } },');
   route.fulfill({ status: 200, contentType: 'text/javascript', body });
 });
 await ctx.addInitScript(() => {
@@ -113,7 +119,7 @@ await ctx.addInitScript(() => {
   };
 });
 
-const page = await ctx.newPage();
+let page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -121,7 +127,7 @@ await page.goto(BASE + 'index.html', { waitUntil: 'load' });
 await page.waitForFunction(() => window.__ASHEN__ && window.__ASHEN__.screen === 'menu', null, { timeout: 120000 });
 await sleep(1500);
 
-const audio = () => page.evaluate(() => window.__ASHEN__.fx().audio);
+const audio = () => page.evaluate(() => (window.__stand ? window.__stand.audio() : window.__ASHEN__.fx().audio));
 const probe = () => page.evaluate(() => { const p = window.__sfxProbe; return { created: { ...p.created }, starts: p.starts, peakDb: p.peakDb, rmsMax: p.rmsMax ?? -120, contexts: p.contexts }; });
 const resetLevels = () => page.evaluate(() => { const p = window.__sfxProbe; p.peakDb = -120; p.rmsMax = -120; p.rmsSum = 0; p.rmsN = 0; });
 const levels = () => page.evaluate(() => { const p = window.__sfxProbe; return { peakDb: +p.peakDb.toFixed(1), rmsMaxDb: +(p.rmsMax ?? -120).toFixed(1), rmsAvgDb: +(10 * Math.log10((p.rmsSum || 0) / Math.max(1, p.rmsN || 0) + 1e-12)).toFixed(1) }; });
@@ -147,8 +153,10 @@ const key = async (code, ms = 80) => { await page.keyboard.down(code); await sle
   await sleep(600);
   const a1 = await audio();
   check('первый клик разблокировал звук', a1.created && a1.state === 'running', a1.state);
-  check('все сэмплы загрузились', a1.samples && a1.samples.loaded === N_FILES && a1.samples.failed === 0, JSON.stringify(a1.samples));
-  check('эмбиент арены играет из сэмпла', a1.ambient && a1.ambientSample, JSON.stringify({ ambient: a1.ambient, sample: a1.ambientSample }));
+  if (!LEGACY) {
+    check('все сэмплы загрузились', a1.samples && a1.samples.loaded === N_FILES && a1.samples.failed === 0, JSON.stringify(a1.samples));
+    check('эмбиент арены играет из сэмпла', a1.ambient && a1.ambientSample, JSON.stringify({ ambient: a1.ambient, sample: a1.ambientSample }));
+  }
   await resetLevels(); await sleep(3000);
   report.levels.menuAmbient = await levels();
   check('эмбиент тихий (≤ −30 дБ RMS) и не молчит', report.levels.menuAmbient.rmsAvgDb < -30 && report.levels.menuAmbient.rmsAvgDb > -75, JSON.stringify(report.levels.menuAmbient));
@@ -171,7 +179,7 @@ const key = async (code, ms = 80) => { await page.keyboard.down(code); await sle
 
 // ---------------------------------------------------------------- 2. бой (отладка с клавиатуры)
 // бою хватает маленького окна: программный рендер быстрее, звуку размер окна не важен
-await page.setViewportSize({ width: 800, height: 450 });
+await page.setViewportSize({ width: 480, height: 270 });
 await clickText('Отладка с клавиатуры'); await sleep(200);
 await clickText('Начать'); await sleep(400);
 await clickText('Продолжить без камеры (DEBUG)'); await sleep(600);
@@ -180,7 +188,8 @@ await clickText('Продолжить без камеры (DEBUG)'); await sleep
   const scr = await page.evaluate(() => window.__ASHEN__.screen);
   if (scr === 'tutorial') {
     let s0 = (await probe()).starts;
-    await key('KeyH', 150); await sleep(1500);
+    await key('KeyH', 400);
+    await page.waitForFunction((n) => window.__sfxProbe.starts > n, s0, { timeout: 8000 }).catch(() => {});
     const s1 = (await probe()).starts;
     check('обучение: подсказка «ОШИБКА» звучит мягким «тук»', s1 > s0, `запусков ${s1 - s0}`);
     s0 = s1;
@@ -210,6 +219,39 @@ await sleep(800);
   check('стоим на месте: звук не создаёт узлов в кадре', d === 0, `+${d} узлов за 3 с`);
 }
 
+// пауза: петли и бой молчат, проба громкости слышна
+{
+  await page.keyboard.down('KeyK'); await sleep(500);
+  await page.keyboard.press('Escape'); await sleep(400);
+  await page.keyboard.up('KeyK');
+  const a = await audio();
+  check('пауза: экран паузы, движок в паузе, петли погашены', (await page.evaluate(() => window.__ASHEN__.screen)) === 'paused' && a.paused && a.loops === 0, JSON.stringify({ paused: a.paused, loops: a.loops }));
+  const ui = await page.evaluate(() => ({ range: !!document.querySelector('.ao-panel--pause input[type=range]'), mute: !!document.querySelector('.ao-panel--pause .ao-mute') }));
+  check('в паузе есть ползунок и «Без звука»', ui.range && ui.mute, JSON.stringify(ui));
+  const s0 = (await probe()).starts;
+  await page.evaluate(() => { const r = document.querySelector('.ao-panel--pause input[type=range]'); r.value = '55'; r.dispatchEvent(new Event('input', { bubbles: true })); });
+  await sleep(500);
+  check('пауза: проба громкости слышна', (await probe()).starts > s0);
+  await page.setViewportSize({ width: 1366, height: 768 }); await sleep(800);
+  await page.screenshot({ path: join(OUT, 'pause.png') });
+  await page.evaluate(() => { const r = document.querySelector('.ao-panel--pause input[type=range]'); r.value = '50'; r.dispatchEvent(new Event('input', { bubbles: true })); });
+  await sleep(200);
+}
+
+// ---------------------------------------------------------------- 3. стенд: звук каждого действия боя
+// Полная игра на программном рендере даёт 1–3 кадра в секунду, и нажатие теряется между кадрами. Поэтому
+// действия проверяются на dev/sfx_stand.html: те же combat.js + boss.js + effects.js + ввод с клавиатуры,
+// но без мира и героев — бой идёт на полной скорости, а цепочка «событие боя → звук» та же, что в игре.
+report.gameContexts = (await probe()).contexts;
+await page.close();
+page = await ctx.newPage();
+page.on('pageerror', (e) => errors.push(String(e)));
+page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+await page.goto(BASE + 'dev/sfx_stand.html?regen=1' + (LEGACY ? '&legacy=1' : ''), { waitUntil: 'load' });
+await page.waitForFunction(() => !!window.__stand, null, { timeout: 60000 });
+await page.mouse.click(5, 5);
+await page.waitForFunction((n) => { const a = window.__stand.audio(); return a.created && (!a.samples || a.samples.loaded + a.samples.failed >= n); }, N_FILES, { timeout: 30000 }).catch(() => {});
+await sleep(800);
 // действия: каждое должно запустить хотя бы один звук
 const ACTIONS = [
   ['ходьба (шаги)', 'KeyW', 2200],
@@ -235,8 +277,10 @@ for (const [label, code, hold] of ACTIONS) {
   const s0 = (await probe()).starts;
   const c0 = totalCreated(await probe());
   if (code === 'KeyL') await resetLevels();
-  await key(code, hold);
-  await sleep(code === 'KeyL' ? 1400 : 650);
+  // на программном рендере кадр длится сотни миллисекунд: держим клавишу не меньше 0,4 с и ждём звук до 6 с
+  await key(code, Math.max(400, hold));
+  await page.waitForFunction((n) => window.__sfxProbe.starts > n, s0, { timeout: 6000 }).catch(() => {});
+  await sleep(code === 'KeyL' ? 2500 : 300);
   const p = await probe();
   const st = p.starts - s0;
   perAction.push({ label, starts: st, nodes: totalCreated(p) - c0 });
@@ -267,30 +311,12 @@ clearInterval(watch);
   const a = await audio();
   check('через 4,5 с тишины голоса освобождены', a.voices <= a.loops + 1, JSON.stringify({ voices: a.voices, loops: a.loops, cats: a.categories }));
 }
-// пауза: петли и бой молчат, проба громкости слышна
-{
-  await page.keyboard.down('KeyK'); await sleep(500);
-  await page.keyboard.press('Escape'); await sleep(400);
-  await page.keyboard.up('KeyK');
-  const a = await audio();
-  check('пауза: экран паузы, движок в паузе, петли погашены', (await page.evaluate(() => window.__ASHEN__.screen)) === 'paused' && a.paused && a.loops === 0, JSON.stringify({ paused: a.paused, loops: a.loops }));
-  const ui = await page.evaluate(() => ({ range: !!document.querySelector('.ao-panel--pause input[type=range]'), mute: !!document.querySelector('.ao-panel--pause .ao-mute') }));
-  check('в паузе есть ползунок и «Без звука»', ui.range && ui.mute, JSON.stringify(ui));
-  const s0 = (await probe()).starts;
-  await page.evaluate(() => { const r = document.querySelector('.ao-panel--pause input[type=range]'); r.value = '55'; r.dispatchEvent(new Event('input', { bubbles: true })); });
-  await sleep(500);
-  check('пауза: проба громкости слышна', (await probe()).starts > s0);
-  await page.setViewportSize({ width: 1366, height: 768 }); await sleep(800);
-  await page.screenshot({ path: join(OUT, 'pause.png') });
-  await page.evaluate(() => { const r = document.querySelector('.ao-panel--pause input[type=range]'); r.value = '50'; r.dispatchEvent(new Event('input', { bubbles: true })); });
-  await sleep(200);
-}
-
 const pr = await probe();
 report.created = pr.created;
 report.contexts = pr.contexts;
-check('один AudioContext на всю игру', pr.contexts === 1, `${pr.contexts}`);
+check('один AudioContext на всю игру', report.gameContexts === 1 && pr.contexts === 1, `игра ${report.gameContexts}, стенд ${pr.contexts}`);
 check('без ошибок в консоли', errors.filter((e) => !/favicon|storage\.googleapis|mediapipe|404/i.test(e)).length === 0, errors.slice(0, 5).join(' | '));
+report.legacy = LEGACY;
 writeFileSync(join(OUT, 'sfx-report.json'), JSON.stringify(report, null, 1));
 console.log(`\nуровни: ${JSON.stringify(report.levels)}\nскриншоты и отчёт: ${OUT}`);
 console.log(failures ? `ПРОВАЛЕНО: ${failures}` : 'ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ');
