@@ -159,7 +159,8 @@ const screen = (page) => page.eval('__ASHEN__.screen');
 async function scenarioBootAndDebug() {
   const { page, kill } = await launch('debug');
   try {
-    const booted = await page.waitFor('!!window.__ASHEN__', 60000);
+    // [LOAD] загрузчик снимается после сборки шейдеров мира (main.js, bootCompile), а __ASHEN__ есть раньше — ждём оба
+    const booted = await page.waitFor(`!!window.__ASHEN__ && document.getElementById('ao-boot').hidden`, 60000);
     check('страница загружается по localhost, все модули импортированы', !!booted);
     if (!booted) return;
     const info = await page.eval(`({rev: __ASHEN__.threeRevision, screen: __ASHEN__.screen, canvases: document.querySelectorAll('canvas').length, main: __ASHEN__.canvasCount(), boot: document.getElementById('ao-boot').hidden, slot: !!document.querySelector('#ui-camera-slot > #ao-video')})`);
@@ -450,10 +451,10 @@ if (!BROWSER) { console.error('Chrome/Edge не найден'); process.exit(2);
 console.log('Browser:', BROWSER, '\nOut:', OUT);
 const server = await startServer();
 try {
-  // Проверка сервера: отдаёт игру, прячет служебные файлы
-  const ok = await fetch(URL);
-  const py = await fetch(URL + 'serve_game.py');
-  const js = await fetch(URL + 'main.js');
+  // Проверка сервера: отдаёт игру, прячет служебные файлы (тела ответов дочитываем: иначе fetch в Node 24 падает на assert)
+  const ok = await fetch(URL); await ok.arrayBuffer();
+  const py = await fetch(URL + 'serve_game.py'); await py.arrayBuffer();
+  const js = await fetch(URL + 'main.js'); await js.arrayBuffer();
   check('serve_game.py: index 200, .py скрыт (404), JS как text/javascript', ok.status === 200 && py.status === 404 && /javascript/.test(js.headers.get('content-type')), `${ok.status}/${py.status}/${js.headers.get('content-type')}`);
   for (const sc of [scenarioBootAndDebug, scenarioFakeCamera, scenarioOath, scenarioDenied, scenarioNoModel, scenarioNoCdn, scenarioFile, scenarioDevSuites].filter((f) => !argOf('--only') || f.name.includes(argOf('--only')))) {
     try { await sc(); } catch (e) { check(sc.name + ' выполнен', false, e.message); }
