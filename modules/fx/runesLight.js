@@ -10,8 +10,14 @@
 //   ℓ АЛЬФА  — сброс откатов: осколки слетаются к груди (время идёт вспять), «часовой» глиф-нимб
 //              заполняется развёрткой, затем кольца перезарядки (вертикальное и по земле) и столб света.
 // Силуэты: винт вверх (орбис) ≠ горизонтальная восьмёрка (лемнис) ≠ схлопывание + кольца + столб (альфа).
+// [W4-ЗАКЛИНАНИЯ] Руна в воздухе (fx.shared.runeAir из handMagic.js) втягивается в героя: орбис — в круг у ног,
+// лемнис и альфа — в грудь; главный эффект стартует к выпуску (сдвиг ≤ 0.12 с), в точке «приземления» знака —
+// вспышка. Цвета — палитры стихий (соперник — фиолетовый), постоянные петли редеют при 3+ эффектах (scopeShare фона).
 
 import { caster, runeCircle, gather, rampOf, trail, clamp, TAU, isNum } from './common.js';
+
+// [W4-ЗАКЛИНАНИЯ] знак в воздухе летит к точке втягивания столько секунд после выпуска (airRune travel)
+const AIR_TRAVEL = 0.14;
 
 export function register(fx) {
   const V3 = fx.THREE.Vector3;
@@ -27,6 +33,18 @@ export function register(fx) {
   const glyph = (o) => { if (!fx.glyph) return null; try { return fx.glyph.spawn(o); } catch (e) { return null; } };
   const flare = (h, a) => { if (h && h.flare) { try { h.flare(a); } catch (e) { /* ignore */ } } };
   const stopTrail = (tr) => { if (tr && tr.stop) { try { tr.stop(); } catch (e) { /* ignore */ } } };
+  /** [W4-ЗАКЛИНАНИЯ] руна в воздухе этого каста (контракт handMagic.js) или null — прежний тайминг. */
+  function airOf(rune, c) {
+    const air = fx.shared && fx.shared.runeAir;
+    return air && air.rune === rune && air.t0 === kit.clock && air.remote === c.remote && air.pos ? air : null;
+  }
+  /** Знак «приземлился» в героя: звезда + кольцо (2 частицы). */
+  function landPulse(at, P, R, s) {
+    const soft = reduced() ? 0.6 : 1;
+    kit.flash(at, { color: P.core, size: [0.15, 0.85 * s * soft], dur: 0.18, intensity: 3.6, sprite: 'star', pull: 0.45, rival: R });
+    kit.flash(at, { color: P.mid, size: [0.2, 1.3 * s * soft], dur: 0.3, intensity: 2, sprite: 'ring', pull: 0.45, rival: R, curve: 0.6 });
+  }
+  const _lp2 = new V3();
 
   // Лемниската Бернулли в плоскости «вправо–вверх» (к камере за спиной — читаемый знак ∞),
   // с обхватом тела по глубине: на одном проходе перекрестья лента идёт перед грудью, на другом — за спиной.
@@ -102,26 +120,40 @@ export function register(fx) {
   fx.on('rune_cast', (ev, d) => {
     const c = caster(fx, ev, d);
     const R = c.remote, P = fx.pal('heal', d), ramp = rampOf('heal', R), rv = R ? 1 : 0, soft = reduced() ? 0.6 : 1;
+    const air = airOf('orbis', c);
     runeCircle(fx, c, 'orbis', 'heal', { radius: 1.9, dur: 2.3, spin: 0.45, rings: 3, intensity: 1.9, unfold: 0.35, motes: 30 });
-    // волна света по земле от ног
-    const g = { x: c.feet.x, y: c.feet.y + 0.06, z: c.feet.z };
-    kit.emit({ at: g, shape: 'ring', radius: 0.4, count: 40, radial: 4.2, drag: 3, speed: [0, 0.2], dir: UP, cone: 0.2, life: [0.4, 0.65], size: [0.34, 0.12], ramp, intensity: 1.8, sprite: 'glow', rival: R });
-    shock('ring', { pos: g, r0: 0.3, r1: 2.4, dur: 0.6, color: P.mid, hot: P.core, intensity: 1.4, thickness: 0.18, rival: rv });
-    helix(c, R, ramp);
-    // тёплый свет на лице и груди
-    kit.light(c.head, { color: P.hot, intensity: 1.1 * soft, range: 5, dur: 1.0, attack: 0.35, follow: () => fx.anchor('head', _hd, R) });
-    kit.flash(c.chest, { color: P.hot, size: [0.3, 1.2], dur: 0.5, intensity: 1.3 * soft, sprite: 'glow', pull: 0.7, rival: R, fadeIn: 0.3 });
-    kit.after(0.3, () => orbisShell(c, R, P, ramp));
-    kit.after(0.4, () => orbisPetals(c, R));
-    kit.after(0.55, () => orbisBloom(c, R, P, ramp));
+    // [W4-ЗАКЛИНАНИЯ] знак в воздухе падает в круг у ног; винт и волна стартуют к выпуску (не позже +0.12 с)
+    let S = 0;
+    if (air) {
+      const land = new V3(c.feet.x + c.fwd.x * 0.35, c.feet.y + 0.12, c.feet.z + c.fwd.z * 0.35);
+      air.plan('absorb', land);
+      const L = Math.max(0, air.launchAt - kit.clock);
+      S = Math.min(L, 0.12);
+      kit.after(L + AIR_TRAVEL, () => landPulse(land, P, R, 1.1));
+    }
+    const start = () => {
+      if (S > 0) fx.anchor('feet', c.feet, R);
+      // волна света по земле от ног
+      const g = { x: c.feet.x, y: c.feet.y + 0.06, z: c.feet.z };
+      kit.emit({ at: g, shape: 'ring', radius: 0.4, count: 40, radial: 4.2, drag: 3, speed: [0, 0.2], dir: UP, cone: 0.2, life: [0.4, 0.65], size: [0.34, 0.12], ramp, intensity: 1.8, sprite: 'glow', rival: R });
+      shock('ring', { pos: g, r0: 0.3, r1: 2.4, dur: 0.6, color: P.mid, hot: P.core, intensity: 1.4, thickness: 0.18, rival: rv });
+      helix(c, R, ramp);
+      // тёплый свет на лице и груди
+      kit.light(c.head, { color: P.hot, intensity: 1.1 * soft, range: 5, dur: 1.0, attack: 0.35, follow: () => fx.anchor('head', _hd, R) });
+      kit.flash(fx.anchor('chest', c.chest, R), { color: P.hot, size: [0.3, 1.2], dur: 0.5, intensity: 1.3 * soft, sprite: 'glow', pull: 0.7, rival: R, fadeIn: 0.3 });
+    };
+    if (S > 0) kit.after(S, start); else start();
+    kit.after(S + 0.3, () => orbisShell(c, R, P, ramp));
+    kit.after(S + 0.4, () => orbisPetals(c, R));
+    kit.after(S + 0.55, () => orbisBloom(c, R, P, ramp));
     audio('cast', c.chest);
     return true;
   }, (d) => d.rune === 'orbis');
 
-  // оберег: золотые искры медленно кружат у груди (≤ 16/с)
+  // оберег: золотисто-зелёные искры орбиса медленно кружат у груди (≤ 16/с); снимок знает оберег только нашего героя
   const emWard = {
     at: new V3(), center: new V3(), shape: 'ring', radius: 0.58, normal: UP, count: 1, dir: UP, cone: 0.7, speed: [0.02, 0.14],
-    orbit: 2.3, life: [0.9, 1.3], size: [0.07, 0.02], ramp: 'gold', intensity: 2.0, sprite: 'spark', fadeIn: 0.35, essential: true, rival: false,
+    orbit: 2.3, life: [0.9, 1.3], size: [0.07, 0.02], ramp: rampOf('heal', false), intensity: 2.0, sprite: 'spark', fadeIn: 0.35, essential: true, rival: false,
   };
   let wardAcc = 0;
 
@@ -163,7 +195,8 @@ export function register(fx) {
           lemPoint(cur[i], ph + i * Math.PI, _lc, _lr, _lf, 1.12 * sc, 1.0 * sc, 0.38 * sc);
           const tr = trs[i];
           if (tr && tr.alive !== false) {
-            try { tr.push(cur[i]); if (tr.setIntensity) tr.setIntensity(2.4 * fade); } catch (err) { trs[i] = null; }
+            // [W4-ЗАКЛИНАНИЯ] setIntensity теперь калиброван (×0.75) — 3.2 даёт прежнюю яркость ленты
+            try { tr.push(cur[i]); if (tr.setIntensity) tr.setIntensity(3.2 * fade); } catch (err) { trs[i] = null; }
           }
           if (started) {
             const L = cur[i].distanceTo(prev[i]);
@@ -202,8 +235,16 @@ export function register(fx) {
 
   // Лечение во времени: медленная лента-восьмёрка и мягкий импульс раз в секунду.
   // [0] — наш герой (по снимку snap.player.regen), [1] — соперник (по таймеру из rune_cast: в снимке нет его regen).
+  // [W4-ЗАКЛИНАНИЯ] палитра и рампа — один раз на состояние (раньше fx.pal(…, {remote}) создавал объект каждый кадр)
   function mkRegen(remote) {
-    return { remote, k: 0, phase: Math.PI / 2, acc: 0, pulse: 0.35, tr: null, has: false, prev: new V3(), cur: new V3(), until: 0, showUntil: 0 };
+    return {
+      remote, k: 0, phase: Math.PI / 2, acc: 0, pulse: 0.35, tr: null, has: false, prev: new V3(), cur: new V3(), until: 0, showUntil: 0,
+      P: fx.pal('eternal', remote ? { remote: true } : null), ramp: rampOf('eternal', remote),
+    };
+  }
+  function resetRegen(st) {
+    if (st.tr) { stopTrail(st.tr); st.tr = null; }
+    st.k = 0; st.has = false; st.acc = 0; st.pulse = 0.35; st.phase = Math.PI / 2; st.until = 0; st.showUntil = 0;
   }
   const regen = [mkRegen(false), mkRegen(true)];
   const _rc = new V3(), _rr = new V3(), _rf = new V3();
@@ -217,7 +258,7 @@ export function register(fx) {
   };
   const pulseFlash = { color: 0xffe9a8, size: [0.3, 1.1], dur: 0.6, intensity: 1.1, sprite: 'glow', pull: 0.7, rival: false, fadeIn: 0.35 };
   const pulseStar = { color: 0xfffdf2, size: [0.1, 0.5], dur: 0.3, intensity: 2.2, sprite: 'star', pull: 0.3, rival: false };
-  function regenStep(st, dt, snap) {
+  function regenStep(st, dt, snap, sh) {
     let want;
     if (st.remote) want = !!(snap.opponent && snap.opponent.position && snap.opponent.action !== 'dead' && kit.clock < st.until);
     else want = !!(snap.player && snap.player.regen && snap.player.action !== 'dead');
@@ -228,7 +269,7 @@ export function register(fx) {
       if (st.tr) { stopTrail(st.tr); st.tr = null; }
       return;
     }
-    const R = st.remote, P = fx.pal('eternal', { remote: R });
+    const R = st.remote, P = st.P;
     st.phase += dt * TAU / 2.8;
     if (st.phase > 1e4) st.phase %= TAU;
     fx.anchor('chest', _rc, R); fx.facing(_rf, R); _rr.set(-_rf.z, 0, _rf.x);
@@ -236,14 +277,14 @@ export function register(fx) {
     if (st.tr && st.tr.alive === false) st.tr = null;
     if (!st.tr && gate && fx.trails) st.tr = trail(fx, 'eternal', R, { style: 'energy', width: 0.07, life: 0.8, intensity: 1.5, taper: 1, maxPoints: 48, minDist: 0.04 });
     if (st.tr) {
-      try { st.tr.push(st.cur); if (st.tr.setIntensity) st.tr.setIntensity(1.5 * st.k); } catch (e) { st.tr = null; }
+      try { st.tr.push(st.cur); if (st.tr.setIntensity) st.tr.setIntensity(2.0 * st.k); } catch (e) { st.tr = null; } // ×0.75 калибровки
     } else if (st.has) {
-      st.acc += dt * 32 * decor();
+      st.acc += dt * 32 * decor() * sh;
       const n = Math.floor(st.acc);
       if (n > 0) {
         st.acc -= n;
         emRegen.at.copy(st.prev); emRegen.to.copy(st.cur); emRegen.count = Math.min(3, n);
-        emRegen.intensity = 1.9 * st.k; emRegen.ramp = rampOf('eternal', R); emRegen.rival = R;
+        emRegen.intensity = 1.9 * st.k; emRegen.ramp = st.ramp; emRegen.rival = R;
         kit.emit(emRegen);
       }
     }
@@ -255,7 +296,7 @@ export function register(fx) {
       kit.flash(_rc, pulseFlash);
       pulseStar.color = P.core; pulseStar.intensity = 2.2 * st.k * soft; pulseStar.rival = R;
       kit.flash(st.cur, pulseStar);
-      emRegenMote.at.copy(_rc); emRegenMote.at.y -= 0.3; emRegenMote.ramp = rampOf('eternal', R); emRegenMote.rival = R;
+      emRegenMote.at.copy(_rc); emRegenMote.at.y -= 0.3; emRegenMote.ramp = st.ramp; emRegenMote.rival = R; emRegenMote.count = 5 * sh;
       kit.emit(emRegenMote);
     }
     st.prev.copy(st.cur); st.has = true;
@@ -264,16 +305,28 @@ export function register(fx) {
   fx.on('rune_cast', (ev, d) => {
     const c = caster(fx, ev, d);
     const R = c.remote, P = fx.pal('eternal', d), ramp = rampOf('eternal', R), soft = reduced() ? 0.6 : 1;
+    const air = airOf('lemnis', c);
     runeCircle(fx, c, 'lemnis', 'eternal', { radius: 1.8, dur: 2.5, spin: 0.3, rings: 3, intensity: 1.8, unfold: 0.4 });
-    gather(fx, c.chest, 'eternal', R, { time: 0.2, radius: 0.9, count: 26, glow: 0.7 });
-    lemRibbons(c, R, ramp);
-    kit.after(0.4, () => lemBurst(c, R, P, ramp, 0, false));            // правая петля
-    kit.after(0.8, () => lemBurst(c, R, P, ramp, Math.PI, false));      // левая петля
-    kit.after(1.2, () => lemBurst(c, R, P, ramp, Math.PI / 2, true));   // перекрестье перед грудью
-    kit.light(c.chest, { color: P.hot, intensity: 0.8 * soft, range: 5, dur: 1.4, attack: 0.3, follow: () => fx.anchor('chest', _oc, R) });
+    // [W4-ЗАКЛИНАНИЯ] знак в воздухе втягивается в грудь — из неё раскрывается восьмёрка (не позже +0.12 с);
+    // без руны в воздухе — прежний сбор искр к груди
+    let S = 0;
+    if (air) {
+      air.plan('absorb', c.chest);
+      const L = Math.max(0, air.launchAt - kit.clock);
+      S = Math.min(L, 0.12);
+      kit.after(L + AIR_TRAVEL, () => landPulse(fx.anchor('chest', _lp2, R), P, R, 0.9));
+    } else gather(fx, c.chest, 'eternal', R, { time: 0.2, radius: 0.9, count: 26, glow: 0.7 });
+    const start = () => {
+      lemRibbons(c, R, ramp);
+      kit.light(fx.anchor('chest', c.chest, R), { color: P.hot, intensity: 0.8 * soft, range: 5, dur: 1.4, attack: 0.3, follow: () => fx.anchor('chest', _oc, R) });
+    };
+    if (S > 0) kit.after(S, start); else start();
+    kit.after(S + 0.4, () => lemBurst(c, R, P, ramp, 0, false));            // правая петля
+    kit.after(S + 0.8, () => lemBurst(c, R, P, ramp, Math.PI, false));      // левая петля
+    kit.after(S + 1.2, () => lemBurst(c, R, P, ramp, Math.PI / 2, true));   // перекрестье перед грудью
     // дальше — лечение во времени (см. regenStep); лента вечности начинается после каста
     const st = regen[R ? 1 : 0];
-    st.showUntil = kit.clock + 1.5;
+    st.showUntil = kit.clock + S + 1.5;
     if (R) st.until = kit.clock + clamp(isNum(d.duration) ? d.duration : 6, 1, 12);
     audio('cast', c.chest);
     return true;
@@ -331,8 +384,8 @@ export function register(fx) {
     kit.emit({ at: g, shape: 'ring', radius: 0.4, count: 44, radial: 7.5, drag: 3.2, speed: [0, 0.2], dir: UP, cone: 0.2, life: [0.3, 0.5], size: [0.12, 0.03], ramp, intensity: 2.8, sprite: 'spark', stretch: 0.02, essential: true, rival: R });
     kit.emit({ at: g, shape: 'ring', radius: 0.4, count: 22, radial: 5.5, drag: 3, speed: [0, 0.1], dir: UP, cone: 0.2, life: [0.35, 0.55], size: [0.4, 0.15], color: edge, intensity: 1.4, sprite: 'glow', rival: R });
     shock('ring', { pos: g, r0: 0.3, r1: 3.4, dur: 0.5, color: edge, hot: P.core, intensity: 1.8, rival: rv });
-    kit.light(c.chest, { color: R ? 0xc8b0ff : 0xe4ecff, intensity: 1.7, range: 9, dur: 0.6, attack: 0.05 });
-    kit.screenFlash(R ? 0xb49cff : 0xf4f2ff, 0.06, 0.12);
+    kit.light(c.chest, { color: R ? P.hot : P.core, intensity: 1.7, range: 9, dur: 0.6, attack: 0.05 });
+    kit.screenFlash(R ? P.hot : P.core, 0.06, 0.12);
     kit.shake(0.1);
     for (const h of glyphs) flare(h, 1);
     // руки «перезаряжены»
@@ -360,14 +413,21 @@ export function register(fx) {
   fx.on('rune_cast', (ev, d) => {
     const c = caster(fx, ev, d);
     const R = c.remote, P = fx.pal('reset', d), ramp = rampOf('reset', R), rv = R ? 1 : 0;
-    const edge = R ? 0x9a6bff : 0x78a8ff;   // белое золото с синей кромкой
-    const T = 0.34;                          // момент «перезарядки»
+    const edge = R ? P.mid : P.deep;         // белое золото с синей кромкой (соперник — фиолетовая)
+    const air = airOf('alpha', c);
+    // момент «перезарядки»: [W4-ЗАКЛИНАНИЯ] осколки и знак в воздухе приходят в грудь вместе (не позже +0.12 с)
+    let T = 0.34;
+    if (air) {
+      air.plan('absorb', c.chest);
+      T = clamp(air.launchAt - kit.clock + AIR_TRAVEL, 0.34, 0.46);
+    }
     // круг на земле (синие линии, бело-золотое ядро) и «часовой» нимб за головой — развёртка заполняется к T
     const gGround = glyph({
       pos: { x: c.feet.x, y: c.feet.y + 0.04, z: c.feet.z }, radius: 1.9, symbol: 'alpha', color: edge, hot: P.hot, intensity: 1.9,
       dur: 1.9, unfold: 0.5, spin: -0.9, rings: 3, ticks: 36, style: 'rune', rival: rv,
     });
-    const gHalo = glyph({
+    // на low пул знаков мал (5): при руне в воздухе нимб не нужен — символ уже крупно в кадре
+    const gHalo = air && kit.Q && kit.Q.name === 'low' ? null : glyph({
       pos: { x: c.head.x + c.fwd.x * 0.35, y: c.head.y + 0.1, z: c.head.z + c.fwd.z * 0.35 }, normal: { x: -c.fwd.x, y: 0, z: -c.fwd.z },
       radius: 0.95, symbol: 'alpha', symbolScale: 0.5, color: edge, hot: P.core, intensity: 1.8, dur: 1.25, unfold: 0.5, spin: -1.6,
       rings: 2, ticks: 24, style: 'sigil', rival: rv,
@@ -386,9 +446,11 @@ export function register(fx) {
   fx.every((dt, snap) => {
     if (!snap || !(dt > 0)) return;
     const pl = snap.player;
+    // [W4-ЗАКЛИНАНИЯ] фон: при 3+ эффектах петли редеют (kit режет фон и сам — фон уступает касту первым)
+    const sh = kit.scopeShare(null);
     // оберег орбиса
     if (pl && pl.warded && pl.action !== 'dead') {
-      wardAcc += dt * 16 * decor();
+      wardAcc += dt * 16 * decor() * sh;
       if (wardAcc >= 1) {
         const n = Math.floor(wardAcc);
         wardAcc -= n;
@@ -400,7 +462,9 @@ export function register(fx) {
       }
     } else wardAcc = 0;
     // лечение лемниса
-    regenStep(regen[0], dt, snap);
-    regenStep(regen[1], dt, snap);
+    regenStep(regen[0], dt, snap, sh);
+    regenStep(regen[1], dt, snap, sh);
   });
+  // [W4-ЗАКЛИНАНИЯ] сброс боя: ленты лечения, таймеры соперника, счётчики
+  fx.onClear(() => { wardAcc = 0; resetRegen(regen[0]); resetRegen(regen[1]); });
 }
