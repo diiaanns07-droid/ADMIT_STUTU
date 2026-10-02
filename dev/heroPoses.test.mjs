@@ -176,6 +176,14 @@ const finite = (H) => Object.values(H.B).every((b) => [b.quaternion.x, b.quatern
   assert.ok(!poses.claims({ type: 'player_slash', data: {} }) && !poses.claims({ type: 'sigil_cast', data: { sigil: 'clap' } }));
   assert.ok(poses.claimsHold('shield') && poses.claimsHold('conjure') && !poses.claimsHold('stun'));
 
+  // магия ладони: сгусток в правой (лёд — ладонь вниз), бросок — толчок вперёд
+  run(0.5, ctx({ P: { action: 'idle', handSpell: { phase: 'hold', element: 'frost', power: 0.6 } } }));
+  assert.equal(poses.active, 'orb', 'сгусток в ладони');
+  assert.ok(wp(H.B.rightHand).z - wp(H.B.rightUpperArm).z > 0.4 * armLen, 'сгусток — перед грудью');
+  run(0.3, ctx(), [{ type: 'hand_spell_throw', data: { element: 'frost', dir: { x: 0.5, y: 0.2 } } }]);
+  assert.equal(poses.active, 'orbThrow');
+  assert.ok(poses.claims({ type: 'hand_spell_throw', data: {} }));
+  run(0.8, ctx());
   // взгляд на Регента: цель слева-впереди — голова довёрнута к ней
   {
     const look = ctx({ lookTarget: new THREE.Vector3(6, 0, 6) });

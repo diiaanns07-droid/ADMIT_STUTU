@@ -74,6 +74,14 @@ export const SPELL_ELEMENTS = Object.freeze({
   frost: { id: 'frost', title: 'Лёд', form: 'ладонь вниз' },
   earth: { id: 'earth', title: 'Земля', form: 'кулак ладонью вверх' },
 });
+// [W4-ПОЗЫ] поза кисти героя (modules/heroPoses.js) под форму стихии — как у игрока: ладонь вверх/вниз/вперёд
+// и пальцы (open — раскрыта, claw — «когти», grip — кулак). Бросок — толчок ладонью по dir броска.
+export const HERO_SPELL_POSE = Object.freeze({
+  fire: Object.freeze({ palm: 'up', fingers: 'open' }),
+  storm: Object.freeze({ palm: 'forward', fingers: 'claw' }),
+  frost: Object.freeze({ palm: 'down', fingers: 'open' }),
+  earth: Object.freeze({ palm: 'up', fingers: 'grip' }),
+});
 export { RUNE_ELEMENT };
 
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);

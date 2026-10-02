@@ -24,6 +24,8 @@
 // Оси героя (как в heroModel): +z — вперёд, +x — влево героя, +y — вверх. Цели рук — от своего плеча,
 // в длинах руки, в «боковых» осях: o — наружу (у левой +x, у правой −x), u — вверх, f — вперёд.
 
+import { HERO_SPELL_POSE } from '../core/handMagic.js';
+
 export const POSES_VERSION = 'W4-poses-1';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -171,6 +173,11 @@ const POSES = {
   sky: pose({ staff: [0.05, 1, 0.05], hz: 0.03, sp: -0.08, cp: -0.2, ep: -0.6, L: { at: [0.34, 0.92, 0.16], pole: [1, 0, -0.3], ...PALM_SKY }, fL: OPEN, R: { at: [0.34, 0.92, 0.16], pole: [1, 0, -0.3], ...PALM_SKY }, fR: OPEN, brow: 0.6, smile: 0.25 }),
   verdict: pose({ staff: [0, 0.35, 1], hy: -0.06, hz: 0.06, sp: 0.16, cp: 0.08, ep: 0.05, flz: 0.1, leg: 1, L: { at: [0.16, 0.0, 0.96], pole: P_ELB_DOWN, ...PALM_DOWN }, fL: OPEN,
     R: { at: [0.16, 0.0, 0.96], pole: P_ELB_DOWN, ...PALM_DOWN }, fR: OPEN, frown: 0.6, squint: 0.2 }),
+  // магия ладони: правая кисть перед грудью держит сгусток (форма — по стихии, HERO_SPELL_POSE), левая — у пояса
+  orbHold: pose({ staff: [0.2, 1, 0.05], sp: 0.04, cy: 0.12, ep: 0.12, ey: -0.08, R: { at: [-0.12, -0.36, 0.56], pole: P_ELB_DOWN, ...PALM_UP }, fR: OPEN,
+    L: { at: [0.16, -0.62, 0.22], pole: P_ELB_OUT, dir: [0.2, -0.5, 0.85], thumb: [0, 0.3, 1] }, fL: SOFT, frown: 0.45, squint: 0.2 }),
+  orbThrow: pose({ staff: [0, 0.6, 1], hz: 0.05, sp: 0.1, cy: 0.26, ep: 0.0, flz: 0.07, leg: 1, R: { at: [-0.02, 0.05, 1.0], pole: P_ELB_DOWN, ...PALM_OUT }, fR: OPEN,
+    L: { at: [0.3, -0.55, -0.05], pole: P_ELB_BACK, dir: [0.1, -1, 0.3], thumb: [0, 0, 1] }, fL: SOFT, brow: 0.25 }),
   // поражение: на колено, корпус склонён, рука на колене
   kneel: pose({ staff: [0.05, 1, 0.25], hy: -0.42, hz: -0.04, sp: 0.32, cp: 0.12, ep: 0.78, er: 0.06, flz: 0.34, fly: 0.0, frz: -0.38, fry: 0.06, frp: 0.9, leg: 1,
     L: { at: [0.02, -0.66, 0.58], pole: [1, -0.3, 0.2], dir: [0, -0.7, 0.7], thumb: [-1, 0, 0] }, fL: SOFT,
@@ -324,6 +331,20 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
         v[I.FROWN] = 0.4 + 0.3 * ch;
       } },
     sphereThrow: { id: 'sphereThrow', enter: 0.12, exit: 0.25, dur: 0.6, keys: [[0, POSES.sculpt], [0.2, POSES.sphereThrow, 'out2'], [0.45, POSES.sphereThrow], [0.6, POSES.sphereThrow]] },
+    orb: { id: 'orb', enter: 0.16, exit: 0.2, keys: [[0, POSES.orbHold]], hold: true,
+      live(t, c, v) {
+        // форма кисти — как у игрока; сгусток крупнеет с силой — ладонь чуть отходит от груди
+        const f = HERO_SPELL_POSE[c.spellEl] || HERO_SPELL_POSE.fire, pw = clamp01(c.spellPower);
+        const P = f.palm === 'down' ? PALM_DOWN : f.palm === 'forward' ? PALM_OUT : PALM_UP;
+        v.set(P.dir, AR + 7); v.set(P.thumb, AR + 10);
+        for (let j = 0; j < FING.length; j++) v[FR + j] = 0;
+        v[FR + FING.indexOf(f.fingers === 'grip' ? 'grip' : f.fingers === 'claw' ? 'claw' : 'open')] = 1;
+        v[AR + 3] += 0.08 * pw; v[AR + 2] += 0.03 * pw + 0.01 * Math.sin(t * 2.4);
+        // двумя руками: левая подставляет ладонь под сгусток
+        if (c.spellTwo) { v[AL] = 1; v[AL + 1] = -0.26; v[AL + 2] = -0.42; v[AL + 3] = 0.52; v.set(PALM_UP.dir, AL + 7); v.set(PALM_UP.thumb, AL + 10); v[FL] = 1; v[FL + 5] = 0; }
+      } },
+    orbThrow: { id: 'orbThrow', enter: 0.12, exit: 0.25, dur: 0.6, keys: [[0, POSES.orbHold], [0.2, POSES.orbThrow, 'out2'], [0.45, POSES.orbThrow], [0.6, POSES.orbThrow]],
+      live(t, c, v) { v[AR + 1] += 0.35 * c.throwX; v[AR + 2] += 0.3 * c.throwY; } },   // x — вправо в кадре = наружу у правой
     pray: { id: 'pray', enter: 0.16, exit: 0.15, keys: [[0, POSES.pray]], hold: true,
       live(t, c, v) {
         // заряд дрожит в ладонях: дрожь растёт с зарядом, голова склоняется ниже
@@ -387,7 +408,8 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     const d = e.data || {};
     if (e.type === 'burst') return true;
     if (e.type === 'sigil_cast') return d.sigil === 'gate' || d.sigil === 'pillar';
-    if (e.type === 'player_cast') return d.ability === 'bolt' || d.ability === 'throw';
+    if (e.type === 'player_cast') return d.ability === 'bolt' || d.ability === 'throw' || d.ability === 'hand_orb';
+    if (e.type === 'hand_spell_throw') return true;
     return false;
   }
   function claimsHold(key, P) {
@@ -420,7 +442,10 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
           break;
         case 'shield_start': recognized(); break;
         case 'parry': if (d.success) recognized(); break;
-        case 'perfect_dodge': case 'bow_release': case 'hand_spell_throw': recognized(); break;
+        case 'hand_spell_throw':
+          ctx0.throwX = d.dir && fin(d.dir.x) ? clamp(d.dir.x, -1, 1) : 0; ctx0.throwY = d.dir && fin(d.dir.y) ? clamp(d.dir.y, -1, 1) : 0;
+          start(ACTIONS.orbThrow); st.exert = Math.min(1, st.exert + 0.3); recognized(); break;
+        case 'perfect_dodge': case 'bow_release': recognized(); break;
         case 'block': st.blockK = 1; break;
         case 'player_hit': st.hit = 1; st.hitDir = d.direction && fin(d.direction.x) ? Math.sign(d.direction.x) || 1 : (Math.random() < 0.5 ? -1 : 1); st.smileT = 0; break;
         case 'ultimate_start': st.exert = 1; break;
@@ -430,7 +455,7 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
   }
 
   // ---------------------------------------------------------------- кадр: что держит тело
-  const ctx0 = { conjure: 0, sigilCharge: 0, ult: null, bowHero: false, gaze: 0, dt: 0 };
+  const ctx0 = { conjure: 0, sigilCharge: 0, ult: null, bowHero: false, gaze: 0, dt: 0, spellEl: 'fire', spellPower: 0, spellTwo: false, throwX: 0, throwY: 0 };
   function think(dt, c) {
     // c: { P, snap, status, menu, idleW, moving, bowW, spellW, mirrorW, gaze, lookTarget, camera, bowHero }
     const P = c.P;
@@ -441,6 +466,8 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     st.ult = u; ctx0.ult = u;
     ctx0.conjure = P && P.conjure ? clamp01(+P.conjure.charge || 0) : 0;
     ctx0.sigilCharge = P && fin(P.sigilCharge) ? P.sigilCharge : 0;
+    const hs = P && P.handSpell && (P.handSpell.phase === 'form' || P.handSpell.phase === 'hold') ? P.handSpell : null;
+    if (hs) { ctx0.spellEl = hs.element || 'fire'; ctx0.spellPower = fin(hs.power) ? hs.power : 0; ctx0.spellTwo = !!hs.twoHand; }
     let want = null;
     if (c.menu) want = st.sig ? ACTIONS.signature : null;
     else if (dead) want = ACTIONS.defeat;
@@ -449,11 +476,12 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     else if (P && (P.action === 'shield' || P.shielding) && c.bowW < 0.5) want = ACTIONS.shield;
     else if (P && P.conjure && P.action !== 'dash') want = ACTIONS.conjure;
     else if (ctx0.sigilCharge > 0.02) want = ACTIONS.pray;
+    else if (hs && c.bowW < 0.5) want = ACTIONS.orb;
     const cur = st.a && st.a.def;
     if (want) {
       // удержание сменяет импульс сразу; импульс (выброс, печать) поверх удержания доигрывает своё
       const impulse = cur && !cur.hold && st.at < cur.dur;
-      if (cur !== want && !(impulse && (want === ACTIONS.shield || want === ACTIONS.pray || want === ACTIONS.conjure))) start(want);
+      if (cur !== want && !(impulse && (want === ACTIONS.shield || want === ACTIONS.pray || want === ACTIONS.conjure || want === ACTIONS.orb))) start(want);
     } else if (cur && cur.hold) stop(cur.exit);
     else if (cur && !cur.hold && st.at >= cur.dur) stop(cur.exit);
     if (status !== st.lastStatus) { if (status !== 'victory') st.victory = null; st.lastStatus = status; }

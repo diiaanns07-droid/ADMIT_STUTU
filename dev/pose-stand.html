@@ -83,9 +83,10 @@ const SCRIPTS = {
   victory: [[0.1, () => { snap.status = 'victory'; }]],
   defeat: [[0.1, () => { snap.status = 'defeat'; P.action = 'dead'; P.hp = 0; }]],
   walk: [[0.0, set({ velocity: { x: 0, z: 1.6 } })]],
+  orb: [[0.1, set({ handSpell: { phase: 'hold', element: 'fire', power: 0.4 } })], [1.5, set({ handSpell: null })], [1.5, ev('hand_spell_throw', { element: 'fire', dir: { x: 0.3, y: 0.2 } })]],
 };
 function reset() {
-  Object.assign(P, { action: 'idle', shielding: false, conjure: null, sigilCharge: 0, sigilAxis: null, hp: 100, velocity: { x: 0, z: 0 } });
+  Object.assign(P, { action: 'idle', shielding: false, conjure: null, sigilCharge: 0, sigilAxis: null, hp: 100, velocity: { x: 0, z: 0 }, handSpell: null });
   snap.status = 'playing'; snap.ultimate = null; pend = [];
 }
 let scriptT = 0, ultT = -1;
