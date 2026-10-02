@@ -17,7 +17,7 @@
 'use strict';
 
 // <AO_MANIFEST> — генерирует node tools/sw_manifest.mjs, руками не править
-const VERSION = 'ff2b2e7e2359';
+const VERSION = '012b23134e1d';
 const VENDOR_VERSION = 'b3f563930682';
 const SHELL = [
   "./",
@@ -54,6 +54,8 @@ const SHELL = [
   "modules/bdoIcons.js",
   "modules/boss.js",
   "modules/brightForest.js",
+  "modules/challenge.css",
+  "modules/challenge.js",
   "modules/characterLooks.js",
   "modules/coach.css",
   "modules/combat.js",
@@ -90,6 +92,7 @@ const SHELL = [
   "modules/heroTrail.js",
   "modules/netLobby.css",
   "modules/netLobby.js",
+  "modules/posterCard.js",
   "modules/pvp.js",
   "modules/remotePlayer.js",
   "modules/sfx.js",

@@ -28,10 +28,11 @@
 import { createTutorialTrainer, TRAINER_STEPS } from '../core/tutorialTrainer.js';
 import { COACH_GROUPS, hintPictogram } from '../core/gestureCoach.js'; // [ТВИСТ «ОШИБКА»] итоги: жесты и пиктограммы
 import { createTechniqueScreen } from './techniqueTrainer.js';            // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
+import { createChallengeScreen, createChallengeMenuButton } from './challenge.js'; // [W3-CHALLENGE] «Испытание · 60 с»
 
 export const API_VERSION = 'ASHEN_V1';
 
-const SCREENS = ['menu', 'camera', 'calibration', 'tutorial', 'playing', 'paused', 'victory', 'defeat', 'error', 'oath', 'training', 'technique'];
+const SCREENS = ['menu', 'camera', 'calibration', 'tutorial', 'playing', 'paused', 'victory', 'defeat', 'error', 'oath', 'training', 'technique', 'challenge']; // [W3-CHALLENGE] + итоги испытания
 const TRACK_STATES = ['idle', 'loading', 'permission', 'calibrating', 'ready', 'lost', 'error'];
 const CAMERA_RUNNING = ['ready', 'lost', 'calibrating'];
 const CAMERA_STARTING = ['permission', 'loading'];
@@ -63,6 +64,7 @@ const SCREEN_ANNOUNCE = {
   paused: 'Пауза',
   victory: 'Победа',
   defeat: 'Поражение',
+  challenge: 'Итоги испытания', // [W3-CHALLENGE]
   error: 'Ошибка',
   oath: 'Клятва героя: улучшения',
   training: 'Тренировка клятвы',
@@ -1474,6 +1476,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     // [ТВИСТ «ОШИБКА»] тренажёр: чек-лист условий жеста вживую — твист за 20 секунд
     const techBtn = btn('Тренажёр техники', () => invoke('onTechnique', { from: 'menu' }), { variant: 'secondary' });
     techBtn.node.classList.add('ao-menu__tech');
+    const chalBtn = createChallengeMenuButton({ el, listen, invoke }); // [W3-CHALLENGE] «Испытание · 60 с» и рекорд дня
     const oathPts = el('span', { class: 'ao-oathpts', hidden: true });
     const dbg = el('button', { type: 'button', class: 'ao-toggle', 'aria-pressed': 'false' }, el('span', { class: 'ao-toggle__track', 'aria-hidden': 'true' }), el('span', { class: 'ao-toggle__label', text: 'Отладка с клавиатуры' }));
     listen(dbg, 'click', () => invoke('onDebug', !state.debug));
@@ -1494,7 +1497,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       title,
       el('p', { class: 'ao-subtitle', text: 'Бой с Регентом Нимба' }),
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
-      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, techBtn.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode'], 'menu')), // [НОВИЧОК] режим жестов — на виду
+      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, chalBtn.node /* [W3-CHALLENGE] */, techBtn.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode'], 'menu')), // [НОВИЧОК] режим жестов — на виду
       buildHeroPick('menu'),
       el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'difficulty', 'reducedMotion'], 'menu')),
       el('div', { class: 'ao-menu__foot' }, el('div', { class: 'ao-menu__toggles' }, dbg, presentBtn), dbgKeys),
@@ -1510,6 +1513,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         const pts = ctx.vm.progress && isNum(ctx.vm.progress.points) ? ctx.vm.progress.points : 0;
         setText(oathPts, pts > 0 ? `${pts} ${plural(pts, 'очко', 'очка', 'очков')}` : '');
         setHidden(oathPts, !(pts > 0));
+        chalBtn.update(ctx); // [W3-CHALLENGE]
       },
     };
   })();
@@ -2627,6 +2631,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const techR = btn('Тренажёр техники', () => invoke('onTechnique', { from: kind }));
     const oathR = btn('Клятва героя', () => invoke('onOath', { from: kind }));
     const exit = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
+    const posterR = btn('Сохранить постер', () => invoke('onPosterSave', { from: kind })); // [W3-CHALLENGE] постер и после обычного боя
     const panel = el(
       'div',
       { class: `ao-panel ao-panel--result ao-panel--${kind} ao-frame ao-has-tech` },
@@ -2637,7 +2642,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       tech.node,
       coachTip,
       tip,
-      el('div', { class: 'ao-actions ao-actions--center' }, again.node, techR.node, oathR.node, exit.node),
+      el('div', { class: 'ao-actions ao-actions--center' }, again.node, posterR.node /* [W3-CHALLENGE] */, techR.node, oathR.node, exit.node),
     );
     return {
       section: screenSection(kind, panel, hid),
@@ -3350,7 +3355,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     uid, el, btn, setBtn, listen, heading, screenSection, statusLine, paintStatus, setText, setHidden, setAttr, setClass, setStyle,
     invoke, announce, pressEnable, describe: (tr) => describeTracking(tr, cfg), cameraStarting: CAMERA_STARTING, debugInfo: DEBUG_INFO,
   });
-  const screens = { menu, camera, calibration: calib, tutorial, paused, victory, defeat, error: errorScr, oath, training, technique };
+  // [W3-CHALLENGE] итоги испытания: ранг, очки, имя из 3 букв, зал славы дня, постер (modules/challenge.js)
+  const challenge = createChallengeScreen({ uid, el, btn, setBtn, listen, heading, screenSection, setText, setHidden, setAttr, setClass, invoke, announce, doc });
+  const screens = { menu, camera, calibration: calib, tutorial, paused, victory, defeat, error: errorScr, oath, training, technique, challenge };
   const slotHosts = { camera: camera.host, calibration: calib.host, tutorial: tutorial.host, paused: paused.host, playing: hud.dockHost, training: training.host, technique: technique.host };
 
   ui.append(backdrop, hud.node, banner);
@@ -3459,6 +3466,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     oath: (ctx) => oath.update(ctx),
     training: (ctx) => training.update(ctx),
     technique: (ctx) => technique.update(ctx),
+    challenge: (ctx) => challenge.update(ctx), // [W3-CHALLENGE]
   };
 
   function update(viewModel) {

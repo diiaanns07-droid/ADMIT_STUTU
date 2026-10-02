@@ -35,6 +35,8 @@ import { feelOfEvents, FEEL_TIME } from './core/gameFeel.js';     // [FEEL] ос
 import { createCueTracker } from './modules/sfx.js';    // [SFX] «✓ Распознано» и «ОШИБКА» на обучении и в бою
 import { createCoachOverlay } from './core/coachOverlay.js'; // [ТВИСТ «ОШИБКА»] подсветка ошибки на превью камеры
 import { createTechniqueTrainer } from './modules/techniqueTrainer.js'; // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
+import { CHALLENGE, createChallengeBrain, createChallengeSession, createChallengeHud, createTally, createHall, buildResult } from './modules/challenge.js'; // [W3-CHALLENGE]
+import { createPosterCanvas, posterBlob, downloadPoster, posterFileName, skeletonFromVision, demoSkeleton } from './modules/posterCard.js'; // [W3-CHALLENGE] постер
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
 
@@ -133,6 +135,8 @@ const UNCAPPED = PERF_Q.get('uncapped') === '1';
 const DEMO = PERF_Q.has('demo') && PERF_Q.get('demo') !== '0';
 const CLASSIC = PERF_Q.get('classic') === '1' && !DEMO;
 const QUICK = !CLASSIC;
+// [W3-CHALLENGE] ?challenge — сразу «Испытание · 60 с» (камера → 3-2-1 → минута боя → итоги); ?reset-hall — очистить зал славы дня
+const CHALLENGE_Q = PERF_Q.has('challenge') && PERF_Q.get('challenge') !== '0';
 let perfTuner = null;
 try {
   perfTuner = createPerfTuner({ renderer });
@@ -180,6 +184,20 @@ const app = {
   gate: { ok: true, reason: '', since: 0, flashUntil: 0 }, // причина недоступности «В бой»/«Продолжить» для кнопок UI
   outroAt: 0,                // [FEEL] performance.now() исхода боя: экран итогов — после замедленного финала
 };
+// [W3-CHALLENGE] «Испытание · 60 с»: фазы попытки, подсчёт очков (в каждом бою — для постера), зал славы дня,
+// кадр боя и линии скелета в момент последнего удара. Логика — modules/challenge.js, функции — блок ниже.
+const chal = {
+  session: createChallengeSession(),
+  tally: createTally(),
+  hall: (() => { try { return createHall(window.localStorage); } catch (e) { return createHall(null); } })(),
+  hallView: { list: [], best: null },
+  hud: null,
+  result: null,              // итог попытки (экран «Время вышло», зал, постер)
+  posterUrl: '',
+  shot: { canvas: null, want: false, at: 0, has: false },
+  skeleton: null,
+  hudAt: 0, live: { score: 0, rank: 'D' },
+};
 
 // [ASHEN_V2] мир создаётся первым: его раскладка (коллайдеры, земля, арена, старт) нужна бою и камере.
 const world = make('world.js', () => createWorld({ THREE, scene, renderer, camera, config }));
@@ -194,7 +212,7 @@ try {
 // [HERO] витрина героя в меню: кинематографичный свет и облёт (modules/heroShowcase.js); ошибка — прежняя камера меню
 let heroShowcase = null;
 if (heroModel && world && world.hero) import('./modules/heroShowcase.js').then((m) => { try { heroShowcase = m.createHeroShowcase({ THREE, scene, heroRoot: world.hero.root, heroModel, getPostfx: () => postfx, settings, dom: canvas }); } catch (e) { console.warn('[HERO] витрина', e); } }).catch((e) => console.warn('[HERO] heroShowcase.js', e && e.message));
-const bossBrain = make('boss.js', () => createBossBrain(config));
+const bossBrain = make('boss.js', () => createChallengeBrain(createBossBrain, config)); // [W3-CHALLENGE] в испытании — фиксированный seed
 const combat = make('combat.js', () => createCombat({ config, bossBrain, layout: worldLayout }));
 const effects = make('effects.js', () => createEffects({ THREE, scene, camera, renderer, config }));
 // [VFX] эффекты V6 крепятся к рукам героя (C5 heroModel.getAnchors → world.getAnchors) и к рельефу карты
@@ -253,7 +271,7 @@ function simSquatFrame(now, dt) {
 }
 function applyUpgrades() {
   if (typeof combat.setUpgrades !== 'function') return;
-  try { combat.setUpgrades(progression.mods()); } catch (e) { console.warn('[ASHEN] setUpgrades', e); }
+  try { combat.setUpgrades(chal.session.active ? {} : progression.mods()); } catch (e) { console.warn('[ASHEN] setUpgrades', e); } // [W3-CHALLENGE] в испытании — без улучшений
 }
 applyUpgrades();
 progression.onChange((why) => { if (why === 'buy' || why === 'reset') applyUpgrades(); });
@@ -292,6 +310,7 @@ function forestZoneEvents(events, snap) {
 function applyStartZone() {
   if (typeof combat.setSpawn !== 'function' || !worldLayout || !worldLayout.spawns) return;
   if (app.netInfo && app.netInfo.spawn) { combat.setSpawn(app.netInfo.spawn); return; } // [NET] дуэль по сети: своя точка поляны
+  if (chal.session.active) { combat.setSpawn(edgeSpawn()); return; }   // [W3-CHALLENGE] испытание — всегда у края арены
   if (settings.startZone === 'edge') { combat.setSpawn(edgeSpawn()); return; }   // [ONBOARD] сразу у края арены
   combat.setSpawn(settings.startZone === 'forest' ? worldLayout.spawns.forest : null);
 }
@@ -422,7 +441,7 @@ function setScreen(screen) {
 
 function resetFight() {
   applyStartZone();            // [FOREST] место старта
-  if (typeof combat.setDifficulty === 'function') { try { combat.setDifficulty(settings.difficulty); } catch (e) { console.warn('[FEEL] сложность', e); } } // [FEEL] HP и урон Регента
+  if (typeof combat.setDifficulty === 'function') { try { combat.setDifficulty(chal.session.active ? CHALLENGE.difficulty : settings.difficulty); } catch (e) { console.warn('[FEEL] сложность', e); } } // [FEEL] HP и урон Регента
   combat.reset();              // сбрасывает и bossBrain
   world.reset();
   effects.reset();
@@ -452,12 +471,14 @@ function rigState(snap, impulse) {
 
 function startFight() {
   if (pvpCtl && pvpCtl.active && pvpCtl.inMatch) { app.introShown = true; setScreen('playing'); return; } // [PVP] матч идёт: вернуться в бой без сброса
+  challengePrepare();          // [W3-CHALLENGE] seed Регента, сложность, улучшения — до сброса боя
   resetFight();
   battleHud.reset();
   resetCoach();
   app.resumableFight = false;
   app.resumeAt = 0;
   effects.setVolume(gameVolume());
+  if (challengeStart()) return; // [W3-CHALLENGE] испытание — без облёта, отсчёт 3-2-1
   if (!app.introShown && settings.startZone !== 'forest') {   // [FOREST] облёт интро — только у арены
     app.introShown = true;
     // [ONBOARD] облёт 1,8 с (было 5 с): первый удар успевает за 3 с после «В бой»; любая клавиша, клик или жест — пропустить
@@ -530,7 +551,7 @@ function leaveCamera() {
     app.pauseReason = why; setScreen('paused'); app.pauseReason = why;
     return;
   }
-  if (DEMO || (pvpCtl && pvpCtl.active && pvpCtl.inMatch)) { startFight(); return; }   // [PVP] дуэль уже идёт — обратно в бой
+  if (DEMO || chal.session.phase === 'armed' || (pvpCtl && pvpCtl.active && pvpCtl.inMatch)) { startFight(); return; }   // [W3-CHALLENGE] испытание — без обучения   // [PVP] дуэль уже идёт — обратно в бой
   setScreen('tutorial');
 }
 
@@ -710,13 +731,14 @@ const callbacks = {
       return;
     }
     if (from === 'camera') {
-      if (arg.debug && app.debug) { setScreen('tutorial'); return; }
+      if (arg.debug && app.debug) { if (chal.session.phase === 'armed') startFight(); else setScreen('tutorial'); return; } // [W3-CHALLENGE]
       if (QUICK && trackingReady()) { leaveCamera(); return; }   // [ONBOARD] калибровка уже есть — дальше
       setScreen('calibration');
       return;
     }
     if (from === 'calibration') {
       if (app.resumableFight) { const why = app.resumableReason === 'user' ? 'user' : 'tracking'; app.resumableFight = false; app.resumableReason = null; app.pauseReason = why; setScreen('paused'); return; }
+      if (chal.session.phase === 'armed') { startFight(); return; } // [W3-CHALLENGE]
       setScreen('tutorial');
       return;
     }
@@ -821,6 +843,7 @@ const callbacks = {
 
   onExit() {
     if (pvpCtl && pvpCtl.active) pvpCtl.stop();   // [PVP] выход из дуэли: бой возвращается к Регенту
+    challengeExit();                      // [W3-CHALLENGE] обычный бой: случайный seed, улучшения клятвы
     app.nav = [];
     app.resumableFight = false;
     app.introShown = false;
@@ -972,6 +995,167 @@ import('./modules/pvp.js').then((m) => {
   } catch (e) { console.warn('[ASHEN] pvp недоступен:', e); pvpCtl = null; }
 }).catch((e) => console.warn('[ASHEN] modules/pvp.js не загружен:', e && e.message));
 
+// ---------------------------------------------------------------- [W3-CHALLENGE] «Испытание · 60 с»
+// Одна и та же минута для каждого члена жюри: фиксированный seed Регента (порядок атак), «Лёгкая» сложность,
+// без улучшений «Клятвы героя», старт у края арены, без облёта — отсчёт 3-2-1. Очки и ранг — modules/challenge.js,
+// зал славы дня — localStorage этого ноутбука, постер — modules/posterCard.js (кадр боя и линии скелета в момент
+// последнего удара; видео камеры не сохраняется). Подсчёт очков идёт в каждом бою: постер есть и после обычного.
+try { chal.hud = createChallengeHud({ root: uiRoot }); } catch (e) { console.warn('[W3-CHALLENGE] таймер', e); chal.hud = null; }
+function refreshHall() { chal.hallView = { list: chal.hall.list(), best: chal.hall.best() }; }
+refreshHall();
+if (PERF_Q.has('reset-hall')) {
+  chal.hall.clear(); refreshHall();
+  try { const u = new URL(location.href); u.searchParams.delete('reset-hall'); history.replaceState(null, '', u.href); } catch (e) { /* адрес останется прежним */ }
+  setTimeout(() => flashRecNote('Зал славы дня очищен — можно начинать финал'), 400);
+}
+// новая попытка или обычный бой: до resetFight (он читает сложность и место старта, combat.reset — мозг Регента)
+function challengePrepare() {
+  const on = chal.session.active && !(pvpCtl && pvpCtl.active);
+  if (on) chal.session.arm(); else chal.session.disarm();
+  try { bossBrain.useChallenge(on); } catch (e) { console.warn('[W3-CHALLENGE] seed', e); }
+  applyUpgrades();
+  chal.result = null; chal.skeleton = null; chal.shot.has = false; chal.shot.want = false; chal.shot.at = 0;
+  setPosterUrl('');
+}
+// бой сброшен: подсчёт с нуля; в испытании — сразу на арену и отсчёт 3-2-1 (true — облёт не нужен)
+function challengeStart() {
+  chal.tally.reset(lastSnapshot);
+  if (!chal.session.active) return false;
+  app.introShown = true;
+  chal.session.begin(performance.now(), lastSnapshot);
+  chal.live = { score: 0, rank: 'D' };
+  setScreen('playing');
+  return true;
+}
+function challengeExit() {
+  if (!chal.session.active) return;
+  chal.session.disarm();
+  try { bossBrain.useChallenge(false); } catch (e) { /* ignore */ }
+  applyUpgrades();
+}
+function challengeResult(kind) {
+  const hero = HEROES[settings.hero] || {};
+  return buildResult({
+    tally: chal.tally, snap: lastSnapshot, coach: coachEnd || coachStats.summary(), session: kind === 'challenge' ? chal.session : null, kind,
+    mode: app.debug ? 'debug' : settings.gestureMode, hero: settings.hero, heroName: hero.name || '',
+  });
+}
+// конец попытки: итог → зал славы дня (имя впишут на экране итогов) → постер
+function finishChallenge() {
+  finishCoach();
+  const r = challengeResult('challenge');
+  const h = chal.hall.add({ ...r, name: '' });
+  chal.result = { ...r, place: h.place, total: h.total, isRecord: h.isRecord, entryId: h.entry.id, name: '', named: false };
+  refreshHall();
+  buildPosterPreview();
+}
+// кадр боя: очки в каждом бою; в испытании — отсчёт, таймер, конец минуты
+function challengeFrame(now, events) {
+  if (chal.tally.add(events, lastSnapshot.time)) noteHitMoment(now);
+  if (!chal.session.active || (pvpCtl && pvpCtl.active)) return;
+  const done = lastSnapshot.status === 'victory' || lastSnapshot.status === 'defeat';
+  if (done && chal.session.end(lastSnapshot.status, lastSnapshot)) { finishChallenge(); return; }   // итоги — после замедленного финала
+  const sig = chal.session.frame(now, lastSnapshot);
+  if (sig === 'tick') cue('ui_ok');
+  else if (sig === 'go') cue('perfect');
+  else if (sig === 'timeup') { app.outroAt = now; cue('boss_phase'); finishChallenge(); }   // outroAt: бой окончен — без паузы и подсчёта жестов
+  else if (sig === 'show') { app.outroAt = 0; setScreen(challengeRoute(false)); }
+}
+// куда после финала боя: итоги испытания (с фанфарами рекорда) или обычные «Победа» / «Поражение»
+function challengeRoute(win) {
+  if (chal.session.active && chal.session.phase === 'done' && chal.result) {
+    if (chal.result.isRecord) {
+      cue('victory');
+      if (chal.hud) { try { chal.hud.celebrate({ reducedMotion: !!settings.reducedMotion }); } catch (e) { /* не критично */ } }
+    }
+    return 'challenge';
+  }
+  return win ? 'victory' : 'defeat';
+}
+// крупный таймер и живые очки над боем (очки пересчитываются 8 раз в секунду)
+function challengeHud(now) {
+  if (!chal.hud) return;
+  const ph = chal.session.phase;
+  const show = app.screen === 'playing' && (ph === 'countdown' || ph === 'running' || ph === 'timeup' || (ph === 'done' && !!app.outroAt));
+  if (show && ph === 'running' && now - chal.hudAt > 120) {
+    chal.hudAt = now;
+    const r = challengeResult('challenge');
+    chal.live = { score: r.score, rank: r.rank };
+  } else if (chal.result && (ph === 'timeup' || ph === 'done')) chal.live = { score: chal.result.score, rank: chal.result.rank };
+  const hint = app.debug ? 'J — снаряды · K — щит · L — выброс · пробел — рывок' : '«OK» правой — снаряды · толкни ладонь к камере — щит · кулак → ладонь — выброс';
+  try { chal.hud.update({ show, ...chal.session.view(now), outcome: chal.session.outcome, score: chal.live.score, rank: chal.live.rank, hint }); } catch (e) { console.warn('[W3-CHALLENGE] таймер', e); chal.hud = null; }
+}
+// момент попадания по Регенту: линии скелета (точки позы и кистей, не видео) и кадр боя — не чаще раза в 0,6 с
+function noteHitMoment(now) {
+  if (!app.debug && vision) { try { const sk = skeletonFromVision(vision.getPose(), vision.getHands()); if (sk) chal.skeleton = sk; } catch (e) { /* без скелета */ } }
+  if (now - chal.shot.at >= 600) { chal.shot.at = now; chal.shot.want = true; }
+}
+function grabShot() {
+  chal.shot.want = false;
+  try {
+    const W = 760, H = Math.max(1, Math.round(W * viewH() / Math.max(1, viewW())));
+    const c = chal.shot.canvas || (chal.shot.canvas = document.createElement('canvas'));
+    if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+    c.getContext('2d').drawImage(canvas, 0, 0, W, H);
+    chal.shot.has = true;
+  } catch (e) { chal.shot.has = false; }
+}
+function posterData() {
+  const r = chal.result || challengeResult('fight');
+  const hero = HEROES[settings.hero] || {};
+  return {
+    ...r, heroName: hero.name || '', heroCls: [hero.cls, hero.element].filter(Boolean).join(' · '),
+    art: chal.shot.has ? chal.shot.canvas : null,
+    skeleton: chal.skeleton || (app.debug ? demoSkeleton() : null),   // в отладке с клавиатуры — поза-образец
+    date: Date.now(),
+  };
+}
+function setPosterUrl(url) {
+  if (chal.posterUrl) { try { URL.revokeObjectURL(chal.posterUrl); } catch (e) { /* ignore */ } }
+  chal.posterUrl = url || '';
+}
+// превью постера на экране итогов испытания
+let posterSeq = 0;
+function buildPosterPreview() {
+  const seq = ++posterSeq;
+  try {
+    const c = createPosterCanvas(document, posterData());
+    posterBlob(c).then((b) => { if (seq === posterSeq && chal.result) { setPosterUrl(URL.createObjectURL(b)); renderUI(); } }).catch((e) => console.warn('[W3-CHALLENGE] постер', e));
+  } catch (e) { console.warn('[W3-CHALLENGE] постер', e); }
+}
+Object.assign(callbacks, {
+  // «Испытание · 60 с» из меню, с экрана итогов («Ещё раз») или по ?challenge
+  onChallenge() {
+    unlockAudio();
+    if (pvpCtl && pvpCtl.active) return;
+    chal.session.arm();
+    if (app.debug || trackingReady()) { startFight(); return; }   // камера уже откалибрована (повтор) или клавиатура
+    setScreen('camera');                                           // дальше сами: камера, калибровка, сразу бой (без обучения)
+    if (QUICK) { app.onb.autoEnabled = true; enableCamera(); }
+  },
+  onChallengeName(arg) {
+    const id = arg && arg.id, name = arg && arg.name;
+    if (!chal.result || chal.result.entryId !== id || !chal.hall.rename(id, name)) return;
+    const e = chal.hall.all().find((x) => x.id === id);
+    chal.result = { ...chal.result, name: e ? e.name : '', named: true, place: chal.hall.placeOf(id) || chal.result.place };
+    refreshHall();
+    cue('ui_ok');
+    buildPosterPreview();   // имя — и на постере
+    renderUI();
+  },
+  // «Сохранить картинку» (испытание) и «Сохранить постер» (обычный бой): PNG 1200×630
+  onPosterSave() {
+    const data = posterData();
+    let c;
+    try { c = createPosterCanvas(document, data); } catch (e) { console.warn('[W3-CHALLENGE] постер', e); flashRecNote('Постер не получился — попробуйте ещё раз'); return; }
+    return posterBlob(c).then((b) => {
+      const name = posterFileName(data);
+      downloadPoster(document, b, name);
+      flashRecNote(`Постер сохранён: ${name}`);
+    }).catch((e) => { console.warn('[W3-CHALLENGE] постер', e); flashRecNote('Постер не сохранился — браузер не дал создать файл'); });
+  },
+});
+
 const _proj = new THREE.Vector3();
 function projectToScreen(p) {
   _proj.set(p.x, p.y, p.z).project(camera);
@@ -1100,6 +1284,7 @@ function renderUI() {
     training: app.screen === 'training' ? trainingView() : null,
     technique: app.screen === 'technique' ? techView : null,
     coach: app.screen === 'victory' || app.screen === 'defeat' ? (coachEnd || coachStats.summary()) : null, // [ТВИСТ «ОШИБКА»] итог, сравнение с прошлым боем
+    challenge: { result: app.screen === 'challenge' ? chal.result : null, hall: chal.hallView.list, best: chal.hallView.best, posterUrl: chal.posterUrl }, // [W3-CHALLENGE]
     // [ONBOARD] причина на кнопках «В бой»/«Продолжить бой»; отсчёт автопродолжения; калибровка из сохранения
     gate: { ok: app.gate.ok, reason: app.gate.reason },
     autoResumeMs: app.autoResume ? Math.max(0, app.autoResume.at - performance.now()) : null,
@@ -1292,7 +1477,7 @@ function precompileTick() {
   if (hk !== precomp.heroKey) { precomp.heroKey = hk; if (heroModel && heroModel.ready) schedulePrecompile('герой'); }
   if (!precomp.fight && app.screen === 'playing') { precomp.fight = true; schedulePrecompile('бой'); }
 }
-const CALM_SCREENS = new Set(['menu', 'paused', 'camera', 'calibration', 'tutorial', 'oath', 'training', 'technique', 'victory', 'defeat']);
+const CALM_SCREENS = new Set(['menu', 'paused', 'camera', 'calibration', 'tutorial', 'oath', 'training', 'technique', 'victory', 'defeat', 'challenge']); // [W3-CHALLENGE] + challenge
 let perfHud = null;
 try { perfHud = createPerfHud({ root: document.body }); } catch (e) { console.warn('[PERF] панель', e); }
 if (perfTuner) perfTuner.onChange((why, st) => {
@@ -1352,6 +1537,7 @@ function frame(now) {
       } else app.lostTime = 0;
     }
     if (now < app.resumeAt) frozen = true;
+    if (chal.session.frozen(now)) frozen = true;   // [W3-CHALLENGE] 3-2-1 и «ВРЕМЯ ВЫШЛО»
     if (app.screen === 'playing' && !frozen && !app.outroAt) trackCoach(input);   // [FEEL] после исхода жесты не считаются
     if (app.screen === 'playing' && dt > 0 && !frozen) {
       // [ASHEN_V2] стик — в осях камеры: «вперёд на стике» = «вперёд на экране»
@@ -1371,6 +1557,7 @@ function frame(now) {
     lastSnapshot = combat.getSnapshot();
     events = checkEmbers(lastSnapshot, events);
     events = forestZoneEvents(events, lastSnapshot);   // [FOREST]
+    challengeFrame(now, events);                       // [W3-CHALLENGE] очки, таймер, момент удара
     if (lastSnapshot.status === 'victory' || lastSnapshot.status === 'defeat') finishCoach();   // [ТВИСТ «ОШИБКА»] итог — в историю (один раз; жесты финала уже не считаются)
     if (lastSnapshot.status === 'victory' || lastSnapshot.status === 'defeat') {
       // [FEEL] экран итогов — после замедленного финала (в дуэли и при «Уменьшенном движении» — короче)
@@ -1380,7 +1567,7 @@ function frame(now) {
         app.outroAt = now;
         if (hold > 0) { timeFx.slowUntil = now + hold; timeFx.slowMs = hold; timeFx.slowScale = win ? OUTRO.victoryScale : OUTRO.defeatScale; }
       }
-      if (now - app.outroAt >= hold) { app.outroAt = 0; setScreen(win ? 'victory' : 'defeat'); }
+      if (now - app.outroAt >= hold) { app.outroAt = 0; setScreen(challengeRoute(win)); }   // [W3-CHALLENGE] испытание → свои итоги
     }
   }
 
@@ -1494,7 +1681,9 @@ function frame(now) {
   if (postfx && postfx.enabled) { try { postfx.render(dtReal); rendered = true; } catch (e) { console.warn('[ASHEN] postfx.render', e); postfx = null; } }
   if (!rendered) renderer.render(scene, camera);
   if (perfTuner) perfTuner.gpuEnd();
+  if (chal.shot.want) grabShot();   // [W3-CHALLENGE] кадр боя в момент удара (до показа буфера)
   renderUI();
+  challengeHud(now);                // [W3-CHALLENGE] таймер и очки над боем
   drawTracking(now, input);
   battleHud.frame({
     dtReal, timeScale: ts, screen: app.screen, snapshot: lastSnapshot, events, input: app.debug ? null : input,
@@ -1524,7 +1713,8 @@ applySettings();
 resize();
 if (settings.startZone !== 'arena') { try { resetFight(); } catch (e) { console.warn('[ASHEN] startZone', e); } }   // [FOREST] в меню герой у врат леса; [ONBOARD] у края арены
 // [ONBOARD] ?demo — живая презентация: без меню сразу экран камеры (камера и калибровка — сами), затем бой
-if (DEMO) { setScreen('camera'); app.onb.autoEnabled = true; enableCamera(); }
+if (DEMO && !CHALLENGE_Q) { setScreen('camera'); app.onb.autoEnabled = true; enableCamera(); }
+if (CHALLENGE_Q) callbacks.onChallenge({ from: 'url' });   // [W3-CHALLENGE] ?challenge — сразу испытание
 renderUI();
 requestAnimationFrame(frame);
 boot.done();
@@ -1564,6 +1754,8 @@ window.__ASHEN__ = Object.freeze({
   squats: () => squats.getDebug(),
   technique: () => (techView ? JSON.parse(JSON.stringify({ ...techView, synthHands: null, synthPose: null, focus: techView.focus ? { ...techView.focus, pictogram: !!techView.focus.pictogram } : null })) : null), // [ТВИСТ «ОШИБКА»] QA тренажёра
   pvp: () => (pvpCtl ? pvpCtl.debug() : null),   // [PVP] QA: фаза, счёт, статистика дуэли
+  challenge: () => ({ phase: chal.session.phase, left: chal.session.timeLeft(), live: { ...chal.live }, seed: bossBrain.challenge, result: chal.result ? JSON.parse(JSON.stringify(chal.result)) : null, hall: chal.hallView.list.map((e) => ({ ...e })), poster: !!chal.posterUrl, shot: chal.shot.has, skeleton: !!chal.skeleton }), // [W3-CHALLENGE] QA
+  challengeFinish: () => { chal.session.finishNow(performance.now()); return chal.session.phase; }, // [W3-CHALLENGE] QA: конец минуты сейчас (в headless бой идёт ~1 кадр/с)
   zoneMood: (m) => { try { world.atmosphere.setZoneMood(m); return true; } catch (e) { return false; } }, // [BDO] QA: настроение зоны
   heroMax: () => { const c = typeof combat.getEffectiveConfig === 'function' ? combat.getEffectiveConfig() : null; return c ? { hp: c.player.maxHp, energy: c.player.maxEnergy } : null; },
   embers: () => (worldLayout && Array.isArray(worldLayout.pois) ? worldLayout.pois.map((q) => ({ id: q.id, x: q.x, z: q.z, lit: progression.isEmberLit(q.id) })) : []),
