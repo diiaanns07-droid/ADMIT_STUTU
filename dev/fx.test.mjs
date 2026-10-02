@@ -93,7 +93,7 @@ await fx.v6.ready;
 const loaded = fx.v6.stats().loaded;
 ok(loaded.failed.length === 0, 'все модули V6 загружены, сбой: ' + loaded.failed.join(','));
 ok(loaded.subsystems.length === 6, 'подсистем 6: ' + loaded.subsystems.join(','));
-ok(loaded.choreo.length === 8, 'хореографий 8');
+ok(loaded.choreo.length === 13, 'хореографий 13: ' + loaded.choreo.length);
 
 // ---------------------------------------------------------------- 2. все события: свои и соперника
 const inputs = [null, { valid: true, hands: { drawing: true, trail: [{ x: 0.6, y: 0.3 }, { x: 0.7, y: 0.5 }, { x: 0.55, y: 0.5 }], right: { shape: 'point' } },

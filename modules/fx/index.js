@@ -22,8 +22,14 @@ const SUBSYSTEMS = [
   ['shock', './shock.js', 'createShock'],
   ['hex', './shieldHex.js', 'createHexShield'],
 ];
-// Хореографии (порядок = приоритет обработчиков).
+// Хореографии (порядок = приоритет обработчиков). Слои-«добавки» (возвращают не true) — раньше тех, кто рисует событие целиком.
+// [W3-МАГИЯ] магии ладонями: заряд между ладонями, «Врата бури», «Столп небес»; ядро/ореол/свет снарядов и сочные попадания.
 const CHOREO = [
+  './sigilCharge.js',
+  './sigilGate.js',
+  './sigilPillar.js',
+  './castFx.js',
+  './hitFx.js',
   './handMagic.js',
   './runesFire.js',
   './runesLight.js',
@@ -48,6 +54,7 @@ export function createFxV6(deps) {
   const handlers = new Map(); // type → [{fn, filter, src}]
   const everies = [];
   const clearers = [];
+  const disposers = [];
   const suppressedKeys = new Set();
   const warned = new Set();
   const loaded = { subsystems: [], choreo: [], failed: [] };
@@ -76,6 +83,11 @@ export function createFxV6(deps) {
     every(fn) { if (typeof fn === 'function') everies.push({ fn, src: fx._src || '?' }); },
     // сброс боя (effects.reset / перезапуск combat): хореография обнуляет свои долгие состояния
     onClear(fn) { if (typeof fn === 'function') clearers.push({ fn, src: fx._src || '?' }); },
+    // [W3-МАГИЯ] dispose слоя: хореография освобождает свои меши/материалы/геометрии
+    onDispose(fn) { if (typeof fn === 'function') disposers.push({ fn, src: fx._src || '?' }); },
+    // общее состояние хореографий (заряд печати → выпуск врат/столпа) и QA-подмена снимка (стенд, видео)
+    shared: {},
+    qa: { charge: null },
     suppress(key) { suppressedKeys.add(key); },
     // PvP: событие соперника (data.remote) рисуется теми же эффектами в его цвете
     rival: (d) => (d && d.remote ? 1 : 0),
@@ -203,7 +215,11 @@ export function createFxV6(deps) {
       for (let i = 0; i < clearers.length; i++) { try { clearers[i].fn(fx); } catch (e) { warn('clear:' + clearers[i].src, e); } }
       kit.clear(); each('clear');
     },
-    dispose() { each('dispose'); kit.dispose(); },
+    dispose() {
+      for (let i = 0; i < disposers.length; i++) { try { disposers[i].fn(fx); } catch (e) { warn('dispose:' + disposers[i].src, e); } }
+      disposers.length = 0;
+      each('dispose'); kit.dispose();
+    },
     stats() {
       const sub = {};
       for (const k of ['glyph', 'bolts', 'trails', 'decals', 'shock', 'hex']) { const s = fx[k]; if (s && typeof s.stats === 'function') { try { sub[k] = s.stats(); } catch (e) { sub[k] = null; } } }
