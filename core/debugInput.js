@@ -62,6 +62,7 @@ export function createDebugInput(target = window) {
     if (!enabled || isTyping(e)) return;
     const code = e.code;
     if (!KEYS.includes(code)) return;
+    if (code === 'KeyP' && e.shiftKey) return;   // [ПРОЕКТОР] Shift+P — режим презентации (modules/ui.js), не «призма»
     if (code === 'Space' && e.target && e.target.tagName === 'BUTTON') return; // пробел на кнопке — это нажатие кнопки
     e.preventDefault();
     if (e.repeat) return;              // подавление автоповтора

@@ -604,6 +604,100 @@ function normCosts(c) {
   return out;
 }
 
+/* ------------------------------------------------- [ПРОЕКТОР] распознанные жесты
+ * Для подписей под превью камеры, шпаргалки и режима презентации: что именно распознала игра
+ * у каждой руки. Поля берутся из сырого InputFrame (vision.read + handZone.apply в main.js);
+ * normInput выше их не пропускает, и его потребители (обучение, пауза) не меняются. */
+
+const RUNE_RU = { ignis: 'ИГНИС ▲', fulgur: 'ФУЛЬГУР ϟ', orbis: 'ОРБИС ○', stella: 'СТЕЛЛА ★', spira: 'СПИРА @', lemnis: 'ЛЕМНИСКА ∞', caret: 'АКУС ^', vee: 'МЕССИС V', clepsydra: 'КЛЕПСИДРА ⧗', alpha: 'АЛЬФА ℓ' };
+const SIGIL_RU = { clap: 'ХЛОПОК', gate: 'ВРАТА', frame: 'РАМКА', delta: 'ДЕЛЬТА', cor: 'СЕРДЦЕ' };
+const SHAPE_RU = { pinch: 'ЩЕПОТЬ', point: 'УКАЗАТЕЛЬНЫЙ', fist: 'КУЛАК', open: 'ЛАДОНЬ', victory: 'V', unknown: 'В КАДРЕ' };
+const READ_ERR_MS = 4200;      // «ОШИБКА» держится столько же, сколько карточка подсказки battleHud
+const CHEAT_KEY = 'ashen-oath.cheat.v1';
+
+function normGestures(v) {
+  if (!v || typeof v !== 'object') return null;
+  const debug = v.source === 'debug';
+  if (v.valid !== true) return debug ? { source: 'debug', empty: true } : null;
+  const H = v.hands && typeof v.hands === 'object' ? v.hands : null;
+  const hand = (h) => (h && typeof h === 'object' && typeof h.shape === 'string'
+    ? { shape: SHAPE_RU[h.shape] ? h.shape : 'unknown', palm: typeof h.palmFacing === 'string' ? h.palmFacing : '', charge: clamp(num(h.charge), 0, 1) }
+    : null);
+  const st = v.stick && typeof v.stick === 'object' ? v.stick : null;
+  const bow = v.bow && typeof v.bow === 'object' ? v.bow : null;
+  const hs = v.handSpell && typeof v.handSpell === 'object' ? v.handSpell : null;
+  const dd = v.dashDir && typeof v.dashDir === 'object' && (num(v.dashDir.x) || num(v.dashDir.z)) ? { x: num(v.dashDir.x), z: num(v.dashDir.z) }
+    : num(v.dash) !== 0 ? { x: Math.sign(num(v.dash)), z: 0 } : null;
+  const hint = v.hint && typeof v.hint === 'object' && typeof v.hint.text === 'string' && v.hint.text
+    ? { code: String(v.hint.code || ''), gesture: String(v.hint.gesture || ''), text: v.hint.text.slice(0, 220), side: v.hint.side === 'left' || v.hint.side === 'right' ? v.hint.side : null, tMs: num(v.hint.tMs, 0) }
+    : null;
+  return {
+    source: debug ? 'debug' : 'cv',
+    available: !!(H && H.available),
+    left: hand(H && H.left),
+    right: hand(H && H.right),
+    drawing: !!(H && H.drawing),
+    attack: v.attack === true,
+    shield: v.shield === true,
+    burst: v.burst === true,
+    burstBoth: v.burstHand === 'both',
+    spark: v.spark === true,
+    slash: !!v.slash,
+    parry: v.parry === true,
+    sigil: typeof v.sigil === 'string' && v.sigil ? v.sigil : null,
+    rune: typeof v.rune === 'string' && v.rune ? v.rune : null,
+    dashDir: dd,
+    conjure: v.conjure && typeof v.conjure === 'object' ? (v.conjure.kind === 'prism' ? 'prism' : 'orb') : null,
+    thrown: !!(v.throw && typeof v.throw === 'object'),
+    stick: st ? {
+      mode: st.mode === 'steer' ? 'steer' : 'stick', engaged: st.engaged === true,
+      gait: st.gait === 'run' || st.gait === 'walk' ? st.gait : 'idle',
+      turn: clamp(num(st.turn, num(st.x)), -1, 1), x: clamp(num(st.x), -1, 1), z: clamp(num(st.z), -1, 1),
+    } : null,
+    moveX: clamp(num(v.moveX), -1, 1),
+    moveZ: clamp(num(v.moveZ), -1, 1),
+    charge: clamp(num(v.charge), 0, 1),
+    bowActive: !!(bow && bow.active),
+    bowDraw: bow ? clamp(num(bow.draw), 0, 1) : 0,
+    bowRelease: !!(bow && bow.release),
+    spell: !!(hs && (hs.phase === 'form' || hs.phase === 'hold')),
+    spellThrow: !!(hs && hs.phase === 'throw'),
+    hint,
+  };
+}
+
+/* Пиктограммы базовых жестов (36×36, контур currentColor). Рука — «прихватка»: ладонь + пальцы толстыми штрихами. */
+const SVG36 = 'viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"';
+const PALM = (dx = 0, dy = 0) =>
+  `<g transform="translate(${dx} ${dy})"><rect x="11" y="17" width="13" height="12" rx="4.2" fill="currentColor" fill-opacity=".2"/>` +
+  '<path d="M13 17.5V9.5M16.3 17V7.5M19.6 17V8.3M22.6 18V11.5" stroke-width="2.8"/><path d="M11.3 22.5 8.2 18.8" stroke-width="2.8"/></g>';
+const FIST = (dx = 0, dy = 0) =>
+  `<g transform="translate(${dx} ${dy})"><rect x="10.5" y="13" width="15" height="14" rx="4.8" fill="currentColor" fill-opacity=".2"/>` +
+  '<path d="M14.3 13.4v4M18 13.4v4M21.7 13.4v4" stroke-width="1.4"/><path d="M10.8 21h6.4" stroke-width="2.4"/></g>';
+const GESTURE_ICONS = {
+  // ход «рулём»: ладонь у груди, дуга-руль над ней
+  move: `<svg ${SVG36}>${PALM(0, 4)}<path d="M8 8.5q10-6.5 20 0" /><path d="M8 8.5l.4-3.4M8 8.5l3.3.6M28 8.5l-.4-3.4M28 8.5l-3.3.6"/></svg>`,
+  // щит: ладонь толкается к камере — волны впереди
+  shield: `<svg ${SVG36}>${PALM(-3, 1)}<path d="M26.5 12c2.2 3.6 2.2 8.4 0 12M30 9c3.4 5.4 3.4 12.6 0 18"/></svg>`,
+  // рывок: ладонь и линии скорости
+  dash: `<svg ${SVG36}>${PALM(4, 1)}<path d="M3 15h6M2 20h7M3.5 25h5"/></svg>`,
+  // «OK»: кольцо большого и указательного, три пальца вверх
+  bolt: `<svg ${SVG36}><circle cx="13" cy="16" r="4.4" stroke-width="2.4"/><path d="M18.5 18V8M21.8 18.5V9M25 19.5V11.5" stroke-width="2.8"/>` +
+    '<path d="M9.5 19.5c.4 5.6 3.8 9 8.6 9 4.6 0 7.6-3.2 7.6-7.6v-1.4" fill="currentColor" fill-opacity=".2"/><path d="M30 7l3-2M30.5 11.5h3.2" /></svg>',
+  // выброс: кулак → ладонь, лучи
+  burst: `<svg ${SVG36}>${PALM(0, 3)}<path d="M18 2.5v3.6M7 6.5l2.4 2.4M29 6.5l-2.4 2.4M3.5 15.5h3.4M29 15.5h3.4"/></svg>`,
+  // искра: из кулака выпрямлен указательный, у кончика — вспышка
+  spark: `<svg ${SVG36}>${FIST(0, 6)}<path d="M14.3 19.5V8.5" stroke-width="2.8"/><path d="M14.3 2.2v2.4M9.8 4.2l1.6 1.6M18.8 4.2l-1.6 1.6M8.6 8.4h2.2M17.8 8.4H20"/></svg>`,
+};
+const CHEAT_ITEMS = [
+  { key: 'move', side: 'left', name: 'Ход', how: 'левая ладонь у груди', howStick: 'левая рука — джойстик' },
+  { key: 'shield', side: 'left', name: 'Щит', how: 'толкни ладонь к камере' },
+  { key: 'dash', side: 'left', name: 'Рывок', how: 'резкий дёрг левой' },
+  { key: 'bolt', side: 'right', name: 'Снаряд', how: '«OK» правой' },
+  { key: 'burst', side: 'right', name: 'Выброс', how: 'кулак → резко ладонь' },
+  { key: 'spark', side: 'right', name: 'Искра', how: 'щелчок указательным' },
+];
+
 /* ------------------------------------------------------------ descriptions */
 
 function describeTracking(tr, cfg) {
@@ -838,6 +932,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     focusPending: false,
     errorKey: null,
     errorInfo: explainError(''),
+    // [ПРОЕКТОР] подписи жестов: защёлка импульсов по рукам, активная «ОШИБКА», когда сработал жест шпаргалки
+    read: { left: null, right: null, err: null, errKey: '', fired: {}, view: null },
+    cheatHidden: false,
+    present: false,
   };
 
   /* ---------------------------------------------------------- plumbing */
@@ -1369,6 +1467,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const oathPts = el('span', { class: 'ao-oathpts', hidden: true });
     const dbg = el('button', { type: 'button', class: 'ao-toggle', 'aria-pressed': 'false' }, el('span', { class: 'ao-toggle__track', 'aria-hidden': 'true' }), el('span', { class: 'ao-toggle__label', text: 'Отладка с клавиатуры' }));
     listen(dbg, 'click', () => invoke('onDebug', !state.debug));
+    // [ПРОЕКТОР] режим презентации для питча через проектор (то же, что клавиша P)
+    const presentBtn = el('button', { type: 'button', class: 'ao-toggle ao-toggle--present', 'aria-pressed': 'false', 'aria-keyshortcuts': 'P', 'data-ui-local': '' }, el('span', { class: 'ao-toggle__track', 'aria-hidden': 'true' }), el('span', { class: 'ao-toggle__label', text: 'Режим презентации · P' }));
+    listen(presentBtn, 'click', () => setPresent(!state.present));
     const dbgKeys = el('p', { class: 'ao-debugkeys', hidden: true, text: DEBUG_KEYS_TEXT });
     const title = el(
       'h1',
@@ -1386,7 +1487,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode'], 'menu')), // [НОВИЧОК] режим жестов — на виду
       buildHeroPick('menu'),
       el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3', text: 'Настройки' }), buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'difficulty', 'reducedMotion'], 'menu')),
-      el('div', { class: 'ao-menu__foot' }, dbg, dbgKeys),
+      el('div', { class: 'ao-menu__foot' }, el('div', { class: 'ao-menu__toggles' }, dbg, presentBtn), dbgKeys),
     );
     return {
       section: screenSection('menu', panel, hid),
@@ -1394,6 +1495,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       focus: () => start.node,
       update(ctx) {
         setAttr(dbg, 'aria-pressed', ctx.debug ? 'true' : 'false');
+        setAttr(presentBtn, 'aria-pressed', state.present ? 'true' : 'false');
         setHidden(dbgKeys, !ctx.debug);
         const pts = ctx.vm.progress && isNum(ctx.vm.progress.points) ? ctx.vm.progress.points : 0;
         setText(oathPts, pts > 0 ? `${pts} ${plural(pts, 'очко', 'очка', 'очков')}` : '');
@@ -1828,8 +1930,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           ready,
           coach,
           el('p', { class: 'ao-note', text: 'Остановить бой: кнопка «Пауза» в углу экрана или Esc. Если выйти из кадра, бой встанет на паузу сам.' }),
-          el('div', { class: 'ao-actions ao-actions--inline' }, start.node, recal.node, el('span', { class: 'ao-spacer' }), back.node),
         ),
+        // [ПРОЕКТОР] кнопки — отдельной колонкой справа, чтобы «В бой» не уходила под край на 1366×768
+        el('div', { class: 'ao-actions ao-actions--inline ao-tut-actions' }, start.node, recal.node, el('span', { class: 'ao-spacer' }), back.node),
       ),
     );
     const setChip = (c, st, text) => {
@@ -2767,6 +2870,174 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     };
   })();
 
+  /* ------------------------------------------- [ПРОЕКТОР] что распознала игра */
+
+  // Импульсы (рывок, выброс, искра…) живут один кадр — подпись держится IMPULSE_LATCH_MS.
+  function latchSide(side, text, now) { state.read[side] = { text, tone: 'fire', until: now + IMPULSE_LATCH_MS }; }
+  function liveLeft(g) {
+    if (!g || g.empty) return g && g.source === 'debug' ? { text: 'КЛАВИАТУРА', tone: 'off' } : { text: 'НЕ ВИДНА', tone: 'off' };
+    if (g.conjure) return { text: g.conjure === 'prism' ? 'ПРИЗМА' : 'СФЕРА', tone: 'go' };
+    if (g.bowActive) return { text: 'ЛУК', tone: 'go' };
+    if (g.shield) return { text: 'ЩИТ', tone: 'go' };
+    const st = g.stick;
+    if (st && st.engaged) {
+      const turn = st.mode === 'steer' ? st.turn : st.x;
+      const arrow = turn > 0.25 ? ' →' : turn < -0.25 ? ' ←' : '';
+      if (st.mode === 'stick') return { text: Math.hypot(st.x, st.z) > 0.15 ? `ХОД${arrow}` : 'ДЖОЙСТИК', tone: 'go' };
+      if (st.gait === 'run') return { text: `БЕГ${arrow}`, tone: 'go' };
+      if (st.gait === 'walk') return { text: `ХОД${arrow}`, tone: 'go' };
+      return { text: arrow ? `ПОВОРОТ${arrow}` : 'РУЛЬ', tone: 'go' };
+    }
+    if (g.source === 'debug' && (Math.abs(g.moveZ) > 0.15 || Math.abs(g.moveX) > 0.15)) return { text: Math.abs(g.moveX) > Math.abs(g.moveZ) ? (g.moveX > 0 ? 'ПОВОРОТ →' : 'ПОВОРОТ ←') : 'ХОД', tone: 'go' };
+    const h = g.left;
+    if (!h) return g.source === 'debug' ? { text: 'КЛАВИАТУРА', tone: 'off' } : { text: 'НЕ ВИДНА', tone: 'off' };
+    return { text: SHAPE_RU[h.shape] || 'В КАДРЕ', tone: 'idle' };
+  }
+  function liveRight(g) {
+    if (!g || g.empty) return g && g.source === 'debug' ? { text: 'КЛАВИАТУРА', tone: 'off' } : { text: 'НЕ ВИДНА', tone: 'off' };
+    if (g.conjure) return { text: g.conjure === 'prism' ? 'ПРИЗМА' : 'СФЕРА', tone: 'go' };
+    if (g.spell) return { text: 'МАГИЯ: СГУСТОК', tone: 'go' };
+    if (g.bowActive) return { text: g.bowDraw > 0.05 ? `ТЕТИВА ${Math.round(g.bowDraw * 100)}%` : 'ЛУК: ЩЕПОТЬ', tone: 'go' };
+    if (g.attack) return { text: 'OK → ВЫСТРЕЛ', tone: 'go' };
+    const h = g.right;
+    if (!h) return g.source === 'debug' ? { text: 'КЛАВИАТУРА', tone: 'off' } : { text: 'НЕ ВИДНА', tone: 'off' };
+    if (h.shape === 'fist') {
+      const c = Math.max(h.charge, g.charge);
+      return c > 0.05 ? { text: `КУЛАК · ЗАРЯД ${Math.round(c * 100)}%`, tone: c >= 0.3 ? 'go' : 'idle' } : { text: 'КУЛАК', tone: 'idle' };
+    }
+    if (g.drawing) return { text: 'РИСУЕТ РУНУ', tone: 'go' };
+    if (h.shape === 'pinch') return { text: 'OK', tone: 'idle' };
+    return { text: SHAPE_RU[h.shape] || 'В КАДРЕ', tone: 'idle' };
+  }
+  function computeReadout(ctx) {
+    const R = state.read;
+    const now = ctx.now;
+    const g = normGestures(ctx.vm && ctx.vm.input);
+    const fired = R.fired;
+    // подписи защёлкиваются на любом экране с превью (обучение — там жюри пробует жесты), шпаргалка — только в бою
+    const live = g && !g.empty && ctx.screen !== 'menu' && ctx.screen !== 'error';
+    const fight = live && ctx.screen === 'playing';
+    if (live) {
+      if (g.parry) { latchSide('left', 'ПАРИРОВАНИЕ', now); if (fight) fired.parry = now; }
+      if (g.dashDir) { latchSide('left', g.dashDir.x > 0.3 ? 'РЫВОК →' : g.dashDir.x < -0.3 ? 'РЫВОК ←' : 'РЫВОК', now); if (fight) fired.dash = now; }
+      if (g.burst) { latchSide('right', 'ВЫБРОС!', now); if (g.burstBoth) latchSide('left', 'ВЫБРОС!', now); if (fight) fired.burst = now; }
+      if (g.rune) latchSide('right', `РУНА ${RUNE_RU[g.rune] || g.rune.toUpperCase()}`, now);
+      if (g.spark) { latchSide('right', 'ИСКРА', now); if (fight) fired.spark = now; }
+      if (g.slash) latchSide('right', 'РАССЕЧЕНИЕ', now);
+      if (g.sigil) { const t = `ПЕЧАТЬ ${SIGIL_RU[g.sigil] || g.sigil.toUpperCase()}`; latchSide('left', t, now); latchSide('right', t, now); }
+      if (g.thrown) { latchSide('left', 'БРОСОК ЧАР', now); latchSide('right', 'БРОСОК ЧАР', now); }
+      if (g.bowRelease) latchSide('right', 'ВЫСТРЕЛ ИЗ ЛУКА', now);
+      if (g.spellThrow) latchSide('right', 'МАГИЯ: БРОСОК', now);
+    }
+    if (fight) {
+      if (g.attack) fired.bolt = now;
+      if (g.shield) fired.shield = now;
+      if ((g.stick && g.stick.engaged && (g.stick.gait !== 'idle' || Math.abs(g.stick.turn) > 0.25 || (g.stick.mode === 'stick' && Math.hypot(g.stick.x, g.stick.z) > 0.15)))
+        || (g.source === 'debug' && (Math.abs(g.moveZ) > 0.15 || Math.abs(g.moveX) > 0.15))) fired.move = now;
+    }
+    if (g && g.hint) {
+      const key = `${g.hint.code}|${g.hint.tMs}|${g.hint.text}`;
+      if (key !== R.errKey) { R.errKey = key; R.err = { ...g.hint, until: now + READ_ERR_MS }; }
+    }
+    if (['menu', 'error', 'victory', 'defeat', 'oath'].includes(ctx.screen)) R.err = null;
+    const pick = (side, liveText) => (R[side] && now < R[side].until ? R[side] : liveText(g));
+    const err = R.err && now < R.err.until ? R.err : null;
+    R.view = { left: pick('left', liveLeft), right: pick('right', liveRight), err, debug: ctx.debug };
+    return R.view;
+  }
+
+  // Подписи «ЛЕВАЯ: ЩИТ» / «ПРАВАЯ: OK → ВЫСТРЕЛ» и строка «ОШИБКА» — под превью в доке и в режиме презентации.
+  function readoutView(extraCls = '') {
+    const row = (side, label) => {
+      const v = el('span', { class: 'ao-gread__v' });
+      const node = el('p', { class: 'ao-gread__row', 'data-side': side, 'data-tone': 'off' }, el('span', { class: 'ao-gread__k', text: `${label}:` }), ' ', v);
+      return { node, v };
+    };
+    const L = row('left', 'ЛЕВАЯ');
+    const Rr = row('right', 'ПРАВАЯ');
+    const errHead = el('span', { class: 'ao-gread__errhead' });
+    const errText = el('span', { class: 'ao-gread__errtext' });
+    const err = el('p', { class: 'ao-gread__err', hidden: true }, errHead, ' ', errText);
+    const node = el('div', { class: `ao-gread ${extraCls}`.trim(), 'aria-hidden': 'true' }, L.node, Rr.node, err);
+    return {
+      node,
+      paint(r) {
+        if (!r) return;
+        setText(L.v, r.left.text);
+        setAttr(L.node, 'data-tone', r.err && r.err.side === 'left' ? 'err' : r.left.tone);
+        setText(Rr.v, r.right.text);
+        setAttr(Rr.node, 'data-tone', r.err && r.err.side === 'right' ? 'err' : r.right.tone);
+        setHidden(err, !r.err);
+        if (r.err) {
+          const side = r.err.side === 'left' ? ' · левая' : r.err.side === 'right' ? ' · правая' : '';
+          setText(errHead, `ОШИБКА · ${r.err.gesture || 'жест'}${side}`);
+          setText(errText, r.err.text);
+        }
+      },
+    };
+  }
+
+  // Шпаргалка боя: базовые жесты. Сработавший подсвечивается, на перезарядке и без энергии — тускнеет. Tab — скрыть.
+  function cheatSheet() {
+    const items = {};
+    const list = el('ul', { class: 'ao-cheat__list' });
+    for (const it of CHEAT_ITEMS) {
+      const how = el('span', { class: 'ao-cheat__how', text: it.how });
+      const time = el('span', { class: 'ao-cheat__time' });
+      const fill = el('span', { class: 'ao-cheat__cd', 'aria-hidden': 'true' });
+      const node = el(
+        'li',
+        { class: 'ao-cheat__item', 'data-key': it.key, 'data-side': it.side, 'data-state': 'ready' },
+        el('span', { class: 'ao-cheat__icon', 'aria-hidden': 'true', html: GESTURE_ICONS[it.key] }),
+        el('span', { class: 'ao-cheat__text' }, el('span', { class: 'ao-cheat__name', text: it.name }), how),
+        time,
+        fill,
+      );
+      items[it.key] = { node, how, time, fill, it, mode: 'steer' };
+      list.append(node);
+    }
+    const node = el(
+      'aside',
+      { class: 'ao-cheat', 'aria-label': 'Шпаргалка жестов' },
+      el('p', { class: 'ao-cheat__head' },
+        el('span', { class: 'ao-cheat__lg' }, el('span', { class: 'ao-cheat__sw', 'data-side': 'left' }), 'левая — движение'),
+        el('span', { class: 'ao-cheat__lg' }, el('span', { class: 'ao-cheat__sw', 'data-side': 'right' }), 'правая — магия')),
+      list,
+      el('p', { class: 'ao-cheat__foot', text: 'Tab — скрыть' }),
+    );
+    const pill = el('p', { class: 'ao-cheat-pill', hidden: true, text: 'Tab — шпаргалка жестов' });
+    const FIRE_MS = { move: 250, shield: 250, bolt: 250, dash: IMPULSE_LATCH_MS, burst: IMPULSE_LATCH_MS, spark: IMPULSE_LATCH_MS };
+    const CD = { dash: 'dash', burst: 'burst', spark: 'spark' };
+    return {
+      node,
+      pill,
+      paint(ctx, energy, alive) {
+        const hidden = state.cheatHidden;
+        setHidden(node, hidden);
+        setHidden(pill, !hidden);
+        if (hidden) return;
+        const fired = state.read.fired;
+        const cd = (ctx.snap && ctx.snap.cooldowns) || {};
+        const costs = cfg.abilityCosts;
+        const moveMode = ctx.settings && ctx.settings.moveMode === 'stick' ? 'stick' : 'steer';
+        for (const c of Object.values(items)) {
+          const k = c.it.key;
+          if (k === 'move' && c.mode !== moveMode) { c.mode = moveMode; setText(c.how, moveMode === 'stick' ? c.it.howStick : c.it.how); }
+          let st = 'ready', frac = 0, tt = '';
+          const rem = CD[k] ? Math.max(0, num(cd[`${CD[k]}Remaining`])) : 0;
+          const tot = CD[k] ? num(cd[`${CD[k]}Total`]) : 0;
+          if (!alive) st = 'off';
+          else if (ctx.now - num(fired[k], -1e9) < FIRE_MS[k]) st = 'active';
+          else if (rem > 0.05) { st = 'cooldown'; frac = tot > 0 ? clamp(rem / tot, 0, 1) : 0; tt = rem >= 1 ? `${Math.ceil(rem)} с` : ''; }
+          else if (isNum(costs[k]) && energy < costs[k]) { st = 'low'; tt = 'мало энергии'; }
+          setAttr(c.node, 'data-state', st);
+          setStyle(c.fill, 'transform', `scaleX(${(Math.round(frac * 100) / 100).toFixed(2)})`);
+          setText(c.time, tt);
+        }
+      },
+    };
+  }
+
   /* ----------------------------------------------------------------- HUD */
 
   const hud = (() => {
@@ -2832,11 +3103,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     );
     const dockHost = el('div', { class: 'ao-cvdock__slot' });
     const dockStatus = statusLine('ao-status--compact');
-    const dock = el('div', { class: 'ao-cvdock' }, dockHost, dockStatus.node);
+    const dockRead = readoutView();   // [ПРОЕКТОР] «ЛЕВАЯ: ЩИТ» / «ПРАВАЯ: OK → ВЫСТРЕЛ» под превью
+    const dock = el('div', { class: 'ao-cvdock' }, dockHost, dockRead.node, dockStatus.node);
+    const cheat = cheatSheet();       // [ПРОЕКТОР] шпаргалка жестов, Tab
     const pauseBtn = btn('Пауза', () => invoke('onPause', { reason: 'user' }), { variant: 'secondary', iconName: 'pause' });
     pauseBtn.node.classList.add('ao-pausebtn');
     pauseBtn.node.setAttribute('aria-keyshortcuts', 'Escape');
-    const node = el('div', { class: 'ao-hud', hidden: true }, boss, hero, dock, pauseBtn.node);
+    const node = el('div', { class: 'ao-hud', hidden: true }, boss, hero, cheat.node, cheat.pill, dock, pauseBtn.node);
 
     return {
       node,
@@ -2918,7 +3191,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           const info = ctx.debug ? DEBUG_INFO : describeTracking(ctx.tr, cfg);
           paintStatus(dockStatus, info, '');
           setAttr(dockHost, 'data-tone', info.tone);
+          // [ПРОЕКТОР] подписи жестов и красная рамка «ОШИБКИ»
+          const r = state.read.view;
+          dockRead.paint(r);
+          setAttr(dock, 'data-err', r && r.err ? 'on' : null);
         }
+        cheat.paint(ctx, energy, alive);
+        setClass(node, 'is-cheat', !state.cheatHidden);
       },
     };
   })();
@@ -2931,6 +3210,49 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     state.bannerTimer = later(() => setHidden(banner, true), BANNER_MS);
   }
 
+  /* -------------------------------------------- [ПРОЕКТОР] режим презентации
+   * Клавиша P или ?present в адресе: экран делится 40/60 — слева большая зеркальная камера со скелетом
+   * и крупными подписями жестов, справа игра (html.ao-present сдвигает #ao-app и .ao-ui вправо; main.js
+   * берёт размер рендера с канваса и получает событие resize). Для живого питча через проектор. */
+
+  // в меню и на экране ошибки камера выключена — там слот паркуется, панель показывает подсказку
+  const PRESENT_SCREENS = ['camera', 'calibration', 'tutorial', 'playing', 'paused', 'training', 'victory', 'defeat', 'oath'];
+  const present = (() => {
+    const host = el('div', { class: 'ao-slothost ao-pres__cam' });
+    const read = readoutView('ao-gread--big');
+    const status = statusLine();
+    const idle = el('p', { class: 'ao-pres__idle' });
+    const keyHint = el('span', { class: 'ao-pres__key', text: 'P — выйти' });
+    const node = el(
+      'aside',
+      { class: 'ao-pres', 'aria-label': 'Режим презентации: камера и распознанные жесты', hidden: true },
+      el('div', { class: 'ao-pres__head' }, el('span', { class: 'ao-pres__title', text: 'Что видит камера' }), keyHint),
+      host,
+      idle,
+      read.node,
+      el('p', { class: 'ao-pres__legend' },
+        el('span', { class: 'ao-cheat__lg' }, el('span', { class: 'ao-cheat__sw', 'data-side': 'left' }), 'левая кисть — движение'),
+        el('span', { class: 'ao-cheat__lg' }, el('span', { class: 'ao-cheat__sw', 'data-side': 'right' }), 'правая — магия')),
+      status.node,
+    );
+    return {
+      node,
+      host,
+      update(ctx) {
+        const info = ctx.debug ? DEBUG_INFO : describeTracking(ctx.tr, cfg);
+        paintStatus(status, info, ctx.debug ? '' : ctx.tr.message);
+        setAttr(host, 'data-tone', info.tone);
+        const shown = slot.parentNode === host;
+        setHidden(idle, shown);
+        if (!shown) setText(idle, CAMERA_RUNNING.includes(ctx.tr.status) ? 'Камера на паузе — превью вернётся в бою.' : 'Камера включится после «Начать» — здесь будет видно, что распознаёт игра.');
+        // в бою и обучении с отладкой P — «призма» (core/debugInput.js), режим переключает Shift+P
+        setText(keyHint, ctx.debug && (ctx.screen === 'playing' || ctx.screen === 'tutorial') ? 'Shift+P — выйти' : 'P — выйти');
+        read.paint(state.read.view);
+        setAttr(node, 'data-err', state.read.view && state.read.view.err ? 'on' : null);
+      },
+    };
+  })();
+
   /* ----------------------------------------------------------- assembly */
 
   const screens = { menu, camera, calibration: calib, tutorial, paused, victory, defeat, error: errorScr, oath, training };
@@ -2939,12 +3261,26 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   ui.append(backdrop, hud.node, banner);
   for (const scr of Object.values(screens)) ui.append(scr.section);
   ui.append(book.section); // [ТРЕНАЖЁР] «Книга заклинаний» — поверх меню, паузы и обучения
-  ui.append(debugBadge, park, live, liveAlert);
+  ui.append(present.node, debugBadge, park, live, liveAlert);
   root.appendChild(ui);
 
   function moveSlot(screen) {
-    const host = slotHosts[screen] || park;
+    const inPresent = state.present && PRESENT_SCREENS.includes(screen);
+    const host = inPresent ? present.host : slotHosts[screen] || park;
     if (slot.parentNode !== host) host.appendChild(slot);
+    // trackingHud читает режим рисунка у слота: в большой панели презентации — полный «tracking edit»
+    setAttr(slot, 'data-hud-mode', inPresent ? 'full' : null);
+  }
+
+  function setPresent(on) {
+    const next = !!on;
+    if (state.present === next) return;
+    state.present = next;
+    setClass(doc.documentElement, 'ao-present', next);
+    setHidden(present.node, !next);
+    if (state.screen) moveSlot(state.screen);
+    try { win.dispatchEvent(new win.Event('resize')); } catch (err) { /* без resize рендер подстроится на следующем изменении окна */ }
+    announce(next ? 'Режим презентации включён' : 'Режим презентации выключен');
   }
 
   function enterScreen(screen) {
@@ -3061,8 +3397,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     setClass(ui, 'ao-reduced-motion', ctx.settings.reducedMotion);
     setClass(doc.documentElement, 'ao-bdo', !(vm.settings && vm.settings.bdoUi === false)); // [BDO] стиль Black Desert (настройка bdoUi)
     syncSettings(ctx.settings);
+    computeReadout(ctx);   // [ПРОЕКТОР] до экранов: подписи нужны HUD и панели презентации
     UPDATERS[screen](ctx);
     book.update(ctx);
+    if (state.present) present.update(ctx);
     if (state.focusPending) {
       state.focusPending = false;
       focusScreen(screen);
@@ -3070,6 +3408,35 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   /* ------------------------------------------------------------ keyboard */
+
+  // [ПРОЕКТОР] Tab в бою — скрыть/показать шпаргалку; P — режим презентации (в бою с отладкой P — «призма»,
+  // там режим переключает Shift+P). В полях ввода (лобби дуэли) клавиши не перехватываются.
+  const typingTarget = (t) => !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''));
+  // Tab остаётся навигацией, если фокус на чужой кнопке (итоги дуэли modules/pvp.js и т. п.) или открыто окно дуэли
+  const tabFree = () => {
+    const a = doc.activeElement;
+    if (a && a !== doc.body && a !== doc.documentElement && !hud.node.contains(a)) return false;
+    const m = doc.querySelector('.pvp-modal');
+    return !(m && m.getClientRects().length);
+  };
+  listen(win, 'keydown', (e) => {
+    if (disposed || e.repeat || e.ctrlKey || e.metaKey || e.altKey || typingTarget(e.target)) return;
+    if (e.key === 'Tab' && state.screen === 'playing' && tabFree()) {
+      e.preventDefault();
+      state.cheatHidden = !state.cheatHidden;
+      try { win.localStorage.setItem(CHEAT_KEY, state.cheatHidden ? 'hidden' : 'shown'); } catch (err) { /* хранилище недоступно */ }
+      return;
+    }
+    if (e.code === 'KeyP') {
+      if (state.debug && !e.shiftKey && (state.screen === 'playing' || state.screen === 'tutorial')) return;
+      setPresent(!state.present);
+    }
+  });
+  try { state.cheatHidden = win.localStorage.getItem(CHEAT_KEY) === 'hidden'; } catch (err) { state.cheatHidden = false; }
+  try {
+    const q = new win.URLSearchParams(win.location.search);
+    if (q.has('present') && !/^(0|false|off)$/i.test(q.get('present') || '')) setPresent(true);
+  } catch (err) { /* без адреса — обычный режим */ }
 
   listen(win, 'keydown', (e) => {
     if (disposed || !cfg.keyboardPause) return;
@@ -3093,6 +3460,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     }
     for (const id of timers) win.clearTimeout(id);
     timers.clear();
+    if (state.present) {
+      setClass(doc.documentElement, 'ao-present', false);   // через кеш setClass: следующий экземпляр UI включит режим снова
+      try { win.dispatchEvent(new win.Event('resize')); } catch (err) { /* ignore */ }
+    }
     ui.remove();
   }
 

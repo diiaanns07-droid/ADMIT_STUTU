@@ -48,7 +48,7 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
   document.body.append(stage);
 
   const calls = [];
-  const names = ['onEnableCamera', 'onCalibrate', 'onStart', 'onPause', 'onResume', 'onRestart', 'onSettings', 'onDebug', 'onExit', 'onOath', 'onTraining', 'onBuyUpgrade', 'onBack'];
+  const names = ['onEnableCamera', 'onCalibrate', 'onStart', 'onPause', 'onResume', 'onRestart', 'onSettings', 'onDebug', 'onExit', 'onOath', 'onTraining', 'onBuyUpgrade', 'onBack', 'onNet'];
   const callbacks = {};
   for (const n of names) {
     callbacks[n] = (arg) => {
@@ -155,7 +155,8 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     let disabledFired = [];
     for (const [name, v] of Object.entries(fixtures)) {
       ui.update(clone(v));
-      const buttons = $$('button').filter(isVisible).filter((b) => !b.hasAttribute('data-ui-local')); // [ТРЕНАЖЁР] data-ui-local — меняют только сам экран, проверены в п. 11
+      // data-ui-local — переключатель внутри UI без колбэка (режим презентации), проверяется в 22б
+      const buttons = $$('button').filter((b) => isVisible(b) && !b.hasAttribute('data-ui-local'));
       for (const b of buttons) {
         ui.update(clone(v));
         if (!isVisible(b)) continue;
@@ -554,14 +555,21 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     check(`все панели помещаются в ${W}×${H} без прокрутки`, fitFail.length === 0, fitFail.join('; '));
     check('панели без backdrop-filter', !blurFound);
 
-    /* 20. HUD занимает малую часть арены */
+    /* 20. HUD занимает малую часть арены. [ПРОЕКТОР] Превью камеры (~22 % ширины) и шпаргалка жестов
+       крупные намеренно: их считаем отдельно, центр арены остаётся свободным. */
     ui.update(F('playing'));
     await frame();
-    const area = ['.ao-boss', '.ao-hero', '.ao-cvdock', '.ao-pausebtn']
-      .map((s) => $(s).getBoundingClientRect())
+    const areaOf = (sels) => sels.map((s) => $(s)).filter((n) => n && isVisible(n)).map((n) => n.getBoundingClientRect())
       .reduce((a, r) => a + r.width * r.height, 0);
-    const frac = area / (W * H);
-    check('HUD занимает меньше 15% экрана', frac < 0.15, `${(frac * 100).toFixed(1)}%`);
+    const frac = areaOf(['.ao-boss', '.ao-hero', '.ao-pausebtn']) / (W * H);
+    check('HUD без превью и шпаргалки занимает меньше 15% экрана', frac < 0.15, `${(frac * 100).toFixed(1)}%`);
+    const fracAll = areaOf(['.ao-boss', '.ao-hero', '.ao-pausebtn', '.ao-cvdock', '.ao-cheat']) / (W * H);
+    check('HUD с превью камеры и шпаргалкой занимает меньше 36% экрана', fracAll < 0.36, `${(fracAll * 100).toFixed(1)}%`);
+    const dockR = $('.ao-cvdock').getBoundingClientRect();
+    check('превью камеры в бою — не меньше 20% ширины экрана (или 240 px)', dockR.width >= Math.min(0.2 * W, 240) - 1, `${Math.round(dockR.width)} px из ${W}`);
+    const mid = { x: W / 2, y: H / 2 };
+    const covers = ['.ao-cvdock', '.ao-cheat', '.ao-hero'].some((s) => { const r = $(s).getBoundingClientRect(); return mid.x >= r.left && mid.x <= r.right && mid.y >= r.top && mid.y <= r.bottom; });
+    check('центр арены свободен от HUD', !covers);
 
     /* 21. Уменьшенное движение */
     ui.update(F('menu', { settings: { quality: 'medium', volume: 0.8, reducedMotion: true, sensitivity: 1 } }));
@@ -573,6 +581,87 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     ui.update(F('camera-idle'));
     await frame();
     check('на экране камеры фокус на «Разрешить камеру»', document.activeElement && document.activeElement.textContent.trim() === 'Разрешить камеру', document.activeElement && document.activeElement.textContent.trim());
+
+    /* 22б. [ПРОЕКТОР] подписи жестов под превью, «ОШИБКА», шпаргалка (Tab), режим презентации (P) */
+    {
+      let cheatSaved = null;
+      try { cheatSaved = localStorage.getItem('ashen-oath.cheat.v1'); localStorage.removeItem('ashen-oath.cheat.v1'); } catch (e) { /* нет хранилища */ }
+      const liveIn = (extra) => ({
+        source: 'cv', valid: true, calibrated: true, moveX: 0, dash: 0, attack: false, shield: false, burst: false,
+        hands: { available: true, left: { shape: 'open', palmFacing: 'camera', charge: 0 }, right: { shape: 'pinch', palmFacing: 'camera', charge: 0 } },
+        ...extra,
+      });
+      const rows = () => [...layer.querySelectorAll('.ao-cvdock .ao-gread__row')].map((n) => n.textContent);
+      ui.update(F('playing', { input: liveIn({ attack: true, shield: true }) }));
+      await frame();
+      check('под превью: «ЛЕВАЯ: ЩИТ» и «ПРАВАЯ: OK → ВЫСТРЕЛ»', rows()[0] === 'ЛЕВАЯ: ЩИТ' && rows()[1] === 'ПРАВАЯ: OK → ВЫСТРЕЛ', rows().join(' | '));
+      const hint = { code: 'ok_ring_open', gesture: '«OK» · снаряд', text: 'Сомкни кончики большого и указательного в кольцо', side: 'right', tMs: 77 };
+      ui.update(F('playing', { input: liveIn({ burst: true, hint }) }));
+      await frame();
+      ui.update(F('playing', { input: liveIn({}) }));
+      await frame();
+      check('импульс «ВЫБРОС!» держится после своего кадра', rows()[1] === 'ПРАВАЯ: ВЫБРОС!', rows()[1]);
+      const errNode = $('.ao-cvdock .ao-gread__err');
+      check('«ОШИБКА»: красная рамка превью и текст подсказки', $('.ao-cvdock').getAttribute('data-err') === 'on' && isVisible(errNode) && /Сомкни кончики/.test(errNode.textContent), errNode && errNode.textContent);
+      const item = (k) => $(`.ao-cheat__item[data-key="${k}"]`);
+      check('шпаргалка: 6 жестов, сработавший «Выброс» подсвечен', layer.querySelectorAll('.ao-cheat__item').length === 6 && item('burst').getAttribute('data-state') === 'active', item('burst') && item('burst').getAttribute('data-state'));
+      check('шпаргалка: «Рывок» на перезарядке тускнеет', item('dash').getAttribute('data-state') === 'cooldown' && getComputedStyle(item('dash')).opacity < 0.7);
+      const small = [...layer.querySelectorAll('.ao-cheat *, .ao-cvdock .ao-gread *')].filter((n) => isVisible(n) && n.childNodes.length && [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()) && parseFloat(getComputedStyle(n).fontSize) < 14);
+      check('шпаргалка и подписи — шрифт не меньше 14 px', small.length === 0, small.map((n) => `${n.className}:${getComputedStyle(n).fontSize}`).join(', '));
+      key('Tab', { code: 'Tab' });
+      ui.update(F('playing'));
+      await frame();
+      check('Tab в бою скрывает шпаргалку, остаётся подсказка «Tab»', !isVisible($('.ao-cheat')) && isVisible($('.ao-cheat-pill')));
+      key('Tab', { code: 'Tab' });
+      ui.update(F('playing'));
+      await frame();
+      check('повторный Tab возвращает шпаргалку', isVisible($('.ao-cheat')));
+      key('p', { code: 'KeyP' });
+      ui.update(F('playing'));
+      await frame();
+      const pslot = ui.cameraSlot;
+      check('P: режим презентации, слот камеры в левой панели 40 %', document.documentElement.classList.contains('ao-present') && pslot.parentElement.classList.contains('ao-pres__cam') && isVisible($('.ao-pres')) && Math.abs($('.ao-pres').getBoundingClientRect().width - 0.4 * W) < 3);
+      const htmlCs = getComputedStyle(document.documentElement);
+      check('в режиме презентации <html> не получает стилей панели (не fixed, указатель работает)', htmlCs.position !== 'fixed' && htmlCs.pointerEvents !== 'none', `${htmlCs.position}/${htmlCs.pointerEvents}`);
+      // в 60 % ширины длинные экраны могут прокручиваться, но главная кнопка обязана быть видна сразу
+      const presFail = [];
+      for (const [name, label] of [['menu', 'Начать'], ['tutorial-live', 'В бой'], ['paused-lost', 'Продолжить бой']]) {
+        if (!fixtures[name]) continue;
+        ui.update(F(name));
+        await frame();
+        const pnl = $$('.ao-screen').filter(isVisible).map((sc) => sc.querySelector('.ao-panel'))[0];
+        const b = pnl && btnByText(pnl, label);
+        const r = b && b.getBoundingClientRect(), pr = pnl && pnl.getBoundingClientRect();
+        if (!r || r.top < pr.top - 1 || r.bottom > Math.min(pr.bottom, H) + 1 || r.left < 0.4 * W - 1) presFail.push(`${name}: «${label}» ${r ? Math.round(r.top) + '..' + Math.round(r.bottom) : 'нет'}`);
+      }
+      check(`режим презентации: главная кнопка видна без прокрутки (меню, обучение, пауза) в ${W}×${H}`, presFail.length === 0, presFail.join('; '));
+      ui.update(F('playing'));
+      await frame();
+      key('p', { code: 'KeyP' });
+      ui.update(F('playing'));
+      await frame();
+      check('повторный P выключает режим, слот снова в доке', !document.documentElement.classList.contains('ao-present') && pslot.parentElement.classList.contains('ao-cvdock__slot'));
+      ui.update(F('menu'));
+      await frame();
+      const pbtn = $('.ao-toggle--present');
+      pbtn.click();
+      ui.update(F('menu'));
+      const onByClick = document.documentElement.classList.contains('ao-present') && pbtn.getAttribute('aria-pressed') === 'true';
+      pbtn.click();
+      ui.update(F('menu'));
+      check('кнопка «Режим презентации · P» в меню включает и выключает режим', onByClick && !document.documentElement.classList.contains('ao-present'));
+      ui.update(F('playing-debug'));
+      await frame();
+      key('p', { code: 'KeyP' });
+      check('в бою с отладкой P остаётся «призмой» (режим не переключается)', !document.documentElement.classList.contains('ao-present'));
+      key('P', { code: 'KeyP', shiftKey: true });
+      ui.update(F('playing-debug'));
+      const shiftOn = document.documentElement.classList.contains('ao-present');
+      key('P', { code: 'KeyP', shiftKey: true });
+      ui.update(F('playing-debug'));
+      check('в бою с отладкой режим переключает Shift+P', shiftOn && !document.documentElement.classList.contains('ao-present'));
+      try { if (cheatSaved === null) localStorage.removeItem('ashen-oath.cheat.v1'); else localStorage.setItem('ashen-oath.cheat.v1', cheatSaved); } catch (e) { /* нет хранилища */ }
+    }
 
     /* 23. dispose */
     reset();
