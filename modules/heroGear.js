@@ -1519,7 +1519,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     const holder = model || vrm.scene, _mq = new THREE.Quaternion();
     cloth = createCloth(THREE, {
       cols, rows, rest, anchor: raw(chestB), parent: holder, colliders: bodyCaps.map((c) => ({ ...c, r: c.r + (/UpperArm|hest/.test(c.name) ? 0.012 : 0) })).concat(gearCaps), material: capeMat,
-      pleats: 7, pleatDepth: 0.006, plane: 'none', name: 'cape', carry: 0.7,
+      pleats: 7, pleatDepth: 0.006, plane: 'none', name: 'cape', carry: 0.7, react: true,
       hips: raw('hips'), back: { lim: 0.04, h: 0.5 },
       fwd: (out) => out.set(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(_mq)),
       floor: () => holder.getWorldPosition(new THREE.Vector3()).y,
@@ -1573,7 +1573,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     const _mq = new THREE.Quaternion();
     cloth = createCloth(THREE, {
       cols, rows, rest, anchor: raw(chestB), parent: holder, colliders, material: capeMat,
-      pleats: 3.5, pleatDepth: w > 0.55 ? 0.016 : 0.012, hem: { r: 0.0055, material: mats.trim },
+      pleats: 3.5, pleatDepth: w > 0.55 ? 0.016 : 0.012, hem: { r: 0.0055, material: mats.trim }, react: true,
       hips: raw('hips'), back: { lim: 0.035, h: Math.max(0.2, bp[chestB].y - bp.hips.y) },
       fwd: (out) => out.set(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(_mq)),
       floor: () => holder.getWorldPosition(new THREE.Vector3()).y,
@@ -1731,7 +1731,7 @@ export function dressHero(THREE, vrm, opts = {}) {
         pleats: pet ? 0 : pn.pleats ?? 1.5, pleatDepth: pet ? 0 : 0.008, name: 'tabard', plane: Math.abs(pn.az) < 0.5 ? 'front' : 'none',
         hem: pet || ST ? null : { r: 0.0045, material: mats.trim },
         cling: pet ? (pn.layer ? 4 : 3) : P.tabard.cling ?? 3,
-        slits: pet ? { gaps: PL.gaps, from: 2 } : null, cup: pet ? 0.011 : 0,
+        slits: pet ? { gaps: PL.gaps, from: 2 } : null, cup: pet ? 0.011 : 0, react: true,
         uv: pn.emblem || panelMat || pet ? { u0: 0, u1: 1, v0: 0, v1: 1 } : { u0: 0, u1: 1, v0: 0, v1: 0.62 },
         hips: raw('hips'), back: { lim: 0.03, h: 0.3 },
         fwd: (out) => out.set(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(_mq2)),

@@ -121,7 +121,7 @@ assert.equal(cl.mesh.parent, null); assert.equal(cl.hem.parent, null);
     root.position.set(0, 0, 0); root.rotation.set(0, 0, 0); root.updateMatrixWorld(true);
     const cc = 9, cr2 = 12, crest = new Float32Array(cc * cr2 * 3);
     for (let j = 0; j < cr2; j++) for (let i = 0; i < cc; i++) crest.set([(i / (cc - 1) - 0.5) * 0.45, 1.45 - (j / (cr2 - 1)) * 0.9, -0.2 - 0.03 * (j / (cr2 - 1))], (j * cc + i) * 3);
-    const cape = createCloth(THREE, { cols: cc, rows: cr2, rest: crest, anchor: hips, parent: root, colliders, material: mat, plane: 'back', hips, back: { lim: 0.03, h: 0.4 }, fwd: (out) => out.set(0, 0, 1).applyQuaternion(root.quaternion), floor: () => 0 });
+    const cape = createCloth(THREE, { cols: cc, rows: cr2, rest: crest, anchor: hips, parent: root, colliders, material: mat, plane: 'back', react: true, hips, back: { lim: 0.03, h: 0.4 }, fwd: (out) => out.set(0, 0, 1).applyQuaternion(root.quaternion), floor: () => 0 });
     cape.setMotion(calmK);
     const behind = () => { const P = cape.particles, hp = hips.getWorldPosition(new THREE.Vector3()); let s2 = 0; for (let i = 0; i < cc; i++) s2 += hp.z - P[((cr2 - 1) * cc + i) * 3 + 2]; return s2 / cc; };
     let rest0 = 0, run = 0, burstMax = 0, flutVar = 0, prevB = null;
