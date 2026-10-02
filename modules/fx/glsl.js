@@ -69,26 +69,41 @@ export function premulBlend(THREE) {
 }
 
 // hex 0xRRGGBB → [r,g,b] в ЛИНЕЙНОМ пространстве (для uniform vec3 без преобразования в шейдере).
+const srgbLin = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
 export function hexLin(hex, out) {
   const o = out || [0, 0, 0];
-  const f = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
-  o[0] = f(((hex >> 16) & 255) / 255); o[1] = f(((hex >> 8) & 255) / 255); o[2] = f((hex & 255) / 255);
+  // [W4-ЗАКЛИНАНИЯ] без замыкания на вызов (bolts.set зовёт каждый кадр)
+  o[0] = srgbLin(((hex >> 16) & 255) / 255); o[1] = srgbLin(((hex >> 8) & 255) / 255); o[2] = srgbLin((hex & 255) / 255);
   return o;
 }
 
 // Палитры стихий V6 (sRGB hex). core — белое ядро, hot — раскалённый, mid — основной, deep — тень/край.
+// [W4-ЗАКЛИНАНИЯ] единый цветовой язык стихий (читается с проектора): огонь — оранжево-золотой, гроза (storm) —
+// бело-голубая, тьма (void) — фиолетовая с чёрным ядром (black), ветер — изумрудный, буря (tempest) — электрик.
 export const ELEMENTS = Object.freeze({
-  fire:   Object.freeze({ core: 0xfff4d6, hot: 0xffc05a, mid: 0xff6a1a, deep: 0x9a1e08, smoke: 0x2a1c16 }),
-  storm:  Object.freeze({ core: 0xf4fbff, hot: 0xb8e6ff, mid: 0x5fb4ff, deep: 0x2a3fb0, smoke: 0x1c2436 }),
+  fire:   Object.freeze({ core: 0xfff4d6, hot: 0xffc44a, mid: 0xff7418, deep: 0xa8280a, smoke: 0x2a1c16 }),
+  storm:  Object.freeze({ core: 0xfbfdff, hot: 0xd4efff, mid: 0x86c6ff, deep: 0x3050c0, smoke: 0x1c2436 }),
   heal:   Object.freeze({ core: 0xfffbe0, hot: 0xffe38a, mid: 0x9df07a, deep: 0x2f9a58, smoke: 0x21301f }),
   star:   Object.freeze({ core: 0xfffaf0, hot: 0xffe0a0, mid: 0xffb070, deep: 0x8a3cff, smoke: 0x1d1830 }),
-  wind:   Object.freeze({ core: 0xf0fff8, hot: 0xc6f5e4, mid: 0x7fd6c0, deep: 0x3e7f78, smoke: 0x3a3a34 }),
+  wind:   Object.freeze({ core: 0xf0fff6, hot: 0xa6ffd6, mid: 0x2ee39a, deep: 0x0c7a50, smoke: 0x1c3328 }),
   eternal:Object.freeze({ core: 0xfffdf2, hot: 0xffe9a8, mid: 0xf2b8ff, deep: 0x7a4cc9, smoke: 0x241c30 }),
   frost:  Object.freeze({ core: 0xf6ffff, hot: 0xc8f4ff, mid: 0x7fd8ff, deep: 0x2f6fb8, smoke: 0x1c2a36 }),
-  void:   Object.freeze({ core: 0xf6e6ff, hot: 0xd49cff, mid: 0x9a4dff, deep: 0x3a0f6e, smoke: 0x140a1f }),
+  void:   Object.freeze({ core: 0xf2e2ff, hot: 0xc890ff, mid: 0x8c3cf4, deep: 0x2a0856, smoke: 0x0e0618, black: 0x06020c }),
+  tempest:Object.freeze({ core: 0xf2f7ff, hot: 0x96c4ff, mid: 0x2f78ff, deep: 0x2a1fc0, smoke: 0x141a3a }),
   time:   Object.freeze({ core: 0xf2fbff, hot: 0xbfe8ff, mid: 0x7ab8e8, deep: 0x2c4c8a, smoke: 0x18202c }),
   reset:  Object.freeze({ core: 0xffffff, hot: 0xfff2c8, mid: 0xffd27a, deep: 0x5a8cff, smoke: 0x202030 }),
   gold:   Object.freeze({ core: 0xfff3d6, hot: 0xffd28a, mid: 0xe8a14a, deep: 0xb4602e, smoke: 0x2a2018 }),
   earth:  Object.freeze({ core: 0xffe9c8, hot: 0xffb46a, mid: 0xa8744a, deep: 0x4a3222, smoke: 0x3a3028 }),
   rival:  Object.freeze({ core: 0xf6eeff, hot: 0xd2b4ff, mid: 0x9a6bff, deep: 0x4b2a9a, smoke: 0x1a1428 }),
 });
+
+// [W4-ЗАКЛИНАНИЯ] стихия героя (settings.hero, modules/heroModel.js): ею окрашены его «общие» заклинания —
+// снаряд «OK», выброс, сфера, искра, печати; у рун — своя стихия руны, у героя — предвестник и ободок.
+export const HERO_ELEMENT = Object.freeze({
+  ashen: 'fire', warrior: 'fire',            // Пепельный страж — пепел и пламя
+  elf: 'storm', elfVroid: 'storm',           // Эльфийка — гроза
+  dark: 'void', darkVroid: 'void',           // Тёмная чародейка — тьма
+  ranger: 'wind',                            // Лучница — ветер
+  archmage: 'tempest',                       // Архимаг — буря
+});
+export const heroElement = (id) => HERO_ELEMENT[id] || 'fire';

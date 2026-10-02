@@ -9,7 +9,7 @@
 // якоря героя/соперника, цель, палитры стихий, PvP-окраска, подавление старых «постоянных» эффектов.
 
 import { createFxKit, SPRITES } from './kit.js';
-import { ELEMENTS } from './glsl.js';
+import { ELEMENTS, heroElement } from './glsl.js';
 
 export const FX_V6_VERSION = 'ASHEN_V6-fx-1';
 
@@ -59,6 +59,8 @@ export function createFxV6(deps) {
   const warned = new Set();
   const loaded = { subsystems: [], choreo: [], failed: [] };
   let snap = null, input = null, enabled = true, quality = deps.quality || 'medium';
+  // [W4-ЗАКЛИНАНИЯ] выбранный герой (effects.js передаёт живую настройку)
+  const heroId = () => { try { return typeof deps.heroId === 'function' ? deps.heroId() : deps.heroId; } catch (e) { return null; } };
   const V3 = THREE.Vector3;
   const _a = new V3(), _b = new V3();
 
@@ -94,6 +96,9 @@ export function createFxV6(deps) {
     isRemote: (d) => !!(d && d.remote),
     // палитра стихии; для соперника — холодный фиолетовый
     pal: (el, d) => (d && d.remote ? ELEMENTS.rival : (ELEMENTS[el] || ELEMENTS.gold)),
+    // [W4-ЗАКЛИНАНИЯ] стихия героя (settings.hero): его «общие» заклинания окрашены ею; соперник — 'rival'
+    heroEl: (d) => (d && d.remote ? 'rival' : heroElement(heroId())),
+    heroPal: (d) => (d && d.remote ? ELEMENTS.rival : (ELEMENTS[heroElement(heroId())] || ELEMENTS.fire)),
     // якоря: name ∈ handR | handL | chest | head | feet | staffTip | bowSocket
     anchor: (name, out, remote) => kit.anchor(name, out || new V3(), !!remote),
     /** Позиция события или null. */
@@ -171,6 +176,10 @@ export function createFxV6(deps) {
     const list = handlers.get(type);
     if (!list) return false;
     let done = false;
+    // [W4-ЗАКЛИНАНИЯ] сцена эффекта: всё, что нарисует событие (и его акторы), — одна сцена с приоритетом свежести
+    const prevScope = kit.currentScope;
+    const sk = scopeKey(type, d);
+    if (sk !== null) kit.scope(sk);
     for (let i = 0; i < list.length; i++) {
       const h = list[i];
       try {
@@ -178,7 +187,21 @@ export function createFxV6(deps) {
         if (h.fn(ev, d, fx) === true) { done = true; break; }
       } catch (e) { warn('h:' + type + ':' + h.src, e); }
     }
+    kit.enterScope(prevScope);
     return done;
+  }
+  // [W4-ЗАКЛИНАНИЯ] ключ сцены события (null — без сцены): касты — по заклинанию, удары — общая серия
+  function scopeKey(type, d) {
+    const r = d && d.remote ? 'r:' : '';
+    switch (type) {
+      case 'rune_cast': return r + 'rune:' + (d && d.rune);
+      case 'player_cast': return r + (d && d.ability === 'rune' ? 'rune:' + d.rune : d && (d.ability === 'bolt' || d.ability === 'spark') ? d.ability : '');
+      case 'burst': return r + 'burst';
+      case 'sigil_cast': return r + 'sigil:' + (d && d.sigil);
+      case 'hand_spell_throw': case 'bow_release': case 'player_slash': case 'ultimate_cast': return '';
+      case 'projectile_impact': case 'boss_hit': case 'rune_hit': case 'sigil_hit': case 'arrow_hit': case 'hand_spell_hit': case 'player_hit': return r + 'hit';
+      default: return null;
+    }
   }
   function update(dt, snapshot) {
     snap = snapshot && typeof snapshot === 'object' ? snapshot : null;

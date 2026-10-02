@@ -3,6 +3,8 @@
 // круг-глиф с символом руны под заклинателем, глиф у ладони, сбор искр, взрыв, послесвечение.
 // Всё безопасно при отсутствии подсистем (fx.glyph/bolts/trails/decals/shock могут быть null).
 
+import { runeStroke } from './glyph.js'; // [W4-ЗАКЛИНАНИЯ] штрихи символа для руны в воздухе
+
 const TAU = Math.PI * 2;
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const hasVec = (o) => !!o && typeof o === 'object' && isNum(o.x) && isNum(o.y) && isNum(o.z);
@@ -13,7 +15,7 @@ export const easeIn = (t) => Math.pow(clamp(t, 0, 1), 2);
 // Стихия → строка градиента частиц (kit RAMP) и дым.
 export const RAMP = {
   fire: 'fire', storm: 'storm', heal: 'heal', star: 'star', wind: 'wind', eternal: 'eternal', frost: 'frost',
-  void: 'void', time: 'time', reset: 'reset', gold: 'gold', earth: 'ember', rival: 'rival',
+  void: 'void', time: 'time', reset: 'reset', gold: 'gold', earth: 'ember', rival: 'rival', tempest: 'tempest', // [W4-ЗАКЛИНАНИЯ] буря
 };
 export const SMOKE = { fire: 'firesmoke', frost: 'frostsmoke', void: 'voidsmoke', earth: 'dust' };
 export const rampOf = (el, remote) => (remote ? 'rival' : (RAMP[el] || 'gold'));
@@ -193,3 +195,285 @@ export function trail(fx, el, remote, o) {
 }
 
 export { TAU, isNum, hasVec };
+
+// ====================================================================== [W4-ЗАКЛИНАНИЯ] читаемость заклинаний
+// Жюри сидит в 3–5 м от проектора: каждое заклинание должно сразу читаться — что вылетело, откуда и куда.
+//  - herald()  — предвестник: в момент распознавания жеста у руки вспышка и руна (0,15 с) — жест связан с эффектом;
+//  - airRune() — нарисованный символ вспыхивает крупно в воздухе перед героем и «становится» заклинанием;
+//  - createComet() — единый облик снаряда в полёте: белое ядро + цветной ореол + 2–3 слоя частиц + лента-след
+//    + короткий свет из общего пула (на low kit.light → null), голова крупнее хвоста — видно направление.
+// Всё — частицы kit (один вызов отрисовки на все), ленты trails и знаки glyph (по одному вызову на подсистему).
+
+
+const HERALD_SYM = { fire: 'fire', storm: 'storm', void: 'vee', wind: 'spira', tempest: 'storm', frost: 'frost', earth: 'earth', heal: 'orbis', star: 'stella', eternal: 'lemnis', time: 'clepsydra', reset: 'alpha', gold: 'fire', rival: 'storm' };
+/** Символ для предвестника: руна → сама руна, иначе знак стихии. */
+export const heraldSymbol = (el, rune) => (typeof rune === 'string' && rune ? rune : (HERALD_SYM[el] || 'fire'));
+
+// предвыделенные опции (события редки, но emit/flash зовутся много раз — без лишних объектов)
+const _hf = { color: 0, size: [0, 0], dur: 0.15, intensity: 4, sprite: 'star', pull: 0.35, rival: false, rot: 0, fadeIn: 0.02, curve: 0.45 };
+const _he = { at: null, dir: null, cone: Math.PI, count: 8, speed: [1.5, 4], life: [0.12, 0.22], size: [0.05, 0.01], ramp: 'gold', intensity: 3, sprite: 'spark', stretch: 0.025, drag: 4, rival: false, essential: true };
+
+/**
+ * Предвестник у руки: белая звезда + цветное кольцо-волна + руна-спрайт (0,15 с), искры; на medium/high — чёткий
+ * знак glyph поверх (одна запись пула, без новых вызовов отрисовки). o: { symbol, scale:1, dir (к цели), glyph:true }.
+ */
+export function herald(fx, at, el, remote, o) {
+  if (!at || !isNum(at.x)) return;
+  o = o || {};
+  const kit = fx.kit, P = fx.pal(el, { remote }), k = isNum(o.scale) ? o.scale : 1;
+  const sf = (() => { try { return fx.reduced() ? 0.7 : 1; } catch (e) { return 1; } })();
+  _hf.rival = !!remote; _hf.fadeIn = 0.02; _hf.curve = 0.45;
+  // белая звезда — «щелчок» распознавания
+  _hf.color = P.core; _hf.size[0] = 0.12 * k; _hf.size[1] = 0.95 * k * sf; _hf.dur = 0.15; _hf.intensity = 4.4; _hf.sprite = 'star'; _hf.pull = 0.4; _hf.rot = 0;
+  kit.flash(at, _hf);
+  // кольцо-волна цвета стихии
+  _hf.color = P.mid; _hf.size[0] = 0.18 * k; _hf.size[1] = 1.25 * k * sf; _hf.dur = 0.16; _hf.intensity = 3; _hf.sprite = 'ring'; _hf.pull = 0.38; _hf.rot = 0;
+  kit.flash(at, _hf);
+  // руна-спрайт (атлас kit) — видна и на low, где знаки glyph экономятся
+  _hf.color = P.hot; _hf.size[0] = 0.55 * k; _hf.size[1] = 0.7 * k; _hf.dur = 0.15; _hf.intensity = 3.2; _hf.sprite = 'rune'; _hf.pull = 0.42; _hf.rot = (Math.random() - 0.5) * 0.4;
+  kit.flash(at, _hf);
+  _he.at = at; _he.dir = o.dir || null; _he.cone = o.dir ? 0.9 : Math.PI; _he.count = 9; _he.ramp = rampOf(el, remote); _he.rival = !!remote;
+  kit.emit(_he);
+  _he.at = null; _he.dir = null;
+  // чёткий знак у руки (глиф): только medium/high — на low пул знаков мал (5), его берегут руны
+  const g = fx.glyph;
+  if (g && o.glyph !== false && kit.Q && kit.Q.glyphDetail > 0) {
+    try {
+      g.spawn({
+        pos: at, billboard: true, radius: 0.36 * k, symbol: heraldSymbol(el, o.symbol), symbolScale: 0.62, style: 'rune', rings: 1, ticks: 12,
+        color: P.mid, hot: P.core, intensity: 2.6, symbolGlow: 2, write: 0, flare: 1, pop: 0.45, unfold: 0.08, dur: 0.2, fade: 0.08, spin: 3,
+        rival: remote ? 1 : 0, dark: el === 'void' && !remote,
+      });
+    } catch (e) { /* без знака */ }
+  }
+}
+
+// ---------------------------------------------------------------------- руна в воздухе
+const STROKE_CACHE = new Map();
+function strokeOf(rune) {
+  if (STROKE_CACHE.has(rune)) return STROKE_CACHE.get(rune);
+  let pts = null;
+  try { pts = runeStroke(rune, 28); } catch (e) { pts = null; }
+  STROKE_CACHE.set(rune, pts);
+  return pts;
+}
+const _ae = { at: null, count: 1, speed: [0.2, 1.2], life: [0.18, 0.34], size: [0.07, 0.015], ramp: 'gold', intensity: 3, sprite: 'spark', drag: 2.5, rival: false, essential: false, dir: null, cone: Math.PI, stretch: 0 };
+const _ap = { x: 0, y: 0, z: 0 };
+
+/**
+ * Руна в воздухе: символ крупно вспыхивает перед героем (знак glyph «bare» без колец, лицом к камере, белое ядро
+ * линий + цвет стихии, вспышка и искры по штрихам), держится hold с и «становится» заклинанием:
+ *   mode 'through' — летит к цели вслед за снарядом и сжимается (снаряд «прошивает» знак);
+ *   mode 'absorb'  — втягивается в героя (to: точка); 'up' — уходит вверх к цели (молния с неба).
+ * c — caster(); o: { pos, to, hold:0.22, travel:0.14, radius:0.95, mode:'through', burst:true }.
+ * Возвращает { pos, glyph, at } — pos можно использовать как точку, через которую пройдёт снаряд.
+ */
+export function airRune(fx, c, rune, el, o) {
+  o = o || {};
+  const V3 = fx.THREE.Vector3, kit = fx.kit;
+  const remote = c.remote, P = fx.pal(el, { remote });
+  const R = (isNum(o.radius) ? o.radius : 0.95) * (fx.reduced && fx.reduced() ? 0.85 : 1);
+  // перед героем: на линии рука → цель, чуть выше головы героя — не закрыт его спиной с камеры за плечом
+  const pos = o.pos ? new V3().copy(o.pos) : new V3(
+    c.chest.x + c.fwd.x * 1.7, c.chest.y + 0.62, c.chest.z + c.fwd.z * 1.7);
+  const hold = isNum(o.hold) ? o.hold : 0.22, travel = isNum(o.travel) ? o.travel : 0.14;
+  const mode = o.mode || 'through';
+  let to = o.to;
+  if (!to) {
+    if (mode === 'absorb') to = c.chest;
+    else if (mode === 'up') to = { x: pos.x + c.fwd.x * 1.5, y: pos.y + 3.2, z: pos.z + c.fwd.z * 1.5 };
+    else to = { x: pos.x + (c.target.x - pos.x) * 0.35, y: pos.y + (c.target.y - pos.y) * 0.35, z: pos.z + (c.target.z - pos.z) * 0.35 };
+  }
+  const dark = el === 'void' && !remote;
+  let h = null;
+  const g = fx.glyph;
+  if (g) {
+    try {
+      h = g.spawn({
+        pos, billboard: true, radius: R, symbol: rune, symbolScale: 0.8, style: 'bare', color: P.mid, hot: P.core,
+        intensity: 2.8, symbolGlow: 2.6, write: isNum(o.write) ? o.write : 0.09, flare: 1, pop: 0.35, unfold: 0.12,
+        dur: hold + travel + 0.06, fade: 0.08, spin: 0, rival: remote ? 1 : 0, dark,
+        to, travelAt: hold, travelDur: travel, shrink: mode === 'absorb' ? 0.12 : 0.3,
+      });
+    } catch (e) { h = null; }
+  }
+  // вспышка-ореол за знаком (bloom) и искры по штрихам символа
+  _hf.rival = !!remote; _hf.fadeIn = 0.03; _hf.curve = 0.5; _hf.rot = 0;
+  _hf.color = P.hot; _hf.size[0] = R * 0.8; _hf.size[1] = R * 2.4; _hf.dur = 0.26; _hf.intensity = 2.2; _hf.sprite = 'glow'; _hf.pull = 0.2;
+  kit.flash(pos, _hf);
+  _hf.color = P.core; _hf.size[0] = R * 0.3; _hf.size[1] = R * 1.3; _hf.dur = 0.12; _hf.intensity = 3.6; _hf.sprite = 'star'; _hf.pull = 0.25;
+  kit.flash(pos, _hf);
+  if (!h) {
+    // без подсистемы знаков — руна-спрайт атласа
+    _hf.color = P.mid; _hf.size[0] = R * 1.6; _hf.size[1] = R * 1.9; _hf.dur = hold + travel; _hf.intensity = 3; _hf.sprite = 'rune'; _hf.pull = 0.2;
+    kit.flash(pos, _hf);
+  }
+  const pts = strokeOf(rune);
+  if (pts && o.burst !== false) {
+    // базис знака — как у billboard-глифа: вправо/вверх камеры
+    const cam = kit.camera;
+    let ux = 1, uy = 0, uz = 0, vx = 0, vy = 1, vz = 0;
+    if (cam && cam.matrixWorld) { const e = cam.matrixWorld.elements; ux = e[0]; uy = e[1]; uz = e[2]; vx = e[4]; vy = e[5]; vz = e[6]; }
+    const side = 0.8 * 1.3 * R;
+    const ramp = rampOf(el, remote);
+    _ae.ramp = ramp; _ae.rival = !!remote; _ae.at = _ap; _ae.count = 1;
+    const step = kit.Q && kit.Q.name === 'low' ? 2 : 1;
+    for (let i = 0; i < pts.length; i += step) {
+      const q = pts[i], lx = (q.x - 0.5) * side, ly = (0.5 - q.y) * side;
+      _ap.x = pos.x + ux * lx + vx * ly; _ap.y = pos.y + uy * lx + vy * ly; _ap.z = pos.z + uz * lx + vz * ly;
+      _ae.sprite = i & 1 ? 'spark' : 'glow'; _ae.size[0] = i & 1 ? 0.07 : 0.16; _ae.intensity = i & 1 ? 3 : 2;
+      kit.emit(_ae);
+    }
+    _ae.at = null;
+  }
+  // превращение: знак рассыпается искрами к цели заклинания
+  const ramp2 = rampOf(el, remote);
+  const toV = new V3(to.x, to.y, to.z);
+  kit.after(hold, () => {
+    kit.emit({ at: pos, to: toV, shape: 'line', count: 16, speed: [0.3, 1.2], life: [0.12, 0.24], size: [0.08, 0.015], ramp: ramp2, intensity: 3, sprite: 'spark', drag: 3, rival: remote, essential: true });
+    _hf.rival = !!remote; _hf.color = P.core; _hf.size[0] = R * 0.25; _hf.size[1] = R * 1.1; _hf.dur = 0.12; _hf.intensity = 3.8; _hf.sprite = 'star'; _hf.pull = 0.25; _hf.rot = 0; _hf.fadeIn = 0.02; _hf.curve = 0.45;
+    kit.flash(pos, _hf);
+  });
+  return { pos, glyph: h, at: hold, to: toV };
+}
+
+// ---------------------------------------------------------------------- комета (снаряд в полёте)
+// Слой 2 — частицы стихии: огонь — языки пламени (вверх), гроза/буря — длинные искры, тьма — дымные «перья»
+// и чёрное ядро, ветер — изумрудные листья по спирали; прочие — искры своей рампы.
+const COMET_LOOK = {
+  fire:    { sprite: 'flame', ramp: 'flame', grav: -1.6, turb: 0.5, stretch: 0, size: 0.9, trail: 'fire' },
+  storm:   { sprite: 'spark', ramp: 'storm', grav: 0, turb: 0.2, stretch: 0.05, size: 0.35, trail: 'energy' },
+  tempest: { sprite: 'spark', ramp: 'tempest', grav: 0, turb: 0.3, stretch: 0.06, size: 0.35, trail: 'energy' },
+  void:    { sprite: 'wisp', ramp: 'void', grav: -0.4, turb: 0.6, stretch: 0, size: 0.8, trail: 'dark' },
+  wind:    { sprite: 'leaf', ramp: 'wind', grav: -0.2, turb: 0.9, stretch: 0, size: 0.45, trail: 'energy' },
+};
+const COMET_DEF = { sprite: 'spark', ramp: null, grav: 0.6, turb: 0.2, stretch: 0.03, size: 0.35, trail: 'energy' };
+const COMET_POOL = 24;
+
+/**
+ * createComet(fx) → { start(pos, el, o) → comet|null, active() }.
+ * comet.step(pos, dir?, dt) — каждый кадр полёта (pos/dir можно переиспользовать), comet.end(hitPos?) — конец.
+ * o: { size:0.3 (м, радиус головы), remote, light:true, lightK:1, dur (сек, для света), trail:true, trailWidth,
+ *      ramp (своя рампа слоя искр), look (стихия облика, по умолчанию el), scope (сцена kit; по умолчанию текущая) }.
+ */
+export function createComet(fx) {
+  const V3 = fx.THREE.Vector3, kit = fx.kit;
+  const pool = [];
+  const live = [];
+  const eCore = { at: null, to: null, shape: 'point', count: 1, speed: [0, 0.05], life: [0.06, 0.08], size: [0.3, 0.2], sizeVar: 0.1, ramp: 'whiteHold', intensity: 3, sprite: 'glow', fadeIn: 0.05, essential: true, rival: false };
+  const eHalo = { at: null, to: null, shape: 'point', count: 1, speed: [0, 0.08], life: [0.09, 0.13], size: [0.7, 0.45], sizeVar: 0.15, ramp: 'gold', intensity: 1.7, sprite: 'glow', fadeIn: 0.1, essential: true, rival: false };
+  const eDark = { at: null, to: null, shape: 'point', count: 1, speed: [0, 0.05], life: [0.07, 0.09], size: [0.24, 0.18], sizeVar: 0.05, ramp: 'darkcore', intensity: 1, sprite: 'dot', blend: 'alpha', fadeIn: 0.05, essential: true, rival: false };
+  const eTail = { at: null, radius: 0.08, count: 1, dir: null, cone: 0.5, speed: [0.5, 2.2], life: [0.16, 0.32], size: [0.06, 0.01], ramp: 'gold', intensity: 3, sprite: 'spark', stretch: 0.035, drag: 2.6, gravity: 0.8, essential: false, rival: false };
+  const eEl = { at: null, radius: 0.1, count: 1, dir: null, cone: 1.1, speed: [0.3, 1.2], life: [0.22, 0.42], size: [0.3, 0.06], ramp: 'gold', intensity: 2.2, sprite: 'spark', stretch: 0, drag: 2, gravity: 0, turb: 0, spin: [-3, 3], essential: false, rival: false };
+  const kLight = { color: 0xffffff, intensity: 0.6, range: 7, dur: 0.6, attack: 0.1, follow: null };
+
+  function make() {
+    const c = {
+      alive: false, el: 'gold', look: COMET_DEF, P: null, remote: false, size: 0.3, ramp: 'gold', dark: false,
+      pos: new V3(), prev: new V3(), dir: new V3(0, 0, -1), back: new V3(0, 0, 1), lp: new V3(), started: false,
+      accA: 0, accB: 0, accC: 0, tr: null, scope: null, follow: null,
+      step(p, d, dt) { stepC(c, p, d, dt); },
+      end(hit) { endC(c, hit); },
+    };
+    c.follow = () => c.lp;
+    return c;
+  }
+  for (let i = 0; i < 6; i++) pool.push(make());
+
+  function start(p, el, o) {
+    if (!p || !isNum(p.x)) return null;
+    o = o || {};
+    if (live.length >= COMET_POOL) endC(live[0]);
+    const c = pool.pop() || make();
+    const remote = !!o.remote;
+    const lookEl = o.look || el;
+    c.alive = true; c.el = el; c.remote = remote; c.look = COMET_LOOK[remote ? '' : lookEl] || COMET_DEF;
+    c.P = fx.pal(el, { remote });
+    c.size = isNum(o.size) ? o.size : 0.3;
+    c.ramp = o.ramp || rampOf(el, remote);
+    c.dark = lookEl === 'void' && !remote;
+    c.pos.copy(p); c.prev.copy(p); c.lp.copy(p); c.started = false;
+    c.accA = 0; c.accB = 0; c.accC = 0;
+    c.scope = o.scope !== undefined ? o.scope : kit.currentScope;
+    c.tr = null;
+    if (o.trail !== false && fx.trails) {
+      try {
+        const style = c.look.trail;
+        c.tr = fx.trails.create({
+          style, width: isNum(o.trailWidth) ? o.trailWidth : c.size * 1.25, life: isNum(o.trailLife) ? o.trailLife : 0.28, head: 1.1, taper: 1,
+          color: c.P.mid, hot: style === 'dark' ? c.P.hot : c.P.core, intensity: 2.4, rival: remote ? 1 : 0, maxPoints: 26, minDist: 0.06,
+        });
+        if (c.tr) c.tr.push(p);
+      } catch (e) { c.tr = null; }
+    }
+    if (o.light !== false) {
+      kLight.color = c.P.hot; kLight.intensity = 0.55 * (isNum(o.lightK) ? o.lightK : 1); kLight.range = 7;
+      kLight.dur = isNum(o.dur) ? o.dur + 0.1 : 0.7; kLight.follow = c.follow;
+      kit.light(p, kLight);
+      kLight.follow = null;
+    }
+    live.push(c);
+    return c;
+  }
+  function stepC(c, p, d, dt) {
+    if (!c.alive || !p) return;
+    c.prev.copy(c.pos);
+    c.pos.set(p.x, p.y, p.z);
+    c.lp.copy(c.pos);
+    if (d && isNum(d.x) && (d.x * d.x + d.y * d.y + d.z * d.z) > 1e-8) c.dir.set(d.x, d.y, d.z).normalize();
+    else { c.dir.subVectors(c.pos, c.prev); if (c.dir.lengthSq() > 1e-10) c.dir.normalize(); }
+    c.back.copy(c.dir).multiplyScalar(-1);
+    if (c.tr) c.tr.push(c.pos);
+    if (!(dt > 0)) return;
+    const prevScope = kit.enterScope(c.scope);
+    if (c.scope) kit.touchScope(c.scope, 0.25);
+    const s = c.size, seg = c.started ? c.prev.distanceTo(c.pos) : 0;
+    c.started = true;
+    // голова: ядро и ореол вдоль пройденного за кадр отрезка — на 30 кадрах/с голова сплошная, а не пунктир
+    const nHead = Math.min(4, 1 + Math.floor(seg / Math.max(0.12, s * 0.9)));
+    const line = seg > 0.02;
+    eHalo.at = line ? c.prev : c.pos; eHalo.to = line ? c.pos : null; eHalo.shape = line ? 'line' : 'point'; eHalo.count = nHead;
+    eHalo.ramp = c.ramp; eHalo.rival = c.remote; eHalo.size[0] = s * 2.5; eHalo.size[1] = s * 1.7;
+    kit.emit(eHalo);
+    if (c.dark) {
+      eDark.at = eHalo.at; eDark.to = eHalo.to; eDark.shape = eHalo.shape; eDark.count = nHead; eDark.size[0] = s * 0.95; eDark.size[1] = s * 0.75;
+      kit.emit(eDark);
+      // тьма: вместо белого ядра — светлый фиолетовый ободок вокруг чёрной сердцевины
+      eCore.size[0] = s * 1.2; eCore.size[1] = s * 0.95; eCore.ramp = 'void'; eCore.sprite = 'ring';
+    } else { eCore.size[0] = s * 1.05; eCore.size[1] = s * 0.7; eCore.ramp = 'whiteHold'; eCore.sprite = 'glow'; }
+    eCore.at = eHalo.at; eCore.to = eHalo.to; eCore.shape = eHalo.shape; eCore.count = nHead; eCore.rival = c.remote;
+    kit.emit(eCore);
+    // слой 1: искры-хвост назад по полёту
+    c.accA += dt * 46;
+    let n = Math.floor(c.accA);
+    if (n > 0) {
+      c.accA -= n; if (n > 5) n = 5;
+      eTail.at = c.pos; eTail.dir = c.back; eTail.count = n; eTail.ramp = n & 1 ? c.ramp : (c.dark ? 'void' : 'white'); eTail.radius = s * 0.5; eTail.rival = c.remote;
+      eTail.size[0] = Math.max(0.05, s * 0.22);
+      kit.emit(eTail);
+    }
+    // слой 2: частицы стихии
+    const L = c.look;
+    c.accB += dt * 24;
+    n = Math.floor(c.accB);
+    if (n > 0) {
+      c.accB -= n; if (n > 3) n = 3;
+      eEl.at = c.pos; eEl.dir = c.back; eEl.count = n; eEl.sprite = L.sprite; eEl.ramp = c.remote ? 'rival' : (L.ramp || c.ramp); eEl.rival = c.remote;
+      eEl.gravity = L.grav; eEl.turb = L.turb; eEl.stretch = L.stretch; eEl.radius = s * 0.6;
+      eEl.size[0] = s * L.size; eEl.size[1] = s * L.size * 0.25;
+      kit.emit(eEl);
+    }
+    kit.enterScope(prevScope);
+  }
+  function endC(c, hit) {
+    if (!c.alive) return;
+    c.alive = false;
+    if (c.tr) { if (hit && isNum(hit.x)) c.tr.push(hit); c.tr.stop(); c.tr = null; }
+    c.scope = null;
+    const i = live.indexOf(c);
+    if (i >= 0) live.splice(i, 1);
+    if (pool.length < COMET_POOL) pool.push(c);
+  }
+  function clear() { while (live.length) endC(live[live.length - 1]); }
+  return { start, active: () => live.length, clear };
+}
