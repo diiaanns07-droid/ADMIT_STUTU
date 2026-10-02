@@ -216,6 +216,11 @@ import('./core/postfx.js').then((m) => {
   } catch (e) { console.warn('[ASHEN] postfx недоступен, обычный рендер:', e); postfx = null; }
 }).catch((e) => console.warn('[ASHEN] core/postfx.js не загружен, обычный рендер:', e && e.message));
 const rig = createCameraRig(config.camera);
+// [W3-КИНО] сцены Регента: переход в фазу 2 и гибель (modules/fx/bossFinale.js); нет модуля — бой как был
+let bossFinale = null;
+import('./modules/fx/bossFinale.js').then((m) => {
+  try { bossFinale = m.createBossFinale({ THREE, scene, world, cue, shake: (k) => rig.shake(k), reducedMotion: () => !!settings.reducedMotion, quality: () => settings.quality }); } catch (e) { console.warn('[W3-КИНО] финал Регента', e); }
+}).catch((e) => console.warn('[W3-КИНО] bossFinale.js не загружен:', e && e.message));
 const combatCfg = typeof combat.getConfig === 'function' ? combat.getConfig() : null;
 
 // [ASHEN_V2] прогресс героя: очки клятвы (отжимания, угли на плато) → улучшения боя.
@@ -436,6 +441,7 @@ function resetFight() {
   app.lostTime = 0;
   app.outroAt = 0;             // [FEEL] финал и замедление прошлого боя не переходят в новый
   timeFx.slowUntil = 0; timeFx.stopUntil = 0;
+  if (bossFinale) bossFinale.reset();   // [W3-КИНО] осколки и кинокамера прошлого боя
 }
 
 // [ASHEN_V2] состояние камеры из снимка: вне арены — камера исследования, в арене — lock-on.
@@ -1213,6 +1219,7 @@ function timeScale(now) {
 }
 // [FEEL] финал боя: последний удар замедлен, HUD пишет «ПОБЕДА» / «РЕГЕНТ УСТОЯЛ», потом — экран итогов.
 const OUTRO = { victoryMs: 1700, defeatMs: 1200, victoryScale: 0.25, defeatScale: 0.45 };
+OUTRO.victoryMs = 2600;   // [W3-КИНО] гибель Регента (modules/fx/bossFinale.js): перегрев 0,55 с, осколки, облёт камеры
 
 // ---------------------------------------------------------------- [ТВИСТ «ОШИБКА»]
 // Импульсы удачных жестов и коды подсказок из распознавателя → статистика боя.
@@ -1251,6 +1258,7 @@ function feedPostFx(events) {
     const edge = Math.max(Math.abs(_sunV.x), Math.abs(_sunV.y));
     postfx.setSun(_sunV.x * 0.5 + 0.5, _sunV.y * 0.5 + 0.5, inFront ? 1 - Math.min(1, Math.max(0, (edge - 1) / 0.6)) : 0);
   }
+  feedCinema(events);   // [W3-КИНО]
   if (!Array.isArray(events) || typeof postfx.punch !== 'function') return;
   for (const e of events) {
     let k = e && PUNCH[e.type];
@@ -1259,6 +1267,23 @@ function feedPostFx(events) {
     let x = 0.5, y = 0.5;
     if (e.position) { _sunV.set(e.position.x, e.position.y || 0, e.position.z).project(camera); if (_sunV.z < 1) { x = _sunV.x * 0.5 + 0.5; y = _sunV.y * 0.5 + 0.5; } }
     postfx.punch(k, x, y);
+  }
+}
+
+// [W3-КИНО] экранные события боя → postfx.pulse (волна, рывок, ранение); цвет фаз — из атмосферы
+const _cinPos = { x: 0, y: 0, z: 0 };
+function feedCinema(events) {
+  const atmo = world && world.atmosphere;
+  if (typeof postfx.setLook === 'function') postfx.setLook(atmo && atmo.look ? atmo.look : null);
+  if (!Array.isArray(events) || typeof postfx.pulse !== 'function') return;
+  for (const e of events) {
+    const d = (e && e.data) || {};
+    if (!e || d.remote) continue;
+    if (e.type === 'player_hit') postfx.pulse('hurt', 0.45 + Math.min(0.55, (Number(d.amount) || 10) / 40));
+    else if (e.type === 'perfect_dodge') postfx.pulse('dash', 1);
+    else if (e.type === 'player_dash' && e.position) { _cinPos.x = e.position.x; _cinPos.y = (e.position.y || 0) + 1.2; _cinPos.z = e.position.z; postfx.pulse('dash', 0.6, _cinPos); }
+    else if (e.type === 'boss_impact' && !d.launch && (d.attackKind === 'slam' || d.attackKind === 'nova')) postfx.pulse('shockwave', d.attackKind === 'nova' ? 1 : 0.75, e.position);
+    else if (e.type === 'burst') postfx.pulse('shockwave', 0.5 + 0.5 * Math.min(1, Number(d.power) || 0.5), e.position);
   }
 }
 
@@ -1310,7 +1335,7 @@ function frame(now) {
   const stalled = raw > config.loop.stallSec;       // после ухода вкладки не догоняем
   const dtReal = stalled ? 0 : Math.min(raw, config.loop.maxDt);
   const ts = app.screen === 'playing' ? (pvpCtl && pvpCtl.active ? pvpCtl.timeScale(now) : timeScale(now)) : 1; // [PVP] в дуэли без стоп-кадров
-  const dt = dtReal * ts;
+  const dt = dtReal * ts * (bossFinale && app.screen === 'playing' ? bossFinale.timeScale() : 1);   // [W3-КИНО] сцена перехода в фазу 2
 
   const input = readInput();
   // [HAND] лук и магия рукой → input.bow / input.handSpell; конфликтующие жесты гасятся (C2)
@@ -1449,6 +1474,7 @@ function frame(now) {
   if (effects.setInput) effects.setInput(input); // [VFX] след руны в воздухе, свечение ладоней
   if (heroBowPose) { try { heroBowPose.update(dt, { root: world.hero && world.hero.root, heroModel, snap: lastSnapshot }); } catch (e) { /* [HAND] */ } } // [HAND] поза лука/ладони
   try { effects.update(dt, fxSnap, fxEvents); } catch (e) { console.error('[ASHEN] effects.update', e); } // [NET] fxSnap/fxEvents
+  if (bossFinale) { try { bossFinale.update(dt, dtReal, lastSnapshot, events); } catch (e) { console.warn('[W3-КИНО] финал', e); bossFinale = null; } }   // [W3-КИНО]
   if (effects.takeHitStop && app.screen === 'playing') { const hs = Math.min(effects.takeHitStop(), settings.reducedMotion ? FEEL_TIME.reducedStopMaxMs : Infinity); if (hs > 0) timeFx.stopUntil = Math.max(timeFx.stopUntil, now + hs); } // [VFX] хит-стоп по силе удара; [FEEL] «Уменьшенное движение» — не дольше 40 мс
   if (handVisuals && effects.linkHandVisuals) effects.linkHandVisuals(handVisuals); // [VFX] стрелы/сгустки/попадания — V6, лук — №6
   if (handVisuals) { try { handVisuals.update(dt, fxSnap, fxEvents, handAnchors()); } catch (e) { /* [HAND] */ } } // [HAND] (fxSnap — со стрелами соперника)
@@ -1483,15 +1509,16 @@ function frame(now) {
     const c = rig.update(dtReal, rigState(lastSnapshot, imp));
     camera.position.set(c.position.x, c.position.y, c.position.z);
     camera.lookAt(c.target.x, c.target.y, c.target.z);
+    if (bossFinale) bossFinale.applyCamera(camera, dtReal);   // [W3-КИНО] наезд на Регента / облёт места гибели
   }
 
   if (heroShowcase) { try { heroShowcase.update(dtReal, app.screen === 'menu', camera); } catch (e) { console.warn('[HERO] витрина', e); heroShowcase = null; } } // [HERO] свет и облёт витрины
   if (pvpCtl) { try { pvpCtl.frame(lastSnapshot, app.screen); } catch (e) { console.error('[PVP] frame', e); } } // [PVP] фазы хоста, готовность, панель
   if (postfx && typeof postfx.setMode === 'function') { try { postfx.setMode(app.screen, settings); } catch (e) { /* ignore */ } } // [BDO] DOF меню и грейд по экрану
-  if (postfx && postfx.enabled) feedPostFx(events);
+  if (postfx) feedPostFx(events);   // [W3-КИНО] и на low: цвет фаз, ранение, засветка
   let rendered = false;
   if (perfTuner) perfTuner.gpuBegin();
-  if (postfx && postfx.enabled) { try { postfx.render(dtReal); rendered = true; } catch (e) { console.warn('[ASHEN] postfx.render', e); postfx = null; } }
+  if (postfx) { try { postfx.render(dtReal); rendered = true; } catch (e) { console.warn('[ASHEN] postfx.render', e); postfx = null; } }   // [W3-КИНО] на low — обычный кадр + наложение
   if (!rendered) renderer.render(scene, camera);
   if (perfTuner) perfTuner.gpuEnd();
   renderUI();
