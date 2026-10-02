@@ -146,6 +146,9 @@ renderer.shadowMap.type = THREE.PCFShadowMap;
 // ?uncapped=1 — без предела кадров (замеры QA), ?pose=lite|full — модель позы вручную.
 const PERF_Q = new URLSearchParams(location.search);
 const UNCAPPED = PERF_Q.get('uncapped') === '1';
+// [PERF] ?benchcam=1 — замер tools/perf_bench.mjs: камера (в headless — поддельная) работает и в «Отладке с клавиатуры»,
+// чтобы мерить бой и MediaPipe на одной видеокарте одновременно. Ввод остаётся клавиатурным.
+const BENCH_CAM = PERF_Q.get('benchcam') === '1';
 // [ONBOARD] быстрый вход: «Играть» → камера с автокалибровкой → обучение → бой у края арены.
 // ?demo — для живой презентации: без меню, сразу камера → бой; ?classic=1 — прежний поток экранов с кнопками.
 const DEMO = PERF_Q.has('demo') && PERF_Q.get('demo') !== '0';
@@ -1003,7 +1006,7 @@ const callbacks = {
     app.debug = on;
     debugInput.setEnabled(on);
     if (on) trainer.setDemo(true);        // [ТВИСТ «ОШИБКА»] тренажёр без камеры — демо
-    if (on && vision) vision.stop();      // в DEBUG камера не используется и выключается
+    if (on && vision && !BENCH_CAM) vision.stop();      // в DEBUG камера не используется и выключается
     renderUI();
   },
 
@@ -1035,7 +1038,7 @@ const callbacks = {
   onBuyUpgrade(id) { if (progression.buy(id).ok) renderUI(); },
   onBack() {
     const to = app.nav.pop() || 'menu';
-    if (to === 'menu' && vision && !app.resumableFight && !cursorCamAllowed()) vision.stop();   // в меню камера не нужна ([W3-CURSOR] — кроме курсора-кисти)
+    if (to === 'menu' && vision && !app.resumableFight && !cursorCamAllowed() && !BENCH_CAM) vision.stop();   // в меню камера не нужна ([W3-CURSOR] — кроме курсора-кисти)
     setScreen(to);
   },
 
@@ -1048,7 +1051,7 @@ const callbacks = {
     app.resumableFight = false;
     app.introShown = false;
     app.autoResume = null;                // [ONBOARD]
-    if (vision && !cursorCamAllowed()) vision.stop();   // в меню камера выключается (калибровка сохраняется в vision); [W3-CURSOR] — кроме курсора-кисти
+    if (vision && !cursorCamAllowed() && !BENCH_CAM) vision.stop();   // в меню камера выключается (калибровка сохраняется в vision); [W3-CURSOR] — кроме курсора-кисти
     resetFight();
     lastSnapshot = null;
     app.error = null;
@@ -2131,6 +2134,8 @@ resize();
 if (settings.startZone !== 'arena') { try { resetFight(); } catch (e) { console.warn('[ASHEN] startZone', e); } }   // [FOREST] в меню герой у врат леса; [ONBOARD] у края арены
 // [ONBOARD] ?demo — живая презентация: без меню сразу экран камеры (камера и калибровка — сами), затем бой
 if (DEMO && !CHALLENGE_Q) { setScreen('camera'); app.onb.autoEnabled = true; enableCamera(); }
+// [PERF] ?benchcam=1 — камера работает с самого старта и не выключается в отладке (замер боя вместе с MediaPipe)
+if (BENCH_CAM) ensureVision().then((v) => v.start()).catch((e) => console.warn('[PERF] benchcam: камера не запустилась', e && (e.code || e.message)));
 if (CHALLENGE_Q) callbacks.onChallenge({ from: 'url' });   // [W3-CHALLENGE] ?challenge — сразу испытание
 renderUI();
 requestAnimationFrame(frame);

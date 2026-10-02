@@ -1224,7 +1224,7 @@ export async function createVision(options = {}) {
     seq: 0, inflightSeq: null, lastRvfcT: 0, pollFrames: -1, pollFramesT: 0, rvfcStarved: false,
   };
   const perf = {
-    arrivals: [], hz: 0, inferMs: null, latencyMs: null, results: 0,
+    arrivals: [], hz: 0, inferMs: null, handsMs: null, latencyMs: null, results: 0,   // inferMs — поза, handsMs — кисти (EMA)
     skippedBusy: 0, skippedRate: 0, errors: 0, consecutiveErrors: 0, captureErrors: 0,
     lastInferT: -Infinity, minIntervalMs: 0,
     camArrivals: [], camFallback: null, handsFrames: 0, // [PERF]
@@ -1272,6 +1272,7 @@ export async function createVision(options = {}) {
         stand: standDet.getDebug(),   // [СТОЯ]
         inferenceHz: arr.length >= 2 ? r1(perf.hz) : null,
         inferMs: r1(perf.inferMs),
+        handsMs: r1(perf.handsMs),          // [PERF] отдельно: время модели кистей за кадр
         latencyMs: r1(perf.latencyMs),
         results: perf.results,
         skippedBusy: perf.skippedBusy,
@@ -1799,7 +1800,7 @@ export async function createVision(options = {}) {
       if (perf.consecutiveErrors >= 3) { switchToMainFallback(`повторные ошибки в worker: ${m.message || ''}`); return; }
     } else {
       perf.consecutiveErrors = 0;
-      if (running) handleResult(m.tMs, m.landmarks ? unpackCompactLandmarks(m.landmarks) : null, m.w, m.h, m.inferMs, unpackHands(m.hands, m.handsMeta));
+      if (running) handleResult(m.tMs, m.landmarks ? unpackCompactLandmarks(m.landmarks) : null, m.w, m.h, m.inferMs, unpackHands(m.hands, m.handsMeta), m.handsMs);
     }
     if (running && loop.dirty && nowMs() - perf.lastInferT >= perf.minIntervalMs) {
       loop.lastKey = loop.dirtyKey;
@@ -1828,14 +1829,18 @@ export async function createVision(options = {}) {
     } finally {
       try { if (res && typeof res.close === 'function') res.close(); } catch { /* ignore */ }
     }
+    const poseMs = nowMs() - t0;
     let hands = [];
+    let handsMs = null;
     if (e.hands) {
       let hr = null;
+      const h0 = nowMs();
       try { hr = e.hands.detectForVideo(video, ts); hands = handsFromResult(hr); }
       catch { /* кадр без рук */ }
       finally { try { if (hr && typeof hr.close === 'function') hr.close(); } catch { /* ignore */ } }
+      handsMs = nowMs() - h0;
     }
-    handleResult(now, lms, video.videoWidth, video.videoHeight, nowMs() - t0, hands);
+    handleResult(now, lms, video.videoWidth, video.videoHeight, poseMs, hands, handsMs);
   }
 
   function handsFromResult(res) {
@@ -1869,7 +1874,7 @@ export async function createVision(options = {}) {
     return out;
   }
 
-  function handleResult(tMs, lms, w, h, inferMs, hands) {
+  function handleResult(tMs, lms, w, h, inferMs, hands, handsMs = null) {
     const arrived = nowMs();
     perf.results++;
     perf.arrivals.push(arrived);
@@ -1877,6 +1882,7 @@ export async function createVision(options = {}) {
     const a = perf.arrivals;
     if (a.length >= 2 && a[a.length - 1] > a[0]) perf.hz = ((a.length - 1) * 1000) / (a[a.length - 1] - a[0]);
     if (finite(inferMs)) perf.inferMs = emaValue(perf.inferMs, inferMs, 0.15);
+    if (finite(handsMs)) perf.handsMs = emaValue(perf.handsMs, handsMs, 0.15);
     perf.latencyMs = emaValue(perf.latencyMs, arrived - tMs, 0.15);
     updateMinInterval();
     // [PERF] кадр с уверенной кистью: закрытые руками плечи не считаются потерей трекинга

@@ -114,6 +114,7 @@ const LOCO = ['Idle', 'Walk', 'Run', 'WalkBack', 'StrafeL', 'StrafeR'];
 const LEG_VRM = ['hips', 'leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'leftToes', 'rightUpperLeg', 'rightLowerLeg', 'rightFoot', 'rightToes'];
 const ANCHOR_NAMES = ['handL', 'handR', 'chest', 'head', 'bowSocket', 'staffTip'];
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -338,6 +339,9 @@ export function createHeroModel({
     const token = ++S.token;
     S.hero = def.id;
     clear();
+    // [PERF] хронометраж появления героя (мс от начала setHero, нарастающим итогом) — панель F3 и tools/perf_bench.mjs
+    const tm = { id: def.id, t0: nowMs(), fetch: null, parse: null, prep: null, clips: null, setup: null, dress: null, ready: null };
+    S.timing = tm;
     // пока грузится новая модель — виден процедурный герой, якоря на его маркерах (или на root)
     // на витрине меню процедурное тело не показываем (мелькал чужой силуэт): герой появляется, когда готов
     showProcedural(!S.inMenu || (!def.vrm && !def.glb)); parentAnchors();
@@ -348,16 +352,20 @@ export function createHeroModel({
       // [LOAD] байты GLB — через общий кэш (предзагрузка витрины, возврат к прежнему герою — без сети);
       // не скачались (отмена предзагрузки, ошибка) — загрузчик попробует сам
       const pre = def.glb ? await fetchBytes(url).catch(() => null) : null;
+      tm.fetch = nowMs() - tm.t0;
       if (S.disposed || token !== S.token) return;   // пока качали, выбрали другого героя — дальше не грузим
       const vrm = def.glb ? await loadHumanoidGLB(THREE, url, undefined, pre) : await loadVRM(THREE, url);
+      tm.parse = nowMs() - tm.t0;
       if (def.recolor) await recolorHero(vrm, def.recolor, def.makeup || null);
       if (def.hide) vrm.scene.traverse((o) => { if (o.isMesh && def.hide.some((n) => o.name.startsWith(n))) o.visible = false; });
       if (def.brows) thinBrows(vrm, def.brows);
       if (def.smile) smileFace(vrm, def.smile);
       // пропорции: у Quaternius голова стилизованно крупная — чуть меньше (снаряжение головы крепится после)
       if (def.headScale) { const hb = vrm.humanoid.getRawBoneNode ? vrm.humanoid.getRawBoneNode('head') : null; if (hb) hb.scale.setScalar(def.headScale); }
+      tm.prep = nowMs() - tm.t0;
       if (S.disposed || token !== S.token) { disposeVrm(vrm); return; }
       const lib = await buildClips(THREE, vrm, url, libUrls);
+      tm.clips = nowMs() - tm.t0;
       if (S.disposed || token !== S.token) { disposeVrm(vrm); return; }
       // рост: VRoid ~1.5–1.6 м — подгоняем под героя
       if (vrm.humanoid.resetNormalizedPose) vrm.humanoid.resetNormalizedPose();
@@ -411,8 +419,10 @@ export function createHeroModel({
       for (const clip of Object.values(lib.clips)) for (const tr of clip.tracks) tracked.add(tr.name.split('.')[0]);
       const free = Object.values(bones).filter((b) => b && !tracked.has(b.name));
       cur = { model: wrapG, vrm, mixer, full, upper, lower, midR, stride: lib.stride, loops: lib.loops, bones, free, scale: k, def, gear: null, shade: null, url, hands, rig: lib.rig };
+      tm.setup = nowMs() - tm.t0;
       // оболочка: реалистичные материалы (modules/heroShading.js) и снаряжение (modules/heroGear.js)
       await dressUp(token);
+      tm.dress = nowMs() - tm.t0;
       if (S.disposed || token !== S.token) return;
       showProcedural(false);
       for (const n of LOCO) if (full[n]) { full[n].play(); full[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); if (lower[n]) { lower[n].play(); lower[n].setEffectiveWeight(0); } }
@@ -421,6 +431,7 @@ export function createHeroModel({
       parentAnchors();
       if (S.lod) { const l = S.lod; S.lod = -1; applyLod(l); }   // LOD, заданный до загрузки
       S.ready = true;
+      tm.ready = nowMs() - tm.t0;
       S.appear = 1;   // появление: вспышка ауры (меню)
       if (stance) setStance(stance);
     } catch (e) {
@@ -1281,6 +1292,8 @@ export function createHeroModel({
         shading: opts.shading, lod: S.lod, pose: { bow: +pose.wBow.toFixed(2), spell: +pose.wSpell.toFixed(2), mirror: +mirror.w.toFixed(2) },
         gear: cur && cur.gear ? cur.gear.names || [] : [],
         gearMs: cur && cur.gear && cur.gear.perf ? { cloth: +cur.gear.perf.cloth.toFixed(3), hair: +cur.gear.perf.hair.toFixed(3) } : null,
+        timing: S.timing ? { ...S.timing } : null,   // [PERF] этапы последней загрузки модели, мс от начала setHero
+        procedural: heroBody ? !!heroBody.visible : null,   // [PERF] QA: виден ли процедурный герой мира (плащ с руной)
       };
     },
   };

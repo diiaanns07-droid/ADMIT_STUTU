@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>ASHEN OATH — стенд распознавания (замер)</title>
+<!--
+  [PERF] Стенд только для замеров: настоящий modules/vision.js (worker, MediaPipe) на потоке камеры,
+  без 3D-сцены. Запускается tools/perf_bench.mjs в headless Chrome с поддельной камерой
+  (--use-fake-device-for-media-stream): в кадре нет человека, поэтому модель кистей каждый кадр
+  ищет ладони заново (детектор), а не ведёт их — это худший случай по времени.
+  Параметры адреса: delegate=GPU|CPU · hands=1|0 · pose=lite|full · width=640 (captureMaxWidth) ·
+  hz=30 (maxInferenceHz) · cam=640x480 · worker=1|0 · sec=12 (длительность).
+  Результат: window.__VB__ = { done, summary, samples[] } и текст на странице.
+-->
+<style>body{margin:0;background:#111;color:#ddd;font:13px/1.4 ui-monospace,Consolas,monospace}pre{padding:12px;white-space:pre-wrap}video{position:fixed;right:8px;bottom:8px;width:160px;opacity:.5}</style>
+</head>
+<body>
+<pre id="out">запуск…</pre>
+<video id="v" muted playsinline></video>
+<script type="module">
+import { createVision } from '../modules/vision.js';
+import { DEPS } from '../config.js';
+
+const q = new URLSearchParams(location.search);
+const out = document.getElementById('out');
+const say = (s) => { out.textContent = s; };
+const SEC = +(q.get('sec') || 12);
+const [cw, ch] = (q.get('cam') || '640x480').split('x').map(Number);
+const pose = q.get('pose') === 'full' ? DEPS.mediaPipe.modelFullUrl : DEPS.mediaPipe.modelUrl;
+const cfg = {
+  mediaPipe: { moduleUrl: DEPS.mediaPipe.moduleUrl, wasmRoot: DEPS.mediaPipe.wasmRoot, modelUrl: pose, handModelUrl: DEPS.mediaPipe.handModelUrl },
+  delegate: q.get('delegate') === 'CPU' ? 'CPU' : 'GPU',
+  hands: q.get('hands') !== '0',
+  captureMaxWidth: +(q.get('width') || 640),
+  maxInferenceHz: +(q.get('hz') || 30),
+  camera: { width: cw, height: ch, frameRate: 30 },
+  useWorker: q.get('worker') === '0' ? 'off' : 'auto',
+};
+if (q.get('handsDelegate')) cfg.handsDelegate = q.get('handsDelegate');   // [PERF] раздельный делегат кистей (если поддержан)
+if (q.get('poseEvery')) cfg.poseEvery = +q.get('poseEvery');               // [PERF] поза каждый N-й тик (если поддержано)
+window.__VB__ = { done: false, cfg, samples: [], summary: null, error: null };
+const med = (a) => { const b = a.filter((x) => typeof x === 'number' && Number.isFinite(x)).sort((x, y) => x - y); return b.length ? b[b.length >> 1] : null; };
+try {
+  const vision = await createVision({ video: document.getElementById('v'), config: cfg, onStatus: (s) => { if (!window.__VB__.done) say(`${s.status}: ${s.message}`); } });
+  const t0 = performance.now();
+  await vision.start();
+  const tStart = performance.now() - t0;
+  // прогрев: первые 3 с не считаем (компиляция шейдеров делегата, первые кадры камеры)
+  await new Promise((r) => setTimeout(r, 3000));
+  const tEnd = performance.now() + SEC * 1000;
+  while (performance.now() < tEnd) {
+    await new Promise((r) => setTimeout(r, 250));
+    const s = vision.getStatus();
+    const d = s.debug || {};
+    window.__VB__.samples.push({ t: Math.round(performance.now()), hz: d.inferenceHz, inferMs: d.inferMs, handsMs: d.handsMs, latencyMs: d.latencyMs, camFps: d.cameraFps, results: d.results, skippedBusy: d.skippedBusy, status: s.status });
+  }
+  const S = window.__VB__.samples;
+  const st = vision.getStatus();
+  window.__VB__.summary = {
+    delegate: st.delegate, handsDelegate: st.hands && st.hands.delegate, mode: st.mode, handsReady: !!(st.hands && st.hands.ready),
+    poseModel: st.debug && st.debug.poseModel, video: st.debug && st.debug.video, captureMaxWidth: cfg.captureMaxWidth, startMs: Math.round(tStart),
+    hz: med(S.map((x) => x.hz)), inferMs: med(S.map((x) => x.inferMs)), handsMs: med(S.map((x) => x.handsMs)), latencyMs: med(S.map((x) => x.latencyMs)), camFps: med(S.map((x) => x.camFps)),
+    results: S.length ? S[S.length - 1].results - S[0].results : 0, sec: SEC, fallback: st.debug && st.debug.workerFallbackReason,
+  };
+  say(JSON.stringify(window.__VB__.summary, null, 1));
+  vision.stop();
+} catch (e) {
+  window.__VB__.error = String((e && (e.code || e.message)) || e);
+  say('ОШИБКА: ' + window.__VB__.error);
+}
+window.__VB__.done = true;
+</script>
+</body>
+</html>
