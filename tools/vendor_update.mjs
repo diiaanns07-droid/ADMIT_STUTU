@@ -39,6 +39,7 @@ export const THREE_ADDONS = [
   'postprocessing/GTAOPass.js',
   'postprocessing/SMAAPass.js',
   'postprocessing/BokehPass.js',
+  'libs/meshopt_decoder.module.js', // [LOAD] сжатые модели героев и деревни (EXT_meshopt_compression)
 ];
 // Только SIMD-сборки: worker берёт module-вариант, запасной режим в главном потоке — обычный.
 // Сборка без SIMD (браузеры до 2021 г.) не копируется — её отдаёт CDN через sw.js.

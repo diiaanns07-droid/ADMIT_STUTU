@@ -17,8 +17,8 @@
 'use strict';
 
 // <AO_MANIFEST> — генерирует node tools/sw_manifest.mjs, руками не править
-const VERSION = '8a0d5f40b94b';
-const VENDOR_VERSION = '82621cd74530';
+const VERSION = '429f14bf5fee';
+const VENDOR_VERSION = 'b3f563930682';
 const SHELL = [
   "./",
   "config.js",
@@ -147,6 +147,7 @@ const SHELL = [
   "vendor/npm/peerjs@1.5.5/dist/peerjs.min.js",
   "vendor/npm/three@0.185.1/build/three.core.min.js",
   "vendor/npm/three@0.185.1/build/three.module.min.js",
+  "vendor/npm/three@0.185.1/examples/jsm/libs/meshopt_decoder.module.js",
   "vendor/npm/three@0.185.1/examples/jsm/loaders/GLTFLoader.js",
   "vendor/npm/three@0.185.1/examples/jsm/math/SimplexNoise.js",
   "vendor/npm/three@0.185.1/examples/jsm/postprocessing/BokehPass.js",
