@@ -255,7 +255,7 @@ export const FACE_LOOKS = Object.freeze({
   elf: {
     brow: { color: 0x7a6447, inner: [0.0135, 1.6738], peak: [0.0425, 1.6838], tail: [0.0608, 1.6772], w: [0.0040, 0.0034, 0.0009], peakT: 0.64, soft: 0.75, hair: 0.75, seed: 3 },
     eyes: { scale: 1.07, iris: 1.08, shadow: 0x7f9fd6, shadowA: 0.42, shadow2: 0xb6c8ee, liner: 0x3b2c24, linerW: 0.0006, wing: 0.0016, wingUp: 0.32, lower: 0.18 },
-    skin: { blush: 0xf2959a, blushA: 0.2, glow: 0.8, contour: 0.55, conceal: 0.65 },
+    skin: { blush: 0xf2959a, blushA: 0.2, glow: 0.8, contour: 0.55, conceal: 0.85 },
     lips: { color: 0xd8828c, a: 0.62, gloss: 0.75, tint: 0xf0a0a8 },
     shape: { jaw: 0.85, chin: 0.8, nose: 0.85, cheek: 0.5 },
   },
@@ -263,7 +263,7 @@ export const FACE_LOOKS = Object.freeze({
   dark: {
     brow: { color: 0x1d1424, inner: [0.0128, 1.6732], peak: [0.0435, 1.6848], tail: [0.0625, 1.6772], w: [0.0043, 0.0036, 0.0009], peakT: 0.66, soft: 0.55, hair: 0.6, seed: 7 },
     eyes: { scale: 1.07, iris: 1.08, shadow: 0x6a3f9a, shadowA: 0.55, shadow2: 0x3a2050, liner: 0x0b0610, linerW: 0.00095, wing: 0.0058, wingUp: 0.42, lower: 0.3 },
-    skin: { blush: 0xc98aa6, blushA: 0.1, glow: 0.6, contour: 0.7, conceal: 0.55 },
+    skin: { blush: 0xc98aa6, blushA: 0.1, glow: 0.6, contour: 0.7, conceal: 0.7 },
     lips: { color: 0x8a3058, a: 0.78, gloss: 0.85, tint: 0xb04a78 },
     shape: { jaw: 0.9, chin: 0.85, nose: 0.8, cheek: 0.6 },
   },
@@ -271,7 +271,7 @@ export const FACE_LOOKS = Object.freeze({
   ranger: {
     brow: { color: 0x5b3b27, inner: [0.0132, 1.6735], peak: [0.0420, 1.6822], tail: [0.0610, 1.6768], w: [0.0047, 0.0039, 0.0011], peakT: 0.6, soft: 0.85, hair: 0.95, seed: 11 },
     eyes: { scale: 1.06, iris: 1.07, shadow: 0x8f9a52, shadowA: 0.36, shadow2: 0xc9a85a, liner: 0x2a1a12, linerW: 0.00055, wing: 0.0011, wingUp: 0.25, lower: 0.15 },
-    skin: { blush: 0xee9480, blushA: 0.22, freckles: 0xa86a4a, frecklesA: 0.5, glow: 0.85, contour: 0.45, conceal: 0.6 },
+    skin: { blush: 0xee9480, blushA: 0.22, freckles: 0xa86a4a, frecklesA: 0.5, glow: 0.85, contour: 0.45, conceal: 0.8 },
     lips: { color: 0xc8766c, a: 0.5, gloss: 0.6, tint: 0xe39a8c },
     shape: { jaw: 0.75, chin: 0.7, nose: 0.75, cheek: 0.45 },
   },

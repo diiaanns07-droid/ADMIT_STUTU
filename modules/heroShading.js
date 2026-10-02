@@ -117,7 +117,7 @@ export function patchHeroLight(THREE, mat) {
     float hMet = 1.0 - 0.8 * metalnessFactor;
     ${skin ? `float hDiff = saturate( hNL );
     float hWrap = saturate( ( hNL + 0.5 ) / 1.5 );
-    totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * ( hDiff + max( hWrap - hDiff, 0.0 ) * vec3( 0.62, 0.34, 0.26 ) ) * hMet;
+    totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * ( hDiff + max( hWrap - hDiff, 0.0 ) * vec3( 0.5, 0.31, 0.25 ) ) * hMet;
     float hTr = pow( saturate( dot( hV, - heroRimDir ) ), 3.0 ) * pow( 1.0 - saturate( dot( hN, hV ) ), 1.5 );
     totalEmissiveRadiance += heroRimColor * diffuseColor.rgb * vec3( 1.0, 0.36, 0.24 ) * hTr * 1.4;` : `float hDiff = mix( saturate( hNL ), saturate( ( hNL + 0.35 ) / 1.35 ), 0.35 );
     totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * hDiff * hMet;`}
@@ -1165,8 +1165,8 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     const g = mt && mt.userData ? mt.userData.heroSkinGlow : undefined;
     if (g === undefined) return;
     const k = Math.max(0, Math.min(1, g));
-    skinU.wrap.value = 0.5 + 0.15 * k;
-    skinU.tint.value.setRGB(1.0, 0.42 - 0.06 * k, 0.32 - 0.07 * k).multiplyScalar(0.85 + 0.3 * k);
+    skinU.wrap.value = 0.5 + 0.1 * k;
+    skinU.tint.value.setRGB(1.0, 0.46, 0.36).multiplyScalar(0.72 + 0.2 * k);
     skinU.amb.value.setRGB(1.03 + 0.04 * k, 0.98, 0.95 - 0.03 * k);
   });
   let curMode = null, curQ = quality;
