@@ -179,6 +179,7 @@ export const config = {
     qualityAuto: true,      // [PERF] уровень качества и разрешение подбирает core/perfTuner.js под железо игрока
     volume: 0.5,
     muted: false,           // [SFX] «Без звука» (клавиша M)
+    voice: true,            // [W3-VOICE] «Голос тренера»: подсказки «ОШИБКА» и реплики диктора вслух (клавиша V); без русского голоса молчит
     reducedMotion: false,
     difficulty: 'easy',     // [FEEL] сложность боя с Регентом: 'easy' — «Лёгкая» (по умолчанию для первого боя), 'normal' — «Обычная»
     sensitivity: 1.0,

@@ -11,7 +11,7 @@ import {
   HINT_PHRASES, GROUP_PHRASES, GENERIC_PHRASE, TRAIN_PHRASES, ANNOUNCER, SIGIL_PHRASES, ULT_PHRASES,
   hintPhrase, trainPhrase, countWord, setSummary, numberWord, numberGenitive, groupOfCode,
 } from '../core/voicePhrases.js';
-import { createVoiceCoach, createVoiceDirector, rankRussianVoices, PRIORITY } from '../modules/voiceCoach.js';
+import { createVoiceCoach, createVoiceDirector, createVoiceRecords, rankRussianVoices, PRIORITY } from '../modules/voiceCoach.js';
 
 let failures = 0;
 function check(name, ok, detail = '') {
@@ -272,13 +272,24 @@ function rig(opts = {}) {
   check('ультимейт: подсказка → «Подними обе руки!»', step(2600, { screen: 'playing', events: [{ type: 'ultimate_ready' }] }) === ULT_PHRASES.ready);
   check('ультимейт: удар → «Небесный суд!»', step(2600, { screen: 'playing', events: [{ type: 'ultimate_cast' }] }) === ULT_PHRASES.cast);
   check('победа → «Победа!»', step(2600, { screen: 'playing', events: [{ type: 'victory' }] }) === ANNOUNCER.victory);
-  check('новый рекорд на экране итогов → «Новый рекорд!»', step(2600, { screen: 'victory', record: true }) === ANNOUNCER.record);
   const pv = rig();
-  pv.director.frame(0, { screen: 'playing', pvp: true, events: [{ type: 'pvp_round', data: { phase: 'countdown', round: 1 } }] });
-  check('дуэль: отсчёт → «Три, два, один!»', pv.synth.current && pv.synth.current.text === ANNOUNCER.countdown);
-  pv.synth.finish(); pv.clk.t = 3000;
-  pv.director.frame(3000, { screen: 'playing', pvp: true, boss: { hp: 5, maxHp: 100 }, events: [{ type: 'victory' }] });
-  check('дуэль: без «Добей его!» и без «Победа!» за Регента', pv.synth.log.length === 1);
+  const cd = [];
+  for (const [t, n] of [[0, 3], [1000, 2], [2000, 1], [3000, 0]]) {
+    pv.clk.t = t; pv.synth.finish();
+    pv.director.frame(t, { screen: 'playing', pvp: true, countdown: n, events: n === 0 ? [{ type: 'pvp_round', data: { phase: 'fight', round: 1 } }] : [] });
+    if (pv.synth.current) cd.push(pv.synth.current.text);
+  }
+  check('дуэль: отсчёт по тикам «Три… Два… Один» и «В бой!» — без ожидания 2,5 с', cd.join(',') === 'Три,Два,Один,В бой!', cd.join(','));
+  pv.synth.finish(); pv.clk.t = 6000;
+  pv.director.frame(6000, { screen: 'playing', pvp: true, boss: { hp: 5, maxHp: 100 }, events: [{ type: 'victory' }] });
+  check('дуэль: без «Добей его!» и без «Победа!» за Регента', pv.synth.log.length === 4);
+  pv.clk.t = 9000;
+  pv.director.frame(9000, { screen: 'playing', pvp: true, events: [{ type: 'pvp_round', data: { phase: 'match_end', winner: 'me' } }] });
+  check('дуэль: победа в матче → «Победа!»', pv.synth.current && pv.synth.current.text === ANNOUNCER.victory);
+  const ar = rig();
+  ar.director.frame(0, { screen: 'paused', countdown: 3 });
+  ar.clk.t = 300; ar.coach.error('Сомкни кольцо!');
+  check('отсчёт не прерывается подсказкой', ar.synth.current && ar.synth.current.text === 'Три');
   // обучение: «Распознано!» — раз на карточку
   const tu = rig();
   tu.director.frame(0, { screen: 'tutorial', recognized: 'ok' });
@@ -305,6 +316,42 @@ function rig(opts = {}) {
   pu.clk.t += 500; pu.synth.finish(); pu.director.frame(pu.clk.t, { screen: 'menu' });
   for (let t = 0; t < 3000; t += 100) { pu.clk.t += 100; pu.synth.finish(); pu.director.frame(pu.clk.t, { screen: 'menu' }); }
   check('отжимания: ушёл с экрана → итог «Восемь из десяти!»', pu.synth.texts().includes('Восемь из десяти!'), pu.synth.texts().join(','));
+}
+
+// 11. рекорды: «Новый рекорд!» — только когда есть с чем сравнить
+{
+  const mem = new Map();
+  const storage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)) };
+  const recs = createVoiceRecords(storage);
+  check('первая победа — не рекорд (точка отсчёта)', recs.win(180, 60) === false);
+  check('победа медленнее и хуже — не рекорд', recs.win(200, 55) === false);
+  check('победа быстрее — рекорд', recs.win(150, 50) === true);
+  check('точность выше — рекорд', recs.win(170, 75) === true);
+  check('рекорды пережили перезагрузку (localStorage)', createVoiceRecords(storage).data.win === 150 && createVoiceRecords(storage).data.acc === 75);
+  const broken = createVoiceRecords({ getItem: () => '{не json', setItem: () => { throw new Error('quota'); } });
+  let ok = true;
+  try { broken.win(100, 50); broken.reps('squats', 5); ok = broken.best('squats') === 5; } catch (e) { ok = false; }
+  check('испорченное или недоступное хранилище — без исключений', ok && createVoiceRecords(null).win(10, 10) === false);
+  // бой: победа быстрее прежней → «Победа!», затем «Новый рекорд!»
+  const r = rig();
+  const d = createVoiceDirector(r.coach, { records: recs });
+  d.frame(0, { screen: 'playing' });
+  d.frame(10, { screen: 'playing', fight: { time: 120, accuracy: 40 }, events: [{ type: 'victory' }] });
+  for (let t = 100; t <= 4000; t += 100) { r.clk.t = t; r.synth.finish(); d.frame(t, { screen: t > 1700 ? 'victory' : 'playing' }); }
+  check('бой: «Победа!», затем «Новый рекорд!»', r.synth.texts().join(',') === 'Победа!,Новый рекорд!', r.synth.texts().join(','));
+  // тренировка: прежний лучший подход 5 → на шестом повторе «Новый рекорд!» вместо «Шесть», один раз
+  const tr = rig();
+  const recs2 = createVoiceRecords(storage);
+  recs2.reps('pushups', 5);
+  const dt = createVoiceDirector(tr.coach, { records: recs2 });
+  const said = [];
+  for (let i = 0; i <= 8; i++) {
+    tr.clk.t = i * 1500; tr.synth.finish();
+    dt.frame(tr.clk.t, { screen: 'training', training: { exercise: 'pushups', reps: i, attempts: i, hint: null } });
+    if (tr.synth.current) said.push(tr.synth.current.text);
+  }
+  check('тренировка: шестой повтор при рекорде 5 → «Новый рекорд!», дальше — счёт', said.join(',') === 'Раз,Два,Три,Четыре,Пять,Новый рекорд!,Семь,Восемь', said.join(','));
+  check('тренировка: лучший подход сохранён', recs2.best('pushups') === 8);
 }
 
 console.log(failures ? `\nПРОВАЛЕНО: ${failures}` : '\nВСЕ ПРОВЕРКИ ПРОЙДЕНЫ');

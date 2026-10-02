@@ -218,17 +218,66 @@ export function createVoiceCoach({
   };
 }
 
+// ───────── рекорды (localStorage) ─────────
+// Лучшая победа (время боя и точность жестов) и лучший подход на тренировке. «Новый рекорд!» звучит, только
+// когда есть с чем сравнить: первый бой и первый подход — не рекорд, а точка отсчёта.
+export const VOICE_RECORDS_KEY = 'ashen-oath.voice.v1';
+export function createVoiceRecords(storage, key = VOICE_RECORDS_KEY) {
+  let data = null;
+  function load() {
+    if (data) return data;
+    data = { win: null, acc: null, reps: {} };
+    try {
+      const raw = storage && typeof storage.getItem === 'function' ? storage.getItem(key) : null;
+      const o = raw ? JSON.parse(raw) : null;
+      if (o && typeof o === 'object') {
+        if (fin(o.win) && o.win > 0) data.win = o.win;
+        if (fin(o.acc)) data.acc = o.acc;
+        if (o.reps && typeof o.reps === 'object') for (const [k, v] of Object.entries(o.reps)) if (fin(v) && v > 0) data.reps[k] = v;
+      }
+    } catch (e) { /* хранилище недоступно или испорчено — начинаем с нуля */ }
+    return data;
+  }
+  function save() { try { if (storage && typeof storage.setItem === 'function') storage.setItem(key, JSON.stringify(data)); } catch (e) { /* ignore */ } }
+  return {
+    // победа за timeSec с точностью accuracy (%, может быть null) → true, если это рекорд
+    win(timeSec, accuracy) {
+      const d = load();
+      const hadWin = d.win !== null;
+      const faster = fin(timeSec) && timeSec > 0 && hadWin && timeSec < d.win - 0.5;
+      const sharper = fin(accuracy) && d.acc !== null && hadWin && accuracy > d.acc;
+      if (fin(timeSec) && timeSec > 0 && (!hadWin || timeSec < d.win)) d.win = timeSec;
+      if (fin(accuracy) && (d.acc === null || accuracy > d.acc)) d.acc = accuracy;
+      save();
+      return faster || sharper;
+    },
+    best(exercise) { return load().reps[exercise] || 0; },
+    reps(exercise, n) {
+      const d = load();
+      if (fin(n) && n > (d.reps[exercise] || 0)) { d.reps[exercise] = Math.floor(n); save(); }
+    },
+    get data() { return { ...load(), reps: { ...load().reps } }; },
+  };
+}
+
 // ───────── режиссёр: что и когда говорить в игре ─────────
 // frame(now, view) раз в кадр. view:
-//   screen — app.screen; hint — input.hint (после обогащения записью COACH_HINTS) или null;
+//   screen — app.screen; hint — подсказка «ОШИБКА» { code, tMs, group?, fix? } (новая — по code|tMs) или null;
 //   events — события боя этого кадра; boss — { hp, maxHp } или null; pvp — идёт ли онлайн-дуэль;
-//   training — { exercise, reps, attempts, hint: { code, tMs } } на экране тренировки; record — новый рекорд;
-//   recognized — ключ карточки обучения, жест которой только что распознан.
+//   fight — { time, accuracy } боя (для рекорда победы); countdown — 3, 2, 1 во время отсчёта, иначе 0;
+//   training — { exercise, reps, attempts, hint: { code, tMs } } на экране тренировки;
+//   recognized — ключ шага обучения, жест которого только что распознан.
 const HINT_SCREENS = new Set(['tutorial', 'playing']);
-const SET_IDLE_MS = 7000;    // пауза без повторов — подход окончен, звучит итог
+const SET_IDLE_MS = 7000;      // пауза без повторов — подход окончен, звучит итог
+const RECORD_MIN_REPS = 3;     // рекорд подхода — только если прежний лучший был не меньше
+const COUNTDOWN = Object.freeze({ 3: 'Три', 2: 'Два', 1: 'Один' });
 
-export function createVoiceDirector(coach) {
-  const S = { hint: '', screen: '', finish: false, enraged: false, trainKey: '', reps: 0, attempts: 0, set: null, trainHint: null, recognized: new Set(), outcome: false, ultHintAt: -Infinity };
+export function createVoiceDirector(coach, { records = null } = {}) {
+  const S = {
+    hint: '', screen: '', finish: false, enraged: false, outcome: false, countdown: 0,
+    trainKey: '', reps: 0, attempts: 0, set: null, trainHint: null, best: 0, recordSaid: false,
+    recognized: new Set(),
+  };
 
   function resetFight() { S.finish = false; S.enraged = false; S.outcome = false; }
   function newSet(ex) { S.set = { exercise: ex, good: 0, total: 0, lastAt: -Infinity }; }
@@ -246,44 +295,64 @@ export function createVoiceDirector(coach) {
       case 'boss_stunned': case 'boss_ward_break': case 'barrier_break': case 'boss_barrier_break': coach.event(ANNOUNCER.barrier); break;
       case 'shield_break': if (d.target === 'boss' || d.owner === 'boss') coach.event(ANNOUNCER.barrier); break;
       case 'boss_phase':
-        if (d.awaken) break;
+        if (d.awaken) break;   // «пробуждение» в облёте — не ярость
         if (!S.enraged && (d.stage >= 2 || d.phase >= 2 || d.enraged)) { S.enraged = true; coach.event(ANNOUNCER.enraged); }
         break;
       case 'boss_enrage': case 'boss_enraged': if (!S.enraged) { S.enraged = true; coach.event(ANNOUNCER.enraged); } break;
       // ультимейт: подсказка «как вызвать» и сам удар (имена событий — от модуля ультимейта)
-      case 'ult_ready': case 'ultimate_ready': case 'sky_judgement_ready':
-        coach.event(ULT_PHRASES.ready, { key: 'ult|ready' }); break;
-      case 'ult_cast': case 'ultimate_cast': case 'ultimate': case 'sky_judgement':
-        coach.final(ULT_PHRASES.cast); break;
-      case 'victory': if (!S.outcome && !view.pvp) { S.outcome = true; coach.final(ANNOUNCER.victory); } break;
+      case 'ult_ready': case 'ultimate_ready': case 'sky_judgement_ready': coach.event(ULT_PHRASES.ready); break;
+      case 'ult_cast': case 'ultimate_cast': case 'ultimate': case 'sky_judgement': coach.final(ULT_PHRASES.cast); break;
+      case 'victory':
+        if (S.outcome || view.pvp) break;
+        S.outcome = true;
+        coach.final(ANNOUNCER.victory);
+        if (records) {
+          const f = view.fight || {};
+          let rec = false;
+          try { rec = records.win(f.time, f.accuracy); } catch (err) { rec = false; }
+          if (rec) coach.final(ANNOUNCER.record, { ttl: 7000 });
+        }
+        break;
       case 'defeat': if (!S.outcome && !view.pvp) { S.outcome = true; coach.final(ANNOUNCER.defeat); } break;
       case 'pvp_round':
-        if (d.phase === 'countdown' || d.phase === 'round_start' && d.countdown) coach.final(ANNOUNCER.countdown, { key: `count|${d.round || ''}` });
+        if (d.phase === 'fight') coach.final(ANNOUNCER.fight, { ttl: 1500 });
+        else if (d.phase === 'round_end' && (d.winner === 'me' || d.winner === 'opponent')) coach.event(d.winner === 'me' ? ANNOUNCER.roundWin : ANNOUNCER.roundLose);
         else if (d.phase === 'match_end' && (d.winner === 'me' || d.winner === 'opponent')) coach.final(d.winner === 'me' ? ANNOUNCER.victory : ANNOUNCER.defeat);
         break;
       default: break;
     }
   }
 
+  // отсчёт «Три… Два… Один» — по тикам (раунд дуэли, автопродолжение после потери трекинга)
+  function countdown(n) {
+    n = fin(n) ? Math.max(0, Math.min(3, Math.ceil(n))) : 0;
+    if (n === S.countdown) return;
+    const prev = S.countdown;
+    S.countdown = n;
+    if (n > 0 && n < (prev || 4)) coach.say(COUNTDOWN[n], { kind: 'count', priority: PRIORITY.final, ttl: 700 });
+  }
+
   function training(view, now) {
     const T = view.training;
     if (!T) { if (S.set) closeSet(); S.trainKey = ''; return; }
     const ex = T.exercise === 'squats' ? 'squats' : 'pushups';
-    if (S.trainKey !== ex) {   // новый экран тренировки или смена упражнения
+    const reps = fin(T.reps) ? Math.floor(T.reps) : 0, attempts = fin(T.attempts) ? T.attempts : null;
+    if (S.trainKey !== ex || reps < S.reps) {   // новый экран тренировки, смена упражнения или сброс счёта
       if (S.set) closeSet();
-      S.trainKey = ex; S.reps = T.reps | 0; S.attempts = fin(T.attempts) ? T.attempts : 0; S.trainHint = T.hint || null;
+      S.trainKey = ex; S.reps = reps; S.attempts = attempts !== null ? attempts : 0; S.trainHint = T.hint || null;
+      S.best = records ? records.best(ex) : 0; S.recordSaid = false;
       newSet(ex);
       return;
     }
     if (!S.set) newSet(ex);
     // попытки: чистые повторы + отклонённые; без счётчика попыток — по повторам и подсказкам
-    const reps = fin(T.reps) ? Math.floor(T.reps) : 0, attempts = fin(T.attempts) ? T.attempts : null;
-    if (reps < S.reps) S.reps = reps;   // счёт сброшен
     if (reps > S.reps) {
       const add = reps - S.reps;
       S.set.good += add; S.set.lastAt = now;
       if (attempts === null) S.set.total += add;
-      coach.count(countWord(reps));   // «раз… два… три» — то же число, что на экране
+      if (records && !S.recordSaid && S.best >= RECORD_MIN_REPS && reps > S.best) { S.recordSaid = true; coach.final(ANNOUNCER.record); }
+      else coach.count(countWord(reps));   // «раз… два… три» — то же число, что на экране
+      if (records) records.reps(ex, reps);
     }
     S.reps = reps;
     if (attempts !== null) {
@@ -307,7 +376,6 @@ export function createVoiceDirector(coach) {
       const screen = view.screen || '';
       if (screen !== S.screen) {
         if (screen === 'playing' && S.screen !== 'paused') resetFight();
-        if (screen === 'victory' && view.record) coach.final(ANNOUNCER.record);
         if (screen === 'tutorial') S.recognized.clear();
         S.screen = screen;
       }
@@ -328,10 +396,13 @@ export function createVoiceDirector(coach) {
         if (!S.finish && b.hp > 0 && b.hp / b.maxHp <= 0.2) { S.finish = true; coach.event(ANNOUNCER.finish); }
         if (b.hp / b.maxHp > 0.5) S.finish = false;
       }
+      countdown(view.countdown);
       if (screen === 'training') training(view, now);
       else if (S.trainKey) training({ training: null }, now);
       coach.pump(now);
     },
-    reset() { S.hint = ''; resetFight(); S.set = null; S.trainKey = ''; },
+    // реплика диктора по ключу ANNOUNCER (например, 'voiceOn' — подтверждение включения голоса)
+    announce(key, kind = 'info') { return ANNOUNCER[key] ? coach.say(ANNOUNCER[key], { kind }) : 'empty'; },
+    reset() { S.hint = ''; resetFight(); S.set = null; S.trainKey = ''; S.countdown = 0; },
   };
 }
