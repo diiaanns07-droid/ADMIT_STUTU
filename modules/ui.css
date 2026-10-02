@@ -2909,7 +2909,7 @@ body:has(> .nl-badge:not([hidden])) .ao-cheat-pill {
   top: 112px;
 }
 /* ---- [ПРОЕКТОР] режим презентации: узкие раскладки — по ширине игровой области (60 % окна), а не окна */
-@media (max-width: 1180px) {
+@media (max-width: 1300px) {
   html.ao-present .ao-cols,
   html.ao-present .ao-panel--calib .ao-cols,
   html.ao-present .ao-panel--pause .ao-cols {
