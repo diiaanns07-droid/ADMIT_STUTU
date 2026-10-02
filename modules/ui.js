@@ -472,6 +472,17 @@ const TRAINER_PICS = {
     '<g class="pic-b">' + handG(HAND_OPEN, 'right') + '</g></g>' +
     '<g class="pic-rays"><path d="M100 28 V8 M158 46 L172 30 M42 46 L28 30 M178 104 H200 M22 104 H2"/></g>'),
 };
+// [W3-MAGIC] «Книга заклинаний»: магия двух ладоней — «ладони вместе → растянуть» (и в «Новичке»)
+const PALMS_TOGETHER = '<g transform="translate(10 40) scale(.6)">' + handG(HAND_OPEN, 'left') + '</g>' +
+  '<g transform="translate(198 40) scale(-.6 .6)">' + handG(HAND_OPEN, 'left') + '</g>';
+const STRETCH_CARDS = [
+  { id: 'gate', title: 'Врата бури', effect: 'волна огня и молний по земле к Регенту и щит на 3,5 с',
+    tip: 'Сомкни ладони, подержи (чем дольше, тем сильнее) и резко разведи в стороны.', keyText: 'X — держать и отпустить',
+    pic: picWrap('mini', PALMS_TOGETHER + '<g class="pic-arrows"><path d="M44 120 H8 M20 108 L8 120 L20 132 M164 120 H200 M188 108 L200 120 L188 132"/></g>') },
+  { id: 'pillar', title: 'Столп небес', effect: 'столп света сверху: оглушает Регента на 1,2 с',
+    tip: 'Сомкни ладони, подержи и резко растяни: одну руку вверх, другую вниз.', keyText: 'G — держать и отпустить',
+    pic: picWrap('mini', PALMS_TOGETHER + '<g class="pic-arrows"><path d="M104 36 V6 M92 18 L104 6 L116 18 M104 178 V214 M92 202 L104 214 L116 202"/></g>') },
+];
 // Маленькие (статичные) — для полосы шагов, итога и «Книги заклинаний».
 const TRAINER_MINI = {
   walk: picWrap('mini', '<path class="pic-line" d="M8 104 H200"/><g transform="translate(14 22) scale(0.82)">' + handG(HAND_OPEN, 'left') + '</g>'),
@@ -2349,6 +2360,14 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         el('div', { class: 'ao-book-card__pic', html: TRAINER_MINI[st.id] }), el('p', { class: 'ao-trn-hand', text: st.hand }), t, tip, key);
       return { st, t, tip, key, node };
     });
+    // [W3-MAGIC] две карточки «ладони вместе → растянуть»
+    const magicCards = STRETCH_CARDS.map((st) => {
+      const key = el('p', { class: 'ao-book-card__key', hidden: true, text: `Отладка: ${st.keyText}` });
+      const node = el('article', { class: 'ao-book-card', 'data-side': 'both', 'data-magic': st.id },
+        el('div', { class: 'ao-book-card__pic', html: st.pic }), el('p', { class: 'ao-trn-hand', text: 'Обе руки' }),
+        el('h3', { class: 'ao-h3', text: `${st.title} → ${st.effect}` }), el('p', { class: 'ao-tut-gesture', text: st.tip }), key);
+      return { key, node };
+    });
     const paintBasic = (moveMode, debug) => {
       for (const c of basicCards) {
         const v = c.st.stick && moveMode === 'stick' ? { ...c.st, ...c.st.stick } : c.st;
@@ -2356,13 +2375,16 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setText(c.tip, v.tip);
         setHidden(c.key, !debug);
       }
+      for (const c of magicCards) setHidden(c.key, !debug);
     };
     paintBasic('steer', false);
     const basic = el('div', { class: 'ao-book-basic' }, basicCards.map((c) => c.node));
+    const magic = el('div', { class: 'ao-book-basic ao-book-magic' }, magicCards.map((c) => c.node));
     const { grid, cards } = buildTutCards();
     const panes = {
       basic: el('div', { class: 'ao-book-pane', role: 'tabpanel', id: `${uid}-book-basic`, 'aria-labelledby': `${uid}-book-tab-basic` },
-        el('p', { class: 'ao-lead', text: 'Эти жесты учит тренажёр «Научись за 60 секунд» перед боем. Их хватает, чтобы победить.' }), basic),
+        el('p', { class: 'ao-lead', text: 'Эти жесты учит тренажёр «Научись за 60 секунд» перед боем. Их хватает, чтобы победить.' }), basic,
+        el('p', { class: 'ao-lead ao-book-magic__lead', text: 'Мощная магия двух ладоней: сомкни ладони → растяни. Работает в обоих режимах.' }), magic),
       adv: el('div', { class: 'ao-book-pane', role: 'tabpanel', id: `${uid}-book-adv`, 'aria-labelledby': `${uid}-book-tab-adv`, hidden: true },
         el('p', { class: 'ao-lead', text: 'Рывок, искра, рассечение, парирование, руны ▲ ϟ ○ ★ @ ∞ ^ V ⧗ ℓ, печати двумя руками, лук и стихии.' }), grid),
     };

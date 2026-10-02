@@ -2458,6 +2458,17 @@
 .ao-book-card .ao-trn-hand {
   color: var(--side);
 }
+/* [W3-MAGIC] магия двух ладоней: «Врата бури», «Столп небес» */
+.ao-book-card[data-side='both'] {
+  --side: #c9a45c;
+}
+.ao-book-magic__lead {
+  margin-top: 0.9rem;
+}
+.ao-book-magic .ao-pic .pic-arrows {
+  stroke: #ffcf70;
+  stroke-width: 7;
+}
 .ao-book-card__pic {
   height: clamp(80px, 17vh, 150px);
   align-self: center;
