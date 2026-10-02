@@ -811,6 +811,7 @@ function buildBrows(THREE, P, b, E, quality) {
     name: 'FaceBrow#W4', map: tex, color: cB, vertexColors: true, transparent: true, depthWrite: false,
     roughness: 0.78, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
   });
+  mat.userData.faceRibbon = true;
   const mesh = new THREE.SkinnedMesh(g, mat);
   mesh.name = 'BrowStrands';
   mesh.bind(face.skeleton, face.bindMatrix);
@@ -1201,7 +1202,8 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     });
     if (orig.normalMap) m.normalScale.copy(orig.normalScale);
     // [W4-ЛИЦО] лента бровей и подводки: цвет подводки — вершинами, смещение полигонов — поверх кожи без мерцания
-    if (orig.vertexColors) m.vertexColors = true;
+    // (только у своей ленты: у GLB почти все меши с COLOR_0, а шторка века heroGear берёт материал лица без него)
+    if (orig.vertexColors && orig.userData && orig.userData.faceRibbon) m.vertexColors = true;
     if (orig.polygonOffset) { m.polygonOffset = true; m.polygonOffsetFactor = orig.polygonOffsetFactor; m.polygonOffsetUnits = orig.polygonOffsetUnits; }
     if (kind === 'skin') { m.roughness = Math.max(0.45, orig.roughness * 0.85); }
     // брови и волосы модели — в цвет причёски героини (серая текстура × цвет)
