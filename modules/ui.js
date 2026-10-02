@@ -1401,8 +1401,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
 
   // [W3-VOICE] «Голос тренера»: подсказки «ОШИБКА» и реплики диктора вслух (main.js, modules/voiceCoach.js).
   // Включён ли — settings.voice; найден ли русский голос — viewModel.voice.state. Голоса нет — кнопка неактивна,
-  // под громкостью — «русского голоса в системе нет». Узлы создаются один раз, update() меняет текст и атрибуты.
-  function buildVoiceToggle() {
+  // в паузе под громкостью ещё и строка «русского голоса в системе нет» (в меню — только кнопка: меню не растёт).
+  // Узлы создаются один раз, update() меняет текст и атрибуты.
+  function buildVoiceToggle(prefix) {
     const btn = el('button', { type: 'button', class: 'ao-mute ao-voice', 'aria-pressed': 'true', 'aria-keyshortcuts': 'V', title: 'Голос тренера: подсказки и реплики вслух — клавиша V', text: 'Голос · V' });
     const note = el('div', { class: 'ao-field__hint ao-voice__note', hidden: true, text: 'Русского голоса в системе нет — голос тренера молчит' });
     let missing = false;
@@ -1413,8 +1414,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       setAttr(btn, 'aria-pressed', on ? 'true' : 'false');
       setAttr(btn, 'aria-disabled', missing ? 'true' : null);
       setAttr(btn, 'title', missing ? 'Русского голоса в системе нет — голос тренера молчит' : 'Голос тренера: подсказки и реплики вслух — клавиша V');
-      setText(btn, missing ? 'Голоса нет' : on ? 'Голос · V' : 'Голос выкл · V');
-      setHidden(note, !missing);
+      setText(btn, missing ? 'Нет русского голоса' : on ? 'Голос · V' : 'Голос выкл · V');
+      setHidden(note, !missing || prefix === 'menu');
     });
     return { btn, note };
   }
@@ -1442,7 +1443,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
             setText(mute, m ? 'Звук выключен · M' : 'Без звука · M');
           },
         });
-        const voice = buildVoiceToggle(); // [W3-VOICE] «Голос · V» — в той же строке, меню не растёт
+        const voice = buildVoiceToggle(prefix); // [W3-VOICE] «Голос · V» — в той же строке, меню не растёт
         const volField = buildRange({
           key: 'volume', prefix, label: 'Громкость', min: 0, max: 100, step: 5, head: [mute, voice.btn],
           toRaw: (v) => Math.round(v * 100), fromRaw: (r) => r / 100, format: (v) => `${Math.round(v * 100)}%`,

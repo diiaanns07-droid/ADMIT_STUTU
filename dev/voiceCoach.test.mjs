@@ -219,6 +219,12 @@ function rig(opts = {}) {
   const rep = rig();
   for (let i = 0; i < 30; i++) { rep.clk.t = i * 16; rep.director.frame(rep.clk.t, { screen: 'playing', hint: { code: 'shield_palm', tMs: 5 } }); }
   check('тот же импульс подсказки в 30 кадрах — одна фраза', rep.synth.log.length === 1);
+  const pz = rig();
+  pz.director.frame(0, { screen: 'playing', hint: { code: 'ok_ring_open', tMs: 1 } });
+  pz.clk.t = 500; pz.director.frame(500, { screen: 'playing', hint: { code: 'shield_palm', tMs: 2 } });
+  pz.synth.finish(); pz.clk.t = 900; pz.director.frame(900, { screen: 'paused' });
+  pz.clk.t = 2600; pz.director.frame(2600, { screen: 'paused' });
+  check('ушёл на паузу — ждущая подсказка боя не звучит', pz.synth.log.length === 1, pz.synth.texts().join(' | '));
   const menu = rig();
   menu.director.frame(0, { screen: 'menu', hint: { code: 'shield_palm', tMs: 5 } });
   check('в меню подсказки не звучат', menu.synth.log.length === 0);

@@ -138,11 +138,12 @@ export function createVoiceCoach({
     try { u = new Utterance(item.text); } catch (e) { stats.errors++; return false; }
     try {
       u.lang = (voice && voice.lang) || 'ru-RU';
-      if (voice) u.voice = voice;
       u.volume = vol;
       u.rate = RATE[item.kind] || 1.05;
       u.pitch = 1;
     } catch (e) { /* ignore */ }
+    // голос — отдельно: Chrome бросает исключение на объект не того типа, громкость и темп от этого не теряются
+    try { if (voice) u.voice = voice; } catch (e) { /* остаётся язык ru-RU — синтезатор подберёт голос сам */ }
     const c = { u, item, at: now };
     const done = (ev) => {
       if (cur !== c) return;
@@ -212,6 +213,8 @@ export function createVoiceCoach({
       else if (cur) { try { cur.u.volume = vol; } catch (e) { /* ignore */ } }
     },
     stop() { hush(); },
+    // сбросить ожидающие фразы этого вида (подсказки боя после ухода на паузу уже не нужны)
+    drop(kind) { const n = queue.length; queue = queue.filter((q) => q.kind !== kind); stats.dropped += n - queue.length; },
     get available() { return state === 'ready'; },
     get state() { return state; },
     dispose() { hush(); disposed = true; },
@@ -377,6 +380,7 @@ export function createVoiceDirector(coach, { records = null } = {}) {
       if (screen !== S.screen) {
         if (screen === 'playing' && S.screen !== 'paused') resetFight();
         if (screen === 'tutorial') S.recognized.clear();
+        if (!HINT_SCREENS.has(screen) && typeof coach.drop === 'function') coach.drop('error');
         S.screen = screen;
       }
       // «ОШИБКА»: новая подсказка распознавателя (тот же импульс — та же метка tMs)
