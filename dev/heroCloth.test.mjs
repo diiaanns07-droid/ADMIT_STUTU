@@ -128,7 +128,7 @@ assert.equal(cl.mesh.parent, null); assert.equal(cl.hem.parent, null);
     for (let f = 0; f < 360; f++) {
       const dt = 1 / 60;
       if (f >= 120 && f < 260) root.position.z += (sprint ? 8.2 : 5) * dt;
-      if (f >= 262 && f < 272 && !sprint) root.position.z += 11 * dt;          // рывок 11 м/с
+      if (f >= 262 && f < 275 && !sprint) root.position.z += 16 * dt;          // рывок 16 м/с (3,6 м за 0,22 с)
       root.updateMatrixWorld(true);
       cape.update(dt, 0);
       if (f === 118) rest0 = behind();
@@ -144,6 +144,23 @@ assert.equal(cl.mesh.parent, null); assert.equal(cl.hem.parent, null);
   assert.ok(full.burstMax > 0.5, `рывок даёт всплеск (${full.burstMax.toFixed(2)})`);
   assert.equal(calm.burstMax, 0, '«Уменьшенное движение»: без всплеска');
   assert.equal(runCape(1, true).burstMax, 0, 'спринт 8,2 м/с — не рывок: без всплеска');
+  // 165 Гц с ограничением до 55 кадров/с: положение — шагами симуляции 1/120 с (2–3 шага за кадр), спринт
+  {
+    root.position.set(0, 0, 0); root.rotation.set(0, 0, 0); root.updateMatrixWorld(true);
+    const cc = 7, cr3 = 8, rs = new Float32Array(cc * cr3 * 3);
+    for (let j = 0; j < cr3; j++) for (let i = 0; i < cc; i++) rs.set([(i / (cc - 1) - 0.5) * 0.4, 1.4 - j * 0.1, -0.2], (j * cc + i) * 3);
+    const c2 = createCloth(THREE, { cols: cc, rows: cr3, rest: rs, anchor: hips, parent: root, colliders, material: mat, plane: 'back', react: true, hips, back: { lim: 0.03, h: 0.4 }, fwd: (out) => out.set(0, 0, 1), floor: () => 0 });
+    let simT = 0, simZ = 0, bMax = 0;
+    for (let f = 0; f < 330; f++) {
+      const dt = 1 / 55, tEnd = (f + 1) * dt;
+      while (simT + 1 / 120 <= tEnd) { simT += 1 / 120; simZ += 8.2 / 120; }
+      root.position.z = simZ; root.updateMatrixWorld(true);
+      c2.update(dt, 0);
+      if (f > 60) bMax = Math.max(bMax, c2.motion.burst);
+    }
+    c2.dispose();
+    assert.ok(bMax < 0.05, `спринт шагами симуляции на 55 кадрах/с — без всплеска (${bMax.toFixed(3)})`);
+  }
   assert.ok(calm.run < full.run, `«Уменьшенное движение»: отдув меньше (${calm.run.toFixed(3)} < ${full.run.toFixed(3)} м)`);
   assert.ok(calm.flutVar < full.flutVar, `«Уменьшенное движение»: трепет меньше (${calm.flutVar.toFixed(3)} < ${full.flutVar.toFixed(3)})`);
 }

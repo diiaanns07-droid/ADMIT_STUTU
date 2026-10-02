@@ -16,7 +16,7 @@
 //   [W4-НАРЯДЫ] slits — { gaps: [q…], from } — разрезы-«лепестки»: ниже ряда from связи через промежутки q
 //   (между столбцами частиц q и q+1) сняты, лепестки висят и качаются сами; сплайн отрисовки не тянет
 //   край лепестка к соседу. cup — выпуклость каждого лепестка (м), без кромки-складки на разрезе.
-//   Движение: на бегу ткань сильнее отдувается назад и трепещет, рывок (резко > 10 м/с) — короткий всплеск;
+//   Движение: на бегу ткань сильнее отдувается назад и трепещет, рывок (резко > 11 м/с) — короткий всплеск;
 //   react: true — включает этот отклик; setMotion(k) — 1 обычно, < 1 спокойнее («Уменьшенное движение»:
 //   меньше трепета, без всплеска).
 //   → { mesh, update(dt, lod), reset(), setWind(k), setMotion(k), dispose() }
@@ -204,17 +204,22 @@ export function createCloth(THREE, o) {
   let haveM = false, vAx = 0, vAy = 0, vAz = 0;
   // [W4-НАРЯДЫ] движение тела: сглаженная скорость кости по горизонтали (м/с) → доля «бега» runK,
   // рывок — всплеск burst, гаснет за ~0,35 с; calm — спокойный режим (setMotion)
-  let spdS = 0, runK = 0, burst = 0, calm = 1, fph = 0;
+  let spdS = 0, runK = 0, burst = 0, calm = 1, fph = 0, wX = 0, wZ = 0, wT = 0;
   const REACT = !!o.react;   // отклик на бег и рывок — по запросу (плащ, полы); слой волос — как раньше
   function motion(dt, dx, dz) {
     if (!REACT) return;
-    const sp = Math.sqrt(dx * dx + dz * dz) / dt;
-    const prevS = spdS;
-    spdS += (Math.min(sp, 14) - spdS) * (1 - Math.exp(-dt * 6));
+    burst *= Math.exp(-dt / 0.35);
+    // скорость — по окну ≥ 1/30 с: положение героя идёт шагами симуляции (1/120 с), за один кадр на 165 Гц
+    // в него попадает то 2, то 3 шага — мгновенная скорость «скачет» и спринт казался бы рывком
+    wX += dx; wZ += dz; wT += dt;
+    if (wT < 1 / 30) return;
+    const sp = Math.sqrt(wX * wX + wZ * wZ) / wT, prevS = spdS;
+    spdS += (Math.min(sp, 14) - spdS) * (1 - Math.exp(-wT * 6));
+    wX = wZ = wT = 0;
     const x = Math.min(1, Math.max(0, (spdS - 1.5) / 4.5));
     runK = x * x * (3 - 2 * x);
     // рывок: 3,6 м за 0,22 с (~16 м/с) — резкий скачок над сглаженной скоростью; спринт (8,2 м/с) — не рывок
-    burst = sp > 10 && sp > prevS + 3 && calm > 0.6 ? 1 : burst * Math.exp(-dt / 0.35);
+    if (sp > 11 && sp > prevS + 3 && calm > 0.6) burst = 1;
   }
   function carry(dt) {
     const e0 = anchor.matrixWorld.elements;

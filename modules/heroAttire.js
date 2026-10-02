@@ -15,7 +15,7 @@
 // export: dressAttire(ctx) → { names, update(dt, t, lod, glow), setLod(l), setQuality(q), dispose() }
 //         fabricMaterial(THREE, o), hideBase(root, prefixes), skinShell(THREE, parts, o), ATTIRE_CFG
 
-import { surface, tube, gem, glintTexture, corsetTextures, sharedTextures, CORSET_V, BRACE_V } from './heroForge.js';
+import { surface, tube, gem, glintTexture, corsetTextures, corsetTop, corsetBot, sharedTextures, CORSET_V, BRACE_V } from './heroForge.js';
 
 // общие настройки нарядов (main.js → heroGear.configureGear): «Уменьшенное движение» — ткань спокойнее
 export const ATTIRE_CFG = { reducedMotion: false };
@@ -122,6 +122,8 @@ export function skinShell(THREE, parts, { offset = 0.005, material, name = 'atti
     for (let t = 0; t < tri; t++) {
       const a = idx ? idx.getX(t * 3) : t * 3, b = idx ? idx.getX(t * 3 + 1) : t * 3 + 1, c = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
       if (!uv[a] || !uv[b] || !uv[c]) continue;
+      // все три вершины по одну сторону контура (3-й элемент uv: −1 ниже, +1 выше) — треугольник прозрачен целиком
+      if (uv[a][2] && uv[a][2] === uv[b][2] && uv[b][2] === uv[c][2]) continue;
       let ua = uv[a][0], ub = uv[b][0], uc = uv[c][0];
       // шов развёртки: треугольник через u = 0/1 — дальние вершины на +1 (текстура повторяется по u)
       if (Math.max(ua, ub, uc) - Math.min(ua, ub, uc) > 0.5) { if (ua < 0.5) ua += 1; if (ub < 0.5) ub += 1; if (uc < 0.5) uc += 1; }
@@ -455,8 +457,7 @@ export function dressAttire(ctx) {
   const fabrics = [];
   const add = (r, bone, high = false) => {
     if (!r) return null;
-    stick(r.grp, bone, r.at, new THREE.Quaternion());
-    names.push(r.grp.name);
+    stick(r.grp, bone, r.at, new THREE.Quaternion());   // имя детали записывает сам stick (heroGear)
     if (r.glint) glints.push(r.glint);
     if (high) extras.push(r.grp);
     return r;
@@ -491,7 +492,8 @@ export function dressAttire(ctx) {
     const corsetUV = (wp) => {
       const vh = (wp.y - yLo) / (yHi - yLo);
       if (vh < -0.3 || vh > 1.3) return null;
-      return [uAz(wp), CORSET_V[0] + 0.002 + span * Math.min(1, Math.max(0, vh)) * 0.996];
+      const u = uAz(wp), side = vh < corsetBot(u) - 0.03 ? -1 : vh > corsetTop(u) + 0.03 ? 1 : 0;
+      return [u, CORSET_V[0] + 0.002 + span * Math.min(1, Math.max(0, vh)) * 0.996, side];
     };
     const parts = [];
     vrm.scene.traverse((o) => { if (o.isSkinnedMesh && /Body$|Body_?\d*$/.test(o.name) && !/Belt/.test(o.name) && o.visible) parts.push({ mesh: o, uvOf: corsetUV }); });
