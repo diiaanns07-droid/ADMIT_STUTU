@@ -128,6 +128,95 @@ export function patchHeroLight(THREE, mat) {
   return mat;
 }
 
+// [W4-ВОЛОСЫ] Блеск волос героинь (modules/heroHair.js): свет волоса вместо GGX — модель Каджия-Кей.
+// Два блика вдоль пряди (касательная — varying vHairT из вершинного шейдера heroHair): основной узкий почти
+// белый (сдвинут к корню) и вторичный широкий цветной (к кончику: отлив — фиолетовый у чародейки, золотой у
+// эльфийки, медный у лучницы); сдвиг у каждой пряди свой (vHairS.x) и рвётся по волоскам атласа. Мягкий
+// терминатор (свет заходит за край пряди), блик гаснет на теневой стороне. Просвечивание: источник за
+// волосами — кромка светится цветом волос (hairTT). Для настоящих источников — подмена RE_Direct (тени
+// карты теней учтены: directLight.color уже ослаблен), для света витрины меню — те же члены от
+// heroKeyDir/heroRimDir/heroFillColor (как patchHeroLight, но блик — Каджия-Кей).
+// U: { hairSpec1, hairSpec2 (цвет × сила), hairKK (vec4: степени 1 и 2, сдвиги 1 и 2), hairTT } — общие
+// объекты юниформ (одна запись — все проходы причёски).
+export function patchHairGloss(THREE, mat, U) {
+  if (!mat || mat.userData.hairGloss || !mat.isMeshStandardMaterial) return mat;
+  initHeroLight(THREE);
+  mat.userData.hairGloss = true;
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader, r) => {
+    if (prev) prev.call(mat, shader, r);
+    Object.assign(shader.uniforms, HERO_LIGHT, U);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+uniform vec3 heroKeyColor;
+uniform vec3 heroKeyDir;
+uniform vec3 heroRimColor;
+uniform vec3 heroRimDir;
+uniform vec3 heroFillColor;
+uniform vec3 hairSpec1;
+uniform vec3 hairSpec2;
+uniform vec4 hairKK;
+uniform vec3 hairTT;
+varying vec3 vHairT;
+varying vec2 vHairS;
+float hairGlint = 1.0;   // яркость волоска атласа: блик рвётся по прядям
+float hairShift = 0.0;
+vec3 hairKKSpec( vec3 N, vec3 V, vec3 L ) {
+  vec3 T = vHairT - N * dot( vHairT, N );
+  float tl = length( T );
+  if ( tl < 1e-4 ) return vec3( 0.0 );
+  T /= tl;
+  vec3 H = normalize( L + V );
+  vec3 t1 = normalize( T + N * ( hairKK.z + hairShift ) ), t2 = normalize( T + N * ( hairKK.w + hairShift ) );
+  float d1 = dot( t1, H ), d2 = dot( t2, H );
+  float s1 = pow( max( 0.0, 1.0 - d1 * d1 ), 0.5 * hairKK.x ), s2 = pow( max( 0.0, 1.0 - d2 * d2 ), 0.5 * hairKK.y );
+  float vis = smoothstep( -0.15, 0.35, dot( N, L ) );
+  return vis * hairGlint * ( hairSpec1 * s1 + hairSpec2 * s2 );
+}
+vec3 hairTrans( vec3 N, vec3 V, vec3 L, vec3 albedo ) {
+  float b = pow( saturate( dot( - V, L ) ), 6.0 );
+  return hairTT * mix( vec3( 1.0 ), albedo * 3.0, 0.5 ) * b * ( 0.35 + 0.65 * ( 1.0 - abs( dot( N, V ) ) ) );
+}`)
+      .replace('#include <lights_physical_pars_fragment>', `#include <lights_physical_pars_fragment>
+void RE_Direct_Hair( const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight ) {
+  float nl = dot( geometryNormal, directLight.direction );
+  float wrapD = saturate( ( nl + 0.4 ) / 1.4 );
+  reflectedLight.directDiffuse += wrapD * directLight.color * BRDF_Lambert( material.diffuseContribution );
+  reflectedLight.directSpecular += directLight.color * hairKKSpec( geometryNormal, geometryViewDir, directLight.direction );
+  reflectedLight.directDiffuse += directLight.color * hairTrans( geometryNormal, geometryViewDir, directLight.direction, material.diffuseColor );
+}
+#undef RE_Direct
+#define RE_Direct RE_Direct_Hair`)
+      .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+  // нормаль «объёма» причёски — одна на обе стороны карты (изнанка не темнеет пятнами)
+  #ifdef DOUBLE_SIDED
+  normal *= faceDirection;
+  #endif`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+  #ifdef USE_MAP
+  { float hl = dot( sampledDiffuseColor.rgb, vec3( 0.3333 ) ); hairGlint = 0.35 + 0.9 * hl; hairShift = vHairS.x + ( hl - 0.62 ) * 0.22; }
+  #else
+  hairShift = vHairS.x;
+  #endif`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  {
+    vec3 hN = normal;
+    vec3 hV = normalize( vViewPosition );
+    float hNL = dot( hN, heroKeyDir );
+    totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * saturate( ( hNL + 0.4 ) / 1.4 );
+    totalEmissiveRadiance += heroKeyColor * hairKKSpec( hN, hV, heroKeyDir );
+    float hF = pow( 1.0 - saturate( dot( hN, hV ) ), 4.0 );
+    totalEmissiveRadiance += heroRimColor * hF * saturate( dot( hN, heroRimDir ) * 0.6 + 0.45 ) * 0.7;
+    totalEmissiveRadiance += heroRimColor * hairTrans( hN, hV, heroRimDir, diffuseColor.rgb );
+    totalEmissiveRadiance += diffuseColor.rgb * heroFillColor * ( 0.4 + 0.6 * saturate( dot( hN, hV ) ) );
+  }`);
+  };
+  const prevKey = mat.customProgramCacheKey;
+  mat.customProgramCacheKey = () => 'hairGloss:' + (prevKey ? prevKey.call(mat) : '');
+  mat.needsUpdate = true;
+  return mat;
+}
+
 // [HERO] «Пробуждённые» латы: светящиеся жилы-трещины по металлу (маска — metalness карты ORM),
 // узор в осях позы привязки (прилипает к доспеху), пульс и бегущая снизу вверх волна. HDR > 1 — ловит bloom.
 export const HERO_TIME = { value: 0 };
