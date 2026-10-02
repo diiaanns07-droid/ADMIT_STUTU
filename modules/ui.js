@@ -72,7 +72,8 @@ const SCREEN_ANNOUNCE = {
 const DEBUG_KEYS_TEXT =
   'Клавиши отладки: W — вперёд, A и D — поворот (в «Джойстике» — шаг вбок), S — стоп (в «Джойстике» — назад), ' +
   'пробел — рывок по ходу, Q и E — рывок вбок, J — огонь, U — искра, I — рассечение, ' +
-  'K — щит, F — парирование, L — выброс, O или P — сфера или призма; Esc — пауза. Это клавиатура, а не трекинг.';
+  'K — щит, F — парирование, L — выброс, O или P — сфера или призма, ' +
+  'X или G (держать и отпустить) — «Врата бури» или «Столп небес»; Esc — пауза. Это клавиатура, а не трекинг.';   // [W3-MAGIC] X/G
 
 const PART_NAMES = {
   head: 'голова',
@@ -615,7 +616,7 @@ function normCosts(c) {
  * normInput выше их не пропускает, и его потребители (обучение, пауза) не меняются. */
 
 const RUNE_RU = { ignis: 'ИГНИС ▲', fulgur: 'ФУЛЬГУР ϟ', orbis: 'ОРБИС ○', stella: 'СТЕЛЛА ★', spira: 'СПИРА @', lemnis: 'ЛЕМНИСКА ∞', caret: 'АКУС ^', vee: 'МЕССИС V', clepsydra: 'КЛЕПСИДРА ⧗', alpha: 'АЛЬФА ℓ' };
-const SIGIL_RU = { clap: 'ХЛОПОК', gate: 'ВРАТА', frame: 'РАМКА', delta: 'ДЕЛЬТА', cor: 'СЕРДЦЕ' };
+const SIGIL_RU = { clap: 'ХЛОПОК', gate: 'ВРАТА БУРИ', frame: 'РАМКА', delta: 'ДЕЛЬТА', cor: 'СЕРДЦЕ', pillar: 'СТОЛП НЕБЕС' };   // [W3-MAGIC] +столп
 const SHAPE_RU = { pinch: 'ЩЕПОТЬ', point: 'УКАЗАТЕЛЬНЫЙ', fist: 'КУЛАК', open: 'ЛАДОНЬ', victory: 'V', unknown: 'В КАДРЕ' };
 const READ_ERR_MS = 4200;      // «ОШИБКА» держится столько же, сколько карточка подсказки battleHud
 const CHEAT_KEY = 'ashen-oath.cheat.v1';
@@ -650,6 +651,8 @@ function normGestures(v) {
     slash: !!v.slash,
     parry: v.parry === true,
     sigil: typeof v.sigil === 'string' && v.sigil ? v.sigil : null,
+    sigilCharge: clamp(num(v.sigilCharge), 0, 1),   // [W3-MAGIC] ладони сомкнуты — заряд
+    sigilAxis: v.sigilAxis === 'h' || v.sigilAxis === 'v' ? v.sigilAxis : null,
     rune: typeof v.rune === 'string' && v.rune ? v.rune : null,
     dashDir: dd,
     conjure: v.conjure && typeof v.conjure === 'object' ? (v.conjure.kind === 'prism' ? 'prism' : 'orb') : null,
@@ -693,6 +696,10 @@ const GESTURE_ICONS = {
   burst: `<svg ${SVG36}>${PALM(0, 3)}<path d="M18 2.5v3.6M7 6.5l2.4 2.4M29 6.5l-2.4 2.4M3.5 15.5h3.4M29 15.5h3.4"/></svg>`,
   // искра: из кулака выпрямлен указательный, у кончика — вспышка
   spark: `<svg ${SVG36}>${FIST(0, 6)}<path d="M14.3 19.5V8.5" stroke-width="2.8"/><path d="M14.3 2.2v2.4M9.8 4.2l1.6 1.6M18.8 4.2l-1.6 1.6M8.6 8.4h2.2M17.8 8.4H20"/></svg>`,
+  // [W3-MAGIC] ладони вместе → растянуть: две сомкнутые ладони, стрелки в стороны и вверх-вниз
+  stretch: `<svg ${SVG36}><rect x="12.6" y="11" width="5" height="14" rx="2.5" fill="currentColor" fill-opacity=".2" stroke-width="2.2"/>` +
+    '<rect x="18.4" y="11" width="5" height="14" rx="2.5" fill="currentColor" fill-opacity=".2" stroke-width="2.2"/>' +
+    '<path d="M9 18H2.8M5.3 15.5 2.8 18l2.5 2.5M27 18h6.2M30.7 15.5l2.5 2.5-2.5 2.5M18 8V2.6M15.6 5 18 2.6 20.4 5M18 28v5.4M15.6 31l2.4 2.4 2.4-2.4"/></svg>',
 };
 const CHEAT_ITEMS = [
   { key: 'move', side: 'left', name: 'Ход', how: 'левая ладонь у груди', howStick: 'левая рука — джойстик' },
@@ -701,6 +708,7 @@ const CHEAT_ITEMS = [
   { key: 'bolt', side: 'right', name: 'Снаряд', how: '«OK» правой' },
   { key: 'burst', side: 'right', name: 'Выброс', how: 'кулак → резко ладонь' },
   { key: 'spark', side: 'right', name: 'Искра', how: 'щелчок указательным' },
+  { key: 'stretch', side: 'right', name: 'Врата · Столп', how: 'ладони вместе → растянуть' },   // [W3-MAGIC]
 ];
 
 /* ------------------------------------------------------------ descriptions */
@@ -2967,6 +2975,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   function liveLeft(g) {
     if (!g || g.empty) return g && g.source === 'debug' ? { text: 'КЛАВИАТУРА', tone: 'off' } : { text: 'НЕ ВИДНА', tone: 'off' };
     if (g.conjure) return { text: g.conjure === 'prism' ? 'ПРИЗМА' : 'СФЕРА', tone: 'go' };
+    if (g.sigilCharge > 0) return stretchRead(g);   // [W3-MAGIC]
     if (g.bowActive) return { text: 'ЛУК', tone: 'go' };
     if (g.shield) return { text: 'ЩИТ', tone: 'go' };
     const st = g.stick;
@@ -2983,9 +2992,16 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     if (!h) return g.source === 'debug' ? { text: 'КЛАВИАТУРА', tone: 'off' } : { text: 'НЕ ВИДНА', tone: 'off' };
     return { text: SHAPE_RU[h.shape] || 'В КАДРЕ', tone: 'idle' };
   }
+  // [W3-MAGIC] ладони сомкнуты — заряд «Врат бури» / «Столпа небес»; тянут — куда
+  function stretchRead(g) {
+    if (g.sigilAxis === 'h') return { text: 'ВРАТА БУРИ ←→', tone: 'go' };
+    if (g.sigilAxis === 'v') return { text: 'СТОЛП НЕБЕС ↕', tone: 'go' };
+    return { text: `ЛАДОНИ ВМЕСТЕ · ${Math.round(g.sigilCharge * 100)}% → РАСТЯНИ`, tone: 'go' };
+  }
   function liveRight(g) {
     if (!g || g.empty) return g && g.source === 'debug' ? { text: 'КЛАВИАТУРА', tone: 'off' } : { text: 'НЕ ВИДНА', tone: 'off' };
     if (g.conjure) return { text: g.conjure === 'prism' ? 'ПРИЗМА' : 'СФЕРА', tone: 'go' };
+    if (g.sigilCharge > 0) return stretchRead(g);   // [W3-MAGIC]
     if (g.spell) return { text: 'МАГИЯ: СГУСТОК', tone: 'go' };
     if (g.bowActive) return { text: g.bowDraw > 0.05 ? `ТЕТИВА ${Math.round(g.bowDraw * 100)}%` : 'ЛУК: ЩЕПОТЬ', tone: 'go' };
     if (g.attack) return { text: 'OK → ВЫСТРЕЛ', tone: 'go' };
@@ -3014,7 +3030,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       if (g.rune) latchSide('right', `РУНА ${RUNE_RU[g.rune] || g.rune.toUpperCase()}`, now);
       if (g.spark) { latchSide('right', 'ИСКРА', now); if (fight) fired.spark = now; }
       if (g.slash) latchSide('right', 'РАССЕЧЕНИЕ', now);
-      if (g.sigil) { const t = `ПЕЧАТЬ ${SIGIL_RU[g.sigil] || g.sigil.toUpperCase()}`; latchSide('left', t, now); latchSide('right', t, now); }
+      if (g.sigil) { const t = `ПЕЧАТЬ ${SIGIL_RU[g.sigil] || g.sigil.toUpperCase()}`; latchSide('left', t, now); latchSide('right', t, now); if (fight && (g.sigil === 'gate' || g.sigil === 'pillar')) fired.stretch = now; }
       if (g.thrown) { latchSide('left', 'БРОСОК ЧАР', now); latchSide('right', 'БРОСОК ЧАР', now); }
       if (g.bowRelease) latchSide('right', 'ВЫСТРЕЛ ИЗ ЛУКА', now);
       if (g.spellThrow) latchSide('right', 'МАГИЯ: БРОСОК', now);
@@ -3096,7 +3112,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el('p', { class: 'ao-cheat__foot', text: 'Tab — скрыть' }),
     );
     const pill = el('p', { class: 'ao-cheat-pill', hidden: true, text: 'Tab — шпаргалка жестов' });
-    const FIRE_MS = { move: 250, shield: 250, bolt: 250, dash: IMPULSE_LATCH_MS, burst: IMPULSE_LATCH_MS, spark: IMPULSE_LATCH_MS };
+    const FIRE_MS = { move: 250, shield: 250, bolt: 250, dash: IMPULSE_LATCH_MS, burst: IMPULSE_LATCH_MS, spark: IMPULSE_LATCH_MS, stretch: IMPULSE_LATCH_MS };
     const CD = { dash: 'dash', burst: 'burst', spark: 'spark' };
     return {
       node,
@@ -3114,8 +3130,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           const k = c.it.key;
           if (k === 'move' && c.mode !== moveMode) { c.mode = moveMode; setText(c.how, moveMode === 'stick' ? c.it.howStick : c.it.how); }
           let st = 'ready', frac = 0, tt = '';
-          const rem = CD[k] ? Math.max(0, num(cd[`${CD[k]}Remaining`])) : 0;
-          const tot = CD[k] ? num(cd[`${CD[k]}Total`]) : 0;
+          let rem = CD[k] ? Math.max(0, num(cd[`${CD[k]}Remaining`])) : 0;
+          let tot = CD[k] ? num(cd[`${CD[k]}Total`]) : 0;
+          if (k === 'stretch' && cd.sigils && cd.sigils.gate && cd.sigils.pillar) {
+            // [W3-MAGIC] перезарядка — пока не готова ни одна из двух печатей
+            const a = cd.sigils.gate, b = cd.sigils.pillar, first = num(a.remaining) <= num(b.remaining) ? a : b;
+            rem = Math.max(0, num(first.remaining)); tot = num(first.total);
+          }
           if (!alive) st = 'off';
           else if (ctx.now - num(fired[k], -1e9) < FIRE_MS[k]) st = 'active';
           else if (rem > 0.05) { st = 'cooldown'; frac = tot > 0 ? clamp(rem / tot, 0, 1) : 0; tt = rem >= 1 ? `${Math.ceil(rem)} с` : ''; }

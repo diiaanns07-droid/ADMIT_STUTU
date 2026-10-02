@@ -34,7 +34,9 @@ const DEFAULT_COLUMNS = [0, 45, 90, 135, 180, 225, 270, 315].map((a) => ({
 }));
 // [ASHEN_V3] руны правой руки и двуручные печати
 export const RUNE_IDS = Object.freeze(['ignis', 'fulgur', 'orbis', 'stella', 'spira', 'lemnis', 'caret', 'vee', 'clepsydra', 'alpha']);
-export const SIGIL_IDS = Object.freeze(['clap', 'gate', 'frame', 'delta', 'cor']);
+export const SIGIL_IDS = Object.freeze(['clap', 'gate', 'frame', 'delta', 'cor', 'pillar']);   // [W3-MAGIC] +pillar
+// [W3-MAGIC] «ладони вместе → растянуть»: эти две печати есть и в «Новичке»
+export const STRETCH_SIGILS = Object.freeze(['gate', 'pillar']);
 
 export const DEFAULT_LAYOUT = Object.freeze({
   version: 1,
@@ -201,10 +203,15 @@ export const DEFAULT_COMBAT_CONFIG = deepFreeze({
   // [ASHEN_V3] двуручные печати (input.sigil): хлопок, врата, рамка
   sigils: {
     clap: { energy: 25, cooldown: 12, radius: 7, damage: 25, stun: 1.2, reach: 9 },   // громовой хлопок
-    gate: { energy: 30, cooldown: 20, duration: 5, reduction: 0.6 },                  // бастион: −60% урона, орбы гаснут
+    // [W3-MAGIC] «Врата бури» (ладони вместе → в стороны): волна огня и молний по земле к Регенту
+    // (урон damage × (minK..1) по силе жеста, скорость speed м/с, дальность range) + короткий бастион: −60% урона, орбы гаснут
+    gate: { energy: 25, cooldown: 12, duration: 3.5, reduction: 0.6, damage: 60, minK: 0.5, speed: 16, range: 26, width: 3.5 },
     frame: { energy: 20, cooldown: 18, duration: 8, bonus: 0.3 },                     // метка цели: +30% урона по Регенту
     delta: { energy: 50, cooldown: 30, ticks: 4, damage: 40, interval: 0.2, width: 1.2 }, // ▲ двумя руками: луч, гасит сферы на линии
     cor: { energy: 40, cooldown: 35, heal: 45, duration: 3, ward: 6 },                 // ♥ двумя руками: лечение за 3 с + оберег
+    // [W3-MAGIC] «Столп небес» (ладони вместе → вверх-вниз): столп света бьёт Регента сверху через delay с,
+    // урон damage × (minK..1), оглушение stun с (срывает замах); дальность range
+    pillar: { energy: 35, cooldown: 18, damage: 100, minK: 0.5, stun: 1.2, delay: 0.45, range: 30 },
     castTime: 0.3,
   },
   combo: {
@@ -576,6 +583,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         fireTimer: 0, firing: false, castTimer: 0, burstCd: 0,
         runeCd: Object.fromEntries(RUNE_IDS.map((k) => [k, 0])), ward: 0, charge: 0,
         sigilCd: Object.fromEntries(SIGIL_IDS.map((k) => [k, 0])), bastion: 0, beam: [],
+        magic: [],   // [W3-MAGIC] летящие «Врата бури» / падающие «Столпы небес»: { sigil, t, dmg, power }
         vortex: 0, regen: 0, regenRate: 0, meteors: [],
         combo: 0, comboTimer: 0,
         dead: false,
@@ -591,7 +599,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       seenIds: new Set(),
       seenOrder: [],
       stats: { damageDealt: 0, damageTaken: 0, dodges: 0, blocks: 0 },
-      input: { moveX: 0, moveZ: 0, attack: false, shield: false, valid: false, conjure: null, viewYaw: NaN, steer: false, autoWalk: false },
+      input: { moveX: 0, moveZ: 0, attack: false, shield: false, valid: false, conjure: null, viewYaw: NaN, steer: false, autoWalk: false, sigilCharge: 0, sigilAxis: null },
       auto: { dir: 1, flipT: 0, stuckT: 0, detourT: 0, detourSign: 1, lastX: null, lastZ: null, want: 0 },   // [НОВИЧОК] автоход
       engaged: engaged0,
       frame: { yaw: null, stickA: 0, idle: 0, target: null },
@@ -606,7 +614,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       pendingBurst: false,
       pendingBurstPower: null,
       pendingRune: null,
-      pendingSigil: null,
+      pendingSigil: null, pendingSigilPower: null,
       dashBuffer: null,
       pendingThrow: null,
       debug: {
@@ -786,6 +794,9 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         bastion: P.bastion > 0, bastionRemaining: P.bastion,
         vortex: P.vortex > 0, vortexRemaining: P.vortex, regen: P.regen > 0, regenRemaining: P.regen,
         combo: P.combo, comboMultiplier: 1 + comboBonus(), comboTimer: P.comboTimer,
+        // [W3-MAGIC] ладони сомкнуты — заряд «Врат бури» / «Столпа небес» 0..1 и куда тянут: 'h' | 'v' | null
+        sigilCharge: st.status === 'playing' ? st.input.sigilCharge : 0,
+        sigilAxis: st.status === 'playing' ? st.input.sigilAxis : null,
       },
       boss: {
         position: vcopy(BOSS),
@@ -898,7 +909,13 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       st.pendingBurstPower = Number.isFinite(bp) && bp > 0 ? clamp(bp, 0, 1) : null;
     }
     if (typeof input.rune === 'string' && RUNE_IDS.includes(input.rune) && !novice) st.pendingRune = input.rune;
-    if (typeof input.sigil === 'string' && SIGIL_IDS.includes(input.sigil) && !novice) st.pendingSigil = input.sigil;
+    if (typeof input.sigil === 'string' && SIGIL_IDS.includes(input.sigil) && (!novice || STRETCH_SIGILS.includes(input.sigil))) {
+      st.pendingSigil = input.sigil;
+      st.pendingSigilPower = unit(input.sigilPower, 0.6);   // [W3-MAGIC] сила жеста 0..1 (нет — средняя)
+    }
+    // [W3-MAGIC] заряд «ладони вместе» для снимка (эффекты, HUD)
+    st.input.sigilCharge = unit(input.sigilCharge, 0);
+    st.input.sigilAxis = input.sigilAxis === 'h' || input.sigilAxis === 'v' ? input.sigilAxis : null;
     const ch = Number(input.charge);
     st.p.charge = Number.isFinite(ch) ? clamp(ch, 0, 1) : 0;
     if (hand) { try { hand.readInput(novice ? { ...input, bow: null, handSpell: null } : input); } catch (e) { console.warn('[combat] hand.readInput', e); } } // [HAND] input.bow / input.handSpell; [НОВИЧОК] без лука и магии рукой
@@ -1568,6 +1585,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     const sg = st.pendingSigil;
     if (!sg) return;
     st.pendingSigil = null;
+    const power = Number.isFinite(st.pendingSigilPower) ? st.pendingSigilPower : 0.6;
     const S = C.sigils[sg];
     let reason = '';
     if (P.sigilCd[sg] > EPS) reason = 'cooldown';
@@ -1599,10 +1617,8 @@ export function createCombat({ config, bossBrain, layout } = {}) {
         emit('boss_stunned', to, { duration: S.stun, source: 'clap' });
         damageBoss(S.damage, 'sigil', to, { sigil: 'clap' });
       }
-    } else if (sg === 'gate') {
-      P.bastion = S.duration;
-      emit('sigil_cast', chest, { sigil: 'gate', duration: S.duration, reduction: S.reduction, from: vcopy(chest), to: vcopy(chest) });
-      emit('bastion_start', pp, { duration: S.duration });
+    } else if (sg === 'gate' || sg === 'pillar') {
+      castStretch(sg, S, power, pp, chest, to);   // [W3-MAGIC]
     } else if (sg === 'frame') {
       B.mark = S.duration;
       emit('sigil_cast', chest, { sigil: 'frame', duration: S.duration, bonus: S.bonus, from: vcopy(chest), to: vcopy(to) });
@@ -1631,6 +1647,53 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       P.ward = S.ward;
       emit('sigil_cast', chest, { sigil: 'cor', heal: S.heal, duration: S.duration, ward: S.ward, from: vcopy(chest), to: vcopy(chest) });
       emit('ward_start', pp, { duration: S.ward });
+    }
+  }
+
+  // ───────── [W3-MAGIC] «ладони сомкнуты → растянуть»: «Врата бури» и «Столп небес» ─────────
+  // Контракт для визуала (№3), голоса (№7) и «Духа игрока» (№5):
+  //  • событие 'sigil_cast' { sigil: 'gate' | 'pillar', power 0..1, damage, from, to, ... }:
+  //    gate — волна огня и молний по земле от героя к Регенту (speed м/с, width м, eta с до удара)
+  //           + короткий бастион (duration с, reduction; как раньше — ещё и 'bastion_start');
+  //    pillar — столп света с неба над Регентом, удар через delay с, оглушение stun с;
+  //  • снимок: player.sigilCharge 0..1 (ладони сомкнуты, идёт заряд), player.sigilAxis 'h' | 'v' | null;
+  //  • попадание — обычное 'boss_hit' с source 'sigil' и data { sigil, power } (столп — ещё 'boss_stunned'
+  //    с source 'pillar'); волна, не долетевшая до Регента (дальше range), не бьёт: 'sigil_miss'.
+  function castStretch(sg, S, power, pp, chest, to) {
+    const P = st.p;
+    const k = S.minK + (1 - S.minK) * clamp(power, 0, 1);
+    const dmg = S.damage * k;
+    const dist = distXZ(pp, BOSS);
+    const reach = dist <= S.range;
+    if (sg === 'gate') {
+      P.bastion = Math.max(P.bastion, S.duration);
+      const eta = dist / Math.max(1, S.speed);
+      emit('sigil_cast', chest, { sigil: 'gate', power, damage: dmg, duration: S.duration, reduction: S.reduction, speed: S.speed, width: S.width, eta, reach, from: vcopy(chest), to: vcopy(to) });
+      emit('bastion_start', pp, { duration: S.duration });
+      P.magic.push({ sigil: 'gate', t: reach ? eta : Math.min(eta, S.range / Math.max(1, S.speed)), dmg: reach ? dmg : 0, power });
+    } else {
+      emit('sigil_cast', chest, { sigil: 'pillar', power, damage: dmg, stun: S.stun, delay: S.delay, reach, from: vcopy(chest), to: vcopy(to) });
+      P.magic.push({ sigil: 'pillar', t: S.delay, dmg: reach ? dmg : 0, power });
+    }
+  }
+  function stepStretchMagic(h) {
+    const P = st.p, B = st.b;
+    if (!P.magic.length) return;
+    for (const m of P.magic) m.t -= h;
+    while (P.magic.length && st.status === 'playing') {
+      const i = P.magic.findIndex((m) => m.t <= 0);
+      if (i < 0) break;
+      const m = P.magic.splice(i, 1)[0];
+      const to = bossAim();
+      if (!(m.dmg > 0)) { emit('sigil_miss', to, { sigil: m.sigil, power: m.power }); continue; }
+      if (m.sigil === 'pillar' && !(PV && PV.on)) {
+        const S = C.sigils.pillar;
+        for (const tg of st.telegraphs) emit('telegraph_cancel', tg.center, { attackId: tg.id, attackKind: tg.kind, reason: 'stun' });
+        st.telegraphs.length = 0;
+        B.stun = Math.max(B.stun, S.stun);
+        emit('boss_stunned', to, { duration: S.stun, source: 'pillar' });
+      }
+      damageBoss(m.dmg, 'sigil', to, { sigil: m.sigil, power: m.power });
     }
   }
 
@@ -2244,6 +2307,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       if (P.hp > 0) P.hp = Math.min(C.player.maxHp, P.hp + P.regenRate * dtR);
       if (P.regen <= 0) emit('regen_end', playerPos(), { reason: 'expired' });
     }
+    stepStretchMagic(h);   // [W3-MAGIC]
     if (P.beam.length) {
       for (const m of P.beam) m.t -= h;
       while (P.beam.length && P.beam[0].t <= 0 && st.status === 'playing') {
