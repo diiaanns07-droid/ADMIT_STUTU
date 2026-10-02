@@ -113,7 +113,7 @@ try {
       await shot(page, 'battle_overview', 'бой · обзор арены');
       await g.setCam(null);
       await g.step(4);
-      // видео: каждый шаг — кадр (заклинания подряд, без ожидания энергии)
+      // видео: каждый шаг заклинания — кадр ролика
       const vstep = async (n) => {
         if (!FRAMES) return g.step(n);
         for (let i = 0; i < n; i++) { await g.step(1); vframe++; await page.screenshot({ path: join(FRAMES, `${String(vframe).padStart(5, '0')}.jpg`), type: 'jpeg', quality: 90 }); }
@@ -123,13 +123,11 @@ try {
       for (const s of SPELLS) {
         const id = `spell_${s.id}`;
         if (!want(id) && !FRAMES) continue;
-        if (!FRAMES) {
-          // энергия — в «быстром» настоящем времени
-          await g.virtual(false);
-          await page.waitForFunction(() => { const s = window.__ASHEN__.snapshot(); return s && s.player.energy >= 75 && s.player.action !== 'cast'; }, null, { polling: 200, timeout: 120000 }).catch(() => log(`${id}: не дождались энергии`));
-          await g.virtual(true);
-          await g.step(3);
-        }
+        // энергия — в «быстром» настоящем времени (в видео эти кадры не пишутся: склейка между заклинаниями)
+        await g.virtual(false);
+        await page.waitForFunction(() => { const s = window.__ASHEN__.snapshot(); return s && s.player.energy >= 75 && s.player.action !== 'cast'; }, null, { polling: 200, timeout: 120000 }).catch(() => log(`${id}: не дождались энергии`));
+        await g.virtual(true);
+        await g.step(3);
         const peak = PEAK[s.id] || 10;
         if (s.hold) {
           await page.keyboard.down(s.key);
