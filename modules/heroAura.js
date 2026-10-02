@@ -186,7 +186,7 @@ void main() {
   // пояс знаков: 16 ячеек, «рукописный» знак из 2–4 штрихов по хэшу ячейки; разгораются с яростью
   {
     float ga = ( a + spin ) / TAU * 16.0;
-    float ci = floor( ga ), cu = fract( ga ) - 0.5;
+    float ci = mod( floor( ga ), 16.0 ), cu = fract( ga ) - 0.5;   // по модулю: на шве atan — тот же знак
     vec2 q = vec2( cu * ( TAU * 0.76 / 16.0 ), r - 0.76 ) / 0.085;
     float h1 = hash1( ci + 1.0 ), h2 = hash1( ci + 17.0 ), h3 = hash1( ci + 31.0 );
     float d = seg( q, vec2( 0.0, -0.72 ), vec2( 0.0, 0.72 ) );
@@ -213,7 +213,7 @@ void main() {
   float fill = 1.0 - smoothstep( fa - 0.012, fa + 0.012, af );
   float fr = band( r, 0.933, 0.013, aa );
   I += fr * fill * 0.4;
-  H += fr * fill * ( 0.1 + 0.45 * uReady ) + fr * exp( - pow( ( af - fa ) * 9.0, 2.0 ) ) * step( 0.01, uFury ) * ( 1.0 - uReady ) * 0.9;
+  H += fr * fill * ( 0.1 + 0.45 * uReady ) + fr * exp( - ( af - fa ) * ( af - fa ) * 81.0 ) * step( 0.01, uFury ) * ( 1.0 - uReady ) * 0.9;
   // мягкий свет кольцом по земле (не диск), рябь при накоплении, сердцевина заряда
   I += smoothstep( 0.15, 0.7, r ) * ( 1.0 - smoothstep( 0.7, 1.0, r ) ) * ( 0.025 + 0.04 * uFury );
   float w = fract( r * 1.6 - t * 0.45 );
@@ -239,10 +239,10 @@ const WAVE_VERT = /* glsl */`
 varying vec3 vN;
 varying vec3 vV;
 varying float vY;
-varying float vAng;
+varying vec2 vXZ;
 void main() {
   vY = position.y;
-  vAng = atan( position.z, position.x );
+  vXZ = position.xz;
   vec4 mv = modelViewMatrix * vec4( position, 1.0 );
   vN = normalMatrix * normal;
   vV = - mv.xyz;
@@ -256,8 +256,9 @@ uniform vec3 uC2;
 varying vec3 vN;
 varying vec3 vV;
 varying float vY;
-varying float vAng;
+varying vec2 vXZ;
 void main() {
+  float vAng = atan( vXZ.y, vXZ.x );
   float F = 1.0 - abs( dot( normalize( vN ), normalize( vV ) ) );
   float y = vY;
   float ph = fract( y * 1.8 - uTime * 0.5 );
@@ -593,9 +594,8 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
       U.uHandR.value.copy(_hR); parent.worldToLocal(U.uHandR.value);
       haveHands = true;
     }
-    const handPulse = 1 + 0.45 * almost * (0.5 + 0.5 * Math.sin(t * 14));
-    const hk = (v) => smooth(0.02, 1, v) * 2.2 * handPulse;
-    RU.heroAuraHandK.value.set(haveHands ? hk(st.sL) : 0, haveHands ? hk(st.sR) : 0);
+    const handPulse = 2.2 * (1 + 0.45 * almost * (0.5 + 0.5 * Math.sin(t * 14)));
+    RU.heroAuraHandK.value.set(haveHands ? smooth(0.02, 1, st.sL) * handPulse : 0, haveHands ? smooth(0.02, 1, st.sR) * handPulse : 0);
     U.uHandW.value.set(haveHands ? st.sL : 0, haveHands ? st.sR : 0);
 
     // контровой rim: стихия; ярость и вспышка — ярче и горячее; смерть — гаснет

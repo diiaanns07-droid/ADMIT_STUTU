@@ -33,7 +33,7 @@ void main() {
   float fade = vT.z * pow( 1.0 - age, 1.6 );
   // тело ленты: ярче к навершию, мягко гаснет к древку; горячая нить у кромки навершия
   float body = smoothstep( 0.15, 0.9, a ) * ( 1.0 - smoothstep( 0.97, 1.0, a ) );
-  float core = exp( - pow( ( a - 0.9 ) * 12.0, 2.0 ) );
+  float core = exp( - ( a - 0.9 ) * ( a - 0.9 ) * 144.0 );   // pow() с отрицательным основанием в GLSL не определён
   float streak = 0.72 + 0.28 * sin( a * 38.0 + age * 9.0 );
   // [W4-АУРА] старый край ленты рвётся на волокна (а не тает ровной полосой) и редкие блёстки в теле
   float fib = 0.5 + 0.5 * sin( a * 61.0 + sin( a * 17.0 ) * 3.0 );
@@ -190,6 +190,8 @@ export function createFootprints(THREE, { color = 0x9ff4ff, color2 = 0xffffff, c
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   let next = 0, lastT = -1e4;
   mesh.visible = false;
+  // героя перестали обновлять (скрыт, ушёл со сцены) — следы не застывают на земле
+  mesh.onBeforeRender = () => { if (typeof performance !== 'undefined' && performance.now() / 1000 - U.uTime.value > 0.5) mesh.visible = false; };
   return {
     mesh,
     // t — часы шейдера (те же, что идут в update); k — сила отпечатка 0…1
@@ -295,6 +297,9 @@ export function createDashBurst(THREE, { color = 0x9ff4ff, color2 = 0xffffff, co
     U.uPx.value = _vp.w / (2 * Math.tan((fov * Math.PI) / 360));
   };
   let next = 0, until = -1e4, seed = 7331;
+  const onRender = pts.onBeforeRender;
+  // героя перестали обновлять — облака пыли не висят в воздухе
+  pts.onBeforeRender = (r, sc, cam) => { if (typeof performance !== 'undefined' && performance.now() / 1000 - U.uTime.value > 0.5) { pts.visible = false; return; } onRender(r, sc, cam); };
   const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
   function put(x, y, z, vx, vy, vz, t, life, kind) {
     const i = next; next = (next + 1) % n;
