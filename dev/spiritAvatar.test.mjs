@@ -315,6 +315,20 @@ test('отладка с клавиатуры: синтетические рук�
   assert.ok(finite(sp));
 });
 
+test('отладка: U без полной шкалы «Небесного суда» руки духа не поднимает; ultimate_start — поднимает', () => {
+  const dbg = (extra = {}) => ({ screen: 'playing', debug: true, input: { valid: true, source: 'debug', ...(extra.input || {}) }, snapshot: { player: { fury: extra.fury ?? 10 } }, events: extra.events });
+  run(sp, 2, () => dbg());
+  sp.frame(DT, (T += 16), dbg({ input: { ultimate: true, spark: true } }));
+  run(sp, 0.6, () => dbg());
+  let inf = sp.info();
+  assert.ok(inf.joints.leftWrist.y < inf.joints.head.y && inf.joints.rightWrist.y < inf.joints.head.y, `отказ боя — руки внизу ${inf.joints.rightWrist.y} / ${inf.joints.head.y}`);
+  sp.frame(DT, (T += 16), dbg({ fury: 0, events: [{ id: 'u', type: 'ultimate_start', position: { x: 0, y: 1, z: 0 } }] }));
+  run(sp, 0.6, () => ({ ...dbg({ fury: 0 }), snapshot: { player: { fury: 0 }, ultimate: { active: true, t: 0.6 } } }));
+  inf = sp.info();
+  assert.ok(inf.joints.leftWrist.y > inf.joints.head.y && inf.joints.rightWrist.y > inf.joints.head.y, `сцена — руки вверх ${inf.joints.rightWrist.y} / ${inf.joints.head.y}`);
+  run(sp, 3, () => dbg({ fury: 0 }));
+});
+
 test('модель кисти: 21 точка, кулак короче ладони, правая — зеркально левой', () => {
   const a = new Float32Array(63), b = new Float32Array(63), c = new Float32Array(63);
   buildHand(a, 0, 'left', { x: 0, y: 0, z: 0, ang: 0, curls: [0, 0, 0, 0], thumbIn: 0 });

@@ -1074,7 +1074,9 @@ export function createSpiritAvatar(opts = {}) {
     const tm = { burst: -9, burstBoth: false, sigil: -9, spark: -9, slash: -9, parry: -9, dash: -9, dashX: 0, ult: -9, stretch: -9, stretchH: true, t: 0 };
     const COUNT = [[1, 1, 1, 1, 1], [0, 1, 1, 1, 1], [0, 0, 1, 1, 1], [0, 0, 0, 1, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 0]];
     function setShape(h, c0, c1, c2, c3, thumbIn, pinch = 0) { h.curls[0] = c0; h.curls[1] = c1; h.curls[2] = c2; h.curls[3] = c3; h.thumbIn = thumbIn; h.pinch = pinch; }
-    function step(dt, input) {
+    // opt.ultByInput: в бою без шкалы ультимейта руки вверх — по импульсу ввода; со шкалой («Небесный суд») —
+    // только по событию ultimate_start (ult()), иначе отказ боя (шкала не полна) выглядел бы успехом
+    function step(dt, input, opt) {
       const t = (tm.t += dt), I = input || {};
       const L = tgt[0], R = tgt[1];
       // покой: левая плавно качается, пальцы шевелятся; правая считает 1–5, машет и показывает «OK»
@@ -1097,7 +1099,7 @@ export function createSpiritAvatar(opts = {}) {
       if (I.slash) tm.slash = t;
       if (I.parry) tm.parry = t;
       if (I.dashDir) { tm.dash = t; tm.dashX = Math.sign(I.dashDir.x || 0) || -1; }
-      if (I.ultimate || I.ult) tm.ult = t;
+      if ((I.ultimate || I.ult) && !(opt && opt.ultByInput === false)) tm.ult = t;
       const sBurst = t - tm.burst, sSpark = t - tm.spark, sSlash = t - tm.slash, sParry = t - tm.parry, sDash = t - tm.dash, sSigil = t - tm.sigil, sUlt = t - tm.ult;
       if (sBurst < 0.7) {
         for (let s = tm.burstBoth ? 0 : 1; s < 2; s++) {
@@ -1147,7 +1149,7 @@ export function createSpiritAvatar(opts = {}) {
       for (let i = 0; i < 21; i++) { jOk[J.HL + i] = 1; jOk[J.HR + i] = 1; }
       finishTargets();
     }
-    return { step, reset() { tm.t = 0; } };
+    return { step, reset() { tm.t = 0; }, ult() { tm.ult = tm.t; } };
   }
 
   // ------------------------------------------------------------ реакции
@@ -1213,7 +1215,7 @@ export function createSpiritAvatar(opts = {}) {
       const ty = e && e.type;
       if (!ty) continue;
       if (ty === 'block') st.shieldHit = 1;
-      else if (ty === 'ultimate_start' || ty === 'ultimate' || ty === 'victory') triggerUlt();
+      else if (ty === 'ultimate_start' || ty === 'ultimate' || ty === 'victory') { triggerUlt(); if (source === 'synth' && ty !== 'victory') syn.ult(); }
       else if (ty === 'ultimate_strike') { st.ult = 1; ring(3, 1.0, 0.5, 3.6, st.colElem2); }
       else if (ty === 'ultimate_ready') { st.ready = 1; ring(3, 0.8, 0.4, 2.0, st.colElem2); }   // [W3-ULT] шкала полна — нимб зовёт
       else if (ty === 'ultimate_end') { st.ult = Math.min(st.ult, 0.5); ring(3, 0.9, 0.5, 1.7, st.colElem); }   // [W3-ULT] выдох: руки опускаются
@@ -1288,7 +1290,8 @@ export function createSpiritAvatar(opts = {}) {
     let live = false;
     if (ctx.debug) {
       if (source !== 'synth') { source = 'synth'; syn.reset(); }
-      syn.step(dt, ctx.input);
+      const furySys = !!(ctx.snapshot && ctx.snapshot.player && fin(ctx.snapshot.player.fury));
+      syn.step(dt, ctx.input, { ultByInput: !furySys });
       live = true;
     } else {
       if (source !== 'camera') { source = 'camera'; isoInit.fill(0); ref.ok = false; }
