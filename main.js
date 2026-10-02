@@ -221,6 +221,11 @@ let bossFinale = null;
 import('./modules/fx/bossFinale.js').then((m) => {
   try { bossFinale = m.createBossFinale({ THREE, scene, world, cue, shake: (k) => rig.shake(k), reducedMotion: () => !!settings.reducedMotion, quality: () => settings.quality }); } catch (e) { console.warn('[W3-КИНО] финал Регента', e); }
 }).catch((e) => console.warn('[W3-КИНО] bossFinale.js не загружен:', e && e.message));
+// [W3-КИНО] события боя → импульсы экрана (core/cinemaFeed.js); гроза второй фазы → гром и отсвет молнии
+let cinema = null;
+import('./core/cinemaFeed.js').then((m) => {
+  try { cinema = m.createCinemaFeed({ pulse: (kind, k, pos, o) => (postfx && typeof postfx.pulse === 'function' ? postfx.pulse(kind, k, pos, o) : false) }); } catch (e) { console.warn('[W3-КИНО] cinemaFeed', e); }
+}).catch((e) => console.warn('[W3-КИНО] cinemaFeed.js не загружен:', e && e.message));
 const combatCfg = typeof combat.getConfig === 'function' ? combat.getConfig() : null;
 
 // [ASHEN_V2] прогресс героя: очки клятвы (отжимания, угли на плато) → улучшения боя.
@@ -442,6 +447,7 @@ function resetFight() {
   app.outroAt = 0;             // [FEEL] финал и замедление прошлого боя не переходят в новый
   timeFx.slowUntil = 0; timeFx.stopUntil = 0;
   if (bossFinale) bossFinale.reset();   // [W3-КИНО] осколки и кинокамера прошлого боя
+  if (cinema) cinema.reset();           // [W3-КИНО] отложенные импульсы прошлого боя
 }
 
 // [ASHEN_V2] состояние камеры из снимка: вне арены — камера исследования, в арене — lock-on.
@@ -1270,21 +1276,12 @@ function feedPostFx(events) {
   }
 }
 
-// [W3-КИНО] экранные события боя → postfx.pulse (волна, рывок, ранение); цвет фаз — из атмосферы
-const _cinPos = { x: 0, y: 0, z: 0 };
+// [W3-КИНО] экранные события боя → postfx.pulse (core/cinemaFeed.js: волна, рывок, ранение, «Врата бури»,
+// «Столп небес», удар ультимейта); цвет фаз — из атмосферы (atmosphere.look)
 function feedCinema(events) {
   const atmo = world && world.atmosphere;
   if (typeof postfx.setLook === 'function') postfx.setLook(atmo && atmo.look ? atmo.look : null);
-  if (!Array.isArray(events) || typeof postfx.pulse !== 'function') return;
-  for (const e of events) {
-    const d = (e && e.data) || {};
-    if (!e || d.remote) continue;
-    if (e.type === 'player_hit') postfx.pulse('hurt', 0.45 + Math.min(0.55, (Number(d.amount) || 10) / 40));
-    else if (e.type === 'perfect_dodge') postfx.pulse('dash', 1);
-    else if (e.type === 'player_dash' && e.position) { _cinPos.x = e.position.x; _cinPos.y = (e.position.y || 0) + 1.2; _cinPos.z = e.position.z; postfx.pulse('dash', 0.6, _cinPos); }
-    else if (e.type === 'boss_impact' && !d.launch && (d.attackKind === 'slam' || d.attackKind === 'nova')) postfx.pulse('shockwave', d.attackKind === 'nova' ? 1 : 0.75, e.position);
-    else if (e.type === 'burst') postfx.pulse('shockwave', 0.5 + 0.5 * Math.min(1, Number(d.power) || 0.5), e.position);
-  }
+  if (cinema) { try { cinema.feed(events, lastSnapshot); } catch (e) { console.warn('[W3-КИНО] cinemaFeed', e); cinema = null; } }
 }
 
 // ---------------------------------------------------------------- главный цикл

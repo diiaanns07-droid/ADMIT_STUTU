@@ -17,7 +17,7 @@
 'use strict';
 
 // <AO_MANIFEST> — генерирует node tools/sw_manifest.mjs, руками не править
-const VERSION = '7be50f6d5492';
+const VERSION = '18bfb023d587';
 const VENDOR_VERSION = 'b3f563930682';
 const SHELL = [
   "./",
@@ -28,6 +28,7 @@ const SHELL = [
   "core/bdoTheme.js",
   "core/bowGesture.js",
   "core/cameraRig.js",
+  "core/cinemaFeed.js",
   "core/coachOverlay.js",
   "core/coachPictograms.js",
   "core/debugInput.js",

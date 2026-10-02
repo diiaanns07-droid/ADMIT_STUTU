@@ -193,6 +193,151 @@ await test('мусор на входе не роняет', async () => {
   post.dispose();
 });
 
+// ---------------------------------------------------------------- cinemaFeed: события боя → импульсы
+const { createCinemaFeed, CINE } = await import('../core/cinemaFeed.js');
+function makeFeed() {
+  const calls = [];
+  const feed = createCinemaFeed({
+    pulse: (kind, k, pos, o) => { calls.push({ kind, k, pos: pos ? { x: pos.x, y: pos.y, z: pos.z } : null, color: o ? o.color : undefined, dur: o ? o.dur : undefined }); return true; },
+    now: () => 0,
+  });
+  return { feed, calls };
+}
+const snapT = (time, py = 0) => ({ status: 'playing', time, player: { position: { x: 0, y: py, z: 6 } }, boss: { maxHp: 1000 } });
+const ev = (type, data = {}, position = { x: 0, y: 1.4, z: 6 }) => ({ id: type + Math.random(), type, position, data });
+const near = (a, b, e = 1e-6) => Math.abs(a - b) < e;
+
+await test('cinemaFeed: прежние реакции (ранение, рывок, удары Регента, выброс), события соперника — мимо', async () => {
+  const { feed, calls } = makeFeed();
+  feed.feed([
+    ev('player_hit', { amount: 20 }),
+    ev('player_dash', {}, { x: 1, y: 0, z: 2 }),
+    ev('perfect_dodge'),
+    ev('boss_impact', { attackKind: 'slam' }, { x: 0, y: 0, z: 0 }),
+    ev('boss_impact', { attackKind: 'nova' }, { x: 0, y: 0, z: 0 }),
+    ev('boss_impact', { attackKind: 'slam', launch: true }),
+    ev('boss_impact', { attackKind: 'orb' }),
+    ev('burst', { power: 1 }, { x: 0, y: 2, z: 0 }),
+    ev('player_hit', { amount: 30, remote: true }),
+  ], snapT(1));
+  const kinds = calls.map((c) => c.kind).join(',');
+  ok(kinds === 'hurt,dash,dash,shockwave,shockwave,shockwave', kinds);
+  ok(near(calls[0].k, 0.45 + 20 / 40), 'ранение по урону ' + calls[0].k);
+  ok(near(calls[1].k, 0.6) && near(calls[1].pos.y, 1.2), 'рывок от груди героя');
+  ok(near(calls[2].k, 1), 'идеальный рывок');
+  ok(near(calls[3].k, 0.75) && near(calls[4].k, 1), 'slam 0,75, nova 1');
+  ok(near(calls[5].k, 1), 'выброс полным зарядом');
+});
+
+await test('cinemaFeed: «Врата бури» — вспышка и волна у ног, волны по пути, у Регента волна и тёплая вспышка (по времени боя)', async () => {
+  const { feed, calls } = makeFeed();
+  const from = { x: 0, y: 1.4, z: 9 }, to = { x: 0, y: 2.5, z: 0 };
+  feed.feed([ev('sigil_cast', { sigil: 'gate', power: 1, eta: 0.6, reach: true, from, to }, from)], snapT(10, 0));
+  ok(calls.length === 2 && calls[0].kind === 'flash' && calls[0].color === CINE.gate.castColor, 'тёплая вспышка сразу ' + JSON.stringify(calls[0]));
+  ok(calls[1].kind === 'shockwave' && near(calls[1].pos.y, CINE.gate.groundLift) && near(calls[1].pos.z, 9), 'волна у ног героя ' + JSON.stringify(calls[1]));
+  // пауза: время боя стоит — ничего не срабатывает
+  for (let i = 0; i < 30; i++) feed.feed([], snapT(10, 0));
+  ok(calls.length === 2 && feed.debug().pending === 4, 'в паузе ждём ' + JSON.stringify(feed.debug()));
+  feed.feed([], snapT(10.2, 0));
+  ok(calls.length === 3 && calls[2].kind === 'shockwave' && near(calls[2].pos.z, 9 - 9 * 0.33, 1e-4) && near(calls[2].pos.y, CINE.gate.groundLift), 'первая волна пути ' + JSON.stringify(calls[2]));
+  feed.feed([], snapT(10.4, 0));
+  ok(calls.length === 4 && near(calls[3].pos.z, 9 - 9 * 0.66, 1e-4), 'вторая волна пути');
+  feed.feed([], snapT(10.6, 0));
+  const hit = calls.slice(4).map((c) => c.kind).sort().join(',');
+  ok(hit === 'flash,shockwave', 'у цели ' + hit);
+  const fl = calls.slice(4).find((c) => c.kind === 'flash');
+  ok(fl.color === CINE.gate.hitColor && near(fl.pos.z, 0), 'тёплая вспышка у Регента');
+  ok(feed.debug().pending === 0, 'очередь пуста');
+});
+
+await test('cinemaFeed: «Врата бури» не долетели — sigil_miss снимает остаток пути; попадание раньше таймера играет удар сразу и один раз', async () => {
+  const { feed, calls } = makeFeed();
+  const from = { x: 0, y: 1.4, z: 30 }, to = { x: 0, y: 2.5, z: 0 };
+  feed.feed([ev('sigil_cast', { sigil: 'gate', power: 0.5, eta: 1.8, reach: false, from, to }, from)], snapT(5));
+  ok(feed.debug().pending === 2, 'без удара — только путь ' + feed.debug().pending);
+  feed.feed([], snapT(5.7));   // первая волна пути (0,59 с)
+  const n = calls.length;
+  feed.feed([ev('sigil_miss', { sigil: 'gate' }, to)], snapT(5.9));
+  ok(feed.debug().pending === 0 && calls.length === n, 'остаток пути снят');
+  // долетели, boss_hit пришёл на кадр раньше таймера
+  calls.length = 0;
+  feed.feed([ev('sigil_cast', { sigil: 'gate', power: 1, eta: 0.5, reach: true, from: { x: 0, y: 1.4, z: 8 }, to }, from)], snapT(6));
+  calls.length = 0;
+  feed.feed([ev('boss_hit', { sigil: 'gate', source: 'sigil', amount: 60 }, to)], snapT(6.49));
+  const kinds = calls.map((c) => c.kind).sort().join(',');
+  ok(kinds === 'flash,punch,shockwave', 'удар сразу + рывок крупного урона: ' + kinds);
+  feed.feed([], snapT(7));
+  ok(calls.length === 3 && feed.debug().pending === 0, 'по таймеру ещё раз не играет');
+});
+
+await test('cinemaFeed: «Столп небес» — бело-голубая засветка и волна у Регента в момент удара (delay), раньше — по boss_hit', async () => {
+  const { feed, calls } = makeFeed();
+  const to = { x: 1, y: 2.5, z: -1 };
+  feed.feed([ev('sigil_cast', { sigil: 'pillar', power: 1, delay: 0.45, reach: true, to })], snapT(20));
+  ok(calls.length === 0, 'до удара — ничего');
+  feed.feed([], snapT(20.4));
+  ok(calls.length === 0, 'ещё рано');
+  feed.feed([], snapT(20.45));
+  const fl = calls.find((c) => c.kind === 'flash'), sw = calls.find((c) => c.kind === 'shockwave');
+  ok(fl && sw && calls.length === 2, 'засветка и волна ' + JSON.stringify(calls));
+  ok(fl.color === CINE.pillar.color && near(fl.k, CINE.pillar.flash + CINE.pillar.flashP), 'бело-голубая, по силе жеста');
+  ok(near(sw.pos.x, 1) && near(sw.pos.z, -1) && near(sw.k, CINE.pillar.wave), 'волна у Регента');
+  // boss_hit пришёл раньше таймера: сразу, один раз
+  calls.length = 0;
+  feed.feed([ev('sigil_cast', { sigil: 'pillar', power: 0.5, delay: 0.45, to })], snapT(30));
+  feed.feed([ev('boss_hit', { sigil: 'pillar', source: 'sigil', amount: 30 }, to)], snapT(30.43));
+  ok(calls.map((c) => c.kind).sort().join(',') === 'flash,shockwave', 'сразу по попаданию ' + calls.map((c) => c.kind));
+  feed.feed([], snapT(31));
+  ok(calls.length === 2, 'и не повторяется');
+  // промах столпа (Регент дальше range) — удар всё равно виден
+  calls.length = 0;
+  feed.feed([ev('sigil_cast', { sigil: 'pillar', delay: 0.45, reach: false, to })], snapT(40));
+  feed.feed([ev('sigil_miss', { sigil: 'pillar' }, to)], snapT(40.45));
+  ok(calls.length === 2 && feed.debug().pending === 0, 'промах — тоже удар');
+});
+
+await test('cinemaFeed: крупный урон → punch, мелкий и ультимейт — нет; ultimate_strike → ultimate, без второй кинорамки', async () => {
+  const { feed, calls } = makeFeed();
+  const p = { x: 0, y: 2.5, z: 0 };
+  feed.feed([ev('boss_hit', { amount: 14, source: 'spark' }, p), ev('boss_hit', { amount: 44, source: 'rune' }, p)], snapT(1));
+  ok(calls.length === 0, 'до 45 — без рывка');
+  feed.feed([ev('boss_hit', { amount: 45, source: 'rune' }, p), ev('boss_hit', { amount: 200, source: 'burst' }, p)], snapT(1));
+  ok(calls.length === 2 && near(calls[0].k, CINE.bigHit.k0) && near(calls[1].k, CINE.bigHit.k1), 'рывок по урону ' + calls.map((c) => c.k));
+  calls.length = 0;
+  feed.feed([
+    ev('ultimate_start', { duration: 3.6, strikeAt: 2.3 }),
+    ev('ultimate_strike', { amount: 300 }, p),
+    ev('boss_hit', { amount: 300, source: 'ultimate', ultimate: true }, p),
+    ev('ultimate_end', { struck: true }),
+  ], snapT(2));
+  ok(calls.length === 1 && calls[0].kind === 'ultimate' && near(calls[0].pos.y, 2.5), 'одна «ultimate», без bars и без рывка ' + JSON.stringify(calls));
+});
+
+await test('cinemaFeed: новый бой сбрасывает очередь, переполнение не роняет, мусор игнорируется', async () => {
+  const { feed, calls } = makeFeed();
+  feed.feed([ev('sigil_cast', { sigil: 'pillar', delay: 0.45, to: { x: 0, y: 2, z: 0 } })], snapT(50));
+  feed.feed([], snapT(0.01));   // новый бой: время с нуля
+  feed.feed([], snapT(1));
+  ok(calls.length === 0 && feed.debug().pending === 0, 'удар прошлого боя не сыграл');
+  for (let i = 0; i < 12; i++) feed.feed([ev('sigil_cast', { sigil: 'gate', eta: 1, reach: true, from: { x: 0, y: 1, z: 9 }, to: { x: 0, y: 2, z: 0 } })], snapT(1 + i * 0.01));
+  ok(feed.debug().pending <= CINE.slots && feed.debug().dropped > 0, 'вытеснение ' + JSON.stringify(feed.debug()));
+  feed.feed([null, 5, {}, { type: 'sigil_cast' }, { type: 'sigil_cast', data: { sigil: 'gate' } }, { type: 'boss_hit', data: null, position: null }, { type: 'player_dash' }], null);
+  feed.feed(undefined, undefined);
+  ok(true);
+});
+
+await test('cinemaFeed + postfx (low): импульсы доходят до настоящего postfx', async () => {
+  const { post } = makePost('low');
+  await post.whenReady;
+  const feed = createCinemaFeed({ pulse: (kind, k, pos, o) => post.pulse(kind, k, pos, o) });
+  feed.feed([ev('player_hit', { amount: 40 })], snapT(1));
+  ok(post.info().fx.hurt > 0.99, 'ранение ' + post.info().fx.hurt);
+  feed.feed([ev('sigil_cast', { sigil: 'pillar', power: 1, delay: 0.45, to: { x: 0, y: 2, z: 0 } })], snapT(2));
+  feed.feed([], snapT(2.5));
+  ok(post.info().fx.flash > 0.85 && post.info().fx.last.kind === 'flash', 'засветка столпа ' + JSON.stringify(post.info().fx));
+  post.dispose();
+});
+
 // ---------------------------------------------------------------- bossFinale
 function makeWorld() {
   const body = new THREE.Group();
