@@ -17,7 +17,7 @@
 'use strict';
 
 // <AO_MANIFEST> — генерирует node tools/sw_manifest.mjs, руками не править
-const VERSION = '586aa3886d3f';
+const VERSION = '995614686643';
 const VENDOR_VERSION = 'b3f563930682';
 const SHELL = [
   "./",
@@ -39,6 +39,7 @@ const SHELL = [
   "core/handGestures.js",
   "core/handMagic.js",
   "core/handZone.js",
+  "core/hybridTip.js",
   "core/inputRecorder.js",
   "core/leftStick.js",
   "core/perfHud.js",
@@ -52,6 +53,7 @@ const SHELL = [
   "core/trackingHud.js",
   "core/tutorialTrainer.js",
   "core/ultimate.js",
+  "core/visionPlan.js",
   "core/voicePhrases.js",
   "index.html",
   "main.js",

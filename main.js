@@ -18,7 +18,7 @@ import { createDebugInput, emptyInput } from './core/debugInput.js';
 import { createBossBrain } from './modules/boss.js';
 import { createCombat } from './modules/combat.js';
 import { createWorld } from './modules/world.js';
-import { createHeroModel, HEROES, configureHeroes } from './modules/heroModel.js';
+import { createHeroModel, HEROES, configureHeroes, warmHero } from './modules/heroModel.js';
 import { createEffects } from './modules/effects.js';
 import { createUI } from './modules/ui.js';
 import { createVision } from './modules/vision.js';
@@ -32,6 +32,7 @@ import { createPoseRecorder } from './core/poseRecorder.js'; // [W3-SQUAT] за�
 import { createHandZone, createHeroBowPose } from './core/handZone.js'; // [HAND] лук и магия рукой
 import { createPerfTuner } from './core/perfTuner.js'; // [PERF] автоподстройка под железо
 import { createPerfHud } from './core/perfHud.js';     // [PERF] F3 — кадры и трекинг
+import { createHybridTip } from './core/hybridTip.js';    // [PERF] подсказка: Chrome на встроенной видеокарте
 import { feelOfEvents, FEEL_TIME } from './core/gameFeel.js';     // [FEEL] остановка кадра, замедление, тряска по силе удара
 import { CHALLENGE, createChallengeBrain, createChallengeSession, createChallengeHud, createTally, createHall, buildResult } from './modules/challenge.js'; // [W3-CHALLENGE]
 import { createPosterCanvas, posterBlob, posterFontsReady, downloadPoster, posterFileName, skeletonFromVision, demoSkeleton } from './modules/posterCard.js'; // [W3-CHALLENGE] постер
@@ -128,6 +129,8 @@ const handCombatOn = () => settings.handCombat !== false && (app.debug || settin
 const settings = loadSettings();
 config.settings = settings;
 config.boss.seed = (Math.random() * 0xffffffff) >>> 0; // разный порядок атак от запуска к запуску
+// [LOAD] герой начинает грузиться до построения мира: модель (байты уже качает index.html), клипы, модули оболочки
+try { warmHero(settings.hero, { baseUrl: new URL('./assets/quaternius/', import.meta.url).href }); } catch (e) { /* не критично */ }
 
 // ---------------------------------------------------------------- renderer / scene / camera
 let renderer;
@@ -146,6 +149,12 @@ renderer.shadowMap.type = THREE.PCFShadowMap;
 // ?uncapped=1 — без предела кадров (замеры QA), ?pose=lite|full — модель позы вручную.
 const PERF_Q = new URLSearchParams(location.search);
 const UNCAPPED = PERF_Q.get('uncapped') === '1';
+// [PERF] ?benchcam=1 — замер tools/perf_bench.mjs: камера (в headless — поддельная) работает с самого старта и не
+// выключается в «Отладке с клавиатуры», чтобы мерить бой и MediaPipe на одной видеокарте одновременно; ?benchcam=fight —
+// включается при входе в бой (экран камеры с живой камерой в отладке не пропускает дальше). Ввод остаётся клавиатурным.
+const BENCH_CAM = PERF_Q.get('benchcam') === '1' || PERF_Q.get('benchcam') === 'fight';
+const BENCH_CAM_AT_BOOT = PERF_Q.get('benchcam') === '1';
+let benchCamStarted = false;
 // [ONBOARD] быстрый вход: «Играть» → камера с автокалибровкой → обучение → бой у края арены.
 // ?demo — для живой презентации: без меню, сразу камера → бой; ?classic=1 — прежний поток экранов с кнопками.
 const DEMO = PERF_Q.has('demo') && PERF_Q.get('demo') !== '0';
@@ -222,13 +231,17 @@ const worldLayout = world && world.layout ? world.layout : null;
 let heroModel = null;
 try {
   // [HERO] C5: общие настройки (атмосфера, шейдинг) — и для удалённого героя NET
-  configureHeroes({ atmosphere: world && world.atmosphere, shading: settings.heroShading, quality: settings.quality, camera });
+  configureHeroes({ atmosphere: world && world.atmosphere, shading: settings.heroShading, quality: settings.quality, camera, renderer }); // [LOAD] renderer — шейдеры героя собираются до показа
   if (world && world.hero) heroModel = createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, markers: world.hero.markers, atmosphere: world.atmosphere, shading: settings.heroShading, quality: settings.quality, hero: settings.hero, baseUrl: new URL('./assets/quaternius/', import.meta.url).href }); // [HERO] markers/atmosphere/shading
 } catch (e) { console.warn('[ASHEN] heroModel', e); }
 if (settings.reducedMotion) import('./modules/heroGear.js').then((m) => m.configureGear({ reducedMotion: true })).catch(() => {}); // [W4-НАРЯДЫ] ткань нарядов спокойнее
 // [HERO] витрина героя в меню: кинематографичный свет и облёт (modules/heroShowcase.js); ошибка — прежняя камера меню
 let heroShowcase = null;
-if (heroModel && world && world.hero) import('./modules/heroShowcase.js').then((m) => { try { heroShowcase = m.createHeroShowcase({ THREE, scene, heroRoot: world.hero.root, heroModel, getPostfx: () => postfx, settings, dom: canvas }); } catch (e) { console.warn('[HERO] витрина', e); } }).catch((e) => console.warn('[HERO] heroShowcase.js', e && e.message));
+// [LOAD] промис витрины: её свет должен быть в сцене до сборки шейдеров мира (bootCompile), иначе первый кадр меню
+// пересобирает все программы заново (другое число источников света) — на NVIDIA это ещё ~10 с рывков
+const heroShowcaseP = heroModel && world && world.hero
+  ? import('./modules/heroShowcase.js').then((m) => { try { heroShowcase = m.createHeroShowcase({ THREE, scene, heroRoot: world.hero.root, heroModel, getPostfx: () => postfx, settings, dom: canvas }); } catch (e) { console.warn('[HERO] витрина', e); } }).catch((e) => console.warn('[HERO] heroShowcase.js', e && e.message))
+  : Promise.resolve();
 const bossBrain = make('boss.js', () => createChallengeBrain(createBossBrain, config)); // [W3-CHALLENGE] в испытании — фиксированный seed
 const combat = make('combat.js', () => createCombat({ config, bossBrain, layout: worldLayout }));
 const effects = make('effects.js', () => createEffects({ THREE, scene, camera, renderer, config }));
@@ -607,6 +620,7 @@ function startFight() {
 
 // [ONBOARD] пропуск интро: клавиша, клик/касание или жест (кадр ввода с действием или заметным движением рук)
 const INTRO_GESTURE_AFTER = 0.35;   // с: поза, с которой нажали «В бой», интро сразу не обрывает
+const HERO_INTRO_WAIT = 4;          // [HERO] с: облёт продлевается, пока грузится модель героя (не дольше этого)
 function introGesture(input) {
   if (!input || !input.valid || input.source === 'debug') return false;
   const b = input.bow, h = input.handSpell;
@@ -840,13 +854,21 @@ function visionProfile() {
 // [PERF] распознавание → автоподстройке (рендер уступает GPU, если MediaPipe не успевает за камерой);
 // точная модель позы не держит частоту — переход на быструю (сейчас, если не в бою, и в следующие запуски).
 const perfVis = { t: 0, slowSince: null, wantLite: false, switched: false };
+// [PERF] подсказка про гибридный ноутбук (core/hybridTip.js); распознавание — как в версии друга, поза на каждом кадре
+let hybridTip = null;
+try { hybridTip = createHybridTip({ root: document.body }); } catch (e) { hybridTip = null; }
 function perfVisionTick(now) {
   if (!perfTuner || now - perfVis.t < 500) return;
   perfVis.t = now;
   const s = vision ? visionStatus() : null;
   const d = s && s.debug;
-  if (!d || !(s.status === 'ready' || s.status === 'calibrating' || s.status === 'lost')) { perfTuner.setVision(null); perfVis.slowSince = null; return; }
+  if (!d || !(s.status === 'ready' || s.status === 'calibrating' || s.status === 'lost')) {
+    perfTuner.setVision(null); perfVis.slowSince = null;
+    if (hybridTip) hybridTip.update(now, { gpuClass: perfTuner.hardware.gpuClass, hz: null, cameraFps: null, screen: app.screen });
+    return;
+  }
   perfTuner.setVision({ hz: d.inferenceHz, cameraFps: d.cameraFps, inferMs: d.inferMs });
+  if (hybridTip) hybridTip.update(now, { gpuClass: perfTuner.hardware.gpuClass, hz: d.inferenceHz, cameraFps: d.cameraFps, screen: app.screen });
   const slow = !trainPose.active && d.poseModel === 'full' && Number.isFinite(d.inferenceHz) && Number.isFinite(d.cameraFps) && d.cameraFps >= 20 && d.inferenceHz < 16;
   if (slow) { if (perfVis.slowSince === null) perfVis.slowSince = now; if (now - perfVis.slowSince > 6000) perfVis.wantLite = true; }
   else perfVis.slowSince = null;
@@ -1005,7 +1027,7 @@ const callbacks = {
     app.debug = on;
     debugInput.setEnabled(on);
     if (on) trainer.setDemo(true);        // [ТВИСТ «ОШИБКА»] тренажёр без камеры — демо
-    if (on && vision) vision.stop();      // в DEBUG камера не используется и выключается
+    if (on && vision && !BENCH_CAM) vision.stop();      // в DEBUG камера не используется и выключается
     renderUI();
   },
 
@@ -1037,7 +1059,7 @@ const callbacks = {
   onBuyUpgrade(id) { if (progression.buy(id).ok) renderUI(); },
   onBack() {
     const to = app.nav.pop() || 'menu';
-    if (to === 'menu' && vision && !app.resumableFight && !cursorCamAllowed()) vision.stop();   // в меню камера не нужна ([W3-CURSOR] — кроме курсора-кисти)
+    if (to === 'menu' && vision && !app.resumableFight && !cursorCamAllowed() && !BENCH_CAM) vision.stop();   // в меню камера не нужна ([W3-CURSOR] — кроме курсора-кисти)
     setScreen(to);
   },
 
@@ -1050,7 +1072,7 @@ const callbacks = {
     app.resumableFight = false;
     app.introShown = false;
     app.autoResume = null;                // [ONBOARD]
-    if (vision && !cursorCamAllowed()) vision.stop();   // в меню камера выключается (калибровка сохраняется в vision); [W3-CURSOR] — кроме курсора-кисти
+    if (vision && !cursorCamAllowed() && !BENCH_CAM) vision.stop();   // в меню камера выключается (калибровка сохраняется в vision); [W3-CURSOR] — кроме курсора-кисти
     resetFight();
     lastSnapshot = null;
     app.error = null;
@@ -1897,6 +1919,7 @@ function frame(now) {
   const ts = app.screen === 'playing' ? (pvpCtl && pvpCtl.active ? pvpCtl.timeScale(now) : timeScale(now)) : 1; // [PVP] в дуэли без стоп-кадров
   const dt = dtReal * ts * (bossFinale && app.screen === 'playing' ? bossFinale.timeScale() : 1);   // [W3-КИНО] сцена перехода в фазу 2
 
+  if (BENCH_CAM && !benchCamStarted && app.screen === 'playing') benchCamStart();   // [PERF] ?benchcam=fight
   const input = readInput();
   // [HAND] лук и магия рукой → input.bow / input.handSpell; конфликтующие жесты гасятся (C2)
   if (handZone) { try { handZone.apply(input, now, { debug: app.debug, playing: app.screen === 'playing', enabled: handCombatOn() }); } catch (e) { console.warn('[HAND] apply', e); } }
@@ -1916,8 +1939,10 @@ function frame(now) {
       I.awakened = true; // «пробуждение»: рёв стража у world, волна и звук у effects (урона нет)
       events = [{ id: `intro-awaken-${Math.round(now)}`, type: 'boss_phase', position: { ...lastSnapshot.boss.position, y: 3 }, data: { stage: 1, awaken: true } }];
     }
+    // [HERO] модель героя ещё грузится (медленная сеть): облёт ждёт её до HERO_INTRO_WAIT с, чтобы бой не начался с пустым местом героя
+    const heroWait = !!(heroModel && heroModel.loading && !heroModel.ready) && I.t < I.duration + HERO_INTRO_WAIT;
     // [ONBOARD] пропуск в тот же кадр, что и «пробуждение», — переход на следующий кадр, чтобы world/effects получили событие
-    if (I.t >= I.duration || (I.skip && events === NO_EVENTS)) { rig.reset(lastSnapshot.player.position, lastSnapshot.boss.position); readInput(); setScreen('playing'); } // из облёта — в lock-on, дальше камера сама перейдёт в explore
+    if (!heroWait && (I.t >= I.duration || (I.skip && events === NO_EVENTS))) { rig.reset(lastSnapshot.player.position, lastSnapshot.boss.position); readInput(); setScreen('playing'); } // из облёта — в lock-on, дальше камера сама перейдёт в explore
   }
   showIntroHint(QUICK && app.screen === 'intro');
 
@@ -2133,10 +2158,28 @@ resize();
 if (settings.startZone !== 'arena') { try { resetFight(); } catch (e) { console.warn('[ASHEN] startZone', e); } }   // [FOREST] в меню герой у врат леса; [ONBOARD] у края арены
 // [ONBOARD] ?demo — живая презентация: без меню сразу экран камеры (камера и калибровка — сами), затем бой
 if (DEMO && !CHALLENGE_Q) { setScreen('camera'); app.onb.autoEnabled = true; enableCamera(); }
+// [PERF] ?benchcam=1 — камера работает с самого старта и не выключается в отладке (замер боя вместе с MediaPipe)
+function benchCamStart() {
+  if (benchCamStarted) return;
+  benchCamStarted = true;
+  ensureVision().then((v) => v.start()).catch((e) => console.warn('[PERF] benchcam: камера не запустилась', e && (e.code || e.message)));
+}
+if (BENCH_CAM_AT_BOOT) benchCamStart();
 if (CHALLENGE_Q) callbacks.onChallenge({ from: 'url' });   // [W3-CHALLENGE] ?challenge — сразу испытание
 renderUI();
-requestAnimationFrame(frame);
-boot.done();
+// [LOAD] шейдеры мира собираются до первого кадра (compileAsync + KHR_parallel_shader_compile): пока драйвер линкует
+// программы в своих потоках, главный поток свободен — модель героя разбирается и одевается параллельно, а первый
+// кадр не стоит несколько секунд. Экран загрузки («Сборка мира и героев…») остаётся до готовности, не дольше BOOT_COMPILE_MAX_MS.
+const BOOT_COMPILE_MAX_MS = 12000;
+const bootCompile = PARALLEL_COMPILE && typeof renderer.compileAsync === 'function'
+  ? Promise.race([heroShowcaseP.then(() => renderer.compileAsync(scene, camera)).catch(() => null), new Promise((r) => setTimeout(r, BOOT_COMPILE_MAX_MS))])
+  : Promise.resolve();
+const tBoot0 = performance.now();
+bootCompile.then(() => {
+  console.info(`[perf] шейдеры мира до первого кадра: ${Math.round(performance.now() - tBoot0)} мс, программ ${renderer.info.programs ? renderer.info.programs.length : '?'}`);
+  requestAnimationFrame(frame);
+  boot.done();
+});
 
 // Диагностика для QA (только чтение). Не используется игровой логикой.
 window.__ASHEN__ = Object.freeze({
