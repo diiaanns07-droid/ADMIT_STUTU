@@ -1043,7 +1043,10 @@ export function createHandGestures(configPatch = {}) {
     if (!H.present) { H.fistStableAt = null; H.charge = 0; H.releasedAt = null; }
     if (H.releasedAt !== null && t - H.releasedAt > cfg.releaseWindowMs) {
       // [ОШИБКА] заряженный правый кулак раскрывался слишком медленно (или не до конца)
-      if (H.side === 'right' && H.present && H.releaseCharge >= cfg.minCharge && H.rawShape === 'unknown' && !st.stroke) hint('burst_slow', t, { side: 'right' });
+      // Сглаживание формы (One-Euro) запаздывает: кисть уже раскрывается (raw 'open'), а устойчивая форма ещё
+      // не 'open' — это тоже медленное раскрытие, иначе игрок не получит ни выброса, ни подсказки.
+      const slowOpen = H.rawShape === 'unknown' || (H.rawShape === 'open' && H.shape !== 'open');
+      if (H.side === 'right' && H.present && H.releaseCharge >= cfg.minCharge && slowOpen && !st.stroke) hint('burst_slow', t, { side: 'right' });
       H.releasedAt = null;
     }
   }

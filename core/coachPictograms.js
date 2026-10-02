@@ -443,6 +443,7 @@ pair('hand_edge',
 pair('hand_far',
   (D) => { frameBox(D, 3, 3, 58, 50); hand(D, { x: 32, y: 30, s: 13, ...OPEN, arm: 0.03 }); focus(D, 32, 28, 9); },
   (D) => { frameBox(D, 3, 3, 58, 50); hand(D, { x: 32, y: 31, s: 42, ...OPEN }); });
+FIG.hand_far_stand = FIG.hand_far; // [СТОЯ] та же картинка: кисть мелкая → подойти ближе
 pair('hands_missing',
   (D) => {
     frameBox(D, 3, 3, 58, 42);
