@@ -49,6 +49,7 @@ class GameHandler(http.server.SimpleHTTPRequestHandler):
         ".md": "text/plain; charset=utf-8",
         ".txt": "text/plain; charset=utf-8",
         ".svg": "image/svg+xml",
+        ".ogg": "audio/ogg",
     }
 
     def __init__(self, *args, **kwargs):

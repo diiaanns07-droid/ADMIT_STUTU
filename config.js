@@ -168,14 +168,17 @@ export const config = {
     connectTimeoutMs: 15000,
   },
 
-  // Звук временно выключен по просьбе владельца: AudioContext не создаётся, ползунок громкости скрыт.
-  // Включить обратно: enabled: true.
-  audio: { enabled: false },
+  // [SFX] Звук: сэмплы assets/sfx (собственные, tools/sfx_bake.mjs) + синтез Web Audio для остального.
+  //   enabled: false — без звука совсем (AudioContext не создаётся, ползунок громкости скрыт);
+  //   samples: false — только прежний синтез; director: false — звук из визуальных обработчиков, как было;
+  //   maxVoices — потолок одновременных голосов (лимиты по категориям — в modules/sfx.js).
+  audio: { enabled: true, samples: true, director: true, maxVoices: 20 },
 
   defaultSettings: {
     quality: 'medium',
     qualityAuto: true,      // [PERF] уровень качества и разрешение подбирает core/perfTuner.js под железо игрока
-    volume: 0.6,
+    volume: 0.5,
+    muted: false,           // [SFX] «Без звука» (клавиша M)
     reducedMotion: false,
     difficulty: 'easy',     // [FEEL] сложность боя с Регентом: 'easy' — «Лёгкая» (по умолчанию для первого боя), 'normal' — «Обычная»
     sensitivity: 1.0,
