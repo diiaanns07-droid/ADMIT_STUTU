@@ -42,6 +42,19 @@ const FEEL = {
 const SANS = '"Segoe UI","Trebuchet MS",system-ui,sans-serif';
 const CRIT = '#ffcf4a', RED = '#ff3b2a', OK_GREEN = '#9be39b';
 const MOVE_DUR = 0.6;      // сколько живёт надпись жеста
+// [W4-UI] числа урона: римские цифры Cinzel, подписи — капитель Forum (vendor/fonts, есть кириллица)
+const NUM_FONT = '"Cinzel","Palatino Linotype","Book Antiqua",Georgia,serif';
+const CAP_FONT = '"Forum","Cinzel","Palatino Linotype","Book Antiqua",Georgia,serif';
+// top/mid/bot — градиент заливки, edge — внутренняя кромка, glow — свечение (рисуется один раз в спрайт)
+// rise/arc/drop — подъём, уход в сторону и «провисание» в конце дуги (px), dur — жизнь (с)
+const NUM_STYLE = {
+  dmg: { top: '#ffffff', mid: '#f6ead2', bot: '#c2ab80', edge: '#4a3820', glow: 'rgba(255,236,200,0.5)', dur: 0.95, rise: 62, arc: 30, drop: 16, pop: 0.45 },
+  big: { top: '#fffaf0', mid: '#ffe2a0', bot: '#cf9038', edge: '#5a3a10', glow: 'rgba(255,206,120,0.7)', dur: 1.05, rise: 70, arc: 32, drop: 14, pop: 0.55 },
+  crit: { top: '#fffbe6', mid: '#ffd24a', bot: '#d47a14', edge: '#4a2400', glow: 'rgba(255,184,50,0.95)', dur: 1.25, rise: 80, arc: 22, drop: 8, pop: 0.95 },
+  heal: { top: '#f2ffe9', mid: '#8bec80', bot: '#2c9a48', edge: '#0a3517', glow: 'rgba(110,240,130,0.75)', dur: 1.1, rise: 54, arc: 8, drop: 0, pop: 0.4 },
+  hurt: { top: '#ffe4d4', mid: '#ff7a4a', bot: '#b0241a', edge: '#360705', glow: 'rgba(255,80,40,0.7)', dur: 1.0, rise: 48, arc: 34, drop: 20, pop: 0.5 },
+};
+const NUM_MAX = 14;        // одновременно на экране; новое число вытесняет самое старое
 
 const isObj = (v) => v !== null && typeof v === 'object';
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -49,7 +62,7 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 export function createBattleHud({ canvas } = {}) {
   const ctx = canvas && canvas.getContext ? canvas.getContext('2d') : null;
-  if (!ctx) return { frame() {}, reset() {}, dispose() {} };
+  if (!ctx) return { frame() {}, reset() {}, dispose() {}, numbers: () => [] };
   // [BDO] DOM-слой (панель умений, полосы, цель, мини-карта, титр зоны); ошибки не ломают canvas-HUD
   let bdo = null;
   try { bdo = createBdoHud({ root: canvas.parentNode, canvas }); } catch (e) { console.warn('[battleHud] bdoHud', e); bdo = null; }
@@ -123,6 +136,192 @@ export function createBattleHud({ canvas } = {}) {
     if (callouts.length >= MAX_CALLOUTS) callouts.shift();
     callouts.push({ text, x, y, vy: opts.vy ?? -26, t: 0, dur: opts.dur ?? 0.9, color, size, serif: !!opts.serif, scramble: !!opts.scramble,
       sans: !!opts.sans, pop: !!opts.pop, label: opts.label || '' }); // [FEEL] крупные цифры: жирный шрифт с обводкой, «щелчок», подпись «КРИТ!»
+  }
+  // ------------------------------------------------------------------ [W4-UI] числа урона
+  // Каждое число рисуется ОДИН раз в свой спрайт (offscreen canvas из пула NUM_MAX: обводка, градиент,
+  // свечение, у крита — «КРИТ!»), а в кадре — только drawImage с прозрачностью и масштабом: без
+  // аллокаций и без shadowBlur в каждом кадре. Вылет по дуге в сторону (стороны чередуются), «щелчок»
+  // при появлении; старые числа раздвигаются вверх — не накладываются. Лечение — зелёное «+N».
+  // Без document (тесты в Node) число рисуется прямо в кадр той же функцией paintNumber.
+  let quality = 'medium';               // фактический уровень (settings.quality; авто — уже подставлен)
+  const nums = [];
+  for (let i = 0; i < NUM_MAX; i++) nums.push({ on: false, seq: 0, kind: 'dmg', text: '', label: '', x: 0, y: 0, px: 0, py: 0, oy: 0, side: 1, t: 0, dur: 1, size: 20, ls: 0, w: 0, h: 0, pad: 0, bw: 0, sp: null, sw: 0, sh: 0 });
+  let numSeq = 0, numSide = 1, spriteOff = false, qMarked = false;
+  const heal = { last: -1, acc: 0, t: 9 };   // рост HP героя → «+N»
+  function makeSprite() {
+    if (spriteOff) return null;
+    try {
+      const c = typeof document !== 'undefined' && document.createElement ? document.createElement('canvas') : null;
+      const g = c && c.getContext ? c.getContext('2d') : null;
+      if (g) return { c, g };
+    } catch (e) { /* без спрайтов */ }
+    spriteOff = true;
+    return null;
+  }
+  function layoutNumber(g, n) {
+    g.font = `700 ${n.size}px ${NUM_FONT}`;
+    const tw = num(g.measureText(n.text).width, n.text.length * n.size * 0.6);
+    let lw = 0;
+    n.ls = 0;
+    if (n.label) { n.ls = Math.round(Math.max(15, n.size * 0.36)); g.font = `400 ${n.ls}px ${CAP_FONT}`; lw = num(g.measureText(n.label).width, 0) + n.ls * 0.4; }
+    n.pad = Math.ceil(n.size * 0.32) + 4;                     // обводка и свечение
+    n.bw = Math.max(tw, lw) + n.size * 0.2;                   // видимая ширина (для раздвижки)
+    n.w = Math.ceil(Math.max(tw, lw) + n.pad * 2);
+    n.h = Math.ceil(n.size * 0.86 + (n.ls ? n.ls * 1.15 : 0) + n.pad * 2);
+  }
+  // Число с подписью; (cx, by) — середина по горизонтали и линия шрифта цифр.
+  function paintNumber(g, n, cx, by, glow) {
+    const S = NUM_STYLE[n.kind] || NUM_STYLE.dmg, sz = n.size;
+    g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineJoin = 'round';
+    if (n.label) {
+      const ly = by - sz * 0.86 - n.ls * 0.12;
+      g.font = `400 ${n.ls}px ${CAP_FONT}`;
+      if (glow) { g.shadowColor = S.glow; g.shadowBlur = n.ls * 0.6; }
+      g.lineWidth = Math.max(2.5, n.ls * 0.2); g.strokeStyle = 'rgba(40,16,0,0.95)';
+      g.strokeText(n.label, cx, ly);
+      g.shadowBlur = 0; g.shadowColor = 'rgba(0,0,0,0)';
+      g.fillStyle = '#fff0b8'; g.fillText(n.label, cx, ly);
+    }
+    g.font = `700 ${sz}px ${NUM_FONT}`;
+    if (glow) { g.shadowColor = S.glow; g.shadowBlur = sz * 0.42; }
+    g.lineWidth = Math.max(4, sz * 0.2); g.strokeStyle = 'rgba(8,5,3,0.94)';
+    g.strokeText(n.text, cx, by);
+    g.shadowBlur = 0; g.shadowColor = 'rgba(0,0,0,0)';
+    g.lineWidth = Math.max(1.5, sz * 0.075); g.strokeStyle = S.edge;
+    g.strokeText(n.text, cx, by);
+    const gr = g.createLinearGradient(0, by - sz * 0.74, 0, by + sz * 0.04);
+    gr.addColorStop(0, S.top); gr.addColorStop(0.48, S.mid); gr.addColorStop(1, S.bot);
+    g.fillStyle = gr; g.fillText(n.text, cx, by);
+  }
+  function spawnNumber(kind, text, x, y, size, label = '') {
+    let n = null;
+    for (const q of nums) if (!q.on) { n = q; break; }
+    if (!n) { n = nums[0]; for (const q of nums) if (q.seq < n.seq) n = q; }   // вытесняем самое старое
+    const S = NUM_STYLE[kind] || NUM_STYLE.dmg;
+    n.on = true; n.seq = ++numSeq; n.kind = kind; n.text = text; n.label = label;
+    n.size = Math.round(size); n.t = 0; n.dur = S.dur; n.oy = 0;
+    numSide = -numSide;
+    n.side = kind === 'heal' ? 0 : numSide;
+    n.x = clamp(x, 40, Math.max(41, W - 40)); n.y = clamp(y, 70, Math.max(71, H - 30));
+    n.px = n.x; n.py = n.y;
+    if (!n.sp) n.sp = makeSprite();
+    if (n.sp) {
+      layoutNumber(n.sp.g, n);
+      const d = dpr, cw = Math.ceil(n.w * d), chh = Math.ceil(n.h * d), c = n.sp.c;
+      if (c.width < cw || c.height < chh) { c.width = Math.max(c.width, cw); c.height = Math.max(c.height, chh); }
+      const g = n.sp.g;
+      g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height);
+      g.setTransform(d, 0, 0, d, 0, 0);
+      paintNumber(g, n, n.w / 2, n.h - n.pad, quality !== 'low');
+      n.sw = cw; n.sh = chh;
+    } else layoutNumber(ctx, n);
+    // удары одного мгновения (выброс по нескольким целям, залп) — стопкой сразу, без рывка на следующем кадре
+    for (const o of nums) {
+      if (!o.on || o === n || o.t > 0.08 || Math.abs(o.x - n.x) * 2 >= o.bw + n.bw) continue;
+      n.oy = Math.min(n.oy, o.oy - (o.size * 0.9 + o.ls * 1.1 + n.ls * 1.1 + 4));
+    }
+    return n;
+  }
+  // четырёхлучевая искра (путь, без аллокаций)
+  function sparkle(x, y, r, rot) {
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const a = rot + i * Math.PI / 2, b = a + Math.PI / 4;
+      ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+      ctx.lineTo(x + Math.cos(b) * r * 0.2, y + Math.sin(b) * r * 0.2);
+    }
+    ctx.closePath(); ctx.fill();
+  }
+  function drawNumbers(dtR, rm) {
+    let any = false;
+    // 1. возраст и точка на дуге
+    for (const n of nums) {
+      if (!n.on) continue;
+      n.t += dtR;
+      if (n.t >= n.dur) { n.on = false; continue; }
+      any = true;
+      const S = NUM_STYLE[n.kind] || NUM_STYLE.dmg, k = n.t / n.dur;
+      if (rm) { n.px = n.x; n.py = n.y + n.oy; continue; }
+      const ex = 1 - (1 - k) * (1 - k), ey = 1 - (1 - k) * (1 - k) * (1 - k);
+      n.px = n.x + n.side * S.arc * ex;
+      n.py = n.y - S.rise * ey + S.drop * k * k * k + n.oy;
+    }
+    if (!any) return;
+    // 2. без наложений: старшее из пересекающихся уходит вверх (плавно; три прохода — каскад по стопке)
+    for (let pass = 0; pass < 3; pass++) for (const a of nums) {
+      if (!a.on) continue;
+      for (const b of nums) {
+        if (!b.on || b.seq <= a.seq) continue;              // a — старше b
+        const aTop = a.py - a.size * 0.8 - a.ls * 1.1, aBot = a.py + a.size * 0.1;
+        const bTop = b.py - b.size * 0.8 - b.ls * 1.1, bBot = b.py + b.size * 0.1;
+        if (Math.abs(a.px - b.px) * 2 >= a.bw + b.bw || aBot <= bTop - 2 || bBot <= aTop - 2) continue;
+        const ov = aBot - bTop + 3, step = rm ? ov : Math.min(ov, 40) * 0.5;
+        a.oy -= step; a.py -= step;
+      }
+    }
+    // 3. отрисовка
+    const base = ctx.globalAlpha, lowQ = quality === 'low', hiQ = quality === 'high';
+    for (const n of nums) {
+      if (!n.on) continue;
+      const S = NUM_STYLE[n.kind] || NUM_STYLE.dmg, k = n.t / n.dur;
+      const kin = clamp(n.t / 0.14, 0, 1);
+      const pop = rm ? 1 : 1 + S.pop * (1 - kin) * (1 - kin) - (n.kind === 'crit' ? 0.08 * Math.sin(kin * Math.PI) : 0);
+      const sc = pop * (rm ? 1 : 1 - 0.14 * clamp((k - 0.62) / 0.38, 0, 1));
+      const a = clamp(n.t / 0.05, 0, 1) * (k < 0.68 ? 1 : 1 - (k - 0.68) / 0.32);
+      if (a <= 0.01) continue;
+      ctx.globalAlpha = base * a;
+      if (n.sp) {
+        const dw = n.w * sc, dh = n.h * sc, ox = n.px - dw / 2, oy = n.py - (n.h - n.pad) * sc;
+        ctx.drawImage(n.sp.c, 0, 0, n.sw, n.sh, ox, oy, dw, dh);
+        if (!lowQ && !rm && n.kind === 'crit' && n.t < 0.16) {   // белая вспышка крита
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = base * a * (1 - n.t / 0.16) * 0.85;
+          ctx.drawImage(n.sp.c, 0, 0, n.sw, n.sh, ox, oy, dw, dh);
+          ctx.globalCompositeOperation = 'source-over';
+        }
+      } else {
+        ctx.save(); ctx.translate(n.px, n.py); ctx.scale(sc, sc); paintNumber(ctx, n, 0, 0, false); ctx.restore();
+      }
+      if (n.kind !== 'crit') continue;
+      // крит: искра у числа мерцает и вращается; при появлении — золотое кольцо и брызги
+      const cy = n.py - n.size * 0.42 * sc;
+      if (!lowQ && !rm && n.t < 0.36) {
+        const r = clamp(n.t / 0.36, 0, 1), e = 1 - (1 - r) * (1 - r);
+        ctx.globalAlpha = base * a * (1 - r);
+        ctx.strokeStyle = '#ffd98a'; ctx.lineWidth = 3 * (1 - r) + 0.5;
+        ctx.beginPath(); ctx.arc(n.px, cy, n.size * (0.55 + 1.25 * e), 0, Math.PI * 2); ctx.stroke();
+        if (hiQ) {
+          ctx.beginPath();
+          for (let i = 0; i < 8; i++) {
+            const ang = i * Math.PI / 4 + n.seq, r0 = n.size * (0.5 + 1.1 * e), r1 = r0 + n.size * 0.35 * (1 - r);
+            ctx.moveTo(n.px + Math.cos(ang) * r0, cy + Math.sin(ang) * r0); ctx.lineTo(n.px + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
+          }
+          ctx.stroke();
+        }
+      }
+      const tw = rm ? 1 : 0.65 + 0.35 * Math.sin(n.t * 16 + n.seq);
+      ctx.globalAlpha = base * a;
+      ctx.fillStyle = '#fff6d6';
+      sparkle(n.px + n.bw * 0.5 * sc, n.py - n.size * 0.78 * sc, n.size * 0.3 * sc * tw, rm ? 0 : n.t * 2.4);
+      if (!lowQ) sparkle(n.px - n.bw * 0.46 * sc, n.py - n.size * 0.12 * sc, n.size * 0.17 * sc * (1.6 - tw), rm ? 0 : -n.t * 3);
+    }
+    ctx.globalAlpha = base;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.lineJoin = 'miter';
+  }
+  // рост HP героя (лечение рун, печати «Кор», вечность) копится и всплывает «+N» над героем
+  function trackHeal(snap, dtR, live) {
+    const P = snap && snap.player;
+    const hp = P && Number.isFinite(P.hp) ? P.hp : -1;
+    if (!live || hp < 0) { heal.last = hp; heal.acc = 0; heal.t = 9; return; }
+    if (heal.last >= 0 && hp > heal.last + 0.01) heal.acc += hp - heal.last;
+    heal.last = hp;
+    heal.t += dtR;                                           // с прошлого «+N»: разовое лечение — сразу, реген — раз в 0,45 с
+    if (heal.acc >= 1 && heal.t >= 0.45) {
+      const amount = Math.round(heal.acc);
+      const x = hero ? hero.cx : W * 0.4, y = hero ? hero.top - 6 : H * 0.55;
+      spawnNumber('heal', `+${amount}`, x + 18, y, clamp(22 + amount * 0.45, 22, 36));
+      heal.acc = 0; heal.t = 0;
+    }
   }
   function vignette(color, a, inner = 0.55) {
     const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * inner * 0.5, W / 2, H / 2, Math.max(W, H) * 0.75);
@@ -299,11 +498,10 @@ export function createBattleHud({ canvas } = {}) {
           const p = at && !at.behind ? at : { x: W / 2, y: H * 0.35 };
           const jx = (Math.random() - 0.5) * 30;
           if (FEEL.bigNumbers) {
-            // [FEEL] крупные цифры: обычные — светлые 20–34 px, криты — золотые 34–56 px с «КРИТ!»
+            // [FEEL] крупные цифры; [W4-UI] спрайт с градиентом и свечением, дуга, криты — золото с искрой и «КРИТ!»
             const crit = isCrit(d, amount);
-            const size = crit ? clamp(32 + amount * 0.22, 34, 56) : clamp(18 + amount * 0.3, 20, 34);
-            addCallout(`${Math.round(amount)}`, p.x + jx, p.y - 14, crit ? CRIT : big ? GOLD_HI : '#f4ecdc', size,
-              { sans: true, pop: true, label: crit ? 'КРИТ!' : '', vy: crit ? -34 : -30, dur: crit ? 1.0 : 0.8 });
+            const size = crit ? clamp(36 + amount * 0.22, 38, 60) : big ? clamp(24 + amount * 0.3, 26, 40) : clamp(20 + amount * 0.3, 22, 36);
+            spawnNumber(crit ? 'crit' : big ? 'big' : 'dmg', `${Math.round(amount)}`, p.x + jx * 0.5, p.y - 14, size, crit ? 'КРИТ!' : '');
             critNext = false;
             if (d.source === 'burst' && lastBurstMove && lastBurstMove.t < 0.3) {
               // множитель выброса с учётом комбо и метки: «ВЫБРОС ×2.1»
@@ -318,7 +516,7 @@ export function createBattleHud({ canvas } = {}) {
         case 'player_hit': {
           hurt.t = 0;
           const p = at && !at.behind ? at : { x: W * 0.4, y: H * 0.6 };
-          if (FEEL.bigNumbers) addCallout(`−${Math.round(num(d.amount, 0))}`, p.x, p.y - 24, EMBER, clamp(24 + num(d.amount, 0) * 0.3, 26, 40), { sans: true, pop: true, vy: -22 });
+          if (FEEL.bigNumbers) spawnNumber('hurt', `−${Math.round(num(d.amount, 0))}`, p.x, p.y - 24, clamp(24 + num(d.amount, 0) * 0.3, 26, 40)); // [W4-UI]
           else addCallout(`-${Math.round(num(d.amount, 0))}`, p.x, p.y - 20, EMBER, 16);
           break;
         }
@@ -1349,9 +1547,37 @@ export function createBattleHud({ canvas } = {}) {
       else if (e.type === 'ability_denied' && e.data && e.data.ability === 'ultimate') ult.denyT = 0;
     }
   }
+  const FB = { x: 0, y: 0, w: 0, h: 0 };   // [W4-UI] один объект на все кадры
   function furyBox() {
     const w = clamp(W * 0.3, 200, 430), h = clamp(H * 0.016, 9, 14);
-    return { x: W / 2 - w / 2, y: H - clamp(H * 0.06, 30, 54), w, h };
+    FB.x = W / 2 - w / 2; FB.y = H - clamp(H * 0.06, 30, 54); FB.w = w; FB.h = h;
+    return FB;
+  }
+  // [W4-UI] шкала в стиле полос героя (ui.css): рамка с ромбами на концах, глянец, деления на четверти,
+  // белая «полоса потери» после траты, блик по заполненной части; градиенты создаются только при смене размера.
+  const fury = { kx: -1, ky: -1, kw: -1, kh: -1, fill: null, gloss: null, sheen: null, tail: 0, hold: 0, fs: 0, capFont: '', numFont: '', pct: -1, pctText: '' };
+  function furyCache(B) {
+    if (fury.fill && fury.kx === B.x && fury.ky === B.y && fury.kw === B.w && fury.kh === B.h) return;
+    fury.kx = B.x; fury.ky = B.y; fury.kw = B.w; fury.kh = B.h;
+    fury.fs = Math.round(clamp(H * 0.019, 14, 17));
+    fury.capFont = `400 ${fury.fs}px ${CAP_FONT}`;
+    fury.numFont = `700 ${fury.fs}px ${NUM_FONT}`;
+    const g = ctx.createLinearGradient(B.x, 0, B.x + B.w, 0);
+    g.addColorStop(0, '#7a1410'); g.addColorStop(0.45, '#d8401c'); g.addColorStop(0.8, EMBER); g.addColorStop(1, CRIT);
+    fury.fill = g;
+    const v = ctx.createLinearGradient(0, B.y, 0, B.y + B.h);
+    v.addColorStop(0, 'rgba(255,255,255,0.32)'); v.addColorStop(0.45, 'rgba(255,255,255,0.06)'); v.addColorStop(0.5, 'rgba(255,255,255,0)'); v.addColorStop(1, 'rgba(0,0,0,0.3)');
+    fury.gloss = v;
+    const sw = B.h * 4;
+    const sh = ctx.createLinearGradient(-sw, 0, sw, 0);   // блик в своих координатах: рисуется со сдвигом translate
+    sh.addColorStop(0, 'rgba(255,248,230,0)'); sh.addColorStop(0.5, 'rgba(255,248,230,0.55)'); sh.addColorStop(1, 'rgba(255,248,230,0)');
+    fury.sheen = sh;
+  }
+  function capDiamond(x, y, r) {
+    ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath();
+    ctx.fillStyle = '#0b0a09'; ctx.fill(); ctx.strokeStyle = GOLD; ctx.lineWidth = 1; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, y - r * 0.45); ctx.lineTo(x + r * 0.45, y); ctx.lineTo(x, y + r * 0.45); ctx.lineTo(x - r * 0.45, y); ctx.closePath();
+    ctx.fillStyle = GOLD_HI; ctx.fill();
   }
   function drawFury(snap, U, dtR, rm) {
     const P = snap.player;
@@ -1359,45 +1585,75 @@ export function createBattleHud({ canvas } = {}) {
     const max = Math.max(1, num(P.furyMax, 100)), v = clamp(P.fury / max, 0, 1), ready = !!P.furyReady;
     ult.shown += (v - ult.shown) * (1 - Math.exp(-(v < ult.shown ? 14 : 6) * dtR));
     if (Math.abs(v - ult.shown) < 0.002) ult.shown = v;
+    // хвост потери: при падении держится 0,3 с, затем догоняет
+    if (v >= fury.tail) { fury.tail = v; fury.hold = 0; } else { fury.hold += dtR; if (fury.hold > 0.3) fury.tail = Math.max(v, fury.tail - dtR * 1.4); }
     ult.gainT += dtR;
     if (ult.readyT >= 0) ult.readyT += dtR;
     const B = furyBox(), pulse = ready ? (rm ? 0.6 : 0.5 + 0.5 * Math.sin(t * 6.5)) : 0;
-    // подложка
-    ctx.fillStyle = 'rgba(5,7,11,0.72)';
-    ctx.fillRect(B.x - 6, B.y - 20, B.w + 12, B.h + 26);
-    ctx.strokeStyle = ready ? `rgba(255,207,74,${0.55 + 0.45 * pulse})` : 'rgba(201,164,92,0.55)';
-    ctx.lineWidth = ready ? 2 : 1;
-    ctx.strokeRect(B.x - 6 + 0.5, B.y - 20 + 0.5, B.w + 12, B.h + 26);
-    // подписи
-    ctx.textBaseline = 'alphabetic';
-    ctx.font = `700 ${Math.round(clamp(H * 0.017, 11, 14))}px ${SANS}`;
-    ctx.fillStyle = ready ? CRIT : GOLD_HI; ctx.textAlign = 'left';
-    ctx.fillText(ready ? 'НЕБЕСНЫЙ СУД ГОТОВ' : 'ЯРОСТЬ КЛЯТВЫ', B.x, B.y - 6);
-    ctx.textAlign = 'right'; ctx.fillStyle = ready ? CRIT : STEEL;
-    ctx.fillText(`${Math.floor(v * 100)}%`, B.x + B.w, B.y - 6);
-    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    // полоса
-    ctx.fillStyle = 'rgba(255,255,255,0.08)';
-    ctx.fillRect(B.x, B.y, B.w, B.h);
-    const fw = B.w * ult.shown;
-    if (fw > 0.5) {
-      const g = ctx.createLinearGradient(B.x, 0, B.x + B.w, 0);
-      g.addColorStop(0, '#a3241a'); g.addColorStop(0.55, EMBER); g.addColorStop(1, CRIT);
-      ctx.fillStyle = g;
-      if (ready && !rm) { ctx.shadowColor = CRIT; ctx.shadowBlur = 10 + 14 * pulse; }
-      ctx.fillRect(B.x, B.y, fw, B.h);
-      ctx.shadowBlur = 0;
-      // блик прироста и пульс полной шкалы
-      const gl = ready ? 0.25 + 0.35 * pulse : clamp(1 - ult.gainT / 0.35, 0, 1) * 0.45;
-      if (gl > 0.01) { ctx.fillStyle = `rgba(255,246,224,${gl.toFixed(3)})`; ctx.fillRect(B.x, B.y, fw, B.h); }
+    furyCache(B);
+    const base = ctx.globalAlpha;
+    // подложка: тёмная плашка, бронзовая кромка и золотой кант (как панели ui.css)
+    const px = B.x - 10, py = B.y - 22, pw = B.w + 20, ph = B.h + 30;
+    ctx.fillStyle = 'rgba(8,7,6,0.78)';
+    ctx.fillRect(px, py, pw, ph);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(111,85,50,0.95)'; ctx.strokeRect(px + 0.5, py + 0.5, pw - 1, ph - 1);
+    ctx.strokeStyle = 'rgba(216,179,106,0.28)'; ctx.strokeRect(px + 3.5, py + 3.5, pw - 7, ph - 7);
+    if (ready) {   // готово: золотой ореол без shadowBlur — два широких полупрозрачных контура
+      ctx.globalAlpha = base * (0.35 + 0.4 * pulse);
+      ctx.strokeStyle = CRIT; ctx.lineWidth = 6; ctx.strokeRect(px - 2, py - 2, pw + 4, ph + 4);
+      ctx.globalAlpha = base * (0.6 + 0.4 * pulse);
+      ctx.lineWidth = 1.5; ctx.strokeRect(px + 0.5, py + 0.5, pw - 1, ph - 1);
+      ctx.globalAlpha = base;
     }
-    ctx.fillStyle = 'rgba(5,7,11,0.6)';
+    // подписи: капитель Forum, проценты — Cinzel
+    ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
+    ctx.font = fury.capFont;
+    ctx.textAlign = 'left';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    const label = ready ? 'НЕБЕСНЫЙ СУД ГОТОВ' : 'ЯРОСТЬ КЛЯТВЫ';
+    ctx.strokeText(label, B.x, B.y - 6);
+    ctx.fillStyle = ready ? CRIT : GOLD_HI; ctx.fillText(label, B.x, B.y - 6);
+    ctx.textAlign = 'right';
+    ctx.font = fury.numFont;
+    const pc = Math.floor(v * 100);
+    if (pc !== fury.pct) { fury.pct = pc; fury.pctText = `${pc}%`; }   // строка — только при смене процента
+    ctx.strokeText(fury.pctText, B.x + B.w, B.y - 6);
+    ctx.fillStyle = ready ? CRIT : STEEL; ctx.fillText(fury.pctText, B.x + B.w, B.y - 6);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.lineJoin = 'miter';
+    // полоса: дорожка, хвост потери, заливка, блик, глянец, деления
+    ctx.fillStyle = '#0a0607';
+    ctx.fillRect(B.x, B.y, B.w, B.h);
+    const fw = B.w * ult.shown, tw = B.w * fury.tail;
+    if (tw > fw + 0.5) { ctx.fillStyle = 'rgba(255,246,228,0.88)'; ctx.fillRect(B.x + fw, B.y, tw - fw, B.h); }
+    if (fw > 0.5) {
+      ctx.fillStyle = fury.fill;
+      ctx.fillRect(B.x, B.y, fw, B.h);
+      const gl = ready ? 0.22 + 0.3 * pulse : clamp(1 - ult.gainT / 0.35, 0, 1) * 0.45;   // блик прироста и пульс полной шкалы
+      if (gl > 0.01) { ctx.globalAlpha = base * gl; ctx.fillStyle = '#fff6e0'; ctx.fillRect(B.x, B.y, fw, B.h); ctx.globalAlpha = base; }
+      if (quality !== 'low' && !rm) {
+        const cyc = (t * 0.32) % 1.4;                       // пробег блика ~3 с с паузой
+        if (cyc < 1) {
+          const sx = B.x + (-0.1 + cyc * 1.2) * fw;
+          ctx.save();
+          ctx.beginPath(); ctx.rect(B.x, B.y, fw, B.h); ctx.clip();
+          ctx.translate(sx, 0); ctx.fillStyle = fury.sheen; ctx.fillRect(-B.h * 4, B.y, B.h * 8, B.h);
+          ctx.restore();
+        }
+      }
+    }
+    ctx.fillStyle = fury.gloss; ctx.fillRect(B.x, B.y, B.w, B.h);
+    ctx.fillStyle = 'rgba(5,4,3,0.75)';
     for (let i = 1; i < 4; i++) ctx.fillRect(Math.round(B.x + B.w * i / 4), B.y, 1, B.h);
+    ctx.strokeStyle = 'rgba(111,85,50,0.95)'; ctx.lineWidth = 1;
+    ctx.strokeRect(B.x - 0.5, B.y - 0.5, B.w + 1, B.h + 1);
+    capDiamond(B.x - 1, B.y + B.h / 2, 6);
+    capDiamond(B.x + B.w + 1, B.y + B.h / 2, 6);
     if (ult.denyT < 1.2) {
       ult.denyT += dtR;
-      ctx.globalAlpha = clamp(1.2 - ult.denyT, 0, 1);
-      tag('ПОДОЙДИ К РЕГЕНТУ — СУД БЬЁТ В АРЕНЕ', W / 2, B.y - 44, STEEL, `600 12px ${MONO}`, 'center');
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha = base * clamp(1.2 - ult.denyT, 0, 1);
+      tag('ПОДОЙДИ К РЕГЕНТУ — СУД БЬЁТ В АРЕНЕ', W / 2, B.y - 46, STEEL, `600 12px ${MONO}`, 'center');
+      ctx.globalAlpha = base;
     }
   }
   // фигурка «обе руки вверх»: k — 0..1 насколько подняты руки (анимация подсказки)
@@ -1512,6 +1768,12 @@ export function createBattleHud({ canvas } = {}) {
   function frame(f) {
     if (disposed) return;
     if (bdo) { try { bdo.frame(f); } catch (e) { console.warn('[battleHud] bdoHud.frame', e); bdo = null; } } // [BDO]
+    // [W4-UI] фактический уровень качества → html[data-ao-q] (CSS гасит бесконечные анимации на low)
+    const q = f && f.settings && (f.settings.quality === 'low' || f.settings.quality === 'high') ? f.settings.quality : 'medium';
+    if (q !== quality || !qMarked) {
+      quality = q; qMarked = true;
+      try { if (typeof document !== 'undefined' && document.documentElement) document.documentElement.setAttribute('data-ao-q', q); } catch (e) { /* без DOM */ }
+    }
     try {
       const vp = isObj(f.viewport) ? f.viewport : { w: canvas.clientWidth, h: canvas.clientHeight };
       resize(vp.w, vp.h);
@@ -1532,6 +1794,7 @@ export function createBattleHud({ canvas } = {}) {
       const snap = f.snapshot;
       if (!paused) handleEvents(f.events, proj, snap, rm);
       if (!paused) ultEvents(f.events);   // [W3-ULT]
+      if (!paused) trackHeal(snap, dtR, screen === 'playing' && snap.status === 'playing');   // [W4-UI] «+N» лечения
       const U = isObj(f.ult) ? f.ult : null, cine = !!(U && isObj(U.cine));   // [W3-ULT] сцена: кадр без прицелов и подсказок
       if (screen === 'intro') {
         drawLock(snap, proj, rm, dtR, true);
@@ -1553,6 +1816,7 @@ export function createBattleHud({ canvas } = {}) {
       if (!over && !cine) drawCoach(f.coach, dtR, rm);
       if (U && !over && !cine) { drawFury(snap, U, dtR, rm); if (!paused) drawUltCall(snap, U, dtR, rm); }   // [W3-ULT]
       drawCallouts(dtR, rm);
+      drawNumbers(dtR, rm);   // [W4-UI] числа урона и лечения поверх подписей
       if (!cine) drawMoves(dtR, rm);
       if (cine) drawUltCine(U, dtR, rm);   // [W3-ULT] полосы, вспышка, титр
       drawScreenFx(over || cine ? 1 : num(f.timeScale, 1), dtR, rm);   // [W3-ULT] в сцене без «SLOW ×»
@@ -1572,15 +1836,29 @@ export function createBattleHud({ canvas } = {}) {
 
   function reset() {
     callouts.length = 0;
+    for (const n of nums) n.on = false;   // [W4-UI]
+    heal.last = -1; heal.acc = 0; heal.t = 9;
     combo = { n: 0, shown: 0, pop: 0, lost: 0, lostN: 0 };
     rune = { name: '', sub: '', t: 9, trail: null };
     flash.t = 1; hurt.t = 1; dashFx.t = 1; fizzleT = 9; coach = { hint: null, t: 9 }; lock.ok = false; lock.hitFlash = 0;
     moves.length = 0; parried.clear(); critNext = false; lastBurstMove = null; lastBoltT = -9; hero = null; comboMilestone = 0; // [FEEL]
     outro = { kind: '', t: 0, time: 0, bossPct: 0 };
     ult.shown = 0; ult.gainT = 9; ult.readyT = -1; ult.wasReady = false; ult.denyT = 9;   // [W3-ULT]
+    fury.tail = 0; fury.hold = 0;   // [W4-UI]
     for (const k of Object.keys(deniedAt)) delete deniedAt[k];
     if (bdo) { try { bdo.reset(); } catch (e) { /* ignore */ } } // [BDO]
   }
-  function dispose() { disposed = true; clearAll(); if (bdo) { try { bdo.dispose(); } catch (e) { /* ignore */ } } }
-  return { frame, reset, dispose };
+  function dispose() {
+    disposed = true; clearAll();
+    for (const n of nums) { n.on = false; if (n.sp) { n.sp.c.width = 0; n.sp.c.height = 0; n.sp = null; } }   // [W4-UI] спрайты чисел
+    if (bdo) { try { bdo.dispose(); } catch (e) { /* ignore */ } }
+  }
+  // [W4-UI] QA: видимые числа урона — текст, вид и рамка цифр на экране (только для тестов, не в кадре)
+  function numbers() {
+    return nums.filter((n) => n.on).sort((a, b) => a.seq - b.seq).map((n) => ({
+      text: n.text, kind: n.kind, label: n.label, x: n.px, y: n.py, t: n.t, sprite: !!n.sp,
+      box: { x0: n.px - n.bw / 2, x1: n.px + n.bw / 2, y0: n.py - n.size * 0.8 - n.ls * 1.1, y1: n.py + n.size * 0.1 },
+    }));
+  }
+  return { frame, reset, dispose, numbers };
 }
