@@ -1,7 +1,6 @@
 // [W3-SPIRIT] node-тест духа игрока (modules/spiritAvatar.js): создание, поза и кисти → плечи, локти и 2×21 точка
 // пальцев, зеркало как на превью, сглаживание (без дрожи, без запаздывания), угасание при потере трекинга, реакции
-// (жест, «ОШИБКА», щит, заряд, ось и каст магии ладонями, «Небесный суд», облёт камеры, «Уменьшенное движение»),
-// синтетика «Отладки с клавиатуры», настройка «Дух игрока», low без
+// (жест, «ОШИБКА», щит, заряд, ультимейт), синтетика «Отладки с клавиатуры», настройка «Дух игрока», low без
 // шейдеров, отсутствие аллокаций буферов в кадре и dispose без утечек.
 // three.js — ASHEN_THREE=…/vendor/npm/three@0.185.1/build/three.module.min.js; без него — FAIL (не SKIP).
 import assert from 'node:assert/strict';
@@ -52,9 +51,34 @@ function run(sp, seconds, mk) {
 }
 const finite = (sp) => {
   let ok = true;
-  sp.root.traverse((o) => { const a = o.geometry && o.geometry.attributes.position; if (a && !Array.from(a.array).every(Number.isFinite)) ok = false; });
+  sp.root.traverse((o) => {
+    const a = o.geometry && o.geometry.attributes.position; if (a && !Array.from(a.array).every(Number.isFinite)) ok = false;
+    if (o.isInstancedMesh && !Array.from(o.instanceMatrix.array).every(Number.isFinite)) ok = false;
+  });
   return ok;
 };
+
+// ---- помощники стыков с соседями: ладони рядом, размах щели (info) и нарисованная щель (high / low)
+const close = () => ctxOf({ x: -0.12, y: 0.2 }, { x: 0.12, y: 0.2 });
+const span = (inf) => { const [a, b] = inf.slitEnds; return { x: Math.abs(b[0] - a[0]), y: Math.abs(b[1] - a[1]) }; };
+// нарисованная щель: последний инстанс отрисовки костей (high) — длина, направление, яркость
+function drawnSlit(sp) {
+  let mesh = null;
+  sp.root.traverse((o) => { if (o.isInstancedMesh && o.material && o.material.name === 'spirit-bone' && o.parent && o.parent.visible) mesh = o; });
+  if (!mesh) return null;
+  const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  mesh.getMatrixAt(mesh.count - 1, m); m.decompose(p, q, sc);
+  const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+  const c = mesh.geometry.attributes.aColor.array, k = (mesh.count - 1) * 3;
+  return { len: sc.y, dx: Math.abs(dir.x), dy: Math.abs(dir.y), lum: c[k] + c[k + 1] + c[k + 2] };
+}
+// low: щель — последний отрезок линий
+function drawnSlitLow(sp) {
+  let lines = null;
+  sp.root.traverse((o) => { if (o.isLineSegments && o.material && o.material.name === 'spirit-lines') lines = o; });
+  const a = lines.geometry.attributes.position.array, c = lines.geometry.attributes.color.array, n = a.length;
+  return { dx: Math.abs(a[n - 3] - a[n - 6]), dy: Math.abs(a[n - 2] - a[n - 5]), lum: c[n - 3] + c[n - 2] + c[n - 1] };
+}
 
 const HEROES = { ashen: { fx: { color: 0xff7a2a, color2: 0xffd08a } }, elf: { fx: { color: 0x9ff4ff, color2: 0xfff3c0 } } };
 const scene = new THREE.Scene();
@@ -203,101 +227,14 @@ test('руки вверх ~0,5 с: дух поднимает руки и всп�
   assert.ok(sp.info().up > 0.9 && sp.info().ult < 0.05, `со шкалой: up ${sp.info().up}, ult ${sp.info().ult}`);
 });
 
-// [W3-MAGIC] щель света: первые 5 отрезков геометрии молний (spirit-arcs) — лучи по оси растяжения ладоней
-function slitDir() {
-  let arcs = null;
-  sp.root.traverse((o) => { if (o.material && o.material.name === 'spirit-arcs') arcs = o; });
-  if (!arcs || !arcs.visible) return null;
-  const a = arcs.geometry.attributes.position.array, i = 2 * 2 * 3;   // средний (самый яркий) луч
-  return { dx: Math.abs(a[i + 3] - a[i]), dy: Math.abs(a[i + 4] - a[i + 1]) };
-}
-
-test('магия ладонями (PR №13): sigilAxis h/v — щель света по оси; sigil_cast — вспышка во весь размах', () => {
-  const together = () => ctxOf({ x: -0.12, y: 0.2 }, { x: 0.12, y: 0.2 });
-  run(sp, 0.6, () => ({ ...together(), snapshot: { player: { sigilCharge: 0.8, sigilAxis: 'h' } } }));
-  let inf = sp.info(), d = slitDir();
-  assert.ok(inf.charge > 0.6 && inf.axis === 'h', `заряд ${inf.charge}, ось ${inf.axis}`);
-  assert.ok(d && d.dx > 4 * d.dy && d.dx > 0.3, `щель по горизонтали ${JSON.stringify(d)}`);
-  run(sp, 0.6, () => ({ ...together(), snapshot: { player: { sigilCharge: 0.8, sigilAxis: 'v' } } }));
-  inf = sp.info(); d = slitDir();
-  assert.ok(inf.axis === 'v' && d && d.dy > 4 * d.dx, `щель по вертикали ${inf.axis} ${JSON.stringify(d)}`);
-  // каст «Столп небес»: вспышка обеих рук, кольцо, щель во весь размах — и гаснет
-  const rings0 = inf.rings;
-  sp.frame(DT, (T += 16), { ...together(), snapshot: { player: { sigilCharge: 0, sigilAxis: null } }, events: [{ id: 's1', type: 'sigil_cast', position: { x: 0, y: 1, z: 0 }, data: { sigil: 'pillar', power: 0.9 } }] });
-  inf = sp.info(); d = slitDir();
-  assert.ok(inf.slit > 0.9 && inf.slitH === 0 && inf.flash[0] > 0.8 && inf.flash[1] > 0.8 && inf.rings > rings0, `каст ${JSON.stringify({ slit: inf.slit, slitH: inf.slitH, flash: inf.flash, rings: inf.rings })}`);
-  assert.ok(d && d.dy > 2.5, `щель во весь размах ${JSON.stringify(d)}`);
-  // тот же каст импульсом ввода в соседнем кадре — одна вспышка, не две
-  sp.frame(DT, (T += 16), { ...together(), input: { valid: true, sigil: 'pillar' } });
-  assert.ok(sp.info().slit <= inf.slit + 1e-6, 'без повторной вспышки');
-  run(sp, 1.2, () => ({ ...together(), snapshot: { player: { sigilCharge: 0, sigilAxis: null } } }));
-  assert.ok(sp.info().slit < 0.01 && sp.info().axis === null && slitDir() === null, `погасло ${sp.info().slit}`);
-  // «Врата бури» импульсом ввода (обучение, тренажёр — без событий боя): щель по горизонтали
-  sp.frame(DT, (T += 16), { ...together(), input: { valid: true, sigil: 'gate' } });
-  inf = sp.info(); d = slitDir();
-  assert.ok(inf.slit > 0.9 && inf.slitH === 1 && d && d.dx > 4 * d.dy, `врата ${inf.slitH} ${JSON.stringify(d)}`);
-  run(sp, 1.2, () => together());
-});
-
-test('ультимейт (PR №14): ultimate_ready — нимб зовёт, ultimate_start/strike — руки вверх, ultimate_end — выдох', () => {
-  run(sp, 2.5, () => ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }));
-  const r0 = sp.info().rings;
-  sp.frame(DT, (T += 16), { ...ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }), snapshot: { player: { fury: 100, furyReady: true } }, events: [{ id: 'r', type: 'ultimate_ready', position: { x: 0, y: 0, z: 0 }, data: { fury: 100 } }] });
-  assert.ok(sp.info().ready > 0.9 && sp.info().rings > r0, `ready ${sp.info().ready}`);
-  sp.frame(DT, (T += 16), { ...ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }), snapshot: { player: { fury: 0 }, ultimate: { active: true, t: 0 } }, events: [{ id: 'us', type: 'ultimate_start', position: { x: 0, y: 1, z: 0 }, data: { duration: 3.6, strikeAt: 2.3 } }] });
-  assert.ok(sp.info().ult > 0.9, `старт ${sp.info().ult}`);
-  run(sp, 2.2, () => ({ ...ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }), snapshot: { player: { fury: 0 }, ultimate: { active: true, t: 1 } } }));
-  let inf = sp.info();
-  assert.ok(inf.ult >= 0.7 && inf.cine > 0.9, `сцена: руки вверх ${inf.ult}, приглушён ${inf.cine}`);
-  assert.ok(inf.joints.leftWrist.y > inf.joints.head.y - 0.2 && inf.joints.rightWrist.y > inf.joints.head.y - 0.2, 'руки духа подняты');
-  sp.frame(DT, (T += 16), { ...ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }), snapshot: { player: { fury: 0 }, ultimate: { active: true, t: 2.3 } }, events: [{ id: 'st', type: 'ultimate_strike', position: { x: 0, y: 3, z: -20 }, data: { amount: 250 } }] });
-  assert.ok(sp.info().ult > 0.95, 'удар');
-  sp.frame(DT, (T += 16), { ...ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }), snapshot: { player: { fury: 0 } }, events: [{ id: 'ue', type: 'ultimate_end', position: { x: 0, y: 0, z: 0 }, data: { struck: true } }] });
-  assert.ok(sp.info().ult <= 0.5, `выдох ${sp.info().ult}`);
-  run(sp, 2, () => ({ ...ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }), snapshot: { player: { fury: 0 } } }));
-  inf = sp.info();
-  assert.ok(inf.ult < 0.05 && inf.cine < 0.05, `сцена кончилась ${inf.ult} ${inf.cine}`);
-});
-
-test('облёт камеры: дух в небе всегда дальше и героя, и Регента (между камерой и героем не встаёт)', () => {
-  const cam0 = camera.position.clone();
-  try {
-    // камера перед Регентом смотрит на героя за 26 м: дух должен быть дальше героя
-    camera.position.set(0, 3, -16);
-    camera.updateMatrixWorld(true);
-    const snap = { player: { position: { x: 0, y: 0, z: 10 } }, boss: { position: { x: 0, y: 0, z: -20 } }, ultimate: { active: true, t: 1 } };
-    run(sp, 0.5, () => ({ ...ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }), snapshot: snap }));
-    const dHero = Math.hypot(0, 1.2 - 3, 10 + 16);
-    assert.ok(sp.info().skyDepth > dHero + 5, `глубина ${sp.info().skyDepth} при герое в ${dHero.toFixed(1)} м`);
-    // обычный бой: камера за героем — дух за Регентом
-    camera.position.set(0, 3, 16); camera.updateMatrixWorld(true);
-    const snap2 = { player: { position: { x: 0, y: 0, z: 10 } }, boss: { position: { x: 0, y: 0, z: 0 } } };
-    run(sp, 0.5, () => ({ ...ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }), snapshot: snap2 }));
-    assert.ok(sp.info().skyDepth > Math.hypot(16, 0) + 5, `за Регентом ${sp.info().skyDepth}`);
-  } finally { camera.position.copy(cam0); camera.updateMatrixWorld(true); }
-  run(sp, 1, () => ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }));
-});
-
-test('«Уменьшенное движение»: без шлейфа, молнии заряда не мерцают', () => {
-  settings.reducedMotion = true;
-  try {
-    run(sp, 0.6, () => ({ ...ctxOf({ x: -0.3, y: 0.3 }, { x: 0.3, y: 0.3 }), snapshot: { player: { sigilCharge: 0.9 } } }));
-    const s0 = sp.info().arcSeed;
-    run(sp, 0.5, () => ({ ...ctxOf({ x: -0.3, y: 0.3 }, { x: 0.3, y: 0.3 }), snapshot: { player: { sigilCharge: 0.9 } } }));
-    assert.equal(sp.info().arcSeed, s0, 'молнии не перерисовываются');
-    assert.equal(sp.info().trail, 0, 'шлейфа нет');
-  } finally { settings.reducedMotion = false; }
-  const s1 = sp.info().arcSeed;
-  run(sp, 0.3, () => ({ ...ctxOf({ x: -0.3, y: 0.3 }, { x: 0.3, y: 0.3 }), snapshot: { player: { sigilCharge: 0.9 } } }));
-  assert.notEqual(sp.info().arcSeed, s1, 'без «Уменьшенного движения» молнии живые');
-  run(sp, 1, () => ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }));
-});
-
 test('«Дух игрока» выключен — гаснет и не рисуется; включён — возвращается', () => {
+  // выключили посреди «Небесного суда» — включили в новом бою: ни облёта, ни старой вспышки
+  sp.frame(DT, (T += 16), { ...ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }), events: [{ id: 'x1', type: 'ultimate_start', data: { duration: 3.6 } }] });
   settings.spiritAvatar = false;
   try {
     run(sp, 2, () => ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }));
     assert.ok(sp.info().alpha < 0.01 && !sp.info().skyVisible, `alpha ${sp.info().alpha}`);
+    assert.ok(!sp.info().cine && sp.info().ult === 0, `сброшено: облёт ${sp.info().cine}, ult ${sp.info().ult}`);
   } finally { settings.spiritAvatar = true; }
   run(sp, 1.5, () => ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }));
   assert.ok(sp.info().alpha > 0.8);
@@ -313,20 +250,6 @@ test('отладка с клавиатуры: синтетические рук�
   assert.ok(inf.joints.leftWrist.z < -0.6, `левая вперёд: z ${inf.joints.leftWrist.z}`);
   assert.ok(inf.shield > 0.9, 'купол щита');
   assert.ok(finite(sp));
-});
-
-test('отладка: U без полной шкалы «Небесного суда» руки духа не поднимает; ultimate_start — поднимает', () => {
-  const dbg = (extra = {}) => ({ screen: 'playing', debug: true, input: { valid: true, source: 'debug', ...(extra.input || {}) }, snapshot: { player: { fury: extra.fury ?? 10 } }, events: extra.events });
-  run(sp, 2, () => dbg());
-  sp.frame(DT, (T += 16), dbg({ input: { ultimate: true, spark: true } }));
-  run(sp, 0.6, () => dbg());
-  let inf = sp.info();
-  assert.ok(inf.joints.leftWrist.y < inf.joints.head.y && inf.joints.rightWrist.y < inf.joints.head.y, `отказ боя — руки внизу ${inf.joints.rightWrist.y} / ${inf.joints.head.y}`);
-  sp.frame(DT, (T += 16), dbg({ fury: 0, events: [{ id: 'u', type: 'ultimate_start', position: { x: 0, y: 1, z: 0 } }] }));
-  run(sp, 0.6, () => ({ ...dbg({ fury: 0 }), snapshot: { player: { fury: 0 }, ultimate: { active: true, t: 0.6 } } }));
-  inf = sp.info();
-  assert.ok(inf.joints.leftWrist.y > inf.joints.head.y && inf.joints.rightWrist.y > inf.joints.head.y, `сцена — руки вверх ${inf.joints.rightWrist.y} / ${inf.joints.head.y}`);
-  run(sp, 3, () => dbg({ fury: 0 }));
 });
 
 test('модель кисти: 21 точка, кулак короче ладони, правая — зеркально левой', () => {
@@ -368,9 +291,215 @@ test('low: линии и точки стандартных материалов,
   assert.ok(lines >= 1, 'кости — линии');
   assert.equal(sp.info().trail, 0, 'без шлейфа');
   assert.ok(finite(sp));
+  run(sp, 0.6, () => ({ ...close(), snapshot: { player: { sigilCharge: 0.8, sigilAxis: 'v' } } }));
+  const gl = drawnSlitLow(sp);
+  assert.ok(gl.dy > 0.3 && gl.dx < 0.02 && gl.lum > 0.3, `low: щель отрезком вдоль y ${JSON.stringify(gl)}`);
+  run(sp, 0.8, () => close());
+  assert.ok(drawnSlitLow(sp).lum < 0.01, 'low: щель погасла');
   settings.quality = 'high';
   run(sp, 0.2, () => ctxOf({ x: -0.9, y: 0 }, { x: 0.9, y: 0 }));
   assert.equal(sp.info().tier, 'high');
+});
+
+// ---- стыки с соседями: две магии ладонями (sigilCharge / sigilAxis / sigil_cast) и «Небесный суд» (ultimate_*)
+test('две магии ладонями: заряд с осью — щель света вдоль оси, без оси (сфера) — щели нет', () => {
+  run(sp, 1.2, () => ({ ...close(), input: { valid: true } }));
+  assert.ok(sp.info().slit < 0.01 && sp.info().slitAxis === null, `покой: щель ${sp.info().slit}`);
+  // 'h' — «Врата бури»: горизонтальная щель
+  run(sp, 0.6, () => ({ ...close(), snapshot: { player: { sigilCharge: 0.7, sigilAxis: 'h' } } }));
+  let inf = sp.info(), d = span(inf);
+  assert.ok(inf.slit > 0.5 && inf.slitAxis === 'h' && inf.charge > 0.5, `щель ${inf.slit} ${inf.slitAxis}, заряд ${inf.charge}`);
+  assert.ok(d.x > 0.3 && d.y < 0.02, `горизонтальная: ${d.x}×${d.y}`);
+  let g = drawnSlit(sp);
+  assert.ok(g && g.len > 0.3 && g.dx > 0.99 && g.lum > 0.5, `нарисована вдоль x: ${JSON.stringify(g)}`);
+  // 'v' — «Столп небес»: щель поворачивается вертикально (ось из ввода тоже годится)
+  run(sp, 0.5, () => ({ ...close(), input: { valid: true, sigilCharge: 0.9, sigilAxis: 'v' } }));
+  inf = sp.info(); d = span(inf);
+  assert.ok(inf.slitAxis === 'v' && d.y > 0.3 && d.x < 0.02, `вертикальная: ${d.x}×${d.y}`);
+  g = drawnSlit(sp);
+  assert.ok(g.len > 0.3 && g.dy > 0.99 && g.lum > 0.5, `нарисована вдоль y: ${JSON.stringify(g)}`);
+  // растянул ладони вдоль оси — щель тянется от ладони до ладони
+  run(sp, 0.5, () => ({ ...ctxOf({ x: -0.15, y: -0.4 }, { x: 0.15, y: 0.9 }), input: { valid: true, sigilCharge: 0.9, sigilAxis: 'v' } }));
+  d = span(sp.info());
+  const pl = sp.info().joints.leftWrist.y, pr = sp.info().joints.rightWrist.y;
+  assert.ok(d.y > Math.abs(pr - pl) * 0.8, `от ладони до ладони: щель ${d.y}, ладони ${Math.abs(pr - pl)}`);
+  // заряд без оси (сфера двумя руками) — только сфера
+  run(sp, 0.8, () => ({ ...close(), input: { valid: true, conjure: { kind: 'orb', charge: 0.6 } } }));
+  assert.ok(sp.info().slit < 0.02 && sp.info().charge > 0.5, `сфера: щель ${sp.info().slit}, заряд ${sp.info().charge}`);
+  run(sp, 1, () => ({ ...close(), input: { valid: true } }));
+  assert.ok(sp.info().slit < 0.01 && sp.info().charge < 0.05, 'погасло');
+  assert.ok(drawnSlit(sp).len === 0 || drawnSlit(sp).lum < 0.01, 'нарисованная щель погасла');
+  // пауза: снимок застыл с зарядом — щель, сфера и щит из снимка не держатся
+  run(sp, 0.6, () => ({ ...close(), snapshot: { player: { sigilCharge: 0.7, sigilAxis: 'h', shielding: true } } }));
+  assert.ok(sp.info().slit > 0.5 && sp.info().shield > 0.5);
+  run(sp, 1, () => ({ ...ctxOf({ x: -0.9, y: 0.2 }, { x: 0.9, y: 0.2 }), screen: 'paused', snapshot: { player: { sigilCharge: 0.7, sigilAxis: 'h', shielding: true } } }));
+  assert.ok(sp.info().slit < 0.01 && sp.info().charge < 0.05 && sp.info().shield < 0.05, `пауза: щель ${sp.info().slit}, заряд ${sp.info().charge}, щит ${sp.info().shield}`);
+});
+
+test('sigil_cast: ладони вспыхивают, щель разлетается вдоль оси (gate — в стороны, pillar — вверх-вниз); жест + событие — одна вспышка', () => {
+  run(sp, 1.2, () => ({ ...close(), input: { valid: true } }));
+  sp.frame(DT, (T += 16), { ...close(), events: [{ id: 'g1', type: 'sigil_cast', position: { x: 0, y: 1, z: 0 }, data: { sigil: 'gate', power: 0.9 } }] });
+  let inf = sp.info();
+  assert.ok(inf.flash[0] > 0.8 && inf.flash[1] > 0.8, `ладони ${inf.flash}`);
+  assert.ok(inf.slitBurst > 0.9 && inf.slitAxis === 'h' && inf.slit > 1, `вспышка щели ${inf.slitBurst} ${inf.slitAxis} ${inf.slit}`);
+  assert.equal(inf.rings, 3, 'кольца: две ладони и центр');
+  run(sp, 0.25, () => close());
+  let d = span(sp.info());
+  assert.ok(d.x > 1.3 && d.y < 0.02, `разлёт в стороны ${d.x}×${d.y}`);
+  run(sp, 1.2, () => close());
+  assert.ok(sp.info().slit < 0.01 && sp.info().rings === 0, 'вспышка погасла');
+  // «Столп небес»: жест на кадре раньше события боя — вспышка одна
+  sp.frame(DT, (T += 16), { ...close(), input: { valid: true, sigil: 'pillar', sigilPower: 0.8 } });
+  sp.frame(DT, (T += 16), { ...close(), events: [{ id: 'p1', type: 'sigil_cast', position: { x: 0, y: 1, z: 0 }, data: { sigil: 'pillar', power: 0.8 } }] });
+  inf = sp.info();
+  assert.ok(inf.slitAxis === 'v' && inf.slitBurst > 0.9, `столп ${inf.slitAxis} ${inf.slitBurst}`);
+  assert.equal(inf.rings, 3, 'одна вспышка на каст');
+  run(sp, 0.25, () => close());
+  d = span(sp.info());
+  assert.ok(d.y > 1.3 && d.x < 0.02, `разлёт вверх-вниз ${d.x}×${d.y}`);
+  // отказ (откат, энергия): жест есть, события боя нет — в бою только вспышка ладоней, щель не разлетается
+  run(sp, 1.2, () => close());
+  sp.frame(DT, (T += 16), { ...close(), input: { valid: true, sigil: 'gate', sigilPower: 0.8 }, events: [{ id: 'd1', type: 'ability_denied', data: { reason: 'cooldown', sigil: 'gate' } }] });
+  inf = sp.info();
+  assert.ok(inf.slitBurst === 0 && inf.flash[0] > 0.8 && inf.flash[1] > 0.8, `отказ: щель ${inf.slitBurst}, ладони ${inf.flash}`);
+  // обучение: боя и событий нет — каст по жесту
+  run(sp, 1.2, () => ({ ...close(), screen: 'tutorial' }));
+  sp.frame(DT, (T += 16), { ...close(), screen: 'tutorial', input: { valid: true, sigil: 'gate', sigilPower: 0.8 } });
+  assert.ok(sp.info().slitBurst > 0.9 && sp.info().slitAxis === 'h', `обучение: ${sp.info().slitBurst}`);
+  // прочие печати и события — без щели
+  run(sp, 1.2, () => close());
+  sp.frame(DT, (T += 16), { ...close(), events: [{ id: 'c1', type: 'sigil_cast', data: { sigil: 'clap' } }], input: { valid: true, sigil: 'clap' } });
+  assert.ok(sp.info().slitBurst === 0 && sp.info().flash[0] > 0.8, 'хлопок: вспышка ладоней без щели');
+  assert.ok(finite(sp));
+});
+
+test('«Небесный суд»: ultimate_ready — вспышка и нимб; облёт камеры — дух вспыхивает, уходит в небо и гаснет; после ultimate_end возвращается', () => {
+  const pose0 = () => ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 });
+  run(sp, 2.5, () => ({ ...pose0(), snapshot: { player: { fury: 60, furyMax: 100 } } }));
+  assert.ok(sp.info().alpha > 0.8 && sp.info().rings === 0);
+  sp.frame(DT, (T += 16), { ...pose0(), snapshot: { player: { fury: 100, furyReady: true } }, events: [{ id: 'r1', type: 'ultimate_ready', position: { x: 0, y: 0, z: 0 }, data: { fury: 100 } }] });
+  let inf = sp.info();
+  assert.ok(inf.flash[0] > 0.8 && inf.flash[1] > 0.8 && inf.rings >= 3, `готов: вспышка ${inf.flash}, кольца ${inf.rings}`);
+  run(sp, 1, () => ({ ...pose0(), snapshot: { player: { fury: 100, furyReady: true } } }));
+  assert.ok(sp.info().ready > 0.9, 'нимб «руки вверх!»');
+  // сцена: бой стоит 3,6 с, удар в 2,3 с
+  const scene = (t) => ({ ...pose0(), snapshot: { status: 'playing', player: { fury: 0 }, ultimate: { active: true, t, duration: 3.6, strikeAt: 2.3 } } });
+  const y0 = sp.root.position.y, s0 = sp.root.scale.x;
+  sp.frame(DT, (T += 16), { ...scene(0), events: [{ id: 'u1', type: 'ultimate_start', position: { x: 0, y: 1, z: 0 }, data: { duration: 3.6, strikeAt: 2.3 } }] });
+  inf = sp.info();
+  assert.ok(inf.ult > 0.9 && inf.cine, `старт: ult ${inf.ult}, облёт ${inf.cine}`);
+  let t = DT;
+  run(sp, 0.3, () => scene((t += DT)));
+  inf = sp.info();
+  assert.ok(inf.rise > 0.3 && inf.skyVisible, `уходит в небо: rise ${inf.rise}`);
+  assert.ok(sp.root.position.y > y0 + 0.25 && sp.root.scale.x > s0 * 1.02, `вверх и больше: y ${y0.toFixed(2)} → ${sp.root.position.y.toFixed(2)}, масштаб ${s0.toFixed(2)} → ${sp.root.scale.x.toFixed(2)}`);
+  run(sp, 0.8, () => scene((t += DT)));
+  inf = sp.info();
+  assert.ok(inf.alpha < 0.01 && !inf.skyVisible, `облёт без духа: alpha ${inf.alpha}, виден ${inf.skyVisible}`);
+  sp.frame(DT, (T += 16), { ...scene(2.3), events: [{ id: 'u2', type: 'ultimate_strike', position: { x: 0, y: 3, z: 0 }, data: { amount: 280 } }] });
+  t = 2.3;
+  run(sp, 0.7, () => scene((t += DT)));
+  assert.ok(sp.info().cine && !sp.info().skyVisible, 'удар и общий план — дух всё ещё не в кадре');
+  sp.frame(DT, (T += 16), { ...pose0(), snapshot: { player: { fury: 0 } }, events: [{ id: 'u3', type: 'ultimate_end', position: { x: 0, y: 0, z: 0 }, data: { struck: true } }] });
+  assert.ok(!sp.info().cine, 'сцена кончилась');
+  run(sp, 1.5, () => ({ ...pose0(), snapshot: { player: { fury: 0 } } }));
+  inf = sp.info();
+  assert.ok(inf.alpha > 0.8 && inf.skyVisible && inf.rise === 0, `вернулся: alpha ${inf.alpha}, rise ${inf.rise}`);
+  // победа ударом меча: снимка сцены уже нет — дух ждёт конца облёта по своему отсчёту
+  sp.frame(DT, (T += 16), { ...pose0(), snapshot: { status: 'victory', player: { fury: 0 } }, events: [{ id: 'u4', type: 'ultimate_start', data: { duration: 3.6 } }] });
+  run(sp, 2, () => ({ ...pose0(), snapshot: { status: 'victory', player: { fury: 0 } } }));
+  assert.ok(sp.info().cine && !sp.info().skyVisible, 'облёт после победы — без духа');
+  run(sp, 2.6, () => ({ ...pose0(), snapshot: { status: 'victory', player: { fury: 0 } } }));
+  assert.ok(!sp.info().cine && sp.info().alpha > 0.5, `облёт кончился: alpha ${sp.info().alpha}`);
+  // «Заново» посреди сцены: новый бой, сцены в снимке нет (null) — облёта нет, дух сразу на месте
+  sp.frame(DT, (T += 16), { ...scene(0.2), events: [{ id: 'u6', type: 'ultimate_start', data: { duration: 3.6 } }] });
+  assert.ok(sp.info().cine);
+  sp.frame(DT, (T += 16), { ...pose0(), snapshot: { status: 'playing', player: { fury: 0 }, ultimate: null } });
+  assert.ok(!sp.info().cine, '«Заново» — без облёта');
+  run(sp, 1.5, () => ({ ...pose0(), snapshot: { status: 'playing', player: { fury: 0 }, ultimate: null } }));
+  // «Уменьшенное движение»: сцена уступает кадр мечу так же, но дух просто гаснет — без подъёма в небо
+  settings.reducedMotion = true;
+  try {
+    const yR = sp.root.position.y;
+    sp.frame(DT, (T += 16), { ...scene(0), events: [{ id: 'u7', type: 'ultimate_start', data: { duration: 3.6 } }] });
+    t = DT;
+    run(sp, 0.3, () => scene((t += DT)));
+    assert.ok(sp.root.position.y <= yR + 0.01, `без подъёма: y ${yR.toFixed(2)} → ${sp.root.position.y.toFixed(2)}`);
+    run(sp, 0.9, () => scene((t += DT)));
+    inf = sp.info();
+    assert.ok(inf.cine && !inf.skyVisible, `гаснет: виден ${inf.skyVisible}`);
+    sp.frame(DT, (T += 16), { ...pose0(), snapshot: { status: 'playing', player: { fury: 0 }, ultimate: null } });
+    run(sp, 1.5, () => ({ ...pose0(), snapshot: { status: 'playing', player: { fury: 0 }, ultimate: null } }));
+    assert.ok(sp.info().skyVisible && sp.info().alpha > 0.8, 'вернулся');
+  } finally { settings.reducedMotion = false; }
+  // ушли с арены во время сцены (итоги) — отсчёт сброшен
+  sp.frame(DT, (T += 16), { ...pose0(), events: [{ id: 'u5', type: 'ultimate_start', data: { duration: 3.6 } }] });
+  sp.frame(DT, (T += 16), { ...pose0(), screen: 'victory' });
+  assert.ok(!sp.info().cine, 'итоги — без облёта');
+});
+
+test('режим презентации P: в крупном превью дух ярче и есть в бою; без P в бою превью без духа', () => {
+  const at = (screen, present) => () => ({ ...ctxOf({ x: -0.9, y: -0.4 }, { x: 0.9, y: 0.5 }), screen, present });
+  run(sp, 1.5, at('tutorial', false));
+  const plain = sp.info().frameBright;
+  run(sp, 1.5, at('tutorial', true));
+  const big = sp.info().frameBright;
+  assert.ok(plain > 0.8 && big > plain * 1.3, `ярче: ${plain} → ${big}`);
+  assert.ok(sp.info().present);
+  run(sp, 1.5, at('playing', true));
+  assert.ok(sp.info().frameBright > 1 && sp.info().alpha > 0.8, `P в бою: превью ${sp.info().frameBright}, небо ${sp.info().alpha}`);
+  run(sp, 1.5, at('playing', false));
+  assert.ok(sp.info().frameBright < 0.01 && sp.info().alpha > 0.8, 'без P в бою — только небо');
+});
+
+test('«Уменьшенное движение»: без шлейфа, молний и бегущего света; щель и нимб не пульсируют', () => {
+  settings.reducedMotion = true;
+  try {
+    const ctx = () => ({ ...close(), snapshot: { player: { fury: 100, furyReady: true, sigilCharge: 0.8, sigilAxis: 'h' } } });
+    run(sp, 1.2, ctx);
+    const inf = sp.info();
+    assert.ok(inf.rm && inf.trail === 0 && !inf.arcs, `шлейф ${inf.trail}, молнии ${inf.arcs}`);
+    let arcsVisible = false, uTime = null, uTime2 = null;
+    sp.root.traverse((o) => { if (o.material && o.material.name === 'spirit-arcs' && o.visible) arcsVisible = true; if (o.material && o.material.name === 'spirit-bone') uTime = o.material.uniforms.uTime.value; });
+    assert.ok(!arcsVisible, 'молнии скрыты');
+    const s0 = sp.info().slit;
+    let dev = 0;
+    for (let i = 0; i < 30; i++) { sp.frame(DT, (T += 16), ctx()); dev = Math.max(dev, Math.abs(sp.info().slit - s0)); }
+    sp.root.traverse((o) => { if (o.material && o.material.name === 'spirit-bone') uTime2 = o.material.uniforms.uTime.value; });
+    assert.ok(dev < 0.005, `щель не мерцает: ${dev}`);
+    let halo = null;
+    sp.root.traverse((o) => { if (o.isInstancedMesh && o.geometry.type === 'TorusGeometry') halo = o; });
+    const hc0 = Array.from(halo.geometry.attributes.aColor.array);
+    let hdev = 0;
+    for (let i = 0; i < 30; i++) { sp.frame(DT, (T += 16), ctx()); const hc = halo.geometry.attributes.aColor.array; hdev = Math.max(hdev, Math.abs(hc[0] - hc0[0]), Math.abs(hc[1] - hc0[1])); }
+    assert.ok(hc0[0] + hc0[1] > 0.1 && hdev < 0.005, `нимб не пульсирует: ${hdev} (цвет ${hc0})`);
+    assert.equal(uTime2, uTime, 'время шейдеров стоит — свет не бежит');
+  } finally { settings.reducedMotion = false; }
+  run(sp, 0.5, () => close());
+  assert.ok(sp.info().trail > 0, 'шлейф вернулся');
+});
+
+test('отладка: X/G (удержание) — ладони сомкнуты и щель по оси, отпустил — разлёт в стороны / вверх-вниз; U без сцены — руки не вверх', () => {
+  const dbg = (input) => () => ({ screen: 'playing', debug: true, input: { valid: true, source: 'debug', ...input } });
+  run(sp, 1.2, dbg({ sigilCharge: 0.8, sigilAxis: 'h' }));
+  let j = sp.info().joints;
+  assert.ok(Math.abs(j.rightWrist.x - j.leftWrist.x) < 0.4 && sp.info().slitAxis === 'h', `ладони сомкнуты: ${j.leftWrist.x}…${j.rightWrist.x}`);
+  sp.frame(DT, (T += 16), dbg({ sigil: 'gate', sigilPower: 0.9 })());
+  run(sp, 0.45, dbg({}));
+  j = sp.info().joints;
+  assert.ok(j.rightWrist.x - j.leftWrist.x > 1.5 && Math.abs(j.leftWrist.y + 0.05) < 0.15 && Math.abs(j.rightWrist.y + 0.05) < 0.15, `в стороны у груди: ${j.leftWrist.x}…${j.rightWrist.x}, y ${j.leftWrist.y} / ${j.rightWrist.y}`);
+  run(sp, 1.2, dbg({ sigilCharge: 0.8, sigilAxis: 'v' }));
+  sp.frame(DT, (T += 16), dbg({ sigil: 'pillar', sigilPower: 0.9 })());
+  run(sp, 0.45, dbg({}));
+  j = sp.info().joints;
+  assert.ok(j.rightWrist.y - j.leftWrist.y > 1.2, `вверх-вниз: ${j.leftWrist.y}…${j.rightWrist.y}`);
+  // U при неполной шкале: бой даёт «Искру», а input.ultimate приходит всё равно — руки духа не поднимаются
+  run(sp, 1.5, dbg({}));
+  sp.frame(DT, (T += 16), dbg({ spark: true, ultimate: true })());
+  run(sp, 0.5, dbg({}));
+  j = sp.info().joints;
+  assert.ok(j.leftWrist.y < j.head.y && sp.info().ult < 0.05, `руки не вверх: ${j.leftWrist.y} < ${j.head.y}`);
+  assert.ok(finite(sp));
 });
 
 test('dispose: снят с камеры, каждый geometry/material/texture освобождён; кадр после dispose — без ошибок', () => {

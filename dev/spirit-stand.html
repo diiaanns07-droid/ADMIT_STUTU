@@ -27,9 +27,10 @@
 // камеры (свой холст в слоте). Источник — синтетика «Отладки с клавиатуры» или поза/кисти в формате vision
 // (dev/handSynth.mjs: незеркальная поза + кисти показа), чтобы проверить путь камеры и зеркало.
 // URL: view=both|sky|frame  src=synth|vision  q=low|medium|high  post=0 (без постобработки)  present=1
-//      g=idle|shield|attack|burst|charge|sigil|ult|hint|wave|demo (сценарий 15 с для видео)  t=<сек> (прогнать до t шагом 1/60, отрисовать, title=READY)
-//      hero=ashen|elf|dark|ranger|archmage  clean=1 (без подписи)
-// Клавиши (как в отладке): K — щит, J — «OK», L — выброс, O — заряд, Z — печать, U — ультимейт, H — «ОШИБКА».
+//      g=idle|shield|attack|burst|charge|sigil|gate|pillar|ult|hint|wave|demo (сценарий 15 с для видео)  t=<сек> (прогнать до t шагом 1/60, отрисовать, title=READY)
+//      hero=ashen|elf|dark|ranger|archmage  clean=1 (без подписи)  rm=1 («Уменьшенное движение»)
+// Клавиши (как в отладке): K — щит, J — «OK», L — выброс, O — заряд, Z — печать, X / G (держать, отпустить) — «Врата бури» /
+// «Столп небес», R — шкала «Ярость клятвы» полна, U — «Небесный суд» (облёт 3,6 с: дух над ареной уходит в небо), H — «ОШИБКА».
 import * as THREE from 'three';
 import { createSpiritAvatar } from '../modules/spiritAvatar.js';
 import { makeScene, handAt, SHAPES } from './handSynth.mjs';
@@ -86,9 +87,23 @@ const held = new Set();
 const pulses = new Set();
 addEventListener('keydown', (e) => { if (e.repeat) return; held.add(e.code); pulses.add(e.code); });
 addEventListener('keyup', (e) => held.delete(e.code));
-let conjT = 0, simT = 0;
+let conjT = 0, simT = 0, strT = 0, strAxis = null, furyReady = false;
+const stretchKeys = { KeyX: 'h', KeyG: 'v' };
+const evq = [];                             // события боя этого шага (как combat.drainEvents)
 function inputAt(t, dt) {
-  const I = { valid: true, source: 'debug', moveX: 0, moveZ: 0, attack: false, shield: false, burst: false, burstHand: null, conjure: null, sigil: null, hint: null };
+  const I = { valid: true, source: 'debug', moveX: 0, moveZ: 0, attack: false, shield: false, burst: false, burstHand: null, conjure: null, sigil: null, hint: null, sigilCharge: 0, sigilAxis: null };
+  // «ладони вместе → растянуть» (как core/debugInput.js): удержание — заряд за 1,5 с, отпускание — печать и sigil_cast
+  let axis = null;
+  for (const k in stretchKeys) if (held.has(k)) axis = stretchKeys[k];
+  if (G === 'gate' || G === 'pillar') { const p = t % 3; axis = p > 0.5 && p < 2 ? (G === 'gate' ? 'h' : 'v') : null; }
+  if (axis) { strT += dt; strAxis = axis; I.sigilCharge = Math.min(1, strT / 1.5); I.sigilAxis = axis; }
+  else if (strAxis) {
+    const sigil = strAxis === 'v' ? 'pillar' : 'gate', power = Math.min(1, Math.max(0.4, 0.4 + 0.6 * strT / 1.5));
+    I.sigil = sigil; I.sigilPower = power;
+    evq.push({ id: `s${t}`, type: 'sigil_cast', position: { x: 0, y: 1, z: 0 }, data: { sigil, power } });
+    strT = 0; strAxis = null;
+  }
+  if (pulses.has('KeyR') && !furyReady) { furyReady = true; evq.push({ id: `r${t}`, type: 'ultimate_ready', position: { x: 0, y: 0, z: 0 }, data: { fury: 100 } }); }
   const ph = (k, period, from, to) => { const p = t % period; return p >= from && p < to; };
   // g=demo — сценарий для видео: счёт пальцев, щит, выброс, заряд, печать, «ОШИБКА», ультимейт
   if (G === 'demo') {
@@ -98,14 +113,14 @@ function inputAt(t, dt) {
     if (d > 7.4 && d < 9.4) { conjT += dt; I.conjure = { kind: 'orb', size: 0.5, charge: Math.min(1, conjT / 1.5), heldMs: conjT * 1000 }; } else if (d >= 9.4) conjT = 0;
     if (d >= 9.8 && d < 9.8 + dt) I.sigil = 'clap';
     if (d >= 10.6 && d < 10.6 + dt) I.hint = { code: 'burst_short_hold', side: 'right' };
-    if (d >= 11.6 && d < 11.6 + dt) I.ultimate = true;
+    if (d >= 11.6 && d < 11.6 + dt) { I.ultimate = true; evq.push({ id: `u${t}`, type: 'ultimate_start', position: { x: 0, y: 0, z: 0 }, data: { duration: 3.6, strikeAt: 2.3 } }); }
   }
   if (G === 'shield' || held.has('KeyK')) I.shield = t > 0.5;
   if (G === 'attack' || held.has('KeyJ')) I.attack = t > 0.5;
   if (G === 'charge' || held.has('KeyO')) { conjT += dt; I.conjure = { kind: 'orb', size: 0.5, charge: Math.min(1, conjT / 1.5), heldMs: conjT * 1000 }; } else conjT = 0;
   if (pulses.has('KeyL') || (G === 'burst' && ph('b', 1.6, 0.8, 0.8 + dt))) { I.burst = true; I.burstHand = 'both'; }
   if (pulses.has('KeyZ') || (G === 'sigil' && ph('s', 1.6, 0.8, 0.8 + dt))) I.sigil = 'clap';
-  if (pulses.has('KeyU') || (G === 'ult' && ph('u', 3, 0.6, 0.6 + dt))) I.ultimate = true;
+  if (pulses.has('KeyU') || (G === 'ult' && ph('u', 6, 0.6, 0.6 + dt))) { I.ultimate = true; furyReady = false; evq.push({ id: `u${t}`, type: 'ultimate_start', position: { x: 0, y: 0, z: 0 }, data: { duration: 3.6, strikeAt: 2.3 } }); }
   if (pulses.has('KeyH') || (G === 'hint' && ph('h', 1.6, 0.8, 0.8 + dt))) I.hint = { code: 'burst_short_hold', side: 'right' };
   pulses.clear();
   return I;
@@ -138,7 +153,8 @@ let last = performance.now(), visT = 0, visData = null;
 function step(dt, now) {
   simT += dt;
   const I = inputAt(simT, dt);
-  const ctx = { screen: VIEW === 'frame' ? 'tutorial' : 'playing', present: VIEW === 'both' || Q.get('present') === '1', debug: SRC !== 'vision', input: I, events: I.ultimate ? [{ id: 'u', type: 'ultimate_start', position: { x: 0, y: 0, z: 0 } }] : [], snapshot: { boss: { position: { x: 0, y: 0, z: 0 } }, player: { shielding: !!I.shield } }, hero: settings.hero };
+  const events = evq.splice(0, evq.length);
+  const ctx = { screen: VIEW === 'frame' ? 'tutorial' : 'playing', present: VIEW === 'both' || Q.get('present') === '1', debug: SRC !== 'vision', input: I, events, snapshot: { boss: { position: { x: 0, y: 0, z: 0 } }, player: { shielding: !!I.shield, fury: furyReady ? 100 : 40, furyMax: 100, furyReady, sigilCharge: I.sigilCharge, sigilAxis: I.sigilAxis } }, hero: settings.hero };
   if (SRC === 'vision') {
     visT += dt;
     if (!visData || visT >= 1 / 30) { visT = 0; visData = visionAt(simT); }   // камера ~30 Гц
@@ -160,7 +176,7 @@ if (T_END !== null) {
     requestAnimationFrame(loop);
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
     step(dt, now); draw();
-    hud.textContent = `view=${VIEW} src=${SRC} q=${QUAL} g=${G}\nK щит · J «OK» · L выброс · O заряд · Z печать · U ультимейт · H «ОШИБКА»\n` + JSON.stringify(spirit.info()).slice(0, 600);
+    hud.textContent = `view=${VIEW} src=${SRC} q=${QUAL} g=${G}\nK щит · J «OK» · L выброс · O заряд · Z печать · X/G врата/столп · R шкала · U «Небесный суд» · H «ОШИБКА»\n` + JSON.stringify(spirit.info()).slice(0, 600);
   })(performance.now());
 }
 </script>
