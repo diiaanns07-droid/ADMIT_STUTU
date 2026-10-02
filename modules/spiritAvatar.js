@@ -21,12 +21,19 @@
 //               Регента он никогда не закрывает), к нам спиной, как тень игрока над ареной.
 //   Трекинг потерян — плавно гаснет. Интро, меню, итоги — скрыт.
 // Реакции: распознанный жест — вспышка и кольцо на нужной руке цветом стихии героя; подсказка «ОШИБКА» —
-// короткая красная вспышка на этой руке; щит — купол в ладони; заряд ладонями (player.sigilCharge; пока
-// его нет — сфера/призма двумя руками) — сфера и молнии между ладонями; ультимейт (событие ult*/руки
-// вверх ~0,5 с) — дух поднимает руки и вспыхивает.
+// короткая красная вспышка на этой руке; щит — купол в ладони; заряд ладонями — сфера и молнии между ладонями
+// (player.sigilCharge 0..1 или сфера/призма двумя руками), а при player.sigilAxis 'h' | 'v' ещё и щель света
+// вдоль оси растяжения (горизонтальная — «Врата бури», вертикальная — «Столп небес»); 'sigil_cast'
+// { sigil: 'gate' | 'pillar' } — щель вспыхивает и разлетается вдоль оси, ладони вспыхивают.
+// «Небесный суд»: 'ultimate_ready' — нимб и ладони вспыхивают, полная шкала — нимб цвета стихии пульсирует;
+// руки вверх ~0,5 с — дух поднимает руки и светится (без шкалы ультимейта — и вспыхивает); 'ultimate_start' —
+// вспышка, руки вверх, и дух над ареной уходит в небо и гаснет: облёт камеры идёт без него (не лезет в кадр
+// между камерой и героем); 'ultimate_strike' — волна света; после 'ultimate_end' дух возвращается.
+// «Уменьшенное движение»: без шлейфа, без бегущего света и молний, нимб и щель не пульсируют.
 // Качество 'low' — линии и точки стандартных материалов, без шлейфа (3 вызова отрисовки).
 // В «Отладке с клавиатуры» дух двигают синтетические руки (модель кисти как в dev/handSynth.mjs):
-// пальцы «считают» 1–5, клавиши J/K/L/O/P/U/I/F/Z… показывают жесты.
+// пальцы «считают» 1–5, клавиши J/K/L/O/P/U/I/F/Z… показывают жесты, X/G (удержание) — ладони сомкнуты,
+// отпустил — растянул в стороны / вверх-вниз.
 
 export const SPIRIT_SW = 3.6;          // ширина плеч духа над ареной, м (на дистанции 20 м): 10 м, руки вверх — ~15 м
 export const HAND_BONES = Object.freeze([[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12],
@@ -56,6 +63,7 @@ const BONES = [];
   }
 }
 const NB = BONES.length;
+const SLIT = NB, NBI = NB + 1;           // щель света заряда — ещё один инстанс в отрисовке костей
 const B_A = Int16Array.from(BONES, (b) => b[0]), B_B = Int16Array.from(BONES, (b) => b[1]);
 const B_R = Float32Array.from(BONES, (b) => b[2]), B_G = Uint8Array.from(BONES, (b) => b[3]);
 const B_EA = Float32Array.from(BONES, (b) => b[4]), B_EB = Float32Array.from(BONES, (b) => b[5]);
@@ -428,6 +436,20 @@ function palmOf(P, base, out) {
   for (let k = 0; k < PALM.length; k++) { const o = (base + PALM[k]) * 3; out[0] += P[o] / 5; out[1] += P[o + 1] / 5; out[2] += P[o + 2] / 5; }
 }
 
+// щель света между ладонями: центр — точка заряда, ось — st.slitDir (тело: x вправо, y вверх); половина длины —
+// от заряда и вспышки каста (st.slitHalf), но не короче половины разноса ладоней вдоль оси: растянул — щель
+// тянется от ладони до ладони. k — увеличение кисти этого вида.
+function slitEnds(st, c, pl, pr, k, a, b) {
+  const dx = st.slitDir[0], dy = st.slitDir[1];
+  let half = st.slitHalf * k;
+  if (st.chargeBoth) {
+    const sep = Math.abs((pr[0] - pl[0]) * dx + (pr[1] - pl[1]) * dy) * 0.5 + 0.05 * k;
+    if (sep > half) half = sep;
+  }
+  a[0] = c[0] - dx * half; a[1] = c[1] - dy * half; a[2] = c[2];
+  b[0] = c[0] + dx * half; b[1] = c[1] + dy * half; b[2] = c[2];
+}
+
 // ------------------------------------------------------------------ визуальный «скелет» (один на сцену)
 // Одна сборка рисует состояние духа в своей сцене: над ареной (камера игры) и в превью (свой холст).
 function createRig(THREE, name) {
@@ -455,17 +477,21 @@ function createRig(THREE, name) {
     // кости — одна инстанс-отрисовка сужающихся трубок
     const boneGeo = own(new THREE.CylinderGeometry(0.8, 1, 1, 10, 1, true));
     boneGeo.translate(0, 0.5, 0);
-    const bCol = new THREE.InstancedBufferAttribute(new Float32Array(NB * 3), 3).setUsage(DYN);
-    const bEnd = new THREE.InstancedBufferAttribute(new Float32Array(NB * 2), 2);
+    const bCol = new THREE.InstancedBufferAttribute(new Float32Array(NBI * 3), 3).setUsage(DYN);
+    const bEnd = new THREE.InstancedBufferAttribute(new Float32Array(NBI * 2), 2);
     for (let k = 0; k < NB; k++) { bEnd.array[k * 2] = BONES[k][4]; bEnd.array[k * 2 + 1] = BONES[k][5]; }
+    bEnd.array[SLIT * 2] = 1; bEnd.array[SLIT * 2 + 1] = 1;
     boneGeo.setAttribute('aColor', bCol); boneGeo.setAttribute('aEnds', bEnd);
-    // «рукав» — только у костей кистей: короткие кости перекрываются, у длинных края рукава заметны (там — дымка)
-    boneGeo.setAttribute('aGlow', new THREE.InstancedBufferAttribute(Float32Array.from(BONES, (b) => (b[3] >= G_HAND_L ? 1 : 0)), 1));
+    // «рукав» — только у костей кистей и щели: короткие кости перекрываются, у длинных края рукава заметны (там — дымка)
+    const glowK = new Float32Array(NBI);
+    for (let k = 0; k < NB; k++) glowK[k] = BONES[k][3] >= G_HAND_L ? 1 : 0;
+    glowK[SLIT] = 1;
+    boneGeo.setAttribute('aGlow', new THREE.InstancedBufferAttribute(glowK, 1));
     const boneMat = M(new THREE.ShaderMaterial({ name: 'spirit-bone', uniforms: { uTime: U.uTime, uOpacity: U.uOpacity, uFlow: U.uFlow }, vertexShader: BONE_VS, fragmentShader: BONE_FS, ...ADD }));
-    const bones = own(new THREE.InstancedMesh(boneGeo, boneMat, NB));
+    const bones = own(new THREE.InstancedMesh(boneGeo, boneMat, NBI));
     bones.instanceMatrix.setUsage(DYN); bones.frustumCulled = false; bones.renderOrder = 6;
     const glowMat = M(new THREE.ShaderMaterial({ name: 'spirit-glow', uniforms: { uOpacity: U.uOpacity, uGlowR: { value: 2.8 }, uGlowK: { value: 0.22 } }, vertexShader: GLOW_VS, fragmentShader: GLOW_FS, side: THREE.BackSide, ...ADD }));
-    const glow = own(new THREE.InstancedMesh(boneGeo, glowMat, NB));
+    const glow = own(new THREE.InstancedMesh(boneGeo, glowMat, NBI));
     glow.instanceMatrix = bones.instanceMatrix;           // те же матрицы костей — без второй записи
     glow.frustumCulled = false; glow.renderOrder = 5;
     // голова и сфера заряда
@@ -519,7 +545,7 @@ function createRig(THREE, name) {
 
   function buildLow() {
     const group = new THREE.Group(); group.name = `${name}-low`;
-    const NV = (NB + HEAD_SEG) * 2;
+    const NV = (NB + HEAD_SEG + 1) * 2;   // кости, голова, щель заряда
     const lGeo = own(new THREE.BufferGeometry());
     lGeo.setAttribute('position', attr(NV, 3)); lGeo.setAttribute('color', attr(NV, 3));
     const lMat = M(new THREE.LineBasicMaterial({ name: 'spirit-lines', vertexColors: true, ...ADD }));
@@ -568,6 +594,7 @@ function createRig(THREE, name) {
 
   // точки этого вида: над ареной кисти крупнее (духу можно), в превью — точно по рукам игрока
   const Pv = new Float32Array(N * 3), pL = new Float32Array(3), pR = new Float32Array(3), pC = new Float32Array(3);
+  const sA = new Float32Array(3), sB = new Float32Array(3);   // концы щели света этого вида
   function viewPoints(st, k) {
     const P = st.P;
     Pv.set(P);
@@ -584,13 +611,14 @@ function createRig(THREE, name) {
     palmOf(Pv, J.HL, pL); palmOf(Pv, J.HR, pR);
     if (st.chargeBoth) { for (let c = 0; c < 3; c++) pC[c] = (pL[c] + pR[c]) / 2; }
     else { pC[0] = st.chargePos[0]; pC[1] = st.chargePos[1]; pC[2] = st.chargePos[2]; }
+    slitEnds(st, pC, pL, pR, k, sA, sB);
   }
 
   // st — состояние духа (createSpiritAvatar), v — вид этой сцены:
   // { alpha, px, scale, depthTest, q, lowPointSize, thick, headK, bodyK, auraK, handK }
   function write(st, v) {
     if (v.q !== tier) setTier(v.q);
-    U.uTime.value = st.time; U.uOpacity.value = v.alpha; U.uFlow.value = st.rm ? 0 : 1;
+    U.uTime.value = st.tSh; U.uOpacity.value = v.alpha; U.uFlow.value = st.rm ? 0 : 1;
     U.uPx.value = v.px; U.uScale.value = v.scale;
     for (const m of mats) if (m.depthTest !== v.depthTest) m.depthTest = v.depthTest;
     viewPoints(st, v.handK);
@@ -618,17 +646,29 @@ function createRig(THREE, name) {
       }
       bc[k * 3] = GC[g * 3] * al; bc[k * 3 + 1] = GC[g * 3 + 1] * al; bc[k * 3 + 2] = GC[g * 3 + 2] * al;
     }
+    // щель света заряда: тонкая трубка вдоль оси растяжения (рукав даёт ей мягкий ореол)
+    const si = st.slitI;
+    _a.set(sA[0], sA[1], sA[2]); _b.set(sB[0], sB[1], sB[2]); _d.subVectors(_b, _a);
+    const sl = _d.length();
+    if (si < 0.01 || sl < 1e-4) f.bones.setMatrixAt(SLIT, ZERO_M);
+    else {
+      _d.multiplyScalar(1 / sl); _q.setFromUnitVectors(UP, _d);
+      const rr = st.slitR * v.thick * v.handK; _s.set(rr, sl, rr);
+      _m.compose(_a, _q, _s); f.bones.setMatrixAt(SLIT, _m);
+    }
+    const scl = st.slitCol;
+    bc[SLIT * 3] = scl[0] * si; bc[SLIT * 3 + 1] = scl[1] * si; bc[SLIT * 3 + 2] = scl[2] * si;
     f.bones.instanceMatrix.needsUpdate = true; f.bCol.needsUpdate = true;
     // голова и заряд
     const oc = f.oCol.array, ha = A[J.HEAD] * v.headK;
     _a.set(P[J.HEAD * 3], P[J.HEAD * 3 + 1], P[J.HEAD * 3 + 2]); _q.identity();
-    const hr = st.headR * 0.86 * (1 + 0.04 * Math.sin(st.time * 2.1));
+    const hr = st.headR * 0.86 * (1 + (st.rm ? 0 : 0.04 * Math.sin(st.time * 2.1)));
     if (ha < 0.004) f.orbs.setMatrixAt(0, ZERO_M); else { _s.set(hr, hr, hr); _m.compose(_a, _q, _s); f.orbs.setMatrixAt(0, _m); }
     oc[0] = GC[0] * ha; oc[1] = GC[1] * ha; oc[2] = GC[2] * ha;
     const ch = st.charge;
     if (ch < 0.02) f.orbs.setMatrixAt(1, ZERO_M);
     else {
-      const cr = (0.07 + 0.3 * ch + 0.03 * Math.sin(st.time * 11)) * v.handK;
+      const cr = (0.07 + 0.3 * ch + (st.rm ? 0 : 0.03 * Math.sin(st.time * 11))) * v.handK;
       _a.set(pC[0], pC[1], pC[2]); _s.set(cr, cr, cr); _m.compose(_a, _q, _s); f.orbs.setMatrixAt(1, _m);
     }
     const cc = st.colElem2;
@@ -658,12 +698,12 @@ function createRig(THREE, name) {
     // кольца
     const rp = f.rGeo.attributes.position.array, rc = f.rGeo.attributes.aColor.array, rs = f.rGeo.attributes.aSize.array;
     // нимб: кольцо над головой, к зрителю чуть наклонено; вспыхивает в ультимейт
-    const halo = A[J.HEAD] * (0.55 + 1.4 * st.ult + 0.6 * st.up + st.ready * (0.7 + 0.5 * Math.sin(st.time * 6))) * Math.max(v.headK, 0.7);
+    const halo = A[J.HEAD] * (0.55 + 1.4 * st.ult + 0.6 * st.up + st.ready * (st.rm ? 0.95 : 0.7 + 0.5 * Math.sin(st.time * 6))) * Math.max(v.headK, 0.7);
     if (halo < 0.004) f.halo.setMatrixAt(0, ZERO_M);
     else {
       const hr2 = st.headR * (0.78 + 0.25 * st.ult);
       _a.set(P[J.HEAD * 3], P[J.HEAD * 3 + 1] + st.headR * 1.12, P[J.HEAD * 3 + 2]);
-      _e.set(v.haloTilt, 0, 0.04 * Math.sin(st.time * 0.9)); _q.setFromEuler(_e); _s.set(hr2, hr2, hr2);
+      _e.set(v.haloTilt, 0, st.rm ? 0 : 0.04 * Math.sin(st.time * 0.9)); _q.setFromEuler(_e); _s.set(hr2, hr2, hr2);
       _m.compose(_a, _q, _s); f.halo.setMatrixAt(0, _m);
     }
     // готовый ультимейт — нимб цвета стихии героя
@@ -674,10 +714,10 @@ function createRig(THREE, name) {
     for (let i = 0; i < RINGS; i++) {
       const R = st.rings[i], o = i + 1;
       if (!R.on) { rs[o] = 0; rc[o * 3] = rc[o * 3 + 1] = rc[o * 3 + 2] = 0; continue; }
-      const pp = R.side === 0 ? pL : R.side === 1 ? pR : null;
+      const pp = R.side === 0 ? pL : R.side === 1 ? pR : R.side === 4 ? pC : null;
       rp[o * 3] = pp ? pp[0] : R.x; rp[o * 3 + 1] = pp ? pp[1] : R.y; rp[o * 3 + 2] = (pp ? pp[2] : R.z) - 0.05;
       const k = R.t / R.dur, fade = (1 - k) * (1 - k);
-      rs[o] = (R.s0 + (R.s1 - R.s0) * Math.sqrt(k)) * (pp ? v.handK : 1);
+      rs[o] = (R.s0 + (R.s1 - R.s0) * (st.rm ? 0.35 + 0.65 * k : Math.sqrt(k))) * (pp ? v.handK : 1);
       rc[o * 3] = R.r * fade; rc[o * 3 + 1] = R.g * fade; rc[o * 3 + 2] = R.b * fade;
     }
     upload(f.rGeo.attributes.position, (RINGS + 1) * 3); upload(f.rGeo.attributes.aColor, (RINGS + 1) * 3); upload(f.rGeo.attributes.aSize, RINGS + 1);
@@ -749,6 +789,14 @@ function createRig(THREE, name) {
         o += 3;
       }
     }
+    // щель заряда (погашенная — нулевой длины и чёрная: аддитивно не видна)
+    const si = st.slitI * v.alpha * 1.4, scl = st.slitCol;
+    for (let s = 0; s < 2; s++) {
+      const q = si > 0.004 ? (s ? sB : sA) : pC;
+      lp[o] = q[0]; lp[o + 1] = q[1]; lp[o + 2] = q[2];
+      lc[o] = scl[0] * si; lc[o + 1] = scl[1] * si; lc[o + 2] = scl[2] * si;
+      o += 3;
+    }
     upload(l.lGeo.attributes.position, o); upload(l.lGeo.attributes.color, o);
     const pp = l.pGeo.attributes.position.array, pc = l.pGeo.attributes.color.array;
     for (let j = 0; j < N; j++) {
@@ -779,7 +827,7 @@ function createRig(THREE, name) {
   }
 
   function writeArcs(st, v) {
-    const on = st.charge > 0.05 && st.arcSeed > 0;
+    const on = st.charge > 0.05 && st.arcSeed > 0 && !st.rm;   // молнии мерцают — при «Уменьшенном движении» их нет
     arcs.visible = on;
     if (!on) return;
     const ap = aGeo.attributes.position.array, ac = aGeo.attributes.color.array;
@@ -858,7 +906,10 @@ export function createSpiritAvatar(opts = {}) {
     flash: new Float32Array(2), flashCol: [new Float32Array([1, 1, 1]), new Float32Array([1, 1, 1])],
     shield: 0, shieldPop: 1, shieldHit: 0, charge: 0, chargePos: new Float32Array(3),
     palmL: new Float32Array(3), palmR: new Float32Array(3), chargeBoth: false,
-    ult: 0, up: 0, ready: 0, arcSeed: 1, viewAlpha: 1,
+    ult: 0, up: 0, ready: 0, arcSeed: 1, viewAlpha: 1, tSh: 0,
+    // щель света заряда: сила 0..1, ось (тело), вспышка каста 0..1, половина длины, толщина, цвет, видимость
+    slit: 0, slitDir: new Float32Array([1, 0]), slitBurst: 0, slitHalf: 0, slitR: 0.02, slitI: 0, slitCol: new Float32Array(3),
+    slitAxis: null, slitA: new Float32Array(3), slitB: new Float32Array(3),
     rings: Array.from({ length: RINGS }, () => ({ on: false, side: 0, t: 0, dur: 0.6, s0: 0.2, s1: 1.4, x: 0, y: 0, z: 0, r: 0, g: 0, b: 0 })),
     trail: new Float32Array(NT * NS_MAX * 3), trailA: new Float32Array(NT), trailHead: 0, trailN: 0, trailFill: 0, trailAcc: 0,
   };
@@ -866,9 +917,11 @@ export function createSpiritAvatar(opts = {}) {
   let presence = 0;                        // трекинг есть (0..1, с плавным угасанием)
   let skyA = 0, frameA = 0;                // видимость духа над ареной и в кадре
   const edge = { attack: false, shield: false, conjure: false, hintCode: null, hintSide: null };
-  let upLatch = false, ultCool = 0, chargeT = 0, arcT = 0;
+  let upLatch = false, ultCool = 0, chargeT = 0, arcT = 0, castCool = 0;
+  let cineLeft = 0, rise = 0;              // «Небесный суд»: сколько ещё идёт облёт камеры, подъём духа в небо 0..1
   const elemCache = { hero: null };
   let quality = 'medium';
+  let presentNow = false, frameBright = 0;  // режим презентации P; яркость духа в превью (для info)
   let enabled = true, disposed = false, warnAt = 0, warm = 3;
   let source = 'none';
 
@@ -1038,10 +1091,12 @@ export function createSpiritAvatar(opts = {}) {
   function createSynth() {
     const mk = (x, y) => ({ x, y, z: 0, ang: 0, curls: [0, 0, 0, 0], thumbIn: 0, pinch: 0, away: false });
     const cur = [mk(-0.62, -0.42), mk(0.62, -0.32)], tgt = [mk(-0.62, -0.42), mk(0.62, -0.32)];
-    const tm = { burst: -9, burstBoth: false, sigil: -9, spark: -9, slash: -9, parry: -9, dash: -9, dashX: 0, ult: -9, t: 0 };
+    const tm = { burst: -9, burstBoth: false, sigil: -9, spark: -9, slash: -9, parry: -9, dash: -9, dashX: 0, t: 0, stretch: -9, stretchV: false };
     const COUNT = [[1, 1, 1, 1, 1], [0, 1, 1, 1, 1], [0, 0, 1, 1, 1], [0, 0, 0, 1, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 0]];
     function setShape(h, c0, c1, c2, c3, thumbIn, pinch = 0) { h.curls[0] = c0; h.curls[1] = c1; h.curls[2] = c2; h.curls[3] = c3; h.thumbIn = thumbIn; h.pinch = pinch; }
-    function step(dt, input) {
+    // ultK — st.ult духа (сцена «Небесного суда» идёт): руки вверх. Не по input.ultimate — клавиша U в
+    // отладке шлёт его и при неполной шкале (бой тогда даёт «Искру»), а руки вверх — только когда сцена началась.
+    function step(dt, input, ultK = 0) {
       const t = (tm.t += dt), I = input || {};
       const L = tgt[0], R = tgt[1];
       // покой: левая плавно качается, пальцы шевелятся; правая считает 1–5, машет и показывает «OK»
@@ -1058,13 +1113,13 @@ export function createSpiritAvatar(opts = {}) {
       if (I.attack) { R.x = 0.48; R.y = -0.08; R.z = -0.45; R.ang = -0.2; setShape(R, 0.45, 0, 0, 0, 0, 1); }
       if ((I.charge || 0) > 0.05) setShape(R, 1, 1, 1, 1, 1);
       if (I.burst) { tm.burst = t; tm.burstBoth = I.burstHand === 'both'; }
-      if (I.sigil) tm.sigil = t;
+      if (I.sigil === 'gate' || I.sigil === 'pillar') { tm.stretch = t; tm.stretchV = I.sigil === 'pillar'; }
+      else if (I.sigil) tm.sigil = t;
       if (I.spark) tm.spark = t;
       if (I.slash) tm.slash = t;
       if (I.parry) tm.parry = t;
       if (I.dashDir) { tm.dash = t; tm.dashX = Math.sign(I.dashDir.x || 0) || -1; }
-      if (I.ultimate || I.ult) tm.ult = t;
-      const sBurst = t - tm.burst, sSpark = t - tm.spark, sSlash = t - tm.slash, sParry = t - tm.parry, sDash = t - tm.dash, sSigil = t - tm.sigil, sUlt = t - tm.ult;
+      const sBurst = t - tm.burst, sSpark = t - tm.spark, sSlash = t - tm.slash, sParry = t - tm.parry, sDash = t - tm.dash, sSigil = t - tm.sigil, sStr = t - tm.stretch;
       if (sBurst < 0.7) {
         for (let s = tm.burstBoth ? 0 : 1; s < 2; s++) {
           const h = tgt[s];
@@ -1081,7 +1136,21 @@ export function createSpiritAvatar(opts = {}) {
         R.x = 0.24 + 0.1 * c; R.y = -0.18; R.z = -0.5; R.ang = 0.55; setShape(R, 0.3, 0.3, 0.3, 0.3, 0.2);
       }
       if (sSigil < 0.45) { const k = Math.sin((sSigil / 0.45) * Math.PI); L.x += (-0.06 - L.x) * k; R.x += (0.06 - R.x) * k; L.y = R.y = -0.08; L.ang = -0.2; R.ang = 0.2; setShape(L, 0, 0, 0, 0, 0); setShape(R, 0, 0, 0, 0, 0); }
-      if (sUlt < 1.6) { L.x = -0.6; L.y = 1.95; L.ang = 0.12; R.x = 0.6; R.y = 1.95; R.ang = -0.12; setShape(L, 0, 0, 0, 0, 0); setShape(R, 0, 0, 0, 0, 0); }
+      // «ладони вместе → растянуть» (X / G): пока зажата — ладони сомкнуты у груди и дрожат от заряда,
+      // отпустил — разлетаются в стороны («Врата бури») или вверх-вниз («Столп небес»)
+      const sc = clamp(+I.sigilCharge || 0, 0, 1);
+      if (sc > 0.01) {
+        const tr = 0.012 * sc * Math.sin(t * 41);
+        L.x = -0.075 + tr; R.x = 0.075 + tr; L.y = R.y = -0.05; L.z = R.z = -0.45; L.ang = -0.08; R.ang = 0.08;
+        setShape(L, 0, 0, 0, 0, 0.1); setShape(R, 0, 0, 0, 0, 0.1);
+      } else if (sStr < 0.95) {
+        const k = Math.min(1, sStr / 0.32), e = 1 - (1 - k) * (1 - k);
+        if (tm.stretchV) { L.x = -0.12; R.x = 0.12; L.y = -0.05 - 0.75 * e; R.y = -0.05 + 1.0 * e; L.ang = Math.PI * 0.92 * e; R.ang = 0; }
+        else { L.x = -0.075 - 0.8 * e; R.x = 0.075 + 0.8 * e; L.y = R.y = -0.05; L.ang = 0.25 * e; R.ang = -0.25 * e; }
+        L.z = R.z = -0.45 * (1 - e) - 0.2;
+        setShape(L, 0, 0, 0, 0, 0); setShape(R, 0, 0, 0, 0, 0);
+      }
+      if (ultK > 0.3) { L.x = -0.6; L.y = 1.95; L.ang = 0.12; R.x = 0.6; R.y = 1.95; R.ang = -0.12; setShape(L, 0, 0, 0, 0, 0); setShape(R, 0, 0, 0, 0, 0); }
       // плавно к цели (как живая рука), затем — кисти и локти
       const k = 1 - Math.exp(-dt / 0.085);
       for (let s = 0; s < 2; s++) {
@@ -1135,6 +1204,16 @@ export function createSpiritAvatar(opts = {}) {
     ultCool = 1.2; st.ult = 1;
     ring(0, 0.9, 0.3, 2.2, st.colElem); ring(1, 0.9, 0.3, 2.2, st.colElem); ring(3, 1.1, 0.4, 3.2, st.colElem2);
   }
+  // каст «ладони вместе → растянуть»: щель вспыхивает и разлетается вдоль оси, ладони вспыхивают
+  function castSlit(axis, power) {
+    if (castCool > 0) return;              // жест (input.sigil) и событие боя (sigil_cast) — одна вспышка
+    castCool = 0.35;
+    st.slitDir[0] = axis === 'v' ? 0 : 1; st.slitDir[1] = axis === 'v' ? 1 : 0; st.slitAxis = axis;
+    st.slitBurst = 1;
+    flashHand(2);
+    ring(4, 0.7, 0.3, 1.8 + 1.0 * clamp(fin(power) ? power : 0.6, 0, 1), st.colElem2);
+  }
+  const sigAxis = (v) => (v === 'h' || v === 'v' ? v : null);
 
   function react(dt, ctx) {
     const I = ctx.input || null, snap = ctx.snapshot || null, ev = Array.isArray(ctx.events) ? ctx.events : null;
@@ -1150,21 +1229,32 @@ export function createSpiritAvatar(opts = {}) {
       if (I.spark || I.slash || I.rune || (I.bow && I.bow.release) || (I.handSpell && I.handSpell.phase === 'throw')) flashHand(1);
       if (I.parry || I.dashDir || I.dash) flashHand(0);
       if (I.burst) flashHand(I.burstHand === 'both' ? 2 : 1);
-      if (I.sigil || I.throw) flashHand(2);
+      if (I.sigil === 'gate' || I.sigil === 'pillar') castSlit(I.sigil === 'pillar' ? 'v' : 'h', I.sigilPower);
+      else if (I.sigil || I.throw) flashHand(2);
       // «ОШИБКА»: короткая красная вспышка на руке, к которой относится подсказка
       const h = I.hint && I.hint.code ? I.hint : null;
       if (h && (h.code !== edge.hintCode || h.side !== edge.hintSide)) flashHand(h.side === 'left' ? 0 : h.side === 'right' ? 1 : 2, true);
       edge.hintCode = h ? h.code : null; edge.hintSide = h ? h.side : null;
     } else { edge.attack = false; edge.shield = false; edge.conjure = false; }
-    // события боя: удар по щиту, ультимейт «Небесный суд» (ultimate_start — сцена, ultimate_strike — удар), победа
+    // события боя: удар по щиту, каст печатей, «Небесный суд» (ultimate_ready — шкала полна, ultimate_start —
+    // сцена и облёт камеры, ultimate_strike — удар меча, ultimate_end — сцена кончилась), победа
     if (ev) for (const e of ev) {
       const ty = e && e.type;
       if (!ty) continue;
+      const d = e.data || null;
       if (ty === 'block') st.shieldHit = 1;
-      else if (ty === 'ultimate_start' || ty === 'ultimate' || ty === 'victory') triggerUlt();
+      else if (ty === 'sigil_cast') { const sg = d && d.sigil; if (sg === 'gate' || sg === 'pillar') castSlit(sg === 'pillar' ? 'v' : 'h', d.power); }
+      else if (ty === 'ultimate_ready') { flashHand(2); ring(5, 1.0, 0.4, 2.6, st.colElem2); }
+      else if (ty === 'ultimate_start') { triggerUlt(); cineLeft = d && fin(d.duration) && d.duration > 0 ? d.duration : 3.6; }
       else if (ty === 'ultimate_strike') { st.ult = 1; ring(3, 1.0, 0.5, 3.6, st.colElem2); }
+      else if (ty === 'ultimate_end') cineLeft = 0;
+      else if (ty === 'ultimate' || ty === 'victory') triggerUlt();
       else if (ty === 'perfect_dodge') flashHand(0);
     }
+    // облёт камеры идёт, пока идёт сцена боя; после победы ударом меча — ещё до конца своего отсчёта
+    const su = snap && snap.ultimate;
+    if (su && su.active && fin(su.t) && fin(su.duration)) cineLeft = Math.max(cineLeft, su.duration - su.t);
+    cineLeft = SKY_SCREENS.has(ctx.screen || 'playing') ? Math.max(0, cineLeft - dt) : 0;
     // шкала ультимейта есть (player.fury) — полная: нимб пульсирует «руки вверх!»; идёт сцена — руки духа подняты
     const furySys = !!(pl && fin(pl.fury));
     st.ready = approach(st.ready, pl && pl.furyReady ? 1 : 0, dt, 0.2, 0.3);
@@ -1192,9 +1282,34 @@ export function createSpiritAvatar(opts = {}) {
     if (I && I.conjure) ch = Math.max(ch, 0.25 + 0.75 * clamp(+I.conjure.charge || 0, 0, 1));
     if (pl && pl.conjure) ch = Math.max(ch, 0.25 + 0.75 * clamp(+pl.conjure.charge || 0, 0, 1));
     st.charge = approach(st.charge, clamp(ch, 0, 1), dt, 0.1, 0.3);
+    // щель вдоль оси растяжения: есть ось (player.sigilAxis / input.sigilAxis) и ладони сомкнуты с зарядом
+    let sc = 0;
+    if (pl && fin(pl.sigilCharge)) sc = Math.max(sc, pl.sigilCharge);
+    if (I && fin(I.sigilCharge)) sc = Math.max(sc, I.sigilCharge);
+    const ax = sigAxis(I && I.sigilAxis) || sigAxis(pl && pl.sigilAxis);
+    const slitOn = !!ax && sc > 0.01;
+    st.slit = approach(st.slit, slitOn ? 0.3 + 0.7 * clamp(sc, 0, 1) : 0, dt, 0.08, 0.15);
+    if (ax && st.slitBurst <= 0) {
+      // ось сменилась — щель плавно поворачивается (без «Уменьшенного движения»)
+      const tx = ax === 'v' ? 0 : 1, ty = ax === 'v' ? 1 : 0, k = st.rm || st.slit < 0.05 ? 1 : 1 - Math.exp(-dt / 0.06);
+      let dx = st.slitDir[0] + (tx - st.slitDir[0]) * k, dy = st.slitDir[1] + (ty - st.slitDir[1]) * k;
+      const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+      st.slitDir[0] = dx; st.slitDir[1] = dy; st.slitAxis = ax;
+    }
+    st.slitBurst = Math.max(0, st.slitBurst - dt / 0.55);
+    castCool = Math.max(0, castCool - dt);
+    const b = st.slitBurst, grow = b > 0 ? 1 - b * b : 0;
+    st.slitHalf = 0.1 + 0.34 * st.slit + (st.rm ? 0.8 : 1.6) * grow;
+    st.slitR = 0.016 + 0.02 * st.slit + 0.03 * b;
+    const shimmer = st.rm ? 1 : 0.88 + 0.12 * Math.sin(st.time * 27);
+    st.slitI = Math.max(st.slit * shimmer, b * Math.sqrt(b) * 1.8);
+    if (st.slitI < 0.005 && !slitOn) st.slitAxis = null;
+    const e2 = st.colElem2;
+    st.slitCol[0] = e2[0] * 1.2 + 0.45; st.slitCol[1] = e2[1] * 1.2 + 0.45; st.slitCol[2] = e2[2] * 1.2 + 0.45;
     for (let s = 0; s < 2; s++) st.flash[s] = Math.max(0, st.flash[s] * Math.exp(-dt * (st.rm ? 6 : 3.2)) - dt * 0.05);
     arcT -= dt;
     if (arcT <= 0) { arcT = 0.055; st.arcSeed = 1 + ((st.arcSeed * 48271) % 2147483646); }
+    slitEnds(st, st.chargePos, st.palmL, st.palmR, 1, st.slitA, st.slitB);   // для info() и тестов
   }
 
   // ------------------------------------------------------------ кадр
@@ -1214,8 +1329,10 @@ export function createSpiritAvatar(opts = {}) {
     quality = QUALITY[S.quality] ? S.quality : 'medium';
     st.rm = !!S.reducedMotion;
     st.time += dt;
+    if (!st.rm) st.tSh += dt;                // время шейдеров: при «Уменьшенном движении» свет не бежит и не крутится
     const screen = ctx.screen || 'playing';
     const present = ctx.present !== undefined ? !!ctx.present : hasDom && !!document.documentElement && document.documentElement.classList.contains('ao-present');
+    presentNow = present;
     // выключен в настройках и уже погас — не тратим кадр (холст в превью освободится сам)
     if (!on && skyA < 0.003 && frameA < 0.003 && warm <= 0) { skyA = frameA = 0; sky.root.visible = false; frameTick(now, 0, ctx); return; }
 
@@ -1223,7 +1340,7 @@ export function createSpiritAvatar(opts = {}) {
     let live = false;
     if (ctx.debug) {
       if (source !== 'synth') { source = 'synth'; syn.reset(); }
-      syn.step(dt, ctx.input);
+      syn.step(dt, ctx.input, st.ult);
       live = true;
     } else {
       if (source !== 'camera') { source = 'camera'; isoInit.fill(0); ref.ok = false; }
@@ -1260,17 +1377,22 @@ export function createSpiritAvatar(opts = {}) {
       if (!R.on) continue;
       R.t += dt;
       if (R.t >= R.dur) { R.on = false; continue; }
-      const p = R.side === 0 ? st.palmL : R.side === 1 ? st.palmR : null;
+      const p = R.side === 0 ? st.palmL : R.side === 1 ? st.palmR : R.side === 4 ? st.chargePos : null;
       if (p) { R.x = p[0]; R.y = p[1]; R.z = p[2] - 0.05; }
+      else if (R.side === 5) { R.x = P[J.HEAD * 3]; R.y = P[J.HEAD * 3 + 1] + st.headR * 1.1; R.z = P[J.HEAD * 3 + 2]; }   // над головой
       else { R.x = P[J.NECK * 3]; R.y = P[J.NECK * 3 + 1] + 0.2; R.z = P[J.NECK * 3 + 2]; }
     }
     colors();
     trails(dt);
 
-    // где виден
-    const wantSky = on && SKY_SCREENS.has(screen) && !!camera;
+    // где виден; «Небесный суд»: облёт камеры идёт без духа над ареной — он вспыхивает, уходит в небо и гаснет,
+    // а в последние полсекунды облёта (камера возвращается к обычному ракурсу) проявляется снова
+    const cine = cineLeft > 0.45;
+    const wantSky = on && SKY_SCREENS.has(screen) && !!camera && !cine;
     const wantFrame = on && (FRAME_SCREENS.has(screen) || (present && PRESENT_SLOT_SCREENS.has(screen)));
-    skyA = approach(skyA, wantSky ? 1 : 0, dt, 0.35, 0.3);
+    if (cine) rise = Math.min(1, rise + dt / 0.6);
+    else if (skyA < 0.02) rise = 0;          // возвращается с неба уже на своём месте
+    skyA = approach(skyA, wantSky ? 1 : 0, dt, 0.35, cine ? 0.16 : 0.3);
     frameA = approach(frameA, wantFrame ? 1 : 0, dt, 0.25, 0.25);
     const flare = 1 + 0.55 * st.ult + 0.25 * st.up;
     // над ареной
@@ -1280,7 +1402,8 @@ export function createSpiritAvatar(opts = {}) {
     else if (skyAlpha > 0.003) { sky.root.visible = true; placeSky(ctx, present); writeRig(sky, skyAlpha, skyView); }
     else sky.root.visible = false;
     // в кадре
-    const frameAlpha = frameA * presence * (present ? 1.25 : 1) * flare;
+    const frameAlpha = frameA * presence * (present ? 1.35 : 1) * flare;   // P: крупное превью — дух ярче
+    frameBright = frameAlpha;
     frameTick(now, frameAlpha, ctx);
   }
 
@@ -1338,13 +1461,14 @@ export function createSpiritAvatar(opts = {}) {
       dBoss = Math.hypot(bp.x - _v.x, (bp.y || 0) + 3 - _v.y, bp.z - _v.z);
     }
     const D = clamp(dBoss + 9, 20, 46);
-    const scale = SPIRIT_SW * (D / 20) * (present ? 0.85 : 1);
+    const rs = st.rm ? 0 : rise * rise;       // уходит в небо: вверх и чуть больше (при «Уменьшенном движении» — просто гаснет)
+    const scale = SPIRIT_SW * (D / 20) * (present ? 0.85 : 1) * (1 + 0.35 * rs);
     // верх духа (голова или поднятые кисти) — не выше 0,9 высоты кадра: руки вверх — дух опускается
     let top = P[J.HEAD * 3 + 1] + 0.45;
     for (let s = 0; s < 2; s++) { const w = s ? J.RW : J.LW, tip = (s ? J.HR : J.HL) + 12; top = Math.max(top, P[w * 3 + 1] + (P[tip * 3 + 1] - P[w * 3 + 1]) * skyView.handK + 0.15); }
     const kNdc = scale / (D * tanH);
     skyNy += (Math.min(0.36, 0.9 - top * kNdc) - skyNy) * (1 - Math.exp(-skyDt / 0.35));
-    const nx = present ? 0.5 : 0.42, ny = skyNy;
+    const nx = present ? 0.5 : 0.42, ny = skyNy + 0.55 * rs;
     sky.root.position.set(nx * tanH * aspect * D, ny * tanH * D, -D);
     sky.root.quaternion.identity();
     sky.root.scale.set(scale, scale, scale);   // z > 0: «к веб-камере» — в глубину, к Регенту (дух к нам спиной)
@@ -1403,6 +1527,7 @@ export function createSpiritAvatar(opts = {}) {
     rig.root.scale.set(sw, sw, -sw);          // лицом к игроку: «к веб-камере» — к зрителю
     frameView.px = pxH;
     frameView.scale = sw;
+    frameView.thick = presentNow ? 0.85 : 0.7; frameView.bodyK = presentNow ? 0.5 : 0.35; frameView.auraK = presentNow ? 0.55 : 0.4;
     frameView.lowPointSize = 0.1 * sw * pxH / (fr.dpr || 1);
     frameView.q = quality;
     writeRig(rig, alpha, frameView);
@@ -1468,6 +1593,10 @@ export function createSpiritAvatar(opts = {}) {
         flash: [+st.flash[0].toFixed(3), +st.flash[1].toFixed(3)], shield: +st.shield.toFixed(3), charge: +st.charge.toFixed(3),
         ult: +st.ult.toFixed(3), up: +st.up.toFixed(3), ready: +st.ready.toFixed(3), rings: st.rings.filter((r) => r.on).length, trail: st.trailN,
         tier: sky.tier, elem: [+st.colElem[0].toFixed(3), +st.colElem[1].toFixed(3), +st.colElem[2].toFixed(3)],
+        slit: +st.slitI.toFixed(3), slitAxis: st.slitAxis, slitBurst: +st.slitBurst.toFixed(3),
+        slitEnds: [Array.from(st.slitA, (v) => +v.toFixed(3)), Array.from(st.slitB, (v) => +v.toFixed(3))],
+        cine: cineLeft > 0.45, rise: +rise.toFixed(3), present: presentNow, frameBright: +frameBright.toFixed(3), rm: st.rm,
+        shaderTime: +st.tSh.toFixed(3), arcs: st.charge > 0.05 && !st.rm,
         flashColor: [Array.from(st.flashCol[0], (v) => +v.toFixed(3)), Array.from(st.flashCol[1], (v) => +v.toFixed(3))],
       };
     },
