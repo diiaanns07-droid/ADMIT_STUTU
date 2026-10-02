@@ -559,35 +559,46 @@ function warpMesh(mesh, warp) {
   return moved;
 }
 
-// фронтальная проекция на кожу лица: самое переднее пересечение луча вдоль −z (область бровей и век)
+// фронтальная проекция на кожу лица: самое переднее пересечение луча вдоль −z (область бровей и век).
+// Треугольники области — в сетке 4 мм по (x, y): запрос проверяет только свою клетку
 function faceSurface(P, box) {
   const g = P.face.geometry, pa = g.attributes.position, na = g.attributes.normal, ix = g.index;
-  const T = [];
+  const C = 0.004, nx = Math.max(1, Math.ceil((box[1] - box[0]) / C)), ny = Math.max(1, Math.ceil((box[3] - box[2]) / C));
+  const cells = Array.from({ length: nx * ny }, () => []);
+  const T = [];   // по 12 чисел: x0 y0 z0 x1 y1 z1 x2 y2 z2, вершины a b c
   for (let t = 0; t < ix.count; t += 3) {
     const a = ix.getX(t), b = ix.getX(t + 1), c = ix.getX(t + 2);
-    const xs = [pa.getX(a), pa.getX(b), pa.getX(c)], ys = [pa.getY(a), pa.getY(b), pa.getY(c)], zs = [pa.getZ(a), pa.getZ(b), pa.getZ(c)];
-    if (Math.max(...xs) < box[0] || Math.min(...xs) > box[1] || Math.max(...ys) < box[2] || Math.min(...ys) > box[3] || Math.max(...zs) < box[4]) continue;
-    T.push([a, b, c, xs, ys, zs]);
+    const x0 = pa.getX(a), x1 = pa.getX(b), x2 = pa.getX(c), y0 = pa.getY(a), y1 = pa.getY(b), y2 = pa.getY(c);
+    const z0 = pa.getZ(a), z1 = pa.getZ(b), z2 = pa.getZ(c);
+    const lx = Math.min(x0, x1, x2), hx = Math.max(x0, x1, x2), ly = Math.min(y0, y1, y2), hy = Math.max(y0, y1, y2);
+    if (hx < box[0] || lx > box[1] || hy < box[2] || ly > box[3] || Math.max(z0, z1, z2) < box[4]) continue;
+    const k = T.length / 12;
+    T.push(x0, y0, z0, x1, y1, z1, x2, y2, z2, a, b, c);
+    const cx0 = Math.max(0, Math.floor((lx - box[0]) / C)), cx1 = Math.min(nx - 1, Math.floor((hx - box[0]) / C));
+    const cy0 = Math.max(0, Math.floor((ly - box[2]) / C)), cy1 = Math.min(ny - 1, Math.floor((hy - box[2]) / C));
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) cells[cy * nx + cx].push(k);
   }
   return (x, y, outP, outN) => {
-    let best = -Infinity, hit = null, w0 = 0, w1 = 0, w2 = 0;
-    for (const tr of T) {
-      const [, , , xs, ys, zs] = tr;
-      const d = (ys[1] - ys[2]) * (xs[0] - xs[2]) + (xs[2] - xs[1]) * (ys[0] - ys[2]);
+    const cx = Math.floor((x - box[0]) / C), cy = Math.floor((y - box[2]) / C);
+    if (cx < 0 || cy < 0 || cx >= nx || cy >= ny) return false;
+    let best = -Infinity, hit = -1, w0 = 0, w1 = 0, w2 = 0;
+    for (const k of cells[cy * nx + cx]) {
+      const o = k * 12, ax = T[o], ay = T[o + 1], bx = T[o + 3], by = T[o + 4], qx = T[o + 6], qy = T[o + 7];
+      const d = (by - qy) * (ax - qx) + (qx - bx) * (ay - qy);
       if (Math.abs(d) < 1e-14) continue;
-      const l0 = ((ys[1] - ys[2]) * (x - xs[2]) + (xs[2] - xs[1]) * (y - ys[2])) / d;
-      const l1 = ((ys[2] - ys[0]) * (x - xs[2]) + (xs[0] - xs[2]) * (y - ys[2])) / d;
+      const l0 = ((by - qy) * (x - qx) + (qx - bx) * (y - qy)) / d;
+      const l1 = ((qy - ay) * (x - qx) + (ax - qx) * (y - qy)) / d;
       const l2 = 1 - l0 - l1;
       if (l0 < -1e-6 || l1 < -1e-6 || l2 < -1e-6) continue;
-      const z = l0 * zs[0] + l1 * zs[1] + l2 * zs[2];
-      if (z > best) { best = z; hit = tr; w0 = l0; w1 = l1; w2 = l2; }
+      const z = l0 * T[o + 2] + l1 * T[o + 5] + l2 * T[o + 8];
+      if (z > best) { best = z; hit = o; w0 = l0; w1 = l1; w2 = l2; }
     }
-    if (!hit) return false;
+    if (hit < 0) return false;
     outP[0] = x; outP[1] = y; outP[2] = best;
-    const [a, b, c] = hit;
-    let nx = na.getX(a) * w0 + na.getX(b) * w1 + na.getX(c) * w2, ny = na.getY(a) * w0 + na.getY(b) * w1 + na.getY(c) * w2, nz = na.getZ(a) * w0 + na.getZ(b) * w1 + na.getZ(c) * w2;
-    const L = Math.hypot(nx, ny, nz) || 1;
-    outN[0] = nx / L; outN[1] = ny / L; outN[2] = nz / L;
+    const a = T[hit + 9], b = T[hit + 10], c = T[hit + 11];
+    const mx = na.getX(a) * w0 + na.getX(b) * w1 + na.getX(c) * w2, my = na.getY(a) * w0 + na.getY(b) * w1 + na.getY(c) * w2, mz = na.getZ(a) * w0 + na.getZ(b) * w1 + na.getZ(c) * w2;
+    const L = Math.hypot(mx, my, mz) || 1;
+    outN[0] = mx / L; outN[1] = my / L; outN[2] = mz / L;
     return true;
   };
 }
@@ -624,7 +635,8 @@ function browTexture(THREE, b, N) {
   if (typeof document === 'undefined') return null;
   const W = N, Hb = Math.max(16, N / 8), gap = Math.max(4, N / 64), Hl = Math.max(4, N / 64), H = Hb + gap + Hl;
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  const g = cv.getContext('2d');
+  // холст в памяти (не на видеокарте): штрихи и маска читаются обратно — без синхронного чтения из GPU
+  const g = cv.getContext('2d', { willReadFrequently: true });
   const B = 1 / BROW_MARGIN;
   // маска формы брови (альфа 0…1)
   const mask = new Float32Array(W * Hb);
@@ -909,11 +921,14 @@ export function facePainter(look) {
       for (const [[u], s] of eyes) blob(u + s * 4, 104.5, 7.5, 3.4, s * -0.35, lift(skin, 0.18), 0.2 * ct, 'source-over', 0.1);
     }
     // 3. тени век по стихии: основной тон по подвижному веку, второй — к внешнему углу, дымка по нижнему веку
+    // тон — режимом «цвет» (оттенок тени при яркости кожи: цветные, а не грязные тени), глубина — «умножением»
     if (E.shadow !== undefined) for (const [[u, v], s] of eyes) {
-      blob(u + s * 1.2, FACE_UV.eyeTop - 1.4, 9.5, 4.2, s * -0.18, E.shadow, E.shadowA ?? 0.4, 'multiply', 0.15);
-      if (E.shadow2 !== undefined) blob(u + s * 5.5, FACE_UV.eyeTop - 2.6, 6.5, 3.2, s * -0.5, E.shadow2, (E.shadowA ?? 0.4) * 0.55, 'multiply', 0.1);
+      const A = E.shadowA ?? 0.4;
+      blob(u + s * 1.2, FACE_UV.eyeTop - 1.4, 9.5, 4.2, s * -0.18, E.shadow, A * 0.45, 'multiply', 0.15);
+      blob(u + s * 1.6, FACE_UV.eyeTop - 1.6, 10.5, 4.8, s * -0.2, E.shadow, A * 1.1, 'color', 0.2);
+      if (E.shadow2 !== undefined) blob(u + s * 5.5, FACE_UV.eyeTop - 2.6, 6.5, 3.2, s * -0.5, E.shadow2, A * 0.8, 'color', 0.1);
       blob(u - s * 1.0, FACE_UV.eyeTop - 2.2, 4.0, 2.4, 0, lift(skin, 0.28), 0.18, 'source-over', 0.1);   // свет в центре века
-      if (E.lower) blob(u + s * 2.5, FACE_UV.eyeBot + 1.1, 6.5, 1.5, s * 0.12, E.shadow, E.lower, 'multiply', 0.1);
+      if (E.lower) { blob(u + s * 2.5, FACE_UV.eyeBot + 1.1, 6.5, 1.5, s * 0.12, E.shadow, E.lower, 'multiply', 0.1); blob(u + s * 2.5, FACE_UV.eyeBot + 1.2, 7, 1.8, s * 0.12, E.shadow, E.lower * 1.5, 'color', 0.1); }
     }
     // 4. румянец на «яблочках» щёк
     if (Sk.blush !== undefined) for (const [[u], s] of eyes) blob(u + s * 3, 110, 13, 8, s * -0.25, Sk.blush, Sk.blushA ?? 0.18, 'source-over', 0.05);
@@ -1233,9 +1248,9 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     // лимбальное кольцо — тёмный ободок по краю радужки
     diffuseColor.rgb *= 1.0 - 0.6 * smoothstep( 0.8, 0.97, irR ) * ( 1.0 - smoothstep( 1.0, 1.12, irR ) );
     // глубина: тень верхнего века и уголков, белок к уголкам теплее; каустика в нижней части радужки
-    float lidSh = smoothstep( 0.0, 0.3, vHeroEyeL.y ) * 0.85;
+    float lidSh = smoothstep( 0.0, 0.3, vHeroEyeL.y ) * 0.75;
     float cornerSh = smoothstep( 0.55, 0.95, abs( vHeroEyeL.x ) ) * ( 1.0 - heroIrM );
-    diffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.74, 0.68, 0.66 ), lidSh ) * mix( vec3( 1.0 ), vec3( 0.86, 0.76, 0.74 ), cornerSh );
+    diffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.76, 0.7, 0.68 ), lidSh ) * mix( vec3( 1.0 ), vec3( 0.86, 0.76, 0.74 ), cornerSh );
     float caus = heroIrM * smoothstep( 0.02, -0.34, vHeroEyeP.y ) * smoothstep( 0.3, 0.62, irR );
     diffuseColor.rgb *= 1.0 + 0.75 * caus;
   }` : '#include <map_fragment>\n  vec3 heroEyeTex = diffuseColor.rgb;\n  float heroIrM = 1.0;');
