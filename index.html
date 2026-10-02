@@ -65,6 +65,27 @@
   }
   </script>
   <script>
+    // [LOAD] Модель выбранного героя и библиотека клипов качаются с первых миллисекунд страницы, параллельно с кодом
+    // игры: modules/heroModel.js (fetchBytes) берёт готовые байты из window.__aoPrefetch (url → Promise<ArrayBuffer>).
+    // Соответствие «герой → файл» повторяет HEROES в modules/heroModel.js; разошлось — просто лишняя загрузка,
+    // герой грузится как раньше. Сбой загрузки здесь ничего не ломает: запись удаляется, heroModel качает сам.
+    (function () {
+      try {
+        var files = { ashen: 'knight.glb', elf: 'ranger.glb', dark: 'ranger.glb', ranger: 'ranger.glb', archmage: 'wizard.glb' };
+        var hero = 'ashen';
+        try { var s = JSON.parse(localStorage.getItem('ashen-oath.settings.v1') || 'null'); if (s && files[s.hero]) hero = s.hero; } catch (e) { /* нет настроек */ }
+        var pre = {};
+        [files[hero], 'anims_kaykit.glb'].forEach(function (f) {
+          var u = new URL('assets/heroes/' + f, document.baseURI).href;
+          var p = fetch(u).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); });
+          p.catch(function () { if (pre[u] === p) delete pre[u]; });
+          pre[u] = p;
+        });
+        window.__aoPrefetch = pre;
+      } catch (e) { /* без предзагрузки */ }
+    })();
+  </script>
+  <script>
     // Загрузчик-страховка: показывает понятную ошибку вместо чёрного экрана.
     // [OFFLINE] и настоящий прогресс загрузки: байты и файлы кода, подпись — что именно грузится.
     (function () {
@@ -72,7 +93,7 @@
       var timedOut = false;
       var domReady = false;
       // Объём стартовой загрузки (статические импорты main.js + стили). Обновляет tools/sw_manifest.mjs.
-      var BOOT = /*AO_BOOT*/{"bytes":3512766,"files":56,"big":["vendor/npm/three@0.185.1/build/three.core.min.js","vendor/npm/three@0.185.1/build/three.module.min.js","modules/world.js"]}/*/AO_BOOT*/;
+      var BOOT = /*AO_BOOT*/{"bytes":3535640,"files":58,"big":["vendor/npm/three@0.185.1/build/three.core.min.js","vendor/npm/three@0.185.1/build/three.module.min.js","modules/world.js"]}/*/AO_BOOT*/;
       var prog = { bytes: 0, files: 0, pct: 0, label: 'Код игры', lastT: Date.now(), startT: Date.now(), done: {} };
       var seen = {};
       function el(id) { return document.getElementById(id); }
