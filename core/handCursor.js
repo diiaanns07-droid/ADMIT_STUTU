@@ -110,13 +110,13 @@ export function pinchRatio(hand, aspect = 4 / 3) {
 
 // ─────────────────────────────────────────────────────────── ядро
 // step(f) каждый кадр. f: { t (мс), viewport {w,h}, hands (vision.getHands()), pose, targets [{id,x0,y0,x1,y1,disabled}],
-//   active (экран разрешает курсор), pinch (разрешена щепоть) }.
+//   active (экран разрешает курсор), pinch (разрешена щепоть), dwellMs (удержание на этом экране, иначе — из настроек) }.
 // Возвращает { visible, x, y, targetId, progress 0..1, disabled, pinched, click: id|null, how: 'dwell'|'pinch'|null }.
 export function createCursorCore(opts = {}) {
   const cfg = { ...CURSOR_DEFAULTS, ...opts };
   const st = {
     lastT: null, seenAt: -1e9, visible: false, x: 0, y: 0, fx: null, dx: 0, dy: 0,
-    box: null, targetId: null, hoverSince: 0, dwell: 0, lockedId: null, cooldownUntil: -1e9,
+    box: null, targetId: null, hoverSince: 0, dwell: 0, dwellMs: 0, lockedId: null, cooldownUntil: -1e9,
     pinched: false, pinchAt: -1e9, openAt: -1e9, hist: [], clicks: 0, lastHow: null,
   };
   const out = { visible: false, x: 0, y: 0, targetId: null, progress: 0, disabled: false, pinched: false, click: null, how: null };
@@ -189,9 +189,10 @@ export function createCursorCore(opts = {}) {
 
     // удержание: только на живой цели, не сразу после клика и не на кнопке, которую уже нажали (уведите кольцо)
     const live = tg && !tg.disabled && st.lockedId !== id && t >= st.cooldownUntil;
+    st.dwellMs = fin(f.dwellMs) && f.dwellMs > 0 ? f.dwellMs : cfg.dwellMs;
     if (live && seen) st.dwell += dt * 1000;
     else if (!live) st.dwell = 0;
-    if (live && st.dwell >= cfg.dwellMs) fire(id, t, 'dwell');
+    if (live && st.dwell >= st.dwellMs) fire(id, t, 'dwell');
     return fill(tg);
   }
 
@@ -218,7 +219,7 @@ export function createCursorCore(opts = {}) {
     out.visible = st.visible; out.x = st.x; out.y = st.y;
     out.targetId = st.visible ? st.targetId : null;
     out.disabled = !!(tg && tg.disabled);
-    out.progress = st.visible && st.targetId !== null ? clamp(st.dwell / cfg.dwellMs, 0, 1) : 0;
+    out.progress = st.visible && st.targetId !== null ? clamp(st.dwell / (st.dwellMs || cfg.dwellMs), 0, 1) : 0;
     out.pinched = st.pinched;
     out.locked = st.lockedId !== null && st.lockedId === st.targetId;
     return out;
@@ -353,14 +354,22 @@ export function createHandCursor(opts = {}) {
   // прокрутка у края: кольцо у нижней (верхней) кромки прокручиваемой панели — панель едет (меню на низком экране)
   const EDGE_PX = 70, SCROLL_PXS = 520;
   let scrollEl = null, scrollAt = -1e9, lastScrollT = 0;
-  function scrollerAt(x, y) {
-    let el = doc.elementFromPoint(x, y);
+  function scrollable(el) {
     while (el && el !== doc.body && el !== doc.documentElement) {
-      if (el.scrollHeight > el.clientHeight + 4) {
+      if (el.scrollHeight > el.clientHeight + 4 && !el.closest('.ao-hc')) {
         const oy = win.getComputedStyle(el).overflowY;
         if (oy === 'auto' || oy === 'scroll') return el;
       }
       el = el.parentElement;
+    }
+    return null;
+  }
+  // кольцо у края экрана может стоять ниже (выше) самой панели — пробуем точки ближе к середине
+  function scrollerAt(x, y) {
+    const dir = y > win.innerHeight / 2 ? -1 : 1;
+    for (const d of [0, 40, 80, 130]) {
+      const el = scrollable(doc.elementFromPoint(x, clamp(y + dir * d, 1, win.innerHeight - 1)));
+      if (el) return el;
     }
     const se = doc.scrollingElement;
     return se && se.scrollHeight > se.clientHeight + 4 ? se : null;
@@ -379,11 +388,11 @@ export function createHandCursor(opts = {}) {
     if (k) { scrollEl.scrollTop += clamp(k, -1, 1) * SCROLL_PXS * dt; scanAt = -1e9; }
   }
 
-  // f: { hands, pose, active, pinch }
+  // f: { hands, pose, active, pinch, dwellMs }
   function update(now, f = {}) {
     const active = !!f.active;
     if (active && now - scanAt > 160) { scanAt = now; scan(); }
-    const o = core.step({ t: now, viewport: { w: win.innerWidth, h: win.innerHeight }, hands: f.hands, pose: f.pose, targets: active ? targets : [], active, pinch: f.pinch !== false });
+    const o = core.step({ t: now, viewport: { w: win.innerWidth, h: win.innerHeight }, hands: f.hands, pose: f.pose, targets: active ? targets : [], active, pinch: f.pinch !== false, dwellMs: f.dwellMs });
     const el = o.visible && o.targetId !== null ? els.get(o.targetId) || null : null;
     setHover(el && !o.disabled ? el : null);
     if (o.click !== null) {

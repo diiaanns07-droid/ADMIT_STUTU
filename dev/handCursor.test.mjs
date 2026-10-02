@@ -161,6 +161,14 @@ test('экран без курсора (бой) — кольца нет, кли�
   ok(!r.o.visible, 'кисть пропала — кольцо погасло');
 });
 
+test('удержание дольше на экранах с упражнениями (dwellMs кадра)', () => {
+  const core = createCursorCore();
+  const frames = rep(40, () => at(200, 330));
+  let t = 0, clickAt = null;
+  for (const h of frames) { t += 33; const o = core.step({ t, viewport: VIEW, hands: h, pose: POSE, targets: TARGETS, active: true, dwellMs: 1200 }); if (o.click !== null && clickAt === null) clickAt = t; }
+  ok(clickAt !== null && clickAt > 1150 && clickAt < 1350, `клик на ${clickAt} мс`);
+});
+
 test('сглаживание: рывок кисти через экран — кольцо догоняет быстро (без вязкости)', () => {
   const core = createCursorCore();
   let r = run(core, rep(10, () => at(200, 200)));

@@ -910,8 +910,10 @@ const trackingHud = createTrackingHud({ canvas: overlay });
 // В меню камера включается сама, если разрешение на неё уже дано (окно запроса браузера не всплывает);
 // при первом запуске разрешение спрашивает «Играть» (Enter), дальше мышь не нужна.
 const CURSOR_ON = PERF_Q.get('cursor') !== '0';
-const CURSOR_SCREENS = new Set(['menu', 'paused', 'victory', 'defeat', 'oath', 'technique', 'error']);
-const CURSOR_NO_PINCH = new Set(['technique']);   // в тренажёре щепоть «OK» — упражнение, а не клик
+const CURSOR_SCREENS = new Set(['menu', 'paused', 'victory', 'defeat', 'oath', 'technique', 'training', 'error']);
+const CURSOR_NO_PINCH = new Set(['technique', 'training']);   // в тренажёре щепоть «OK» — упражнение, а не клик
+// там, где руки заняты упражнением, кнопка нажимается дольше — случайное движение её не заденет
+const CURSOR_DWELL = { technique: 1200, training: 1500 };
 let handCursor = null, cursorOut = null;
 const cursorCam = { granted: false, startP: null };
 if (CURSOR_ON) {
@@ -944,7 +946,7 @@ function cursorTick(now) {
   const active = !app.debug && !!vision && (CURSOR_SCREENS.has(app.screen) || book || tutDone);
   let hands = null, pose = null;
   if (active) { try { hands = vision.getHands(); pose = vision.getPose(); } catch (e) { hands = null; pose = null; } }
-  try { cursorOut = handCursor.update(now, { hands, pose, active, pinch: !CURSOR_NO_PINCH.has(app.screen) || book }); } catch (e) { console.warn('[W3-CURSOR]', e); handCursor = null; cursorOut = null; }
+  try { cursorOut = handCursor.update(now, { hands, pose, active, pinch: !CURSOR_NO_PINCH.has(app.screen) || book, dwellMs: book ? 0 : CURSOR_DWELL[app.screen] || 0 }); } catch (e) { console.warn('[W3-CURSOR]', e); handCursor = null; cursorOut = null; }
 }
 // [ТВИСТ «ОШИБКА»] свой слой поверх overlay: точки, которые надо исправить (getActiveHint) и условия тренажёра.
 // COACH_OVERLAY = false — выключить (например, если подсветку рисует сам трекинг-HUD).
