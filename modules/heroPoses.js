@@ -35,8 +35,8 @@ const EASE = {
   io: smooth01,
   out: (x) => 1 - (1 - x) * (1 - x) * (1 - x),
   in: (x) => x * x,
-  // рывок с перелётом (удар, раскрытие): выходит за цель на ~6% и возвращается
-  back: (x) => { const c = 1.6, t = x - 1; return 1 + (c + 1) * t * t * t + c * t * t; },
+  // удар: быстрый старт и мягкая остановка (пик скорости — 2/T: кисть не «телепортируется»)
+  out2: (x) => 1 - (1 - x) * (1 - x),
 };
 
 // ---------------------------------------------------------------- вектор позы
@@ -154,19 +154,19 @@ const POSES = {
   pray: pose({ hy: -0.015, sp: 0.05, ep: 0.26, L: { at: [-0.27, -0.46, 0.4], pole: P_ELB_DOWN, ...PRAY }, fL: { soft: 0.4, open: 0.6 },
     R: { at: [-0.27, -0.46, 0.4], pole: P_ELB_DOWN, ...PRAY }, fR: { soft: 0.4, open: 0.6 }, frown: 0.6, squint: 0.4, staff: [0.75, 1, 0.15] }),
   // «Врата бури»: руки разлетаются в стороны, грудь раскрыта, подбородок вверх
-  gate: pose({ staff: [0.65, 1, 0.05], hy: -0.03, sp: -0.05, cp: -0.16, ep: -0.12, flx: 0.05, frx: -0.05, leg: 1,
+  gate: pose({ staff: [0.65, 1, 0.05], hy: -0.03, sp: -0.05, cp: -0.16, ep: -0.3, flx: 0.05, frx: -0.05, leg: 1,
     L: { at: [0.97, 0.14, 0.2], pole: [0, -0.6, -1], ...PALM_SIDE }, fL: OPEN, R: { at: [0.97, 0.14, 0.2], pole: [0, -0.6, -1], ...PALM_SIDE }, fR: OPEN, brow: 0.55, smile: 0.1 }),
   // «Столп небес»: правая — в небо, левая — к земле
-  pillar: pose({ staff: [0, 1, 0.06], hy: -0.04, sp: -0.04, cp: -0.12, cr: 0.06, ep: -0.22, er: 0.04, leg: 1,
+  pillar: pose({ staff: [0, 1, 0.06], hy: -0.04, sp: -0.04, cp: -0.12, cr: 0.06, ep: -0.4, er: 0.04, leg: 1,
     R: { at: [0.06, 0.98, 0.12], pole: [1, 0, -0.4], dir: [0.05, 1, 0.08], thumb: [-1, 0, -0.3] }, fR: OPEN,
     L: { at: [0.26, -0.9, 0.24], pole: [0.4, 0.2, -1], dir: [0.15, -0.8, 0.55], thumb: [-1, 0, 0.1] }, fL: OPEN, brow: 0.5 }),
   // «Небесный суд»: руки к небу, грудь выгнута; приговор — ладони вниз-вперёд
   skyPrep: pose({ staff: [0, 1, 0.2], hy: -0.03, sp: 0.04, ep: 0.12, L: { at: [0.06, -0.38, 0.46], pole: P_ELB_DOWN, ...PALM_UP }, fL: SOFT, R: { at: [0.06, -0.38, 0.46], pole: P_ELB_DOWN, ...PALM_UP }, fR: SOFT, frown: 0.3 }),
-  sky: pose({ staff: [0.05, 1, 0.05], hz: 0.03, sp: -0.08, cp: -0.2, ep: -0.38, L: { at: [0.34, 0.92, 0.16], pole: [1, 0, -0.3], ...PALM_SKY }, fL: OPEN, R: { at: [0.34, 0.92, 0.16], pole: [1, 0, -0.3], ...PALM_SKY }, fR: OPEN, brow: 0.6, smile: 0.25 }),
+  sky: pose({ staff: [0.05, 1, 0.05], hz: 0.03, sp: -0.08, cp: -0.2, ep: -0.6, L: { at: [0.34, 0.92, 0.16], pole: [1, 0, -0.3], ...PALM_SKY }, fL: OPEN, R: { at: [0.34, 0.92, 0.16], pole: [1, 0, -0.3], ...PALM_SKY }, fR: OPEN, brow: 0.6, smile: 0.25 }),
   verdict: pose({ staff: [0, 0.35, 1], hy: -0.06, hz: 0.06, sp: 0.16, cp: 0.08, ep: 0.05, flz: 0.1, leg: 1, L: { at: [0.16, 0.0, 0.96], pole: P_ELB_DOWN, ...PALM_DOWN }, fL: OPEN,
     R: { at: [0.16, 0.0, 0.96], pole: P_ELB_DOWN, ...PALM_DOWN }, fR: OPEN, frown: 0.6, squint: 0.2 }),
   // поражение: на колено, корпус склонён, рука на колене
-  kneel: pose({ staff: [0.05, 1, 0.25], hy: -0.42, hz: -0.04, sp: 0.32, cp: 0.12, ep: 0.42, er: 0.06, flz: 0.34, fly: 0.0, frz: -0.38, fry: 0.06, frp: 0.9, leg: 1,
+  kneel: pose({ staff: [0.05, 1, 0.25], hy: -0.42, hz: -0.04, sp: 0.32, cp: 0.12, ep: 0.78, er: 0.06, flz: 0.34, fly: 0.0, frz: -0.38, fry: 0.06, frp: 0.9, leg: 1,
     L: { at: [0.02, -0.66, 0.58], pole: [1, -0.3, 0.2], dir: [0, -0.7, 0.7], thumb: [-1, 0, 0] }, fL: SOFT,
     R: { at: [0.28, -0.98, 0.18], pole: [0.6, 0.3, -1], dir: [0.1, -1, 0.3], thumb: [0, 0, 1] }, fR: SOFT, pain: 0.55, squint: 0.4 }),
   stagger: pose({ staff: [0.15, 1, 0], hz: -0.06, sp: -0.12, cp: -0.1, ep: -0.14, L: { at: [0.34, -0.55, 0.3], pole: P_ELB_OUT, dir: [0.2, -0.6, 0.8], thumb: [0, 0.2, 1] }, fL: SOFT,
@@ -177,8 +177,8 @@ const POSES = {
 function victoryPoses(kind) {
   const bow = kind === 'bow';
   const raise = bow
-    ? pose({ sp: -0.05, cp: -0.14, ep: -0.24, er: 0.05, L: { at: [0.18, 0.96, 0.14], pole: [1, 0, -0.3], dir: [0, 1, 0.1], thumb: [0, 0.2, 1] }, fL: FIST, R: { at: [0.28, -0.5, 0.42], pole: P_ELB_OUT, dir: [0, 0.4, 1], thumb: [0, 1, 0] }, fR: FIST, smile: 1, brow: 0.6 })
-    : pose({ staff: [0.02, 1, 0.08], sp: -0.05, cp: -0.14, ep: -0.24, er: -0.05, R: { at: [0.16, 0.95, 0.14], pole: [1, 0, -0.3], dir: [-0.1, 0.2, 1], thumb: [0, 1, 0.1] }, fR: FIST, L: { at: [-0.12, -0.4, 0.4], pole: P_ELB_OUT, dir: [-0.6, 0.6, 0.4], thumb: [0, 1, 0] }, fL: FIST, smile: 1, brow: 0.6 });
+    ? pose({ sp: -0.05, cp: -0.14, ep: -0.4, er: 0.05, L: { at: [0.18, 0.96, 0.14], pole: [1, 0, -0.3], dir: [0, 1, 0.1], thumb: [0, 0.2, 1] }, fL: FIST, R: { at: [0.28, -0.5, 0.42], pole: P_ELB_OUT, dir: [0, 0.4, 1], thumb: [0, 1, 0] }, fR: FIST, smile: 1, brow: 0.3 })
+    : pose({ staff: [0.02, 1, 0.08], sp: -0.05, cp: -0.14, ep: -0.4, er: -0.05, R: { at: [0.16, 0.95, 0.14], pole: [1, 0, -0.3], dir: [-0.1, 0.2, 1], thumb: [0, 1, 0.1] }, fR: FIST, L: { at: [-0.12, -0.4, 0.4], pole: P_ELB_OUT, dir: [-0.6, 0.6, 0.4], thumb: [0, 1, 0] }, fL: FIST, smile: 1, brow: 0.3 });
   const proud = bow
     ? pose({ hx: 0.03, hr: 0.05, cr: -0.04, sp: -0.03, ep: -0.1, er: -0.06, flz: 0.06, flyw: -0.25, leg: 1, L: { at: [0.16, -0.18, 0.32], pole: [0.5, -1, 0.1], dir: [-0.45, 0.1, 1], thumb: [0.05, 1, 0.1] }, fL: FIST, R: HIP_R, fR: SOFT, smile: 0.8, brow: 0.25 })
     : pose({ staff: [0.08, 1, 0.12], sp: -0.03, ep: -0.1, R: { at: [0.18, -0.48, 0.42], pole: P_ELB_OUT, dir: [-0.1, -0.15, 1], thumb: [0, 1, 0.1] }, fR: FIST, L: { at: [-0.18, -0.36, 0.34], pole: P_ELB_OUT, dir: [-0.7, 0.55, 0.4], thumb: [0, 1, 0] }, fL: FIST, smile: 0.8, brow: 0.25 });
@@ -233,14 +233,14 @@ function signatureBase(id, female) {
 function signatureGesture(id, base) {
   const P = (d) => { const v = new Float32Array(base); const add = pose(d); for (let i = 0; i < BODY_END; i++) v[i] += add[i]; for (const k of ['SMILE', 'BROW', 'FROWN']) v[I[k]] = add[I[k]] || v[I[k]]; for (const sb of [[AL, 'L'], [AR, 'R']]) if (d[sb[1]]) v.set(add.subarray(sb[0], sb[0] + ARM.length), sb[0]); if (d.fL) v.set(add.subarray(FL, FL + FING.length), FL); if (d.fR) v.set(add.subarray(FR, FR + FING.length), FR); if (d.staff) for (const k of STAFF_I) v[k] = add[k]; return v; };
   switch (id) {
-    case 'ashen': { const up = P({ staff: [0.02, 1, 0.06], cp: -0.1, ep: -0.15, R: { at: [0.12, 0.92, 0.2], pole: [1, 0, -0.3], dir: [-0.1, 0.2, 1], thumb: [0, 1, 0.1] }, fR: FIST, L: { at: [-0.15, -0.38, 0.38], pole: P_ELB_OUT, dir: [-0.7, 0.55, 0.4], thumb: [0, 1, 0] }, fL: FIST, smile: 0.3, brow: 0.4 });
+    case 'ashen': { const up = P({ staff: [0.02, 1, 0.06], cp: -0.1, ep: -0.28, R: { at: [0.12, 0.92, 0.2], pole: [1, 0, -0.3], dir: [-0.1, 0.2, 1], thumb: [0, 1, 0.1] }, fR: FIST, L: { at: [-0.15, -0.38, 0.38], pole: P_ELB_OUT, dir: [-0.7, 0.55, 0.4], thumb: [0, 1, 0] }, fL: FIST, smile: 0.3, brow: 0.4 });
       return [[0, base], [0.45, up, 'out'], [1.6, up], [2.3, base, 'io']]; }
-    case 'elf': { const tilt = P({ er: 0.12, ep: 0.1, smile: 0.9, L: { at: [0.16, 0.0, 0.34], pole: [0.5, -1, 0.1], dir: [-0.35, 0.25, 1], thumb: [0.15, 1, 0.05] }, fL: FIST });
+    case 'elf': { const tilt = P({ er: 0.15, ep: -0.03, smile: 0.9, L: { at: [0.16, 0.0, 0.34], pole: [0.5, -1, 0.1], dir: [-0.35, 0.25, 1], thumb: [0.15, 1, 0.05] }, fL: FIST });
       return [[0, base], [0.6, tilt, 'io'], [1.9, tilt], [2.6, base, 'io']]; }
     case 'dark': { const raise = P({ ep: -0.06, L: { at: [-0.02, 0.05, 0.7], pole: P_ELB_DOWN, ...PALM_UP }, fL: CLAW, brow: 0.2, smile: 0.4 });
       return [[0, base], [0.55, raise, 'out'], [1.7, raise], [2.4, base, 'io']]; }
-    case 'archmage': { const flare = P({ cp: -0.12, ep: -0.2, L: { at: [0.18, 0.62, 0.62], pole: P_ELB_DOWN, dir: [-0.1, 0.6, 0.8], thumb: [1, 0.3, 0] }, fL: OPEN, brow: 0.5 });
-      return [[0, base], [0.35, flare, 'back'], [1.4, flare], [2.1, base, 'io']]; }
+    case 'archmage': { const flare = P({ cp: -0.12, ep: -0.32, L: { at: [0.18, 0.62, 0.62], pole: P_ELB_DOWN, dir: [-0.1, 0.6, 0.8], thumb: [1, 0.3, 0] }, fL: OPEN, brow: 0.5 });
+      return [[0, base], [0.4, flare, 'out2'], [1.4, flare], [2.1, base, 'io']]; }
     default: return null;
   }
 }
@@ -292,15 +292,15 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     st.a = null; st.fade = 0; st.fadeDur = exit;
   }
   const ACTIONS = {
-    shield: { id: 'shield', enter: 0.12, exit: 0.2, keys: [[0, POSES.shieldPrep], [0.07, POSES.shieldPrep], [0.22, POSES.shield, 'back']], hold: true,
+    shield: { id: 'shield', enter: 0.12, exit: 0.2, keys: [[0, POSES.shieldPrep], [0.07, POSES.shieldPrep], [0.27, POSES.shield, 'out2']], hold: true,
       live(t, c, v) {
         // удержание: ладонь чуть дышит, отдача от удара по щиту — толчок назад
         const b = st.blockK;
         v[AL + 3] -= 0.12 * b; v[I.HZ] -= 0.04 * b; v[I.CP] -= 0.08 * b; v[I.EP] -= 0.06 * b;
         v[AL + 2] += 0.012 * Math.sin(t * 2.1);
       } },
-    ok: { id: 'ok', enter: 0.1, exit: 0.2, dur: 0.46, keys: [[0, POSES.okPrep], [0.07, POSES.okPrep], [0.15, POSES.okStrike, 'back'], [0.34, POSES.okStrike], [0.46, POSES.okStrike]] },
-    burst: { id: 'burst', enter: 0.08, exit: 0.25, dur: 0.95, keys: [[0, POSES.burstWind], [0.16, POSES.burstWind, 'in'], [0.28, POSES.burstOpen, 'back'], [0.7, POSES.burstOpen], [0.95, POSES.burstOpen]] },
+    ok: { id: 'ok', enter: 0.16, exit: 0.2, dur: 0.5, keys: [[0, POSES.okPrep], [0.1, POSES.okPrep], [0.22, POSES.okStrike, 'out2'], [0.4, POSES.okStrike], [0.5, POSES.okStrike]] },
+    burst: { id: 'burst', enter: 0.18, exit: 0.25, dur: 0.95, keys: [[0, POSES.burstWind], [0.16, POSES.burstWind, 'io'], [0.38, POSES.burstOpen, 'out2'], [0.75, POSES.burstOpen], [0.95, POSES.burstOpen]] },
     conjure: { id: 'conjure', enter: 0.16, exit: 0.2, keys: [[0, POSES.sculpt]], hold: true,
       live(t, c, v) {
         // лепка: кисти обходят сферу — одна сверху-слева, другая снизу-справа; сфера растёт с зарядом
@@ -315,7 +315,7 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
         v[I.SY] = 0.05 * Math.sin(a * 0.5);
         v[I.FROWN] = 0.4 + 0.3 * ch;
       } },
-    sphereThrow: { id: 'sphereThrow', enter: 0.08, exit: 0.25, dur: 0.6, keys: [[0, POSES.sculpt], [0.12, POSES.sphereThrow, 'back'], [0.45, POSES.sphereThrow], [0.6, POSES.sphereThrow]] },
+    sphereThrow: { id: 'sphereThrow', enter: 0.12, exit: 0.25, dur: 0.6, keys: [[0, POSES.sculpt], [0.2, POSES.sphereThrow, 'out2'], [0.45, POSES.sphereThrow], [0.6, POSES.sphereThrow]] },
     pray: { id: 'pray', enter: 0.16, exit: 0.15, keys: [[0, POSES.pray]], hold: true,
       live(t, c, v) {
         // заряд дрожит в ладонях: дрожь растёт с зарядом, голова склоняется ниже
@@ -324,8 +324,8 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
         v[AR + 2] += tr * Math.sin(t * 37 + 0.7);
         v[I.EP] += 0.08 * ch; v[I.HY] -= 0.015 * ch; v[I.SQUINT] = 0.3 + 0.4 * ch;
       } },
-    gate: { id: 'gate', enter: 0.06, exit: 0.3, dur: 1.15, keys: [[0, POSES.pray], [0.14, POSES.gate, 'back'], [0.85, POSES.gate], [1.15, POSES.gate]] },
-    pillar: { id: 'pillar', enter: 0.06, exit: 0.32, dur: 1.2, keys: [[0, POSES.pray], [0.16, POSES.pillar, 'back'], [0.9, POSES.pillar], [1.2, POSES.pillar]] },
+    gate: { id: 'gate', enter: 0.12, exit: 0.3, dur: 1.15, keys: [[0, POSES.pray], [0.24, POSES.gate, 'out2'], [0.85, POSES.gate], [1.15, POSES.gate]] },
+    pillar: { id: 'pillar', enter: 0.12, exit: 0.32, dur: 1.2, keys: [[0, POSES.pray], [0.3, POSES.pillar, 'out2'], [0.9, POSES.pillar], [1.2, POSES.pillar]] },
     // «Небесный суд»: время — по сцене боя (snap.ultimate.t), не по dt (dt в сцене замедлен)
     ultimate: { id: 'ultimate', enter: 0.2, exit: 0.4, hold: true,
       live(t, c, v) {
@@ -333,7 +333,7 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
         const ut = u ? u.t : t, sa = u && fin(u.strikeAt) ? u.strikeAt : 2.3;
         if (ut < 0.35) mix(v, POSES.skyPrep, POSES.sky, EASE.io(ut / 0.35) * 0.3);
         else if (ut < sa - 0.12) mix(v, POSES.skyPrep, POSES.sky, 0.3 + 0.7 * EASE.out((ut - 0.35) / 0.5));
-        else if (ut < sa + 0.08) mix(v, POSES.sky, POSES.verdict, EASE.back(clamp01((ut - sa + 0.12) / 0.2)));
+        else if (ut < sa + 0.14) mix(v, POSES.sky, POSES.verdict, EASE.out2(clamp01((ut - sa + 0.12) / 0.26)));
         else v.set(POSES.verdict);
         // руки к небу «тянутся»: лёгкий подъём на вдохе
         v[AL + 2] += 0.02 * Math.sin(ut * 3); v[AR + 2] += 0.02 * Math.sin(ut * 3 + 0.4);
@@ -405,7 +405,7 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
         case 'player_cast':
           if (d.ability === 'bolt') {
             // залп: повтор жеста — с удара (без замаха), если прошлый ещё идёт
-            if (st.a && st.a.def === ACTIONS.ok && st.at < 0.46) st.at = 0.07; else start(ACTIONS.ok);
+            if (st.a && st.a.def === ACTIONS.ok && st.at < 0.5) st.at = Math.min(st.at, 0.1); else start(ACTIONS.ok);
             st.exert = Math.min(1, st.exert + 0.06);
           } else if (d.ability === 'throw') { start(ACTIONS.sphereThrow); st.exert = Math.min(1, st.exert + 0.3); recognized(); }
           else if (d.ability === 'spark' || d.ability === 'slash' || d.ability === 'rune') recognized();
@@ -483,7 +483,7 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     idle[I.FLZ] = 0.07 * freeL * f; idle[I.FLX] = -0.01 * freeL; idle[I.FLYW] = 0.32 * freeL * f; idle[I.FLY] = lift * (st.wsTo < 0 ? 1 : 0.3);
     idle[I.FRZ] = 0.07 * freeR * f; idle[I.FRX] = 0.01 * freeR; idle[I.FRYW] = -0.32 * freeR * f; idle[I.FRY] = lift * (st.wsTo > 0 ? 1 : 0.3);
     // рука на поясе у героинь (в покое дольше 1,2 с; не когда руки ведёт зеркало игрока)
-    st.hipT = still > 0.9 && !c.menu && st.female && c.mirrorW < 0.3 && c.bowW < 0.1 && c.spellW < 0.1 ? (st.hipT || 0) + dt : 0;
+    st.hipT = still > 0.9 && !c.menu && !st.a && out[I.ACT] < 0.05 && st.female && c.mirrorW < 0.3 && c.bowW < 0.1 && c.spellW < 0.1 ? (st.hipT || 0) + dt : 0;
     const hip = smooth01(((st.hipT || 0) - 1.2) / 0.8);
     if (hip > 0) {
       const side = c.staffR ? AL : (st.ws >= 0 ? AR : AL);
@@ -548,9 +548,13 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     const ia = 1 - clamp01(out[I.ACT]);
     for (let i = 0; i < BODY_END; i++) out[i] += idle[i] * ia;
     // руки покоя (рука на поясе) — там, где действие руку не держит
+    // смешивание по весам: доля покоя в цели — wi / (wa + wi), вес — сумма (непрерывно при любом угасании)
     for (const base of [AL, AR]) {
-      const wi = idle[base] * ia;
-      if (wi > out[base]) { const k = out[base] > 1e-3 ? 0.5 : 1; for (let j = 0; j < ARM.length; j++) out[base + j] = out[base + j] + (idle[base + j] - out[base + j]) * k; out[base] = wi; }
+      const wa = out[base], wi = idle[base] * ia * (1 - clamp01(wa));
+      if (wi < 1e-3) continue;
+      if (wa < 1e-3) for (let j = 1; j < ARM.length; j++) out[base + j] = idle[base + j];
+      else { const k = wi / (wa + wi); for (let j = 1; j < ARM.length; j++) out[base + j] += (idle[base + j] - out[base + j]) * k; }
+      out[base] = wa + wi;
     }
     for (let j = 0; j < FING.length; j++) { out[FL + j] += idle[FL + j] * ia; out[FR + j] += idle[FR + j] * ia; }
     out[I.LEG] = Math.max(out[I.LEG], idle[I.LEG] * ia);
@@ -622,7 +626,8 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     rot(B.neck, out[I.NP] + out[I.EP] * 0.35, out[I.NY] + out[I.EY] * 0.4, 0);
     // взгляд: Регент (в бою) или камера (витрина) — голова довернётся, остальное — шея
     look(c);
-    rot(B.head, out[I.EP] * 0.65 + st.lookP, out[I.EY] * 0.6 + st.lookY, out[I.ER] + st.lookR);
+    // голова держит взгляд: наклон корпуса вперёд/назад гасится на 60% (поза, где голова склонена, задаёт ep сама)
+    rot(B.head, out[I.EP] * 0.65 + st.lookP - 0.6 * (out[I.SP] + out[I.CP]), out[I.EY] * 0.6 + st.lookY, out[I.ER] + st.lookR);
     // плечи: подъём (вздрагивание, торжество) и дыхание
     if (B.leftShoulder && out[I.SHL]) B.leftShoulder.rotateZ(out[I.SHL]);
     if (B.rightShoulder && out[I.SHR]) B.rightShoulder.rotateZ(-out[I.SHR]);
@@ -878,7 +883,7 @@ export function rigFace(THREE, vrm, { mouth = true } = {}) {
   const OFF = {
     browIn: { brow: [0, 0.0024, 0.0004], frown: [-0.0011, -0.0016, 0.0004], pain: [-0.0006, 0.0026, 0], smile: [0, 0.0005, 0] },
     browOut: { brow: [0, 0.0018, 0], frown: [0, -0.0006, 0], pain: [0, -0.0009, 0], smile: [0, 0.0004, 0] },
-    mouth: { smile: [0.0007, 0.0024, -0.0008], frown: [-0.0005, -0.0003, 0], pain: [0.0011, -0.0014, -0.0002] },
+    mouth: { smile: [0.0009, 0.003, -0.001], frown: [-0.0005, -0.0003, 0], pain: [0.0011, -0.0014, -0.0002] },
   };
   const _d = new THREE.Vector3();
   let last = '';
