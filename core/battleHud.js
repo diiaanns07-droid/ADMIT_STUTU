@@ -1388,11 +1388,15 @@ export function createBattleHud({ canvas } = {}) {
     const big = age < 5 || holding || one;
     const base = clamp(H * (big ? 0.068 : 0.048), 24, big ? 66 : 46);
     const sc = rm ? 1 : (1 + 0.45 * (1 - kIn) * (1 - kIn)) * (holding ? 1 : 1 + 0.035 * Math.sin(t * 6.5));
-    const sz = Math.round(base * sc), cy = H * (big ? 0.31 : 0.24);
+    let sz = Math.round(base * sc);
+    const cy = H * (big ? 0.31 : 0.24);
     const title = U.debug ? 'НАЖМИ U — НЕБЕСНЫЙ СУД' : holding ? 'ДЕРЖИ!' : 'ПОДНИМИ ОБЕ РУКИ!';
     ctx.globalAlpha = kIn;
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
     ctx.font = `800 ${sz}px ${SANS}`;
+    // не шире 56 % кадра: по краям — панели жестов и камеры (узкие окна, режим презентации)
+    const tw = ctx.measureText(title).width, maxW = W * 0.56;
+    if (tw > maxW) { sz = Math.max(16, Math.floor(sz * maxW / tw)); ctx.font = `800 ${sz}px ${SANS}`; }
     // фигурка над надписью (по центру — не заходит на панели по краям); при удержании — кольцо прогресса вокруг неё
     const gs = base * 1.35, gx = W / 2, gy = cy - sz * 0.95 - gs * 0.62;
     if (!U.debug) {
