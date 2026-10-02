@@ -30,6 +30,7 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const clamp01 = (v) => clamp(v, 0, 1);
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 const smooth01 = (x) => { const t = clamp01(x); return t * t * (3 - 2 * t); };
+const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const EASE = {
   lin: (x) => x,
   io: smooth01,
@@ -86,6 +87,11 @@ function pose(d = {}) {
   return v;
 }
 const ZERO = (() => { const z = pose(); z[I.ACT] = 0; return z; })();
+// списки для циклов кадра — заранее (без литералов-массивов в каждом кадре)
+const ARM_BASES = Object.freeze([AL, AR]);
+const FINGER_SIDES = Object.freeze([Object.freeze([AL, FL, 'left']), Object.freeze([AR, FR, 'right'])]);
+const FACE_KEYS = Object.freeze(['smile', 'frown', 'brow', 'pain']);
+const rotXYZ = (b, x, y, z) => { if (!b) return; if (x) b.rotateX(x); if (y) b.rotateY(y); if (z) b.rotateZ(z); };
 const STAFF_I = [I.SDO, I.SDU, I.SDF];
 
 // Смешивание: корпус/лицо/пальцы — линейно; руки — линейно, но где у одной стороны вес 0, цели берутся
@@ -94,7 +100,7 @@ function mix(out, a, b, k) {
   if (k <= 0) { out.set(a); return out; }
   if (k >= 1) { out.set(b); return out; }
   for (let i = 0; i < N; i++) out[i] = a[i] + (b[i] - a[i]) * k;
-  for (const base of [AL, AR]) {
+  for (const base of ARM_BASES) {
     const wa = a[base], wb = b[base];
     if (wa < 1e-3 && wb >= 1e-3) for (let j = 1; j < 13; j++) out[base + j] = b[base + j];
     else if (wb < 1e-3 && wa >= 1e-3) for (let j = 1; j < 13; j++) out[base + j] = a[base + j];
@@ -269,6 +275,8 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     ult: null, victory: null, defeat: null, lastStatus: '',
   };
   let rig = null;
+  const _ew = { smile: 0, frown: 0, brow: 0, squint: 0, pain: 0 };
+  let rigArms = null, rigLegs = null;   // кости рук и ног — один раз на героя
 
   const legsOn = () => st.q !== 'low';
   const faceOn = () => st.q !== 'low';
@@ -549,7 +557,7 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     for (let i = 0; i < BODY_END; i++) out[i] += idle[i] * ia;
     // руки покоя (рука на поясе) — там, где действие руку не держит
     // смешивание по весам: доля покоя в цели — wi / (wa + wi), вес — сумма (непрерывно при любом угасании)
-    for (const base of [AL, AR]) {
+    for (const base of ARM_BASES) {
       const wa = out[base], wi = idle[base] * ia * (1 - clamp01(wa));
       if (wi < 1e-3) continue;
       if (wa < 1e-3) for (let j = 1; j < ARM.length; j++) out[base + j] = idle[base + j];
@@ -580,7 +588,7 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     const hipsMove = legW > 0.01 && B.hips && B.leftUpperLeg && B.rightUpperLeg && B.leftFoot && B.rightFoot;
     // стопы до сдвига таза: где их поставил клип
     if (hipsMove) {
-      const legs = [[B.leftUpperLeg, B.leftLowerLeg, B.leftFoot], [B.rightUpperLeg, B.rightLowerLeg, B.rightFoot]];
+      const legs = rigLegs;
       for (let i = 0; i < 2; i++) {
         const [u, l, f] = legs[i];
         u.updateWorldMatrix(true, false); l.updateWorldMatrix(false, false); f.updateWorldMatrix(false, false);
@@ -620,7 +628,7 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
       }
     }
     // корпус: позвоночник, грудь, шея, голова (локально — у нормализованных костей покой единичный)
-    const rot = (b, x, y, z) => { if (!b) return; if (x) b.rotateX(x); if (y) b.rotateY(y); if (z) b.rotateZ(z); };
+    const rot = rotXYZ;
     rot(B.spine, out[I.SP], out[I.SY], out[I.SR]);
     rot(B.upperChest || B.chest, out[I.CP], out[I.CY], out[I.CR]);
     rot(B.neck, out[I.NP] + out[I.EP] * 0.35, out[I.NY] + out[I.EY] * 0.4, 0);
@@ -638,11 +646,19 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     let yaw = 0, pitch = 0, roll = 0;
     const tgt = c.lookTarget;
     if (tgt && rig.bones.head && !c.menu) {
-      rig.bones.head.updateWorldMatrix(true, false);
-      getPos(rig.bones.head, _a);
+      // докрутка головы к Регенту: остаток между тем, куда голова уже смотрит (клип, грудь к цели), и целью
+      const hb = rig.bones.head;
+      hb.updateWorldMatrix(true, false);
+      getPos(hb, _a);
       _d.subVectors(tgt, _a).applyQuaternion(_qmi);
-      const hz = Math.hypot(_d.x, _d.z);
-      pitch = -clamp(Math.atan2(_d.y + 2.5, Math.max(1, hz)), -0.15, 0.32) * 0.6;   // Регент высокий — смотрим ему в лицо
+      _d.y += 2.2;                                                   // Регент высокий — смотрим ему в лицо
+      _u.setFromMatrixColumn(hb.matrixWorld, 2).normalize().applyQuaternion(_qmi);   // «вперёд» головы (покой — +z)
+      const hz = Math.max(0.8, Math.hypot(_d.x, _d.z));
+      yaw = clamp(wrapA(Math.atan2(_d.x, _d.z) - Math.atan2(_u.x, _u.z)), -0.6, 0.6) * 0.65;
+      pitch = -clamp(Math.atan2(_d.y, hz) - Math.asin(clamp(_u.y, -1, 1)), -0.15, 0.3) * 0.5;
+      // в каст-позе голова ведёт свою линию (печать, суд, лепка) — докрутка слабее
+      const k = 1 - 0.6 * clamp01(out[I.ACT]);
+      yaw *= k; pitch *= k;
     }
     if (c.menu && st.female) roll = 0.06 * (c.gaze > 0.5 ? 1 : 0.5) * (st.sig === 'dark' ? -1 : 1);
     const k = 1 - Math.exp(-4 * Math.max(1e-3, ctx0.dt));
@@ -656,11 +672,12 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     rig.vrm.scene.updateWorldMatrix(true, false);
     rig.vrm.scene.getWorldQuaternion(_qm);
     const staffR = !!c.staffR;
-    for (const [base, sgn, up, lo, hand, h] of [[AL, 1, B.leftUpperArm, B.leftLowerArm, B.leftHand, rig.hands && rig.hands.left], [AR, -1, B.rightUpperArm, B.rightLowerArm, B.rightHand, rig.hands && rig.hands.right]]) {
+    for (let ai = 0; ai < 2; ai++) {
+      const A = rigArms[ai], base = A.base, sgn = A.sgn, up = A.up, lo = A.lo, hand = A.hand, h = A.h;
       // лук в руке (поза лука heroModel) — руки его; зеркало игрока делит руку с позой
       let w = out[base] * (1 - clamp01(c.bowW) * (st.a && st.a.def === ACTIONS.signature && st.sig === 'elf' ? 0 : 1));
       if (w <= 1e-3 || !up || !lo || !hand) continue;
-      const side = base === AL ? 'L' : 'R';
+      const side = A.side;
       if (!armLen[side]) {
         up.updateWorldMatrix(true, false); lo.updateWorldMatrix(false, false); hand.updateWorldMatrix(false, false);
         armLen[side] = getPos(up, _a).distanceTo(getPos(lo, _b)) + _b.distanceTo(getPos(hand, _c));
@@ -699,7 +716,8 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
   // пальцы: пожелания действия поверх handWants (с посохом правая всегда в кулаке)
   const FMAP = { open: 'open', claw: 'claw', grip: 'grip', ok: 'ok', point: 'point', soft: 'relax' };
   function fingers(want, c) {
-    for (const [base, fb, side] of [[AL, FL, 'left'], [AR, FR, 'right']]) {
+    for (let fi = 0; fi < 2; fi++) {
+      const base = FINGER_SIDES[fi][0], fb = FINGER_SIDES[fi][1], side = FINGER_SIDES[fi][2];
       const w = clamp01(out[base]);
       if (w < 0.05) continue;
       if (side === 'right' && c.staffR) continue;
@@ -720,13 +738,12 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     const E = st.expr;
     const sm = smooth01(st.smileT / 0.35) * (st.smileT > 0 ? 1 : 0);
     const base = c.menu ? (st.female ? 0.3 : 0.12) : 0;
-    const want = {
-      smile: clamp01(Math.max(out[I.SMILE], base, 0.85 * sm) - 0.6 * st.hit),
-      frown: clamp01(out[I.FROWN] * (1 - sm) * (1 - st.hit)),
-      brow: clamp01(out[I.BROW] + 0.25 * sm),
-      squint: clamp01(Math.max(out[I.SQUINT], 0.2 * sm, st.hit > 0.55 ? 0.95 : 0)),
-      pain: clamp01(Math.max(out[I.PAIN], st.hit)),
-    };
+    const want = _ew;
+    want.smile = clamp01(Math.max(out[I.SMILE], base, 0.85 * sm) - 0.6 * st.hit);
+    want.frown = clamp01(out[I.FROWN] * (1 - sm) * (1 - st.hit));
+    want.brow = clamp01(out[I.BROW] + 0.25 * sm);
+    want.squint = clamp01(Math.max(out[I.SQUINT], 0.2 * sm, st.hit > 0.55 ? 0.95 : 0));
+    want.pain = clamp01(Math.max(out[I.PAIN], st.hit));
     const k = 1 - Math.exp(-dt / 0.09);
     for (const key in E) E[key] += (want[key] - E[key]) * (key === 'pain' || key === 'squint' ? Math.min(1, k * 1.8) : k);
     return E;
@@ -734,7 +751,15 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
 
   return {
     get version() { return POSES_VERSION; },
-    bind(r) { rig = r; armLen.L = 0; armLen.R = 0; st.victory = null; },
+    bind(r) {
+      rig = r; armLen.L = 0; armLen.R = 0; st.victory = null;
+      const B = r.bones;
+      rigArms = [
+        { base: AL, sgn: 1, side: 'L', up: B.leftUpperArm, lo: B.leftLowerArm, hand: B.leftHand, h: r.hands && r.hands.left },
+        { base: AR, sgn: -1, side: 'R', up: B.rightUpperArm, lo: B.rightLowerArm, hand: B.rightHand, h: r.hands && r.hands.right },
+      ];
+      rigLegs = [[B.leftUpperLeg, B.leftLowerLeg, B.leftFoot], [B.rightUpperLeg, B.rightLowerLeg, B.rightFoot]];
+    },
     unbind() { rig = null; st.a = null; },
     setHero(id, opts = {}) { st.hero = id; st.female = !!opts.female; st.stance = opts.stance || 'staff'; st.victory = null; if (st.sig) setSignature(id); },
     setQuality(q) { st.q = q === 'low' || q === 'high' ? q : 'medium'; },
@@ -886,18 +911,19 @@ export function rigFace(THREE, vrm, { mouth = true } = {}) {
     mouth: { smile: [0.0009, 0.003, -0.001], frown: [-0.0005, -0.0003, 0], pain: [0.0011, -0.0014, -0.0002] },
   };
   const _d = new THREE.Vector3();
-  let last = '';
+  const last = new Float32Array(4).fill(NaN);
   return {
     bones: parts.length,
     // E: { smile, frown, brow, pain } 0..1 — сдвиг костей лица от покоя
     update(E) {
-      const key = `${E.smile.toFixed(3)}|${E.frown.toFixed(3)}|${E.brow.toFixed(3)}|${E.pain.toFixed(3)}`;
-      if (key === last) return;
-      last = key;
+      // кости не трогаем, пока выражение стоит (сравнение с точностью 1e-3)
+      let same = true;
+      for (let i = 0; i < 4; i++) { const v = E[FACE_KEYS[i]] || 0; if (!(Math.abs(v - last[i]) < 1e-3)) { same = false; last[i] = v; } }
+      if (same) return;
       for (const p of parts) {
         const T = OFF[p.kind];
         _d.set(0, 0, 0);
-        for (const k of ['smile', 'frown', 'brow', 'pain']) { const o = T[k], w = E[k] || 0; if (o && w) { _d.x += o[0] * w * p.side; _d.y += o[1] * w; _d.z += o[2] * w; } }
+        for (let i = 0; i < 4; i++) { const k = FACE_KEYS[i], o = T[k], w = last[i]; if (o && w) { _d.x += o[0] * w * p.side; _d.y += o[1] * w; _d.z += o[2] * w; } }
         _d.applyMatrix3(p.lin);
         p.bone.position.copy(p.rest).add(_d);
       }

@@ -176,6 +176,14 @@ const finite = (H) => Object.values(H.B).every((b) => [b.quaternion.x, b.quatern
   assert.ok(!poses.claims({ type: 'player_slash', data: {} }) && !poses.claims({ type: 'sigil_cast', data: { sigil: 'clap' } }));
   assert.ok(poses.claimsHold('shield') && poses.claimsHold('conjure') && !poses.claimsHold('stun'));
 
+  // взгляд на Регента: цель слева-впереди — голова довёрнута к ней
+  {
+    const look = ctx({ lookTarget: new THREE.Vector3(6, 0, 6) });
+    for (let i = 0; i < 90; i++) frame(H, poses, 1 / 60, look);
+    H.B.head.updateWorldMatrix(true, false);
+    const f = new THREE.Vector3().setFromMatrixColumn(H.B.head.matrixWorld, 2).normalize();
+    assert.ok(f.x > 0.25, `голова к Регенту (${f.x.toFixed(2)})`);
+  }
   // поражение: на колено (таз ниже на ~0,4 м), стопы не проваливаются под пол
   const hip0 = wp(H.B.hips).y;
   for (let i = 0; i < 90; i++) frame(H, poses, 1 / 60, ctx({ status: 'defeat', P: { action: 'dead' } }));
