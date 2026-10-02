@@ -210,9 +210,13 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, h
   function setModelGhost(model, on) {
     if (on && !ghosted && model) {
       ghosted = [];
-      model.traverse((o) => { if ((o.isMesh || o.isSkinnedMesh) && o.material) { ghosted.push({ mesh: o, mat: o.material, cast: o.castShadow }); o.material = Array.isArray(o.material) ? o.material.map(() => ghostMat) : ghostMat; o.castShadow = false; } });
+      model.traverse((o) => {
+        if (!(o.isMesh || o.isSkinnedMesh) || !o.material) return;
+        if (o.userData.noGhost) { ghosted.push({ mesh: o, mat: o.material, cast: o.castShadow, vis: o.visible }); o.visible = false; return; }   // [W4-ЛИЦО] лента бровей — не в «призрак»
+        ghosted.push({ mesh: o, mat: o.material, cast: o.castShadow }); o.material = Array.isArray(o.material) ? o.material.map(() => ghostMat) : ghostMat; o.castShadow = false;
+      });
     } else if (!on && ghosted) {
-      for (const g of ghosted) { g.mesh.material = g.mat; g.mesh.castShadow = g.cast; }
+      for (const g of ghosted) { g.mesh.material = g.mat; g.mesh.castShadow = g.cast; if (g.vis !== undefined) g.mesh.visible = g.vis; }
       ghosted = null;
     }
   }

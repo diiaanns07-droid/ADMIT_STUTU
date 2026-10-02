@@ -742,8 +742,10 @@ function buildBrows(THREE, P, b, E, quality, home) {
   const p = [0, 0, 0], nn = [0, 0, 0];
   const cB = new THREE.Color(b.color ?? 0x3a2a20), cL = new THREE.Color(E.liner ?? 0x1a1010);
   const lin = [Math.min(1, cL.r / Math.max(1e-4, cB.r)), Math.min(1, cL.g / Math.max(1e-4, cB.g)), Math.min(1, cL.b / Math.max(1e-4, cB.b))];
-  // лента: centre(t) → [x, y], half(t) — полуширина, tan — направление; ряды поперёк → вершины на коже
-  function ribbon(side, NA, rows, centre, half, vMap, rgb, lift = 0.00032) {
+  // лента: centre(t) → [x, y], half(t) — полуширина, tan — направление; ряды поперёк → вершины на коже.
+  // eye — сфера глаза: точка, спроецированная внутрь яблока (у самых уголков контур века грубый), поднимается
+  // по коже, пока не выйдет на веко
+  function ribbon(side, NA, rows, centre, half, vMap, rgb, lift = 0.00032, eye = null) {
     const base = pos.length / 3;
     for (let i = 0; i <= NA; i++) {
       const t = i / NA, [cx, cy] = centre(t), [ax, ay] = centre(Math.min(1, t + 0.01)), [bx, by] = centre(Math.max(0, t - 0.01));
@@ -751,7 +753,10 @@ function buildBrows(THREE, P, b, E, quality, home) {
       const hw = half(t);
       for (const v of rows) {
         const o = (v - 0.5) * 2 * hw;
-        if (!surf(cx - ty * o, cy + tx * o, p, nn)) return false;
+        const qx = cx - ty * o;
+        let qy = cy + tx * o;
+        if (!surf(qx, qy, p, nn)) return false;
+        if (eye) for (let k = 0; k < 24 && Math.hypot(p[0] - eye.c[0], p[1] - eye.c[1], p[2] - eye.c[2]) < eye.r * 1.03; k++) { qy += 0.0001; if (!surf(qx, qy, p, nn)) return false; }
         pos.push(side * (p[0] + nn[0] * lift), p[1] + nn[1] * lift, p[2] + nn[2] * lift);
         nor.push(side * nn[0], nn[1], nn[2]);
         uv.push(t, vMap(v)); col.push(rgb[0], rgb[1], rgb[2], 1);
@@ -788,7 +793,7 @@ function buildBrows(THREE, P, b, E, quality, home) {
         return W0 * 0.5 * k;
       }
       const v0 = pos.length / 3;
-      if (ribbon(side, wl > 0.002 ? 28 : 20, [0, 0.5, 1], centre, half, (v) => v * fv.liner, lin, 0.00028)) linerV.push([v0, pos.length / 3]);
+      if (ribbon(side, wl > 0.002 ? 28 : 20, [0, 0.5, 1], centre, half, (v) => v * fv.liner, lin, 0.00028, e)) linerV.push([v0, pos.length / 3]);
     }
   }
   const g = new THREE.BufferGeometry();
@@ -818,6 +823,7 @@ function buildBrows(THREE, P, b, E, quality, home) {
   mesh.bindMode = face.bindMode;
   mesh.position.copy(face.position); mesh.quaternion.copy(face.quaternion); mesh.scale.copy(face.scale);
   mesh.frustumCulled = false; mesh.receiveShadow = true;
+  mesh.userData.noGhost = true;   // остаточные образы рывка (heroGhost) и «призрак» соперника — без ленты бровей
   noShadowCast(mesh);
   mesh.renderOrder = 1;
   face.parent.add(mesh);
@@ -835,7 +841,7 @@ function blinkLiner(mesh, ranges, home) {
   let tries = 0, alpha = 1;
   mesh.onBeforeRender = () => {
     // веки сняты (смена снаряжения) — найти заново
-    if (pivots.length && pivots.some((pv) => !pv.parent)) { pivots.length = 0; q0.length = 0; tries = 0; }
+    for (let i = 0; i < pivots.length; i++) if (!pivots[i].parent) { pivots.length = 0; q0.length = 0; tries = 0; break; }
     if (!pivots.length) {
       if (tries > 240) return;   // у героини нет век — больше не ищем
       tries++;
