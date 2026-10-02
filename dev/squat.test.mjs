@@ -1,6 +1,6 @@
 // Тесты счётчика приседаний (core/squatCounter.js) на синтетической позе. node dev/squat.test.mjs
 // Синтетика, не реальная камера: поза — схема вида спереди и сбоку (synthSquatPose).
-import { createSquatCounter, synthSquatPose, topSquatFault, SQUAT_HINTS } from '../core/squatCounter.js';
+import { createSquatCounter, synthSquatPose, topSquatFault, SQUAT_HINTS, SQUAT_HINTS_NOVICE, SQUAT_PROFILES } from '../core/squatCounter.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -166,6 +166,58 @@ test('человек дальше (масштаб 0,55) и сбоку кадра
   const c3 = createSquatCounter();
   run(c3, 'front', 2, { downS: 3, upS: 2.5 });
   assert(c3.read().reps === 2, 'медленные ' + c3.read().reps);
+});
+
+// [W3-SQUAT] «Новичок»: глубина ≈115–120°, ошибка не отменяет повтор (+1 и карточка), чистый +2; лодыжки не обязательны
+test('Новичок: по умолчанию «Мастер»; профиль «Новичок» — порог глубины мягче, ошибки не блокируют', () => {
+  assert(createSquatCounter().read().mode === 'master' && createSquatCounter({ mode: 'nope' }).read().mode === 'master', 'по умолчанию Мастер');
+  const n = createSquatCounter({ mode: 'novice' }).read();
+  assert(n.mode === 'novice' && n.downDeg === SQUAT_PROFILES.novice.downDeg && n.downDeg > 115, JSON.stringify({ mode: n.mode, downDeg: n.downDeg }));
+});
+
+for (const view of ['front', 'side']) {
+  test(`Новичок ${view}: неглубоко (≈120°) — засчитано и чисто (+2); Мастер — «Садись глубже»`, () => {
+    const depth = 0.6;   // угол по бедру 180 − 95·k ≈ 123° (сбоку плоский угол Мастера ≈ 105° — тоже мелко)
+    const c = createSquatCounter({ mode: 'novice' });
+    run(c, view, 4, { depth });
+    const r = c.read(), d = c.drain();
+    assert(r.reps === 4 && r.clean === 4 && r.points === 8 && d.every((e) => e.clean && e.points === 2), JSON.stringify({ reps: r.reps, clean: r.clean, points: r.points, faults: r.faults }));
+    assert(r.message === 'Чисто! +2', r.message);
+    const m = createSquatCounter();
+    run(m, view, 4, { depth });
+    assert(m.read().reps === 0 && m.read().faults.shallow === 4, 'Мастер ' + JSON.stringify(m.read().faults));
+  });
+}
+
+test('Новичок: колени внутрь и быстро — засчитано +1, карточка про ошибку; неглубоко (≈135°) — не повтор, «чуть глубже»', () => {
+  const c = createSquatCounter({ mode: 'novice' });
+  run(c, 'front', 3, { valgus: 1 });
+  let r = c.read(), d = c.drain();
+  assert(r.reps === 3 && r.clean === 0 && r.points === 3 && r.faults.valgus === 3, JSON.stringify({ reps: r.reps, faults: r.faults }));
+  assert(d.every((e) => !e.clean && e.points === 1 && e.faults[0] === 'valgus'), JSON.stringify(d));
+  assert(r.lastRep.ok === true && r.lastRep.clean === false && r.lastHint.code === 'valgus' && r.lastRep.reason === SQUAT_HINTS.valgus, JSON.stringify(r.lastRep));
+  run(c, 'front', 2, { downS: 0.3, upS: 0.3, t0: 60000 });
+  r = c.read();
+  assert(r.reps === 5 && r.faults.fast === 2 && r.lastHint.code === 'fast', 'быстро: ' + JSON.stringify({ reps: r.reps, faults: r.faults }));
+  run(c, 'front', 2, { depth: 0.47, t0: 120000 });
+  r = c.read();
+  assert(r.reps === 5 && r.lastRep.ok === false && r.lastHint.code === 'shallow' && r.lastHint.text === SQUAT_HINTS_NOVICE.shallow, 'мелко: ' + JSON.stringify(r.lastRep));
+  const top = topSquatFault({ valgus: 1, shallow: 3 }, 'novice');
+  assert(top.code === 'shallow' && top.text === SQUAT_HINTS_NOVICE.shallow && topSquatFault({ shallow: 3 }).text === SQUAT_HINTS.shallow, 'итог: тексты «Новичка»');
+});
+
+test('Новичок: без лодыжек (видимость 0,1) — счёт идёт, ноги «без стоп»; Мастер — «до стоп»', () => {
+  const noFeet = (L) => { for (const j of [27, 28, 29, 30, 31, 32]) L[j] = { ...L[j], visibility: 0.1 }; return L; };
+  for (const mode of ['novice', 'master']) {
+    const c = createSquatCounter({ mode });
+    let t = 1000;
+    const f = (k) => { c.push({ tMs: t, frameW: 640, frameH: 480, landmarks: noFeet(synthSquatPose(k, 'front')) }); t += 50; };
+    for (let i = 0; i < 30; i++) f(0);
+    for (let r = 0; r < 3; r++) { for (let i = 0; i < 20; i++) f(0.5 - 0.5 * Math.cos(Math.PI * i / 20)); for (let i = 0; i < 18; i++) f(0.5 + 0.5 * Math.cos(Math.PI * i / 18)); for (let i = 0; i < 10; i++) f(0); }
+    const r = c.read();
+    if (mode === 'novice') assert(r.reps === 3 && r.feet === false && r.framing.status === 'okNoFeet', JSON.stringify({ reps: r.reps, feet: r.feet, fr: r.framing.status }));
+    else assert(r.reps === 0 && r.phase === 'noPose' && /до стоп/.test(r.message), JSON.stringify({ reps: r.reps, phase: r.phase, m: r.message }));
+  }
 });
 
 test('мусорный ввод не бросает; время назад игнорируется', () => {

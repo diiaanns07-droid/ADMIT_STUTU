@@ -11,7 +11,7 @@
 //
 // createPerfTuner({ renderer, storage? , now? }) →
 //   { beginFrame(now) → bool (false — кадр пропустить), endFrame(now, cpuMs), noteStall(),
-//     setAuto(bool), setTier(q), setVision({ hz, cameraFps, inferMs, model }), onChange(fn),
+//     setAuto(bool), setTier(q), setVision({ hz, cameraFps, inferMs, model }), onChange(fn), trainingPoseModel(),
 //     get tier, get scale, get capFps, state(), profile }
 
 export const PERF_DEFAULTS = Object.freeze({
@@ -82,6 +82,10 @@ export function pickProfile(hw) {
   if (mem <= 4 && tier !== 'low') tier = 'low';
   return { tier, scale, vision, gpuClass: cls };
 }
+
+// [W3-SQUAT] модель позы на экране тренировки: точная (full) держит колени и лодыжки на 2–3 м лучше быстрой;
+// приседания медленные — хватает и 12–15 Гц. Только на программном рендере (нет видеокарты) — быстрая.
+export function trainingPoseModel(gpuClass) { return gpuClass === 'software' ? 'lite' : 'full'; }
 
 export function probeHardware(renderer) {
   let gpu = 'n/a';
@@ -267,6 +271,7 @@ export function createPerfTuner(opts = {}) {
     onChange(fn) { if (typeof fn === 'function') listeners.push(fn); },
     // модель позы оказалась медленной на этой машине: в следующий раз сразу lite
     markPoseSlow() { saved = { ...(saved || {}), gpu: hw.gpu, poseSlow: true }; persist(); },
+    trainingPoseModel() { return trainingPoseModel(hw.gpuClass); },   // [W3-SQUAT] модель позы на экране тренировки
 
     state() {
       const n = s.frames.length;

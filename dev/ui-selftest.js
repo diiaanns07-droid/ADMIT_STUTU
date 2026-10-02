@@ -57,6 +57,7 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
       return undefined;
     };
   }
+  callbacks.onPoseRecord = (arg) => { calls.push({ name: 'onPoseRecord', arg }); };   // [W3-SQUAT] «Сохранить запись позы»
   const count = (n) => calls.filter((c) => c.name === n).length;
   const last = (n) => {
     const l = calls.filter((c) => c.name === n);

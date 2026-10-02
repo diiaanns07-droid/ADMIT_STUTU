@@ -17,7 +17,7 @@
 'use strict';
 
 // <AO_MANIFEST> — генерирует node tools/sw_manifest.mjs, руками не править
-const VERSION = '865028ca278f';
+const VERSION = 'bae0c8b62a63';
 const VENDOR_VERSION = 'b3f563930682';
 const SHELL = [
   "./",
@@ -41,6 +41,7 @@ const SHELL = [
   "core/leftStick.js",
   "core/perfHud.js",
   "core/perfTuner.js",
+  "core/poseRecorder.js",
   "core/postfx.js",
   "core/progression.js",
   "core/pushupCounter.js",
