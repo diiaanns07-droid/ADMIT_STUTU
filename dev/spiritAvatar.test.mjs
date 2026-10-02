@@ -417,18 +417,20 @@ test('«Небесный суд»: ultimate_ready — вспышка и нимб
   sp.frame(DT, (T += 16), { ...pose0(), snapshot: { status: 'playing', player: { fury: 0 }, ultimate: null } });
   assert.ok(!sp.info().cine, '«Заново» — без облёта');
   run(sp, 1.5, () => ({ ...pose0(), snapshot: { status: 'playing', player: { fury: 0 }, ultimate: null } }));
-  // «Уменьшенное движение»: камера не облетает (main.js) — дух не прячется, не поднимается, вспышка видна
+  // «Уменьшенное движение»: сцена уступает кадр мечу так же, но дух просто гаснет — без подъёма в небо
   settings.reducedMotion = true;
   try {
     const yR = sp.root.position.y;
     sp.frame(DT, (T += 16), { ...scene(0), events: [{ id: 'u7', type: 'ultimate_start', data: { duration: 3.6 } }] });
     t = DT;
-    run(sp, 1.2, () => scene((t += DT)));
+    run(sp, 0.3, () => scene((t += DT)));
+    assert.ok(sp.root.position.y <= yR + 0.01, `без подъёма: y ${yR.toFixed(2)} → ${sp.root.position.y.toFixed(2)}`);
+    run(sp, 0.9, () => scene((t += DT)));
     inf = sp.info();
-    assert.ok(!inf.cine && inf.skyVisible && inf.alpha > 0.8 && inf.ult > 0.5, `без облёта: виден ${inf.skyVisible}, alpha ${inf.alpha}, ult ${inf.ult}`);
-    // не уходит в небо (руки вверх — дух лишь опускается, чтобы кисти остались в кадре)
-    assert.ok(inf.rise === 0 && sp.root.position.y <= yR + 0.01, `без подъёма: rise ${inf.rise}, y ${yR.toFixed(2)} → ${sp.root.position.y.toFixed(2)}`);
-    run(sp, 2.6, () => ({ ...pose0(), snapshot: { status: 'playing', player: { fury: 0 }, ultimate: null } }));
+    assert.ok(inf.cine && !inf.skyVisible, `гаснет: виден ${inf.skyVisible}`);
+    sp.frame(DT, (T += 16), { ...pose0(), snapshot: { status: 'playing', player: { fury: 0 }, ultimate: null } });
+    run(sp, 1.5, () => ({ ...pose0(), snapshot: { status: 'playing', player: { fury: 0 }, ultimate: null } }));
+    assert.ok(sp.info().skyVisible && sp.info().alpha > 0.8, 'вернулся');
   } finally { settings.reducedMotion = false; }
   // ушли с арены во время сцены (итоги) — отсчёт сброшен
   sp.frame(DT, (T += 16), { ...pose0(), events: [{ id: 'u5', type: 'ultimate_start', data: { duration: 3.6 } }] });

@@ -1404,7 +1404,8 @@ export function createSpiritAvatar(opts = {}) {
 
     // где виден; «Небесный суд»: облёт камеры идёт без духа над ареной — он вспыхивает, уходит в небо и гаснет,
     // а в последние полсекунды облёта (камера возвращается к обычному ракурсу) проявляется снова
-    const cine = cineLeft > 0.45 && !st.rm;   // «Уменьшенное движение»: облёта нет — дух остаётся и реагирует
+    // при «Уменьшенном движении» облёта нет, но сцена та же (полосы, меч, титр) — дух так же уступает ей кадр, только без подъёма
+    const cine = cineLeft > 0.45;
     const wantSky = on && SKY_SCREENS.has(screen) && !!camera && !cine;
     const wantFrame = on && (FRAME_SCREENS.has(screen) || (present && PRESENT_SLOT_SCREENS.has(screen)));
     if (cine) rise = Math.min(1, rise + dt / 0.6);
@@ -1613,7 +1614,7 @@ export function createSpiritAvatar(opts = {}) {
         tier: sky.tier, elem: [+st.colElem[0].toFixed(3), +st.colElem[1].toFixed(3), +st.colElem[2].toFixed(3)],
         slit: +st.slitI.toFixed(3), slitAxis: st.slitAxis, slitBurst: +st.slitBurst.toFixed(3),
         slitEnds: [Array.from(st.slitA, (v) => +v.toFixed(3)), Array.from(st.slitB, (v) => +v.toFixed(3))],
-        cine: cineLeft > 0.45 && !st.rm, rise: +rise.toFixed(3), present: presentNow, frameBright: +frameBright.toFixed(3), rm: st.rm,
+        cine: cineLeft > 0.45, rise: +rise.toFixed(3), present: presentNow, frameBright: +frameBright.toFixed(3), rm: st.rm,
         shaderTime: +st.tSh.toFixed(3), arcs: st.charge > 0.05 && !st.rm,
         flashColor: [Array.from(st.flashCol[0], (v) => +v.toFixed(3)), Array.from(st.flashCol[1], (v) => +v.toFixed(3))],
       };
