@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><title>[W4-НАРЯДЫ] стенд текстур нарядов</title>
+<!-- Процедурные холсты нарядов (modules/heroForge.js): лепестки, звёздная вышивка (остриё и «хвост»), атлас
+     «корсет + наручи», пелерина; по три карты: цвет, рельеф (R) + альфа (G), свечение. -->
+<style>body{background:#333;margin:0}canvas{margin:2px;vertical-align:top;background:repeating-conic-gradient(#666 0 25%,#999 0 50%) 0 0/16px 16px}</style>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js" } }</script></head><body>
+<script type="module">
+import * as THREE from 'three';
+import * as F from '../modules/heroForge.js';
+const show = (t, w) => { for (const k of ['map', 'bumpAlpha', 'emissive']) { const c = t[k] && t[k].image; if (!c) continue; c.style.width = w + 'px'; document.body.appendChild(c); } };
+show(F.petalTextures(THREE, { segs: [[0, 0.27], [0.36, 0.64], [0.73, 1]], from: 0.36, tips: [0.86, 0.97, 0.82], size: 512 }), 300);
+document.body.appendChild(document.createElement('br'));
+show(F.starTextures(THREE, { size: 1024, hem: 'point' }), 110);
+show(F.starTextures(THREE, { size: 1024, hem: 'swallow' }), 110);
+show(F.corsetTextures(THREE, { size: 512 }), 300);
+document.body.appendChild(document.createElement('br'));
+show(F.mantleTextures(THREE, { size: 1024 }), 600);
+window.__done = true;
+</script></body></html>

@@ -1626,7 +1626,8 @@ export function dressHero(THREE, vrm, opts = {}) {
     // обхват тела на этой высоте по секторам азимута (без ремней, капюшона, волос): ткань прилегает
     const SEC = 24, secR = new Float32Array(SEC);
     vrm.scene.traverse((o) => {
-      if (!o.isSkinnedMesh || !o.visible || /Belt|Hood|Hair|Eye|Face|Brow/i.test(o.name) || /Hair|Eye/.test([].concat(o.material).map((m) => m && m.name).join())) return;
+      // [W4-НАРЯДЫ] руки не в счёт: в стойке «руки на бёдрах» кисти раздували обхват — полы стояли полкой
+      if (!o.isSkinnedMesh || !o.visible || /Belt|Hood|Hair|Eye|Face|Brow|Arms/i.test(o.name) || /Hair|Eye/.test([].concat(o.material).map((m) => m && m.name).join())) return;
       const pa = o.geometry.attributes.position;
       for (let i = 0; i < pa.count; i++) {
         o.getVertexPosition(i, v); v.applyMatrix4(o.matrixWorld);

@@ -301,8 +301,8 @@ function highCollar(ctx, spec) {
   grp.add(mesh);
   // кант сверху и снизу
   const edge = (vv, n) => { const pts = []; for (let i = 0; i <= n; i++) pts.push(P(i / n, vv, new THREE.Vector3()).sub(c0)); return new THREE.CatmullRomCurve3(pts); };
-  grp.add(new THREE.Mesh(G(tube(THREE, edge(1, 40), 120, 5, () => 0.0032)), mats.trim));
-  grp.add(new THREE.Mesh(G(tube(THREE, edge(0, 24), 60, 5, () => 0.004)), mats.trim));
+  grp.add(new THREE.Mesh(G(tube(THREE, edge(1, 40), 84, 5, () => 0.0032)), mats.trim));
+  grp.add(new THREE.Mesh(G(tube(THREE, edge(0, 24), 40, 5, () => 0.004)), mats.trim));
   // звезда-камень на центральном зубце (сзади) — искра
   const top = P(0.5, 1, new THREE.Vector3()).sub(c0);
   const st = new THREE.Mesh(G(gem(THREE, { r: 0.008, h: 0.024, n: 6 })), mats.crystal); st.position.copy(top).addScaledVector(UP, 0.012); grp.add(st);
@@ -400,7 +400,7 @@ function wristRings(ctx, side, spec) {
   const grp = new THREE.Group(); grp.name = `attire-wrist-${side}`;
   const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), ax);
   (spec.rings || [[0, 0.0032], [0.014, 0.0022]]).forEach(([dy, tr]) => {
-    const ring = new THREE.Mesh(G(new THREE.TorusGeometry(r + 0.003 + tr, tr, 6, 28)), mats.trim);
+    const ring = new THREE.Mesh(G(new THREE.TorusGeometry(r + 0.003 + tr, tr, 5, 20)), mats.trim);
     ring.quaternion.copy(q); ring.position.copy(ax).multiplyScalar(-dy);
     grp.add(ring);
   });
@@ -415,7 +415,7 @@ function sparkles(THREE, anchors, color, holder) {
   const pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3).setUsage(THREE.DynamicDrawUsage));
-  const mat = new THREE.PointsMaterial({ name: 'gear-sparkle', map: glintTexture(THREE), size: 0.045, sizeAttenuation: true, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: true });
+  const mat = new THREE.PointsMaterial({ name: 'gear-sparkle', map: glintTexture(THREE), size: 0.055, sizeAttenuation: true, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: true });
   const pts = new THREE.Points(geo, mat);
   pts.name = 'attire-sparkles'; pts.frustumCulled = false; pts.renderOrder = 4;
   holder.add(pts);
@@ -431,8 +431,9 @@ function sparkles(THREE, anchors, color, holder) {
         anchors[i].getWorldPosition(v).applyMatrix4(inv);
         pos[i * 3] = v.x; pos[i * 3 + 1] = v.y; pos[i * 3 + 2] = v.z;
         // вспышка: короткий острый пик раз в 2–5 с и слабое мерцание между ними; с заклинанием — ярче
-        const s = Math.sin(t * ph[i].w + ph[i].p), tw = Math.pow(Math.max(0, s), 14) + 0.12 + 0.06 * Math.sin(t * 7.3 + i);
-        const k = tw * (0.7 + 0.5 * Math.min(2.4, glow));
+        const s = Math.sin(t * ph[i].w + ph[i].p), s2 = Math.sin(t * ph[i].w * 2.3 + ph[i].p * 1.7);
+        const tw = 1.1 * Math.pow(Math.max(0, s), 10) + 0.45 * Math.pow(Math.max(0, s2), 6) + 0.3 + 0.08 * Math.sin(t * 7.3 + i);
+        const k = tw * (0.75 + 0.45 * Math.min(2.4, glow));
         col[i * 3] = base.r * k; col[i * 3 + 1] = base.g * k; col[i * 3 + 2] = base.b * k;
       }
       geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true;
