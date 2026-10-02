@@ -17,7 +17,12 @@ export const PLAN_DEFAULTS = Object.freeze({
   tipMinHz: 15,      // подсказка про гибридный ноутбук: распознавание медленнее…
   tipMinCamFps: 15,  // …при живой камере (не тусклый свет с 8 к/с)
   tipHoldMs: 6000,   // …дольше этого
+  warmMs: 6000,      // после старта распознавания (или паузы в измерениях) столько не решаем: всплеск на прогреве
+  gapMs: 3000,       //   (сборка шейдеров, загрузка героя) не должен переключать; пауза измерений дольше — снова прогрев
 });
+// Поза реже — только на слабом железе. На дискретной видеокарте (NVIDIA, Radeon RX) поза всегда на каждом кадре:
+// там цена кадра с настоящей камерой (~30 мс) лежит между порогами, и одиночный всплеск оставлял бы позу через кадр.
+const PLAN_GPU = new Set(['integrated', 'integrated-strong', 'software', 'unknown']);
 
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 const FULL_POSE_SCREENS = new Set(['training']);
@@ -25,14 +30,20 @@ const MENU_SCREENS = new Set(['menu', 'oath', 'paused', 'victory', 'defeat', 'ch
 
 export function createPosePlanner(config = {}) {
   const C = { ...PLAN_DEFAULTS, ...config };
-  const s = { slow: false, since: null, cost: null, every: 1, reason: 'start' };
+  const s = { slow: false, since: null, cost: null, every: 1, reason: 'start', lastAt: null, warmFrom: null };
   return {
     // now — мс; v: { screen, inferMs (поза), handsMs (кисти), gpuClass, handsReady } → poseEvery (1…menuEvery)
     update(now, v = {}) {
       const cost = fin(v.inferMs) ? v.inferMs + (fin(v.handsMs) ? v.handsMs : 0) : null;
       s.cost = cost;
-      if (v.gpuClass === 'software') { s.slow = true; s.since = null; s.reason = 'software'; }
-      else if (cost !== null) {
+      // прогрев: первые warmMs после старта измерений (или после паузы в них) решение не меняется
+      if (s.lastAt === null || now - s.lastAt > C.gapMs) { s.warmFrom = now; s.since = null; }
+      s.lastAt = now;
+      const warming = now - s.warmFrom < C.warmMs;
+      const gpu = typeof v.gpuClass === 'string' && v.gpuClass ? v.gpuClass : 'unknown';
+      if (!PLAN_GPU.has(gpu)) { s.slow = false; s.since = null; s.reason = `видеокарта ${gpu}: поза на каждом кадре`; }
+      else if (gpu === 'software') { s.slow = true; s.since = null; s.reason = 'software'; }
+      else if (cost !== null && !warming) {
         const want = s.slow ? !(cost < C.fastMs) : cost > C.slowMs;   // гистерезис
         if (want === s.slow) s.since = null;
         else { if (s.since === null) s.since = now; if (now - s.since >= C.holdMs) { s.slow = want; s.since = null; s.reason = want ? `медленно: ${Math.round(cost)} мс/кадр` : `быстро: ${Math.round(cost)} мс/кадр`; } }

@@ -21,7 +21,7 @@ test('сильная машина (6 мс/кадр): поза на каждом 
 });
 
 test('слабая встроенная (поза 40 + кисти 35 мс): после выдержки поза на каждом 2-м в бою, 3-м в меню, каждом на тренировке', () => {
-  const p = createPosePlanner();
+  const p = createPosePlanner({ warmMs: 0 });   // прогрев проверяется отдельным тестом
   const v = { inferMs: 40, handsMs: 35, gpuClass: 'integrated', handsReady: true };
   eq(p.update(1000, { ...v, screen: 'playing' }), 1, 'сразу не переключается');
   eq(p.update(1000 + PLAN_DEFAULTS.holdMs - 100, { ...v, screen: 'playing' }), 1, 'выдержка ещё идёт');
@@ -35,7 +35,7 @@ test('слабая встроенная (поза 40 + кисти 35 мс): по
 });
 
 test('гистерезис: между порогами решение не меняется, обратно — только после быстрых кадров с выдержкой', () => {
-  const p = createPosePlanner();
+  const p = createPosePlanner({ warmMs: 0 });
   run(p, 1000, 5, { screen: 'playing', inferMs: 50, handsMs: 20, gpuClass: 'integrated', handsReady: true });
   eq(p.every, 2, 'медленно → 2');
   run(p, 10000, 5, { screen: 'playing', inferMs: 20, handsMs: 15, gpuClass: 'integrated', handsReady: true });   // 35 мс: между fast и slow
@@ -80,6 +80,38 @@ test('карточка подсказки: без DOM — заглушка; за
   eq(t.shown, false);
   const t2 = createHybridTip({ root: null, storage: memStorage({ [HYBRID_TIP_KEY]: '1' }) });
   eq(t2.dismissed, true);
+});
+
+test('дискретная видеокарта (NVIDIA): поза на каждом кадре даже при медленном кадре — как до планировщика', () => {
+  const p = createPosePlanner();
+  for (const screen of ['menu', 'playing', 'tutorial', 'camera']) {
+    const r = run(p, 1000, 30, { screen, inferMs: 30, handsMs: 25, gpuClass: 'discrete', handsReady: true });   // 55 мс > slowMs
+    eq(r.every, 1, `экран ${screen}`);
+  }
+  ok(!p.slow, 'на дискретной «медленно» не включается');
+});
+
+test('прогрев: всплеск в первые секунды распознавания (сборка шейдеров) не переключает; затем 35 мс — тоже нет', () => {
+  const p = createPosePlanner();
+  const v = { screen: 'tutorial', gpuClass: 'integrated', handsReady: true };
+  run(p, 1000, 5, { ...v, inferMs: 60, handsMs: 30 });                 // 90 мс, 5 с — внутри прогрева
+  eq(p.every, 1, 'всплеск на прогреве — поза на каждом кадре');
+  const r = run(p, 6500, 20, { ...v, inferMs: 20, handsMs: 15 });       // 35 мс — между порогами
+  eq(r.every, 1, 'после прогрева цена между порогами — не переключает');
+});
+
+test('прогрев: долгая медленная работа после прогрева переключает; пауза измерений > gapMs — снова прогрев', () => {
+  const p = createPosePlanner();
+  const v = { screen: 'playing', gpuClass: 'integrated', handsReady: true, inferMs: 45, handsMs: 30 };   // 75 мс
+  const r = run(p, 1000, 10, v);
+  eq(r.every, PLAN_DEFAULTS.fightEvery, 'медленно дольше прогрева + выдержки → поза через кадр');
+  const p2 = createPosePlanner({ warmMs: 0 });
+  run(p2, 1000, 3, { ...v, inferMs: 10, handsMs: 8 });
+  eq(p2.every, 1);
+  const p3 = createPosePlanner();
+  run(p3, 1000, 10, { ...v, inferMs: 10, handsMs: 8 });                  // быстро, прогрев прошёл
+  const r3 = run(p3, 1000 + 10000 + PLAN_DEFAULTS.gapMs + 1000, 4, v);    // камера была выключена → прогрев заново
+  eq(r3.every, 1, 'сразу после паузы — прогрев, не переключает');
 });
 
 let failed = 0;
