@@ -1001,7 +1001,7 @@ import('./modules/pvp.js').then((m) => {
 // зал славы дня — localStorage этого ноутбука, постер — modules/posterCard.js (кадр боя и линии скелета в момент
 // последнего удара; видео камеры не сохраняется). Подсчёт очков идёт в каждом бою: постер есть и после обычного.
 try { chal.hud = createChallengeHud({ root: uiRoot }); } catch (e) { console.warn('[W3-CHALLENGE] таймер', e); chal.hud = null; }
-function refreshHall() { chal.hallView = { list: chal.hall.list(), best: chal.hall.best() }; }
+function refreshHall() { const all = chal.hall.all(); chal.hallView = { list: all, best: all[0] || null }; }   // экран сам выбирает топ-10 и своё место
 refreshHall();
 if (PERF_Q.has('reset-hall')) {
   chal.hall.clear(); refreshHall();

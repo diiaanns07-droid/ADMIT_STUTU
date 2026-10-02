@@ -548,9 +548,17 @@ export function posterBlob(canvas) {
   });
 }
 
+// Имя файла — только латиница: с кириллицей Chrome сохраняет файл как «download» без расширения
+const TRANSLIT = { А: 'A', Б: 'B', В: 'V', Г: 'G', Д: 'D', Е: 'E', Ё: 'E', Ж: 'ZH', З: 'Z', И: 'I', Й: 'Y', К: 'K', Л: 'L', М: 'M', Н: 'N', О: 'O', П: 'P', Р: 'R', С: 'S', Т: 'T', У: 'U', Ф: 'F', Х: 'H', Ц: 'TS', Ч: 'CH', Ш: 'SH', Щ: 'SCH', Ъ: '', Ы: 'Y', Ь: '', Э: 'E', Ю: 'YU', Я: 'YA', Ә: 'A', Ғ: 'G', Қ: 'Q', Ң: 'NG', Ө: 'O', Ұ: 'U', Ү: 'U', Һ: 'H', І: 'I' };
+export function asciiName(s) {
+  let out = '';
+  for (const ch of String(s == null ? '' : s).toUpperCase()) out += /[A-Z0-9]/.test(ch) ? ch : TRANSLIT[ch] !== undefined ? TRANSLIT[ch] : '';
+  return out.slice(0, 12);
+}
 export function posterFileName(data) {
   const d = isObj(data) ? data : {};
-  const name = typeof d.name === 'string' && d.name ? `-${d.name}` : '';
+  const ascii = asciiName(d.name);
+  const name = ascii ? `-${ascii}` : '';
   const t = new Date(fin(d.date) ? d.date : Date.now());
   const p = (v) => String(v).padStart(2, '0');
   return `ashen-oath${name}-${Math.round(fin(d.score) ? d.score : 0)}-${t.getFullYear()}${p(t.getMonth() + 1)}${p(t.getDate())}-${p(t.getHours())}${p(t.getMinutes())}.png`;

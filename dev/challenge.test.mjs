@@ -12,7 +12,7 @@ import { createBossBrain } from '../modules/boss.js';
 import { createCombat } from '../modules/combat.js';
 import {
   CHALLENGE, SCORE, RANKS, rankOf, nextRank, scoreChallenge, createTally, isUltimateEvent, createHall, sanitizeName, sortHall,
-  dayKey, createChallengeBrain, createChallengeSession, buildResult, bestGestureOf, HALL_KEY,
+  dayKey, createChallengeBrain, createChallengeSession, buildResult, bestGestureOf, HALL_KEY, hallRows,
 } from '../modules/challenge.js';
 import { drawPoster, qrMatrix, skeletonFromVision, demoSkeleton, posterFileName, POSTER_W, POSTER_H, GAME_URL } from '../modules/posterCard.js';
 
@@ -229,6 +229,18 @@ test('хранилище бросает исключения или его не�
   hall.add({ score: 5000 });
   eq(hall.list().map((e) => e.score).join(','), '5000,1');
 });
+test('строки зала на экране: топ-10 и своё место за десяткой; при вводе имени — лидеры и соседи', () => {
+  const L = Array.from({ length: 23 }, (_, i) => ({ id: `e${i}`, score: 1000 - i }));
+  const places = (rows) => rows.map((x) => (x === 'gap' ? '…' : x.place)).join(',');
+  eq(places(hallRows(L, 'e4')), '1,2,3,4,5,6,7,8,9,10', 'в десятке — просто топ-10');
+  eq(places(hallRows(L, 'e13')), '1,2,3,4,5,6,7,8,9,10,…,14', 'за десяткой — своё место после «…»');
+  eq(places(hallRows(L, 'e13', true)), '1,2,3,…,13,14,15', 'ввод имени: тройка и соседи');
+  eq(places(hallRows(L, 'e22', true)), '1,2,3,…,22,23', 'последний — сосед только сверху');
+  eq(places(hallRows(L, 'e2', true)), '1,2,3,4,5,6', 'в начале — первые шесть');
+  eq(places(hallRows(L.slice(0, 3), 'e1')), '1,2,3');
+  eq(hallRows(null, 'x').length, 0);
+  eq(places(hallRows([null, 5, ...L.slice(0, 2)], 'zz')), '1,2', 'мусор отброшен');
+});
 test('?reset-hall: clear() очищает хранилище', () => {
   const st = memStore();
   const hall = createHall(st, { now: () => NOW });
@@ -438,7 +450,10 @@ test('скелет из позы и кистей: только координа�
 });
 test('имя файла постера', () => {
   const n = posterFileName({ name: 'АНЯ', score: 8450.4, date: NOW });
-  eq(n, 'ashen-oath-АНЯ-8450-20261002-1530.png');
+  eq(n, 'ashen-oath-ANYA-8450-20261002-1530.png', 'кириллица → латиница (иначе Chrome сохранит «download» без расширения)');
+  eq(posterFileName({ name: 'ӘЛІ', score: 1, date: NOW }), 'ashen-oath-ALI-1-20261002-1530.png');
+  eq(posterFileName({ name: 'Ж7z', score: 1, date: NOW }), 'ashen-oath-ZH7Z-1-20261002-1530.png');
+  ok(/^[\x20-\x7e]+$/.test(posterFileName({ name: '🙂ЩЩЩ', score: 5 })), 'только ASCII');
   ok(/^ashen-oath-0-\d{8}-\d{4}\.png$/.test(posterFileName({})));
 });
 

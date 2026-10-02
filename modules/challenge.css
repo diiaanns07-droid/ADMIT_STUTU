@@ -510,16 +510,22 @@
   color: #5a5242;
 }
 .ao-chal__namehint {
-  font-size: 0.85rem;
+  margin-left: 0.7rem;
+  font-family: var(--ao-font-ui);
+  font-size: 0.82rem;
+  font-weight: 400;
   color: var(--ao-faint);
 }
 .ao-chal__keys {
   display: grid;
-  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-columns: repeat(15, minmax(0, 1fr));
   gap: 4px;
 }
+@media (max-width: 1020px) {
+  .ao-chal__keys { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+}
 .ao-chal__key {
-  min-height: 2.45rem;
+  min-height: 2.5rem;
   padding: 0;
   font: inherit;
   font-size: 1.12rem;
@@ -540,6 +546,7 @@
   background: #3a3226;
 }
 .ao-chal__namebtns {
+  flex: 1;
   display: flex;
   gap: 0.5rem;
 }

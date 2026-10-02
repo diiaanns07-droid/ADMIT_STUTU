@@ -471,6 +471,19 @@ export function createChallengeHud({ root } = {}) {
   };
 }
 
+// Строки зала: топ-10 и своё место за десяткой; пока вводится имя (место на экране уже занято клавишами) —
+// компактно: тройка лидеров и соседи сверху и снизу. list — все попытки дня по убыванию очков.
+export function hallRows(list, meId, compact = false) {
+  const L = Array.isArray(list) ? list.filter((e) => e && typeof e === 'object') : [];
+  const idx = meId ? L.findIndex((e) => e.id === meId) : -1;
+  const at = (i) => ({ e: L[i], place: i + 1 });
+  if (compact && idx >= 5) return [at(0), at(1), at(2), 'gap', ...[idx - 1, idx, idx + 1].filter((i) => i < L.length).map(at)];
+  const n = compact ? 6 : HALL_SHOW;
+  const out = L.slice(0, n).map((e, i) => at(i));
+  if (idx >= n) out.push('gap', at(idx));
+  return out;
+}
+
 // Буквы для имени — крупными кнопками (мышь, касание); с клавиатуры можно печатать любые буквы
 const LETTERS = {
   ru: 'АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЫЭЮЯ'.split(''),
@@ -521,10 +534,9 @@ export function createChallengeScreen(h) {
   setAttr(delBtn.node, 'aria-label', 'Стереть букву');
   const okBtn = btn('Готово', () => submitName(), { variant: 'primary', size: 'lg' });
   const nameBox = el('div', { class: 'ao-chal__name' },
-    el('h3', { class: 'ao-chal__h', text: 'Впишите себя в зал славы' }),
-    el('div', { class: 'ao-chal__nameline' }, nameIn, el('span', { class: 'ao-chal__namehint', text: '3 буквы — кнопками или с клавиатуры' })),
-    grid,
-    el('div', { class: 'ao-chal__namebtns' }, abcBtn.node, delBtn.node, okBtn.node));
+    el('h3', { class: 'ao-chal__h' }, 'Впишите себя в зал славы', el('span', { class: 'ao-chal__namehint', text: '3 буквы — кнопками или с клавиатуры' })),
+    el('div', { class: 'ao-chal__nameline' }, nameIn, el('div', { class: 'ao-chal__namebtns' }, abcBtn.node, delBtn.node, okBtn.node)),
+    grid);
   const hallHead = el('h3', { class: 'ao-chal__h', text: 'Зал славы дня' });
   const hall = el('ol', { class: 'ao-hall', 'aria-label': 'Зал славы дня' });
   const hallEmpty = el('p', { class: 'ao-note', text: 'Сегодня здесь пока пусто.' });
@@ -589,7 +601,7 @@ export function createChallengeScreen(h) {
         setText(rankT, `Ранг ${r.rank} · ${r.rankTitle}`);
         setText(score, fmtScore(r.score));
         setClass(place, 'is-record', !!r.isRecord);
-        setText(place, r.place ? (r.isRecord ? `Новый рекорд дня! 1-е место из ${r.total}` : `${placeText(r.place)} из ${r.total} сегодня`) : '');
+        setText(place, r.place ? (r.isRecord ? (r.total > 1 ? `Новый рекорд дня! 1-е место из ${r.total}` : 'Первый рекорд дня!') : `${placeText(r.place)} из ${r.total} сегодня`) : '');
         parts.replaceChildren(...r.parts.map((p) => el('li', { class: 'ao-chal__part', 'data-part': p.id },
           el('span', { class: 'ao-chal__plabel', text: p.label }),
           el('span', { class: 'ao-chal__pdetail', text: p.detail || '' }),
@@ -600,11 +612,9 @@ export function createChallengeScreen(h) {
         setHidden(nameBox, !cur.id || cur.named);
         if (fresh && cur.id && !cur.named) { setName(''); }
         const list = Array.isArray(c.hall) ? c.hall : [];
-        const rows = list.slice(0, HALL_SHOW).map((e, i) => row(e, i + 1, e.id === r.entryId));
-        if (r.entryId && r.place > HALL_SHOW) {
-          const me = list.find((e) => e.id === r.entryId);
-          if (me) rows.push(el('li', { class: 'ao-hall__gap', 'aria-hidden': 'true', text: '⋯' }), row(me, r.place, true));
-        }
+        const rows = hallRows(list, r.entryId, !cur.named).map((x) => (x === 'gap'
+          ? el('li', { class: 'ao-hall__gap', 'aria-hidden': 'true', text: '⋯' })
+          : row(x.e, x.place, x.e.id === r.entryId)));
         hall.replaceChildren(...rows);
         meName = hall.querySelector('.ao-hall__row.is-me .ao-hall__name');
         if (meName && !cur.named && nameIn.value) meName.textContent = nameIn.value;
