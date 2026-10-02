@@ -529,10 +529,12 @@ export function createChallengeScreen(h) {
   const hallEmpty = el('p', { class: 'ao-note', text: 'Сегодня здесь пока пусто.' });
 
   let cur = { id: null, named: true };
+  let meName = null;   // имя в своей строке таблицы — меняется вместе с набором
   function setName(v) {
     const s = sanitizeName(v);
     if (nameIn.value !== s) nameIn.value = s;
     setBtn(okBtn, { disabled: !s });
+    if (meName && cur.id && !cur.named) meName.textContent = s || '???';
   }
   function submitName() {
     const s = sanitizeName(nameIn.value);
@@ -603,6 +605,8 @@ export function createChallengeScreen(h) {
           if (me) rows.push(el('li', { class: 'ao-hall__gap', 'aria-hidden': 'true', text: '⋯' }), row(me, r.place, true));
         }
         hall.replaceChildren(...rows);
+        meName = hall.querySelector('.ao-hall__row.is-me .ao-hall__name');
+        if (meName && !cur.named && nameIn.value) meName.textContent = nameIn.value;
         setHidden(hallEmpty, rows.length > 0);
       }
       const pu = c.posterUrl || '';
