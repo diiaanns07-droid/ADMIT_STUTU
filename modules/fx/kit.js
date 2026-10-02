@@ -32,7 +32,9 @@ const MAX_PARTICLES = KIT_QUALITY.high.particles;
 
 // ---------------------------------------------------------------- градиенты (цвет и альфа по жизни)
 // Каждая строка — 64 точки sRGB + альфа. Узлы: [t, hex, alpha].
-const RAMP_W = 64, RAMP_ROWS = 48;
+// [W4-ЗАКЛИНАНИЯ] 128 строк (было 48): ~30 именованных + ~90 под hex-цвета палитр — иначе цвета тьмы/ветра/бури
+// молча падали в «золото» (текстура 64×128 RGBA = 32 КБ, одна на весь пул)
+const RAMP_W = 64, RAMP_ROWS = 128;
 const E = ELEMENTS;
 const RAMP_DEFS = {
   fire:    [[0, 0xfff6e0, 1], [0.12, 0xffd070, 1], [0.35, 0xff7a1e, 0.95], [0.65, 0xc2300c, 0.6], [1, 0x3a1810, 0]],
@@ -776,6 +778,6 @@ export function createFxKit(deps) {
     anchor, groundY, cameraPos,
     rampFor, rampRow, SPRITES, ELEMENTS,
     update, setQuality, clear, dispose,
-    stats: () => ({ particles: aliveCount(), cap, highWater, actors: actors.filter((a) => a.alive).length, lights: lights.filter((s) => s.busy).length, spawned: stats.spawned, dropped: stats.dropped, scopes: scopesActive() }),
+    stats: () => ({ particles: aliveCount(), cap, highWater, actors: actors.filter((a) => a.alive).length, lights: lights.filter((s) => s.busy).length, spawned: stats.spawned, dropped: stats.dropped, scopes: scopesActive(), rampRows: customRow, rampCap: RAMP_ROWS }),
   };
 }

@@ -26,9 +26,9 @@ const SUBSYSTEMS = [
 // [W3-МАГИЯ] магии ладонями: заряд между ладонями, «Врата бури», «Столп небес»; ядро/ореол/свет снарядов и сочные попадания.
 const CHOREO = [
   './sigilCharge.js',
+  './castFx.js',          // [W4-ЗАКЛИНАНИЯ] слой-добавка (никогда не true) — раньше врат и столпа: предвестник печатей
   './sigilGate.js',
   './sigilPillar.js',
-  './castFx.js',
   './hitFx.js',
   './handMagic.js',
   './runesFire.js',

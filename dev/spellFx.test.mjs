@@ -131,7 +131,7 @@ async function sweep(quality, hero) {
   const st = fx.v6.stats();
   const dbg = fx.getDebugInfo();
   fx.dispose();
-  return { peak, actors: st.kit.actors, errors: dbg.events.errors, cap: st.kit.cap };
+  return { peak, actors: st.kit.actors, errors: dbg.events.errors, cap: st.kit.cap, rampRows: st.kit.rampRows, rampCap: st.kit.rampCap };
 }
 
 // ---------------------------------------------------------------- 1. бюджет частиц
@@ -143,6 +143,8 @@ for (const q of ['medium', 'low', 'high']) {
   ok(r.peak <= Math.round(BASE[q] * 1.15), `${q}: пик частиц ${r.peak} ≤ main ${BASE[q]} +15% (${Math.round(BASE[q] * 1.15)})`);
   ok(r.errors === 0, `${q}: ошибок обработки событий 0, а их ${r.errors}`);
   ok(r.actors === 0, `${q}: все акторы завершились (${r.actors})`);
+  // строки градиентов под hex-цвета не кончаются (иначе цвет молча становится «золотым»)
+  if (r.rampRows !== undefined) ok(r.rampRows < r.rampCap, `${q}: строк градиентов хватает (${r.rampRows}/${r.rampCap})`);
 }
 if (process.env.SPELLFX_BASE) { console.log(JSON.stringify(peaks)); process.exit(0); }
 

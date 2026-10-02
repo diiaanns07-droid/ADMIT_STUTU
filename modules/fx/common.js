@@ -367,7 +367,8 @@ const COMET_POOL = 24;
  * createComet(fx) → { start(pos, el, o) → comet|null, active() }.
  * comet.step(pos, dir?, dt) — каждый кадр полёта (pos/dir можно переиспользовать), comet.end(hitPos?) — конец.
  * o: { size:0.3 (м, радиус головы), remote, light:true, lightK:1, dur (сек, для света), trail:true, trailWidth,
- *      ramp (своя рампа слоя искр), look (стихия облика, по умолчанию el), scope (сцена kit; по умолчанию текущая) }.
+ *      ramp (своя рампа слоя искр), look (стихия облика, по умолчанию el), scope (сцена kit; по умолчанию текущая),
+ *      rate:1 (доля частиц: очередь снарядов — реже; на low ещё ×0.7) }.
  */
 export function createComet(fx) {
   const V3 = fx.THREE.Vector3, kit = fx.kit;
@@ -384,7 +385,7 @@ export function createComet(fx) {
     const c = {
       alive: false, el: 'gold', look: COMET_DEF, P: null, remote: false, size: 0.3, ramp: 'gold', dark: false,
       pos: new V3(), prev: new V3(), dir: new V3(0, 0, -1), back: new V3(0, 0, 1), lp: new V3(), started: false,
-      accA: 0, accB: 0, accC: 0, tr: null, scope: null, follow: null,
+      accA: 0, accB: 0, accC: 0, tr: null, scope: null, follow: null, rate: 1,
       step(p, d, dt) { stepC(c, p, d, dt); },
       end(hit) { endC(c, hit); },
     };
@@ -403,6 +404,7 @@ export function createComet(fx) {
     c.alive = true; c.el = el; c.remote = remote; c.look = COMET_LOOK[remote ? '' : lookEl] || COMET_DEF;
     c.P = fx.pal(el, { remote });
     c.size = isNum(o.size) ? o.size : 0.3;
+    c.rate = clamp(isNum(o.rate) ? o.rate : 1, 0.1, 1) * (kit.Q && kit.Q.name === 'low' ? 0.7 : 1);
     c.ramp = o.ramp || rampOf(el, remote);
     c.dark = lookEl === 'void' && !remote;
     c.pos.copy(p); c.prev.copy(p); c.lp.copy(p); c.started = false;
@@ -443,7 +445,8 @@ export function createComet(fx) {
     const s = c.size, seg = c.started ? c.prev.distanceTo(c.pos) : 0;
     c.started = true;
     // голова: ядро и ореол вдоль пройденного за кадр отрезка — на 30 кадрах/с голова сплошная, а не пунктир
-    const nHead = Math.min(4, 1 + Math.floor(seg / Math.max(0.12, s * 0.9)));
+    // доля rate — дробное число частиц (kit округляет вероятностно): голова реже, но не пропадает надолго
+    const nHead = Math.min(4, 1 + Math.floor(seg / Math.max(0.12, s * 0.9))) * Math.max(0.5, c.rate);
     const line = seg > 0.02;
     eHalo.at = line ? c.prev : c.pos; eHalo.to = line ? c.pos : null; eHalo.shape = line ? 'line' : 'point'; eHalo.count = nHead;
     eHalo.ramp = c.ramp; eHalo.rival = c.remote; eHalo.size[0] = s * 2.5; eHalo.size[1] = s * 1.7;
@@ -457,7 +460,7 @@ export function createComet(fx) {
     eCore.at = eHalo.at; eCore.to = eHalo.to; eCore.shape = eHalo.shape; eCore.count = nHead; eCore.rival = c.remote;
     kit.emit(eCore);
     // слой 1: искры-хвост назад по полёту
-    c.accA += dt * 46;
+    c.accA += dt * 46 * c.rate;
     let n = Math.floor(c.accA);
     if (n > 0) {
       c.accA -= n; if (n > 5) n = 5;
@@ -467,7 +470,7 @@ export function createComet(fx) {
     }
     // слой 2: частицы стихии
     const L = c.look;
-    c.accB += dt * 24;
+    c.accB += dt * 24 * c.rate;
     n = Math.floor(c.accB);
     if (n > 0) {
       c.accB -= n; if (n > 3) n = 3;

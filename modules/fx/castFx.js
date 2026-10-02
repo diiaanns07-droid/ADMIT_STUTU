@@ -7,9 +7,8 @@
 //  - цвет: общие заклинания окрашены стихией героя (fx.heroEl / heroPal); призма — 'reset', соперник — 'rival';
 //  - предвестник (common.herald, 0,15 с у руки — жест связан с эффектом): первый «OK» потока (дальше — только белая
 //    звёздочка у ствола), выброс (у обеих ладоней / у кулака), начало сотворения, бросок (крупнее), «Искра»,
-//    рассечение, печати (у обеих ладоней), руны (в стихии руны, с её знаком). «Врата» и «Столп» рисуют sigilGate /
-//    sigilPillar целиком (return true раньше castFx) — свой каст узнаём по записи fx.shared.sigil.release
-//    (её ставит sigilCharge в том же обработчике sigil_cast);
+//    рассечение, печати (у обеих ладоней), руны (в стихии руны, с её знаком). castFx стоит в CHOREO раньше
+//    sigilGate / sigilPillar (те рисуют событие целиком и возвращают true), поэтому предвестник есть и у них;
 //  - выброс (burst): белое ядро-вспышка у груди, ореол, веер искр к цели по power, свет;
 //  - сотворение (snap.player.conjure): пока тело между ладонями — ореол и искры, стягивающиеся к ядру
 //    (по аккумулятору, без аллокаций), «готово» (charge → 1) — короткая звезда; бросок — ореол и конус искр;
@@ -33,7 +32,7 @@ const RUNE_EL = {
 const POOL_N = 24;
 const BOLT_STREAM = 0.6;   // пауза между «OK», после которой выстрел — начало нового потока (предвестник)
 const BOLT_LIGHT = 0.6;    // свет болтов — не чаще (единственный слот medium не занимаем потоком)
-const BOLT_RATE = 0.4;     // хвост и слой стихии кометы болта реже (в воздухе 2–5 болтов), голова — каждый кадр
+const BOLT_RATE = 0.45;    // доля частиц кометы болта (в воздухе 2–5 болтов): голова и слои реже (createComet rate)
 const THROW_WIN = 0.4;     // запись сферы без своего броска берёт сцену броска не старше
 const REM = Object.freeze({ remote: true });
 
@@ -260,26 +259,7 @@ export function register(fx) {
     heraldHands(elOf(R), R, true);
   }
   fx.on('sigil_cast', (ev, d) => { sigilHerald(fx.isRemote(d)); });
-  // «Врата» / «Столп»: sigilGate / sigilPillar рисуют событие целиком (return true) и стоят в CHOREO раньше — сюда
-  // их sigil_cast не доходит. Свой каст: sigilCharge (первый в CHOREO) в том же обработчике пишет
-  // fx.shared.sigil.release = 'gate' | 'pillar' — следим за записью (значение и чтение не меняются).
-  (function watchRelease() {
-    const S = fx.shared.sigil;
-    if (!S || typeof S !== 'object') return;
-    const desc = Object.getOwnPropertyDescriptor(S, 'release');
-    if (!desc || !desc.configurable || !('value' in desc)) return;
-    let v = desc.value;
-    try {
-      Object.defineProperty(S, 'release', {
-        configurable: true, enumerable: true,
-        get() { return v; },
-        set(x) {
-          v = x;
-          if (x === 'gate' || x === 'pillar') { try { sigilHerald(false); } catch (e) { /* предвестник не мешает печати */ } }
-        },
-      });
-    } catch (e) { /* без предвестника врат/столпа */ }
-  })();
+  // «Врата» и «Столп» тоже приходят сюда: castFx стоит в CHOREO раньше sigilGate / sigilPillar (те возвращают true).
 
   // ============================================================ ПОЛЁТ своих снарядов: записи по id (пул)
   // r.cls: 1 — сфера/призма (комета, свет), 2 — «OK»-болт (комета вместо старого болта), 3 — «Искра».
@@ -293,7 +273,7 @@ export function register(fx) {
   for (let i = 0; i < POOL_N; i++) pool.push(makeRec());
   let tag = 0, playing = false, boltLightT = -1e9;
   // опции комет (мутируются перед start)
-  const cBolt = { size: 0.45, remote: false, light: false, lightK: 0.8, dur: 0.35, trail: true, trailWidth: 0.5, trailLife: 0.15, scope: null };
+  const cBolt = { size: 0.45, remote: false, light: false, lightK: 0.8, dur: 0.35, trail: true, trailWidth: 0.5, trailLife: 0.15, scope: null, rate: BOLT_RATE };
   const cOrb = { size: 0.4, remote: false, light: true, lightK: 1, dur: 0.8, trail: true, trailWidth: undefined, trailLife: 0.3, scope: null };
   function sceneScope(key) {
     // сцена без смены текущей (запись рождается в fx.every — вне событий)
@@ -364,8 +344,7 @@ export function register(fx) {
 
   function flyTick(r, dt) {
     if (r.comet) {
-      // комета: голова каждый кадр, слои хвоста болта — реже (dt × BOLT_RATE копит только их аккумуляторы)
-      r.comet.step(r.pos, r.vel, r.cls === 2 ? dt * BOLT_RATE : dt);
+      r.comet.step(r.pos, r.vel, dt);
       return;
     }
     if (r.cls !== 3) return;
