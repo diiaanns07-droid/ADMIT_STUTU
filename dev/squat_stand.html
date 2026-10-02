@@ -134,7 +134,7 @@ function frame() {
       faults: q.faults, formScore: q.formScore, topFault: topSquatFault(q.faults, q.mode),
       mode: q.mode, clean: q.clean, points: st.points, downDeg: q.downDeg, feet: q.feet,
       lastRep: q.lastRep, lastEvent: st.lastEv, framing: q.framing, diag: q.diag,
-      pose: { model: 'full', switching: false, hz: q.diag.hz, recFrames: 0, status: 'ready' },
+      pose: { model: 'full', switching: false, hz: q.diag ? q.diag.hz : null, recFrames: 0, status: 'ready' },
     },
   });
   bar.textContent = `стенд приседаний · ${mode === 'novice' ? 'Новичок' : 'Мастер'} · ${cam.label} · дрожь ±${Math.round(jitter * 100)}% · ${hz} Гц · истинных повторов ${st.S.truth.reps.length} · засчитано ${q.reps} из ${q.attempts}`;

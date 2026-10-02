@@ -254,12 +254,20 @@ function savePoseRecording() {
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   flashRecNote(`Сохранено: последние ${Math.round((rec.frames[rec.frames.length - 1].t - rec.frames[0].t) / 1000)} с позы → ${a.download}`);
 }
-const trainPose = { active: false, prevUrl: null };
+// Страховка: точная модель на слабой видеокарте медленнее 6 Гц дольше 8 с (камера ≥ 20 к/с) — до конца сессии быстрая.
+// Счётчику приседаний хватает и 6 Гц (dev/squatSim.mjs), поэтому порог низкий.
+const trainPose = { active: false, prevUrl: null, slowSince: null, slow: false };
 function trainPoseTick() {
   if (!vision || typeof vision.setPoseModel !== 'function' || !DEPS.mediaPipe.modelFullUrl) return;
   // ?trainpose=full|lite — модель на тренировке вручную (QA: проверить смену и на программном рендере)
   const forced = PERF_Q.get('trainpose') || (PERF_Q.get('pose') === 'lite' ? 'lite' : null);
-  const want = app.screen === 'training' && !app.debug && forced !== 'lite' && (forced === 'full' || !perfTuner || perfTuner.trainingPoseModel() === 'full');
+  if (trainPose.active && trainPose.prevUrl && forced !== 'full') {
+    const d = visionStatus().debug, now = performance.now();
+    const slow = d && d.poseModel === 'full' && !d.poseSwitching && Number.isFinite(d.inferenceHz) && Number.isFinite(d.cameraFps) && d.cameraFps >= 20 && d.inferenceHz < 6;
+    trainPose.slowSince = slow ? (trainPose.slowSince ?? now) : null;
+    if (slow && now - trainPose.slowSince > 8000) { trainPose.slow = true; console.warn(`[W3-SQUAT] точная модель позы на тренировке не успевает (${d.inferenceHz} Гц) — быстрая`); }
+  }
+  const want = app.screen === 'training' && !app.debug && !trainPose.slow && forced !== 'lite' && (forced === 'full' || !perfTuner || perfTuner.trainingPoseModel() === 'full');
   if (want && !trainPose.active) {
     const vs = visionStatus(), d = vs.debug;
     // не во время запуска камеры и загрузки модели: смена пересоздаёт движок, start() держит прежний
@@ -268,7 +276,7 @@ function trainPoseTick() {
     trainPose.prevUrl = d && d.poseModel === 'full' ? null : DEPS.mediaPipe.modelUrl;
     if (trainPose.prevUrl) vision.setPoseModel(DEPS.mediaPipe.modelFullUrl).catch(() => {});
   } else if (!want && trainPose.active) {
-    trainPose.active = false;
+    trainPose.active = false; trainPose.slowSince = null;
     if (trainPose.prevUrl) vision.setPoseModel(trainPose.prevUrl).catch(() => {});
     trainPose.prevUrl = null;
   }

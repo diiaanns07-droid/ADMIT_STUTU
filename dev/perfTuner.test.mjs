@@ -1,7 +1,7 @@
 // node dev/perfTuner.test.mjs — автоподстройка под железо (core/perfTuner.js) на фейковых часах.
 // rAF частоты экрана, фейковый таймер GPU (время кадра ∝ площади пикселей), хранилище в памяти.
 // Это модель, а не замер на железе: реальные цифры — tools/… и панель F3 в игре.
-import { classifyGpu, pickCap, pickProfile, createPerfTuner, PERF_STORAGE_KEY } from '../core/perfTuner.js';
+import { classifyGpu, pickCap, pickProfile, createPerfTuner, PERF_STORAGE_KEY, trainingPoseModel } from '../core/perfTuner.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -208,6 +208,16 @@ test('выученное: свежий уровень берётся (не ни�
   eq(a.profile.vision.poseModel, 'full');
   a.markPoseSlow();
   eq(createPerfTuner({ hardware: hwRtx, storage: st, gpuTimer: null }).profile.vision.poseModel, 'lite', 'в следующий запуск — lite');
+});
+
+// [W3-SQUAT] модель позы на экране тренировки: точная, если видеокарта не программная (и на слабой встроенной тоже)
+test('тренировка: модель позы full на любой видеокарте, кроме программного рендера', () => {
+  eq(trainingPoseModel('discrete'), 'full', 'дискретная');
+  eq(trainingPoseModel('integrated'), 'full', 'встроенная');
+  eq(trainingPoseModel('unknown'), 'full', 'неизвестная');
+  eq(trainingPoseModel('software'), 'lite', 'программный рендер');
+  eq(createPerfTuner({ hardware: { gpu: UHD, gpuClass: classifyGpu(UHD), cores: 4, memory: 8 }, storage: memStorage(), gpuTimer: null }).trainingPoseModel(), 'full', 'UHD 620 → full на тренировке (в бою lite)');
+  eq(createPerfTuner({ hardware: { gpu: 'SwiftShader', gpuClass: 'software', cores: 4, memory: 8 }, storage: memStorage(), gpuTimer: null }).trainingPoseModel(), 'lite', 'SwiftShader → lite');
 });
 
 // ───────────────────────────── запуск ─────────────────────────────

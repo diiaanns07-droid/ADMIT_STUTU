@@ -171,6 +171,7 @@ export const SQUAT_FRAME_TIPS = Object.freeze({
   tiltUp: 'Не видно головы — наклони экран ноутбука назад',
   stepBack: 'Отойди на шаг назад — ноги не помещаются в кадр',
   tiltDown: 'Стопы не в кадре — наклони экран ноутбука чуть вперёд или отойди на шаг',
+  tiltDownKnees: 'Не видно колен — наклони экран ноутбука вперёд или отойди на шаг',
   closer: 'Подойди на шаг ближе — так точнее',
   center: 'Встань по центру кадра',
   ok: 'Вижу тебя целиком ✓',
@@ -198,8 +199,9 @@ export function assessSquatFrame(vis, pos, minVis = 0.5) {
   if (!sh && !hip) code = 'noPerson';
   else if (headCut && !ankle) code = 'stepBack';   // обрезано и сверху, и снизу — слишком близко
   else if (headCut) code = 'tiltUp';
-  else if (!knee || (kneeY.length && Math.max(...kneeY) > 0.9)) code = 'stepBack';
-  else if (!ankle) code = fin(top) && top > 0.12 ? 'tiltDown' : 'stepBack';
+  // ноги обрезаны снизу: сверху есть место — камере нужно смотреть ниже (наклонить экран), иначе — отойти
+  else if (!knee) code = fin(top) && top > 0.15 ? 'tiltDownKnees' : 'stepBack';
+  else if (!ankle) code = fin(top) && top > 0.15 ? 'tiltDown' : 'stepBack';
   else if (fin(top) && fin(bottom) && bottom - top < 0.45) code = 'closer';
   else if (fin(hipMx) && (hipMx < 0.18 || hipMx > 0.82)) code = 'center';
   else code = 'ok';
