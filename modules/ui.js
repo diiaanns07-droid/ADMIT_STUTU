@@ -2807,10 +2807,11 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       const input = el('input', { type: 'radio', name: modeName, value, class: 'ao-seg__input' });
       modeInputs.push(input);
       modeSeg.append(el('label', { class: 'ao-seg__opt' }, input, el('span', { class: 'ao-seg__label', text: label })));
-      listen(input, 'change', () => { if (input.checked) invoke('onSettings', { gestureMode: value }); });
+      // «Автоход» сохраняем: иначе смена режима ставит его по умолчанию режима (main.js sanitizeSettings)
+      listen(input, 'change', () => { if (input.checked) invoke('onSettings', { gestureMode: value, ...(state.settings ? { autoWalk: state.settings.autoWalk !== false } : {}) }); });
     }
     const modeHint = el('span', { class: 'ao-field__hint ao-train__modehint' });
-    const modeField = el('fieldset', { class: 'ao-field ao-fieldset ao-train__mode', hidden: true, title: 'Тот же переключатель «Новичок / Мастер», что у жестов в бою' }, el('legend', { class: 'ao-field__legend', text: 'Судья' }), modeSeg, modeHint);
+    const modeField = el('fieldset', { class: 'ao-field ao-fieldset ao-train__mode', hidden: true, title: 'Тот же переключатель «Новичок / Мастер», что у жестов в бою' }, el('legend', { class: 'ao-field__legend', text: 'Режим — и для жестов в бою' }), modeSeg, modeHint);
     const count = el('strong', { class: 'ao-train__count', text: '0' });
     const countLabel = el('span', { class: 'ao-train__label', text: 'отжиманий за подход' });
     const good = el('span', { class: 'ao-train__good', 'aria-hidden': 'true', hidden: true, text: 'Чисто! +1' });
@@ -2983,25 +2984,29 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           setText(prepTip, tip);
           setHidden(prepTip, !tip);
           const pose = T.pose || {};
+          // «Готово» — только когда и кадр в порядке (иначе рядом с красным советом — противоречие)
           const go = pose.switching ? 'Включаю точную модель позы…'
-            : T.state === 'top' && att === 0 ? (novice ? 'Готово — приседай!' : 'Готово — приседайте')
+            : T.state === 'top' && att === 0 && okState ? (novice ? 'Готово — приседай!' : 'Готово — приседайте')
               : T.state === 'setup' ? (novice ? 'Встань прямо — начнём через полсекунды' : 'Встаньте прямо, ноги на ширине плеч')
                 : '';
           setText(prepGo, go);
           setHidden(prepGo, !go);
-          setClass(prepGo, 'is-go', T.state === 'top' && att === 0);
+          setClass(prepGo, 'is-go', T.state === 'top' && att === 0 && okState);
         }
         const H = T.lastHint && typeof T.lastHint === 'object' && typeof T.lastHint.text === 'string' ? T.lastHint : null;
         const hintAge = isNum(T.sinceHintMs) ? T.sinceHintMs : Infinity;
-        const framing = !!H && H.code === 'frame' && T.state === 'noPose';
-        const showFault = !!H && !(framing && prepOn) && (framing || (hintAge < 3000 && hintAge <= repAge + 50));
-        // [W3-SQUAT] «Новичок»: повтор с ошибкой засчитан — карточка «ОШИБКА · засчитано +1»; не дошёл до глубины — «не засчитано»
+        // [W3-SQUAT] про кадр («не вижу ног») говорит подготовка — карточкой не дублируем (и не всплывает после возвращения);
+        // подсказка прошлого повтора гаснет, как только начался новый
+        const stale = !!H && isNum(T.repStart) && isNum(H.tMs) && H.tMs < T.repStart;
+        const showFault = !!H && H.code !== 'frame' && !stale && hintAge < 3000 && hintAge <= repAge + 50;
+        // «Новичок»: повтор с ошибкой засчитан — «Ошибка · засчитано +1»; повтор не засчитан — «Не засчитано»; идёт повтор — «Ошибка»
         const LR = T.lastRep && typeof T.lastRep === 'object' ? T.lastRep : null;
-        const counted = !!LR && LR.ok === true && !LR.clean && isNum(LR.tMs) && isNum(H && H.tMs) && LR.tMs === H.tMs;
+        const ofLast = !!LR && isNum(LR.tMs) && isNum(H && H.tMs) && LR.tMs === H.tMs;
+        const counted = ofLast && LR.ok === true && !LR.clean;
         setHidden(fault, !showFault);
         if (showFault) {
           setText(faultText, H.text);
-          setText(faultKey, counted ? 'Ошибка · засчитано +1' : novice && H.code === 'shallow' && T.state !== 'descent' && T.state !== 'bottom' ? 'Не засчитано' : 'Ошибка');
+          setText(faultKey, counted ? 'Ошибка · засчитано +1' : ofLast && LR.ok === false ? 'Не засчитано' : 'Ошибка');
           setAttr(fault, 'data-tone', counted ? 'warn' : POSTURE.includes(H.code) ? 'bad' : 'warn');
           setAttr(fault, 'data-code', H.code);
           const key = `${H.code}|${H.tMs}`;
