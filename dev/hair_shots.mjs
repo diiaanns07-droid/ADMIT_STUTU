@@ -208,6 +208,52 @@ async function gameBudget() {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 if (argv.includes('--game')) { await gameBudget(); await browser.close(); srv.close(); process.exit(0); }
+// --budget: вклад причёски на стенде — кадр с волосами и без (вызовы, треугольники; тень включена),
+// программы и текстуры материалов волос → budget.json (и до, и после: имена мешей волос обеих версий)
+if (argv.includes('--budget')) {
+  const QS = arg('--qs', 'low,medium,high').split(','), out = {};
+  for (const q of QS) for (const hero of HEROES) {
+    const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
+    await page.route(/cdn\.jsdelivr\.net/, async (route) => {
+      if (/RoomEnvironment\.js$/.test(route.request().url())) return route.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8', body: ROOM_ENV });
+      const local = cdnToLocal(route.request().url());
+      if (local && existsSync(local)) route.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8', body: await readFile(local) });
+      else route.fulfill({ status: 404, body: '' });
+    });
+    await page.goto(`${base}/dev/hero_stand.html?a=${hero}&b=archmage&solo=1&yaw=0&q=${q}`, { waitUntil: 'load', timeout: 180000 });
+    await page.waitForFunction(() => window.__HS_API__ && window.__HS_API__.a.ready && window.__HS_API__.b.ready, null, { timeout: 240000 });
+    out[`${hero}:${q}`] = await page.evaluate(() => {
+      const A = window.__HS_API__, r = A.renderer;
+      window.__HS_MANUAL__ = true;
+      A.b.root.visible = false;
+      for (let i = 0; i < 10; i++) A.step(1 / 30);
+      A.camera.position.set(0, 1.5, 2.2); A.camera.lookAt(0, 1.3, 0);
+      const HAIR = /^(hair-mesh|hair-sheet|hair-cap-mesh|hair-core|hair-soft)$/;
+      const hair = []; A.a.root.traverse((o) => { if (o.isMesh && HAIR.test(o.name)) hair.push(o); });
+      const shot = () => { r.render(A.scene, A.camera); return { calls: r.info.render.calls, triangles: r.info.render.triangles }; };
+      shot();
+      const vis = hair.map((o) => o.visible);
+      const on = shot();
+      hair.forEach((o) => { o.visible = false; });
+      const off = shot();
+      hair.forEach((o, i) => { o.visible = vis[i]; });
+      const progs = new Set(), texs = new Map(), mats = new Set();
+      for (const o of hair) {
+        if (!o.visible) continue;
+        for (const m of [o.material, o.customDepthMaterial].flat().filter(Boolean)) {
+          mats.add(m.name || m.type);
+          const pr = r.properties.get(m); if (pr && pr.currentProgram) progs.add(pr.currentProgram.id);
+          for (const k of ['map', 'alphaMap', 'bumpMap']) if (m[k] && m[k].image) texs.set(m[k].uuid, `${m[k].image.width}x${m[k].image.height}`);
+        }
+      }
+      return { calls: on.calls - off.calls, triangles: on.triangles - off.triangles, meshes: hair.filter((o) => o.visible).map((o) => o.name + (o.castShadow ? '+тень' : '')), materials: [...mats], programs: progs.size, textures: [...texs.values()], frame: on, cpuMs: (() => { for (let i = 0; i < 120; i++) { A.snapA.player.yaw += 0.03; A.a.update(1 / 60, A.snapA, []); } const g = A.a.state().gearMs; return g ? g.hair : null; })() };
+    });
+    log('budget', hero, q, JSON.stringify(out[`${hero}:${q}`]));
+    await page.close();
+  }
+  writeFileSync(join(OUT, 'budget.json'), JSON.stringify(out, null, 1));
+  await browser.close(); srv.close(); process.exit(0);
+}
 // --atlas: атлас прядей (RGB на сером и альфа) → atlas.png
 if (argv.includes('--atlas')) {
   const page = await browser.newPage({ viewport: { width: 1100, height: 600 } });

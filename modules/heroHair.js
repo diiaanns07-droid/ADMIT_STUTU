@@ -39,7 +39,7 @@ import { config } from '../config.js';
 // tt — просвечивание, len — длина от макушки (м, до масштаба героя), hood — капюшон оставить
 const STYLES = {
   // эльфийка: длинные платиновые, прямой пробор, тонкие косы от висков назад (полу-распущенные), обруч
-  elf: { spec1: [1.0, 0.97, 0.92], spec1K: 0.14, spec2: [1.0, 0.84, 0.58], spec2K: 0.08, tt: 0.4, kk: [220, 60, -0.08, 0.13], len: 0.9, motion: 1 },
+  elf: { spec1: [1.0, 0.97, 0.92], spec1K: 0.11, spec2: [1.0, 0.84, 0.58], spec2K: 0.07, tt: 0.4, kk: [140, 40, -0.08, 0.13], len: 0.9, motion: 1 },
   // чародейка: гладкие чёрные, ровная чёлка и боковые пряди «химэ», фиолетовый отлив
   hime: { spec1: [0.9, 0.88, 1.0], spec1K: 0.24, spec2: [0.5, 0.36, 1.0], spec2K: 0.09, tt: 0.2, kk: [320, 90, -0.06, 0.12], len: 0.8, motion: 0.8 },
   // лучница: каштановая высокая коса-хвост, выбившиеся пряди у лица
@@ -86,7 +86,7 @@ function drawAtlas(N) {
     for (let x = Math.round(u0 * C); x < Math.round(u1 * C); x += step) {
       const u = (x / C - u0) / (u1 - u0), e = sm(0, edge, u) * sm(1, 1 - edge, u);
       if (rnd() > 0.35 + 0.65 * e) continue;
-      const a = (0.55 + 0.45 * e) * (0.75 + 0.25 * rnd()), y1 = yEnd(u) * N, vv = Math.round(lum * (0.6 + 0.6 * rnd()) * 255);
+      const a = (0.55 + 0.45 * e) * (0.75 + 0.25 * rnd()), y1 = yEnd(u) * N, vv = Math.round(lum * (0.88 + 0.24 * rnd()) * 255);
       const gr = g.createLinearGradient(0, 0, 0, y1);
       gr.addColorStop(0, `rgba(${vv},${vv},${vv},${a})`); gr.addColorStop(0.8, `rgba(${vv},${vv},${vv},${a})`); gr.addColorStop(1, `rgba(${vv},${vv},${vv},0)`);
       g.fillStyle = gr; g.fillRect(c0 + x, 0, step, y1);
@@ -96,7 +96,7 @@ function drawAtlas(N) {
   under(0, 0.04, 0.96, () => 0.66 + 0.24 * rnd(), 0.62, 0.3);
   for (let i = 0; i < 700; i++) {
     const u = 0.5 + (rnd() - 0.5) * (0.5 + 0.48 * rnd()), x0 = u * C, y1 = N * (0.6 + 0.39 * rnd());
-    hair(x0, -2, x0 + (rnd() - 0.5) * 12 * k, y1, (0.8 + 1.1 * rnd()) * k, 0.5 + 0.45 * rnd(), 0.25 + 0.5 * rnd(), (rnd() - 0.5) * 9 * k, 0.35);
+    hair(x0, -2, x0 + (rnd() - 0.5) * 12 * k, y1, (0.8 + 1.1 * rnd()) * k, 0.55 + 0.4 * rnd(), 0.2 + 0.45 * rnd(), (rnd() - 0.5) * 9 * k, 0.35);
   }
   // 1: пучки — 4 широких пучка, у корней сливаются, сужаются только к своим кончикам
   {
@@ -316,6 +316,17 @@ export function buildHair(THREE, ctx) {
   const cz = (sk.minZ + sk.maxZ) * 0.5 - 0.004, rz = (sk.maxZ - sk.minZ) * 0.5;
   const cx = (sk.minX + sk.maxX) * 0.5, rx = (sk.maxX - sk.minX) * 0.5;
   const O = bp.head.clone().addScaledVector(LEFT, cx).addScaledVector(UP, cy).addScaledVector(FWD, cz);
+  // нижняя половина (затылок, за ушами): снаружи может быть шея меша тела — её вершины тоже «кожа»
+  vrm.scene.traverse((o) => {
+    if (!o.isSkinnedMesh || !o.visible || /hood|hat|helm|armet|hair|eye|brow/i.test(o.name)) return;
+    const pa = o.geometry.attributes.position;
+    for (let i = 0; i < pa.count; i++) {
+      o.getVertexPosition(i, hv); hv.applyMatrix4(o.matrixWorld);
+      rel.copy(hv).sub(O); const r = rel.length();
+      if (r > 0.17 || r < 1e-4 || rel.dot(UP) / r > Math.cos(1.45)) continue;
+      headPts.push(hv.clone());
+    }
+  });
   const browY = sk.minY + hH * 0.58;                    // высота бровей (оси головы)
   // направление по сферическим углам: az 0 — затылок, +π/2 — левый висок, π — лоб; pol 0 — макушка
   const dirOf = (az, pol, out = V3()) => out.set(0, 0, 0).addScaledVector(LEFT, Math.sin(az) * Math.sin(pol)).addScaledVector(UP, Math.cos(pol)).addScaledVector(FWD, -Math.cos(az) * Math.sin(pol));
@@ -560,13 +571,17 @@ export function buildHair(THREE, ctx) {
       const s0 = (o.flex0 || 0) + (o.rev ? (1 - t) : t) * L;
       const fl = Math.min(1, Math.max(0, (s0 - (o.flexStart ?? 0.04)) / (o.flexLen ?? 0.45))) * (o.flexK ?? 1);
       const rd = o.rootDark ?? 0.62;
+      // мягкая волна вдоль пряди (живые волосы, а не линейка): амплитуда растёт от корня
+      const wv = (o.wave ?? 0.004) * Math.min(1, tw * 3) * Math.sin(phase * 6.283 + tw * L / 0.21 * 6.283);
       const shade = tone * (rd + (1 - rd) * Math.min(1, tw * 2.2)) * (0.96 + 0.08 * Math.min(1, tw * 1.3));
       const alpha = (o.alpha ? o.alpha(tw) : 1);
       for (let i = 0; i < cols; i++) {
         const s = i / (cols - 1) - 0.5;
-        p.copy(c).addScaledVector(W, s * width).addScaledVector(Ov, (o.bulge ?? 0.3) * width * (0.25 - s * s));
+        p.copy(c).addScaledVector(W, s * width + wv).addScaledVector(Ov, (o.bulge ?? 0.3) * width * (0.25 - s * s));
         n.copy(Ov).addScaledVector(W, s * (o.fan ?? 0.35)).normalize();
-        const u = (tile + ua + (ub - ua) * (s + 0.5)) * 0.25, v = va + (vb - va) * (o.rev ? 1 - t : t);
+        // по длине: плотная часть атласа (v < 0.5) — до vTip длины, дальше кончики
+        const tl = o.rev ? 1 - t : t, vt = o.vTip ?? 0.7, tv = o.vLin ? tl : (tl < vt ? 0.5 * tl / vt : 0.5 + 0.5 * (tl - vt) / (1 - vt));
+        const u = (tile + ua + (ub - ua) * (s + 0.5)) * 0.25, v = va + (vb - va) * tv;
         const cw = o.chest !== undefined ? (typeof o.chest === 'function' ? o.chest(p, tw) : o.chest) : chestW(p);
         vtx(p, n, u, v, [shade, shade, shade], alpha, [cw, fl, phase, shift], T);
       }
@@ -608,7 +623,7 @@ export function buildHair(THREE, ctx) {
   // коса из трёх прядей вдоль оси pts (radius — толщина пряди по доле длины, width — размах плетения)
   const braid = (pts, radius, width, period, o = {}) => {
     const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
-    const L = curve.getLength(), n = Math.max(12, Math.round(L / 0.004));
+    const L = curve.getLength(), n = Math.max(12, Math.round(L / (o.step || 0.0065)));
     const fr = curve.computeFrenetFrames(n, false), c = V3(), T = V3();
     // плоскость плетения: «наружу» от головы/тела
     for (let k = 0; k < 3; k++) {
@@ -620,7 +635,10 @@ export function buildHair(THREE, ctx) {
         const ph = (t * L / period) * Math.PI * 2 + (k * Math.PI * 2) / 3, w = width(t);
         lobe.push(c.clone().addScaledVector(W, Math.sin(ph) * w).addScaledVector(Ov, Math.sin(ph * 2) * w * 0.32 + w * 0.15));
       }
-      tubeG(lobe, (t) => radius(t) * (0.92 + 0.08 * Math.cos((t * L / period) * Math.PI * 4 + k)), 6, { ...o, rows: n, tone: (o.tone ?? 1) * (0.94 + 0.06 * k) });
+      if (o.ribbon) {
+        // тонкая коса: пряди-ленты в плоскости плетения (втрое дешевле трубок, рисунок тот же)
+        card(lobe, { ...o, tile: 0, cols: 2, rows: n, w0: radius(0) * 2.2, w1: radius(1) * 2.2, u0: 0.3, u1: 0.7, vLin: true, v0: 0.06, v1: 0.45, bulge: 0, wave: 0, taper: false, tone: (o.tone ?? 1) * (0.92 + 0.08 * k) });
+      } else tubeG(lobe, (t) => radius(t) * (0.92 + 0.08 * Math.cos((t * L / period) * Math.PI * 4 + k)), o.sides || 5, { ...o, rows: n, tone: (o.tone ?? 1) * (0.94 + 0.06 * k) });
     }
   };
   // «шапочка»: оболочка вокруг полюса до линии роста; пряди — от полюса наружу (по v), к линии роста
@@ -636,6 +654,7 @@ export function buildHair(THREE, ctx) {
       for (let it = 0; it < 22; it++) { const mid = (lo + hi) / 2; if (inside(dirAt(th, mid, d))) lo = mid; else hi = mid; }
       dmax.push(lo + (o.over ?? 0.06));
     }
+    dbg.shell = dmax.map((dm, i) => { const a = angOf(dirAt((i / NT) * Math.PI * 2, dm)); return [+dm.toFixed(2), +a.az.toFixed(2), +a.pol.toFixed(2)]; });
     const base = pos.length / 3, d = V3(), p = V3(), T = V3();
     for (let i = 0; i <= NT; i++) {
       const th = (i / NT) * Math.PI * 2, tri = Math.abs(((i / NT) * (o.rep ?? 7)) % 2 - 1);
@@ -646,7 +665,8 @@ export function buildHair(THREE, ctx) {
         T.copy(P).multiplyScalar(-Math.sin(de)).addScaledVector(E1, Math.cos(de) * Math.cos(th)).addScaledVector(E2, Math.cos(de) * Math.sin(th)).normalize();
         const sh = (o.tone ?? 0.62) * (0.85 + 0.15 * f);
         const a = f < 0.9 ? 1 : 1 - (f - 0.9) / 0.1 * (o.edge ?? 0.5);
-        const vv = f < 0.9 ? 0.04 + 0.6 * (f / 0.9) : 0.64 + 0.28 * ((f - 0.9) / 0.1);
+        // плотная подложка атласа — до v ≈ 0.5, дальше кончики: у линии роста — только последние 10 %
+        const vv = f < 0.9 ? 0.04 + 0.42 * (f / 0.9) : 0.46 + 0.4 * ((f - 0.9) / 0.1);
         vtx(p, d, (0.3 + 0.4 * tri) * 0.25, vv, [sh, sh, sh], a, [chestW(p), 0, rr(), 0], T);
       }
     }
@@ -658,6 +678,7 @@ export function buildHair(THREE, ctx) {
 
   // ---------------- причёски
   const lenK = (HO.len || 0.9) / 0.9;
+  const dbg = {};
   // корни карт проявляются плавно: нет видимого «среза» там, где карта начинается
   const rootFade = (t) => Math.min(1, 0.25 + t / 0.07);
   const hiDetail = () => { if (detailFrom.at < 0) detailFrom.at = idx.length; };
@@ -676,8 +697,8 @@ export function buildHair(THREE, ctx) {
         const root = S(Math.PI, pol, lift - 0.002).addScaledVector(LEFT, s * (0.005 + 0.003 * layer));
         const pts = walk(root, S(s * (0.95 + 0.3 * (1 - u)), 1.3, lift), 0.018, lift, 30);
         const nW = pts.length;   // путь по коже — прибит, дальше свободно
-        extend(pts, Math.max(0.12, L * (0.82 + 0.16 * rr()) - arcLen(pts)), 0.035, null);
-        drape(pts, nW, 0.006 + layer * 0.007, back, 80, 0.22);
+        extend(pts, Math.max(0.12, L * (0.82 + 0.16 * rr()) - arcLen(pts)), 0.025, null);
+        drape(pts, nW, 0.006 + layer * 0.007, back, 110, 0.35);
         card(pts, { tile: layer ? 1 : 0, w0: 0.03, w1: layer ? 0.05 : 0.06, tone: (layer ? 1 : 0.86) * (0.97 + 0.06 * rr()), flexLen: 0.5, bulge: 0.2, alpha: rootFade });
       }
     }
@@ -689,9 +710,9 @@ export function buildHair(THREE, ctx) {
         const root = S(az * 0.25, 0.2 + 0.05 * rr(), lift - 0.002);
         const pts = walk(root, S(az, Math.min(1.75, hairPol(az) - 0.1), lift), 0.018, lift, 30);
         const nW = pts.length;
-        extend(pts, Math.max(0.15, L * (0.86 + 0.14 * rr()) * (1 - 0.1 * Math.abs(az) / 1.65) - arcLen(pts)), 0.035, null);
-        drape(pts, nW, 0.006 + layer * 0.007, back, 80, 0.22);
-        card(pts, { tile: layer ? 1 : 0, w0: 0.03, w1: layer ? 0.052 : 0.064, tone: (layer ? 1 : 0.84) * (0.97 + 0.06 * rr()), flexLen: 0.5, bulge: 0.2, alpha: rootFade });
+        extend(pts, Math.max(0.15, L * (0.86 + 0.14 * rr()) * (1 - 0.1 * Math.abs(az) / 1.65) - arcLen(pts)), 0.025, null);
+        drape(pts, nW, 0.006 + layer * 0.007, back, 110, 0.35);
+        card(pts, { tile: layer ? 1 : 0, w0: 0.03, w1: layer ? 0.06 : 0.075, tone: (layer ? 1 : 0.84) * (0.97 + 0.06 * rr()), flexLen: 0.5, bulge: 0.2, alpha: rootFade });
       }
     }
     // нижний слой по спине: густая масса под верхними прядями
@@ -701,9 +722,9 @@ export function buildHair(THREE, ctx) {
         const az = (k / (NA - 1) - 0.5) * 2.2, lift = 0.003;
         const root = S(az, Math.min(1.45 + 0.2 * Math.abs(az), hairPol(az) - 0.14), lift);
         const pts = [root];
-        extend(pts, L * (0.72 + 0.14 * rr()), 0.035, V3().copy(dirOf(az, 2.1)).addScaledVector(UP, -1));
-        drape(pts, 1, 0.004, back, 80, 0.22);
-        card(pts, { tile: 0, w0: 0.05, w1: 0.07, tone: 0.72 + 0.1 * rr(), flexLen: 0.5, bulge: 0.2, alpha: rootFade });
+        extend(pts, L * (0.72 + 0.14 * rr()), 0.025, V3().copy(dirOf(az, 2.1)).addScaledVector(UP, -1));
+        drape(pts, 1, 0.004, back, 110, 0.35);
+        card(pts, { tile: 0, w0: 0.05, w1: 0.08, tone: 0.72 + 0.1 * rr(), flexLen: 0.5, bulge: 0.2, alpha: rootFade });
       }
     }
     // пряди у лица: от висков перед ушами — на ключицы и грудь
@@ -723,7 +744,7 @@ export function buildHair(THREE, ctx) {
       extend(pts, L * 0.36, 0.025, null);
       drape(pts, nW, 0.016, FWD.clone(), 70, 0.25);
       const bc = new THREE.CatmullRomCurve3(pts, false, 'centripetal'), bl = bc.getLength();
-      braid(pts, (t) => 0.0034 * (1 - 0.3 * t), (t) => 0.0052 * (1 - 0.25 * t), 0.02, { flexStart: 0.06, flexLen: 0.3, flexK: 1, tone: 1.15 });
+      braid(pts, (t) => 0.0034 * (1 - 0.3 * t), (t) => 0.0052 * (1 - 0.25 * t), 0.02, { flexStart: 0.06, flexLen: 0.3, flexK: 1, tone: 1.1, ribbon: true, step: 0.0028 });
       const e0 = bc.getPointAt(0.97), e1 = bc.getPointAt(1);
       tubeG([e0.clone().lerp(e1, -2), e0, e1], () => 0.0042, 8, { color: [1.0, 0.78, 0.42], flexStart: 0.06, flexLen: 0.3, flexK: 1, flex0: bl * 0.94, rows: 3, v0: 0.3, v1: 0.35 });
     }
@@ -757,7 +778,7 @@ export function buildHair(THREE, ctx) {
         // объём: середина чёлки отходит ото лба, кончики слегка подогнуты к нему
         const n = pts.length;
         for (let i = 1; i < n; i++) { const t = i / (n - 1); pts[i].addScaledVector(out(pts[i], V3()), 0.006 * Math.sin(Math.PI * t * 0.9)); }
-        card(pts, { tile: 3, w0: 0.03, w1: 0.036, tone: 0.95 + 0.1 * rr(), v1: CUT_V + 0.002, taper: false, flexLen: 0.3, flexK: 0.18, bulge: 0.2, rootDark: 0.85 });
+        card(pts, { tile: 3, w0: 0.03, w1: 0.036, tone: 0.95 + 0.1 * rr(), vLin: true, v1: CUT_V + 0.002, taper: false, flexLen: 0.3, flexK: 0.18, bulge: 0.2, rootDark: 0.85 });
       }
     }
     // боковые пряди «химэ»: перед ушами до линии подбородка, срез ровный
@@ -770,7 +791,7 @@ export function buildHair(THREE, ctx) {
       for (let y = last.y - 0.02; y > yJaw; y -= 0.02) pts.push(V3().copy(last).setY(y).addScaledVector(out(last, V3()), 0.004));
       pts.push(V3().copy(last).setY(yJaw).addScaledVector(out(last, V3()), 0.004));
       drape(pts, 2, 0.008 + 0.003 * k, null, 40, 0.25);
-      card(pts, { tile: 3, w0: 0.03, w1: 0.034, tone: 0.95 + 0.08 * rr(), v1: CUT_V + 0.002, taper: false, flexLen: 0.25, flexK: 0.5, bulge: 0.3 });
+      card(pts, { tile: 3, w0: 0.03, w1: 0.034, tone: 0.95 + 0.08 * rr(), vLin: true, v1: CUT_V + 0.002, taper: false, flexLen: 0.25, flexK: 0.5, bulge: 0.3 });
     }
     // длинные пряди за боковыми: по плечам на грудь, срез ровный
     for (const layer of [0, 1]) for (const s of [1, -1]) for (let k = 0; k < (layer ? 3 : 2); k++) {
@@ -791,7 +812,7 @@ export function buildHair(THREE, ctx) {
           const pts = walk(root, S(az, 1.7, lift), 0.02, lift, 30);
           extend(pts, L * 0.95 - arcLen(pts), 0.035, null);
           drape(pts, Math.min(pts.length - 1, 4), 0.005 + layer * 0.006, FWD.clone().multiplyScalar(-1));
-          card(pts, { tile: 3, w0: 0.05, w1: 0.06, tone: 0.9 + 0.1 * rr(), v1: CUT_V + 0.002, taper: false, flexLen: 0.5, bulge: 0.25 });
+          card(pts, { tile: 3, w0: 0.05, w1: 0.06, tone: 0.9 + 0.1 * rr(), vLin: true, v1: CUT_V + 0.002, taper: false, flexLen: 0.5, bulge: 0.25 });
         }
       }
     }
@@ -824,7 +845,7 @@ export function buildHair(THREE, ctx) {
         const pts = walk(start, tie, 0.016, lift, 40);
         pts.forEach((p, i) => { const t = i / Math.max(1, pts.length - 1); p.addScaledVector(out(p, V3()), 0.005 * t * t); });
         const front = Math.cos(th) < 0 ? 1 : 0;
-        card(pts.reverse(), { tile: layer ? 1 : 0, w0: 0.03, w1: 0.05 + 0.01 * front, tone: (layer ? 1 : 0.85) * (0.95 + 0.1 * rr()), flexK: 0, chest: 0, bulge: 0.2, v0: 0.04, v1: layer ? 0.7 : 0.84, rootDark: 0.9, alpha: (t) => (t > 0.85 ? 1 - (t - 0.85) * 3 : 1) });
+        card(pts.reverse(), { tile: layer ? 1 : 0, w0: 0.03, w1: 0.05 + 0.01 * front, tone: (layer ? 1 : 0.85) * (0.95 + 0.1 * rr()), flexK: 0, chest: 0, bulge: 0.2, v0: 0.04, vLin: true, v1: layer ? 0.7 : 0.84, rootDark: 0.9, alpha: (t) => (t > 0.85 ? 1 - (t - 0.85) * 3 : 1) });
       }
     }
     // хвост: от узла чуть вверх-назад, затем вниз по спине; коса из трёх прядей, кисточка на конце
@@ -839,7 +860,7 @@ export function buildHair(THREE, ctx) {
       const a = (k / 8) * Math.PI * 2, base = axis.slice(0, 4).map((p) => p.clone());
       const T0 = V3().copy(base[1]).sub(base[0]).normalize(), e1 = V3().crossVectors(T0, UP).normalize(), e2 = V3().crossVectors(T0, e1);
       base.forEach((p, i) => { const r = 0.014 * Math.sin(Math.PI * Math.min(1, (i + 0.5) / 3.2)); p.addScaledVector(e1, Math.cos(a) * r).addScaledVector(e2, Math.sin(a) * r); });
-      card(base, { tile: 0, w0: 0.022, w1: 0.02, tone: 0.95, flexK: 0.3, chest: 0, bulge: 0.5, v1: 0.75, taper: false });
+      card(base, { tile: 0, w0: 0.022, w1: 0.02, tone: 0.95, flexK: 0.3, chest: 0, bulge: 0.5, vLin: true, v1: 0.75, taper: false });
     }
     const bAxis = new THREE.CatmullRomCurve3(axis, false, 'centripetal');
     const bl = bAxis.getLength(), bPts = [];
@@ -978,7 +999,9 @@ export function buildHair(THREE, ctx) {
       return m;
     };
     const core = fin(new Cls({ ...common, name: 'hair-core', alphaTest: CUT, alphaToCoverage: tq === 'low', ...(phys ? { specularIntensity: 0.35 } : {}) }), false);
-    const soft = tq === 'low' ? null : fin(new Cls({ ...common, name: 'hair-soft', transparent: true, depthWrite: false, ...(phys ? { specularIntensity: 0.35 } : {}) }), true);
+    // мягкая кромка: прозрачный двусторонний материал three рисует в два прохода — один (порядок внутри
+    // причёски задан индексами: от кожи наружу)
+    const soft = tq === 'low' ? null : fin(new Cls({ ...common, name: 'hair-soft', transparent: true, depthWrite: false, forceSinglePass: true, ...(phys ? { specularIntensity: 0.35 } : {}) }), true);
     const depth = new THREE.MeshDepthMaterial({ name: 'hair-depth', depthPacking: THREE.RGBADepthPacking, map: tex, alphaTest: CUT, side: THREE.DoubleSide });
     patchMotion(depth, U, true);
     return { core, soft, depth, N };
@@ -1105,7 +1128,12 @@ export function buildHair(THREE, ctx) {
     capeGap: 0,
     meshes: [meshCore, meshSoft],
     info: () => ({ style: styleId, verts: nV, tris: idx.length / 3, trisLow: nIdxLow / 3, tier, atlas: atlasN, hood: hoodOn }),
-    probe: () => [[0, 1.4], [0, 1.7], [0, 2.0], [0, 2.2], [1.57, 1.2], [1.57, 1.4], [1.0, 1.6], [2.6, 1.0]].map(([az, pol]) => { const d = dirOf(az, pol); return { az, pol, skin: +skinR(d).toFixed(4), ell: +ellR(d).toFixed(4), hp: +hairPol(az).toFixed(3) }; }).concat([{ polFront, nHead: headPts.length, sk }]),
+    probe: () => [[0, 1.8], [0, 2.0], [0, 2.2], [0, 2.3], [0.8, 1.9], [0.8, 2.1], [1.57, 1.2], [1.57, 1.4], [2.4, 1.2]].map(([az, pol]) => {
+      const d = dirOf(az, pol); let cone = 0, n = 0; const q = V3();
+      for (const p of headPts) { q.copy(p).sub(O); const r = q.length(); if (q.divideScalar(r).dot(d) > 0.996) { cone = Math.max(cone, r); n++; } }
+      const a = angOf(d);
+      return { az, pol, skin: +skinR(d).toFixed(4), cone: +cone.toFixed(4), n, ell: +ellR(d).toFixed(4), hp: +hairPol(az).toFixed(3), inside: a.pol < hairPol(a.az) };
+    }).concat([{ polFront, nHead: headPts.length, sk, O: O.toArray().map((x) => +x.toFixed(3)), shell: dbg.shell }]),
   };
   meshCore.userData.hairApi = api;   // QA: info()/probe() со стенда
   return api;
