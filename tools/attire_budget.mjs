@@ -1,5 +1,5 @@
 // [W4-НАРЯДЫ] Цена нарядов героинь: вызовы отрисовки, треугольники, текстуры, программы — на low и high.
-// node tools/attire_budget.mjs [--root DIR] [--vendor DIR] [--heroes elf,dark,ranger] [--q low,high] [--game] [--frames 8]
+// node tools/attire_budget.mjs [--root DIR] [--vendor DIR] [--heroes elf,dark,ranger] [--q low,high] [--game] [--frames 8] [--wait 4000]
 //   стенд (по умолчанию): dev/hero_stand.html?a=<герой>&b=ashen&solo=1 — только героиня в кадре, кадр рендерится
 //     вручную (window.__HS_API__), renderer.info после одного кадра; материалы — уникальные у видимых мешей героини;
 //   --game: игра в меню выбора (витрина героя), медиана window.__ASHEN__.renderInfo() за N кадров.
@@ -20,6 +20,7 @@ const HEROES = argOf('--heroes', 'elf,dark,ranger').split(',');
 const QS = argOf('--q', 'low,high').split(',');
 const GAME = argv.includes('--game');
 const FRAMES = Number(argOf('--frames', '8'));
+const WAIT = Number(argOf('--wait', '4000'));   // мс после готовности героя: витрина и мир догружаются
 const BROWSER = [argOf('--browser'), '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].filter(Boolean).find((p) => existsSync(p));
 const PORT = 8000 + Math.floor(Math.random() * 700);
 const require = createRequire(import.meta.url);
@@ -87,7 +88,8 @@ try {
       await page.goto(`http://127.0.0.1:${PORT}/`);
       await page.waitForFunction(() => !!window.__ASHEN__, null, { timeout: 180000 });
       await page.waitForFunction(() => { const h = window.__ASHEN__.hero(); return h && h.ready && h.gear.length > 0; }, null, { timeout: 300000 });
-      await page.waitForTimeout(4000);
+      await page.waitForFunction(() => { const a = window.__ASHEN__.worldAssets && window.__ASHEN__.worldAssets(); return !a || a.pending === 0; }, null, { timeout: 180000 }).catch(() => {});
+      await page.waitForTimeout(WAIT);
       row = await page.evaluate((n) => new Promise((res) => {
         const rs = [];
         const tick = () => { rs.push(window.__ASHEN__.renderInfo()); if (rs.length < n) requestAnimationFrame(tick); else res(rs); };
