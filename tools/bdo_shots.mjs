@@ -96,11 +96,11 @@ async function gameShots(browser, W, H, tag, log) {
   await sleep(200);
   await btn('Клятва героя').click(); await sleep(500); await shot('09_oath');
   await btn('Назад').click().catch(() => {}); await sleep(300);
-  await btn('Начать').click(); await sleep(400);
+  await btn('Играть').click(); await sleep(400);
   await shot('02_camera');
   await btn('Продолжить без камеры').click(); await sleep(600);
   await shot('04_tutorial');
-  await btn('В бой').click(); await sleep(1600);
+  await btn('В бой').click(); await sleep(700);   // интро 1,8 с
   await shot('05_intro');
   await page.waitForFunction(() => window.__ASHEN__.screen === 'playing', null, { timeout: 90000 });
   await sleep(1500);

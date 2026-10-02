@@ -197,7 +197,22 @@ const ICONS = {
   pause: `<svg ${SVG24}><path d="M9 6.5v11M15 6.5v11"/></svg>`,
   check: `<svg ${SVG24}><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`,
   warn: `<svg ${SVG24}><path d="M12 4 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.01"/></svg>`,
+  // [ONBOARD] руки вниз — для экрана камеры
+  armsdown:
+    `<svg ${SVG24}><circle cx="12" cy="5.6" r="2.4"/><path d="M7.5 20.5v-6.8c0-2 2-3.3 4.5-3.3s4.5 1.3 4.5 3.3v6.8"/>` +
+    '<path d="M3.5 11v7M2 16.6l1.5 1.5L5 16.6M20.5 11v7M19 16.6l1.5 1.5 1.5-1.5"/></svg>',
 };
+
+// [ONBOARD] рамка-силуэт поверх превью камеры (4:3): голова — кольцо прогресса калибровки, плечи, кисти
+const ONB_FRAME_SVG =
+  '<svg class="ao-onb__svg" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">' +
+  '<path class="ao-onb__body" d="M58 300 C62 236 92 204 150 196 C170 193 181 186 184 168 L216 168 C219 186 230 193 250 196 C308 204 338 236 342 300"/>' +
+  '<circle class="ao-onb__face" cx="200" cy="112" r="46"/>' +
+  '<circle class="ao-onb__ring" cx="200" cy="112" r="56" pathLength="100" transform="rotate(-90 200 112)"/>' +
+  '<path class="ao-onb__tick" d="M181 113l13 13 26-28"/>' +
+  '<circle class="ao-onb__hand" data-hand="left" cx="110" cy="268" r="17"/>' +
+  '<circle class="ao-onb__hand" data-hand="right" cx="290" cy="268" r="17"/>' +
+  '</svg>';
 
 /* Пиктограмма сидящего игрока. Вид со спины: правая рука фигуры справа. */
 function figureGroup({ cx = 60, base = 86, s = 1, lean = 0, left = 'down', right = 'down', hi = {}, live = {} }) {
@@ -407,7 +422,7 @@ function normSettings(s) {
     reducedMotion: typeof o.reducedMotion === 'boolean' ? o.reducedMotion : DEFAULT_SETTINGS.reducedMotion,
     sensitivity: isNum(o.sensitivity) ? clamp(o.sensitivity, 0.5, 2) : DEFAULT_SETTINGS.sensitivity,
     moveMode: o.moveMode === 'stick' ? 'stick' : 'steer', // [V5] по умолчанию «Руль»
-    startZone: o.startZone === 'forest' ? 'forest' : 'arena', // [FOREST] место старта
+    startZone: o.startZone === 'forest' || o.startZone === 'edge' ? o.startZone : 'arena', // [FOREST] место старта; [ONBOARD] 'edge' — у края арены
     gestureMode: o.gestureMode === 'master' ? 'master' : 'novice', // [НОВИЧОК] набор жестов
     autoWalk: o.autoWalk !== false,                                 // [НОВИЧОК] автоход
     hero: HERO_OPTIONS.some(([v]) => v === o.hero) ? o.hero : DEFAULT_SETTINGS.hero,
@@ -681,7 +696,18 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     confidenceFair: num(options.confidenceFair, 0.4),
     keyboardPause: options.keyboardPause !== false,
     showVolume: options.showVolume !== false, // false — звук выключен в сборке, ползунок не показываем
+    quickStart: options.quickStart === true,  // [ONBOARD] «Играть»; экран камеры с рамкой-силуэтом и автокалибровкой (ведёт main.js)
   };
+
+  // [ONBOARD] стили быстрого входа — отдельным файлом рядом с ui.css (как netLobby.css)
+  if (cfg.quickStart && !doc.getElementById('ao-onboard-css')) {
+    try {
+      const l = doc.createElement('link');
+      l.id = 'ao-onboard-css'; l.rel = 'stylesheet';
+      l.href = new URL('./ui-onboard.css', import.meta.url).href;
+      (doc.head || doc.documentElement).appendChild(l);
+    } catch (e) { console.warn('[ui] ui-onboard.css', e); }
+  }
 
   let disposed = false;
   const cleanups = [];
@@ -1106,17 +1132,18 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   // [FOREST] «Место старта»: Пепельное плато (у арены) / Сияющий лес (у врат леса)
-  const ZONE_OPTIONS = [['arena', 'Пепельное плато'], ['forest', 'Сияющий лес']];
+  // [ONBOARD] 'edge' — сразу у края арены (бой через секунды), 'arena' — прежняя прогулка от плато
+  const ZONE_OPTIONS = [['edge', 'У арены'], ['arena', 'Пепельное плато'], ['forest', 'Сияющий лес']];
   function buildStartZone(prefix) {
     const name = `${uid}-${prefix}-startzone`;
     const seg = el('div', { class: 'ao-seg' });
     const fs = el('fieldset', { class: 'ao-field ao-fieldset' }, el('legend', { class: 'ao-field__legend', text: 'Место старта' }), seg);
     const inputs = [];
-    const TIPS = { arena: 'У арены Регента, на пепельном плато', forest: 'У эльфийских врат Сияющего леса, к северу от арены' };
+    const TIPS = { edge: 'Сразу на краю арены Регента — бой через пару секунд', arena: 'На пепельном плато: дойти до арены Регента пешком', forest: 'У эльфийских врат Сияющего леса, к северу от арены' };
     for (const [value, label] of ZONE_OPTIONS) {
       const input = el('input', { type: 'radio', name, value, class: 'ao-seg__input' });
       inputs.push(input);
-      const short = prefix === 'menu' && value === 'arena' ? 'Плато' : label;   // в меню — коротко, чтобы встать в ряд
+      const short = prefix === 'menu' ? ({ arena: 'Плато', forest: 'Лес' }[value] || label) : label;   // в меню — коротко, чтобы встать в ряд
       seg.append(el('label', { class: 'ao-seg__opt', title: `${label}: ${TIPS[value]}` }, input, el('span', { class: 'ao-seg__label', text: short })));
       listen(input, 'change', () => { if (input.checked) invoke('onSettings', { startZone: value }); });
     }
@@ -1185,7 +1212,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
 
   const menu = (() => {
     const hid = `${uid}-menu-h`;
-    const start = btn('Начать', () => invoke('onStart', { from: 'menu' }), { variant: 'primary', size: 'lg' });
+    // [ONBOARD] одна большая кнопка «Играть»: камера, калибровка и обучение дальше идут сами
+    const start = btn(cfg.quickStart ? 'Играть' : 'Начать', () => invoke('onStart', { from: 'menu' }), { variant: 'primary', size: cfg.quickStart ? 'xl' : 'lg' });
     const oathBtn = btn('Клятва героя', () => invoke('onOath', { from: 'menu' }), { variant: 'secondary' });
     const netBtn = btn('Онлайн-дуэль', () => invoke('onNet', { from: 'menu' }), { variant: 'secondary' }); // [NET] экран лобби — modules/netLobby.js
     const oathPts = el('span', { class: 'ao-oathpts', hidden: true });
@@ -1271,9 +1299,68 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       err.node,
       el('div', { class: 'ao-actions' }, enable.node, next.node, skip.node, el('span', { class: 'ao-spacer' }), back.node),
     );
+    // [ONBOARD] быстрый экран: живое превью с рамкой-силуэтом (зелёная — плечи и кисти в кадре), кольцо
+    // калибровки вокруг головы, три подсказки-иконки. Камеру, калибровку и переход дальше ведёт main.js.
+    const quick = cfg.quickStart ? (() => {
+      const frame = el('div', { class: 'ao-onb__frame', 'data-fit': 'off', html: ONB_FRAME_SVG });
+      const ring = frame.querySelector('.ao-onb__ring');
+      const hands = {};
+      frame.querySelectorAll('[data-hand]').forEach((n) => { hands[n.getAttribute('data-hand')] = n; });
+      const sub = el('p', { class: 'ao-onb__sub' });
+      const stage = el('div', { class: 'ao-onb__stage' }, host, frame);
+      const tip = (iconName, text) => el('li', { class: 'ao-onb__tip' }, icon(iconName, 'ao-onb__tipicon'), el('span', { text }));
+      const tips = el('ul', { class: 'ao-onb__tips' },
+        tip('frame', 'Плечи и кисти — в рамке'),
+        tip('armsdown', 'Руки вниз, замрите на 1,5 с'),
+        tip('lock', 'Видео остаётся на компьютере'));
+      setAttr(h, 'aria-live', 'polite');
+      const node = el('div', { class: 'ao-panel ao-panel--camera ao-panel--onb ao-frame' },
+        el('div', { class: 'ao-onb__head' }, h, sub), stage, tips, err.node,
+        el('div', { class: 'ao-actions ao-actions--onb' }, enable.node, next.node, skip.node, el('span', { class: 'ao-spacer' }), back.node));
+      return { node, frame, ring, hands, sub };
+    })() : null;
     let running = false;
+    // [ONBOARD] состояние рамки и подписи: off → none (никого) → partial (плечи без кистей) → ok; кольцо — калибровка
+    function updateQuick(ctx, st, pend) {
+      const q = quick, tr = ctx.tr, parts = tr.parts || {};
+      const shoulders = running && st !== 'lost' && parts.leftShoulder === true && parts.rightShoulder === true;
+      const wristL = shoulders && parts.leftWrist === true, wristR = shoulders && parts.rightWrist === true;
+      const calibrating = st === 'calibrating';
+      const done = running && !calibrating && ctx.calibrated === true;
+      const fit = !running ? 'off' : !shoulders ? 'none' : wristL && wristR ? 'ok' : 'partial';
+      setAttr(q.frame, 'data-fit', fit);
+      setAttr(q.node, 'data-state', st === 'error' ? 'error' : null);   // ошибка: превью меньше, подсказки скрыты — «Повторить» в кадре
+      setAttr(q.hands.left, 'data-on', wristL ? 'true' : 'false');
+      setAttr(q.hands.right, 'data-on', wristR ? 'true' : 'false');
+      const prog = calibrating ? clamp(num(tr.progress), 0, 1) : done && shoulders ? 1 : 0;
+      setStyle(q.ring, 'stroke-dashoffset', String(Math.round((1 - prog) * 1000) / 10));
+      setAttr(q.frame, 'data-ring', calibrating ? 'run' : done && shoulders ? 'done' : 'off');
+      const hint = String(tr.message || '');
+      const rel = ctx.vm.tracking && ctx.vm.tracking.debug && ctx.vm.tracking.debug.reliability;
+      const scale = running && rel ? rel.scaleWarning : null;   // 'far' | 'near' — масштаб не совпал с сохранённой калибровкой
+      let title, sub = '';
+      if (ctx.debug) { title = 'Отладка с клавиатуры'; sub = 'Камера не нужна: «Продолжить без камеры».'; }
+      else if (st === 'error') title = 'Камера не включилась';
+      else if (st === 'permission') { title = 'Разрешите камеру'; sub = 'Запрос — у адресной строки браузера.'; }
+      else if (st === 'loading') { title = 'Загружаем распознавание…'; sub = tr.progress !== null && tr.progress > 0 && tr.progress < 1 ? pct(tr.progress) : ''; }
+      else if (!running) { title = pend ? 'Включаем камеру…' : 'Камера выключена'; sub = pend ? '' : 'Нажмите «Включить камеру».'; }
+      else if (scale === 'far') { title = 'Сядьте ближе'; sub = 'Или замрите на 1,5 с — игра подстроится.'; }
+      else if (scale === 'near') { title = 'Отодвиньтесь'; sub = 'Или замрите на 1,5 с — игра подстроится.'; }
+      else if (!shoulders) { title = 'Сядьте в рамку'; sub = 'Чтобы плечи и кисти попали в кадр.'; }
+      else if (calibrating && /опустите/i.test(hint)) { title = 'Опустите руки'; sub = 'И замрите на полторы секунды.'; }
+      else if (calibrating) { title = prog > 0.02 ? 'Замрите…' : 'Сядьте ровно'; sub = prog > 0.02 ? pct(prog) : 'Руки вниз.'; }
+      else if (done) { title = 'Готово!'; sub = wristL && wristR ? 'Начинаем…' : 'Начинаем… Держите кисти в кадре.'; }
+      else if (fit === 'partial') { title = 'Покажите кисти'; sub = 'Опустите руки так, чтобы кисти были в кадре.'; }
+      else { title = 'Сядьте ровно'; sub = 'Руки вниз.'; }
+      setText(h, title);
+      setText(q.sub, sub);
+      setHidden(q.sub, !sub);
+      // кнопки: «Включить камеру» — только если камера выключена или упала; «Далее» — если калибровка уже есть
+      setBtn(enable, { hidden: running || ctx.debug || pend || CAMERA_STARTING.includes(st) });
+      setBtn(next, { hidden: !(done && shoulders) || ctx.debug, label: 'Далее' });
+    }
     return {
-      section: screenSection('camera', panel, hid),
+      section: screenSection('camera', quick ? quick.node : panel, hid),
       heading: h,
       host,
       focus: () => (running ? next.node : enable.node),
@@ -1309,6 +1396,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setBtn(next, { hidden: !running });
         setBtn(skip, { hidden: !ctx.debug || running });
         setAttr(host, 'data-tone', describeTracking(ctx.tr, cfg).tone);
+        if (quick) updateQuick(ctx, st, pend || !!(ctx.vm.onboard && ctx.vm.onboard.starting));
       },
     };
   })();
@@ -1586,8 +1674,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       },
       update(ctx) {
         const st = ctx.tr.status;
-        const canStart = ctx.debug || (st === 'ready' && ctx.calibrated !== false);
-        setBtn(start, { disabled: !canStart });
+        // [ONBOARD] доступность «В бой» — те же условия, что у main.js (gate); причина — прямо на кнопке
+        const gate = ctx.vm.gate && typeof ctx.vm.gate === 'object' ? ctx.vm.gate : null;
+        const canStart = ctx.debug || (gate ? gate.ok === true : st === 'ready' && ctx.calibrated !== false);
+        setBtn(start, { disabled: !canStart, label: canStart || !gate || !gate.reason ? 'В бой' : gate.reason });
         setBtn(recal, { hidden: ctx.debug });
         paintStatus(status, ctx.debug ? DEBUG_INFO : describeTracking(ctx.tr, cfg), ctx.debug ? '' : ctx.tr.message);
         let text;
@@ -1596,6 +1686,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         else if (ctx.calibrated === false) text = 'Нужна калибровка. Нажмите «Перекалибровать».';
         else if (st === 'lost') text = 'Камера не видит позу. Кнопка «В бой» станет доступна, когда трекинг восстановится.';
         else if (st === 'calibrating') text = 'Идёт калибровка.';
+        else if (gate && gate.reason) text = `${gate.reason}.`;   // [ONBOARD]
         else text = 'Камера ещё не готова.';
         setText(ready, text);
         // [V5] тексты карточки движения — под выбранную схему («Руль» / «Джойстик»)
@@ -1714,6 +1805,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const status = statusLine();
     const hint = el('p', { class: 'ao-note', hidden: true });
     const resume = btn('Продолжить бой', () => invoke('onResume'), { variant: 'primary', size: 'lg' });
+    // [ONBOARD] автопродолжение после потери трекинга: крупный отсчёт 3-2-1
+    const countNum = el('span', { class: 'ao-countdown__num' });
+    const countdown = el('div', { class: 'ao-countdown', hidden: true, 'aria-hidden': 'true' }, countNum);
+    host.append(countdown);   // поверх превью: слот камеры встаёт рядом (moveSlot), отсчёт — выше по z-index
     const recal = btn('Перекалибровать', pressCalibrate);
     const restart = btn('Начать бой заново', () => invoke('onRestart'));
     const oathP = btn('Клятва героя', () => invoke('onOath', { from: 'paused' }));
@@ -1740,6 +1835,12 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       ],
       restored: ['Трекинг восстановлен', 'Сядьте в нейтральную позу и опустите руки. Бой продолжится только после нажатия «Продолжить бой».'],
     };
+    // [ONBOARD] быстрый поток: пауза из-за потери трекинга снимается сама (пауза игрока — по-прежнему кнопкой)
+    const COPY_AUTO = {
+      ...COPY,
+      lost: ['Трекинг потерян', 'Вернитесь в кадр: плечи и кисти. Бой продолжится сам — мышь не нужна.'],
+      restored: ['Трекинг восстановлен', 'Сидите ровно, руки вниз — бой продолжится сам.'],
+    };
     return {
       section: screenSection('paused', panel, hid),
       heading: h,
@@ -1756,13 +1857,22 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           state.pause.variant = variant;
         }
         setAttr(panel, 'data-variant', variant);
-        setText(h, COPY[variant][0]);
-        setText(lead, COPY[variant][1]);
+        const T = cfg.quickStart && ctx.vm.pauseReason === 'tracking' ? COPY_AUTO : COPY;
+        setText(h, T[variant][0]);
+        // [ONBOARD] отсчёт автопродолжения (main.js: тело снова в кадре → 3-2-1 → бой)
+        const leftMs = isNum(ctx.vm.autoResumeMs) ? ctx.vm.autoResumeMs : null;
+        const counting = leftMs !== null && !ctx.debug;
+        const countN = counting ? Math.max(1, Math.ceil(leftMs / 1000)) : 0;
+        setHidden(countdown, !counting);
+        if (counting) setText(countNum, String(countN));
+        setText(lead, counting ? `Вы снова в кадре — бой продолжится через ${countN}…` : T[variant][1]);
         paintStatus(status, ctx.debug ? DEBUG_INFO : describeTracking(ctx.tr, cfg), ctx.debug ? '' : ctx.tr.message);
-        const canResume = ctx.debug || (st === 'ready' && ctx.calibrated !== false);
-        setBtn(resume, { disabled: !canResume });
+        // [ONBOARD] доступность «Продолжить бой» — те же условия, что у main.js; причина — на кнопке
+        const gate = ctx.vm.gate && typeof ctx.vm.gate === 'object' ? ctx.vm.gate : null;
+        const canResume = ctx.debug || (gate ? gate.ok === true : st === 'ready' && ctx.calibrated !== false);
+        setBtn(resume, { disabled: !canResume, label: canResume || !gate || !gate.reason ? 'Продолжить бой' : gate.reason });
         let hintText = '';
-        if (!canResume) {
+        if (!canResume && !gate) {
           if (ctx.calibrated === false && st === 'ready') hintText = 'Нужна калибровка: нажмите «Перекалибровать».';
           else if (bad) hintText = 'Кнопка «Продолжить бой» станет доступна, когда камера снова увидит плечи и кисти.';
           else hintText = 'Камера ещё не готова.';

@@ -72,7 +72,7 @@ try {
     await page.waitForFunction(() => { const a = window.__ASHEN__.worldAssets(); return !a || a.pending === 0; }, null, { timeout: 90000 }).catch(() => {});
     await sleep(1500);
     await page.locator('.ao-toggle', { hasText: 'Отладка с клавиатуры' }).click();
-    await btn('Начать').click(); await sleep(300);
+    await btn('Играть').click(); await sleep(300);
     await btn('Продолжить без камеры').click(); await sleep(500);
     await btn('В бой').click();
     await page.waitForFunction(() => window.__ASHEN__.screen === 'playing', null, { timeout: 180000 });
