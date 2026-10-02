@@ -971,7 +971,7 @@ export function rigFace(THREE, vrm, { mouth = true } = {}) {
   const OFF = {
     browIn: { brow: [0, 0.0024, 0.0004], frown: [-0.0011, -0.0016, 0.0004], pain: [-0.0006, 0.0026, 0], smile: [0, 0.0005, 0] },
     browOut: { brow: [0, 0.0018, 0], frown: [0, -0.0006, 0], pain: [0, -0.0009, 0], smile: [0, 0.0004, 0] },
-    mouth: { smile: [0.0011, 0.0036, -0.0012], frown: [-0.0005, -0.0003, 0], pain: [0.0011, -0.0014, -0.0002] },
+    mouth: { smile: [0.0013, 0.0042, -0.0013], frown: [-0.0005, -0.0003, 0], pain: [0.0011, -0.0014, -0.0002] },
   };
   const _d = new THREE.Vector3();
   const last = new Float32Array(4).fill(NaN);
