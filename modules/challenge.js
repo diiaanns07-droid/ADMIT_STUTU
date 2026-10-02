@@ -300,31 +300,31 @@ export function createChallengeBrain(createBossBrain, config, seed = CHALLENGE.s
 // и потеря трекинга его не тратят.
 export function createChallengeSession(rules = CHALLENGE) {
   const R = { ...CHALLENGE, ...(isObj(rules) ? rules : {}) };
-  const st = { phase: 'off', until: 0, goUntil: 0, startTime: 0, left: R.seconds, lastTick: 0, timeUpAt: 0, outcome: null };
+  const st = { phase: 'off', until: 0, goUntil: 0, startTime: 0, left: R.seconds, lastTick: 0, timeUpAt: 0, outcome: null, force: false };
   return {
     rules: R,
     get phase() { return st.phase; },
     get active() { return st.phase !== 'off'; },
     get outcome() { return st.outcome; },
-    arm() { st.phase = 'armed'; st.outcome = null; st.left = R.seconds; },
+    arm() { st.phase = 'armed'; st.outcome = null; st.left = R.seconds; st.force = false; },
     disarm() { st.phase = 'off'; st.outcome = null; },
     // бой сброшен и показан: отсчёт 3-2-1
     begin(nowMs, snap) {
       st.phase = 'countdown'; st.until = nowMs + R.countdownMs; st.goUntil = 0;
-      st.startTime = num(snap && snap.time); st.left = R.seconds; st.lastTick = Math.ceil(R.countdownMs / 1000) + 1; st.outcome = null;
+      st.startTime = num(snap && snap.time); st.left = R.seconds; st.lastTick = Math.ceil(R.countdownMs / 1000) + 1; st.outcome = null; st.force = false;
     },
     // бой стоит: отсчёт или «ВРЕМЯ ВЫШЛО»
     frozen(nowMs) { return (st.phase === 'countdown' && nowMs < st.until) || st.phase === 'timeup'; },
     // кадр боя. Сигналы: 'tick' (3, 2, 1), 'go', 'timeup', 'show' (пора на экран итогов) или null
     frame(nowMs, snap) {
       if (st.phase === 'countdown') {
-        if (nowMs >= st.until) { st.phase = 'running'; st.goUntil = nowMs + R.goMs; st.startTime = num(snap && snap.time, st.startTime); return 'go'; }
+        if (nowMs >= st.until || st.force) { st.phase = 'running'; st.goUntil = nowMs + R.goMs; st.startTime = num(snap && snap.time, st.startTime); return 'go'; }
         const n = Math.ceil((st.until - nowMs) / 1000);
         if (n !== st.lastTick) { st.lastTick = n; return 'tick'; }
         return null;
       }
       if (st.phase === 'running') {
-        st.left = Math.max(0, R.seconds - (num(snap && snap.time) - st.startTime));
+        st.left = st.force ? 0 : Math.max(0, R.seconds - (num(snap && snap.time) - st.startTime));
         if (st.left <= 0) { st.phase = 'timeup'; st.timeUpAt = nowMs; st.outcome = 'timeup'; return 'timeup'; }
         return null;
       }
@@ -338,7 +338,8 @@ export function createChallengeSession(rules = CHALLENGE) {
       st.phase = 'done'; st.outcome = outcome === 'victory' ? 'victory' : 'defeat';
       return true;
     },
-    finishNow(nowMs) { if (st.phase === 'running' || st.phase === 'countdown') { st.left = 0; st.phase = 'timeup'; st.timeUpAt = nowMs; st.outcome = 'timeup'; } }, // QA
+    // QA: конец минуты на следующем кадре (тем же путём, что и настоящий: сигнал 'timeup')
+    finishNow() { if (st.phase === 'running' || st.phase === 'countdown') st.force = true; return st.phase; },
     timeLeft() { return st.left; },
     elapsed() { return R.seconds - st.left; },
     // для HUD: { phase, left, count (3/2/1 | 0 — «ВПЕРЁД»), go }

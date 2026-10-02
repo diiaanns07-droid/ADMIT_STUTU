@@ -225,6 +225,8 @@ function penalty(M, size) {
 const GOLD = '#c4a265', GOLD_HI = '#e3c792', PARCH = '#eadfc5', INK = '#0d0e11', MUTED = '#b9b1a1';
 const LEFT = '#5aaeff', RIGHT = '#ff9a3c';
 const SERIF = '"Cormorant Garamond", "Cormorant", "Palatino Linotype", Georgia, serif';
+const NUM = 'Cinzel, Forum, "Palatino Linotype", Georgia, serif';      // цифры и латиница (у Cormorant цифры «старого стиля»)
+const CAPS = 'Forum, Cinzel, "Cormorant Garamond", Georgia, serif';    // кириллические капители
 const SANS = '"Segoe UI", system-ui, "Noto Sans", "Liberation Sans", Arial, sans-serif';
 const RANK_COLOR = { S: '#ffd36b', A: '#e6e2d6', B: '#d49a5c', C: '#9fb8c9', D: '#a29d92' };
 const OUTCOME = { timeup: 'ВРЕМЯ ВЫШЛО', victory: 'РЕГЕНТ ПОВЕРЖЕН', defeat: 'ГЕРОЙ ПАЛ' };
@@ -409,7 +411,7 @@ export function drawPoster(ctx, data) {
     const sub = d.outcome === 'victory' && fin(d.elapsed) && d.elapsed > 0 ? `за ${Math.round(d.elapsed)} с` : d.kind === 'challenge' ? 'испытание · 60 секунд' : 'бой с Регентом Нимба';
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     ctx.shadowColor = 'rgba(0,0,0,0.85)'; ctx.shadowBlur = 12;
-    ctx.fillStyle = PARCH; ctx.font = `700 40px ${SERIF}`;
+    ctx.fillStyle = PARCH; ctx.font = `400 42px ${CAPS}`;
     ctx.fillText(out, 46, 82);
     ctx.fillStyle = GOLD_HI; ctx.font = `600 20px ${SANS}`;
     ctx.fillText(sub, 48, 112);
@@ -425,8 +427,8 @@ export function drawPoster(ctx, data) {
   // правая панель
   safe(() => {
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = GOLD; ctx.font = `600 46px ${SERIF}`;
-    ctx.fillText('ASHEN  OATH', PX, 92);
+    ctx.fillStyle = GOLD; ctx.font = `600 44px ${NUM}`;
+    ctx.fillText('ASHEN OATH', PX, 92);
     ctx.fillStyle = MUTED; ctx.font = `600 15px ${SANS}`;
     ctx.fillText(d.kind === 'challenge' ? 'ИСПЫТАНИЕ · 60 С · КАМЕРА ВМЕСТО ДЖОЙСТИКА' : 'БОЙ С РЕГЕНТОМ · КАМЕРА ВМЕСТО ДЖОЙСТИКА', PX + 2, 120);
     ctx.strokeStyle = 'rgba(196,162,101,0.5)'; ctx.lineWidth = 1;
@@ -443,13 +445,13 @@ export function drawPoster(ctx, data) {
     ctx.fillStyle = '#16140f'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = col; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(cx, cy, r - 3, 0, Math.PI * 2); ctx.stroke();
     ctx.strokeStyle = 'rgba(196,162,101,0.6)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, r - 12, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = col; ctx.font = `700 96px ${SERIF}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = col; ctx.font = `700 84px ${NUM}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.shadowColor = col; ctx.shadowBlur = 18;
     ctx.fillText(rank, cx, cy + 6);
     ctx.shadowBlur = 0;
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     const sx = cx + r + 26;
-    fitFont(ctx, fmt(d.score), 700, 68, SERIF, W - 46 - sx);
+    fitFont(ctx, fmt(d.score), 700, 62, NUM, W - 46 - sx);
     ctx.fillStyle = PARCH; ctx.fillText(fmt(d.score), sx, cy + 14);
     ctx.fillStyle = MUTED; ctx.font = `600 16px ${SANS}`;
     ctx.fillText(`очков · ранг ${rank}${d.rankTitle ? ` · ${d.rankTitle}` : ''}`, sx + 2, cy + 42);
@@ -471,7 +473,7 @@ export function drawPoster(ctx, data) {
     for (const [k, v] of rows) {
       ctx.fillStyle = MUTED; ctx.font = `600 15px ${SANS}`; ctx.textAlign = 'left';
       ctx.fillText(k.toUpperCase(), PX, y);
-      fitFont(ctx, v, 600, 26, SERIF, W - 46 - PX - 190);
+      fitFont(ctx, v, 600, 24, NUM, W - 46 - PX - 190);
       ctx.fillStyle = PARCH; ctx.textAlign = 'right';
       ctx.fillText(v, W - 46, y + 2);
       ctx.strokeStyle = 'rgba(87,74,51,0.55)'; ctx.lineWidth = 1;
@@ -486,7 +488,7 @@ export function drawPoster(ctx, data) {
     const M = qrMatrix(url, 'M');
     const qs = 124, qx = W - 46 - qs, qy = H - 40 - qs;
     drawQr(ctx, M, qx, qy, qs);
-    ctx.fillStyle = PARCH; ctx.font = `600 22px ${SERIF}`; ctx.textAlign = 'left';
+    ctx.fillStyle = PARCH; ctx.font = `400 24px ${CAPS}`; ctx.textAlign = 'left';
     ctx.fillText('Сыграй сам — побей мой рекорд', PX, qy + 34);
     ctx.fillStyle = GOLD_HI; ctx.font = `600 15px ${SANS}`;
     ctx.fillText(url.replace(/^https?:\/\//, '').replace(/\/$/, ''), PX, qy + 62);
@@ -495,6 +497,14 @@ export function drawPoster(ctx, data) {
   });
   safe(() => frame(ctx, W, H));
   ctx.restore();
+}
+
+// Шрифты постера — те же, что у интерфейса (vendor/fonts); ждём их не дольше timeoutMs, иначе — запасные
+export function posterFontsReady(doc, timeoutMs = 1500) {
+  const fonts = doc && doc.fonts;
+  if (!fonts || typeof fonts.load !== 'function') return Promise.resolve(false);
+  const all = Promise.all(['700 40px Cinzel', '400 40px Forum', 'italic 600 26px "Cormorant Garamond"'].map((f) => fonts.load(f, 'ASHEN 0123 АБВ').catch(() => null)));
+  return Promise.race([all.then(() => true), new Promise((r) => setTimeout(() => r(false), timeoutMs))]);
 }
 
 export function createPosterCanvas(doc, data) {

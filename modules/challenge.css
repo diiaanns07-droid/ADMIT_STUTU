@@ -2,14 +2,18 @@
    с залом славы дня. Подключает modules/challenge.js (как ui-onboard.css у ui.js). */
 
 /* ------------------------------------------------------------------ меню */
+.ao-ui {
+  --ch-num: 'Cinzel', 'Forum', 'Palatino Linotype', Georgia, serif;
+  --ch-disp: 'Forum', 'Cinzel', 'Cormorant Garamond', Georgia, serif;
+}
 .ao-menu__chal {
   flex: 1 0 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.8rem;
-  min-height: 3.1rem;
-  padding: 0.5rem 1.15rem;
+  min-height: 2.9rem;
+  padding: 0.35rem 1rem 0.35rem 0.7rem;
   font: inherit;
   text-align: left;
   color: #f0dcb0;
@@ -31,19 +35,21 @@
   display: flex;
   align-items: center;
   gap: 0.7rem;
-  font-size: 1.15rem;
+  font-size: 1.12rem;
   font-weight: 700;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 .ao-menu__chal-badge {
   display: inline-grid;
   place-items: center;
-  width: 2.1rem;
-  height: 2.1rem;
+  width: 2.05rem;
+  height: 2.05rem;
   border-radius: 50%;
-  font-family: var(--ao-font-display);
-  font-size: 1.05rem;
+  font-family: var(--ch-num);
+  font-size: 0.85rem;
+  letter-spacing: 0;
   font-weight: 700;
   color: #1b150c;
   background: radial-gradient(circle at 35% 30%, #ffe6ad, #c4a265 70%);
@@ -53,9 +59,9 @@
   font-size: 0.82rem;
   font-weight: 600;
   letter-spacing: 0.02em;
+  line-height: 1.25;
   color: var(--ao-muted);
   text-align: right;
-  white-space: nowrap;
 }
 .ao-menu__chal-best strong {
   color: #ffd36b;
@@ -66,6 +72,8 @@
   --ch-gold: #c4a265;
   --ch-gold-hi: #e3c792;
   --ch-parch: #eadfc5;
+  --ch-num: 'Cinzel', 'Forum', 'Palatino Linotype', Georgia, serif;
+  --ch-disp: 'Forum', 'Cinzel', 'Cormorant Garamond', Georgia, serif;
   position: absolute;
   inset: 0;
   z-index: 4;
@@ -95,14 +103,15 @@
   display: flex;
   align-items: baseline;
   gap: 0.15rem;
-  font-family: 'Cormorant Garamond', 'Cormorant', Georgia, serif;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums lining-nums;
   line-height: 1;
 }
 .ao-chalhud__secs {
   min-width: 2ch;
-  font-size: clamp(40px, 7vh, 64px);
-  font-weight: 700;
+  font-family: var(--ch-num);
+  font-size: clamp(38px, 6.4vh, 58px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
   text-align: right;
   color: #fff3d6;
   text-shadow: 0 0 14px rgba(255, 210, 120, 0.45);
@@ -118,8 +127,8 @@
   line-height: 1.05;
 }
 .ao-chalhud__score {
-  font-family: 'Cormorant Garamond', 'Cormorant', Georgia, serif;
-  font-size: clamp(24px, 3.6vh, 34px);
+  font-family: var(--ch-num);
+  font-size: clamp(22px, 3.3vh, 30px);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -146,8 +155,8 @@
   height: 2.6rem;
   border: 2px solid var(--rk);
   border-radius: 50%;
-  font-family: 'Cormorant Garamond', 'Cormorant', Georgia, serif;
-  font-size: 1.6rem;
+  font-family: var(--ch-num);
+  font-size: 1.35rem;
   font-weight: 700;
   color: var(--rk);
   text-shadow: 0 0 10px var(--rk);
@@ -187,7 +196,7 @@
   text-shadow: 0 4px 24px rgba(0, 0, 0, 0.85);
 }
 .ao-chalhud__bignum {
-  font-family: 'Cormorant Garamond', 'Cormorant', Georgia, serif;
+  font-family: var(--ch-disp);
   font-size: min(24vh, 200px);
   font-weight: 700;
   line-height: 1;
@@ -307,7 +316,8 @@
   color: var(--ao-gold);
 }
 .ao-chal__title {
-  font-family: var(--ao-font-display);
+  font-family: var(--ch-disp);
+  letter-spacing: 0.02em;
   font-size: clamp(2rem, 4.4vh + 0.6rem, 2.9rem);
   font-weight: 700;
   line-height: 1.02;
@@ -331,7 +341,7 @@
   animation: ao-ch-rank 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 .ao-chal__rankl {
-  font-family: var(--ao-font-display);
+  font-family: var(--ch-num);
   font-size: clamp(4.2rem, 10vh, 5.8rem);
   font-weight: 700;
   line-height: 1;
@@ -358,11 +368,12 @@
   min-width: 0;
 }
 .ao-chal__score {
-  font-family: var(--ao-font-display);
-  font-size: clamp(3rem, 8vh, 4.6rem);
-  font-weight: 700;
+  font-family: var(--ch-num);
+  font-size: clamp(2.7rem, 7.4vh, 4.2rem);
+  font-weight: 800;
+  letter-spacing: -0.01em;
   line-height: 0.95;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums lining-nums;
   color: #fff3d6;
 }
 .ao-chal__pts {
@@ -479,7 +490,7 @@
 .ao-chal__namein {
   width: 6.4ch;
   padding: 0.1rem 0.3rem 0.1rem 0.6rem;
-  font-family: var(--ao-font-display);
+  font-family: var(--ch-disp);
   font-size: 2.4rem;
   font-weight: 700;
   letter-spacing: 0.35em;
@@ -575,7 +586,7 @@
 .ao-hall__row[data-place='2'] .ao-hall__place { color: #e6e2d6; }
 .ao-hall__row[data-place='3'] .ao-hall__place { color: #d49a5c; }
 .ao-hall__name {
-  font-family: var(--ao-font-display);
+  font-family: var(--ch-disp);
   font-size: 1.3rem;
   font-weight: 700;
   letter-spacing: 0.18em;
@@ -589,13 +600,14 @@
   text-align: center;
 }
 .ao-hall__rank {
-  font-family: var(--ao-font-display);
+  font-family: var(--ch-num);
   font-size: 1.2rem;
   font-weight: 700;
   text-align: center;
   color: var(--rk);
 }
 .ao-hall__score {
+  font-family: var(--ch-num);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -620,4 +632,9 @@
   .ao-hall__row { min-height: 1.75rem; }
   .ao-chal__key { min-height: 2.2rem; }
   .ao-chal__namein { font-size: 2rem; }
+}
+@media (max-height: 960px) {
+  .ao-menu__chal { min-height: 2.5rem; padding-top: 0.25rem; padding-bottom: 0.25rem; }
+  .ao-menu__chal-main { font-size: 1.02rem; }
+  .ao-menu__chal-badge { width: 1.8rem; height: 1.8rem; font-size: 0.78rem; }
 }

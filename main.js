@@ -36,7 +36,7 @@ import { createCueTracker } from './modules/sfx.js';    // [SFX] «✓ Расп�
 import { createCoachOverlay } from './core/coachOverlay.js'; // [ТВИСТ «ОШИБКА»] подсветка ошибки на превью камеры
 import { createTechniqueTrainer } from './modules/techniqueTrainer.js'; // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
 import { CHALLENGE, createChallengeBrain, createChallengeSession, createChallengeHud, createTally, createHall, buildResult } from './modules/challenge.js'; // [W3-CHALLENGE]
-import { createPosterCanvas, posterBlob, downloadPoster, posterFileName, skeletonFromVision, demoSkeleton } from './modules/posterCard.js'; // [W3-CHALLENGE] постер
+import { createPosterCanvas, posterBlob, posterFontsReady, downloadPoster, posterFileName, skeletonFromVision, demoSkeleton } from './modules/posterCard.js'; // [W3-CHALLENGE] постер
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
 
@@ -1118,10 +1118,11 @@ function setPosterUrl(url) {
 let posterSeq = 0;
 function buildPosterPreview() {
   const seq = ++posterSeq;
-  try {
-    const c = createPosterCanvas(document, posterData());
-    posterBlob(c).then((b) => { if (seq === posterSeq && chal.result) { setPosterUrl(URL.createObjectURL(b)); renderUI(); } }).catch((e) => console.warn('[W3-CHALLENGE] постер', e));
-  } catch (e) { console.warn('[W3-CHALLENGE] постер', e); }
+  const data = posterData();
+  posterFontsReady(document)
+    .then(() => posterBlob(createPosterCanvas(document, data)))
+    .then((b) => { if (seq === posterSeq && chal.result) { setPosterUrl(URL.createObjectURL(b)); renderUI(); } })
+    .catch((e) => console.warn('[W3-CHALLENGE] постер', e));
 }
 Object.assign(callbacks, {
   // «Испытание · 60 с» из меню, с экрана итогов («Ещё раз») или по ?challenge
@@ -1146,13 +1147,11 @@ Object.assign(callbacks, {
   // «Сохранить картинку» (испытание) и «Сохранить постер» (обычный бой): PNG 1200×630
   onPosterSave() {
     const data = posterData();
-    let c;
-    try { c = createPosterCanvas(document, data); } catch (e) { console.warn('[W3-CHALLENGE] постер', e); flashRecNote('Постер не получился — попробуйте ещё раз'); return; }
-    return posterBlob(c).then((b) => {
+    return posterFontsReady(document).then(() => posterBlob(createPosterCanvas(document, data))).then((b) => {
       const name = posterFileName(data);
       downloadPoster(document, b, name);
       flashRecNote(`Постер сохранён: ${name}`);
-    }).catch((e) => { console.warn('[W3-CHALLENGE] постер', e); flashRecNote('Постер не сохранился — браузер не дал создать файл'); });
+    }).catch((e) => { console.warn('[W3-CHALLENGE] постер', e); flashRecNote('Постер не сохранился — попробуйте ещё раз'); });
   },
 });
 
@@ -1755,7 +1754,7 @@ window.__ASHEN__ = Object.freeze({
   technique: () => (techView ? JSON.parse(JSON.stringify({ ...techView, synthHands: null, synthPose: null, focus: techView.focus ? { ...techView.focus, pictogram: !!techView.focus.pictogram } : null })) : null), // [ТВИСТ «ОШИБКА»] QA тренажёра
   pvp: () => (pvpCtl ? pvpCtl.debug() : null),   // [PVP] QA: фаза, счёт, статистика дуэли
   challenge: () => ({ phase: chal.session.phase, left: chal.session.timeLeft(), live: { ...chal.live }, seed: bossBrain.challenge, result: chal.result ? JSON.parse(JSON.stringify(chal.result)) : null, hall: chal.hallView.list.map((e) => ({ ...e })), poster: !!chal.posterUrl, shot: chal.shot.has, skeleton: !!chal.skeleton }), // [W3-CHALLENGE] QA
-  challengeFinish: () => { chal.session.finishNow(performance.now()); return chal.session.phase; }, // [W3-CHALLENGE] QA: конец минуты сейчас (в headless бой идёт ~1 кадр/с)
+  challengeFinish: () => chal.session.finishNow(), // [W3-CHALLENGE] QA: конец минуты на следующем кадре (в headless бой почти стоит)
   zoneMood: (m) => { try { world.atmosphere.setZoneMood(m); return true; } catch (e) { return false; } }, // [BDO] QA: настроение зоны
   heroMax: () => { const c = typeof combat.getEffectiveConfig === 'function' ? combat.getEffectiveConfig() : null; return c ? { hp: c.player.maxHp, energy: c.player.maxEnergy } : null; },
   embers: () => (worldLayout && Array.isArray(worldLayout.pois) ? worldLayout.pois.map((q) => ({ id: q.id, x: q.x, z: q.z, lit: progression.isEmberLit(q.id) })) : []),
