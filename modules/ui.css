@@ -4632,7 +4632,7 @@ html.ao-bdo .ao-boss__frame::after {
 }
 /* узкие окна и режим презентации (игра — 60 % окна): полоса Регента по ширине игровой области */
 @media (max-width: 900px) {
-  html.ao-bdo .ao-boss { width: min(600px, 74vw); }
+  html.ao-bdo .ao-boss { width: min(560px, 70vw); }
 }
 @media (max-width: 620px) {
   html.ao-bdo .ao-boss__frame { padding: 0 2.5rem; }
@@ -5040,8 +5040,8 @@ html.ao-bdo .ao-screen--challenge .ao-chal__rank::before {
   border-radius: 50%;
   pointer-events: none;
   background: repeating-conic-gradient(color-mix(in srgb, var(--rk) 34%, transparent) 0deg 4deg, transparent 4deg 15deg);
-  -webkit-mask: radial-gradient(circle, transparent 0 37%, #000 39%, transparent 71%);
-  mask: radial-gradient(circle, transparent 0 37%, #000 39%, transparent 71%);
+  -webkit-mask: radial-gradient(circle, transparent 0 45%, #000 47%, transparent 71%);
+  mask: radial-gradient(circle, transparent 0 45%, #000 47%, transparent 71%);
   animation: ao-w4-rays-in 0.9s ease-out 0.45s both, ao-w4-spin 40s linear 1.3s infinite;
 }
 html.ao-bdo .ao-screen--challenge .ao-chal__rank::after {
