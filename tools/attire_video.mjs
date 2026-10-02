@@ -58,7 +58,8 @@ try {
       const A = window.__HS_API__;
       window.__HS_MANUAL__ = true;
       const s = A.snapA, P = s.player;
-      P.position = { x: 0, y: 0, z: 0 }; P.yaw = 0.4; P.velocity = { x: 0, z: 0 };
+      // бег — по окружности R = 2,2 м вокруг центра стенда (пол — круг 4 м), центр — справа по ходу
+      P.position = { x: -2.2, y: 0, z: -0.6 }; P.yaw = 0; P.velocity = { x: 0, z: 0 };
       for (let i = 0; i < 30; i++) A.a.update(1 / 30, s, []);
       window.__AV__ = { t: 0, cam: new A.THREE.Vector3(), look: new A.THREE.Vector3(), init: false };
     });
@@ -69,10 +70,10 @@ try {
         const u = f / total, ev = [];
         // сценарий: 0–0,24 стойка, 0,24–0,6 бег по дуге, 0,6 — рывок, 0,72 — выброс магии, дальше — стойка
         let sp = 0;
-        if (u > 0.24 && u < 0.6) sp = 4.6 * Math.min(1, (u - 0.24) / 0.05);
-        if (u >= 0.6 && u < 0.66) sp = 10;
-        if (u >= 0.66 && u < 0.7) sp = 2;
-        if (u > 0.24 && u < 0.66) P.yaw += dt * 0.55;
+        if (u > 0.24 && u < 0.6) sp = 4.2 * Math.min(1, (u - 0.24) / 0.05);
+        if (u >= 0.6 && u < 0.645) sp = 14;
+        if (u >= 0.645 && u < 0.7) sp = 2;
+        if (u > 0.24 && u < 0.6) P.yaw += dt * sp / 2.2;
         if (f === Math.round(total * 0.6)) ev.push({ type: 'player_dash', data: { worldDirection: { x: Math.sin(P.yaw), z: Math.cos(P.yaw) } } });
         if (f === Math.round(total * 0.72)) ev.push({ type: 'burst', data: {} });
         P.velocity = { x: Math.sin(P.yaw) * sp, z: Math.cos(P.yaw) * sp };
@@ -84,7 +85,7 @@ try {
         const look = new THREE.Vector3(P.position.x, 1.0, P.position.z);
         if (!V.init) { V.look.copy(look); V.yaw = P.yaw; V.init = true; }
         V.look.lerp(look, 0.3); V.yaw += (P.yaw - V.yaw) * 0.08;
-        A.camera.position.set(V.look.x + Math.sin(V.yaw + side) * 3.5, 1.38, V.look.z + Math.cos(V.yaw + side) * 3.5);
+        A.camera.position.set(V.look.x + Math.sin(V.yaw + side) * 3.1, 1.35, V.look.z + Math.cos(V.yaw + side) * 3.1);
         A.camera.lookAt(V.look);
         A.renderer.render(A.scene, A.camera);
         return A.renderer.domElement.toDataURL('image/jpeg', 0.9);

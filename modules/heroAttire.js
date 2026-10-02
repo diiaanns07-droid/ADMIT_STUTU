@@ -88,7 +88,7 @@ export function hideBase(root, prefixes) {
 // со сдвигом наружу по нормали на offset (м). Скиннинг (кости и веса) — исходный: одежда-оболочка
 // гнётся вместе с курткой и не протыкается. Части с одним набором костей склеиваются в один меш.
 // parts: [{ mesh, uvOf }] → [SkinnedMesh] (добавлены рядом с исходником, тот же transform)
-export function skinShell(THREE, parts, { offset = 0.005, material, name = 'attire-shell' } = {}) {
+export function skinShell(THREE, parts, { offset = 0.005, material, name = 'attire-shell', host = null } = {}) {
   const groups = [];   // { skel, bindMatrix, src, pos, nor, uv, si, sw }
   const v = new THREE.Vector3(), w = new THREE.Vector3(), mInv = new THREE.Matrix4(), mBind = new THREE.Matrix4(), nm = new THREE.Matrix3();
   for (const p of parts) {
@@ -143,10 +143,13 @@ export function skinShell(THREE, parts, { offset = 0.005, material, name = 'atti
     g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(G.si, 4));
     g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(G.sw, 4));
     const m = new THREE.SkinnedMesh(g, material);
-    m.name = name; m.frustumCulled = false; m.castShadow = false; m.receiveShadow = true; m.userData.noShadow = true;
+    // без тени и без остаточных образов рывка (у образа нет альфы — корсет вышел бы сплошной лентой)
+    m.name = name; m.frustumCulled = false; m.castShadow = false; m.receiveShadow = true; m.userData.noShadow = true; m.userData.noGhost = true;
     m.bindMode = G.src.bindMode;
-    G.src.parent.add(m);
-    m.position.copy(G.src.position); m.quaternion.copy(G.src.quaternion); m.scale.copy(G.src.scale);
+    // привязка «attached»: положение меша не важно (bindMatrixInverse = его matrixWorld⁻¹) — можно жить вне
+    // сцены модели (её LOD включает тени всем своим мешам); «detached» — рядом с исходником, тот же transform
+    if (host && m.bindMode === THREE.AttachedBindMode) host.add(m);
+    else { G.src.parent.add(m); m.position.copy(G.src.position); m.quaternion.copy(G.src.quaternion); m.scale.copy(G.src.scale); }
     m.updateMatrixWorld(true);
     m.bind(G.skel, G.bindMatrix);
     out.push(m);
@@ -261,7 +264,7 @@ function highCollar(ctx, spec) {
       v.sub(neck);
       const f = v.dot(FWD), l = v.dot(LEFT), r = Math.hypot(f, l);
       if (r > 0.135) continue;   // плечи и спина ниже — не в счёт: воротник облегает шею и капюшон
-      const k = Math.floor(((Math.atan2(l, f) + Math.PI * 3) % TAU) / TAU * SEC) % SEC;
+      const k = Math.floor(((Math.atan2(l, f) + TAU) % TAU) / TAU * SEC) % SEC;   // азимут 0 — перед, как в rBase(az)
       rS[k] = Math.max(rS[k], r);
     }
   };
@@ -512,7 +515,7 @@ export function dressAttire(ctx) {
       vrm.scene.traverse((o) => { if (o.isSkinnedMesh && /Arms/.test(o.name) && !/Bracer/.test(o.name) && o.visible) parts.push({ mesh: o, uvOf, side }); });
     }
     // область корсета не должна захватить рукава, наручей — куртку: свой uvOf на свой меш
-    const shells = skinShell(THREE, parts, { offset: C.offset ?? 0.006, material: m, name: 'attire-corset' });
+    const shells = skinShell(THREE, parts, { offset: C.offset ?? 0.006, material: m, name: 'attire-corset', host: holder !== vrm.scene ? holder : null });
     for (const sh of shells) { owned.shells.push(sh); names.push(sh.name); }
   }
   // искры камней: новые украшения и камни снаряжения героинь (кулон, серьги, обруч)

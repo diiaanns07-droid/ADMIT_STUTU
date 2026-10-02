@@ -1441,6 +1441,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   // не проходит сквозь ноги и корпус (капсулы по коже модели); вышитая кайма и герб (heroForge.capeTextures)
   let cloth = null, capeMat = null, panelMat = null;
   const attireRel = [], attireFabrics = [];   // [W4-НАРЯДЫ] общие текстуры нарядов (release) и ткани с пульсом вышивки
+  const _floorV = new THREE.Vector3();          // пол для ткани — без новой точки на каждый кадр
   // материал вышитой ткани (плащ, полы мантии): карта/рельеф/свечение вышивки, sheen, подкладка на изнанке
   const clothMat = (tx, name) => {
     const { color, trim, lining } = P.cape;
@@ -1491,7 +1492,7 @@ export function dressHero(THREE, vrm, opts = {}) {
         v.sub(neck);
         const f = v.dot(FWD), l = v.dot(LEFT), r = Math.hypot(f, l);
         if (r > 0.16) continue;
-        const k = Math.floor(((Math.atan2(l, f) + Math.PI * 3) % (Math.PI * 2)) / (Math.PI * 2) * SEC) % SEC;
+        const k = Math.floor(((Math.atan2(l, f) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2) * SEC) % SEC;   // азимут 0 — перед, как в rN(az)
         rS[k] = Math.max(rS[k], r);
       }
     };
@@ -1522,7 +1523,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       pleats: 7, pleatDepth: 0.006, plane: 'none', name: 'cape', carry: 0.7, react: true,
       hips: raw('hips'), back: { lim: 0.04, h: 0.5 },
       fwd: (out) => out.set(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(_mq)),
-      floor: () => holder.getWorldPosition(new THREE.Vector3()).y,
+      floor: () => holder.getWorldPosition(_floorV).y,
     });
     names.push('cape-root');
     // розетки на концах ворота и цепочка между ними
@@ -1576,7 +1577,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       pleats: 3.5, pleatDepth: w > 0.55 ? 0.016 : 0.012, hem: { r: 0.0055, material: mats.trim }, react: true,
       hips: raw('hips'), back: { lim: 0.035, h: Math.max(0.2, bp[chestB].y - bp.hips.y) },
       fwd: (out) => out.set(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(_mq)),
-      floor: () => holder.getWorldPosition(new THREE.Vector3()).y,
+      floor: () => holder.getWorldPosition(_floorV).y,
     });
     names.push('cape-root');
     // воротник-валик по верху плаща (прячет край, где ткань прибита) и застёжки с цепью на груди
@@ -1735,7 +1736,7 @@ export function dressHero(THREE, vrm, opts = {}) {
         uv: pn.emblem || panelMat || pet ? { u0: 0, u1: 1, v0: 0, v1: 1 } : { u0: 0, u1: 1, v0: 0, v1: 0.62 },
         hips: raw('hips'), back: { lim: 0.03, h: 0.3 },
         fwd: (out) => out.set(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(_mq2)),
-        floor: () => holder.getWorldPosition(new THREE.Vector3()).y,
+        floor: () => holder.getWorldPosition(_floorV).y,
       });
       cl.layer = pn.layer || 0;
       tabards.push(cl);
@@ -1986,7 +1987,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     // на 'medium' — sheen у всех и анизотропный блик у волос (главное в образе героинь)
     for (const { m, v } of physSaved) for (const k of Object.keys(v)) m[k] = tq === 'high' || (tq === 'medium' && (k === 'sheen' || (k === 'anisotropy' && m.name === 'gear-hair'))) ? v[k] : 0;
     // [W4-НАРЯДЫ] второй слой лепестков и мелкие украшения — medium+
-    for (const tb of tabards) if (tb.layer) { tb.mesh.visible = tq !== 'low'; if (tb.mesh.visible) tb.reset(); }
+    for (const tb of tabards) if (tb.layer) { const on = tq !== 'low', was = tb.mesh.visible; tb.mesh.visible = on; if (on && !was) tb.reset(); }
     if (attire) attire.setQuality(tq);
   }
   setQuality(quality);

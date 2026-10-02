@@ -117,7 +117,7 @@ assert.equal(cl.mesh.parent, null); assert.equal(cl.hem.parent, null);
 // [W4-НАРЯДЫ] движение: на бегу плащ отдувает назад сильнее, чем в покое; рывок — всплеск; «Уменьшенное
 // движение» — спокойнее (меньше отдув и трепет, без всплеска)
 {
-  const runCape = (calmK) => {
+  const runCape = (calmK, sprint = false) => {
     root.position.set(0, 0, 0); root.rotation.set(0, 0, 0); root.updateMatrixWorld(true);
     const cc = 9, cr2 = 12, crest = new Float32Array(cc * cr2 * 3);
     for (let j = 0; j < cr2; j++) for (let i = 0; i < cc; i++) crest.set([(i / (cc - 1) - 0.5) * 0.45, 1.45 - (j / (cr2 - 1)) * 0.9, -0.2 - 0.03 * (j / (cr2 - 1))], (j * cc + i) * 3);
@@ -127,8 +127,8 @@ assert.equal(cl.mesh.parent, null); assert.equal(cl.hem.parent, null);
     let rest0 = 0, run = 0, burstMax = 0, flutVar = 0, prevB = null;
     for (let f = 0; f < 360; f++) {
       const dt = 1 / 60;
-      if (f >= 120 && f < 260) root.position.z += 5 * dt;
-      if (f >= 262 && f < 272) root.position.z += 11 * dt;          // рывок 11 м/с
+      if (f >= 120 && f < 260) root.position.z += (sprint ? 8.2 : 5) * dt;
+      if (f >= 262 && f < 272 && !sprint) root.position.z += 11 * dt;          // рывок 11 м/с
       root.updateMatrixWorld(true);
       cape.update(dt, 0);
       if (f === 118) rest0 = behind();
@@ -143,6 +143,7 @@ assert.equal(cl.mesh.parent, null); assert.equal(cl.hem.parent, null);
   assert.ok(full.run > full.rest0 + 0.05, `на бегу плащ отдувает назад (${full.rest0.toFixed(3)} → ${full.run.toFixed(3)} м)`);
   assert.ok(full.burstMax > 0.5, `рывок даёт всплеск (${full.burstMax.toFixed(2)})`);
   assert.equal(calm.burstMax, 0, '«Уменьшенное движение»: без всплеска');
+  assert.equal(runCape(1, true).burstMax, 0, 'спринт 8,2 м/с — не рывок: без всплеска');
   assert.ok(calm.run < full.run, `«Уменьшенное движение»: отдув меньше (${calm.run.toFixed(3)} < ${full.run.toFixed(3)} м)`);
   assert.ok(calm.flutVar < full.flutVar, `«Уменьшенное движение»: трепет меньше (${calm.flutVar.toFixed(3)} < ${full.flutVar.toFixed(3)})`);
 }
