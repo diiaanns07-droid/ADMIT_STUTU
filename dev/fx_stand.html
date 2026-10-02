@@ -166,20 +166,30 @@ async function magicStand() {
 
   // заряд печати: ладони сомкнуты → снимок player.sigilCharge растёт; then() — выпуск
   function startCharge(axis, dur, then) { S.charge = { axis, t0: S.time, dur, then }; S.heroAction = 'cast'; }
-  function castGate(pw) {
-    const me = heroChest(), to = bossCore();
-    emit('sigil_cast', me, { sigil: 'gate', power: pw, from: me, to, duration: 5, reduction: 0.6 });
-    S.heroAction = 'cast'; later(0.4, () => { S.heroAction = 'idle'; });
-    S.bastion = 5; emit('bastion_start', heroFeet(), { duration: 5 });
-    later(0.5, () => bossHit(Math.round(40 + 60 * pw), to, { source: 'sigil', sigil: 'gate' }));
+  // по настоящему контракту №2 (modules/combat.js [W3-MAGIC]): поля, задержки и порядок событий как в бою
+  const bossAim = () => v3(0, groundY(0, 0) + 2.2, 0);
+  const chestAt = () => { const f = heroFeet(); return v3(f.x, f.y + 1.1, f.z); };
+  const k01 = (pw) => 0.5 + 0.5 * pw;
+  function castGate(pw, forceMiss = false) {
+    const me = chestAt(), to = bossAim();
+    const dist = Math.hypot(HERO.x, HERO.z), reach = !forceMiss && dist <= 26, eta = dist / 16;
+    const damage = 60 * k01(pw);
+    emit('sigil_cast', me, { sigil: 'gate', power: pw, damage, duration: 3.5, reduction: 0.6, speed: 16, width: 3.5, eta, reach, from: me, to });
+    S.heroAction = 'cast'; later(0.3, () => { S.heroAction = 'idle'; });
+    S.bastion = 3.5; emit('bastion_start', heroFeet(), { duration: 3.5 });
+    later(3.5, () => emit('bastion_end', heroFeet(), { reason: 'expired' }));
+    if (reach) later(eta, () => bossHit(Math.round(damage), to, { source: 'sigil', sigil: 'gate', power: pw, hpAfter: 500, combo: 0, multiplier: 1, marked: false }));
+    else later(Math.min(eta, 26 / 16), () => emit('sigil_miss', to, { sigil: 'gate', power: pw }));
   }
-  function castPillar(pw) {
-    const me = heroChest(), to = bossCore();
-    emit('sigil_cast', me, { sigil: 'pillar', power: pw, from: me, to, stun: 1.5 + pw });
-    S.heroAction = 'cast'; later(0.4, () => { S.heroAction = 'idle'; });
-    later(0.5, () => {
-      bossHit(Math.round(50 + 70 * pw), to, { source: 'sigil', sigil: 'pillar' });
-      S.stun = 1.5 + pw; emit('boss_stunned', to, { duration: S.stun, source: 'pillar' });
+  function castPillar(pw, forceMiss = false) {
+    const me = chestAt(), to = bossAim();
+    const reach = !forceMiss && Math.hypot(HERO.x, HERO.z) <= 30, damage = 100 * k01(pw);
+    emit('sigil_cast', me, { sigil: 'pillar', power: pw, damage, stun: 1.2, delay: 0.45, reach, from: me, to });
+    S.heroAction = 'cast'; later(0.3, () => { S.heroAction = 'idle'; });
+    later(0.45, () => {
+      if (!reach) { emit('sigil_miss', to, { sigil: 'pillar', power: pw }); return; }
+      S.stun = 1.2; emit('boss_stunned', to, { duration: 1.2, source: 'pillar' });          // сначала оглушение, затем удар
+      bossHit(Math.round(damage), to, { source: 'sigil', sigil: 'pillar', power: pw, hpAfter: 450, combo: 0, multiplier: 1, marked: false });
     });
   }
   const RUNE = { ignis: { amount: 45 }, fulgur: { stun: 1.2, cancelled: 0 }, stella: { count: 5, amount: 90 } };
@@ -192,11 +202,14 @@ async function magicStand() {
     if (rune === 'stella') for (let i = 0; i < 5; i++) later(0.5 + i * 0.12, () => { emit('rune_hit', to, { rune, index: i, amount: 18 }); bossHit(18, to, { rune }); });
   }
   const ACTIONS = {
-    chargeGate: () => { say('Ладони сомкнуты → разведи по горизонтали'); startCharge('h', 1.3, () => { say('«Врата бури»'); castGate(power()); }); },
-    chargePillar: () => { say('Ладони сомкнуты → разведи по вертикали'); startCharge('v', 1.3, () => { say('«Столп небес»'); castPillar(power()); }); },
-    holdH: () => startCharge('h', 1.3, null),
-    holdV: () => startCharge('v', 1.3, null),
-    holdNone: () => startCharge(null, 1.3, null),
+    chargeGate: () => { say('Ладони сомкнуты → разведи по горизонтали'); startCharge('h', 1.5, () => { say('«Врата бури»'); castGate(power()); }); },
+    chargePillar: () => { say('Ладони сомкнуты → разведи по вертикали'); startCharge('v', 1.5, () => { say('«Столп небес»'); castPillar(power()); }); },
+    holdH: () => startCharge('h', 1.5, null),
+    holdV: () => startCharge('v', 1.5, null),
+    holdNone: () => startCharge(null, 1.5, null),
+    gateMiss: () => castGate(power(), true),
+    pillarMiss: () => castPillar(power(), true),
+    denied: () => { S.charge = null; S.heroAction = 'idle'; emit('ability_denied', heroFeet(), { ability: 'sigil', sigil: 'gate', reason: 'cooldown' }); },
     release: () => { if (S.charge) { const c = S.charge; S.charge = null; S.heroAction = 'idle'; if (c.then) c.then(); } },
     cancel: () => { S.charge = null; S.heroAction = 'idle'; },
     gate: () => castGate(power()),
@@ -215,7 +228,7 @@ async function magicStand() {
   };
   // показ по кругу (видео 10–15 с): заряд → врата, заряд → столп, выброс, сфера, OK
   const SHOW = [
-    [0.0, 'chargeGate'], [3.8, 'chargePillar'], [7.6, 'burst'], [8.8, 'sphere'], [10.0, 'ok'], [11.6, 'ignis'],
+    [0.0, 'chargeGate'], [4.2, 'chargePillar'], [8.2, 'burst'], [9.4, 'sphere'], [10.6, 'ok'], [12.2, 'ignis'],
   ];
   function runSeq(list) { S.seq = { list: list.slice(), t0: S.time }; }
   function resetSim() {
@@ -307,6 +320,7 @@ async function magicStand() {
     if (heroModel) { try { heroModel.update(sdt, lastSnap, events); } catch (e) { console.warn('heroModel.update', e); } }
     placeCamera(firstFrame ? 0 : dt); firstFrame = false;
     const t0 = performance.now();
+    fx.setInput({ valid: true, source: 'stand', sigilCharge: lastSnap.player.sigilCharge, sigilAxis: lastSnap.player.sigilAxis, sigil: null, sigilPower: 0 });   // как InputFrame игры
     fx.update(sdt, lastSnap, events);
     const hs = fx.takeHitStop(); if (hs > 0) { hitStopLeft = Math.max(hitStopLeft, hs); perf.hitstop = hs; }
     const t1 = performance.now();
@@ -331,7 +345,7 @@ async function magicStand() {
 
   // ---------------------------------------------------------------- UI
   const GROUPS = [
-    ['Новые магии ладонями', [['chargeGate', '⟷ Заряд → Врата бури', 1], ['chargePillar', '↕ Заряд → Столп небес', 1], ['gate', 'Врата сразу'], ['pillar', 'Столп сразу']]],
+    ['Новые магии ладонями', [['chargeGate', '⟷ Заряд → Врата бури', 1], ['chargePillar', '↕ Заряд → Столп небес', 1], ['gate', 'Врата сразу'], ['pillar', 'Столп сразу'], ['gateMiss', 'Врата: промах'], ['pillarMiss', 'Столп: промах'], ['denied', 'Отказ (откат)']]],
     ['Заряд (держать)', [['holdH', 'ось ⟷'], ['holdV', 'ось ↕'], ['holdNone', 'без оси'], ['release', 'выпустить'], ['cancel', 'отмена']]],
     ['Остальное', [['burst', 'Выброс'], ['sphere', 'Сфера'], ['prism', 'Призма'], ['ok', '«OK» ×6'], ['spark', 'Искра'], ['ignis', 'ignis'], ['fulgur', 'fulgur'], ['stella', 'stella'], ['clap', 'Хлопок'], ['delta', 'Дельта'], ['hit', 'Удар по Регенту']]],
     ['Показ', [['show', '▶ Показ 13 с', 1], ['reset', 'Сброс']]],
