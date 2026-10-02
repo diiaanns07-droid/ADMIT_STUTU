@@ -2872,7 +2872,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       el(
         'div',
         { class: 'ao-cols' },
-        el('div', { class: 'ao-col ao-col--media' }, host, status.node, enable.node, diag),
+        el('div', { class: 'ao-col ao-col--media' }, host, el('div', { class: 'ao-train__statusrow' }, status.node, diag), enable.node, summary),
         el(
           'div',
           { class: 'ao-col' },
@@ -2887,7 +2887,6 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           stepsPush,
           stepsSquat,
           simNote,
-          summary,
           total,
         ),
       ),
@@ -2896,8 +2895,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const POSTURE = ['valgus', 'knees_forward', 'lean', 'heels'];
     const VIEW_NAME = { front: 'вид спереди', side: 'вид сбоку', diag: 'вид под углом' };
     const MODE_HINT = {
-      novice: 'Засчитываем с ~115° по бедру; ошибка — карточка и +1, чистый повтор — +2. Стопы в кадре не обязательны.',
-      master: 'Строго: бёдра до параллели (100°), только чистые повторы, в кадре — до стоп.',
+      novice: 'Мягко: с ошибкой +1, чисто +2, стопы не обязательны',
+      master: 'Строго: бёдра до параллели, только чистые, нужны стопы',
     };
     const visState = (v) => (!isNum(v) ? 'off' : v >= 0.5 ? 'on' : v >= 0.3 ? 'weak' : 'off');
     const f2 = (v) => (isNum(v) ? v.toFixed(2).replace('.', ',') : '—');
@@ -3019,7 +3018,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         const feetNote = novice && T.feet === false ? 'без стоп' : '';
         setText(msg, live ? [knee, VIEW_NAME[T.view] || '', feetNote].filter(Boolean).join(' · ') : (prepOn ? '' : typeof T.message === 'string' ? T.message : ''));
         // совет про стопы во время подхода (подготовка уже скрыта)
-        const adv = !prepOn && novice && F && F.status === 'okNoFeet' && F.tip && F.tip.code !== 'ok' ? `Совет: ${F.tip.text.charAt(0).toLowerCase()}${F.tip.text.slice(1)} — точнее техника` : '';
+        const adv = !prepOn && novice && F && F.status === 'okNoFeet' && F.tip && F.tip.code !== 'ok' ? `Совет: ${F.tip.text.charAt(0).toLowerCase()}${F.tip.text.slice(1)}` : '';
         setText(advice, adv);
         setHidden(advice, !adv);
         setHidden(simNote, !T.debugSim);

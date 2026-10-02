@@ -3344,6 +3344,9 @@
 .ao-train__mode {
   margin-bottom: 0.6rem;
 }
+.ao-col--media > .ao-train__summary {
+  margin-top: 0.5rem;
+}
 .ao-train__modehint {
   display: block;
   margin-top: 0.25rem;
@@ -3383,7 +3386,7 @@
 }
 .ao-sil {
   flex: none;
-  width: 3.6rem;
+  width: 4.2rem;
 }
 .ao-sil__svg {
   display: block;
@@ -3451,10 +3454,20 @@
   margin: -0.3rem 0 0.5rem;
   color: var(--ao-warn);
 }
+.ao-train__statusrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem 1rem;
+}
 .ao-train__diag {
-  margin-top: 0.6rem;
   font-size: 0.82rem;
   color: var(--ao-text);
+}
+.ao-train__diag[open] {
+  flex-basis: 100%;
+  order: 2;
 }
 .ao-train__diag > summary {
   cursor: pointer;

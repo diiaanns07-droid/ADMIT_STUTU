@@ -242,6 +242,29 @@ export const FIXTURES = {
       faults: { shallow: 1, valgus: 1 }, formScore: 0.667, topFault: { code: 'shallow', text: 'Садись глубже — бёдра до параллели с полом', count: 1 },
     },
   }),
+  // [W3-SQUAT] подготовка: ноутбук на столе, стопы не в кадре — «вижу до колен ✓» и совет; «Новичок»: засчитан с ошибкой
+  'training-squat-prep': vm({
+    screen: 'training', tracking: { ...READY }, progress: PROGRESS_MID,
+    training: {
+      exercise: 'squats', mode: 'novice', reps: 0, attempts: 0, state: 'top', message: 'Готово — приседай!', depth: 0, knee: 171, view: 'front', feet: false,
+      lastOk: null, sinceRepMs: 1e9, lastHint: null, sinceHintMs: null, faults: {}, formScore: null, topFault: null, clean: 0, points: 0,
+      framing: { full: false, upper: true, ready: true, readyMs: 900, status: 'okNoFeet', statusText: 'Вижу до колен ✓ — можно приседать',
+        tip: { code: 'tiltDown', text: 'Стопы не в кадре — наклони экран ноутбука чуть вперёд или отойди на шаг' },
+        points: { 0: { v: 0.99, ok: true }, 11: { v: 0.99, ok: true }, 12: { v: 0.99, ok: true }, 23: { v: 0.93, ok: true }, 24: { v: 0.92, ok: true }, 25: { v: 0.81, ok: true }, 26: { v: 0.78, ok: true }, 27: { v: 0.32, ok: false }, 28: { v: 0.12, ok: false } } },
+      pose: { model: 'full', switching: false, hz: 15, recFrames: 450 },
+    },
+  }),
+  'training-squat-counted': vm({
+    screen: 'training', tracking: { ...READY }, progress: PROGRESS_MID,
+    training: {
+      exercise: 'squats', mode: 'novice', reps: 3, attempts: 3, clean: 2, points: 5, state: 'top', message: '', depth: 0, knee: 172, view: 'front', feet: false,
+      lastOk: true, sinceRepMs: 400, lastHint: { code: 'fast', text: 'Слишком быстро — опускайся подконтрольно, 2 секунды вниз', tMs: 9000 }, sinceHintMs: 400,
+      lastRep: { tMs: 9000, ok: true, clean: false, faults: ['fast'], minKnee: 121, ms: 640, reason: 'Слишком быстро — опускайся подконтрольно, 2 секунды вниз' },
+      lastEvent: { tMs: 9000, rep: 3, clean: false, points: 1, faults: ['fast'] },
+      faults: { fast: 1 }, formScore: 0.667, topFault: { code: 'fast', text: 'Слишком быстро — опускайся подконтрольно, 2 секунды вниз', count: 1 },
+      framing: { full: false, upper: true, ready: true, readyMs: 9000, status: 'okNoFeet', statusText: 'Вижу до колен ✓ — можно приседать', tip: { code: 'tiltDown', text: 'Стопы не в кадре — наклони экран ноутбука чуть вперёд или отойди на шаг' }, points: {} },
+    },
+  }),
   'training-squat-clean': vm({
     screen: 'training', tracking: { ...READY }, progress: PROGRESS_MID,
     training: { exercise: 'squats', reps: 5, attempts: 5, state: 'top', message: '5', depth: 0, knee: 176, view: 'side', lastOk: true, sinceRepMs: 300, lastHint: null, sinceHintMs: null, faults: {}, formScore: 1, topFault: null },

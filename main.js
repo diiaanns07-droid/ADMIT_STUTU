@@ -257,11 +257,13 @@ function savePoseRecording() {
 const trainPose = { active: false, prevUrl: null };
 function trainPoseTick() {
   if (!vision || typeof vision.setPoseModel !== 'function' || !DEPS.mediaPipe.modelFullUrl) return;
-  const forced = PERF_Q.get('pose');
-  const want = app.screen === 'training' && !app.debug && forced !== 'lite' && (!perfTuner || perfTuner.trainingPoseModel() === 'full');
+  // ?trainpose=full|lite — модель на тренировке вручную (QA: проверить смену и на программном рендере)
+  const forced = PERF_Q.get('trainpose') || (PERF_Q.get('pose') === 'lite' ? 'lite' : null);
+  const want = app.screen === 'training' && !app.debug && forced !== 'lite' && (forced === 'full' || !perfTuner || perfTuner.trainingPoseModel() === 'full');
   if (want && !trainPose.active) {
-    const d = visionStatus().debug;
-    if (d && d.poseSwitching) return;
+    const vs = visionStatus(), d = vs.debug;
+    // не во время запуска камеры и загрузки модели: смена пересоздаёт движок, start() держит прежний
+    if ((d && d.poseSwitching) || !(vs.status === 'ready' || vs.status === 'lost' || vs.status === 'idle')) return;
     trainPose.active = true;
     trainPose.prevUrl = d && d.poseModel === 'full' ? null : DEPS.mediaPipe.modelUrl;
     if (trainPose.prevUrl) vision.setPoseModel(DEPS.mediaPipe.modelFullUrl).catch(() => {});

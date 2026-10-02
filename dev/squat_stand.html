@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHEN OATH — стенд приседаний</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230d1016'/%3E%3Cpath d='M16 5 L25 27 H7 Z' fill='none' stroke='%23c9a45c' stroke-width='2.5'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="../modules/ui.css">
+<link rel="stylesheet" href="../modules/coach.css">
+<style>
+  /* [W3-SQUAT] Стенд экрана тренировки приседаний: настоящие core/squatCounter.js и modules/ui.js, вместо камеры —
+     симуляция человека у ноутбука (dev/squatSim.mjs: дрожь точек, лодыжки за кадром, 12–15 Гц). Стили — префикс sq-. */
+  html, body { margin: 0; height: 100%; background: #101114; overflow: hidden; }
+  #sq-scene { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  .sq-cam { display: block; width: 100%; height: 100%; background: #0d0f13; }
+  .sq-bar {
+    position: fixed; right: 8px; top: 8px; z-index: 60; max-width: calc(100vw - 16px);
+    font: 12px/1.35 ui-monospace, Consolas, monospace; color: #cfc6b3; background: rgba(16, 14, 18, 0.82);
+    border: 1px solid #574a33; padding: 4px 8px; pointer-events: none; white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+<canvas id="sq-scene" aria-hidden="true"></canvas>
+<div id="ui-root"></div>
+<div class="sq-bar" id="sq-bar"></div>
+
+<script type="module">
+// ?mode=novice|master  ?cam=table|low  ?scen=demo|clean|novice|shallow115|tooShallow|fast  ?jitter=0.02  ?hz=15  ?seed=1  ?loop=0
+import { createUI } from '../modules/ui.js';
+import { createSquatCounter, topSquatFault } from '../core/squatCounter.js';
+import { simulateSquatSession } from './squatSim.mjs';
+
+const Q = new URLSearchParams(location.search);
+const num = (k, d) => (Q.has(k) && Number.isFinite(+Q.get(k)) ? +Q.get(k) : d);
+let mode = Q.get('mode') === 'master' ? 'master' : 'novice';
+const CAMS = {
+  table: { cameraHeightM: 1.0, cameraPitchDeg: 8, distanceM: 2.7, label: 'ноутбук на столе, 2,7 м' },
+  low: { cameraHeightM: 0.6, cameraPitchDeg: 0, distanceM: 3.0, label: 'камера низко (0,6 м), 3 м' },
+};
+const cam = CAMS[Q.get('cam')] || CAMS.table;
+// демо: два чистых, быстрый (ошибка, +1), с наклоном корпуса (ошибка, +1), слишком мелкий (не засчитан), чистый
+const DEMO = [
+  { thighDeg: 72, downS: 1.2, upS: 1.0, bottomS: 0.25, topS: 0.9 },
+  { thighDeg: 70, downS: 1.1, upS: 1.0, bottomS: 0.2, topS: 0.9 },
+  { thighDeg: 70, downS: 0.32, upS: 0.3, bottomS: 0.05, topS: 1.2 },
+  { thighDeg: 74, downS: 1.1, upS: 1.0, bottomS: 0.25, topS: 1.0, leanDeg: 62 },
+  { thighDeg: 49, downS: 0.8, upS: 0.7, bottomS: 0.1, topS: 1.3 },
+  { thighDeg: 76, downS: 1.2, upS: 1.0, bottomS: 0.3, topS: 1.5 },
+];
+const scen = Q.get('scen') || 'demo';
+const jitter = num('jitter', 0.02), hz = num('hz', 15);
+
+const scene = document.getElementById('sq-scene');
+function paintScene() {
+  const w = window.innerWidth, h = window.innerHeight;
+  scene.width = w; scene.height = h;
+  const g = scene.getContext('2d');
+  const sky = g.createLinearGradient(0, 0, 0, h);
+  sky.addColorStop(0, '#1d2330'); sky.addColorStop(0.6, '#2a2f38'); sky.addColorStop(1, '#17181c');
+  g.fillStyle = sky; g.fillRect(0, 0, w, h);
+}
+paintScene();
+window.addEventListener('resize', paintScene);
+
+const camCanvas = document.createElement('canvas');
+camCanvas.className = 'sq-cam';
+camCanvas.width = 640; camCanvas.height = 480;
+const bar = document.getElementById('sq-bar');
+
+let st;
+function start() {
+  const S = simulateSquatSession({ seed: num('seed', 1), ...cam, jitter, hz, reps: scen === 'demo' ? DEMO : scen, n: 6, standS: 3, tailS: 2 });
+  st = { S, i: 0, t0: performance.now(), counter: createSquatCounter({ mode }), last: null, reps: 0, points: 0, clean: 0, lastRepAt: -1e9, lastEv: null, hintRef: null, hintAt: -1e9, total: st ? st.total : 0, done: false };
+}
+start();
+
+const callbacks = {
+  onSettings(p) { if (p && (p.gestureMode === 'novice' || p.gestureMode === 'master') && p.gestureMode !== mode) { mode = p.gestureMode; start(); } },
+  onBack() { start(); }, onExercise() {}, onPoseRecord() {}, onOath() {}, onEnableCamera() {},
+};
+const ui = createUI({ root: document.getElementById('ui-root'), callbacks });
+(ui.cameraSlot || document.body).appendChild(camCanvas);
+
+// превью «камеры»: точки позы как их видит MediaPipe (зеркально, как в игре), цвет — видимость
+const BONES = [[11, 12], [11, 23], [12, 24], [23, 24], [23, 25], [25, 27], [24, 26], [26, 28], [11, 13], [13, 15], [12, 14], [14, 16], [7, 8]];
+function drawCam(f) {
+  const g = camCanvas.getContext('2d'), W = camCanvas.width, H = camCanvas.height;
+  g.fillStyle = '#0d0f13'; g.fillRect(0, 0, W, H);
+  g.strokeStyle = 'rgba(196,162,101,0.12)'; g.lineWidth = 1;
+  for (let x = 0; x <= W; x += 64) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+  for (let y = 0; y <= H; y += 64) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  if (!f) return;
+  const L = f.landmarks, P = (i) => (L[i] ? { x: (1 - L[i].x) * W, y: L[i].y * H, v: L[i].visibility } : null);
+  g.lineWidth = 5; g.lineCap = 'round';
+  for (const [a, b] of BONES) {
+    const p = P(a), q = P(b);
+    if (!p || !q) continue;
+    g.strokeStyle = `rgba(227,199,146,${0.15 + 0.55 * Math.min(p.v, q.v)})`;
+    g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(q.x, q.y); g.stroke();
+  }
+  for (let i = 0; i < 33; i++) {
+    const p = P(i);
+    if (!p) continue;
+    g.fillStyle = p.v >= 0.5 ? '#8fb784' : p.v >= 0.3 ? '#deae55' : '#e07458';
+    g.beginPath(); g.arc(p.x, p.y, i === 0 ? 9 : 6, 0, Math.PI * 2); g.fill();
+  }
+  g.fillStyle = 'rgba(255,255,255,0.55)'; g.font = '15px system-ui, sans-serif';
+  g.save(); g.scale(1, 1); g.fillText(`симуляция: ${cam.label}`, 12, H - 14); g.restore();
+}
+
+function frame() {
+  requestAnimationFrame(frame);
+  const now = performance.now();
+  const tSim = st.S.frames.length ? st.S.frames[0].tMs + (now - st.t0) : 0;
+  while (st.i < st.S.frames.length && st.S.frames[st.i].tMs <= tSim) {
+    const f = st.S.frames[st.i++];
+    st.counter.push(f); st.last = f;
+    for (const ev of st.counter.drain()) { st.reps++; st.points += ev.points; st.total += ev.points; if (ev.clean) st.clean++; st.lastRepAt = now; st.lastEv = ev; }
+  }
+  if (st.i >= st.S.frames.length && !st.done) { st.done = true; if (Q.get('loop') !== '0') setTimeout(start, 2500); }
+  const q = st.counter.read();
+  if (q.lastHint && q.lastHint !== st.hintRef) { st.hintRef = q.lastHint; st.hintAt = now; }
+  drawCam(st.last);
+  ui.update({
+    screen: 'training', debug: false, error: null, snapshot: null,
+    tracking: { status: 'ready', message: '', progress: 1, confidence: 0.9, calibrated: true },
+    settings: { quality: 'medium', volume: 0.8, reducedMotion: false, sensitivity: 1, gestureMode: mode },
+    progress: { points: st.total, earned: st.total, pushups: 0, squats: st.reps, embers: [], emberTotal: 0, upgrades: [] },
+    training: {
+      exercise: 'squats', debugSim: false, reps: st.reps, attempts: q.attempts, state: q.phase, message: q.message,
+      depth: q.depth, knee: q.knee, view: q.view, lastOk: q.lastRep ? q.lastRep.ok : null,
+      sinceRepMs: now - st.lastRepAt, lastHint: q.lastHint, sinceHintMs: q.lastHint ? now - st.hintAt : null,
+      faults: q.faults, formScore: q.formScore, topFault: topSquatFault(q.faults, q.mode),
+      mode: q.mode, clean: q.clean, points: st.points, downDeg: q.downDeg, feet: q.feet,
+      lastRep: q.lastRep, lastEvent: st.lastEv, framing: q.framing, diag: q.diag,
+      pose: { model: 'full', switching: false, hz: q.diag.hz, recFrames: 0, status: 'ready' },
+    },
+  });
+  bar.textContent = `стенд приседаний · ${mode === 'novice' ? 'Новичок' : 'Мастер'} · ${cam.label} · дрожь ±${Math.round(jitter * 100)}% · ${hz} Гц · истинных повторов ${st.S.truth.reps.length} · засчитано ${q.reps} из ${q.attempts}`;
+  window.__STAND__ = { reps: q.reps, attempts: q.attempts, clean: q.clean, points: st.points, done: st.done, truth: st.S.truth.reps.length, phase: q.phase };
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

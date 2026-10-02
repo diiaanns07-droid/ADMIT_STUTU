@@ -49,6 +49,7 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
 
   const calls = [];
   const names = ['onEnableCamera', 'onCalibrate', 'onStart', 'onPause', 'onResume', 'onRestart', 'onSettings', 'onDebug', 'onExit', 'onOath', 'onTraining', 'onBuyUpgrade', 'onBack', 'onNet'];
+  names.push('onPoseRecord');   // [W3-SQUAT] «Сохранить запись позы» на экране тренировки
   const callbacks = {};
   for (const n of names) {
     callbacks[n] = (arg) => {
