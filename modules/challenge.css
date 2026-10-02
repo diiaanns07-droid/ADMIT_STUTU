@@ -437,6 +437,10 @@
 }
 .ao-chal__again {
   width: 100%;
+  min-height: 3.7rem;
+  font-size: 1.4rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .ao-chal__sub {
   display: flex;

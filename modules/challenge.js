@@ -524,7 +524,7 @@ export function createChallengeScreen(h) {
   const grid = el('div', { class: 'ao-chal__keys', role: 'group', 'aria-label': 'Буквы' });
   function fillGrid() {
     grid.replaceChildren(...LETTERS[abc].map((ch) => {
-      const k = el('button', { type: 'button', class: 'ao-chal__key', text: ch, 'aria-label': `Буква ${ch}` });
+      const k = el('button', { type: 'button', class: 'ao-chal__key', text: ch, 'aria-label': `Буква ${ch}`, 'data-ui-local': '' });   // меняет только поле имени
       listen(k, 'click', () => setName(nameIn.value + ch));
       return k;
     }));
@@ -532,6 +532,7 @@ export function createChallengeScreen(h) {
   const abcBtn = btn('ABC', () => { abc = abc === 'ru' ? 'en' : 'ru'; setText(abcBtn.labelNode, abc === 'ru' ? 'ABC' : 'АБВ'); fillGrid(); }, { variant: 'secondary' });
   const delBtn = btn('⌫', () => setName(nameIn.value.slice(0, -1)), { variant: 'secondary' });
   setAttr(delBtn.node, 'aria-label', 'Стереть букву');
+  for (const b of [abcBtn, delBtn]) setAttr(b.node, 'data-ui-local', '');   // в игру ничего не передают
   const okBtn = btn('Готово', () => submitName(), { variant: 'primary', size: 'lg' });
   const nameBox = el('div', { class: 'ao-chal__name' },
     el('h3', { class: 'ao-chal__h' }, 'Впишите себя в зал славы', el('span', { class: 'ao-chal__namehint', text: '3 буквы — кнопками или с клавиатуры' })),
