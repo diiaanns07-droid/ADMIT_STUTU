@@ -79,7 +79,7 @@ void main() {
     float r = 0.25 + 0.35 * h2;
     p = vec3(cos(ang) * r, uH * (0.45 + 0.4 * fract(h1 * 7.0)), sin(ang) * r);
     p += vec3(sin(t * 30.0 + aSeed.x * 50.0), cos(t * 27.0 + aSeed.y * 40.0), sin(t * 33.0)) * 0.015;
-    a = (1.0 - smoothstep(0.0, 0.18, ph)) * step(0.35, h2 - 0.3 * uFury);
+    a = (1.0 - smoothstep(0.0, 0.18, ph)) * step(0.35 - 0.3 * uFury, h2);   // с яростью вспышек больше
   }
   // [W4-АУРА] ярость — искры шире и выше, вспышка заполнения толкает их наружу
   p.xz *= 1.0 + 0.16 * uFury + 0.9 * uFlash * (0.4 + aSeed.z);
@@ -326,8 +326,8 @@ const COUNT = { ember: 64, frost: 22, wind: 36, storm: 30 };
 // доли частиц: база и максимум при полной ярости; что рисуется на каждом уровне
 const QUAL = {
   low: { pts: 0.4, ptsMax: 0.6, hq: false, waves: false, prints: 0, burst: 0 },
-  medium: { pts: 1, ptsMax: 1.5, hq: true, waves: true, prints: 12, burst: 44 },
-  high: { pts: 1.3, ptsMax: 2, hq: true, waves: true, prints: 18, burst: 64 },
+  medium: { pts: 1, ptsMax: 1.5, hq: true, waves: true, prints: 12, burst: 72 },   // рывок: старт + след + торможение ≈ 70 частиц
+  high: { pts: 1.3, ptsMax: 2, hq: true, waves: true, prints: 18, burst: 96 },
 };
 const tierOf = (q) => (q === 'low' || q === 'high' ? q : 'medium');
 const clamp01 = (v) => (v > 0 ? (v < 1 ? v : 1) : 0);
@@ -438,7 +438,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
   const WU = { uTime: { value: 0 }, uK: { value: 0 }, uC1: { value: c1.clone() }, uC2: { value: c2.clone() } };
   function makeWaves() {
     const wg = new THREE.CylinderGeometry(0.62, 0.36, 1, 32, 1, true); wg.translate(0, 0.5, 0);
-    const wm = new THREE.ShaderMaterial({ name: 'hero-aura-waves', uniforms: WU, vertexShader: WAVE_VERT, fragmentShader: WAVE_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+    const wm = new THREE.ShaderMaterial({ name: 'hero-aura-waves', uniforms: WU, vertexShader: WAVE_VERT, fragmentShader: WAVE_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, forceSinglePass: true, fog: false });   // аддитив: порядок граней не важен — один проход вместо двух
     const w = new THREE.Mesh(wg, wm);
     w.name = 'hero-aura-waves'; w.scale.set(1, hM * 1.05, 1); w.renderOrder = 3; w.frustumCulled = false;
     w.castShadow = false; w.receiveShadow = false; w.userData.noShadow = true; w.visible = false;
@@ -530,7 +530,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     if (cur && cur.ghost && cur.ghost.setQuality && ghostQ !== tier) { ghostQ = tier; try { cur.ghost.setQuality(tier); } catch (e) { /* ignore */ } }
     const P = snap && snap.player;
     st.menu = !P;
-    if (!P) { st.battle = false; st.dead = false; st.victory = false; st.dashing = false; st.chL = st.chR = 0; st.guard = 0; return; }
+    if (!P) { st.battle = false; st.dead = false; st.victory = false; st.dashing = false; st.wasDash = false; st.chL = st.chR = 0; st.guard = 0; return; }
     const status = snap.status || 'playing';
     st.dead = status === 'defeat' || P.action === 'dead' || !!P.dead;
     st.victory = status === 'victory';
@@ -610,15 +610,17 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     RU.heroAuraRimK.value = (rimBase + 0.65 * st.fz + 0.4 * st.rdy * (0.5 + 0.5 * Math.sin(t * 5)) + 2.2 * fl + 0.35 * ch) * alive;
     RU.heroAuraRimC.value.copy(c1).lerp(c2, Math.min(0.6, 0.2 * st.fz + 0.4 * st.flash));
     // состояние: оберег/щит — золото (с «хлопком» при включении), мало HP — красное сердцебиение
-    if (st.gd > 0.01) { RU.heroAuraStateC.value.copy(goldC); RU.heroAuraStateK.value = st.gd * (1.15 + 0.9 * st.pop) * alive; }
-    else { RU.heroAuraStateC.value.copy(lowC); RU.heroAuraStateK.value = hb * 1.7 * alive; }
+    // золото и красное смешиваются по силе (гаснущий оберег не прячет сердцебиение)
+    const gk = st.gd * (1.15 + 0.9 * st.pop), rk2 = hb * 1.7;
+    RU.heroAuraStateC.value.copy(lowC).lerp(goldC, gk + rk2 > 1e-4 ? gk / (gk + rk2) : 1);
+    RU.heroAuraStateK.value = Math.max(gk, rk2) * alive;
     holder.getWorldPosition(_r);
     rootYaw = holder.rotation ? holder.rotation.y : 0;
     RU.heroAuraGround.value = _r.y;
     RU.heroAuraUnderK.value = st.vis * (0.22 + 0.55 * st.fz + 0.9 * fl + 0.4 * ch) * alive;
 
     // частицы ауры
-    U.uTF.value = (U.uTF.value + dt * (1 + 0.65 * st.fz)) % 3600;
+    U.uTF.value += dt * (1 + 0.65 * st.fz);
     U.uFury.value = st.fz; U.uFlash.value = st.flash; U.uLow.value = Math.min(0.8, hb * 0.9);
     U.uK.value = kExt * (1 + 0.8 * st.fz + 1.6 * fl + 0.3 * st.rdy) * alive;
     g.setDrawRange(0, nOf(Q.pts + (Q.ptsMax - Q.pts) * st.fz));
