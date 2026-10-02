@@ -7,6 +7,8 @@
 //    заряд пропал без каста (медленно, по диагонали, потеря кистей) — сгусток гаснет дымком и падающими искрами.
 // Ведёт общее состояние fx.shared.sigil (точка и сила сгустка — в кадре каста снимок уже с нулевым зарядом).
 // fx.qa.charge = { charge, axis } — подмена снимка для стенда и видео.
+// [W4-ЗАКЛИНАНИЯ] цвет сгустка — стихия героя (LOOKS): ось 'h' — тон молний врат, 'v'/без оси — тон стихии (столп);
+// у тьмы — чёрное ядро (darkcore, blend alpha) в приглушённом фиолетовом свечении. Ядро белее, ореол ярче.
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -45,6 +47,23 @@ export function register(fx) {
   const followCore = () => S.pos;
   lightOpt.follow = followCore;
 
+  // [W4-ЗАКЛИНАНИЯ] вид сгустка по стихии героя; берётся один раз в начале заряда (и при выпуске), не в кадре
+  const E = fx.E;
+  const look = (v, h, litV, litH, dark) => Object.freeze({ v, h, litV, litH,
+    core: dark ? 'darkcore' : 'whiteHold', blend: dark ? 'alpha' : 'add', glow: dark ? v : 'whiteHold', glowK: dark ? 0.45 : 1 });
+  const LOOKS = {
+    fire: look('fire', 'gold', E.fire.hot, 0xffe2a8, false),        // 'h' — бело-золотые молнии, 'v' — пламя
+    storm: look('storm', 'storm', 0xb8dcff, 0xb8dcff, false),
+    void: look('void', 'void', E.void.hot, E.void.hot, true),
+    wind: look('wind', 'wind', E.wind.hot, E.wind.hot, false),
+    tempest: look('tempest', 'tempest', E.tempest.hot, E.tempest.hot, false),
+  };
+  let LK = LOOKS.fire;
+  function pickLook() {
+    LK = LOOKS[fx.heroEl(null)] || LOOKS.fire;
+    emCore.ramp = LK.core; emCore.blend = LK.blend; flCore.ramp = LK.glow; emMote.ramp = LK.h;
+  }
+
   let accCore = 0, accHalo = 0, accSpark = 0, accMote = 0, accSlit = 0;
   let hum = false, ctlT = 0, lightT = 0, lastCharge = 0, castT = -1e9;
 
@@ -70,7 +89,7 @@ export function register(fx) {
     S.active = ch > 0.02;
     if (S.active) {
       corePos(S.pos);
-      if (!was) S.peak = 0;
+      if (!was) { S.peak = 0; pickLook(); }
       S.charge = ch; S.peak = Math.max(S.peak, ch); S.axis = axis; S.t = kit.clock;
     } else {
       S.charge = 0;
@@ -87,20 +106,21 @@ export function register(fx) {
     if (!S.active || !(dt > 0)) { accCore = accHalo = accSpark = accMote = accSlit = accFlash = accAura = accFloor = 0; return; }
 
     const dec = decor(), sf = soft();
+    const ar = axis === 'h' ? LK.h : LK.v;                 // [W4-ЗАКЛИНАНИЯ] градиент стихии героя по оси
     const pulse = 0.85 + 0.15 * Math.sin(kit.clock * (9 + 10 * ch));
     // ядро/ореол/звезда — каждые ~1/18 с (вспышки не масштабируются качеством: по одной на слой)
     accFlash += dt * 18;
     if (accFlash >= 1) {
       accFlash -= Math.floor(accFlash);
       const s = (0.35 + 0.85 * ch) * pulse;
-      flCore.size[0] = s; flCore.size[1] = s * 0.92; flCore.intensity = (2.4 + 1.4 * ch) * sf;
+      flCore.size[0] = s; flCore.size[1] = s * 0.92; flCore.intensity = (2.8 + 1.6 * ch) * sf * LK.glowK;   // [W4-ЗАКЛИНАНИЯ] белее
       kit.flash(S.pos, flCore);
       const hs = 1 + 1.9 * ch;
-      flHalo.size[0] = hs; flHalo.size[1] = hs * 0.95; flHalo.ramp = axis === 'h' ? 'storm' : 'gold'; flHalo.intensity = (0.9 + 0.9 * ch) * sf;
+      flHalo.size[0] = hs; flHalo.size[1] = hs * 0.95; flHalo.ramp = ar; flHalo.intensity = (1.1 + 1.0 * ch) * sf;
       kit.flash(S.pos, flHalo);
       if (ch > 0.25) {
         starRot += 0.35; const ss = 0.6 + 1.6 * ch;
-        flStar.size[0] = ss; flStar.size[1] = ss * 0.9; flStar.rot = starRot; flStar.ramp = axis === 'h' ? 'storm' : 'gold';
+        flStar.size[0] = ss; flStar.size[1] = ss * 0.9; flStar.rot = starRot; flStar.ramp = ar;
         flStar.intensity = (1.2 + 1.6 * ch) * sf;
         kit.flash(S.pos, flStar);
       }
@@ -112,7 +132,7 @@ export function register(fx) {
     if (na > 0) {
       accAura -= na;
       emAura.at.set(_ft.x, _ft.y + 0.15, _ft.z); emAura.center.copy(emAura.at); emAura.count = na;
-      emAura.radius = 0.5 + 0.25 * ch; emAura.ramp = axis === 'h' ? 'storm' : 'gold';
+      emAura.radius = 0.5 + 0.25 * ch; emAura.ramp = ar;
       kit.emit(emAura);
     }
     // кольцо света у ног — сжимается к герою
@@ -121,7 +141,7 @@ export function register(fx) {
     if (na > 0) {
       accFloor -= na;
       emFloor.at.set(_ft.x, _ft.y + 0.04, _ft.z); emFloor.count = na; emFloor.radius = 0.7 + 0.6 * ch;
-      emFloor.ramp = axis === 'h' ? 'storm' : 'gold'; emFloor.intensity = (1 + 1.2 * ch) * sf;
+      emFloor.ramp = ar; emFloor.intensity = (1 + 1.2 * ch) * sf;
       kit.emit(emFloor);
     }
     // ядро: неподвижные тающие точки — сплошной шар, растёт и разгорается с зарядом
@@ -141,8 +161,8 @@ export function register(fx) {
       accHalo -= n;
       const s = 0.45 + 0.9 * ch;
       emHalo.at.copy(S.pos); emHalo.count = n; emHalo.size[0] = s; emHalo.size[1] = s * 0.9;
-      emHalo.ramp = axis === 'h' ? 'storm' : 'gold';
-      emHalo.intensity = (0.7 + 0.8 * ch) * sf;
+      emHalo.ramp = ar;
+      emHalo.intensity = (0.8 + 0.9 * ch) * sf;
       kit.emit(emHalo);
     }
     // искры стягиваются к ядру по спирали (частота по заряду и качеству)
@@ -152,7 +172,7 @@ export function register(fx) {
       accSpark -= n;
       const r = 0.6 + 0.8 * ch;
       emSpark.at.copy(S.pos); emSpark.count = n; emSpark.radius = r;
-      emSpark.radial = -r / 0.3; emSpark.ramp = axis === 'h' ? 'storm' : 'gold';
+      emSpark.radial = -r / 0.3; emSpark.ramp = ar;
       kit.emit(emSpark);
     }
     // искорки-«пылинки» у ядра — электричество при сильном заряде
@@ -171,7 +191,7 @@ export function register(fx) {
         if (axis === 'h') { fx.right(_rt, false); _a.copy(_rt).multiplyScalar(half); }
         else _a.set(0, half, 0);
         emSlit.at.copy(S.pos).sub(_a); emSlit.to.copy(S.pos).add(_a);
-        emSlit.count = n * 3; emSlit.ramp = axis === 'h' ? 'storm' : 'gold';
+        emSlit.count = n * 3; emSlit.ramp = ar;
         emSlit.intensity = (2.4 + 0.6 * ch) * sf;
         kit.emit(emSlit);
       }
@@ -179,7 +199,7 @@ export function register(fx) {
     // свет: короткие импульсы, следящие за ядром (на low пул пуст)
     if (lights() > 0 && kit.clock >= lightT && ch > 0.1) {
       lightT = kit.clock + 0.36;
-      lightOpt.intensity = 0.25 + 0.5 * ch; lightOpt.color = axis === 'h' ? 0xb8dcff : 0xffe2a8;
+      lightOpt.intensity = 0.25 + 0.5 * ch; lightOpt.color = axis === 'h' ? LK.litH : LK.litV;
       kit.light(S.pos, lightOpt);
     }
   });
@@ -187,7 +207,7 @@ export function register(fx) {
   function fizzle() {
     _lp.copy(S.pos);
     kit.emit({ at: _lp, count: 8, shape: 'sphere', radius: 0.15, speed: [0.1, 0.4], life: [0.5, 0.9], size: [0.25, 0.5], sprite: 'smoke', blend: 'alpha', ramp: 'smoke', intensity: 1, alpha: 0.5, gravity: -0.4, drag: 1.5 });
-    kit.emit({ at: _lp, count: 14, speed: [0.4, 1.4], life: [0.35, 0.6], size: [0.04, 0.01], ramp: 'gold', intensity: 2, sprite: 'spark', stretch: 0.02, gravity: 5, drag: 1 });
+    kit.emit({ at: _lp, count: 14, speed: [0.4, 1.4], life: [0.35, 0.6], size: [0.04, 0.01], ramp: S.axis === 'h' ? LK.h : LK.v, intensity: 2, sprite: 'spark', stretch: 0.02, gravity: 5, drag: 1 });
   }
 
   // выпуск: сгусток схлопывается в точку и вспыхивает — дальше рисуют врата/столп (обработчик-добавка)
@@ -199,9 +219,11 @@ export function register(fx) {
     // свежий заряд — его точка; иначе (стенд/тест без заряда) — перед грудью
     if (kit.clock - S.t > 0.5) corePos(S.pos);
     const P = S.pos, sf = soft(), gate = d.sigil === 'gate';
-    kit.flash(P, { ramp: 'whiteHold', size: [1.1 + 0.9 * pw, 0.2], curve: 0.6, dur: 0.16, intensity: 4 * sf, sprite: 'glow', pull: 0.3 });
-    kit.flash(P, { ramp: gate ? 'storm' : 'gold', size: [0.5, 2.6 + 1.6 * pw], dur: 0.24, intensity: 3 * sf, sprite: 'star', pull: 0.35 });
-    kit.emit({ at: P, shape: 'shell', radius: 0.08, count: Math.round(26 + 34 * pw), radial: 5 + 4 * pw, speed: [0, 0.4], life: [0.18, 0.32], size: [0.06, 0.01], ramp: gate ? 'storm' : 'gold', intensity: 3, sprite: 'spark', stretch: 0.05, drag: 2.5 });
+    pickLook();                                            // [W4-ЗАКЛИНАНИЯ] стихия героя; белое ядро и звезда ярче
+    const ar = gate ? LK.h : LK.v;
+    kit.flash(P, { ramp: 'whiteHold', size: [1.1 + 0.9 * pw, 0.2], curve: 0.6, dur: 0.16, intensity: 4.5 * sf, sprite: 'glow', pull: 0.3 });
+    kit.flash(P, { ramp: ar, size: [0.5, 2.6 + 1.6 * pw], dur: 0.24, intensity: 3.6 * sf, sprite: 'star', pull: 0.35 });
+    kit.emit({ at: P, shape: 'shell', radius: 0.08, count: Math.round(26 + 34 * pw), radial: 5 + 4 * pw, speed: [0, 0.4], life: [0.18, 0.32], size: [0.06, 0.01], ramp: ar, intensity: 3, sprite: 'spark', stretch: 0.05, drag: 2.5 });
     if (hum && typeof L.loopStop === 'function') { hum = false; L.loopStop(HUM, 0.05); }
     S.active = false; S.charge = 0;
     return undefined;

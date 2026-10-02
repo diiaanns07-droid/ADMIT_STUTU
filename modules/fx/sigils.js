@@ -335,8 +335,8 @@ export function register(fx) {
   fx.on('sigil_cast', (ev, d) => {
     const c = caster(fx, ev, d);
     const R = c.remote, rival = c.rival;
-    const P = fx.pal('gold', d);
-    const ramp = rampOf('gold', R);
+    const P = fx.heroPal(d);                       // [W4-ЗАКЛИНАНИЯ] цвет героя (было золото)
+    const ramp = rampOf(fx.heroEl(d), R);          // [W4-ЗАКЛИНАНИЯ]
     if (!R) fx.shared.gateCastAt = kit.clock;
     const gp = new V3().copy(c.feet).addScaledVector(c.fwd, 1.05);
     const y0 = c.feet.y + 0.25, y1 = c.feet.y + 1.2;
@@ -393,7 +393,7 @@ export function register(fx) {
     }
     D.want = want;
     if (want && !D.h && fx.hex) {
-      const P = D.remote ? E.rival : E.gold;
+      const P = D.remote ? E.rival : fx.heroPal(null);   // [W4-ЗАКЛИНАНИЯ] купол в цвете героя
       try { D.h = fx.hex.create({ kind: 'dome', color: P.mid, hot: P.core, rival: D.remote ? 1 : 0 }); } catch (e) { D.h = null; }
       D.open = 0;
     }
@@ -418,12 +418,12 @@ export function register(fx) {
   fx.on('block', (ev, d) => {
     if (!d || !d.bastion) return;
     const D = domes[d.remote ? 1 : 0];
-    const P = fx.pal('gold', d);
+    const P = fx.heroPal(d);                       // [W4-ЗАКЛИНАНИЯ] цвет героя
     const p = fx.evPos(ev, new V3());
     if (D.h && p) { try { D.h.hit({ point: p, strength: 1 }); } catch (e) { /* ignore */ } }
     if (p) {
       kit.flash(p, { color: P.core, size: [0.3, 1.2], dur: 0.16, intensity: 3.6, sprite: 'star', pull: 0.3, rival: !!d.remote });
-      kit.emit({ at: p, count: 16, speed: [2, 6], life: [0.2, 0.45], size: [0.06, 0.01], ramp: rampOf('gold', d.remote), intensity: 3, sprite: 'spark', stretch: 0.025, gravity: 3, drag: 2, rival: !!d.remote, essential: true });
+      kit.emit({ at: p, count: 16, speed: [2, 6], life: [0.2, 0.45], size: [0.06, 0.01], ramp: rampOf(fx.heroEl(d), d.remote), intensity: 3, sprite: 'spark', stretch: 0.025, gravity: 3, drag: 2, rival: !!d.remote, essential: true });   // [W4-ЗАКЛИНАНИЯ]
     }
   });
 
@@ -437,7 +437,7 @@ export function register(fx) {
   const markSet = { intensity: 1.6, radius: 1.35 };
   const followTarget = () => fx.target(_mt, false);
   function spawnReticle(r0) {
-    const P = E.gold;
+    const P = fx.heroPal(null);                    // [W4-ЗАКЛИНАНИЯ] цвет героя
     const g = glyph({
       pos: fx.target(_mt, false), billboard: true, radius: r0, symbol: 'frame', symbolScale: 0.92, style: 'hex',
       color: P.mid, hot: P.core, intensity: 2.2, dur: Infinity, unfold: 0.12, spin: 0.35, rings: 2, ticks: 36, follow: followTarget,
@@ -448,8 +448,8 @@ export function register(fx) {
   fx.on('sigil_cast', (ev, d) => {
     const c = caster(fx, ev, d);
     const R = c.remote;
-    const P = fx.pal('gold', d);
-    const ramp = rampOf('gold', R);
+    const P = fx.heroPal(d);                       // [W4-ЗАКЛИНАНИЯ] цвет героя
+    const ramp = rampOf(fx.heroEl(d), R);          // [W4-ЗАКЛИНАНИЯ]
     const dur = isNum(d.duration) ? clamp(d.duration, 0.5, 30) : 6;
     // тонкий луч ладонь → цель
     if (strips) {
@@ -512,8 +512,8 @@ export function register(fx) {
   fx.on('sigil_cast', (ev, d) => {
     const c = caster(fx, ev, d);
     const R = c.remote, rival = c.rival;
-    const P = fx.pal('gold', d);
-    const ramp = rampOf('gold', R);
+    const P = fx.heroPal(d);                       // [W4-ЗАКЛИНАНИЯ] цвет героя
+    const ramp = rampOf(fx.heroEl(d), R);          // [W4-ЗАКЛИНАНИЯ]
     const ticks = isNum(d.ticks) ? clamp(Math.round(d.ticks), 1, 12) : 4;
     const beamDur = 0.25 + ticks * 0.21;
     const o = new V3().copy(c.chest).addScaledVector(c.dir, 0.45);
@@ -531,7 +531,7 @@ export function register(fx) {
       kit.flash(A, { color: P.core, size: [0.12, 0.55], dur: 0.35, intensity: 3.6, sprite: 'star', pull: 0.6, rival: R });
       kit.emit({ at: A, shape: 'line', to: B, count: 10, speed: [0, 0.15], life: [0.25, 0.5], size: [0.09, 0.02], ramp, intensity: 3, sprite: 'glow', fadeIn: 0.3, rival: R, essential: true });
     }
-    gather(fx, o, 'gold', R, { time: 0.13, radius: 0.9, count: 28, glow: 0.7, essential: true });
+    gather(fx, o, fx.heroEl(d), R, { time: 0.13, radius: 0.9, count: 28, glow: 0.7, essential: true });   // [W4-ЗАКЛИНАНИЯ]
     kit.light(o, { color: P.hot, intensity: 0.8, range: 7, dur: 0.3, attack: 0.5 });
     for (const e of [bStreak, bSheath, bRing, bSplash]) e.rival = R;
     const slot = R ? 1 : 0;
@@ -568,8 +568,8 @@ export function register(fx) {
 
   fx.on('sigil_hit', (ev, d) => {
     const R = fx.isRemote(d);
-    const P = fx.pal('gold', d);
-    const ramp = rampOf('gold', R);
+    const P = fx.heroPal(d);                       // [W4-ЗАКЛИНАНИЯ] цвет героя
+    const ramp = rampOf(fx.heroEl(d), R);          // [W4-ЗАКЛИНАНИЯ]
     const p = fx.evPos(ev, new V3()) || fx.target(new V3(), R);
     const ctl = beams[R ? 1 : 0];
     if (ctl && ctl.alive) { ctl.pulse = 1; ctl.until = Math.max(ctl.until, ctl.t + 0.18); }
@@ -591,8 +591,8 @@ export function register(fx) {
   fx.on('sigil_cast', (ev, d) => {
     const c = caster(fx, ev, d);
     const R = c.remote;
-    const P = fx.pal('gold', d);
-    const ramp = rampOf('gold', R);
+    const P = fx.heroPal(d);                       // [W4-ЗАКЛИНАНИЯ] цвет героя
+    const ramp = rampOf(fx.heroEl(d), R);          // [W4-ЗАКЛИНАНИЯ]
     camAxes();
     const hc = new V3().copy(c.head); hc.y += 0.62;
     const S = 0.034;   // масштаб кривой (x ∈ ±16 → ±0.54 м)
@@ -621,7 +621,7 @@ export function register(fx) {
     // удар сердца: вспышка в центре
     kit.flash(hc, { color: P.core, size: [0.3, 1.3], dur: 0.25, intensity: 3.2, sprite: 'star', pull: 0.5, rival: R, delay: 0.48 });
     kit.flash(hc, { color: P.hot, size: [0.6, 1.5], dur: 0.6, intensity: 1.6, sprite: 'glow', pull: 0.5, rival: R, delay: 0.3 });
-    runeCircle(fx, c, 'cor', 'gold', { radius: 1.6, dur: 2.0, spin: 0.6, motes: 22 });
+    runeCircle(fx, c, 'cor', fx.heroEl(d), { radius: 1.6, dur: 2.0, spin: 0.6, motes: 22 });   // [W4-ЗАКЛИНАНИЯ]
     // оберег: оболочка и кольцо
     kit.after(0.5, () => {
       if (!sphere(c.chest, 0.5, 1.35, 0.55, P, R, { intensity: 1.1, distort: 0.3 })) {
@@ -640,13 +640,14 @@ export function register(fx) {
   // Щелчок у правой ладони, раскалённая янтарная игла с коротким энергетическим следом, чёткий удар.
   fx.on('player_cast', (ev, d) => {
     const R = fx.isRemote(d);
-    const P = fx.pal('gold', d);
+    const el = fx.heroEl(d), P = fx.pal(el, d), sr = rampOf(el, R);   // [W4-ЗАКЛИНАНИЯ] цвет героя
+    if (!R) { sparkRamp = sr; sparkPal = P; }                          // [W4-ЗАКЛИНАНИЯ] палитра летящих искр — один раз на выстрел
     const p = fx.evPos(ev, new V3());
     const hand = p && p.y > fx.groundY(p.x, p.z, 0) + 0.4 ? p : fx.anchor('handR', new V3(), R);
     const dir = hasVec(d.velocity) ? d.velocity : null;
-    kit.flash(hand, { color: P.core, size: [0.1, 0.55], dur: 0.08, intensity: 4.2, sprite: 'star', pull: 0.6, rival: R });
-    kit.flash(hand, { color: P.hot, size: [0.2, 0.7], dur: 0.13, intensity: 2, sprite: 'glow', pull: 0.6, rival: R });
-    kit.emit({ at: hand, dir, cone: dir ? 0.5 : Math.PI, count: 4, speed: [3, 7], life: [0.1, 0.22], size: [0.05, 0.01], ramp: rampOf('gold', R), intensity: 3.2, sprite: 'spark', stretch: 0.025, drag: 3, rival: R, essential: true });
+    kit.flash(hand, { ramp: 'whiteHold', size: [0.1, 0.55], dur: 0.08, intensity: 4.2, sprite: 'star', pull: 0.6, rival: R });   // [W4-ЗАКЛИНАНИЯ] белое ядро
+    kit.flash(hand, { ramp: sr, size: [0.2, 0.7], dur: 0.13, intensity: 2.4, sprite: 'glow', pull: 0.6, rival: R });           // [W4-ЗАКЛИНАНИЯ] ореол стихии
+    kit.emit({ at: hand, dir, cone: dir ? 0.5 : Math.PI, count: 4, speed: [3, 7], life: [0.1, 0.22], size: [0.05, 0.01], ramp: sr, intensity: 3.2, sprite: 'spark', stretch: 0.025, drag: 3, rival: R, essential: true });
     au('cast', hand);
     return true;
   }, (d) => d.ability === 'spark');
@@ -654,9 +655,11 @@ export function register(fx) {
   fx.suppress('proj:spark');
   const sparks = new Map();   // id → { gen, tr }
   let sparkGen = 0;
-  const sHead = { at: null, count: 1, speed: [0, 0.1], life: [0.05, 0.06], size: [0.34, 0.12], ramp: 'gold', intensity: 3.2, sprite: 'glow', essential: true, rival: false };
-  const sNeedle = { at: null, dir: null, cone: 0.01, count: 1, speed: [10, 12], life: [0.04, 0.05], size: [0.13, 0.08], ramp: 'whiteHold', intensity: 5, sprite: 'streak', stretch: 0.03, drag: 20, essential: true, rival: false };
-  const sShed = { at: null, count: 1, radius: 0.05, speed: [0.3, 1.2], life: [0.12, 0.25], size: [0.05, 0.01], ramp: 'gold', intensity: 3, sprite: 'spark', stretch: 0.015, drag: 2, gravity: 2, rival: false };
+  let sparkRamp = rampOf(fx.heroEl(null), false), sparkPal = fx.heroPal(null);   // [W4-ЗАКЛИНАНИЯ] цвет героя (обновляется при выстреле)
+  // [W4-ЗАКЛИНАНИЯ] размеры искры ×1.3: голова, игла, осыпь, след
+  const sHead = { at: null, count: 1, speed: [0, 0.1], life: [0.05, 0.06], size: [0.44, 0.16], ramp: 'gold', intensity: 3.2, sprite: 'glow', essential: true, rival: false };
+  const sNeedle = { at: null, dir: null, cone: 0.01, count: 1, speed: [10, 12], life: [0.04, 0.05], size: [0.17, 0.1], ramp: 'whiteHold', intensity: 5, sprite: 'streak', stretch: 0.03, drag: 20, essential: true, rival: false };
+  const sShed = { at: null, count: 1, radius: 0.05, speed: [0.3, 1.2], life: [0.12, 0.25], size: [0.065, 0.013], ramp: 'gold', intensity: 3, sprite: 'spark', stretch: 0.015, drag: 2, gravity: 2, rival: false };
   const _sp = new V3(), _sv = new V3();
   function drawSparks(snap) {
     sparkGen++;
@@ -671,7 +674,7 @@ export function register(fx) {
         _sp.set(pr.position.x, pr.position.y, pr.position.z);
         if (hasVec(pr.velocity)) _sv.set(pr.velocity.x, pr.velocity.y, pr.velocity.z); else _sv.set(0, 0, -1);
         const v = _sv.length();
-        const ramp = R ? 'rival' : 'gold';
+        const ramp = R ? 'rival' : sparkRamp;        // [W4-ЗАКЛИНАНИЯ] цвет героя
         sHead.at = _sp; sHead.ramp = ramp; sHead.rival = R; kit.emit(sHead);
         if (v > 0.1) {
           _sv.multiplyScalar(1 / v);
@@ -682,8 +685,8 @@ export function register(fx) {
         sShed.at = _sp; sShed.ramp = ramp; sShed.rival = R; kit.emit(sShed);
         let e = sparks.get(id);
         if (!e) {
-          const P = R ? E.rival : E.gold;
-          e = { gen: 0, tr: trail(fx, 'gold', R, { style: 'energy', width: 0.09, life: 0.12, intensity: 2.6, taper: 1, maxPoints: 14, color: P.mid, hot: P.core }) };
+          const P = R ? E.rival : sparkPal;          // [W4-ЗАКЛИНАНИЯ] цвет героя; след шире ×1.3
+          e = { gen: 0, tr: trail(fx, 'gold', R, { style: 'energy', width: 0.12, life: 0.12, intensity: 2.6, taper: 1, maxPoints: 14, color: P.mid, hot: P.core }) };
           sparks.set(id, e);
         }
         e.gen = sparkGen;
@@ -701,16 +704,16 @@ export function register(fx) {
 
   fx.on('projectile_impact', (ev, d) => {
     const R = fx.isRemote(d);
-    const P = fx.pal('gold', d);
-    const ramp = rampOf('gold', R);
+    const el = fx.heroEl(d), P = fx.pal(el, d);   // [W4-ЗАКЛИНАНИЯ] цвет героя (вспышки — по градиентам: hex-строки kit кончаются)
+    const ramp = rampOf(el, R);                    // [W4-ЗАКЛИНАНИЯ]
     const p = fx.evPos(ev, new V3());
     if (!p) return;
     const back = hasVec(d.direction) ? { x: -d.direction.x, y: -d.direction.y, z: -d.direction.z } : null;
-    kit.flash(p, { color: P.core, size: [0.25, 1.25], dur: 0.1, intensity: 5, sprite: 'star', pull: 0.7, rival: R });
-    kit.flash(p, { color: P.hot, size: [0.35, 1.5], dur: 0.2, intensity: 2.2, sprite: 'glow', pull: 0.7, rival: R });
-    kit.flash(p, { color: P.mid, size: [0.2, 1.0], dur: 0.16, intensity: 2, sprite: 'ring', pull: 0.7, rival: R });
+    kit.flash(p, { ramp: 'whiteHold', size: [0.25, 1.25], dur: 0.1, intensity: 5, sprite: 'star', pull: 0.7, rival: R });   // [W4-ЗАКЛИНАНИЯ]
+    kit.flash(p, { ramp, size: [0.35, 1.5], dur: 0.2, intensity: 2.6, sprite: 'glow', pull: 0.7, rival: R });              // [W4-ЗАКЛИНАНИЯ] ореол ярче
+    kit.flash(p, { ramp, size: [0.2, 1.0], dur: 0.16, intensity: 2, sprite: 'ring', pull: 0.7, rival: R });                // [W4-ЗАКЛИНАНИЯ]
     kit.emit({ at: p, dir: back, cone: back ? 0.9 : Math.PI, count: 16, speed: [3, 9], life: [0.15, 0.4], size: [0.06, 0.01], ramp, intensity: 3.4, sprite: 'spark', stretch: 0.03, gravity: 6, drag: 2.5, rival: R, essential: true });
-    kit.emit({ at: p, count: 8, speed: [0.5, 2], life: [0.3, 0.6], size: [0.04, 0.01], ramp: R ? 'rival' : 'ember', intensity: 2.6, sprite: 'spark', gravity: 1.5, drag: 2, rival: R });
+    kit.emit({ at: p, count: 8, speed: [0.5, 2], life: [0.3, 0.6], size: [0.04, 0.01], ramp: el === 'fire' ? 'ember' : ramp, intensity: 2.6, sprite: 'spark', gravity: 1.5, drag: 2, rival: R });   // [W4-ЗАКЛИНАНИЯ]
     kit.light(p, { color: P.hot, intensity: 0.7, range: 7, dur: 0.18, attack: 0.05 });
     kit.hitstop(12);
     au('boltImpact', p);
@@ -792,17 +795,17 @@ export function register(fx) {
   fx.on('burst', (ev, d) => {
     const c = caster(fx, ev, d);
     const R = c.remote;
-    const P = fx.pal('gold', d);
-    const ramp = rampOf('gold', R);
+    const el = fx.heroEl(d), P = fx.pal(el, d);   // [W4-ЗАКЛИНАНИЯ] нова в цвете героя (вспышки — по градиентам)
+    const ramp = rampOf(el, R);                    // [W4-ЗАКЛИНАНИЯ]
     const p = fx.evPos(ev, new V3());
     const ctr = p && p.y > c.feet.y + 0.3 ? p : new V3().copy(c.chest);
     const rad = clamp(isNum(d.radius) ? d.radius : 7, 2, 14);
     const pw = clamp(isNum(d.power) ? d.power : 0.8, 0.2, 1);
     const g = { x: c.feet.x, y: c.feet.y + 0.05, z: c.feet.z };
-    kit.flash(ctr, { color: P.core, size: [0.4, 1.5], dur: 0.18, intensity: 5, sprite: 'star', pull: 0.8, rival: R });
-    kit.flash(ctr, { color: P.hot, size: [0.6, 1.5], dur: 0.42, intensity: 2.2, sprite: 'glow', pull: 0.8, rival: R });
+    kit.flash(ctr, { ramp: 'whiteHold', size: [0.4, 1.5], dur: 0.18, intensity: 5, sprite: 'star', pull: 0.8, rival: R });   // [W4-ЗАКЛИНАНИЯ] белое ядро
+    kit.flash(ctr, { ramp, size: [0.6, 1.5], dur: 0.42, intensity: 2.6, sprite: 'glow', pull: 0.8, rival: R });            // [W4-ЗАКЛИНАНИЯ] ореол ярче
     if (!sphere(ctr, 0.3, 1.7, 0.36, P, R, { intensity: 0.8, distort: 1 })) {
-      kit.flash(ctr, { color: P.mid, size: [0.5, 1.5], dur: 0.3, intensity: 1.8, sprite: 'ring', pull: 0.5, rival: R });
+      kit.flash(ctr, { ramp, size: [0.5, 1.5], dur: 0.3, intensity: 1.8, sprite: 'ring', pull: 0.5, rival: R });           // [W4-ЗАКЛИНАНИЯ]
     }
     ring(g, 0.4, rad, 0.62, P, R, { intensity: 1.8, thickness: 0.16, distort: 1 });
     kit.after(0.06, () => ring(g, 0.2, rad * 0.55, 0.45, P, R, { intensity: 1.6, thickness: 0.3 }));
@@ -811,13 +814,13 @@ export function register(fx) {
     kit.emit({ at: ctr, shape: 'ring', radius: 0.3, normal: UP, count: 64, speed: [rad * 1.2, rad * 2.2], life: [0.3, 0.6], size: [0.08, 0.015], ramp, intensity: 3.4, sprite: 'spark', stretch: 0.03, drag: 3, rival: R, essential: true });
     kit.emit({ at: ctr, count: 30, speed: [3, 8], life: [0.4, 0.9], size: [0.06, 0.01], ramp, intensity: 3, sprite: 'spark', stretch: 0.025, drag: 2, gravity: 2, rival: R });
     // кольцо углей по земле
-    kit.emit({ at: { x: g.x, y: g.y + 0.1, z: g.z }, shape: 'ring', radius: 0.5, normal: UP, count: 48, radial: rad * 1.4, speed: [0, 0.4], dir: UP, cone: 0.2, life: [0.3, 0.55], size: [0.45, 0.1], ramp: R ? 'rival' : 'ember', intensity: 2.6, sprite: 'ember', drag: 4.2, rival: R, essential: true });
-    decal(fx, g, 'rune', 2.4, 'gold', R, { life: 5, intensity: 0.9 });
+    kit.emit({ at: { x: g.x, y: g.y + 0.1, z: g.z }, shape: 'ring', radius: 0.5, normal: UP, count: 48, radial: rad * 1.4, speed: [0, 0.4], dir: UP, cone: 0.2, life: [0.3, 0.55], size: [0.45, 0.1], ramp: el === 'fire' ? 'ember' : ramp, intensity: 2.6, sprite: 'ember', drag: 4.2, rival: R, essential: true });   // [W4-ЗАКЛИНАНИЯ]
+    decal(fx, g, 'rune', 2.4, el, R, { life: 5, intensity: 0.9 });   // [W4-ЗАКЛИНАНИЯ]
     // золотые пылинки оседают
     kit.emit({ at: ctr, radius: 1.4, count: 26, dir: UP, cone: 0.6, speed: [0.2, 0.8], life: [0.8, 1.6], size: [0.05, 0.01], ramp, intensity: 2.2, sprite: 'ember', turb: 0.4, gravity: -0.3, drag: 1, delay: 0.3, rival: R });
     kit.light(ctr, { color: P.hot, intensity: 1.8, range: 14, dur: 0.6, attack: 0.03 });
     distort(ctr, 0.8);
-    kit.screenFlash(R ? 0xc8b4ff : 0xffe6b0, 0.08 + 0.06 * pw, 0.1);
+    kit.screenFlash(R ? 0xc8b4ff : P.hot, 0.08 + 0.06 * pw, 0.1);   // [W4-ЗАКЛИНАНИЯ] тон стихии героя
     kit.shake(0.2 + 0.1 * pw); kit.kick(UP, 0.02); kit.hitstop(30);
     au('burst', ctr);
     return true;

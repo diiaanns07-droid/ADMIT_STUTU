@@ -12,8 +12,10 @@
 //             вокруг ядра Регента (молнии над оглушённым уже рисует runesFire.js).
 // Соперник (d.remote): палитра rival, цель — наш герой, удар по своему таймеру (boss_stunned для него не придёт).
 // d.reach === false: столп всё равно бьёт в точку цели, но без вспышки по ядру, хит-стопа и сочных искр.
+// [W4-ЗАКЛИНАНИЯ] цвет — стихия героя (fx.heroEl/heroPal, st.ramp): свет столпа, пятно, искры, молнии, кольца, свечение
+// оглушённого; у тьмы — фиолетовые тучи и чёрные струи внутри столпа (darkcore поверх света). Ядра белее, ореолы ярче.
 
-import { clamp, easeOut, TAU, isNum, hasVec } from './common.js';
+import { clamp, easeOut, TAU, isNum, hasVec, rampOf } from './common.js';
 import { FX_OUT, FX_NOISE, premulBlend, hexLin } from './glsl.js';
 
 const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
@@ -147,12 +149,13 @@ export function register(fx) {
   function castRip(st) {
     const { src, P, R, rival, s } = st;
     const sf = soft();
-    kit.flash(src, { ramp: 'whiteHold', sprite: 'streak', rot: Math.PI / 2, size: [0.5, 2.6 * (0.7 + 0.3 * s)], curve: 0.4, dur: 0.24, intensity: 4 * sf, pull: 0.3, rival: R });
-    kit.flash(src, { ramp: R ? 'rival' : 'gold', sprite: 'glow', size: [0.5, 1.8], dur: 0.32, intensity: 2.4 * sf, pull: 0.3, rival: R });
-    kit.flash(src, { ramp: 'whiteHold', sprite: 'star', size: [0.3, 1.2], dur: 0.16, intensity: 3.2 * sf, pull: 0.35, rival: R });
+    // [W4-ЗАКЛИНАНИЯ] стихия героя; белое ядро и ореол ярче
+    kit.flash(src, { ramp: 'whiteHold', sprite: 'streak', rot: Math.PI / 2, size: [0.5, 2.6 * (0.7 + 0.3 * s)], curve: 0.4, dur: 0.24, intensity: 4.5 * sf, pull: 0.3, rival: R });
+    kit.flash(src, { ramp: st.ramp, sprite: 'glow', size: [0.5, 1.8], dur: 0.32, intensity: 2.8 * sf, pull: 0.3, rival: R });
+    kit.flash(src, { ramp: 'whiteHold', sprite: 'star', size: [0.3, 1.2], dur: 0.16, intensity: 3.8 * sf, pull: 0.35, rival: R });
     // вертикальная щель: искры вдоль короткой оси вверх-вниз
     kit.emit({ at: { x: src.x, y: src.y - 0.35, z: src.z }, shape: 'line', to: { x: src.x, y: src.y + 0.45, z: src.z }, radius: 0.03, count: 26 * (0.45 + 0.55 * s),
-      speed: [0.6, 2.2], life: [0.18, 0.35], size: [0.06, 0.012], ramp: R ? 'rival' : 'gold', intensity: 3.2, sprite: 'spark', stretch: 0.03, drag: 3, rival: R });
+      speed: [0.6, 2.2], life: [0.18, 0.35], size: [0.06, 0.012], ramp: st.ramp, intensity: 3.2, sprite: 'spark', stretch: 0.03, drag: 3, rival: R });
     // нить вверх: частицы-струи
     kit.emit({ at: src, dir: UP, cone: 0.03, count: 22 * (0.45 + 0.55 * s), speed: [16, 26], life: [0.25, 0.45], size: [0.28, 0.1],
       ramp: 'whiteHold', intensity: 3, sprite: 'streak', stretch: 0.06, drag: 0.3, rival: R });
@@ -160,7 +163,7 @@ export function register(fx) {
       try {
         _b1.set(src.x, src.y + 16, src.z);
         fx.bolts.strike({ from: src, to: _b1, color: P.hot, core: P.core, width: 0.035, jitter: 0.02, branches: 0, segments: 6,
-          flicker: false, star: false, origin: false, dur: 0.32, intensity: 2.6, rival, seed: (Math.random() * 1e6) | 0 });
+          flicker: false, star: false, origin: false, dur: 0.32, intensity: 3, rival, seed: (Math.random() * 1e6) | 0 });
       } catch (e) { /* ignore */ }
     }
     kit.light(src, { color: P.hot, intensity: 0.8 * sf, range: 6, dur: 0.3, attack: 0.15 });
@@ -169,12 +172,12 @@ export function register(fx) {
   // ---------------------------------------------------------------- 2. тучи над целью
   function clouds(st) {
     const { sky, ground, P, R, rival, s, delay } = st;
-    const ramp = R ? 'rival' : 'gold';
+    const ramp = st.ramp;                                  // [W4-ЗАКЛИНАНИЯ] стихия героя / rival
     const lowQ = qName() === 'low';
     // сбор туч: первая партия кольца дыма с разбросом старта
     kit.emit({ at: sky, center: sky, shape: 'ring', normal: UP, radius: 5.2 * s, count: 22 * (0.45 + 0.55 * st.power), speed: [0, 0.3],
       vel: { x: 0, y: -0.2, z: 0 }, orbit: 1.5, rgrow: -0.18, life: [1.1, 1.6], size: [3.4 * s, 4.8 * s], sizeVar: 0.3, curve: 0.6,
-      ramp: 'smoke', intensity: 1, alpha: 0.8, sprite: 'smoke', blend: 'alpha', turb: 0.3, spin: [-0.5, 0.5], fadeIn: 0.35, delay: delay * 0.5 });
+      ramp: st.cloud, intensity: 1, alpha: 0.8, sprite: 'smoke', blend: 'alpha', turb: 0.3, spin: [-0.5, 0.5], fadeIn: 0.35, delay: delay * 0.5 });
     // разгорающееся золотое пятно: одна вспышка, растёт до удара
     kit.flash(sky, { ramp, size: [1.2, 6.5 * s], curve: 1.6, dur: delay + 0.12, intensity: 2.4 * soft(), sprite: 'glow', pull: 0, fadeIn: 0.6, rival: R });
     if (!lowQ && fx.glyph) {
@@ -193,7 +196,7 @@ export function register(fx) {
         let n = Math.floor(st.accC);
         if (n > 0) {
           st.accC -= n;
-          emCloud.at = sky; emCloud.center = sky; emCloud.count = n; emCloud.radius = (4.6 - 1.4 * pre) * s;
+          emCloud.at = sky; emCloud.center = sky; emCloud.count = n; emCloud.radius = (4.6 - 1.4 * pre) * s; emCloud.ramp = st.cloud;
           emCloud.size[0] = 3.2 * s; emCloud.size[1] = 4.6 * s; emCloud.orbit = 1.4 + 1.6 * pre; emCloud.rgrow = out > 0 ? 0.25 : -0.22;
           kit.emit(emCloud);
         }
@@ -232,7 +235,7 @@ export function register(fx) {
     mesh.position.set(ground.x, ground.y - 0.05, ground.z);
     mesh.scale.set(r0, H, r0); mesh.updateMatrix();
     const life = 0.6 + 0.3 * st.power;
-    const I = (0.5 + 0.25 * st.power) * soft() * (R ? 0.7 : 1);
+    const I = (0.58 + 0.28 * st.power) * soft() * (R ? 0.7 : 1);   // [W4-ЗАКЛИНАНИЯ] ядро столпа ярче (+15%)
     const red = fx.reduced();
     p.touch = nowMs(); mesh.visible = true;
     kit.actor({
@@ -258,6 +261,7 @@ export function register(fx) {
         if (n > 0) {
           st.accSh -= n;
           emShaft.at = sky; emShaft.to = ground; emShaft.count = n; emShaft.radius = r * 0.7; emShaft.ground = ground.y + 0.05; emShaft.rival = R;
+          emShaft.ramp = st.shaft; emShaft.blend = st.shaftBlend;   // [W4-ЗАКЛИНАНИЯ] у тьмы — чёрные струи
           kit.emit(emShaft);
         }
         // брызги у основания
@@ -266,7 +270,7 @@ export function register(fx) {
         if (n > 0) {
           st.accSp -= n;
           _b0.set(ground.x, ground.y + 0.12, ground.z);
-          emSplash.at = _b0; emSplash.count = n; emSplash.radius = r; emSplash.ramp = R ? 'rival' : 'gold'; emSplash.rival = R; emSplash.ground = ground.y + 0.03;
+          emSplash.at = _b0; emSplash.count = n; emSplash.radius = r; emSplash.ramp = st.ramp; emSplash.rival = R; emSplash.ground = ground.y + 0.03;
           kit.emit(emSplash);
         }
       },
@@ -278,20 +282,21 @@ export function register(fx) {
     const { sky, ground, tgt, P, R, rival, s, power, reach } = st;
     const sf = soft();
     const q = qName(), lowQ = q === 'low';
-    const ramp = R ? 'rival' : 'gold';
+    const ramp = st.ramp;                                  // [W4-ЗАКЛИНАНИЯ] стихия героя / rival
     const gp = { x: ground.x, y: ground.y + 0.12, z: ground.z };
     const rr = st.radius;
     pillarMesh(st);
     // разрыв туч и вспышка в ядре
-    kit.flash(sky, { ramp, size: [3, 8 * s], dur: 0.4, intensity: 2.2 * sf, sprite: 'glow', pull: 0, rival: R });
-    kit.flash(gp, { ramp: 'whiteHold', size: [0.8, 2.8 * s], dur: 0.2, intensity: 2.2 * sf, sprite: 'star', pull: 0.8, rival: R });
-    kit.flash(gp, { ramp, size: [1.4, 3.8 * s], dur: 0.4, intensity: 1.1 * sf, sprite: 'glow', pull: 0.8, rival: R });
+    // [W4-ЗАКЛИНАНИЯ] белое ядро удара и ореолы ярче (читается с проектора)
+    kit.flash(sky, { ramp, size: [3, 8 * s], dur: 0.4, intensity: 2.6 * sf, sprite: 'glow', pull: 0, rival: R });
+    kit.flash(gp, { ramp: 'whiteHold', size: [0.8, 2.8 * s], dur: 0.2, intensity: 3.2 * sf, sprite: 'star', pull: 0.8, rival: R });
+    kit.flash(gp, { ramp, size: [1.4, 3.8 * s], dur: 0.4, intensity: 1.5 * sf, sprite: 'glow', pull: 0.8, rival: R });
     if (reach) {
       // сочный удар по цели: звезда в ядре, искры с тела
-      kit.flash(tgt, { ramp: 'whiteHold', size: [0.8, 3.2 * s], dur: 0.22, intensity: 2.8 * sf, sprite: 'star', pull: 0.9, rival: R });
+      kit.flash(tgt, { ramp: 'whiteHold', size: [0.8, 3.2 * s], dur: 0.22, intensity: 3.6 * sf, sprite: 'star', pull: 0.9, rival: R });
       kit.emit({ at: tgt, radius: 0.6, count: 70 * (0.45 + 0.55 * power), speed: [4, 12], life: [0.3, 0.8], size: [0.07, 0.014], ramp, intensity: 3.4, sprite: 'spark', stretch: 0.04, gravity: 6, drag: 1.5, ground: ground.y + 0.03, rival: R });
     }
-    kit.screenFlash(R ? 0xb49cff : 0xfff0c8, (R ? 0.08 : 0.1 + 0.1 * power) * sf, 0.12);
+    kit.screenFlash(R ? 0xb49cff : P.core, (R ? 0.08 : 0.1 + 0.1 * power) * sf, 0.12);   // [W4-ЗАКЛИНАНИЯ] тон ядра стихии
     kit.light(gp, { color: P.hot, intensity: 0.8 + 0.3 * power, range: 12 + 4 * power, dur: 0.6, attack: 0.03 });
     kit.shake((R ? 0.18 : 0.24 + 0.22 * power) * (reach ? 1 : 0.7));
     if (reach) kit.hitstop(R ? 30 : 40 + 35 * power);
@@ -312,13 +317,13 @@ export function register(fx) {
           _b0.set(fx0, fy0, fz0); _b1.set(tx, ty, tz);
           try {
             fx.bolts.strike({ from: _b0, to: _b1, color: P.hot, core: P.core, width: rnd(0.06, 0.1) * (0.8 + 0.2 * s), branches: lowQ ? 3 : 5, jitter: 0.14, segments: 20,
-              dur: rnd(0.35, 0.5), intensity: 3.2, lift: 0.3, rival, seed: (Math.random() * 1e6) | 0 });
+              dur: rnd(0.35, 0.5), intensity: 3.6, lift: 0.3, rival, seed: (Math.random() * 1e6) | 0 });
           } catch (e) { /* ignore */ }
-          kit.flash(_b1, { ramp: 'whiteHold', size: [0.4, 1.8], dur: 0.16, intensity: 3 * sf, sprite: 'star', pull: 0.3, rival: R });
+          kit.flash(_b1, { ramp: 'whiteHold', size: [0.4, 1.8], dur: 0.16, intensity: 3.4 * sf, sprite: 'star', pull: 0.3, rival: R });
         };
         if (at <= 0) go(); else kit.after(at, go);
       }
-      if (!lowQ) { try { fx.bolts.groundArcs({ center: ground, radius: rr * 2.2, count: q === 'high' ? 10 : 8, dur: 0.65, color: P.hot, core: P.core, intensity: 2.4, rival }); } catch (e) { /* ignore */ } }
+      if (!lowQ) { try { fx.bolts.groundArcs({ center: ground, radius: rr * 2.2, count: q === 'high' ? 10 : 8, dur: 0.65, color: P.hot, core: P.core, intensity: 2.8, rival }); } catch (e) { /* ignore */ } }
     }
     // кольцо удара по земле и в небе
     if (fx.shock) {
@@ -351,7 +356,8 @@ export function register(fx) {
   fx.on('sigil_cast', (ev, d) => {
     const R = fx.isRemote(d);
     const rival = R ? 1 : 0;
-    const P = fx.pal('gold', d);
+    const el = fx.heroEl(d);                               // [W4-ЗАКЛИНАНИЯ] стихия героя (соперник — 'rival')
+    const P = fx.pal(el, d);
     const power = clamp(num(d.power, 0.6), 0, 1);
     const delay = clamp(num(d.delay, 0.45), 0.05, 3);
     const reach = d.reach !== false;
@@ -370,6 +376,9 @@ export function register(fx) {
       src: sourcePoint(new V3(), R), tgt, ground,
       sky: new V3(ground.x, ground.y + (R ? 6 : 6.6 + 0.8 * power), ground.z),
       accC: 0, accS: 0, accF: 0, accSh: 0, accSp: 0,
+      // [W4-ЗАКЛИНАНИЯ] градиенты: искры/свет — стихия, тучи и струи столпа (у тьмы — фиолетовый дым и чёрные струи)
+      ramp: rampOf(el, R), cloud: el === 'void' ? 'voidsmoke' : 'smoke',
+      shaft: el === 'void' ? 'darkcore' : 'whiteHold', shaftBlend: el === 'void' ? 'alpha' : 'add',
     };
     const sg = fx.shared && fx.shared.sigil;
     if (!R && sg && typeof sg === 'object') sg.release = 'pillar';
@@ -385,6 +394,7 @@ export function register(fx) {
     if (fx.isRemote(d)) return;
     glowOn = true; glowT0 = kit.clock; glowDur = Math.max(0.2, num(d.duration, 1.2));
     glowAccF = 1; glowAccS = 0; glowAccM = 0;
+    flGlow.ramp = emHalo.ramp = emMote.ramp = rampOf(fx.heroEl(d), false);   // [W4-ЗАКЛИНАНИЯ] свечение в цвете героя
     // без return true: событие остаётся открытым для остальных слоёв
   }, (d) => d && d.source === 'pillar');
 
@@ -402,7 +412,7 @@ export function register(fx) {
     glowAccF += dt;
     if (glowAccF >= 0.12) {
       glowAccF = 0;
-      flGlow.intensity = 1.8 * kk;
+      flGlow.intensity = 2.1 * kk;   // [W4-ЗАКЛИНАНИЯ] ореол ярче
       kit.flash(_gc, flGlow);
     }
     // кольцо искр вокруг ядра поднимается и вращается
