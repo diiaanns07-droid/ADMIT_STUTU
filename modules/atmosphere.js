@@ -61,8 +61,8 @@ export const FOG = {
 export const STORM = {
   gap: [4.5, 5],            // молния: 4,5 + 0..5 с
   boltK: [0.75, 0.45],      // яркость: 0,75 + 0..0,45
-  boltEl: [0.17, 0.14],     // высота основания тучи (sin угла над горизонтом)
-  boltYaw: 110,             // в пределах ±55° от взгляда камеры
+  boltEl: [0.45, 0.17],     // высота основания тучи (sin угла над горизонтом): над шпилями и стенами арены
+  boltYaw: 70,              // в пределах ±35° от взгляда камеры — в кадре
   thunderDelay: [0.35, 2.2],// гром: 0,35 + 2,2·дальность с
   thunderMax: 4,
   minW: 0.4,                // молнии — когда гроза набрала вес
@@ -279,7 +279,7 @@ void main() {
   col += ( cm * 1.6 + 0.2 ) * fl * vec3( 0.55, 0.62, 0.8 );
   // [W3-КИНО] молния грозы: тучи вспыхивают шире, на medium/high — ломаный разряд от тучи к горизонту
   if ( uBolt > 0.001 ) {
-    col += ( sm * 2.2 + 0.15 ) * uBolt * exp( - ( 1.0 - dot( d, uFlashDir ) ) * 9.0 ) * vec3( 0.7, 0.68, 0.95 );
+    col += ( sm * 1.3 + 0.05 ) * uBolt * exp( - ( 1.0 - dot( d, uFlashDir ) ) * 24.0 ) * vec3( 0.7, 0.68, 0.95 );
     if ( uStormHQ > 0.5 ) {
       float baz = atan( d.x, d.z ) - atan( uFlashDir.x, uFlashDir.z );
       baz = atan( sin( baz ), cos( baz ) );
@@ -288,7 +288,7 @@ void main() {
       float jag = ( ashVN( vec2( el * 34.0, uBoltSeed ) ) - 0.5 ) * 0.035 + ( ashVN( vec2( el * 140.0, uBoltSeed + 9.0 ) ) - 0.5 ) * 0.008;
       float bdx = abs( baz * sqrt( max( 1.0 - el * el, 0.0 ) ) - jag - bh * bh * 0.02 );
       float bon = step( 0.0, el ) * smoothstep( btop, btop - 0.02, el );
-      col += vec3( 0.85, 0.82, 1.0 ) * uBolt * bon * ( exp( - bdx / 0.0012 ) * 5.0 + exp( - bdx / 0.012 ) * 0.25 ) * ( 0.4 + 0.6 * bh );
+      col += vec3( 0.85, 0.82, 1.0 ) * uBolt * bon * ( exp( - bdx / 0.0016 ) * 7.0 + exp( - bdx / 0.015 ) * 0.35 ) * ( 0.4 + 0.6 * bh );
     }
   }
 
@@ -843,7 +843,7 @@ varying vec3 vAshWorldPos;`;
       fl = Math.exp(-Math.pow((ft - 0.04) / 0.03, 2)) + 0.7 * Math.exp(-Math.pow((ft - 0.13) / 0.035, 2));
       if (ft > 0.3) { state.flashT = 0; state.bolt = false; }
     }
-    skyUniforms.uFlash.value = fl * 1.4;
+    skyUniforms.uFlash.value = fl * (state.bolt ? 0.45 : 1.4);   // [W3-КИНО] у грозы свой отсвет туч (uBolt)
     skyUniforms.uBolt.value = state.bolt ? fl * state.boltK : 0;
     const hazeK = hq ? state.storm * STORM.haze.k : 0;
     haze.visible = hazeK > 0.004;
@@ -860,7 +860,7 @@ varying vec3 vAshWorldPos;`;
   }
   const _keyCol = new THREE.Color();
 
-  // [W3-КИНО] молния грозы: перед камерой ±55°, основание тучи 0,17..0,31; гром — по дальности
+  // [W3-КИНО] молния грозы: перед камерой ±35°, основание тучи 0,45..0,62; гром — по дальности
   const _cd = new THREE.Vector3();
   function strikeBolt() {
     const w = Math.max(0.5, state.storm);

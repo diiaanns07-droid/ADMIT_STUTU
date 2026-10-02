@@ -1581,6 +1581,7 @@ window.__ASHEN__ = Object.freeze({
   hands: () => { try { const h = vision && vision.getHands(); return h ? JSON.parse(JSON.stringify({ ...h, left: h.left && { shape: h.left.shape, palmFacing: h.left.palmFacing, charge: h.left.charge }, right: h.right && { shape: h.right.shape, palmFacing: h.right.palmFacing, charge: h.right.charge } })) : null; } catch (e) { return null; } },
   get timeScale() { return timeScale(performance.now()); },
   get postfx() { return postfx ? { enabled: postfx.enabled } : null; },
+  kino: () => { try { return JSON.parse(JSON.stringify({ storm: world.atmosphere.storm, look: world.atmosphere.look, fx: postfx ? postfx.info().fx : null, cinema: cinema ? cinema.debug() : null, finale: bossFinale ? bossFinale.debug() : null })); } catch (e) { return null; } },   // [W3-КИНО] QA: гроза, импульсы, сцены
   get resumeGraceLeft() { return Math.max(0, app.resumeAt - performance.now()); },
   snapshot: () => (lastSnapshot ? JSON.parse(JSON.stringify(lastSnapshot)) : null),
   canvasCount: () => document.querySelectorAll('canvas#ao-canvas').length,
