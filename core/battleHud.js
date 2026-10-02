@@ -15,10 +15,10 @@ const MONO = '"Consolas","Cascadia Mono",monospace';
 const SERIF = '"Palatino Linotype","Book Antiqua",Georgia,serif';
 const GOLD = '#c9a45c', GOLD_HI = '#e3c792', STEEL = '#dfe8f5', BLUE = '#9fc4ff', EMBER = '#ff6a3c', DIM = '#8d97a6';
 const PLATE = 'rgba(5,7,11,0.62)';
-const GLYPHS = '0123456789ABCDEFXZ#%+=/<>';
+const GLYPHS = '0123456789АБВГДЕЖЗКМ#%+=/<>';
 const RUNE_NAME = { ignis: 'ИГНИС', fulgur: 'ФУЛЬГУР', orbis: 'ОРБИС', stella: 'СТЕЛЛА', spira: 'СПИРА', lemnis: 'ЛЕМНИСКА', caret: 'АКУС', vee: 'МЕССИС', clepsydra: 'КЛЕПСИДРА', alpha: 'АЛЬФА' };
 const RUNE_SUB = { ignis: 'огненное копьё', fulgur: 'страж оглушён', orbis: 'лечение и оберег', stella: 'звездопад', spira: 'вихрь гасит сферы', lemnis: 'вечность: лечение', caret: 'залп игл', vee: 'жатва', clepsydra: 'время Регента замедлено', alpha: 'откаты сброшены' };
-const KIND = { slam: 'SLAM', orb: 'ORB', nova: 'NOVA' };
+const KIND = { slam: 'УДАР', orb: 'СФЕРА', nova: 'НОВА' };
 // [ASHEN_V3] двуручные печати
 const SIGIL_NAME = { clap: 'ГРОМОВОЙ ХЛОПОК', gate: 'ВРАТА · БАСТИОН', frame: 'МЕТКА ЦЕЛИ', delta: 'ДЕЛЬТА · ЛУЧ', cor: 'КОР · СЕРДЦЕ' };
 
@@ -36,8 +36,8 @@ const FEEL = {
   groundZones: true,       // красная зона атаки на земле + подпись «ЩИТ или РЫВОК»
   bossCue: true,           // «!» над Регентом за BOSS_CUE_SEC до удара
   outro: true,             // «ПОБЕДА» / «РЕГЕНТ УСТОЯЛ» поверх замедленного финала
-  legacyTeleTags: false,   // прежние мелкие метки «▲ SLAM 1.2s · УЙДИ» у зоны
-  legacyMoveTags: false,   // прежние мелкие BLOCK / DODGE / PERFECT DODGE
+  legacyTeleTags: false,   // прежние мелкие метки «▲ УДАР 1.2 с · УЙДИ» у зоны
+  legacyMoveTags: false,   // прежние мелкие БЛОК / УКЛОН / ИДЕАЛЬНЫЙ РЫВОК
 };
 const SANS = '"Segoe UI","Trebuchet MS",system-ui,sans-serif';
 const CRIT = '#ffcf4a', RED = '#ff3b2a', OK_GREEN = '#9be39b';
@@ -324,7 +324,7 @@ export function createBattleHud({ canvas } = {}) {
         }
         case 'block': {
           const p = at && !at.behind ? at : { x: W * 0.4, y: H * 0.6 };
-          if (FEEL.legacyMoveTags) addCallout(d.ward ? 'ОБЕРЕГ' : 'BLOCK', p.x, p.y - 30, d.ward ? GOLD_HI : BLUE, 14, { scramble: true });
+          if (FEEL.legacyMoveTags) addCallout(d.ward ? 'ОБЕРЕГ' : 'БЛОК', p.x, p.y - 30, d.ward ? GOLD_HI : BLUE, 14, { scramble: true });
           if (d.ward) showMove('block', 'ОБЕРЕГ!', GOLD_HI, 'shield', { sub: 'удар поглощён' });
           else if (d.bastion) showMove('block', 'БАСТИОН!', GOLD_HI, 'shield', { sub: 'урон срезан' });
           else showMove('block', 'БЛОК!', BLUE, 'shield', { sub: d.prevented ? 'удар отражён щитом' : '' });
@@ -333,12 +333,12 @@ export function createBattleHud({ canvas } = {}) {
         case 'dodge':
           if (!d.perfect) {
             const p = at && !at.behind ? at : { x: W * 0.4, y: H * 0.62 };
-            if (FEEL.legacyMoveTags) addCallout('DODGE', p.x, p.y - 30, STEEL, 13, { scramble: true });
+            if (FEEL.legacyMoveTags) addCallout('УКЛОН', p.x, p.y - 30, STEEL, 13, { scramble: true });
             showMove('dodge', 'УКЛОНЕНИЕ!', STEEL, 'dash');
           }
           break;
         case 'perfect_dodge':
-          if (FEEL.legacyMoveTags || !FEEL.moves) addCallout('PERFECT DODGE', W / 2, H * 0.3, STEEL, 30, { vy: 0, dur: 1.2, serif: false, scramble: true });
+          if (FEEL.legacyMoveTags || !FEEL.moves) addCallout('ИДЕАЛЬНЫЙ РЫВОК', W / 2, H * 0.3, STEEL, 30, { vy: 0, dur: 1.2, serif: false, scramble: true });
           showMove('dodge', 'ИДЕАЛЬНЫЙ РЫВОК!', CRIT, 'dash', { big: true, sub: `+${Math.round(num(d.energy, 20))} энергии` });
           break;
         case 'player_dash': dashFx = { t: 0, dir: num(d.direction, 1) >= 0 ? 1 : -1 }; showMove('dash', 'РЫВОК!', STEEL, 'dash'); break;
@@ -452,10 +452,10 @@ export function createBattleHud({ canvas } = {}) {
     lock.ok = true;
     const tel = snap.telegraphs && snap.telegraphs[0];
     let col = STEEL, state = '';
-    if (b.stunned) { col = BLUE; state = `ОГЛУШЁН ${num(b.stunRemaining, 0).toFixed(1)}s`; }
-    else if (b.action === 'windup' && tel) { col = tel.blockable ? BLUE : EMBER; state = `${KIND[tel.kind] || tel.kind} ▸ ${num(tel.remaining, 0).toFixed(1)}s`; }
-    else if (b.action === 'recover') { col = GOLD_HI; state = 'OPEN ▸ STRIKE'; }
-    else if (b.action === 'dead') { col = DIM; state = 'TARGET DOWN'; }
+    if (b.stunned) { col = BLUE; state = `ОГЛУШЁН ${num(b.stunRemaining, 0).toFixed(1)} с`; }
+    else if (b.action === 'windup' && tel) { col = tel.blockable ? BLUE : EMBER; state = `${KIND[tel.kind] || 'АТАКА'} ▸ ${num(tel.remaining, 0).toFixed(1)} с`; }
+    else if (b.action === 'recover') { col = GOLD_HI; state = 'ОТКРЫТ ▸ БЕЙ'; }
+    else if (b.action === 'dead') { col = DIM; state = 'ПОВЕРЖЕН'; }
     const pad = 10 + (b.action === 'windup' && !rm ? Math.sin(t * 18) * 2 : 0);
     const hf = lock.hitFlash;
     ctx.lineWidth = 1.5;
@@ -476,10 +476,10 @@ export function createBattleHud({ canvas } = {}) {
     const dist = Math.hypot(p.x - b.position.x, p.z - b.position.z);
     const lx = lock.x1 + pad + 8, ly = Math.max(96, lock.y0 - pad);
     const engaged = !snap.player.encounter || snap.player.encounter === 'engaged';
-    tag(engaged ? 'REGENT // LOCK' : 'REGENT // ВПЕРЕДИ', lx, ly, engaged ? col : DIM, `600 11px ${MONO}`);
-    tag(`d:${dist.toFixed(1)}m  HP ${Math.round((b.hp / b.maxHp) * 100)}%`, lx, ly + 18, DIM);
+    tag(engaged ? 'РЕГЕНТ · ЦЕЛЬ' : 'РЕГЕНТ · ВПЕРЕДИ', lx, ly, engaged ? col : DIM, `600 11px ${MONO}`);
+    tag(`${dist.toFixed(1)} м · ${Math.round((b.hp / b.maxHp) * 100)}%`, lx, ly + 18, DIM);
     if (state) tag(state, lx, ly + 36, col, `600 12px ${MONO}`);
-    if (b.marked) tag(`◈ МЕТКА +30% · ${num(b.markRemaining, 0).toFixed(1)}s`, lx, ly + (state ? 54 : 36), GOLD_HI, `600 11px ${MONO}`);
+    if (b.marked) tag(`◈ МЕТКА +30% · ${num(b.markRemaining, 0).toFixed(1)} с`, lx, ly + (state ? 54 : 36), GOLD_HI, `600 11px ${MONO}`);
     lock.hitFlash = Math.max(0, lock.hitFlash - dtR * 5);
   }
 
@@ -729,7 +729,7 @@ export function createBattleHud({ canvas } = {}) {
       const hint = tl.blockable ? (tl.kind === 'orb' ? 'ЩИТ' : 'ЩИТ / РЫВОК') : 'УЙДИ';
       const col = tl.blockable ? BLUE : EMBER;
       const x = clamp(p.x, 60, W - 200), y = clamp(p.y + 14 + yNudge, 110, H - 40);
-      tag(`${tl.blockable ? '◇' : '▲'} ${KIND[tl.kind] || tl.kind} ${num(tl.remaining, 0).toFixed(1)}s · ${hint}`, x, y, col, `600 12px ${MONO}`, 'center');
+      tag(`${tl.blockable ? '◇' : '▲'} ${KIND[tl.kind] || 'АТАКА'} ${num(tl.remaining, 0).toFixed(1)} с · ${hint}`, x, y, col, `600 12px ${MONO}`, 'center');
       yNudge += 18;
     }
   }
@@ -928,8 +928,8 @@ export function createBattleHud({ canvas } = {}) {
     ctx.strokeStyle = STEEL; ctx.globalAlpha = 0.35; ctx.lineWidth = 1;
     brackets(cx - w / 2, top.y, cx + w / 2, bot.y, 10);
     ctx.globalAlpha = 1;
-    tag(`YOU  x:${p.x.toFixed(1)} z:${p.z.toFixed(1)}`, cx - w / 2, top.y - 18, DIM, `10px ${MONO}`);
-    if (snap.player.bastion) tag(`▣ БАСТИОН ${num(snap.player.bastionRemaining, 0).toFixed(1)}s`, cx - w / 2, top.y - 36, GOLD_HI, `600 11px ${MONO}`);
+    tag('ВЫ', cx - w / 2, top.y - 18, DIM, `10px ${MONO}`);
+    if (snap.player.bastion) tag(`▣ БАСТИОН ${num(snap.player.bastionRemaining, 0).toFixed(1)} с`, cx - w / 2, top.y - 36, GOLD_HI, `600 11px ${MONO}`);
     // заряд кулака — кольцо у героя
     const ch = input ? num(input.charge, 0) : 0;
     if (ch > 0.02) {
@@ -1126,10 +1126,10 @@ export function createBattleHud({ canvas } = {}) {
       ctx.textAlign = 'right';
       ctx.font = `600 ${Math.round(34 * s)}px ${MONO}`;
       ctx.fillStyle = GOLD_HI;
-      ctx.fillText(`x${n}`, x, y);
+      ctx.fillText(`×${n}`, x, y);
       ctx.font = `600 11px ${MONO}`;
       ctx.fillStyle = STEEL;
-      ctx.fillText(`COMBO  ×${num(P.comboMultiplier, 1).toFixed(2)}`, x, y + 40 * s);
+      ctx.fillText(`КОМБО  ×${num(P.comboMultiplier, 1).toFixed(2)}`, x, y + 40 * s);
       const frac = clamp(num(P.comboTimer, 0) / 3, 0, 1);
       ctx.fillStyle = 'rgba(223,232,245,0.18)'; ctx.fillRect(x - 110, y + 58 * s, 110, 2);
       ctx.fillStyle = GOLD; ctx.fillRect(x - 110 * frac, y + 58 * s, 110 * frac, 2);
@@ -1138,7 +1138,7 @@ export function createBattleHud({ canvas } = {}) {
     if (combo.lost > 0.02 && combo.lostN >= 5) {
       ctx.globalAlpha = combo.lost; ctx.textAlign = 'right';
       ctx.font = `600 12px ${MONO}`; ctx.fillStyle = EMBER;
-      ctx.fillText(`COMBO LOST · x${combo.lostN}`, x, y + 80);
+      ctx.fillText(`КОМБО СОРВАНО · ×${combo.lostN}`, x, y + 80);
       ctx.textAlign = 'left'; ctx.globalAlpha = 1;
     }
     combo.pop = Math.max(0, combo.pop - dtR * 6);

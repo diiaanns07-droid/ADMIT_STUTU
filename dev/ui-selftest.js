@@ -245,11 +245,11 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     ui.update(F('camera-idle', { tracking: null }));
     check('tracking=null не ломает UI', st1.textContent.includes('Камера выключена'));
 
-    /* 9. DEBUG / НЕ CV */
+    /* 9. Плашка «Демо без камеры · клавиатура» (была «DEBUG / НЕ CV») */
     for (const name of ['menu-debug', 'tutorial-debug', 'playing-debug', 'paused-debug']) {
       ui.update(F(name));
       const badge = $('.ao-debug');
-      check(`${name}: видна надпись DEBUG / НЕ CV`, isVisible(badge) && badge.textContent.includes('DEBUG / НЕ CV'));
+      check(`${name}: видна плашка «Демо без камеры · клавиатура»`, isVisible(badge) && badge.textContent.includes('Демо без камеры'));
     }
     ui.update(F('playing'));
     check('в CV-бою надписи DEBUG нет', !isVisible($('.ao-debug')));

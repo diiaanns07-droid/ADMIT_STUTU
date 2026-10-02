@@ -40,8 +40,19 @@ import { createCoachOverlay } from './core/coachOverlay.js'; // [ТВИСТ «О
 import { createTechniqueTrainer } from './modules/techniqueTrainer.js'; // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
 import { createUltimateGesture, ultTimeScale, ultCameraKeys } from './core/ultimate.js'; // [W3-ULT] «Небесный суд»
 import { createVoiceCoach, createVoiceDirector, createVoiceRecords } from './modules/voiceCoach.js'; // [W3-VOICE] подсказки и диктор — вслух
+import { createHandCursor } from './core/handCursor.js'; // [W3-CURSOR] курсор-кисть вместо мыши
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
+// [W3-CURSOR] MediaPipe в главном потоке (запасной путь, если worker не прошёл самопроверку) пишет служебные строки glog
+// уровней I/W («W1002 … gl_context.cc:1118] OpenGL error checking is disabled») — не сбои игры; в консоль их не пускаем.
+// Тот же фильтр — в modules/vision-worker.js. Ошибки (E/F) и все остальные сообщения проходят как раньше.
+{
+  const GLOG_NOISE = /^[IW]\d{4} \d\d:\d\d:\d\d\.\d+\s+\d+\s+[\w.-]+:\d+\]/;
+  for (const k of ['log', 'info', 'warn']) {
+    const orig = console[k];
+    if (typeof orig === 'function') console[k] = (...a) => { if (typeof a[0] === 'string' && GLOG_NOISE.test(a[0])) return; orig.apply(console, a); };
+  }
+}
 
 function fatal(msg, err) {
   console.error('[ASHEN]', msg, err || '');
@@ -641,7 +652,7 @@ function autoResumeTick(now) {
   const auto = QUICK && !app.debug && app.screen === 'paused' && app.pauseReason === 'tracking';
   if (!auto) { app.autoResume = null; return; }
   const r = app.autoResume;
-  if (trackingReady()) {
+  if (trackingReady() && !cursorHolds()) {   // [W3-CURSOR] палец на кнопке паузы — отсчёт ждёт
     if (!r) { app.autoResume = { at: now + AUTO_RESUME_MS, badSince: 0 }; return; }
     r.badSince = 0;
     if (now >= r.at) callbacks.onResume({ auto: true });
@@ -862,7 +873,7 @@ function calibrateAndSave() {
 }
 
 // [ONBOARD] камера нужна на экранах камеры, калибровки, обучения, тренировки и в бою/паузе — не в меню и не в DEBUG
-function cameraWanted() { return !app.debug && app.screen !== 'menu' && app.screen !== 'oath' && app.screen !== 'error'; }
+function cameraWanted() { return !app.debug && ((app.screen !== 'menu' && app.screen !== 'oath' && app.screen !== 'error') || cursorWantsCamera()); } // [W3-CURSOR]
 async function enableCamera() {
   unlockAudio();
   app.error = null;
@@ -999,7 +1010,7 @@ const callbacks = {
   onBuyUpgrade(id) { if (progression.buy(id).ok) renderUI(); },
   onBack() {
     const to = app.nav.pop() || 'menu';
-    if (to === 'menu' && vision && !app.resumableFight) vision.stop();   // в меню камера не нужна
+    if (to === 'menu' && vision && !app.resumableFight && !cursorCamAllowed()) vision.stop();   // в меню камера не нужна ([W3-CURSOR] — кроме курсора-кисти)
     setScreen(to);
   },
 
@@ -1012,7 +1023,7 @@ const callbacks = {
     app.resumableFight = false;
     app.introShown = false;
     app.autoResume = null;                // [ONBOARD]
-    if (vision) vision.stop();            // в меню камера выключается (калибровка сохраняется в vision)
+    if (vision && !cursorCamAllowed()) vision.stop();   // в меню камера выключается (калибровка сохраняется в vision); [W3-CURSOR] — кроме курсора-кисти
     resetFight();
     lastSnapshot = null;
     app.error = null;
@@ -1078,6 +1089,52 @@ if (slot) { slot.appendChild(video); slot.appendChild(overlay); }
 // Трекинг-HUD («tracking edit»: рамки, координаты, скелет кистей, след руны) рисует на overlay;
 // собственный overlay vision выключен (config.vision.overlay=false).
 const trackingHud = createTrackingHud({ canvas: overlay });
+// ---------------------------------------------------------------- [W3-CURSOR] курсор-кисть
+// «Камера вместо джойстика» — и вместо мыши: на экранах с кнопками указательный палец правой руки ведёт
+// светящееся кольцо (core/handCursor.js), клик — задержать на кнопке 0,8 с или щепоть. В бою, интро, на шагах обучения
+// (жесты там — упражнение), на экранах камеры и в «Отладке с клавиатуры» курсора нет; обучение пройдено — курсор
+// нажимает «В бой». ?cursor=0 — выключить совсем.
+// В меню камера включается сама, если разрешение на неё уже дано (окно запроса браузера не всплывает);
+// при первом запуске разрешение спрашивает «Играть» (Enter), дальше мышь не нужна.
+const CURSOR_ON = PERF_Q.get('cursor') !== '0';
+const CURSOR_SCREENS = new Set(['menu', 'paused', 'victory', 'defeat', 'oath', 'technique', 'training', 'error', 'challenge']); // + итоги «Испытания» (имя в зал славы, «Ещё раз»)
+const CURSOR_NO_PINCH = new Set(['technique', 'training']);   // в тренажёре щепоть «OK» — упражнение, а не клик
+// там, где руки заняты упражнением, кнопка нажимается дольше — случайное движение её не заденет
+const CURSOR_DWELL = { technique: 1200, training: 1500 };
+let handCursor = null, cursorOut = null;
+const cursorCam = { granted: false, startP: null };
+if (CURSOR_ON) {
+  try { handCursor = createHandCursor({ onClick: () => cue('ui_ok') }); } catch (e) { console.warn('[W3-CURSOR] курсор', e); handCursor = null; }
+  try {
+    if (handCursor && navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: 'camera' }).then((p) => {
+        cursorCam.granted = cursorCam.granted || p.state === 'granted';
+        p.onchange = () => { cursorCam.granted = p.state === 'granted'; };
+      }, () => { /* браузер не знает разрешения «camera» — камера в меню после первого запуска */ });
+    }
+  } catch (e) { /* то же */ }
+}
+// камера в меню нужна курсору: не отладка, разрешение уже есть
+function cursorCamAllowed() { return !!handCursor && !app.debug && cursorCam.granted; }
+function cursorWantsCamera() { return cursorCamAllowed() && !app.error && (app.screen === 'menu' || app.screen === 'oath'); }
+// кольцо на кнопке: игрок выбирает пункт паузы — автопродолжение 3-2-1 не перебивает его
+function cursorHolds() { return !!(cursorOut && cursorOut.visible && cursorOut.targetId !== null); }
+function cursorTick(now) {
+  if (!handCursor) return;
+  const vst = vision ? visionStatus().status : 'idle';
+  if (vst === 'ready' || vst === 'calibrating' || vst === 'lost') cursorCam.granted = true;   // камера уже работала — разрешение есть
+  if (cursorWantsCamera() && !cursorCam.startP && vst === 'idle') {
+    cursorCam.startP = ensureVision().then((v) => (cursorWantsCamera() ? v.start() : null))
+      .catch((e) => console.info('[W3-CURSOR] камера в меню не включилась:', e && (e.code || e.message)))
+      .finally(() => { cursorCam.startP = null; });
+  }
+  const book = !!uiRoot.querySelector('.ao-screen--book:not([hidden])');
+  const tutDone = app.screen === 'tutorial' && !!uiRoot.querySelector('.ao-trn-stage.is-done');
+  const active = !app.debug && !!vision && (CURSOR_SCREENS.has(app.screen) || book || tutDone);
+  let hands = null, pose = null;
+  if (active) { try { hands = vision.getHands(); pose = vision.getPose(); } catch (e) { hands = null; pose = null; } }
+  try { cursorOut = handCursor.update(now, { hands, pose, active, pinch: !CURSOR_NO_PINCH.has(app.screen) || book, dwellMs: book ? 0 : CURSOR_DWELL[app.screen] || 0 }); } catch (e) { console.warn('[W3-CURSOR]', e); handCursor = null; cursorOut = null; }
+}
 // [ТВИСТ «ОШИБКА»] свой слой поверх overlay: точки, которые надо исправить (getActiveHint) и условия тренажёра.
 // COACH_OVERLAY = false — выключить (например, если подсветку рисует сам трекинг-HUD).
 const COACH_OVERLAY = true;
@@ -2016,6 +2073,7 @@ function frame(now) {
   renderUI();
   challengeHud(now);                // [W3-CHALLENGE] таймер и очки над боем
   drawTracking(now, input);
+  cursorTick(now);   // [W3-CURSOR]
   battleHud.frame({
     dtReal, timeScale: ts, screen: app.screen, snapshot: lastSnapshot, events, input: app.debug ? null : input,
     project: projectToScreen, viewport: { w: viewW(), h: viewH() },
@@ -2085,6 +2143,7 @@ window.__ASHEN__ = Object.freeze({
   hand: () => (handZone ? handZone.getDebug() : null), // [HAND] лук и магия рукой
   challenge: () => ({ phase: chal.session.phase, left: chal.session.timeLeft(), live: { ...chal.live }, seed: bossBrain.challenge, result: chal.result ? JSON.parse(JSON.stringify(chal.result)) : null, hall: chal.hallView.list.map((e) => ({ ...e })), poster: !!chal.posterUrl, shot: chal.shot.has, skeleton: !!chal.skeleton }), // [W3-CHALLENGE] QA
   challengeFinish: () => chal.session.finishNow(), // [W3-CHALLENGE] QA: конец минуты на следующем кадре (в headless бой почти стоит)
+  cursor: () => (handCursor ? handCursor.getDebug() : null), // [W3-CURSOR] курсор-кисть: видимость, цель, удержание, клики
   fx: () => { try { return JSON.parse(JSON.stringify(effects.getDebugInfo())); } catch (e) { return null; } }, // [VFX] QA: частицы и слой V6
   fxLayer: () => (effects && effects.v6) || null, // [W3-МАГИЯ] QA: слой V6 (события магий и подмена заряда для видео)
   heroStep: (dt, snap, events) => { if (heroModel) heroModel.update(dt, snap, events || []); return heroModel ? heroModel.state() : null; }, // QA: шаг анимации без rAF

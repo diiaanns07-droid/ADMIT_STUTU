@@ -182,7 +182,7 @@ const key = async (code, ms = 80) => { await page.keyboard.down(code); await sle
 await page.setViewportSize({ width: 480, height: 270 });
 await clickText('Отладка с клавиатуры'); await sleep(200);
 await clickText('Начать'); await sleep(400);
-await clickText('Продолжить без камеры (DEBUG)'); await sleep(600);
+await clickText('Продолжить без камеры (демо)'); await sleep(600);
 // обучение: «ОШИБКА» по клавише H (демо-подсказка) и «Распознано» по переходу карточки
 {
   const scr = await page.evaluate(() => window.__ASHEN__.screen);

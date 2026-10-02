@@ -33,6 +33,7 @@ class GameHandler(http.server.SimpleHTTPRequestHandler):
         ".css": "text/css",
         ".html": "text/html; charset=utf-8",
         ".json": "application/json",
+        ".webmanifest": "application/manifest+json",   # [W3-CURSOR] манифест приложения
         ".wasm": "application/wasm",
         ".task": "application/octet-stream",
         # [OFFLINE] шрифты и 3D-ассеты: без явного типа Windows берёт его из реестра (бывает пусто/неверно)

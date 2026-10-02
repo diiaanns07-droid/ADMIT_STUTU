@@ -17,7 +17,7 @@
 'use strict';
 
 // <AO_MANIFEST> — генерирует node tools/sw_manifest.mjs, руками не править
-const VERSION = '821569e0929e';
+const VERSION = '273b769bfe7a';
 const VENDOR_VERSION = 'b3f563930682';
 const SHELL = [
   "./",
@@ -34,6 +34,7 @@ const SHELL = [
   "core/debugInput.js",
   "core/gameFeel.js",
   "core/gestureCoach.js",
+  "core/handCursor.js",
   "core/handFxOverlay.js",
   "core/handGestures.js",
   "core/handMagic.js",
@@ -54,6 +55,7 @@ const SHELL = [
   "core/voicePhrases.js",
   "index.html",
   "main.js",
+  "manifest.webmanifest",
   "modules/atmosphere.js",
   "modules/bdoIcons.js",
   "modules/boss.js",
@@ -247,12 +249,15 @@ const WARM = [
   "assets/sfx/boss_nova.ogg",
   "assets/sfx/boss_phase.ogg",
   "assets/sfx/shield_loop.ogg",
+  "assets/icons/icon-192.png",
   "assets/sfx/victory.ogg",
   "assets/polyhaven/dark_rock_02/dark_rock_02_diff.webp",
   "assets/polyhaven/monastery_stone_floor/monastery_stone_floor_nor_gl.webp",
   "assets/polyhaven/dark_rock_02/dark_rock_02_nor_gl.webp",
   "assets/polyhaven/monastery_stone_floor/monastery_stone_floor_diff.webp",
+  "assets/icons/icon-maskable-512.png",
   "assets/sfx/ambient.ogg",
+  "assets/icons/icon-512.png",
   "assets/quaternius/human.glb",
   "assets/heroes/anims_kaykit.glb",
   "assets/quaternius/woman.glb",
@@ -413,7 +418,7 @@ self.addEventListener('fetch', (e) => {
     if (path === 'sw.js') return;
     if (isVendor(path)) { e.respondWith(cacheFirst(e, req, VENDOR, path)); return; }
     if (path.startsWith('assets/')) { e.respondWith(LOOPBACK ? networkFirst(e, req, ASSETS, 0) : staleWhileRevalidate(e, req, ASSETS)); return; }
-    if (req.mode === 'navigate' || path === '' || /\.(m?js|css|html|json)$/.test(path)) { e.respondWith(networkFirst(e, req, APP, LOOPBACK ? 0 : NET_TIMEOUT_MS)); return; }
+    if (req.mode === 'navigate' || path === '' || /\.(m?js|css|html|json|webmanifest)$/.test(path)) { e.respondWith(networkFirst(e, req, APP, LOOPBACK ? 0 : NET_TIMEOUT_MS)); return; }
     return;   // остальное — как без service worker
   }
   if (CDN_HOSTS.includes(url.hostname)) e.respondWith(cacheFirst(e, req, CDN, null));

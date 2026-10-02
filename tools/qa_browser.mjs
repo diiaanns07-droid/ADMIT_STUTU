@@ -173,12 +173,12 @@ async function scenarioBootAndDebug() {
 
     check('меню: переключатель «Отладка с клавиатуры»', (await page.click('Отладка с клавиатуры')) === 'ok');
     await sleep(150);
-    const badge = await page.eval(`[...document.querySelectorAll('*')].some((e) => e.children.length === 0 && e.offsetParent !== null && /DEBUG\\s*\\/\\s*НЕ CV/.test(e.textContent))`);
-    check('DEBUG включается явно, видна надпись DEBUG / НЕ CV', badge && (await page.eval('__ASHEN__.debug')) === true);
+    const badge = await page.eval(`[...document.querySelectorAll('*')].some((e) => e.children.length === 0 && e.offsetParent !== null && /Демо без камеры/.test(e.textContent))`);
+    check('DEBUG включается явно, видна плашка «Демо без камеры · клавиатура»', badge && (await page.eval('__ASHEN__.debug')) === true);
     await page.click('Играть');
     await sleep(150);
     check('Играть → экран камеры', (await screen(page)) === 'camera');
-    await page.click('Продолжить без камеры (DEBUG)');
+    await page.click('Продолжить без камеры (демо)');
     await sleep(150);
     check('DEBUG: без камеры → обучение', (await screen(page)) === 'tutorial');
     await page.shot('02_tutorial_debug');

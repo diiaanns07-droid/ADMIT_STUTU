@@ -327,7 +327,7 @@ const TUTORIAL = [
   {
     key: 'both',
     title: 'Кулак и руны',
-    gesture: 'Правый кулак подержите и резко раскройте — выброс. Правым указательным рисуйте в воздухе, держа фигуру прямо: ▲ ϟ ○ ★ @ ∞ ^ V ⧗ ℓ, в конце замрите.',
+    gesture: 'Правый кулак подержите и резко раскройте — выброс. Правым указательным рисуйте в воздухе, держа фигуру прямо: ▲ ϟ ○ ★ @ ∞ ^ ∨ ⧗ ℓ, в конце замрите.',
     effect: 'Копьё, оглушение, лечение, звездопад, вихрь, вечность, иглы, жатва, замедление Регента, сброс откатов.',
     svg: svgWrap(
       burstRays() +
@@ -655,7 +655,7 @@ function normCosts(c) {
 
 const RUNE_RU = { ignis: 'ИГНИС ▲', fulgur: 'ФУЛЬГУР ϟ', orbis: 'ОРБИС ○', stella: 'СТЕЛЛА ★', spira: 'СПИРА @', lemnis: 'ЛЕМНИСКА ∞', caret: 'АКУС ^', vee: 'МЕССИС V', clepsydra: 'КЛЕПСИДРА ⧗', alpha: 'АЛЬФА ℓ' };
 const SIGIL_RU = { clap: 'ХЛОПОК', gate: 'ВРАТА БУРИ', frame: 'РАМКА', delta: 'ДЕЛЬТА', cor: 'СЕРДЦЕ', pillar: 'СТОЛП НЕБЕС' };   // [W3-MAGIC] +столп
-const SHAPE_RU = { pinch: 'ЩЕПОТЬ', point: 'УКАЗАТЕЛЬНЫЙ', fist: 'КУЛАК', open: 'ЛАДОНЬ', victory: 'V', unknown: 'В КАДРЕ' };
+const SHAPE_RU = { pinch: 'ЩЕПОТЬ', point: 'УКАЗАТЕЛЬНЫЙ', fist: 'КУЛАК', open: 'ЛАДОНЬ', victory: 'ДВА ПАЛЬЦА', unknown: 'В КАДРЕ' };
 const READ_ERR_MS = 4200;      // «ОШИБКА» держится столько же, сколько карточка подсказки battleHud
 const CHEAT_KEY = 'ashen-oath.cheat.v1';
 
@@ -1537,7 +1537,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   const backdrop = el('div', { class: 'ao-backdrop', 'aria-hidden': 'true' });
   const live = el('div', { class: 'ao-sr', role: 'status', 'aria-live': 'polite' });
   const liveAlert = el('div', { class: 'ao-sr', role: 'alert', 'aria-live': 'assertive' });
-  const debugBadge = el('div', { class: 'ao-debug', hidden: true }, el('span', { class: 'ao-debug__main', text: 'DEBUG / НЕ CV' }), el('span', { class: 'ao-debug__sub', text: 'ввод с клавиатуры' }));
+  const debugBadge = el('div', { class: 'ao-debug', hidden: true }, el('span', { class: 'ao-debug__main', text: 'Демо без камеры · клавиатура' })); // [W3-CURSOR] без «DEBUG / НЕ CV»
   const banner = el('div', { class: 'ao-banner', hidden: true, 'aria-hidden': 'true' });
   const park = el('div', { class: 'ao-slot-park', 'aria-hidden': 'true' });
   const slot = el('div', { class: 'ao-camera-slot ui-camera-slot', 'data-ui-camera-slot': '' });
@@ -1622,7 +1622,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const h = heading('h2', hid, 'Камера', 'ao-h2');
     const enable = btn('Разрешить камеру', pressEnable, { variant: 'primary', iconName: 'camera' });
     const next = btn('Далее: калибровка', () => invoke('onStart', { from: 'camera' }), { variant: 'primary' });
-    const skip = btn('Продолжить без камеры (DEBUG)', () => invoke('onStart', { from: 'camera', debug: true }));
+    const skip = btn('Продолжить без камеры (демо)', () => invoke('onStart', { from: 'camera', debug: true }));
     const back = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
     const status = statusLine();
     const msg = el('p', { class: 'ao-msg' });
@@ -1912,7 +1912,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         body.paint(ctx.tr);
 
         let text = '';
-        if (ctx.debug) text = 'Режим DEBUG: управление с клавиатуры, калибровка не нужна. Это не проверка трекинга.';
+        if (ctx.debug) text = 'Демо без камеры: управление с клавиатуры, калибровка не нужна. Это не проверка распознавания.';
         else if (calibrating) text = 'Держите нейтральную позу, пока заполняется шкала.';
         else if (done && st === 'ready') text = 'Калибровка завершена. Переходите к обучению или повторите калибровку.';
         else if (done && st === 'lost') text = 'Калибровка есть, но сейчас поза не распознана. Вернитесь в кадр.';
@@ -1936,7 +1936,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setBtn(run, { hidden: off, disabled: !canRun || pendRun, label: runLabel });
         setClass(run.node, 'ao-btn--primary', !done);
         setClass(run.node, 'ao-btn--secondary', done);
-        setBtn(next, { hidden: !(done || ctx.debug), label: ctx.debug && !done ? 'Далее: обучение (DEBUG)' : 'Далее: обучение' });
+        setBtn(next, { hidden: !(done || ctx.debug), label: ctx.debug && !done ? 'Далее: обучение (демо)' : 'Далее: обучение' });
         setAttr(host, 'data-tone', describeTracking(ctx.tr, cfg).tone);
       },
     };
@@ -2469,7 +2469,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         el('p', { class: 'ao-lead', text: 'Эти жесты учит тренажёр «Научись за 60 секунд» перед боем. Их хватает, чтобы победить.' }), basic,
         el('p', { class: 'ao-lead ao-book-magic__lead', text: 'Мощная магия двух ладоней: сомкни ладони → растяни. Работает в обоих режимах.' }), magic),
       adv: el('div', { class: 'ao-book-pane', role: 'tabpanel', id: `${uid}-book-adv`, 'aria-labelledby': `${uid}-book-tab-adv`, hidden: true },
-        el('p', { class: 'ao-lead', text: 'Рывок, искра, рассечение, парирование, руны ▲ ϟ ○ ★ @ ∞ ^ V ⧗ ℓ, печати двумя руками, лук и стихии.' }), grid),
+        el('p', { class: 'ao-lead', text: 'Рывок, искра, рассечение, парирование, руны ▲ ϟ ○ ★ @ ∞ ^ ∨ ⧗ ℓ, печати двумя руками, лук и стихии.' }), grid),
     };
     for (const [key, label] of TABS) {
       const t = el('button', { type: 'button', class: 'ao-book-tab', role: 'tab', id: `${uid}-book-tab-${key}`, 'aria-controls': `${uid}-book-${key}`, 'aria-selected': key === 'basic' ? 'true' : 'false', 'data-ui-local': '', text: label });
@@ -2932,7 +2932,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       stepSquat3);
     const simNote = el('p', {
       class: 'ao-note ao-train__sim', hidden: true,
-      text: 'DEBUG, без камеры: S или ↓ (держать) — присесть, Shift — быстро, V — колени внутрь, G — колени за носки, T — наклон, H — пятки, B — не выпрямляться.',
+      text: 'Демо без камеры: S или ↓ (держать) — присесть, Shift — быстро, V — колени внутрь, G — колени за носки, T — наклон, H — пятки, B — не выпрямляться.',
     });
     // итог подхода (приседания)
     const sumLine = el('p', { class: 'ao-train__sumline' });
