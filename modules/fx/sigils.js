@@ -325,17 +325,19 @@ export function register(fx) {
   }, (d) => d.sigil === 'clap');
 
   // ============================================================ ⛩ ВРАТА (бастион)
-  // Знак врат (стиль sigil) встаёт вертикально перед героем, поднимается к груди, вспыхивает и
-  // раскрывается в шестигранный купол fx.hex; купол живёт по снимку (bastion), мигает последние 1.2 с, звенит от ударов.
+  // [W3-МАГИЯ] Каст «Врат бури» рисует sigilGate.js (стоит в CHOREO раньше и возвращает true); знак врат ниже —
+  // запасной путь (если sigilGate упал). Шестигранный купол fx.hex живёт по снимку (bastion), мигает последние 1.2 с,
+  // звенит от ударов. Момент своего каста — fx.shared.gateCastAt (пишет sigilGate.js, здесь — запасной путь):
+  // раскрытие купола ждёт 0.4 с, пока вспыхнет разрыв.
   const useHex = !!fx.hex;
   if (useHex) fx.suppress('dome');
-  let gateCastAt = -1e9;
+  const gateAt = () => (isNum(fx.shared.gateCastAt) ? fx.shared.gateCastAt : -1e9);
   fx.on('sigil_cast', (ev, d) => {
     const c = caster(fx, ev, d);
     const R = c.remote, rival = c.rival;
     const P = fx.pal('gold', d);
     const ramp = rampOf('gold', R);
-    if (!R) gateCastAt = kit.clock;
+    if (!R) fx.shared.gateCastAt = kit.clock;
     const gp = new V3().copy(c.feet).addScaledVector(c.fwd, 1.05);
     const y0 = c.feet.y + 0.25, y1 = c.feet.y + 1.2;
     gp.y = y0;
@@ -386,7 +388,8 @@ export function register(fx) {
   function domeTick(D, dt, want, left) {
     if (want && !D.want) {
       // раскрытие ждёт подъёма знака врат (если его только что сотворили)
-      D.startAt = !D.remote && kit.clock - gateCastAt < 0.5 ? gateCastAt + 0.4 : kit.clock;
+      const gc = gateAt(), ago = kit.clock - gc;
+      D.startAt = !D.remote && ago >= 0 && ago < 0.5 ? gc + 0.4 : kit.clock;
     }
     D.want = want;
     if (want && !D.h && fx.hex) {

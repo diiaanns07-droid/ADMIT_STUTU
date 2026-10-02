@@ -17,7 +17,7 @@
 'use strict';
 
 // <AO_MANIFEST> — генерирует node tools/sw_manifest.mjs, руками не править
-const VERSION = 'b3aad153997d';
+const VERSION = 'f0e5cf5daea6';
 const VENDOR_VERSION = 'b3f563930682';
 const SHELL = [
   "./",
@@ -62,12 +62,14 @@ const SHELL = [
   "modules/elfVillage.js",
   "modules/fx/bolts.js",
   "modules/fx/bowHand.js",
+  "modules/fx/castFx.js",
   "modules/fx/combatFx.js",
   "modules/fx/common.js",
   "modules/fx/decals.js",
   "modules/fx/glsl.js",
   "modules/fx/glyph.js",
   "modules/fx/handMagic.js",
+  "modules/fx/hitFx.js",
   "modules/fx/index.js",
   "modules/fx/kit.js",
   "modules/fx/runesFire.js",
@@ -76,6 +78,9 @@ const SHELL = [
   "modules/fx/runesWild.js",
   "modules/fx/shieldHex.js",
   "modules/fx/shock.js",
+  "modules/fx/sigilCharge.js",
+  "modules/fx/sigilGate.js",
+  "modules/fx/sigilPillar.js",
   "modules/fx/sigils.js",
   "modules/fx/trails.js",
   "modules/handVisuals.js",

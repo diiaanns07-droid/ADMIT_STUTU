@@ -34,7 +34,7 @@ function snap(o = {}) {
   return {
     status: 'playing', time: o.time || 1, mode: o.pvp ? 'pvp' : 'boss',
     player: { position: v3(0, 0, 6), yaw: Math.PI, hp: 80, maxHp: 100, energy: 60, maxEnergy: 100, action: o.dead ? 'dead' : 'idle', shielding: !!o.shield, conjure: null,
-      warded: true, bastion: !!o.bastion, bastionRemaining: 3, vortex: !!o.vortex, vortexRemaining: 2, regen: true, regenRemaining: 3, burstCharge: 0.5 },
+      warded: true, bastion: !!o.bastion, bastionRemaining: 3, sigilCharge: o.charge || 0, sigilAxis: o.axis || null, vortex: !!o.vortex, vortexRemaining: 2, regen: true, regenRemaining: 3, burstCharge: 0.5 },
     boss: { position: v3(0, 0, 0), stage: 1, action: 'idle', stunned: !!o.stun, slowed: !!o.slow, slowRemaining: 3, marked: !!o.mark },
     projectiles: o.projectiles || [], telegraphs: [], cooldowns: {},
     opponent: o.pvp ? { id: 'opp', position: v3(0, 0, 0), yaw: 0, hp: 100, maxHp: 100, action: 'idle', shielding: !!o.shield, stunned: !!o.stun, slowed: !!o.slow } : null,
@@ -55,6 +55,20 @@ function eventsFor(remote) {
   for (let i = 0; i < 5; i++) list.push([ev('rune_hit', to, { rune: 'stella', index: i, amount: 18, ...r })]);
   for (const sigil of ['clap', 'gate', 'frame', 'delta', 'cor']) list.push([ev('sigil_cast', from, { sigil, radius: 7, stunned: true, duration: 4, from, to, ...r })]);
   for (let i = 0; i < 3; i++) list.push([ev('sigil_hit', to, { sigil: 'delta', index: i, from, ...r })]);
+  // [W3-МАГИЯ] «Врата бури» и «Столп небес» по полному контракту №2 (modules/combat.js [W3-MAGIC]), промахи, отказ
+  const gateD = { sigil: 'gate', power: 1, damage: 60, duration: 3.5, reduction: 0.6, speed: 16, width: 3.5, eta: 0.375, reach: true, from, to, ...r };
+  list.push([ev('sigil_cast', from, gateD), ev('bastion_start', v3(from.x, 0, from.z), { duration: 3.5, ...r })]);
+  list.push([ev('boss_hit', to, { sigil: 'gate', power: 1, amount: 60, source: 'sigil', hpAfter: 900, combo: 0, multiplier: 1, marked: false })]);
+  list.push([ev('sigil_cast', from, { ...gateD, power: 0.4, damage: 42, eta: 2.1, reach: false })]);
+  list.push([ev('sigil_miss', to, { sigil: 'gate', power: 0.4, ...r })]);
+  list.push([ev('bastion_end', v3(from.x, 0, from.z), { reason: 'expired', ...r })]);
+  const pilD = { sigil: 'pillar', power: 0.8, damage: 90, stun: 1.2, delay: 0.45, reach: true, from, to, ...r };
+  list.push([ev('sigil_cast', from, pilD)]);
+  list.push([ev('boss_stunned', to, { duration: 1.2, source: 'pillar' }), ev('boss_hit', to, { sigil: 'pillar', power: 0.8, amount: 90, source: 'sigil', hpAfter: 800, combo: 1, multiplier: 1.1, marked: false })]);
+  list.push([ev('sigil_cast', from, { ...pilD, reach: false }), ev('sigil_miss', to, { sigil: 'pillar', power: 0.8, ...r })]);
+  list.push([ev('sigil_cast', from, { sigil: 'pillar', from, to, ...r })]);   // поля могут отсутствовать (старый стенд, сеть)
+  list.push([ev('ability_denied', v3(from.x, 0, from.z), { ability: 'sigil', sigil: 'gate', reason: 'cooldown', ...r })]);
+  if (!remote) list.push([ev('boss_hit', to, { amount: 50, source: 'sigil', hpAfter: 50, combo: 0, multiplier: 1, marked: false, pvp: true, target: 'opponent' })]);
   list.push([ev('player_cast', from, { ability: 'spark', projectileId: 'p1', velocity: v3(0, 0, -38), ...r })]);
   list.push([ev('projectile_impact', to, { owner: 'player', kind: 'spark', projectileId: 'p1', result: 'boss', direction: v3(0, 0, -1), ...r })]);
   list.push([ev('projectile_impact', to, { owner: 'player', kind: 'spark', projectileId: 'caret:9', result: 'boss', ...r })]);
@@ -93,7 +107,7 @@ await fx.v6.ready;
 const loaded = fx.v6.stats().loaded;
 ok(loaded.failed.length === 0, 'все модули V6 загружены, сбой: ' + loaded.failed.join(','));
 ok(loaded.subsystems.length === 6, 'подсистем 6: ' + loaded.subsystems.join(','));
-ok(loaded.choreo.length === 8, 'хореографий 8');
+ok(loaded.choreo.length === 13, 'хореографий 13: ' + loaded.choreo.length);
 
 // ---------------------------------------------------------------- 2. все события: свои и соперника
 const inputs = [null, { valid: true, hands: { drawing: true, trail: [{ x: 0.6, y: 0.3 }, { x: 0.7, y: 0.5 }, { x: 0.55, y: 0.5 }], right: { shape: 'point' } },
@@ -119,6 +133,24 @@ for (const pvp of [false, true]) {
 ok(fx.v6.handle('pvp_opponent_cast', ev('pvp_opponent_cast', core, {}), { sourceType: 'rune_cast', rune: 'ignis', from: core, to: chest, remote: true }) === true, 'pvp_opponent_cast → руна соперника');
 fx.update(1 / 60, snap({ pvp: true, projectiles: [{ id: 'opp:p1', owner: 'opponent', kind: 'bolt', remote: true, position: v3(0, 1.5, 2), velocity: v3(0, 0, 30), radius: 0.2 }] }), []);
 ok(fx.supportsRemote === true, 'effects.supportsRemote для net/session.js');
+// [W3-МАГИЯ] заряд печати по снимку: растёт, держится по оси, выпуск; оборванный заряд гаснет сам; QA-подмена
+fx.setInput(null);
+for (const axis of [null, 'h', 'v']) {
+  for (let i = 0; i <= 45; i++) fx.update(1 / 30, snap({ charge: Math.min(1, i / 45), axis }), []);
+  const st = fx.v6.stats().kit;
+  ok(st.particles <= st.cap, 'заряд ' + axis + ': частицы в пределах ёмкости');
+  ok(fx.v6.fx.shared.sigil && fx.v6.fx.shared.sigil.active, 'заряд ' + axis + ': fx.shared.sigil.active');
+  fx.update(1 / 30, snap({ charge: 0 }), [ev('sigil_cast', chest, { sigil: axis === 'v' ? 'pillar' : 'gate', power: 1, damage: 60, speed: 16, width: 3.5, eta: 0.4, delay: 0.45, stun: 1.2, reach: true, from: chest, to: core })]);
+}
+for (let i = 0; i < 20; i++) fx.update(1 / 30, snap({ charge: 0.6, axis: 'h' }), []);
+for (let i = 0; i < 30; i++) fx.update(1 / 30, snap({}), []);
+fx.v6.fx.qa.charge = { charge: 0.8, axis: 'v' };
+for (let i = 0; i < 10; i++) fx.update(1 / 30, snap({}), []);
+ok(fx.v6.fx.shared.sigil.active && fx.v6.fx.shared.sigil.axis === 'v', 'fx.qa.charge подменяет снимок');
+fx.v6.fx.qa.charge = null;
+for (let i = 0; i < 10; i++) fx.update(1 / 30, snap({}), []);
+// оглушённый столпом Регент и купол бастиона по снимку
+for (let i = 0; i < 40; i++) fx.update(1 / 30, snap({ stun: true, bastion: true }), []);
 // дожить все отложенные акторы
 const s0 = snap({});
 for (let i = 0; i < 240; i++) fx.update(1 / 30, s0, []);
