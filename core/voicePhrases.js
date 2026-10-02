@@ -64,6 +64,13 @@ export const HINT_PHRASES = Object.freeze({
   spell_throw_weak: 'Бросай резче!',
   spell_hold: 'Бросай сгусток!',
   spell_palm: 'Ладонь вверх!',
+  // [W3-MAGIC] «ладони вместе → растянуть»
+  stretch_slow: 'Растягивай резче!',
+  stretch_open: 'Сомкни ладони!',
+  stretch_diag: 'Тяни ровно!',
+  // [W3-ULT] «Небесный суд»
+  ult_one_hand: 'Подними обе руки!',
+  ult_early: 'Держи руки вверху!',
 });
 
 // Запасная фраза по группе жеста (COACH_GROUPS) — для кодов, которых в таблице нет.
