@@ -873,8 +873,9 @@ export function beautifyFace(THREE, vrm, look, { quality = 'medium' } = {}) {
   // глаза — новые центры и радиус после «линзы» (для подводки и проекции)
   const P2 = faceParts(vrm) || P;
   // брови-«плашки» и полоски век модели (меш Eyebrows) не рисуются: вместо них — лента бровей и подводки
-  if (P.brows) { P.brows.visible = false; noShadowCast(P.brows); }
+  // (не собралась — например, другая сетка лица — остаются брови модели)
   const brows = look.brow ? buildBrows(THREE, P2, look.brow, look.eyes || {}, quality) : null;
+  if (P.brows && brows) { P.brows.visible = false; noShadowCast(P.brows); }
   // радужка крупнее (читает buildFromStandard) и тёплый подповерхностный оттенок кожи
   if (look.eyes && look.eyes.iris) P.eyes.material.userData.heroIris = look.eyes.iris;
   if (look.skin && look.skin.glow !== undefined) P.face.material.userData.heroSkinGlow = look.skin.glow;
