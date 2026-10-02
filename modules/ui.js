@@ -23,6 +23,7 @@
  *   viewModel.progress = { points, earned, pushups, squats, embers[], emberTotal, upgrades[{id,name,level,max,cost,canBuy,now,next}] }
  *   viewModel.training = { exercise, reps, total, state, message, depth, lastOk, sinceRepMs,
  *     приседания: attempts, knee, view, lastHint{code,text,tMs}, sinceHintMs, faults{}, formScore, topFault{code,text,count}, debugSim }
+ *   [W3-VOICE] viewModel.voice = { on, state: 'ready'|'pending'|'no-ru'|'no-api' } — «Голос тренера» (modules/voiceCoach.js)
  */
 
 import { createTutorialTrainer, TRAINER_STEPS } from '../core/tutorialTrainer.js';
@@ -550,6 +551,7 @@ function normSettings(s) {
     hero: HERO_OPTIONS.some(([v]) => v === o.hero) ? o.hero : DEFAULT_SETTINGS.hero,
     muted: o.muted === true, // [SFX] «Без звука» (клавиша M)
     spiritAvatar: o.spiritAvatar !== false, // [W3-SPIRIT] «Дух игрока»
+    voice: o.voice !== false, // [W3-VOICE] «Голос тренера» (клавиша V)
   };
 }
 
@@ -943,6 +945,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   const timers = new Set();
   const warned = new Set();
   const controls = [];
+  const voiceCtls = []; // [W3-VOICE] «Голос · V»: красятся каждый кадр — голос находится асинхронно (voiceschanged)
 
   const state = {
     screen: null,
@@ -1429,6 +1432,27 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     return fs;
   }
 
+  // [W3-VOICE] «Голос тренера»: подсказки «ОШИБКА» и реплики диктора вслух (main.js, modules/voiceCoach.js).
+  // Включён ли — settings.voice; найден ли русский голос — viewModel.voice.state. Голоса нет — кнопка неактивна,
+  // в паузе под громкостью ещё и строка «русского голоса в системе нет» (в меню — только кнопка: меню не растёт).
+  // Узлы создаются один раз, update() меняет текст и атрибуты.
+  function buildVoiceToggle(prefix) {
+    const btn = el('button', { type: 'button', class: 'ao-mute ao-voice', 'aria-pressed': 'true', 'aria-keyshortcuts': 'V', title: 'Голос тренера: подсказки и реплики вслух — клавиша V', text: 'Голос · V' });
+    const note = el('div', { class: 'ao-field__hint ao-voice__note', hidden: true, text: 'Русского голоса в системе нет — голос тренера молчит' });
+    let missing = false;
+    listen(btn, 'click', () => { if (!missing) invoke('onSettings', { voice: !(state.settings && state.settings.voice !== false) }); });
+    voiceCtls.push((v, st) => {
+      missing = !!v && (v.state === 'no-ru' || v.state === 'no-api');
+      const on = !missing && !(st && st.voice === false);
+      setAttr(btn, 'aria-pressed', on ? 'true' : 'false');
+      setAttr(btn, 'aria-disabled', missing ? 'true' : null);
+      setAttr(btn, 'title', missing ? 'Русского голоса в системе нет — голос тренера молчит' : 'Голос тренера: подсказки и реплики вслух — клавиша V');
+      setText(btn, missing ? 'Нет русского голоса' : on ? 'Голос · V' : 'Голос выкл · V');
+      setHidden(note, !missing || prefix === 'menu');
+    });
+    return { btn, note };
+  }
+
   function buildSettings(keys, prefix) {
     const wrap = el('div', { class: 'ao-settings' });
     for (const key of keys) {
@@ -1452,12 +1476,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
             setText(mute, m ? 'Звук выключен · M' : 'Без звука · M');
           },
         });
-        wrap.append(
-          buildRange({
-            key: 'volume', prefix, label: 'Громкость', min: 0, max: 100, step: 5, head: mute,
-            toRaw: (v) => Math.round(v * 100), fromRaw: (r) => r / 100, format: (v) => `${Math.round(v * 100)}%`,
-          }),
-        );
+        const voice = buildVoiceToggle(prefix); // [W3-VOICE] «Голос · V» — в той же строке, меню не растёт
+        const volField = buildRange({
+          key: 'volume', prefix, label: 'Громкость', min: 0, max: 100, step: 5, head: [mute, voice.btn],
+          toRaw: (v) => Math.round(v * 100), fromRaw: (r) => r / 100, format: (v) => `${Math.round(v * 100)}%`,
+        });
+        volField.append(voice.note);
+        wrap.append(volField);
       } else if (key === 'sensitivity') {
         wrap.append(
           buildRange({
@@ -2305,6 +2330,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         // «ОШИБКА»: что не так и как исправить — на месте совета под кистью
         const hint = v.hint;
         setHidden(coach, !hint);
+        setAttr(coach, 'data-voice-hint', hint ? `${hint.code}|${Math.round(hint.at || 0)}` : null); // [W3-VOICE] голос читает показанную подсказку
         if (hint) {
           const side = hint.side === 'left' ? ' · левая рука' : hint.side === 'right' ? ' · правая рука' : '';
           setText(coachHead, `Ошибка · ${hint.gesture}${side}`);
@@ -3488,7 +3514,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   }
 
   function syncSettings(s) {
-    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}|${s.gestureMode}|${s.autoWalk}|${s.difficulty}|${s.muted}|${s.spiritAvatar}`; // [FOREST] + startZone, [НОВИЧОК] + жесты, [FEEL] + difficulty, [SFX] + muted, [W3-SPIRIT] + дух
+    const key = `${s.quality}|${s.volume}|${s.sensitivity}|${s.reducedMotion}|${s.moveMode}|${s.hero}|${s.startZone}|${s.gestureMode}|${s.autoWalk}|${s.difficulty}|${s.muted}|${s.spiritAvatar}|${s.voice}`; // [FOREST] + startZone, [НОВИЧОК] + жесты, [FEEL] + difficulty, [SFX] + muted, [W3-SPIRIT] + дух
     state.settings = s;
     if (key === state.settingsKey) return;
     state.settingsKey = key;
@@ -3567,6 +3593,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     setClass(ui, 'ao-reduced-motion', ctx.settings.reducedMotion);
     setClass(doc.documentElement, 'ao-bdo', !(vm.settings && vm.settings.bdoUi === false)); // [BDO] стиль Black Desert (настройка bdoUi)
     syncSettings(ctx.settings);
+    for (const paintVoice of voiceCtls) paintVoice(vm.voice, ctx.settings); // [W3-VOICE]
     computeReadout(ctx);   // [ПРОЕКТОР] до экранов: подписи нужны HUD и панели презентации
     UPDATERS[screen](ctx);
     book.update(ctx);

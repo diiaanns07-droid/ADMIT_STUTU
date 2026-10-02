@@ -36,6 +36,7 @@ import { createCueTracker } from './modules/sfx.js';    // [SFX] «✓ Расп�
 import { createCoachOverlay } from './core/coachOverlay.js'; // [ТВИСТ «ОШИБКА»] подсветка ошибки на превью камеры
 import { createTechniqueTrainer } from './modules/techniqueTrainer.js'; // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
 import { createUltimateGesture, ultTimeScale, ultCameraKeys } from './core/ultimate.js'; // [W3-ULT] «Небесный суд»
+import { createVoiceCoach, createVoiceDirector, createVoiceRecords } from './modules/voiceCoach.js'; // [W3-VOICE] подсказки и диктор — вслух
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
 
@@ -70,6 +71,7 @@ function sanitizeSettings(patch, base) {
   if ('reducedMotion' in patch) out.reducedMotion = !!patch.reducedMotion;
   if (patch.difficulty === 'easy' || patch.difficulty === 'normal') out.difficulty = patch.difficulty; // [FEEL] сложность боя с Регентом
   if ('muted' in patch) out.muted = patch.muted === true; // [SFX] «Без звука» (кнопка в меню и паузе, клавиша M)
+  if ('voice' in patch) out.voice = patch.voice !== false; // [W3-VOICE] «Голос тренера» (кнопка рядом с «Без звука», клавиша V)
   if (patch.moveMode === 'steer' || patch.moveMode === 'stick') out.moveMode = patch.moveMode; // [V5] «Руль» / «Джойстик»
   if (typeof patch.hero === 'string' && HEROES[patch.hero]) out.hero = patch.hero;
   // [HERO] C1: шейдинг героев
@@ -589,7 +591,8 @@ function pause(reason) {
 }
 
 const AUDIO_ON = !(config.audio && config.audio.enabled === false);
-const gameVolume = () => (AUDIO_ON && !settings.muted ? settings.volume : 0);
+let voiceDuck = 1; // [W3-VOICE] пока звучит голос тренера — SFX чуть тише
+const gameVolume = () => (AUDIO_ON && !settings.muted ? settings.volume * voiceDuck : 0);
 function unlockAudio() { if (!AUDIO_ON) return; try { effects.unlockAudio().catch(() => {}); } catch (e) { /* ignore */ } }
 // [SFX] Громкость по экрану: пока бой приостановлен (пауза, «Клятва героя»/«Тренировка» из паузы, переподключение
 // камеры посреди боя), боевые звуки и петли молчат — снимок боя заморожен, и щит/орбы иначе гудели бы без конца;
@@ -627,6 +630,89 @@ if (typeof MutationObserver === 'function' && uiRoot) {
       cue(sfxCues.chip(card && card.dataset ? card.dataset.key : null));
     }
   }).observe(uiRoot, { subtree: true, attributes: true, attributeFilter: ['data-state'], attributeOldValue: true });
+}
+
+// ---------------------------------------------------------------- [W3-VOICE] голос тренера
+// Подсказки «ОШИБКА», счёт на тренировке и реплики диктора звучат вслух (modules/voiceCoach.js, фразы —
+// core/voicePhrases.js): жюри в 3–5 м от проектора мелкий текст не прочитает, а «Сомкни кольцо!» слышит весь зал.
+// Громкость — общий ползунок, «Без звука» (M) глушит и голос; пока звучит речь, SFX тише (voiceDuck в gameVolume).
+// V — «Голос тренера» вкл/выкл. В обучении голос читает ту подсказку, что на экране (data-voice-hint у карточки ui.js),
+// и «Распознано!» — на шаге, перешедшем в data-state=ok.
+let voiceCoach = null, voiceDirector = null, voiceWasOn = settings.voice !== false;
+const voiceTut = { hint: null, ok: null, n: 0, trainer: null };
+function voiceVolume() { const v = AUDIO_ON ? settings.volume : 0; return v > 0 ? Math.min(1, 0.4 + 0.6 * v) : 0; } // речь разборчива и на тихом ползунке
+try {
+  let records = null;
+  try { records = createVoiceRecords(window.localStorage); } catch (e) { records = createVoiceRecords(null); }
+  voiceCoach = createVoiceCoach({
+    enabled: settings.voice !== false, muted: !!settings.muted, volume: voiceVolume(),
+    onDuck: (on) => { voiceDuck = on ? 0.6 : 1; try { effects.setVolume(gameVolume()); } catch (e) { /* звук ещё не создан */ } },
+  });
+  voiceDirector = createVoiceDirector(voiceCoach, { records });
+} catch (e) { console.warn('[VOICE] голос тренера недоступен', e); voiceCoach = null; voiceDirector = null; }
+function voiceSettings() {
+  if (!voiceCoach) return;
+  const on = settings.voice !== false;
+  voiceCoach.setVolume(voiceVolume()); voiceCoach.setMuted(!!settings.muted); voiceCoach.setEnabled(on);
+  if (on && !voiceWasOn && voiceDirector) voiceDirector.announce('voiceOn');
+  voiceWasOn = on;
+}
+function voiceView() { return { on: settings.voice !== false, state: voiceCoach ? voiceCoach.state : 'no-api' }; }
+// V — как M, но в отладке V занята: печать «Дельта» в бою (core/debugInput.js гасит её preventDefault) и «колени внутрь» в имитации приседа
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyV' || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (app.debug ? (app.screen === 'playing' || app.screen === 'intro' || app.screen === 'tutorial' || simActive()) : e.defaultPrevented) return;
+  const t = e.target;
+  if (t && (t.tagName === 'TEXTAREA' || t.isContentEditable || (t.tagName === 'INPUT' && !['range', 'checkbox', 'radio', 'button'].includes(t.type)))) return;
+  callbacks.onSettings({ voice: settings.voice === false });
+});
+if (typeof MutationObserver === 'function' && uiRoot) {
+  new MutationObserver((records) => {
+    if (app.screen !== 'tutorial') return;
+    for (const r of records) {
+      const t = r.target, cl = t.classList;
+      if (!cl) continue;
+      if (r.attributeName === 'data-voice-hint') {
+        const [code, at] = String(t.getAttribute('data-voice-hint') || '').split('|');
+        if (code) voiceTut.hint = { code, tMs: +at || 0, ...(hintInfo(code) || {}) };
+        continue;
+      }
+      const st = t.getAttribute('data-state');
+      if ((cl.contains('ao-trn-pill') && st === 'ok' && r.oldValue !== 'ok') || (cl.contains('ao-chip') && st === 'seen' && r.oldValue !== 'seen')) voiceTut.ok = `ok|${++voiceTut.n}`;
+    }
+  }).observe(uiRoot, { subtree: true, attributes: true, attributeFilter: ['data-state', 'data-voice-hint'], attributeOldValue: true });
+}
+// Раз в кадр (после HUD): подсказки, события боя, отсчёт, тренировка.
+function voiceFrame(now, input, events) {
+  if (!voiceDirector) return;
+  try {
+    const scr = app.screen, pvp = !!(pvpCtl && pvpCtl.active);
+    let hint = input && input.hint && input.hint.code ? input.hint : null;
+    if (scr === 'tutorial') {
+      if (voiceTut.trainer === null) voiceTut.trainer = !!uiRoot.querySelector('[data-voice-hint], .ao-trn-coach');
+      if (voiceTut.trainer) hint = voiceTut.hint;   // тренажёр показывает не каждую подсказку — говорим показанную
+    } else { voiceTut.hint = null; voiceTut.ok = null; }
+    let training = null;
+    if (scr === 'training') {
+      if (train.exercise === 'squats') { const q = squats.read(); training = { exercise: 'squats', reps: train.reps, attempts: q.attempts, hint: q.lastHint }; }
+      else { const r = pushups.read(); training = { exercise: 'pushups', reps: train.reps, attempts: train.reps + (r.rejected | 0) + (r.shallow | 0), hint: r.lastHint }; }
+    }
+    // отсчёт: автопродолжение после потери трекинга (пауза) и раунд дуэли
+    let countdown = 0;
+    if (scr === 'paused' && app.autoResume) countdown = (app.autoResume.at - performance.now()) / 1000;
+    else if (pvp && scr === 'playing') {
+      const ss = pvpCtl.session;
+      if (ss && ss.phase === 'countdown' && ss.state && ss.config && ss.config.rounds) countdown = ss.config.rounds.countdown - (performance.now() - ss.state.phaseAt) / 1000;
+    }
+    const b = lastSnapshot && lastSnapshot.boss;
+    let won = false;
+    if (Array.isArray(events)) for (const e of events) if (e && e.type === 'victory') won = true;
+    voiceDirector.frame(now, {
+      screen: scr, hint, events, pvp, countdown, training, recognized: voiceTut.ok,
+      boss: b && !app.outroAt ? { hp: b.hp, maxHp: b.maxHp } : null,
+      fight: won && lastSnapshot ? { time: lastSnapshot.time, accuracy: coachStats.summary().accuracy } : null, // рекорд победы
+    });
+  } catch (e) { console.warn('[VOICE] кадр', e); }
 }
 
 const REC_ON = /[?&]rec=1\b/.test(location.search); // [CONTROLS] запись кистей (см. saveRecording)
@@ -1041,6 +1127,7 @@ function applySettings() {
     if (heroModel && heroModel.setQuality) { try { heroModel.setQuality(settings.quality); configureHeroes({ quality: settings.quality }); } catch (e) { /* ignore */ } } // [HERO]
   }
   screenAudio(app.screen);
+  voiceSettings(); // [W3-VOICE]
   if (vision) vision.configure({ sensitivity: settings.sensitivity, moveMode: settings.moveMode, gestureMode: settings.gestureMode });
   if (typeof debugInput.setMoveMode === 'function') debugInput.setMoveMode(settings.moveMode); // [V5] WASD как «Руль»
 }
@@ -1131,6 +1218,7 @@ function renderUI() {
     progress: { ...progression.getView(), emberTotal: EMBER_TOTAL },
     training: app.screen === 'training' ? trainingView() : null,
     technique: app.screen === 'technique' ? techView : null,
+    voice: voiceView(), // [W3-VOICE] «Голос тренера»: включён ли и найден ли русский голос
     coach: app.screen === 'victory' || app.screen === 'defeat' ? (coachEnd || coachStats.summary()) : null, // [ТВИСТ «ОШИБКА»] итог, сравнение с прошлым боем
     // [ONBOARD] причина на кнопках «В бой»/«Продолжить бой»; отсчёт автопродолжения; калибровка из сохранения
     gate: { ok: app.gate.ok, reason: app.gate.reason },
@@ -1668,6 +1756,7 @@ function frame(now) {
     layout: worldLayout, // [BDO] мини-карта и названия зон
     ult: ultView(),      // [W3-ULT] шкала «Ярость клятвы», зов, сцена
   });
+  voiceFrame(now, input, events); // [W3-VOICE] подсказки и реплики — вслух
 
   perf.frames++;
   if (now - perf.t0 >= 1000) { perf.fps = (perf.frames * 1000) / (now - perf.t0); perf.frames = 0; perf.t0 = now; }
@@ -1727,6 +1816,7 @@ window.__ASHEN__ = Object.freeze({
   fxLayer: () => (effects && effects.v6) || null, // [W3-МАГИЯ] QA: слой V6 (события магий и подмена заряда для видео)
   heroStep: (dt, snap, events) => { if (heroModel) heroModel.update(dt, snap, events || []); return heroModel ? heroModel.state() : null; }, // QA: шаг анимации без rAF
   squats: () => squats.getDebug(),
+  voice: () => (voiceCoach ? voiceCoach.status() : null), // [W3-VOICE] голос, очередь, последние фразы
   technique: () => (techView ? JSON.parse(JSON.stringify({ ...techView, synthHands: null, synthPose: null, focus: techView.focus ? { ...techView.focus, pictogram: !!techView.focus.pictogram } : null })) : null), // [ТВИСТ «ОШИБКА»] QA тренажёра
   pvp: () => (pvpCtl ? pvpCtl.debug() : null),   // [PVP] QA: фаза, счёт, статистика дуэли
   ult: () => ({ cine: ULT.cine ? { ...ULT.cine } : null, gesture: ULT.g ? { ...ULT.g } : null, rig: !!rig.cinematicActive, fx: !!(ULT.fx && ULT.fx.active) }),   // [W3-ULT] QA
