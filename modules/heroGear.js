@@ -1065,7 +1065,7 @@ export function dressHero(THREE, vrm, opts = {}) {
         piv.add(lid, up);
         const low = new THREE.Group(); low.name = 'lash-low';
         // [W4-ЛИЦО] нижние ресницы — от середины к внешнему углу и короче (у внутреннего угла читались чёрными «колючками»)
-        low.add(new THREE.Mesh(lashStrip(e, -0.25, 1.1, yL, F.dL, (t) => F.lenL * 0.16 * (0.3 + 0.7 * Math.sin(Math.PI * t)) * (0.5 + 0.7 * t), -1), mLow));
+        low.add(new THREE.Mesh(lashStrip(e, -0.25, 1.1, yL, F.dL, (t) => F.lenL * 0.12 * (0.3 + 0.7 * Math.sin(Math.PI * t)) * (0.5 + 0.7 * t), -1), mLow));
         const tear = new THREE.Mesh(tearStrip(e), mTear); tear.name = 'tearline'; tear.renderOrder = 3; low.add(tear);
         stick(piv, 'head', e.c, new THREE.Quaternion());
         stick(low, 'head', e.c, new THREE.Quaternion());

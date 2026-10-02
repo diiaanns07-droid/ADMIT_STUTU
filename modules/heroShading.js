@@ -782,7 +782,7 @@ function buildBrows(THREE, P, b, E, quality, home) {
       const W0 = E.linerW, wl = E.wing || 0, up = E.wingUp ?? 0.3;
       // по веку — до 90% разреза (у самого угла веко круто уходит вниз — подводка от него отрывается),
       // дальше «стрелка» наружу и вверх под углом wingUp к горизонтали
-      const span = lid.xo - lid.xi, x0 = lid.xi + span * 0.06, x1 = lid.xi + span * 0.9;
+      const span = lid.xo - lid.xi, x0 = lid.xi + span * 0.1, x1 = lid.xi + span * 0.85;
       const wx = Math.cos(up), wy = Math.sin(up);
       const lidLen = x1 - x0, tot = lidLen + wl, tl = lidLen / (tot || 1);
       const centre = (t) => {
@@ -791,7 +791,7 @@ function buildBrows(THREE, P, b, E, quality, home) {
         return [x1 + wx * d, lid.yAt(x1) + half(tl) + 0.00012 + wy * d];
       };
       function half(t) {
-        const k = t <= tl ? 0.25 + 0.75 * fss(0, 0.8, t / (tl || 1)) : 1 - fss(0, 1, (t - tl) / (1 - tl || 1)) * 0.92;
+        const k = t <= tl ? 0.25 + 0.75 * fss(0, 0.8, t / (tl || 1)) : 1 - fss(0, 1, (t - tl) / (1 - tl || 1)) * 0.8;
         return W0 * 0.5 * k;
       }
       const v0 = pos.length / 3;
@@ -930,14 +930,16 @@ export function facePainter(look) {
     // 1. консилер: запечённые тени вокруг глаз (впалые глаза) мягче, под глазами свежее
     const conceal = Sk.conceal ?? 0;
     if (conceal > 0) for (const [[u, v], s] of eyes) {
-      blob(u + s * 1.0, v + 1.5, 15.5, 12.5, 0, skin, 0.42 * conceal, 'source-over', 0.45);
+      blob(u + s * 1.0, v + 1.5, 12.5, 10, 0, skin, 0.42 * conceal, 'source-over', 0.45);
       blob(u + s * 0.5, v + 8.5, 9.5, 4.0, 0, lift(skin, 0.06), 0.4 * conceal, 'source-over', 0.2);
     }
     // 2. контур: тонкий нос (тень по бокам спинки, свет по спинке), лёгкий свет на скулах
     const ct = Sk.contour ?? 0;
     if (ct > 0) {
-      for (const s of [1, -1]) blob(FACE_UV.mid + s * 5.6, 105, 2.2, 10, 0, 0x8a5a44, 0.16 * ct, 'multiply', 0.1);
-      blob(FACE_UV.mid, 104, 1.6, 9.5, 0, lift(skin, 0.22), 0.22 * ct, 'source-over', 0.2);
+      for (const s of [1, -1]) blob(FACE_UV.mid + s * 5.6, 107, 2.2, 10, 0, 0x8a5a44, 0.22 * ct, 'multiply', 0.1);
+      blob(FACE_UV.mid, 104, 1.6, 9.5, 0, lift(skin, 0.22), 0.14 * ct, 'source-over', 0.2);
+      // крылья носа: меньше светлого альбедо под контровым светом (не «колечко» по краю ноздри)
+      for (const s of [1, -1]) blob(FACE_UV.mid + s * 5, 111.5, 2.8, 1.9, 0, 0x8a5a44, 0.22, 'multiply', 0.2);
       for (const [[u], s] of eyes) blob(u + s * 4, 104.5, 7.5, 3.4, s * -0.35, lift(skin, 0.18), 0.2 * ct, 'source-over', 0.1);
     }
     // 3. тени век по стихии: основной тон по подвижному веку, второй — к внешнему углу, дымка по нижнему веку
@@ -948,10 +950,10 @@ export function facePainter(look) {
       blob(u + s * 1.6, FACE_UV.eyeTop - 1.6, 10.5, 4.8, s * -0.2, E.shadow, A * 1.1, 'color', 0.2);
       if (E.shadow2 !== undefined) blob(u + s * 5.5, FACE_UV.eyeTop - 2.6, 6.5, 3.2, s * -0.5, E.shadow2, A * 0.8, 'color', 0.1);
       blob(u - s * 1.0, FACE_UV.eyeTop - 2.2, 4.0, 2.4, 0, lift(skin, 0.28), 0.18, 'source-over', 0.1);   // свет в центре века
-      if (E.lower) { blob(u + s * 2.5, FACE_UV.eyeBot + 1.1, 6.5, 1.5, s * 0.12, E.shadow, E.lower, 'multiply', 0.1); blob(u + s * 2.5, FACE_UV.eyeBot + 1.2, 7, 1.8, s * 0.12, E.shadow, E.lower * 1.5, 'color', 0.1); }
+      if (E.lower) { blob(u + s * 4.5, FACE_UV.eyeBot + 1.1, 4.5, 1.5, s * 0.12, E.shadow, E.lower, 'multiply', 0.1); blob(u + s * 4.5, FACE_UV.eyeBot + 1.2, 5, 1.8, s * 0.12, E.shadow, E.lower * 1.5, 'color', 0.1); }
     }
     // 4. румянец на «яблочках» щёк
-    if (Sk.blush !== undefined) for (const [[u], s] of eyes) blob(u + s * 3, 110, 13, 8, s * -0.25, Sk.blush, Sk.blushA ?? 0.18, 'source-over', 0.05);
+    if (Sk.blush !== undefined) for (const [[u], s] of eyes) blob(u + s * 4.5, 107.5, 13, 8, s * -0.35, Sk.blush, Sk.blushA ?? 0.18, 'source-over', 0.05);
     // 5. губы: маска — собственный цвет губ на исходном атласе (краснее кожи), тон — к центру нижней губы
     if (Lp && src) {
       const x0 = Math.floor(X(74)), x1 = Math.ceil(X(114)), y0 = Math.floor(Y(123)), y1 = Math.ceil(Y(144));
@@ -967,18 +969,18 @@ export function facePainter(look) {
           const R = src.data[si], G = src.data[si + 1];
           const red = (R - G) / (R + 1);
           const u = gx / S, v = (gy * 512) / H;
-          const ell = 1 - fss(0.82, 1.08, Math.hypot((u - FACE_UV.mid) / 18.5, (v - FACE_UV.lips) / 9.5));
-          const m = fss(0.29, 0.37, red) * ell;
+          const ell = 1 - fss(0.82, 1.08, Math.hypot((u - FACE_UV.mid) / 17, (v - FACE_UV.lips) / 9.5));
+          const m = fss(0.23, 0.38, red) * ell;
           if (m < 0.01) continue;
           // нижняя губа (v > рта) светлее к центру — объём; линия рта темнее
           const low = fss(FACE_UV.lips + 0.5, FACE_UV.lips + 3.5, v) * (1 - fss(2, 11, Math.abs(u - FACE_UV.mid)));
-          const line = 1 - fss(0.4, 1.6, Math.abs(v - FACE_UV.lips));
+          const line = (1 - fss(0.4, 1.6, Math.abs(v - FACE_UV.lips))) * (1 - fss(14, 18, Math.abs(u - FACE_UV.mid)));
           const i = (y * w + x) * 4, k = m * a;
           for (let q = 0; q < 3; q++) {
             const c = lc[q] + (tc[q] - lc[q]) * low * 0.8;
             // цвет помады: смесь «умножения» на кожу губ (сохраняет рельеф атласа) и самого тона
-            const tgt = Math.min(255, (c * px[i + q]) / 255 * 1.18) * 0.62 + c * 0.38;
-            px[i + q] = (px[i + q] * (1 - k) + tgt * k) * (1 - 0.22 * line * m);
+            const tgt = Math.min(255, (c * px[i + q]) / 255 * 1.18) * 0.48 + c * 0.52;
+            px[i + q] = (px[i + q] * (1 - k) + tgt * k) * (1 - 0.1 * line * m);
           }
         }
         g.putImageData(d, x0, y0);
@@ -996,7 +998,7 @@ export function facePainter(look) {
         if (Math.abs(du) < 4.5 && v > 109) continue;   // кончик носа и ноздри — чистые
         const fall = Math.exp(-(((Math.abs(du) - 10) / 16) ** 2));
         const a = (0.16 + rnd() * 0.22) * fa * (0.35 + 0.65 * fall);
-        blob(u, v, 0.55 + rnd() * 0.45, 0.45 + rnd() * 0.35, rnd() * 3, Sk.freckles, a, 'multiply', 0.3);
+        blob(u, v, 0.7 + rnd() * 0.45, 0.55 + rnd() * 0.35, rnd() * 3, Sk.freckles, a, 'multiply', 0.3);
       }
     }
   };
@@ -1272,33 +1274,51 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
   vec2 irD = ( irUv - vec2( 0.5 ) ) / 0.105;
   float irR = length( irD ), irA = atan( irD.y, irD.x );
   float heroIrM = 1.0 - smoothstep( 0.96, 1.06, irR );
+  // верх яблока под веком: веко заслоняет небо — без отражения неба и лака (иначе белая «зарубка» под ресницами)
+  float heroLid = smoothstep( 0.05, 0.3, vHeroEyeL.y ) * heroEyeOk;
   {
     float irL = dot( diffuseColor.rgb, vec3( 0.333 ) );
     // запечённый блик: яркие пиксели внутри радужки → цвет зрачка/радужки вокруг
-    float irHi = smoothstep( 0.55, 0.8, irL ) * ( 1.0 - smoothstep( 0.55, 0.75, irR ) );
-    diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * 0.12 + vec3( 0.02 ), irHi );
+    // у Quaternius блик — светлый квадрат на зрачке (сверху) и точка в радужке (снизу справа): на зрачке
+    // (r < 0.55) всё светлее 0.28 — блик, заливка — чёрный зрачок; в радужке — заливка радужкой напротив
+    // (кромка блика размыта фильтрацией — яркость берётся максимальной по соседям: без серого ободка)
+    float irHL = irL;
+    irHL = max( irHL, dot( texture2D( map, irUv + vec2( 0.006, 0.0 ) ).rgb, vec3( 0.333 ) ) );
+    irHL = max( irHL, dot( texture2D( map, irUv - vec2( 0.006, 0.0 ) ).rgb, vec3( 0.333 ) ) );
+    irHL = max( irHL, dot( texture2D( map, irUv + vec2( 0.0, 0.006 ) ).rgb, vec3( 0.333 ) ) );
+    irHL = max( irHL, dot( texture2D( map, irUv - vec2( 0.0, 0.006 ) ).rgb, vec3( 0.333 ) ) );
+    float irHiP = smoothstep( 0.2, 0.4, irHL ) * ( 1.0 - smoothstep( 0.42, 0.55, irR ) );
+    float irHi = smoothstep( 0.5, 0.7, irL ) * smoothstep( 0.5, 0.62, irR ) * ( 1.0 - smoothstep( 0.92, 1.05, irR ) );
+    diffuseColor.rgb = mix( diffuseColor.rgb, texture2D( map, vec2( 1.0 ) - irUv ).rgb * diffuse, irHi );
+    diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.015 ), irHiP );
     // волокна и венчик
     float fib = 0.5 + 0.5 * sin( irA * 41.0 + sin( irA * 7.0 ) * 2.0 + irR * 5.0 ) * sin( irA * 23.0 - irR * 9.0 );
     float band = smoothstep( 0.3, 0.45, irR ) * ( 1.0 - smoothstep( 0.9, 1.0, irR ) );
     diffuseColor.rgb *= 1.0 + ( fib - 0.5 ) * 0.45 * band * heroIrM;
-    diffuseColor.rgb *= 1.0 + 0.22 * smoothstep( 0.36, 0.5, irR ) * ( 1.0 - smoothstep( 0.5, 0.66, irR ) );
+    diffuseColor.rgb *= 1.0 + 0.12 * smoothstep( 0.36, 0.5, irR ) * ( 1.0 - smoothstep( 0.5, 0.66, irR ) );
     // лимбальное кольцо — тёмный ободок по краю радужки
     diffuseColor.rgb *= 1.0 - 0.6 * smoothstep( 0.8, 0.97, irR ) * ( 1.0 - smoothstep( 1.0, 1.12, irR ) );
     // глубина: тень верхнего века и уголков, белок к уголкам теплее; каустика в нижней части радужки
     // (heroEyeOk = 0 — меш глаз не найден, осей глаза нет: без тени и каустики)
-    float lidSh = smoothstep( 0.0, 0.3, vHeroEyeL.y ) * 0.75 * heroEyeOk;
+    float lidSh = smoothstep( 0.12, 0.32, vHeroEyeL.y ) * 0.42 * heroEyeOk;
     float cornerSh = smoothstep( 0.55, 0.95, abs( vHeroEyeL.x ) ) * ( 1.0 - heroIrM ) * heroEyeOk;
-    diffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.76, 0.7, 0.68 ), lidSh ) * mix( vec3( 1.0 ), vec3( 0.86, 0.76, 0.74 ), cornerSh );
+    diffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.86, 0.84, 0.86 ), lidSh ) * mix( vec3( 1.0 ), vec3( 0.93, 0.89, 0.87 ), cornerSh );
     float caus = heroIrM * smoothstep( 0.02, -0.34, vHeroEyeP.y ) * smoothstep( 0.3, 0.62, irR ) * heroEyeOk;
-    diffuseColor.rgb *= 1.0 + 0.75 * caus;
-  }` : '#include <map_fragment>\n  vec3 heroEyeTex = diffuseColor.rgb;\n  float heroIrM = 1.0;');
+    diffuseColor.rgb *= 1.0 + 0.5 * caus;
+  }` : '#include <map_fragment>\n  vec3 heroEyeTex = diffuseColor.rgb;\n  float heroIrM = 1.0;\n  float irR = 1.0;\n  float heroLid = 0.0;');
+        fs = fs.replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
+  material.specularColor *= 1.0 - 0.9 * heroLid; material.specularColorBlended *= 1.0 - 0.9 * heroLid; material.specularF90 *= 1.0 - 0.9 * heroLid;
+  #ifdef USE_CLEARCOAT
+    material.clearcoat *= 1.0 - heroLid;
+  #endif`);
         fs = fs.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-  ${glow ? 'totalEmissiveRadiance *= heroIrM * ( 1.0 - smoothstep( 0.3, 0.62, dot( heroEyeTex, vec3( 0.333 ) ) ) );' : ''}
+  ${glow ? 'totalEmissiveRadiance *= heroIrM * smoothstep( 0.32, 0.46, irR ) * ( 1.0 - smoothstep( 0.3, 0.62, dot( heroEyeTex, vec3( 0.333 ) ) ) );   // зрачок не светится' : ''}
   {
     // блик в глазах: отражение «студийного» источника сверху-слева (глаза — сферы, выходит точка)
     vec3 eyR = reflect( - normalize( vViewPosition ), normalize( normal ) );
-    float d1 = dot( eyR, normalize( vec3( -0.35, 0.55, 0.76 ) ) ), d2 = dot( eyR, normalize( vec3( 0.42, -0.2, 0.88 ) ) );
-    float eyC = smoothstep( 0.9955, 0.9982, d1 ) * 1.4 + pow( saturate( d1 ), 90.0 ) * 0.16 + smoothstep( 0.9986, 0.9994, d2 ) * 0.5;
+    // искра — в верхней левой части радужки (не под ресницами), вторая — маленькая снизу справа
+    float d1 = dot( eyR, normalize( vec3( -0.3, 0.34, 0.89 ) ) ), d2 = dot( eyR, normalize( vec3( 0.42, -0.2, 0.88 ) ) );
+    float eyC = smoothstep( 0.9935, 0.9975, d1 ) * 1.6 + pow( saturate( d1 ), 90.0 ) * 0.16 + smoothstep( 0.9986, 0.9994, d2 ) * 0.3;
     totalEmissiveRadiance += vec3( 1.25 ) * eyC;
   }`);
         sh.fragmentShader = fs;
