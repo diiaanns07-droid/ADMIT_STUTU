@@ -111,9 +111,13 @@ const ALIAS = { // чего нет в запасном наборе
   BlockHit: 'Punch', Hit: 'Punch', HitB: 'Punch', Victory: 'Jump', Slash: 'Punch', Chop: 'Punch', Throw: 'Punch', Stance: 'Idle',
 };
 const LOCO = ['Idle', 'Walk', 'Run', 'WalkBack', 'StrafeL', 'StrafeR'];
+// [HERO] выбрана модель героя: процедурное тело мира (плащ с руной) не показываем, пока модель грузится, — место
+// героя пустое. Процедурный подменяет модель, только если она грузится дольше этого (медленная сеть) или не загрузилась.
+const HERO_FALLBACK_MS = 10000;
 const LEG_VRM = ['hips', 'leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'leftToes', 'rightUpperLeg', 'rightLowerLeg', 'rightFoot', 'rightToes'];
 const ANCHOR_NAMES = ['handL', 'handR', 'chest', 'head', 'bowSocket', 'staffTip'];
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -158,9 +162,13 @@ const glbBytes = new Map();
 function fetchBytes(url, signal) {
   let e = glbBytes.get(url);
   if (!e) {
-    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
-    const cur = e = { ctl, keep: false, p: null };
-    e.p = fetch(url, ctl ? { signal: ctl.signal } : undefined).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); });
+    // [LOAD] index.html начинает качать модель выбранного героя и библиотеку клипов с первых миллисекунд страницы
+    // (window.__aoPrefetch: url → Promise<ArrayBuffer>) — здесь берём уже идущую загрузку; упала — качаем сами
+    const pre = typeof window !== 'undefined' && window.__aoPrefetch && window.__aoPrefetch[url];
+    const ctl = !pre && typeof AbortController === 'function' ? new AbortController() : null;
+    const cur = e = { ctl, keep: !!pre, p: null };
+    e.p = pre && typeof pre.then === 'function' ? Promise.resolve(pre)
+      : fetch(url, ctl ? { signal: ctl.signal } : undefined).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); });
     e.p.catch(() => { if (glbBytes.get(url) === cur) glbBytes.delete(url); });
     glbBytes.set(url, e);
   }
@@ -171,6 +179,19 @@ function fetchBytes(url, signal) {
     else signal.addEventListener('abort', () => { if (!cur.keep) cur.ctl.abort(); }, { once: true });
   }
   return e.p;
+}
+
+// [LOAD] Начать загрузку героя до создания мира (main.js зовёт сразу после чтения настроек): модули оболочки,
+// загрузчик GLTF, байты модели и библиотека клипов идут параллельно с построением мира; createHeroModel
+// подхватывает их из тех же кэшей. Ошибки здесь не важны — setHero повторит и обработает их как раньше.
+export function warmHero(id, { heroesUrl = null, baseUrl = './assets/quaternius/' } = {}) {
+  try {
+    const def = HEROES[id] || EXTRA_HEROES[id] || HEROES.ashen;
+    const base = typeof document !== 'undefined' ? document.baseURI : 'http://localhost/';
+    const heroesBase = heroesUrl || new URL('../assets/heroes/', import.meta.url).href;
+    prefetchHeroDeps({ kaykit: new URL(KAY, heroesBase).href, quat: new URL('woman.glb', new URL(baseUrl, base)).href });
+    if (def.glb) fetchBytes(new URL(def.glb, heroesBase).href).catch(() => {});
+  } catch (e) { /* не критично: setHero загрузит всё сам */ }
 }
 
 // Перенос всех клипов на VRM (кусками, чтобы не было длинного кадра) + длина шага клипов ходьбы.
@@ -330,6 +351,22 @@ export function createHeroModel({
     S.ready = false;
   }
 
+  // [HERO] таймер подмены процедурным героем при долгой загрузке модели
+  let fallbackT = null;
+  function clearFallback() { if (fallbackT) { clearTimeout(fallbackT); fallbackT = null; } S.fallback = false; }
+
+  // [LOAD] шейдеры модели собираются до показа (renderer.compileAsync + KHR_parallel_shader_compile: главный поток
+  // свободен, пока драйвер линкует программы). Иначе первый кадр с героем — рывок на сотни мс на слабой видеокарте.
+  // compile() собирает материалы обходом всех узлов (не только видимых), поэтому модель остаётся скрытой.
+  async function precompile(obj) {
+    const R = defaults.renderer, cam = defaults.camera;
+    if (!R || typeof R.compileAsync !== 'function' || !cam) return;
+    let sc = root;
+    while (sc && !sc.isScene && sc.parent) sc = sc.parent;
+    if (!sc || !sc.isScene) return;
+    try { await R.compileAsync(obj, cam, sc); } catch (e) { /* рендер соберёт шейдеры сам */ }
+  }
+
   async function setHero(id) {
     let def = HEROES[id] || EXTRA_HEROES[id] || HEROES.ashen;
     // удалённый экземпляр не может взять процедурное тело мира: страж — на запасной модели
@@ -338,26 +375,48 @@ export function createHeroModel({
     const token = ++S.token;
     S.hero = def.id;
     clear();
-    // пока грузится новая модель — виден процедурный герой, якоря на его маркерах (или на root)
-    // на витрине меню процедурное тело не показываем (мелькал чужой силуэт): герой появляется, когда готов
-    showProcedural(!S.inMenu || (!def.vrm && !def.glb)); parentAnchors();
-    if (!def.vrm && !def.glb) { S.ready = !!heroBody; return; }
+    const modelHero = !!(def.vrm || def.glb);
+    // [PERF] хронометраж появления героя (мс от начала setHero, нарастающим итогом) — панель F3 и tools/perf_bench.mjs
+    const tm = { id: def.id, t0: nowMs(), fetch: null, parse: null, prep: null, clips: null, setup: null, dress: null, compile: null, ready: null };
+    S.timing = tm;
+    // [HERO] выбрана модель: процедурное тело мира не мелькает ни при старте, ни при смене героя, ни в бою —
+    // до готовности модели место героя пустое (якоря на маркерах мира; витрина меню показывает «призыв»).
+    // Процедурный подменяет модель только через HERO_FALLBACK_MS (сеть) или если она не загрузилась совсем.
+    clearFallback();
+    showProcedural(!modelHero); parentAnchors();
+    if (!modelHero) { S.ready = !!heroBody; S.loading = false; return; }
+    S.loading = true;
+    // запасной таймер: только если за HERO_FALLBACK_MS модель даже не разобрана (сеть); если байты уже пришли
+    // и идёт разбор/оболочка/шейдеры (главный поток занят компиляцией мира), ждём дальше — плащ не мелькает
+    const armFallback = () => {
+      fallbackT = setTimeout(() => {
+        fallbackT = null;
+        if (token !== S.token || S.ready || S.disposed) return;
+        if (tm.parse !== null) { armFallback(); return; }
+        S.fallback = true; showProcedural(true);
+      }, HERO_FALLBACK_MS);
+    };
+    if (heroBody) armFallback();
     try {
       const url = def.glb ? new URL(def.glb, heroesBase).href : new URL(def.vrm, new URL(vrmUrl, base)).href;
       prefetchHeroDeps(libUrls);   // [LOAD] клипы и модули оболочки — параллельно с моделью
       // [LOAD] байты GLB — через общий кэш (предзагрузка витрины, возврат к прежнему герою — без сети);
       // не скачались (отмена предзагрузки, ошибка) — загрузчик попробует сам
       const pre = def.glb ? await fetchBytes(url).catch(() => null) : null;
+      tm.fetch = nowMs() - tm.t0;
       if (S.disposed || token !== S.token) return;   // пока качали, выбрали другого героя — дальше не грузим
       const vrm = def.glb ? await loadHumanoidGLB(THREE, url, undefined, pre) : await loadVRM(THREE, url);
+      tm.parse = nowMs() - tm.t0;
       if (def.recolor) await recolorHero(vrm, def.recolor, def.makeup || null);
       if (def.hide) vrm.scene.traverse((o) => { if (o.isMesh && def.hide.some((n) => o.name.startsWith(n))) o.visible = false; });
       if (def.brows) thinBrows(vrm, def.brows);
       if (def.smile) smileFace(vrm, def.smile);
       // пропорции: у Quaternius голова стилизованно крупная — чуть меньше (снаряжение головы крепится после)
       if (def.headScale) { const hb = vrm.humanoid.getRawBoneNode ? vrm.humanoid.getRawBoneNode('head') : null; if (hb) hb.scale.setScalar(def.headScale); }
+      tm.prep = nowMs() - tm.t0;
       if (S.disposed || token !== S.token) { disposeVrm(vrm); return; }
       const lib = await buildClips(THREE, vrm, url, libUrls);
+      tm.clips = nowMs() - tm.t0;
       if (S.disposed || token !== S.token) { disposeVrm(vrm); return; }
       // рост: VRoid ~1.5–1.6 м — подгоняем под героя
       if (vrm.humanoid.resetNormalizedPose) vrm.humanoid.resetNormalizedPose();
@@ -411,21 +470,29 @@ export function createHeroModel({
       for (const clip of Object.values(lib.clips)) for (const tr of clip.tracks) tracked.add(tr.name.split('.')[0]);
       const free = Object.values(bones).filter((b) => b && !tracked.has(b.name));
       cur = { model: wrapG, vrm, mixer, full, upper, lower, midR, stride: lib.stride, loops: lib.loops, bones, free, scale: k, def, gear: null, shade: null, url, hands, rig: lib.rig };
+      tm.setup = nowMs() - tm.t0;
       // оболочка: реалистичные материалы (modules/heroShading.js) и снаряжение (modules/heroGear.js)
       await dressUp(token);
+      tm.dress = nowMs() - tm.t0;
       if (S.disposed || token !== S.token) return;
-      showProcedural(false);
       for (const n of LOCO) if (full[n]) { full[n].play(); full[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); if (lower[n]) { lower[n].play(); lower[n].setEffectiveWeight(0); } }
       mixer.update(0);
+      await precompile(wrapG);   // [LOAD] программы шейдеров героя — до первого кадра с ним
+      tm.compile = nowMs() - tm.t0;
+      if (S.disposed || token !== S.token) return;
+      clearFallback();
+      showProcedural(false);
       wrapG.visible = true;   // [LOAD] герой появляется сразу в позе Idle
       parentAnchors();
       if (S.lod) { const l = S.lod; S.lod = -1; applyLod(l); }   // LOD, заданный до загрузки
       S.ready = true;
+      S.loading = false;
+      tm.ready = nowMs() - tm.t0;
       S.appear = 1;   // появление: вспышка ауры (меню)
       if (stance) setStance(stance);
     } catch (e) {
       console.warn('[ASHEN] модель героя не загрузилась — процедурный герой:', e && e.message);
-      if (token === S.token) { clear(); S.hero = heroBody ? 'ashen' : def.id; showProcedural(true); parentAnchors(); S.ready = !!heroBody; }
+      if (token === S.token) { clearFallback(); S.loading = false; clear(); S.hero = heroBody ? 'ashen' : def.id; showProcedural(true); parentAnchors(); S.ready = !!heroBody; }
     }
   }
   const upperClips = new WeakMap(), lowerClips = new WeakMap();
@@ -640,12 +707,14 @@ export function createHeroModel({
   async function dressUp(token) {
     if (!cur) return;
     const c = cur;
+    const tm = S.timing || {};   // [PERF] этапы оболочки (мс от начала setHero)
     try {
       const m = await import('./heroShading.js');
       if (token !== S.token || cur !== c) return;
       c.shade = m.shadeHero(THREE, c.vrm, { mode: opts.shading, atmosphere: opts.atmosphere, quality: opts.quality, heroId: c.def.id, fx: c.def.fx || null, hairColor: c.def.hair ? c.def.hair.color : null });
       heroTimeU = m.HERO_TIME;
     } catch (e) { console.warn('[HERO] heroShading недоступен, MToon как есть:', e && e.message); }
+    tm.shade = nowMs() - (tm.t0 || 0);
     try {
       const g = await import('./heroGear.js');
       if (token !== S.token || cur !== c) return;
@@ -657,6 +726,7 @@ export function createHeroModel({
       c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null, circlet: c.def.circlet || null, lashes: c.def.lashes || null, hoodTrim: c.def.hoodTrim || null, fx: c.def.fx || null, grips: c.hands ? { R: c.hands.staffGrip, L: c.hands.bowGrip } : null });
       if (c.full.Idle) c.full.Idle.stop();
     } catch (e) { console.warn('[HERO] heroGear недоступен, без снаряжения:', e && e.message); }
+    tm.gear = nowMs() - (tm.t0 || 0);
     // тени героя без карт (см. noShadowMap): модель, ткань, пряди и снаряжение
     c.model.traverse((o) => { if (o.isMesh) o.onBeforeShadow = noShadowMap; });
     // аура класса (частицы стихии в шейдере) — modules/heroAura.js
@@ -667,6 +737,7 @@ export function createHeroModel({
         c.aura = am.createHeroAura(THREE, c.model, c.def.fx, { quality: opts.quality, height: (c.def.height || 1.8) / (c.scale || 1) });
       } catch (e) { console.warn('[HERO] аура недоступна:', e && e.message); }
     }
+    tm.aura = nowMs() - (tm.t0 || 0);
     // остаточные образы рывка (modules/heroGhost.js): светящийся силуэт цвета стихии
     try {
       const gm = await import('./heroGhost.js');
@@ -1238,6 +1309,8 @@ export function createHeroModel({
 
   function dispose() {
     S.disposed = true;
+    clearFallback();
+    S.loading = false;
     clear();
     showProcedural(true);
     if (ownRoot && root.parent) root.parent.remove(root);
@@ -1264,6 +1337,7 @@ export function createHeroModel({
     setGaze(k) { const g = k > 0.5 ? 1 : 0; if (g !== (S.gaze || 0)) { S.gaze = g; if (g) S.lookT = 0; } },
         flourish(name = 'CastRaise') { if (cur && cur.full[name]) playAct(name, { speed: 1.1, fade: 0.2 }); },
     get ready() { return S.ready; },
+    get loading() { return !!S.loading; },   // [HERO] модель грузится (место героя пустое): интро ждёт её
     get appear() { return S.appear || 0; },
     get hero() { return S.hero; },
     get vrm() { return cur ? cur.vrm : null; },
@@ -1281,6 +1355,9 @@ export function createHeroModel({
         shading: opts.shading, lod: S.lod, pose: { bow: +pose.wBow.toFixed(2), spell: +pose.wSpell.toFixed(2), mirror: +mirror.w.toFixed(2) },
         gear: cur && cur.gear ? cur.gear.names || [] : [],
         gearMs: cur && cur.gear && cur.gear.perf ? { cloth: +cur.gear.perf.cloth.toFixed(3), hair: +cur.gear.perf.hair.toFixed(3) } : null,
+        timing: S.timing ? { ...S.timing } : null,   // [PERF] этапы последней загрузки модели, мс от начала setHero
+        procedural: heroBody ? !!heroBody.visible : null,   // [PERF] QA: виден ли процедурный герой мира (плащ с руной)
+        loading: !!S.loading, fallback: !!S.fallback,       // [HERO] модель грузится / процедурный подменяет её (долгая загрузка)
       };
     },
   };
