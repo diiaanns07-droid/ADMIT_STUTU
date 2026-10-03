@@ -5032,7 +5032,9 @@ html.ao-bdo .ao-screen::before {
   animation: ao-w4-veil 0.6s ease-out both;
 }
 html.ao-bdo .ao-screen > .ao-panel {
-  animation: ao-w4-panel-in 0.5s cubic-bezier(0.16, 0.84, 0.24, 1) both;
+  /* [W4-СБОРКА] backwards, не both: заполненная анимация transform делает панель контейнером для position: fixed —
+     плашка ключей отладки (.ao-debugkeys) уезжала из угла экрана на кнопки меню */
+  animation: ao-w4-panel-in 0.5s cubic-bezier(0.16, 0.84, 0.24, 1) backwards;
 }
 @keyframes ao-w4-screen-in { from { opacity: 0.35; } to { opacity: 1; } }
 @keyframes ao-w4-veil { from { opacity: 1; } to { opacity: 0; } }
