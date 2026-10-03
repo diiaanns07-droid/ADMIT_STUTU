@@ -328,7 +328,14 @@ export function soleMarkers(THREE, vrm) {
     if (!S.kp.length || !S.knee || !S.foot || !S.nk) continue;
     S.knee.getWorldPosition(kj).applyMatrix4(toScene); S.foot.getWorldPosition(ka).applyMatrix4(toScene);
     const R = 0.6 * kj.distanceTo(ka), dist = (p) => Math.hypot(p.x - kj.x, p.y - kj.y, p.z - kj.z);
-    const zone = S.kp.filter((p) => dist(p) <= R), nz = zone.length;
+    // вершины-двойники (швы UV, жёсткие края): то же место (до 1 мм) и та же доля голени — одна
+    const seen = new Set(), zone = [];
+    for (const p of S.kp) {
+      if (dist(p) > R) continue;
+      const key = `${Math.round(p.x * 1000)},${Math.round(p.y * 1000)},${Math.round(p.z * 1000)},${Math.round(p.w * 100)}`;
+      if (!seen.has(key)) { seen.add(key); zone.push(p); }
+    }
+    const nz = zone.length;
     if (!nz) continue;
     // облако в 6D: (w p′, (1 − w) p′)
     const U = new Float64Array(nz * 6);
