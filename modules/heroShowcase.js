@@ -305,6 +305,7 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     if (stage) stage.wave();
     // своя огибающая вспышки (1,3 с): heroModel.appear в меню у края арены не гаснет (там его update — боевой)
     S.ap = 1;
+    S.apT0 = nowMs();   // [W5-СВЕТ] огибающая вспышки — по часам страницы (см. update)
     S.pushT = first || settings.reducedMotion ? -1 : 0;
     S.sigHold = 0;
     // поза-«визитка» героя (агент №4): строка — клип для flourish, число — сколько секунд не трогать позу
@@ -322,7 +323,8 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
         const fx = heroModel && heroModel.heroFx ? heroModel.heroFx(id) : null;
         _p.copy(heroRoot.position).setY(heroRoot.position.y + 0.9);
         pf.pulse('shockwave', 0.32, { x: _p.x, y: _p.y, z: _p.z });
-        pf.pulse('flash', 0.14, undefined, { color: fx ? fx.color : 0xffd08a, dur: 0.7 });
+        // [W5-СВЕТ] засветка экрана — цветом стихии без белизны (у эльфийки 0x9ff4ff — почти белая пелена) и слабее
+        pf.pulse('flash', 0.1, undefined, { color: fx ? glowCap(_elemC.set(fx.color), RIM_L).getHex() : 0xffd08a, dur: 0.7 });
       } catch (e) { /* ignore */ }
     }
   }
@@ -370,7 +372,10 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     if (S.push < 1e-3 && pushT === 0) S.push = 0;
     const push = S.push;
     if (S.intro > 0) S.intro = Math.max(0, S.intro - dt / 3.2);
-    if (S.ap > 0) S.ap = Math.max(0, S.ap - dt / 1.3);
+    // [W5-СВЕТ] вспышка появления гаснет за 1,3 с по часам страницы, а не по dt кадра: кадр длиннее 0,25 с
+    // (загрузка и сборка шейдеров нового героя на слабой видеокарте) main.js считает разрывом (dt = 0) —
+    // вспышка (контровой ×1,5, круг, портал) замирала на пике, пока герой «догружается»
+    if (S.ap > 0) S.ap = S.apT0 ? Math.max(0, 1 - (nowMs() - S.apT0) / 1300) : Math.max(0, S.ap - dt / 1.3);
     if (heroModel && heroModel.setStance) {
       const id = heroModel.hero;
       const st = active ? (heroModel.menuStance ? heroModel.menuStance(id) : null) : null;

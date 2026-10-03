@@ -7,7 +7,8 @@
 //   • сцена витрины (modules/menuStage.js): цвета стихии не ярче пределов, сердцевина портала за головой ниже порога,
 //     тёмные стихии (страж, чародейка) — без изменений;
 //   • свет витрины (modules/heroShowcase.js → heroShading.HERO_LIGHT): контровой цветной и ниже порога,
-//     ключ на светлых волосах эльфийки ниже порога; появление героя — без всплеска ключа.
+//     ключ на светлых волосах эльфийки ниже порога; появление героя — без всплеска ключа, вспышка появления
+//     гаснет по часам и на разрывах кадров (dt = 0) — корень белой дымки эльфийки.
 // Нужен three.js как модуль: `three` из node_modules или путь в ASHEN_THREE (иначе SKIP).
 import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
@@ -132,7 +133,10 @@ for (const id of ids) {
   };
   const pf = { setFocus() {}, setBloomK() {}, pulse: () => true };
   const sc = createHeroShowcase({ THREE, scene, heroRoot, heroModel: hm, getPostfx: () => pf, settings: { quality: 'high', reducedMotion: false }, dom: null });
-  const step = (n) => { for (let i = 0; i < n; i++) sc.update(1 / 30, true, camera); };
+  // часы страницы — вместе с кадрами (вспышка появления витрины гаснет по performance.now)
+  let vt = 1000;
+  Object.defineProperty(performance, 'now', { value: () => vt, configurable: true, writable: true });
+  const step = (n) => { for (let i = 0; i < n; i++) { vt += 1000 / 30; sc.update(1 / 30, true, camera); } };
   await new Promise((r) => setTimeout(r, 50));   // HERO_LIGHT — динамическим импортом heroShading
   step(90);
   const rimSteady = {};
@@ -151,6 +155,18 @@ for (const id of ids) {
     // светлые волосы (эльфийка) под ключом ниже порога: волос × ключ (рассеянный, N·L = 1)
     const hair = HEROES[id].hair && HEROES[id].hair.color != null ? new THREE.Color(HEROES[id].hair.color) : null;
     if (hair) { const hk = L(hair.multiply(key)); assert.ok(hk < 0.9 * BLOOM, `${id}: волосы под ключом витрины ниже порога (${hk.toFixed(2)})`); }
+  }
+  // разрыв кадров: main.js даёт dt = 0 кадру длиннее 0,25 с (загрузка и сборка шейдеров нового героя на слабой
+  // видеокарте) — вспышка появления всё равно гаснет за 1,3 с по часам, а не стоит на пике, пока идут разрывы
+  {
+    const id = 'elf';
+    hm.hero = 'ashen'; step(30); hm.hero = id; hm.ready = false; step(3); hm.ready = true;
+    step(1);
+    const r0 = L(HERO_LIGHT.heroRimColor.value);
+    for (let i = 0; i < 20; i++) { vt += 100; sc.update(0, true, camera); }   // 2 с одних разрывов
+    const r1 = L(HERO_LIGHT.heroRimColor.value);
+    assert.ok(r0 > rimSteady[id] * 1.15, `${id}: вспышка появления есть (${r0.toFixed(2)} при ${rimSteady[id].toFixed(2)})`);
+    assert.ok(Math.abs(r1 - rimSteady[id]) < 0.02, `${id}: на разрывах кадров вспышка погасла по часам (${r1.toFixed(2)})`);
   }
   // тёмные стихии (страж, чародейка): контровой почти прежний (×1,9 цвета стихии)
   for (const id of ['ashen', 'dark']) if (rimSteady[id] != null) assert.ok(rimSteady[id] > 0.6, `${id}: контровой стража/чародейки не погашен (${rimSteady[id].toFixed(2)})`);

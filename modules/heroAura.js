@@ -734,7 +734,9 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     object: pts,
     rune,
     update, tick, setQuality,
-    setIntensity(v) { kExt = Math.max(0, v); U.uK.value = kExt; pts.visible = kExt > 0.01 && lod < 2; },
+    // [W5-СВЕТ] не больше 2,2: яркость искр растёт как uK² (альфа в квадрате при аддитиве) — вспышка появления
+    // в меню (×3,5) и всплеск заклинаний в бою (×3) давали облако в 9–12 раз ярче (белую пелену вокруг героини)
+    setIntensity(v) { kExt = Math.min(2.2, Math.max(0, v)); U.uK.value = kExt; pts.visible = kExt > 0.01 && lod < 2; },
     setLod(l) { lod = l; pts.visible = l < 2 && kExt > 0.01; if (l >= 2) { rune.visible = false; if (waves) waves.visible = false; } },
     // QA: что сейчас рисуется и с какой силой
     state: () => ({
