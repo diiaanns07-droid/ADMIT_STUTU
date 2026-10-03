@@ -18,13 +18,16 @@
 
   var TOTAL = 13;          // слайдов в докладе; недостающие показываются заглушкой «в сборке»
   var STUB_SEC = 40;       // время на слайд-заглушку в плане таймера
+  // Разделы доклада по порядку сборки: подпись на заглушке, пока часть не слита.
+  var SECTION = { 7: 'Как работает', 8: 'Проверено', 9: 'После отбора в финал', 10: 'После отбора в финал',
+    11: 'После отбора в финал', 12: 'Кому и что дальше' };
   var FADE_MS = 400;       // смена слайда
   var PRESENTER = 'ashen-presenter';
 
   var root = document.documentElement;
-  var deckEl = document.getElementById('deck');
-  var ashCanvas = document.getElementById('ash');
-  var regentEl = document.getElementById('regent');
+  var deckEl = document.getElementById('p1-deck');
+  var ashCanvas = document.getElementById('p1-ash');
+  var regentEl = document.getElementById('p1-regent');
   var reducedMQ = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
 
   function reduced() { return !!(reducedMQ && reducedMQ.matches); }
@@ -55,7 +58,7 @@
       html: '<section class="slide slide--stub" data-slide="' + n + '" data-title="Слайд ' + n + ' — в сборке">' +
         '<span class="stub__n">' + pad(n) + '</span>' +
         '<p class="thesis">Слайд ' + n + ' — в сборке</p>' +
-        '<p class="cap">Часть презентации ещё не слита в main.</p>' +
+        '<p class="cap">' + (SECTION[n] ? 'Раздел «' + SECTION[n] + '». ' : '') + 'Часть презентации ещё не слита в main.</p>' +
         '<aside class="notes">Слайд ' + n + ' ещё в сборке.</aside></section>'
     };
   }
@@ -81,13 +84,21 @@
   }
   var PLAN = slides.reduce(function (a, s) { return a + s.sec; }, 0);
 
+  // Открыто из file:// — игра так не запустится (модули и камера), поэтому ссылки на неё ведут на локальный
+  // сервер: python3 serve_game.py → http://127.0.0.1:8765/.
+  if (location.protocol === 'file:') {
+    deckEl.querySelectorAll('a[href^="../index.html"]').forEach(function (a) {
+      a.setAttribute('href', 'http://127.0.0.1:8765/index.html' + a.getAttribute('href').slice('../index.html'.length));
+    });
+  }
+
   /* ---------- Служебные слои: чёрный экран, помощь, подсказка, объявления для экранного диктора */
   function make(tag, cls, html) { var e = document.createElement(tag); e.className = cls; if (html) e.innerHTML = html; document.body.appendChild(e); return e; }
   var blackout = make('div', 'blackout');
   var help = make('div', 'help',
     '<div class="help__box" role="dialog" aria-label="Клавиши презентации"><h2>Клавиши</h2><dl>' +
-    '<dt><kbd>→</kbd> <kbd>Пробел</kbd> <kbd>PgDn</kbd> <kbd>Enter</kbd></dt><dd>вперёд: сначала шаги слайда, потом следующий</dd>' +
-    '<dt><kbd>←</kbd> <kbd>PgUp</kbd> <kbd>Backspace</kbd></dt><dd>назад: предыдущий слайд целиком</dd>' +
+    '<dt><kbd><i class="arr"></i></kbd> <kbd>Пробел</kbd> <kbd>PgDn</kbd> <kbd>Enter</kbd></dt><dd>вперёд: сначала шаги слайда, потом следующий</dd>' +
+    '<dt><kbd><i class="arr arr--back"></i></kbd> <kbd>PgUp</kbd> <kbd>Backspace</kbd></dt><dd>назад: предыдущий слайд целиком</dd>' +
     '<dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>первый и последний слайд</dd>' +
     '<dt><kbd>F</kbd></dt><dd>полный экран</dd>' +
     '<dt><kbd>S</kbd></dt><dd>окно докладчика: заметки, следующий слайд, таймер</dd>' +
@@ -210,12 +221,23 @@
     var ctx = ashCanvas.getContext('2d');
     var W = 1920, H = 1080, MAX = 60;
     var flakes = [], embers = [], raf = 0, last = 0, want = 0, stopT = 0;
-    var col = {};
+    var col = {}, sprite = null;
     function rgb(hex) {
       var m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return [216, 179, 106];
       var v = parseInt(m[1], 16); return [v >> 16 & 255, v >> 8 & 255, v & 255];
     }
-    function colors() { col = { ash: rgb(token('--muted')), glow: rgb(token('--ember')), hi: rgb(token('--gold-hi')) }; }
+    function colors() { col = { ash: rgb(token('--muted')), glow: rgb(token('--gold-b')), hi: rgb(token('--gold-hi')) }; }
+    // Свечение уголька — готовый спрайт: shadowBlur на каждой частице слишком дорог для слабых ноутбуков.
+    function makeSprite() {
+      var c = document.createElement('canvas'); c.width = c.height = 32;
+      var g = c.getContext('2d'), r = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+      r.addColorStop(0, 'rgba(' + col.hi.join(',') + ',1)');
+      r.addColorStop(.25, 'rgba(' + col.hi.join(',') + ',.85)');
+      r.addColorStop(.5, 'rgba(' + col.glow.join(',') + ',.35)');
+      r.addColorStop(1, 'rgba(' + col.glow.join(',') + ',0)');
+      g.fillStyle = r; g.fillRect(0, 0, 32, 32);
+      return c;
+    }
     function flake(fresh) {
       return {
         x: Math.random() * W, y: fresh ? Math.random() * H : H + 10 + Math.random() * 60,
@@ -226,7 +248,9 @@
     }
     function frame(t) {
       raf = 0;
-      var dt = last ? Math.min(.05, (t - last) / 1000) : .016; last = t;
+      // Хлопья живут на ограниченном шаге (рывок кадра не швыряет их), угольки — по реальным часам:
+      // вспышка укладывается в свои 0,9 с даже на медленном кадре.
+      var real = last ? Math.min(.25, (t - last) / 1000) : .016, dt = Math.min(.05, real); last = t;
       ctx.clearRect(0, 0, W, H);
       var i, p;
       for (i = 0; i < flakes.length; i++) {
@@ -240,22 +264,19 @@
       while (flakes.length < want && flakes.length + embers.length < MAX) flakes.push(flake(false));
       if (embers.length) {
         ctx.globalCompositeOperation = 'lighter';
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = 'rgb(' + col.glow.join(',') + ')';
         for (i = 0; i < embers.length; i++) {
           p = embers[i];
-          p.age += dt;
+          p.age += real;
           if (p.age >= p.life) { embers.splice(i--, 1); continue; }
           var k = p.age / p.life;
-          p.vy -= 60 * dt; p.vx *= .985;
-          p.x += p.vx * dt; p.y += p.vy * dt;
-          var a = (1 - k) * (1 - k);
-          var c2 = k < .35 ? col.hi : col.glow;
-          ctx.fillStyle = 'rgba(' + c2[0] + ',' + c2[1] + ',' + c2[2] + ',' + a.toFixed(3) + ')';
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 - k * .5), 0, 6.2832); ctx.fill();
+          p.vy -= 60 * real; p.vx *= Math.pow(.4, real);
+          p.x += p.vx * real; p.y += p.vy * real;
+          var size = p.r * 4 * (1 - k * .5);
+          ctx.globalAlpha = (1 - k) * (1 - k);
+          ctx.drawImage(sprite, p.x - size / 2, p.y - size / 2, size, size);
         }
+        ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = 'source-over';
-        ctx.shadowBlur = 0;
       }
       if (want || flakes.length || embers.length) raf = requestAnimationFrame(frame);
       else last = 0;
@@ -280,7 +301,8 @@
     function burst(x0, x1, y, count) {
       if (reduced()) return;
       colors();
-      var room = Math.max(0, MAX - flakes.length);
+      sprite = makeSprite();
+      var room = Math.max(0, MAX - flakes.length - embers.length);
       count = Math.min(count, room);
       for (var i = 0; i < count; i++) {
         embers.push({
@@ -404,6 +426,8 @@
   /* ---------- Окно докладчика (S): рисуется из главного окна, работает и из file:// */
   var timer = { t0: 0, tick: 0 };
   function resetTimer() { timer.t0 = Date.now(); renderPresenter(); }
+  var ARROW = token('--arr-mask') || 'none';
+  function plural(k, one, few, many) { var m10 = k % 10, m100 = k % 100; return m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many; }
   function presenterHTML() {
     var vars = ['--ink', '--coal', '--coal-deep', '--line', '--bronze', '--gold', '--gold-b', '--gold-hi', '--parch', '--text', '--muted', '--ember', '--ok']
       .map(function (v) { return v + ':' + token(v); }).join(';');
@@ -428,14 +452,16 @@
       '.nx{font-family:"Cormorant Garamond",Georgia,serif;font-weight:600;font-size:24px;line-height:1.15;color:var(--parch);margin-top:6px}' +
       '.black{color:var(--ember)}button{font:inherit;font-size:17px;color:var(--text);background:var(--coal-deep);border:1px solid var(--line);padding:6px 14px;cursor:pointer}' +
       '.btns{grid-column:1/3;display:flex;gap:10px;align-items:center;color:var(--muted);font-size:15px}' +
+      '.arr{display:inline-block;width:.9em;height:.55em;background:currentColor;-webkit-mask:' + ARROW + ' center/contain no-repeat;mask:' + ARROW + ' center/contain no-repeat}' +
+      '.arr--back{transform:scaleX(-1)}' +
       '</style></head><body>' +
       '<div class="top"><span><span class="n" id="n"></span> <span class="k" id="state"></span></span><span class="clock" id="clock"></span></div>' +
       '<div class="main"><p class="k">Сейчас</p><div class="th" id="th"></div><div class="st" id="st"></div><div class="notes" id="notes"></div></div>' +
       '<div class="side"><div class="box"><p class="k">Время</p><div class="el" id="el">0:00</div>' +
       '<div class="row">План доклада: <b id="plan"></b></div><div class="row">К концу слайда по плану: <b id="due"></b></div>' +
       '<div class="row">На этом слайде: <b id="sec"></b></div></div>' +
-      '<div class="box"><p class="k">Дальше</p><div class="nx" id="nx"></div></div></div>' +
-      '<div class="btns"><button id="b-prev">← Назад</button><button id="b-next">Вперёд →</button><button id="b-reset">Сбросить таймер (R)</button>' +
+      '<div class="box"><p class="k">Дальше</p><div class="nx" id="nx"></div><div class="row" id="nxs"></div></div></div>' +
+      '<div class="btns"><button id="b-prev"><i class="arr arr--back"></i> Назад</button><button id="b-next">Вперёд <i class="arr"></i></button><button id="b-reset">Сбросить таймер (R)</button>' +
       '<span>Клавиши работают и в этом окне.</span></div></body></html>';
   }
   function openPresenter() {
@@ -477,9 +503,8 @@
     set('plan', mmss(PLAN));
     set('due', mmss(due));
     set('sec', mmss(s.sec));
-    var nx = s.shown < s.max ? 'Шаг ' + (s.shown + 1) + ' из ' + s.max + ' на этом слайде'
-      : slides[cur + 1] ? pad(slides[cur + 1].n) + ' · ' + info(slides[cur + 1]) : 'Конец доклада';
-    set('nx', esc(nx), true);
+    set('nx', esc(slides[cur + 1] ? pad(slides[cur + 1].n) + ' · ' + info(slides[cur + 1]) : 'Конец доклада'), true);
+    set('nxs', s.shown < s.max ? 'Сначала ещё ' + (s.max - s.shown) + ' ' + plural(s.max - s.shown, 'шаг', 'шага', 'шагов') + ' на этом слайде' : '');
   }
 
   /* ---------- Печать: на время печати все шаги раскрыты и все цифры горят, потом — как было */
@@ -510,10 +535,15 @@
   }
 
   /* ---------- Мышь и касания */
+  var down = null;
+  document.addEventListener('pointerdown', function (e) { down = { x: e.clientX, y: e.clientY }; }, true);
   document.addEventListener('click', function (e) {
     if (e.button !== 0 || e.defaultPrevented) return;
+    var moved = down && Math.max(Math.abs(e.clientX - down.x), Math.abs(e.clientY - down.y)) > 6;
+    down = null;
+    if (moved) return;
     var t = e.target;
-    if (t.closest && t.closest('a, button, video, input, label, .help__box, [data-no-nav]')) return;
+    if (t.closest && t.closest('a, button, input, select, textarea, label, video, [data-interactive], .help__box')) return;
     if (help.classList.contains('is-on')) { toggleHelp(false); return; }
     var x = e.clientX / window.innerWidth;
     if (x < 0.2) prev(); else if (x > 0.8) next();
@@ -535,13 +565,4 @@
   // Открыли с первого слайда — показываем его с анимацией, как вход вперёд; с любого другого — сразу целиком.
   var first = fromHash();
   go(first, first === 0 ? 'fwd' : 'jump');
-
-  // Небольшой API для частей: переход, текущий номер, признак «уменьшенного движения».
-  window.DECK = {
-    go: function (n) { go(clamp(n, 1, slides.length) - 1, 'jump'); },
-    next: next, prev: prev, reduced: reduced,
-    get n() { return slides[cur] ? slides[cur].n : 0; },
-    get total() { return slides.length; },
-    burst: function (x0, x1, y, count) { ash.burst(x0, x1, y, count); }
-  };
 })();

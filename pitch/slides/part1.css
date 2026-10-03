@@ -11,7 +11,7 @@
 }
 .s1__art img { width: 100%; height: 100%; object-fit: cover; }
 .s1__body {
-  position: absolute; left: 120px; top: 0; bottom: 0; width: 880px;
+  position: absolute; left: 120px; top: 260px; bottom: 120px; width: 880px;
   display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
 }
 .s1__logo {
@@ -69,7 +69,11 @@
 
 /* ---------- 13. Клятва */
 .s13__bg { position: absolute; inset: 0; overflow: hidden; }
-.s13__bg img { width: 100%; height: 100%; object-fit: cover; filter: blur(6px); }
+/* Фон — кадр docs/screenshots/kino/7_death_orbit.jpg: только магический круг с осколками (без надписи «ПОБЕДА»,
+ * плашки «DEBUG / НЕ CV» и окна камеры), размытие 6 px запечено заранее (media/p1/oath-bg.jpg): CSS-фильтр на весь
+ * экран компоновщик пересчитывает каждый кадр, и угольки на слабом ноутбуке дёргались бы. Это размытая фактура
+ * под затемнением 80 %, а не кадр игры, поэтому увеличение не видно. */
+.s13__bg img { width: 100%; height: 100%; object-fit: cover; }
 .s13__bg::after { content: ''; position: absolute; inset: 0; background: var(--ink); opacity: .8; }
 .s13__main { position: absolute; left: 120px; top: 120px; width: 1120px; }
 .s13__oath { font-size: 84px; line-height: 1.06; max-width: none; }
@@ -89,15 +93,12 @@
 .s13__live svg { width: 26px; height: 26px; fill: var(--gold-hi); }
 .s13__live:hover { transform: translateY(-2px); }
 .s13__live:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 6px; }
-.s13__team { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 14px 44px; }
-.s13__team::before {
-  content: 'Команда'; flex: 0 0 100%;
-  font-family: var(--f-caps); font-size: 24px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold-b);
-}
+.s13__team-k { font-family: var(--f-caps); font-size: 26px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold-b); }
+.s13__people { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 14px 44px; }
 .s13__member { display: flex; flex-direction: column; }
 .s13__name { font-size: 34px; line-height: 1.2; color: var(--text); }
 .s13__role { font-size: 26px; line-height: 1.25; color: var(--muted); }
-.s13__qr { position: absolute; right: 120px; top: 250px; width: 440px; margin: 0; text-align: center; }
+.s13__qr { position: absolute; right: 120px; top: 271px; width: 440px; margin: 0; text-align: center; }
 .s13__code {
   padding: 22px; background: var(--parch);
   box-shadow: 0 0 0 1px var(--gold-deep), 0 0 0 10px var(--coal), 0 0 0 11px var(--line), 0 30px 80px rgba(0, 0, 0, .6);
