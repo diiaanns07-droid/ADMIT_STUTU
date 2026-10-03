@@ -249,6 +249,31 @@ async function runVideo(outFile) {
   log('video', outFile, n, 'кадров');
 }
 
+// ---------------------------------------------------------------- видео со стенда: каст-позы подряд, крупно
+// node tools/pose_shots.mjs --stand-video out.mp4 [--heroes dark] [--cam three]
+const STAND_SEQ = [['idle', 1.4, 'покой: контрапост, рука на поясе'], ['shield', 1.3, 'щит: выпад ладонью'], ['bolt', 1.0, '«OK»-снаряд: жест кистью'], ['burst', 1.1, 'выброс: замах и раскрытие'],
+  ['gate', 2.2, 'заряд печати → «Врата бури»'], ['pillar', 2.6, '«Столп небес»'], ['ultimate', 3.6, '«Небесный суд»: руки к небу → приговор'], ['victory', 2.6, 'победа'], ['defeat', 2.4, 'поражение: на колено']];
+async function runStandVideo(outFile) {
+  const FR = join(argOf('--tmp', tmpdir()), `pose_stand_frames_${process.pid}`);
+  rmSync(FR, { recursive: true, force: true }); mkdirSync(FR, { recursive: true });
+  let n = 0;
+  for (const hero of HEROES) {
+    const { ctx, page } = await standPage(hero, QS[0], argOf('--cam', 'three'), { width: 1280, height: 720 });
+    for (const [pose, sec, title] of STAND_SEQ) {
+      await page.evaluate(([p, t]) => { window.__PS__.play(p); window.__PS__.label(t); }, [pose, title]);
+      for (let i = 0; i < Math.round(sec * FPS); i++) {
+        await page.evaluate(() => window.__PS__.step(1 / 30, 1));
+        n++; await page.screenshot({ path: join(FR, `${String(n).padStart(5, '0')}.jpg`), type: 'jpeg', quality: 90 });
+      }
+      log('stand video', hero, pose, n);
+    }
+    await ctx.close();
+  }
+  mkdirSync(dirname(outFile), { recursive: true });
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', join(FR, '%05d.jpg'), '-c:v', 'libx264', '-preset', 'slow', '-crf', '24', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', outFile]);
+  log('stand video', outFile, n, 'кадров');
+}
+
 // ---------------------------------------------------------------- бюджет
 async function runPerf() {
   for (const q of QS) {
@@ -300,6 +325,7 @@ try {
     await ctx.close();
   }
   if (has('--video')) await runVideo(resolve(argOf('--video', join(ROOT, 'docs/video/poses.mp4'))));
+  if (has('--stand-video')) await runStandVideo(resolve(argOf('--stand-video', join(ROOT, 'docs/video/poses_stand.mp4'))));
   if (has('--perf')) await runPerf();
 } finally {
   await browser.close();
