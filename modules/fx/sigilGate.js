@@ -121,9 +121,11 @@ export function register(fx) {
       rot = Math.atan2(c.right.x * e[4] + c.right.y * e[5] + c.right.z * e[6], c.right.x * e[0] + c.right.y * e[1] + c.right.z * e[2]);
     }
     // [W4-ЗАКЛИНАНИЯ] ярче для проектора: белое ядро щели, звезда молний, ореол волны
-    kit.flash(rp, { ramp: 'whiteHold', size: [half * 1.6, half * 2.6], curve: 0.4, dur: 0.24, intensity: 4.5 * sf, sprite: 'streak', rot, pull: 0.4, rival: R });
-    kit.flash(rp, { ramp: rStorm, size: [0.6, 2.2 + 1.2 * s], dur: 0.22, intensity: 3.6 * sf, sprite: 'star', pull: 0.45, rival: R });
-    kit.flash(rp, { ramp: rFire, size: [1.0, 2.6 * s], dur: 0.35, intensity: 2 * sf, sprite: 'glow', pull: 0.3, rival: R });
+    // [W4-ЗАКЛИНАНИЯ] разрыв — у героя, в нескольких метрах от камеры: сдержанно (засветка bloom съедала весь кадр);
+    // яркость — у цели, где волна бьёт
+    kit.flash(rp, { ramp: 'whiteHold', size: [half * 1.4, half * 2.2], curve: 0.4, dur: 0.22, intensity: 3.2 * sf, sprite: 'streak', rot, pull: 0.4, rival: R });
+    kit.flash(rp, { ramp: rStorm, size: [0.5, 1.6 + 0.8 * s], dur: 0.2, intensity: 2.4 * sf, sprite: 'star', pull: 0.45, rival: R });
+    kit.flash(rp, { ramp: rFire, size: [0.9, 2.0 * s], dur: 0.3, intensity: 1.1 * sf, sprite: 'glow', pull: 0.3, rival: R });
     // рваные края: искры бури и белые штрихи разлетаются от щели, створки «разъезжаются» вверх и вниз
     kit.emit({ at: ra, shape: 'line', to: rb, radius: 0.04, count: Math.round(70 * s), speed: [1.5, 5], life: [0.12, 0.3], size: [0.06, 0.012],
       ramp: rStorm, intensity: 3, sprite: 'spark', stretch: 0.04, drag: 3, rival: R });
@@ -139,7 +141,7 @@ export function register(fx) {
       fx.shock.ring({ pos: rp, normal: c.fwd, r0: 0.2, r1: 1.6 + 1.2 * s, dur: 0.35, wall: 0, dustAmount: 0, thickness: 0.25, distort: 0.6,
         color: PS.mid, hot: PS.core, intensity: 1.8, rival: r01 });
     }
-    kit.screenFlash(LK.scrRip, 0.12 * (0.6 + 0.4 * power) * sf, 0.1);   // [W4-ЗАКЛИНАНИЯ] тон молний героя
+    kit.screenFlash(LK.scrRip, 0.07 * (0.6 + 0.4 * power) * sf, 0.1);   // [W4-ЗАКЛИНАНИЯ] тон молний героя; слабее — кинорамка уже даёт засветку
     if (lights() > 0) kit.light(rp, { color: PS.hot, intensity: 1.2, range: 10, dur: 0.45, attack: 0.08 });
     kit.shake(R ? 0.05 : 0.06 + 0.14 * power);
     if (!R) kit.kick(c.fwd, 0.015);
@@ -405,8 +407,8 @@ export function register(fx) {
       const sf = soft();
       _fp.copy(D.c); _fp.y += 1.0;
       // [W4-ЗАКЛИНАНИЯ] ядро раскрытия белее, ореол ярче
-      flStar.ramp = D.remote ? 'rival' : 'whiteHold'; flStar.rival = D.remote; flStar.intensity = 4.2 * sf;
-      flGlow.ramp = ramp; flGlow.rival = D.remote; flGlow.intensity = 2 * sf;
+      flStar.ramp = D.remote ? 'rival' : 'whiteHold'; flStar.rival = D.remote; flStar.intensity = 3 * sf;   // [W4-ЗАКЛИНАНИЯ] купол у камеры — сдержанно
+      flGlow.ramp = ramp; flGlow.rival = D.remote; flGlow.intensity = 1.1 * sf;
       kit.flash(_fp, flStar); kit.flash(_fp, flGlow);
       emOpen.at.copy(_fp); emOpen.ramp = ramp; emOpen.rival = D.remote; emOpen.count = qName() === 'low' ? 20 : 40;
       kit.emit(emOpen);

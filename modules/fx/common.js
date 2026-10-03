@@ -224,13 +224,14 @@ export function herald(fx, at, el, remote, o) {
   const sf = (() => { try { return fx.reduced() ? 0.7 : 1; } catch (e) { return 1; } })();
   _hf.rival = !!remote; _hf.fadeIn = 0.02; _hf.curve = 0.45;
   // белая звезда — «щелчок» распознавания
-  _hf.color = P.core; _hf.size[0] = 0.12 * k; _hf.size[1] = 0.95 * k * sf; _hf.dur = 0.15; _hf.intensity = 4.4; _hf.sprite = 'star'; _hf.pull = 0.4; _hf.rot = 0;
+  // у руки (в 4–6 м от камеры) — сдержанно: bloom иначе превращает вспышки в белое пятно
+  _hf.color = P.core; _hf.size[0] = 0.12 * k; _hf.size[1] = 0.8 * k * sf; _hf.dur = 0.15; _hf.intensity = 3.2; _hf.sprite = 'star'; _hf.pull = 0.4; _hf.rot = 0;
   kit.flash(at, _hf);
   // кольцо-волна цвета стихии
-  _hf.color = P.mid; _hf.size[0] = 0.18 * k; _hf.size[1] = 1.25 * k * sf; _hf.dur = 0.16; _hf.intensity = 3; _hf.sprite = 'ring'; _hf.pull = 0.38; _hf.rot = 0;
+  _hf.color = P.mid; _hf.size[0] = 0.18 * k; _hf.size[1] = 1.15 * k * sf; _hf.dur = 0.16; _hf.intensity = 2.4; _hf.sprite = 'ring'; _hf.pull = 0.38; _hf.rot = 0;
   kit.flash(at, _hf);
   // руна-спрайт (атлас kit) — видна и на low, где знаки glyph экономятся
-  _hf.color = P.hot; _hf.size[0] = 0.55 * k; _hf.size[1] = 0.7 * k; _hf.dur = 0.15; _hf.intensity = 3.2; _hf.sprite = 'rune'; _hf.pull = 0.42; _hf.rot = (Math.random() - 0.5) * 0.4;
+  _hf.color = P.hot; _hf.size[0] = 0.55 * k; _hf.size[1] = 0.7 * k; _hf.dur = 0.15; _hf.intensity = 2.4; _hf.sprite = 'rune'; _hf.pull = 0.42; _hf.rot = (Math.random() - 0.5) * 0.4;
   kit.flash(at, _hf);
   _he.at = at; _he.dir = o.dir || null; _he.cone = o.dir ? 0.9 : Math.PI; _he.count = 9; _he.ramp = rampOf(el, remote); _he.rival = !!remote;
   kit.emit(_he);
@@ -241,7 +242,7 @@ export function herald(fx, at, el, remote, o) {
     try {
       g.spawn({
         pos: at, billboard: true, radius: 0.36 * k, symbol: heraldSymbol(el, o.symbol), symbolScale: 0.62, style: 'rune', rings: 1, ticks: 12,
-        color: P.mid, hot: P.core, intensity: 2.6, symbolGlow: 2, write: 0, flare: 1, pop: 0.45, unfold: 0.08, dur: 0.2, fade: 0.08, spin: 3,
+        color: P.mid, hot: P.core, intensity: 1.9, symbolGlow: 1.3, write: 0, flare: 1, pop: 0.45, unfold: 0.08, dur: 0.2, fade: 0.08, spin: 3,
         rival: remote ? 1 : 0, dark: el === 'void' && !remote, steal: false,   // пул полон — без знака (руна-спрайт уже есть)
       });
     } catch (e) { /* без знака */ }
@@ -300,7 +301,8 @@ export function airRune(fx, c, rune, el, o) {
     try {
       air.glyph = g.spawn({
         pos, billboard: true, radius: R, symbol: rune, symbolScale: 0.8, style: 'bare', color: P.mid, hot: P.core,
-        intensity: isNum(o.intensity) ? o.intensity : 2.8, symbolGlow: 2.6, write: isNum(o.write) ? o.write : 0.09, flare: 1, pop: 0.35, unfold: 0.12,
+        // чёткие линии с белым ядром и умеренным ореолом: на проекторе с bloom сильный ореол съедает форму знака
+        intensity: isNum(o.intensity) ? o.intensity : 2.1, symbolGlow: 1.25, write: isNum(o.write) ? o.write : 0.09, flare: 0.6, pop: 0.35, unfold: 0.12,
         dur: hold + travel + 0.1, fade: 0.08, spin: 0, rival: remote ? 1 : 0, dark: el === 'void' && !remote,
       });
     } catch (e) { air.glyph = null; }
@@ -308,9 +310,9 @@ export function airRune(fx, c, rune, el, o) {
   const gen = air.glyph ? air.glyph.gen : -1;
   // вспышка-ореол за знаком (bloom)
   _hf.rival = !!remote; _hf.fadeIn = 0.03; _hf.curve = 0.5; _hf.rot = 0;
-  _hf.color = P.hot; _hf.size[0] = R * 0.8; _hf.size[1] = R * 2.4; _hf.dur = 0.26; _hf.intensity = 2.2; _hf.sprite = 'glow'; _hf.pull = 0.2;
+  _hf.color = P.hot; _hf.size[0] = R * 0.8; _hf.size[1] = R * 1.7; _hf.dur = 0.24; _hf.intensity = 0.9; _hf.sprite = 'glow'; _hf.pull = 0.2;
   kit.flash(pos, _hf);
-  _hf.color = P.core; _hf.size[0] = R * 0.3; _hf.size[1] = R * 1.3; _hf.dur = 0.12; _hf.intensity = 3.6; _hf.sprite = 'star'; _hf.pull = 0.25;
+  _hf.color = P.core; _hf.size[0] = R * 0.25; _hf.size[1] = R * 0.85; _hf.dur = 0.1; _hf.intensity = 2.4; _hf.sprite = 'star'; _hf.pull = 0.25;
   kit.flash(pos, _hf);
   if (!air.glyph && o.glyph !== false) {
     // без подсистемы знаков — руна-спрайт атласа
@@ -329,7 +331,7 @@ export function airRune(fx, c, rune, el, o) {
     for (let i = 0; i < pts.length; i += st) {
       const q = pts[i], lx = (q.x - 0.5) * side, ly = (0.5 - q.y) * side;
       _ap.x = pos.x + ux * lx + vx * ly; _ap.y = pos.y + uy * lx + vy * ly; _ap.z = pos.z + uz * lx + vz * ly;
-      _ae.sprite = i & 1 ? 'spark' : 'glow'; _ae.size[0] = i & 1 ? 0.07 : 0.16; _ae.intensity = i & 1 ? 3 : 2;
+      _ae.sprite = i & 1 ? 'spark' : 'glow'; _ae.size[0] = i & 1 ? 0.07 : 0.12; _ae.intensity = i & 1 ? 3 : 1.5;
       kit.emit(_ae);
     }
     _ae.at = null;
@@ -344,7 +346,7 @@ export function airRune(fx, c, rune, el, o) {
       _gs.to = null;
     }
     kit.emit({ at: pos, to: air.to, shape: 'line', count: 16, speed: [0.3, 1.2], life: [0.12, 0.24], size: [0.08, 0.015], ramp: rampOf(el, remote), intensity: 3, sprite: 'spark', drag: 3, rival: remote, essential: true });
-    _hf.rival = !!remote; _hf.color = P.core; _hf.size[0] = R * 0.25; _hf.size[1] = R * 1.1; _hf.dur = 0.12; _hf.intensity = 3.8; _hf.sprite = 'star'; _hf.pull = 0.25; _hf.rot = 0; _hf.fadeIn = 0.02; _hf.curve = 0.45;
+    _hf.rival = !!remote; _hf.color = P.core; _hf.size[0] = R * 0.2; _hf.size[1] = R * 0.8; _hf.dur = 0.11; _hf.intensity = 2.6; _hf.sprite = 'star'; _hf.pull = 0.25; _hf.rot = 0; _hf.fadeIn = 0.02; _hf.curve = 0.45;
     kit.flash(pos, _hf);
   });
   return air;

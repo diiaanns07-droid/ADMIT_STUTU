@@ -381,7 +381,7 @@ export function register(fx) {
     // импульс бежит по контуру (тьма — лента с чёрным ядром)
     const dark = darkOf(el, R);
     const rib = trail(fx, el, R, { style: dark ? 'dark' : 'energy', width: 0.12, life: 0.32, intensity: 2.2, maxPoints: 64, minDist: 0.01, ...(dark ? { hot: pal.hot } : null) });
-    const head = { color: pal.core, size: [0.34 * sz, 0.2 * sz], dur: 0.07, intensity: 4.5, sprite: 'star', pull: 0.18, fadeIn: 0.01, curve: 1, rival: R };
+    const head = { color: pal.core, size: [0.28 * sz, 0.16 * sz], dur: 0.07, intensity: 3.2, sprite: 'star', pull: 0.18, fadeIn: 0.01, curve: 1, rival: R };
     const hs = { at: null, count: 1, speed: [0.8, 2.6], life: [0.2, 0.4], size: [0.05, 0.01], ramp, intensity: 3.4, sprite: 'spark', stretch: 0.03, drag: 2, essential: true, rival: R };
     let di = 0;
     kit.actor({
@@ -434,7 +434,7 @@ export function register(fx) {
     const vel = new V3().subVectors(to, from).multiplyScalar(1 / T);
     if (!isNum(vel.x) || !isNum(vel.y) || !isNum(vel.z)) return;
     const ramp = rampOf(el, R);
-    kit.emit({ at: from, vel, count: 1, speed: [0, 0], life: [T, T * 1.05], size: [0.5 * k, 0.22 * k], ramp, intensity: 3.4, sprite: 'glow', fadeIn: 0.03, curve: 1, essential: true, rival: R });
+    kit.emit({ at: from, vel, count: 1, speed: [0, 0], life: [T, T * 1.05], size: [0.45 * k, 0.2 * k], ramp, intensity: 2.4, sprite: 'glow', fadeIn: 0.03, curve: 1, essential: true, rival: R });
     if (darkOf(el, R)) kit.emit({ at: from, vel, count: 1, speed: [0, 0], life: [T, T], size: [0.24 * k, 0.1 * k], ramp: 'darkcore', intensity: 1, sprite: 'dot', blend: 'alpha', fadeIn: 0.03, curve: 1, essential: true });
     else kit.emit({ at: from, vel, count: 1, speed: [0, 0], life: [T, T], size: [0.2 * k, 0.08 * k], ramp: 'whiteHold', intensity: 3, sprite: 'glow', fadeIn: 0.03, curve: 1, essential: true, rival: R });
   }
@@ -484,7 +484,7 @@ export function register(fx) {
     }
     kit.after(T, () => {
       // вспышка впечатывания
-      kit.flash(G, { color: pal.core, size: [0.25, 1.1], dur: 0.18, intensity: 3.8, sprite: 'star', pull: 0.6, rival: R });
+      kit.flash(G, { color: pal.core, size: [0.22, 0.9], dur: 0.16, intensity: 2.8, sprite: 'star', pull: 0.6, rival: R });
       kit.flash(G, { color: pal.hot, size: [0.5, 1.3], dur: 0.3, intensity: 2.0, sprite: 'glow', pull: 0.6, rival: R });
       kit.emit({ at: G, shape: 'ring', radius: 0.2, count: 18, radial: 5, dir: { x: 0, y: 1, z: 0 }, cone: 0.25, speed: [0, 0.5], life: [0.22, 0.4], size: [0.11, 0.02], ramp, intensity: 3.2, sprite: 'spark', stretch: 0.02, drag: 4.5, essential: true, rival: R });
       kit.emit({ at: G, radius: 0.25, count: 8, dir: { x: 0, y: 1, z: 0 }, cone: 0.45, speed: [1.5, 3.4], life: [0.3, 0.55], size: [0.05, 0.01], ramp, intensity: 3, sprite: 'spark', stretch: 0.03, gravity: 3.5, drag: 1.2, rival: R });
@@ -494,7 +494,7 @@ export function register(fx) {
 
   // ------------------------------------------------------------ [W4-ЗАКЛИНАНИЯ] руна в воздухе
   const _ap = new V3();
-  const LIGHT = { color: 0xffffff, intensity: 0.9, range: 6, dur: 0.24, attack: 0.04 };
+  const LIGHT = { color: 0xffffff, intensity: 0.55, range: 6, dur: 0.24, attack: 0.04 };   // мокрый пол у героя + bloom: свет скромный
   /** Один короткий свет на руну — в момент вспышки знака (к выпуску гаснет, слот свободен для снаряда). */
   function airLight(pos, el, R) { LIGHT.color = fx.pal(el, { remote: R }).hot; kit.light(pos, LIGHT); }
   function publish(air) { if (air && fx.shared) fx.shared.runeAir = air; }

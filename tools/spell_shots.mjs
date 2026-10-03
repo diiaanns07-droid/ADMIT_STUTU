@@ -1,6 +1,7 @@
 // [W4-ЗАКЛИНАНИЯ] Съёмка базовых заклинаний «Отладки с клавиатуры» для сравнения до/после и видео.
 // node tools/spell_shots.mjs [--root DIR] [--quality medium|low|high] [--hero ashen] [--size 1280x720] [--fps 30]
 //                            [--shots DIR] [--video FILE.mp4] [--keys J,L,O,X,G,1,2,3,4,5,6,7,8,9,0] [--json FILE]
+//                            [--gap SEC] [--marks 0.05,0.15,0.3]
 // Программный рендер в облаке даёт ~1 кадр/с, поэтому часы страницы (performance.now и requestAnimationFrame)
 // подменяются: игра шагает ровно на 1/fps с, каждый кадр снимается — ролик идёт в настоящем игровом времени.
 // Ракурсы и расписание клавиш детерминированы: снимки «до» (--root на копию main) и «после» совпадают по кадрам.
@@ -39,6 +40,10 @@ const PLAN = {
   G: { code: 'KeyG', hold: 0.8, gap: 0.9, castAt: 'up', marks: [-0.3, 0.15, 0.55] },
 };
 for (let i = 1; i <= 10; i++) { const d = String(i % 10); PLAN[d] = { code: 'Digit' + d, hold: 0.07, gap: 0.78, castAt: 'down', marks: [0.1, 0.3, 0.6] }; }
+// --gap SEC — пауза после каждого заклинания (разбор по одному), --marks a,b,c — свои отметки снимков (с от каста)
+const GAP = argOf('--gap', '') ? +argOf('--gap') : null;
+const MARKS = argOf('--marks', '') ? argOf('--marks').split(',').map(Number).filter(Number.isFinite) : null;
+for (const k of Object.keys(PLAN)) { if (GAP !== null) PLAN[k].gap = GAP; if (MARKS) PLAN[k].marks = MARKS; }
 
 function loadPlaywright() {
   const req = createRequire(import.meta.url);

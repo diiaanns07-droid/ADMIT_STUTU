@@ -41,8 +41,8 @@ export function register(fx) {
   /** Знак «приземлился» в героя: звезда + кольцо (2 частицы). */
   function landPulse(at, P, R, s) {
     const soft = reduced() ? 0.6 : 1;
-    kit.flash(at, { color: P.core, size: [0.15, 0.85 * s * soft], dur: 0.18, intensity: 3.6, sprite: 'star', pull: 0.45, rival: R });
-    kit.flash(at, { color: P.mid, size: [0.2, 1.3 * s * soft], dur: 0.3, intensity: 2, sprite: 'ring', pull: 0.45, rival: R, curve: 0.6 });
+    kit.flash(at, { color: P.core, size: [0.15, 0.7 * s * soft], dur: 0.16, intensity: 2.6, sprite: 'star', pull: 0.45, rival: R });   // у героя — сдержанно
+    kit.flash(at, { color: P.mid, size: [0.2, 1.2 * s * soft], dur: 0.3, intensity: 1.8, sprite: 'ring', pull: 0.45, rival: R, curve: 0.6 });
   }
   const _lp2 = new V3();
 

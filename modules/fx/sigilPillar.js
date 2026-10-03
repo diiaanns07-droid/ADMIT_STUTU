@@ -149,10 +149,10 @@ export function register(fx) {
   function castRip(st) {
     const { src, P, R, rival, s } = st;
     const sf = soft();
-    // [W4-ЗАКЛИНАНИЯ] стихия героя; белое ядро и ореол ярче
-    kit.flash(src, { ramp: 'whiteHold', sprite: 'streak', rot: Math.PI / 2, size: [0.5, 2.6 * (0.7 + 0.3 * s)], curve: 0.4, dur: 0.24, intensity: 4.5 * sf, pull: 0.3, rival: R });
-    kit.flash(src, { ramp: st.ramp, sprite: 'glow', size: [0.5, 1.8], dur: 0.32, intensity: 2.8 * sf, pull: 0.3, rival: R });
-    kit.flash(src, { ramp: 'whiteHold', sprite: 'star', size: [0.3, 1.2], dur: 0.16, intensity: 3.8 * sf, pull: 0.35, rival: R });
+    // [W4-ЗАКЛИНАНИЯ] стихия героя; разрыв у героя (близко к камере) — сдержанно, яркость — у цели (удар столпа)
+    kit.flash(src, { ramp: 'whiteHold', sprite: 'streak', rot: Math.PI / 2, size: [0.5, 2.4 * (0.7 + 0.3 * s)], curve: 0.4, dur: 0.22, intensity: 3.4 * sf, pull: 0.3, rival: R });
+    kit.flash(src, { ramp: st.ramp, sprite: 'glow', size: [0.5, 1.5], dur: 0.3, intensity: 1.6 * sf, pull: 0.3, rival: R });
+    kit.flash(src, { ramp: 'whiteHold', sprite: 'star', size: [0.3, 1.0], dur: 0.15, intensity: 2.8 * sf, pull: 0.35, rival: R });
     // вертикальная щель: искры вдоль короткой оси вверх-вниз
     kit.emit({ at: { x: src.x, y: src.y - 0.35, z: src.z }, shape: 'line', to: { x: src.x, y: src.y + 0.45, z: src.z }, radius: 0.03, count: 26 * (0.45 + 0.55 * s),
       speed: [0.6, 2.2], life: [0.18, 0.35], size: [0.06, 0.012], ramp: st.ramp, intensity: 3.2, sprite: 'spark', stretch: 0.03, drag: 3, rival: R });
