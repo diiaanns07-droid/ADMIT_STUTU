@@ -390,7 +390,8 @@ test('баланс: разумный бот побеждает и без уль�
       c.setDifficulty(lvl); c.reset();
       const B = bot(useUlt);
       let tEnd = -1, ults = 0;
-      runFor(c, 240, () => B(c.getSnapshot()), (cc, e, t) => { ults += count(e, 'ultimate_start'); if (tEnd < 0 && cc.getSnapshot().status !== 'playing') tEnd = t; });
+      runFor(c, 600, () => B(c.getSnapshot()),   // [W5-СЛОЖНОСТЬ] бой на минуты: у Регента в разы больше здоровья
+        (cc, e, t) => { ults += count(e, 'ultimate_start'); if (tEnd < 0 && cc.getSnapshot().status !== 'playing') tEnd = t; });
       res[`${useUlt ? 'ult' : 'plain'}_${lvl}`] = { status: c.getSnapshot().status, t: +tEnd.toFixed(1), ults, hp: Math.round(c.getSnapshot().player.hp) };
     }
   }

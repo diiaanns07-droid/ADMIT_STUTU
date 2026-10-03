@@ -1022,9 +1022,11 @@ export function createBattleHud({ canvas } = {}) {
     for (let i = N; i >= 0; i--) { const u = i / N, x = o.x + dx * u - nx, z = o.z + dz * u - nz; out.push(proj({ x, y: groundAt(layout, x, z) + 0.04, z })); }
     return out;
   }
+  // [W5-СЛОЖНОСТЬ] «!» за cue секунд до удара: у каждой атаки свой (короче замах — короче cue), без него — BOSS_CUE_SEC
+  function cueOf(tl, dur) { const c = num(tl.cue, BOSS_CUE_SEC); return Math.min(c > 0 ? c : BOSS_CUE_SEC, dur); }
   function telK(tl) {
     const dur = Math.max(0.05, num(tl.duration, 1)), rem = Math.max(0, num(tl.remaining, 0));
-    return { dur, rem, k: clamp(1 - rem / dur, 0, 1), cue: rem <= Math.min(BOSS_CUE_SEC, dur) };
+    return { dur, rem, k: clamp(1 - rem / dur, 0, 1), cue: rem <= cueOf(tl, dur) };
   }
   function drawGroundZones(snap, proj, layout, rm) {
     const list = Array.isArray(snap.telegraphs) ? snap.telegraphs.slice(0, 4) : [];
@@ -1071,10 +1073,12 @@ export function createBattleHud({ canvas } = {}) {
     }
     // подпись у ног героя: что летит и чем ответить
     const { rem, cue } = lead ? telK(lead) : { rem: 0, cue: true };
-    const { name, counter } = lead ? telegraphCounter(lead.kind, !!lead.blockable) : { name: 'СФЕРА ЛЕТИТ', counter: 'ЩИТ или ПАРИРОВАНИЕ' };
+    const { name, counter } = lead ? telegraphCounter(lead.kind, !!lead.blockable, lead.move) : { name: 'СФЕРА ЛЕТИТ', counter: 'ЩИТ или ПАРИРОВАНИЕ' };   // [W5-СЛОЖНОСТЬ] + приём
     let line = counter, col = '#ffe2d6';
     // герой уже вне круга удара / радиуса новы — честно сказать, что он в безопасности
-    if (lead && lead.kind !== 'orb' && P && isObj(lead.center) && Math.hypot(P.x - lead.center.x, P.z - lead.center.z) > num(lead.radius, 2) + 0.5) { line = lead.kind === 'nova' ? 'вы вне зоны — хорошо' : 'вы вне круга — хорошо'; col = OK_GREEN; }
+    // [W5-СЛОЖНОСТЬ] кругов может быть несколько («Каменный капкан», двойной удар) — вне круга, только если вне всех
+    const inAny = P && list.some((q) => isObj(q) && q.kind !== 'orb' && isObj(q.center) && Math.hypot(P.x - q.center.x, P.z - q.center.z) <= num(q.radius, 2) + 0.5);
+    if (lead && lead.kind !== 'orb' && P && isObj(lead.center) && !inAny) { line = lead.kind === 'nova' ? 'вы вне зоны — хорошо' : 'вы вне круга — хорошо'; col = OK_GREEN; }
     const fs = Math.round(clamp(H * 0.034, 18, 30));
     ctx.font = `800 ${fs}px ${SANS}`;
     const wLine = ctx.measureText(line).width;
@@ -1113,7 +1117,7 @@ export function createBattleHud({ canvas } = {}) {
     let p = proj({ x: b.x, y: num(b.y, 0) + 6.4, z: b.z });
     if (!p || p.behind) { if (!lock.ok) return; p = { x: (lock.x0 + lock.x1) / 2, y: lock.y0 - 40 }; }
     const { rem, dur } = telK(tl);
-    const cueLen = Math.min(BOSS_CUE_SEC, dur);
+    const cueLen = cueOf(tl, dur);   // [W5-СЛОЖНОСТЬ]
     const r = clamp(H * 0.042, 22, 40) * (rm ? 1 : 1 + 0.12 * pulseAt(22));
     const x = clamp(p.x, r + 8, W - r - 8), y = clamp(p.y, H * 0.13 + r, H * 0.6);
     ctx.save();
