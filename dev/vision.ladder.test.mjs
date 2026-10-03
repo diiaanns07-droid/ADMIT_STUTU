@@ -638,6 +638,32 @@ test('L20 воркер на CPU: кадр 4 с (процессор занят з
   ok(/не ответил на кадр за 8000 мс/.test(s.debug.ladderHistory[0].reason), s.debug.ladderHistory[0].reason);
 }));
 
+test('L21 файлы уже скачаны: воркер на CPU молчит на прогреве дольше cpuWorkerInitTimeoutMs → главный поток; без скачанных файлов — прежние 30 с', async () => {
+  const f = fakeFetch({ delayMs: 1 });
+  const restore = setGlobals({ window: {}, fetch: f });
+  try {
+    const mp = { ...HTTP_MP, modelUrl: 'https://fake.invalid/l21/pose_landmarker_lite.task', handModelUrl: 'https://fake.invalid/l21/hand_landmarker.task' };
+    await withShell({ config: { mediaPipe: mp, delegate: 'CPU', cpuWorkerInitTimeoutMs: 1500 } }, async (env, v) => {
+      SlowWorker.hooks.initDelayMs = (msg, d) => (d === 'CPU' && msg.type === 'ready' ? 4000 : 0);
+      const t0 = Date.now();
+      await v.start();
+      const ms = Date.now() - t0;
+      const s = v.getStatus();
+      eq(s.mode, 'main', 'главный поток');
+      ok(/worker молчит 2 с \(этап: warmup\)/.test(s.debug.ladderHistory[0].reason), s.debug.ladderHistory[0].reason);
+      ok(ms < 3900, `ждали ${ms} мс — меньше задержки воркера`);
+    });
+  } finally { restore(); }
+  // без window/fetch (prefetch не шёл) — этап ждёт workerInitTimeoutMs, а не cpuWorkerInitTimeoutMs
+  await withShell({ config: { delegate: 'CPU', cpuWorkerInitTimeoutMs: 1500 } }, async (env, v) => {
+    SlowWorker.hooks.initDelayMs = (msg, d) => (d === 'CPU' && msg.type === 'ready' ? 2500 : 0);
+    await v.start();
+    const s = v.getStatus();
+    eq(s.mode, 'worker', 'дождались воркер');
+    eq(s.debug.ladderHistory.length, 0);
+  });
+});
+
 // ───────────────────────────── запуск ─────────────────────────────
 const only = process.argv[2] ? new RegExp(process.argv[2]) : null;
 let passed = 0;

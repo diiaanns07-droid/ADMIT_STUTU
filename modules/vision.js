@@ -287,6 +287,9 @@ export const DEFAULT_VISION_CONFIG = Object.freeze({
   // воркер на CPU не ответил на кадр дольше — завис: главный поток. Медленный воркер на CPU всё равно лучше главного
   // потока (процессор тот же, а интерфейс не висит), поэтому таймаут кадра 2,5 с — только для воркера на GPU.
   cpuWorkerFrameTimeoutMs: 8000,
+  // воркер на CPU молчит на этапе модели, прогрева или кистей дольше (файлы уже скачаны или лежат на локальном
+  // сервере) — следующая ступень: на настоящем процессоре этот этап идёт 2–5 с
+  cpuWorkerInitTimeoutMs: 15000,
   firstFramesGraceMs: 10000,       // столько после запуска движка без результатов — «Ожидание первых кадров», не «нет кадров»
   slowGpuHz: 3,                    // GPU-движок отвечает реже этого (камера ≥ 10 к/с) дольше slowGpuMs — ступень ниже
   slowGpuMs: 8000,
@@ -1265,6 +1268,7 @@ export async function createVision(options = {}) {
   let workerFallbackReason = null;
   let loadStage = null;
   let loadText = null;      // [W5-КАМЕРА] текст этапа с числами (загрузка файлов: «12 из 25 МБ»)
+  let filesReady = false;   // [W5-КАМЕРА] файлы MediaPipe уже в кэше или на локальном сервере (prefetchFiles)
   let stickyNote = null;
   let mpResolved = resolveMediaPipe(cfg.mediaPipe);
   // [W5-КАМЕРА] лестница отката. floor — ступень, ниже которой уже спустились (новый движок, например при смене
@@ -1670,14 +1674,15 @@ export async function createVision(options = {}) {
   // потом главный поток качал ещё 11 МБ своего WASM. Скачанное ложится в кэш service worker или HTTP, и воркер берёт
   // его оттуда; таймауты воркера меряют только запуск модели. Уже скачанное (предзагрузка offline.js) не качается
   // повторно. Загрузка стоит дольше prefetchStallMs без единого байта — дальше без неё (воркер попробует сам).
+  // → true, если файлы уже в кэше или лежат на локальном сервере (тогда этапы воркера — без скачивания)
   async function prefetchFiles(mp) {
-    if (cfg.prefetch === false || typeof window === 'undefined' || typeof fetch !== 'function') return;
+    if (cfg.prefetch === false || typeof window === 'undefined' || typeof fetch !== 'function') return false;
     let list = [];
     try { list = mediaPipePreloadList(mp).filter((u) => /^https?:/i.test(u)); } catch { list = []; }
     // с локального сервера (START_GAME.cmd) воркер получит файлы мгновенно — качать заранее нечего (как в offline.js)
     list = list.filter((u) => { try { return !/^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/.test(new URL(u).hostname); } catch { return true; } });
     if (!cfg.hands && mp.handModelUrl) list = list.filter((u) => u !== mp.handModelUrl);
-    if (!list.length) return;
+    if (!list.length) return true;
     const ac = typeof AbortController === 'function' ? new AbortController() : null;
     let lastByte = Date.now();   // сеть — по настенным часам
     const iv = ac ? setInterval(() => { if (Date.now() - lastByte > cfg.prefetchStallMs) ac.abort(); }, 250) : null;
@@ -1694,6 +1699,7 @@ export async function createVision(options = {}) {
         },
       });
       if (!r.ok) console.warn('[vision] файлы MediaPipe заранее не скачались — воркер загрузит сам:', r.errors.join('; '));
+      return r.ok;
     } finally {
       clearInterval(iv);
       loadText = null;
@@ -1702,7 +1708,7 @@ export async function createVision(options = {}) {
 
   async function loadEngine() {
     try {
-      await prefetchFiles(resolveMediaPipe(cfg.mediaPipe)); // [W5-КАМЕРА]
+      filesReady = await prefetchFiles(resolveMediaPipe(cfg.mediaPipe)); // [W5-КАМЕРА]
       return await loadEngineFrom(resolveMediaPipe(cfg.mediaPipe));
     } catch (e) {
       // только ошибки загрузки файлов (404, нет сети, модуль не импортировался), а не отказ GPU/модели
@@ -1772,10 +1778,15 @@ export async function createVision(options = {}) {
         if (err) { try { w.terminate(); } catch { /* уже завершён */ } reject(err); } else resolve(value);
       };
       // [W5-КАМЕРА] прогрев GPU (пробный кадр компилирует шейдеры) — свой, более короткий таймаут: дольше него
-      // видеокарта не успевает, и воркер на CPU запустится быстрее; этапы с загрузкой файлов ждут workerInitTimeoutMs
+      // видеокарта не успевает, и воркер на CPU запустится быстрее; этапы с загрузкой файлов ждут workerInitTimeoutMs.
+      // Файлы уже скачаны: модель кистей на GPU — тоже компиляция шейдеров (таймаут прогрева); у воркера на CPU
+      // этапы модели, прогрева и кистей — cpuWorkerInitTimeoutMs.
       const arm = (stage) => {
         clearTimeout(timer);
-        const ms = stage === 'warmup' && delegate !== 'CPU' ? cfg.workerWarmupTimeoutMs : cfg.workerInitTimeoutMs;
+        const local = filesReady && (stage === 'model' || stage === 'warmup' || stage === 'hands');
+        const ms = delegate !== 'CPU'
+          ? (stage === 'warmup' || (local && stage === 'hands') ? cfg.workerWarmupTimeoutMs : cfg.workerInitTimeoutMs)
+          : (local ? Math.min(cfg.cpuWorkerInitTimeoutMs, cfg.workerInitTimeoutMs) : cfg.workerInitTimeoutMs);
         timer = setTimeout(() => {
           const err = new Error(`worker молчит ${Math.round(ms / 1000)} с (этап: ${stage || 'старт'})`);
           err.ladderTimeout = true;
