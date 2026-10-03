@@ -9,6 +9,8 @@
 //   node tools/hero_ground.mjs --quality medium --out /tmp/hg-medium.json [--heroes ashen,elf] [--root DIR] [--quick]
 //   node tools/hero_ground.mjs --report docs/hero-ground --after a.json,b.json [--before c.json,d.json]
 //        — без прогона: таблица .md и графики .svg (|зазор| по времени у каждого героя, до и после)
+//   node tools/hero_ground.mjs --cost [--quality low,medium] [--out FILE.json] — цена подошвы за кадр в браузере
+//        (window.__ASHEN__.heroFeetCost: как сейчас и прежним точным скиннингом), каждый герой в меню и в бою
 
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname, join, basename } from 'node:path';
@@ -266,6 +268,47 @@ function report() {
   console.log(md);
 }
 
+// ------------------------------------------------------------------ цена подошвы за кадр (настоящие часы страницы)
+async function cost() {
+  const ROOT = resolve(A.of('--root', HERE));
+  const QS = A.of('--quality', 'low,medium').split(',').filter(Boolean);
+  const OUT = resolve(A.of('--out', join(HERE, 'hero-ground-cost.json')));
+  const HEROES = (A.of('--heroes', HERO_IDS.join(',')) || '').split(',').filter((h) => HERO_IDS.includes(h));
+  const N = +A.of('--n', '4000');
+  const { chromium } = loadPlaywright();
+  const server = await startServer(ROOT);
+  const browser = await launchBrowser(chromium, chromiumPath());
+  const res = { n: N, rows: [] };
+  const measure = (page) => page.evaluate((n) => { const r = []; for (let k = 0; k < 5; k++) r.push(window.__ASHEN__.heroFeetCost(n, window.__vb.realNow)); return r; }, N);
+  // медиана пяти повторов (программный рендер и соседние процессы шумят)
+  const med = (a, k) => { const v = a.filter(Boolean).map((x) => x[k]).sort((x, y) => x - y); return v.length ? v[v.length >> 1] : null; };
+  try {
+    for (const q of QS) {
+      for (const scene of ['menu', 'battle']) {
+        for (const h of HEROES) {
+          const g = await openGame(browser, server, { size: [400, 225], settings: { quality: q, hero: h }, patch: { bossHp: 3, bossDamage: 0 }, log: (m) => log(`цена ${q} ${scene} ${h}: ${m}`) });
+          const { page } = g;
+          if (scene === 'battle') { await g.toBattle(); await g.step(30); }
+          const r = await measure(page);
+          const row = { quality: q, scene, hero: h, points: r[0] && r[0].points, nodes: r[0] && r[0].nodes, fastUs: med(r, 'fastUs'), exactUs: med(r, 'exactUs') };
+          res.rows.push(row);
+          log(JSON.stringify(row));
+          await g.ctx.close();
+        }
+      }
+    }
+  } finally {
+    await browser.close().catch(() => {});
+    server.kill();
+  }
+  writeFileSync(OUT, JSON.stringify(res, null, 1));
+  let md = '| Качество | Сцена | Герой | Точек подошвы | Сейчас, мкс/кадр | Прежний скиннинг, мкс/кадр |\n|---|---|---|---:|---:|---:|\n';
+  for (const r of res.rows) md += `| ${r.quality} | ${r.scene === 'menu' ? 'меню' : 'бой'} | ${r.hero} | ${r.points} | ${r.fastUs} | ${r.exactUs} |\n`;
+  console.log(md);
+  log(`записано ${OUT}`);
+}
+
 if (A.has('--report')) report();
+else if (A.has('--cost')) cost().catch((e) => { console.error(e); process.exit(1); });
 else if (process.argv[1] && basename(process.argv[1]) === 'hero_ground.mjs') run().catch((e) => { console.error(e); process.exit(1); });
 void sleep;
