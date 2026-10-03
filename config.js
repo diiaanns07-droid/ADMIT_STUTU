@@ -10,6 +10,7 @@
 //   effects → modules/effects.js (№6)
 //   settings — ЖИВОЙ объект настроек игрока; main.js мутирует его на месте,
 //              world/effects читают reducedMotion/quality оттуда.
+//   visualBudget → tools/visual_budget.mjs и dev/visualBudget.test.mjs (игра его не читает) [W4-БЮДЖЕТ]
 
 export const API_VERSION = 'ASHEN_V1';
 
@@ -173,6 +174,26 @@ export const config = {
   //   samples: false — только прежний синтез; director: false — звук из визуальных обработчиков, как было;
   //   maxVoices — потолок одновременных голосов (лимиты по категориям — в modules/sfx.js).
   audio: { enabled: true, samples: true, director: true, maxVoices: 20 },
+
+  // [W4-БЮДЖЕТ] Бюджет кадра по уровням качества — предел для КАЖДОЙ сцены (меню с каждым героем, бой и все
+  // заклинания, фазы Регента): замер — node tools/visual_budget.mjs → docs/visual-budget.md/.json, проверка —
+  // dev/visualBudget.test.mjs. Взято по замеру main до волны визуала (2026-10-02, вместе с оптимизацией загрузки
+  // героя) + запас 20% (node tools/visual_budget.mjs --suggest). Свет на low — без запаса: на low новых источников нет.
+  //   calls — вызовы отрисовки за кадр со всеми проходами (тени, постобработка); triangles — то же;
+  //   lights — видимые источники в сцене, как их компилирует three (погашенные тоже в шейдерах), shadowLights — с тенью;
+  //   textures, programs — в памяти GPU (накопительно за страницу); particles — вершины Points + спрайты + GPU-частицы V6;
+  //   jsMs — медиана JS кадра в headless-замере (облако, SwiftShader; шумит — запас 50%);
+  //   menu / battle — свои пределы вызовов и треугольников для меню и для боя (battle — и для сцен Регента).
+  // Поднимать предел — только осознанно, в том же PR и с объяснением; сначала — удешевить эффект на low/medium.
+  visualBudget: {
+    low:    { calls: 350, triangles: 480000, lights: 6, shadowLights: 0, textures: 80, programs: 120, particles: 2300, jsMs: 50,
+              menu: { calls: 240, triangles: 480000 }, battle: { calls: 350, triangles: 480000 } },
+    medium: { calls: 630, triangles: 1440000, lights: 12, shadowLights: 1, textures: 100, programs: 215, particles: 4200, jsMs: 50,
+              menu: { calls: 630, triangles: 1440000 }, battle: { calls: 540, triangles: 810000 } },
+    high:   { calls: 820, triangles: 2170000, lights: 18, shadowLights: 1, textures: 115, programs: 225, particles: 6100, jsMs: 70,
+              menu: { calls: 820, triangles: 2170000 }, battle: { calls: 790, triangles: 1500000 } },
+  },
+
 
   defaultSettings: {
     quality: 'medium',
