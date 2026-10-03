@@ -290,7 +290,7 @@
         <i class="p3-tile__bg" aria-hidden="true"></i>
         <svg class="p3-tile__ico" viewBox="0 0 84 72" aria-hidden="true"><path class="p3-ruler" d="M2 58h80"/><path class="p3-ticks" d="M7 52V22M17 52V22M27 52V22M37 52V22M47 52V22M57 52V22M67 52V22M77 52V22"/></svg>
         <span class="num">8<span class="unit p3-hz">Гц</span></span>
-        <p class="unit">жесты держатся на 8–15 кадрах распознавания; руна ${TRI} на 8&nbsp;Гц — 83&nbsp;%, ложных&nbsp;0</p>
+        <p class="unit">жесты держатся при распознавании 8–15 раз в&nbsp;секунду; руна ${TRI} на 8&nbsp;Гц — 83&nbsp;%, ложных&nbsp;0</p>
       </article>
       <article class="corner p3-tile" data-step="2">
         <i class="p3-tile__bg" aria-hidden="true"></i>
