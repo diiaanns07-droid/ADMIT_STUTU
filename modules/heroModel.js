@@ -1233,10 +1233,11 @@ export function createHeroModel({
       turnW = smooth(1.1, 3, Math.abs(S.yawRate)) * 0.55; // yaw растёт — поворот влево
     }
     const want = {
-      Idle: Math.max(0, 1 - moveW - turnW),
+      Idle: Math.max(0, 1 - moveW - turnW),   // [W5-ПОЛ] доля «стоять» — S.standK, для посадки (groundFeet)
       Walk: moveW * wf * (1 - runK), Run: moveW * wf * runK,
       WalkBack: moveW * wb, StrafeL: moveW * wl + (S.yawRate > 0 ? turnW : 0), StrafeR: moveW * wr + (S.yawRate < 0 ? turnW : 0),
     };
+    S.standK = want.Idle;
     // фаза шага по пройденному пути: общий цикл для всех клипов ходьбы
     const st = cur.stride || {};
     const k = cur.scale || 1;
@@ -1738,7 +1739,11 @@ export function createHeroModel({
     const lo = m.fast ? soleLowFast(m, m.fast.res)[2] : (cur.vrm.humanoid.update(), soleHeightSkinned(m));
     const fl = S.floorLift || 0;
     const pen = root.getWorldPosition(_gf).y + fl - lo;
-    S.lift = pen > 1e-4 ? pen : 0;
+    // посадка: герой стоит (вне меню, по снимку не идёт, нет действия на всё тело — у рывка, удара, победы свой полёт),
+    // а подошва над полом — модель вниз до касания. Висела она на переходе «бег, стрейф → покой»: клип бега в фазе
+    // полёта подмешан к покою, таз выше — стопы на 2–12 см над полом 0,2–0,3 с
+    const settle = !S.inMenu && (S.standK || 0) >= 0.5 && !(act && !actUpper);
+    S.lift = pen > 1e-4 || (settle && pen < -1e-4) ? pen : 0;
     if (S.lift) cur.model.position.y = fl + S.lift;
   }
 

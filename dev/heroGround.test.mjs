@@ -9,6 +9,7 @@
 //      удары по герою, победа, поражение, снова покой; смены героев между кругами, третий круг — герой повёрнут.
 //      Подошва никогда не глубже 2 см под полом; стоя — |подошва − пол| ≤ 2 см; колено и голень — не ниже пола,
 //      в поражении обе стопы на полу; носок не разворачивается рывком; таз и подошва в покое в конце — там же.
+//      Остановка после бега, стрейфа, ходьбы — с первого кадра покоя подошва на полу (±2 см).
 //   3. low / high: то же для покоя и победы; пол сцены выше корня (витрина) — подошва на нём.
 //   4. Корень героя по земле (modules/rootFollow.js, и у соперника в дуэли): склон — без отставания, и в рывке;
 //      ступень арены — плавно.
@@ -255,6 +256,31 @@ for (const [round, ids, yaw] of [[1, HM.HERO_ORDER, 0], [2, [...HM.HERO_ORDER].r
 log(`medium: глубже всего ${cm(worstSink.v)} (${worstSink.id || '—'} «${worstSink.name || ''}»), стоя — до ${cm(worstStand.v)} от пола (${worstStand.id} «${worstStand.name}»)`);
 log(`колено в поражении (сетка ног): глубже всего ${cm(worstKnee.v)} (${worstKnee.id || '—'} «${worstKnee.name || ''}»); носок за кадр — до ${worstToe.v.toFixed(1)}° (${worstToe.id} «${worstToe.name}», поворот ${worstToe.yaw})`);
 P.yaw = 0;
+
+// ---------------------------------------------------------------- остановка: бег, стрейф, ходьба → покой
+// Клип бега в фазе полёта подмешан к покою (таз выше) — стопы висели на 2–12 см 0,2–0,3 с; посадка (groundFeet) опускает
+// модель: с первого кадра покоя |подошва − пол| ≤ 2 см. Разная фаза шага на остановке; шаг кадра 1/30 и 1/15 с.
+{
+  let worst = { v: 0 };
+  for (const id of ['ashen', 'dark', 'archmage']) {
+    model.setHero(id); await ready(id);
+    for (const dt of [1 / 30, 1 / 15]) {
+      for (const [name, vx, vz] of [['бег', 0, 5], ['стрейф', 4, 0], ['ходьба', 0, 2], ['назад', 0, -2]]) {
+        for (let off = 0; off < 6; off++) {
+          const go = (vx2, vz2) => { P.x += vx2 * dt; P.z += vz2 * dt; return { status: 'playing', ultimate: null, player: { position: { x: P.x, y: 0, z: P.z }, yaw: 0, velocity: { x: vx2, y: 0, z: vz2 }, action: vx2 || vz2 ? 'move' : 'idle', hp: 80, maxHp: 100 } }; };
+          for (let i = 0; i < Math.round(0.6 / dt) + off; i++) model.update(dt, go(vx, vz), []);
+          for (let i = 0; i < Math.round(0.5 / dt); i++) {
+            model.update(dt, go(0, 0), []);
+            const g = model.feet().sole;
+            if (Math.abs(g) > worst.v) worst = { v: Math.abs(g), id, name, off, i, dt };
+            assert.ok(Math.abs(g) <= TOL, `${id} ${name} → покой (+${off}, кадр ${i}, шаг ${dt.toFixed(3)} с): подошва ${cm(g)} от пола`);
+          }
+        }
+      }
+    }
+  }
+  log(`остановка (бег, стрейф, ходьба, назад → покой): подошва до ${cm(worst.v)} от пола (${worst.id} ${worst.name})`);
+}
 
 // ---------------------------------------------------------------- долгий покой: таз не уплывает за 2 минуты
 {
