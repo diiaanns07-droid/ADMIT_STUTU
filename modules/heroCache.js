@@ -37,25 +37,35 @@ function macrotask() {
 }
 const hasIdle = typeof requestIdleCallback === 'function';
 export function createJob({ idle = false } = {}) {
+  // ожидание простоя можно прервать: abort() и hurry() будят его сразу (иначе отменённая предсборка держала бы
+  // очередь сборок до таймаута requestIdleCallback — до 4 с, а спешная сборка за ней ждала бы)
+  let wait = null;
+  const wake = () => { const w = wait; wait = null; if (w) { if (w.h !== null && typeof cancelIdleCallback === 'function') { try { cancelIdleCallback(w.h); } catch (e) { /* ignore */ } } if (w.t !== null) clearTimeout(w.t); w.res(); } };
   const job = {
     idle, aborted: false, t0: nowMs(), budget: idle ? IDLE_SLICE : FG_SLICE,
     slices: 0, maxSlice: 0, work: 0,
-    abort() { job.aborted = true; },
+    abort() { job.aborted = true; wake(); },
     // спешно: пользователь ждёт этого героя
-    hurry() { if (job.idle) { job.idle = false; job.budget = FG_SLICE; } },
+    hurry() { if (job.idle) { job.idle = false; job.budget = FG_SLICE; wake(); } },
     async slice(force = false) {
       if (job.aborted) throw ABORT;
       const t = nowMs(), d = t - job.t0;
       if (!force && d < job.budget) return;
       job.work += d; job.slices++; if (d > job.maxSlice) job.maxSlice = d;
       if (job.idle && hasIdle) {
-        await new Promise((res) => requestIdleCallback((dl) => {
-          job.budget = Math.max(2, Math.min(IDLE_SLICE, (dl && dl.timeRemaining ? dl.timeRemaining() : IDLE_SLICE) - 1));
-          res();
-        }, { timeout: 4000 }));
-      } else if (job.idle) await new Promise((r) => setTimeout(r, 30));
+        await new Promise((res) => {
+          const w = { res, h: null, t: null };
+          wait = w;
+          w.h = requestIdleCallback((dl) => {
+            if (wait === w) wait = null;
+            job.budget = Math.max(2, Math.min(IDLE_SLICE, (dl && dl.timeRemaining ? dl.timeRemaining() : IDLE_SLICE) - 1));
+            res();
+          }, { timeout: 4000 });
+        });
+      } else if (job.idle) await new Promise((res) => { const w = { res, h: null, t: null }; wait = w; w.t = setTimeout(() => { if (wait === w) wait = null; res(); }, 30); });
       else { await macrotask(); job.budget = FG_SLICE; }
       if (job.aborted) throw ABORT;
+      if (!job.idle) job.budget = FG_SLICE;
       job.t0 = nowMs();
     },
     // подождать следующий кадр (загрузка программ на видеокарте идёт в своём процессе)
@@ -98,6 +108,35 @@ export function pinPrograms(renderer, root, mats) {
   return n;
 }
 export function pinnedCount() { return PINNED.size; }
+// программы проходов теней (depth / distance): их материалы three держит в своём кэше и освобождает вместе с
+// материалом героя — у вытесненного героя уникальный вариант (скиннинг, морфы) исчезал и собирался заново в кадре
+// следующего показа. Закрепляем живые программы теней (их вариантов — единицы на героя).
+export function pinShadowPrograms(renderer) {
+  const list = renderer && renderer.info && renderer.info.programs;
+  if (!list) return 0;
+  let n = 0;
+  for (const p of list) {
+    const k = String(p.cacheKey);
+    if (PINNED.has(p.cacheKey) || !(k.startsWith('depth,') || k.startsWith('distance,'))) continue;
+    p.usedTimes++; PINNED.set(p.cacheKey, p); n++;
+  }
+  return n;
+}
+// «первое использование» программ: three при нём синхронно спрашивает журнал сборки и юниформы
+// (getProgramInfoLog, getShaderInfoLog, getActiveUniform) — вопрос ждёт, пока видеокарта выполнит всё, что ей уже
+// отдано. В кадре подмены такие вопросы вперемешку с отрисовкой давали задачу на секунды (программный рендер) и
+// заметный рывок на слабых GPU; заранее и разом — одно ожидание, пока на сцене прежний герой.
+export function touchPrograms(renderer, root, mats) {
+  if (!renderer || !renderer.properties) return 0;
+  let n = 0;
+  eachMat(root, mats, (m) => {
+    let pr = null;
+    try { pr = renderer.properties.get(m).programs; } catch (e) { pr = null; }
+    if (!pr || typeof pr.values !== 'function') return;
+    for (const p of pr.values()) { if (p && !p.__touched) { try { p.getUniforms(); p.getAttributes(); } catch (e) { /* ignore */ } p.__touched = true; n++; } }
+  });
+  return n;
+}
 
 // ShaderMaterial: в ключе программы — номера исходников из WebGLShaderCache; когда освобождён последний
 // материал с этим исходником, номер пропадает и следующий получает новый (новая программа). Первый

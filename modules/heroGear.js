@@ -276,6 +276,18 @@ export function dressHero(THREE, vrm, opts = {}) {
   while (!r.done) r = it.next();
   return r.value;
 }
+// [W5-СМЕНА] отменённое одевание (dressHeroSteps не дошёл до конца): освободить уже созданное
+export function abortDress(partial) {
+  if (!partial || partial.done || partial.aborted || !partial.owned) return;
+  partial.aborted = true;
+  const { owned, atmosphere } = partial;
+  if (partial.hair) { try { partial.hair.dispose(); } catch (e) { /* ignore */ } }
+  for (const r of partial.attireRel || []) { try { r(); } catch (e) { /* ignore */ } }
+  if (partial.restoreBase) { try { partial.restoreBase(); } catch (e) { /* ignore */ } }
+  for (const g of owned.geo) g.dispose();
+  for (const x of owned.tex) x.dispose();
+  for (const m of owned.mat) { if (atmosphere && atmosphere.releaseEnv) { try { atmosphere.releaseEnv(m); } catch (e) { /* ignore */ } } m.dispose(); }
+}
 export function* dressHeroSteps(THREE, vrm, opts = {}) {
   const { preset = 'ranger', model = null, atmosphere = null, quality = 'medium' } = opts;
   const P = PRESETS[preset] || PRESETS.ranger;
@@ -295,6 +307,10 @@ export function* dressHeroSteps(THREE, vrm, opts = {}) {
   const MK = `${preset}|${opts.heroId || ''}|${opts.hair ? opts.hair.style || 'h' : '-'}`;
   // [W4-НАРЯДЫ] детали костюма, которые заменяет наряд (наручи, ремни, наплечник) — до замеров тела
   const restoreBase = hideBase(vrm.scene, P.attire && P.attire.hide);
+  // [W5-СМЕНА] сборку кусками могут отменить посреди одевания (смена героя): partial — что уже создано, abortDress()
+  // освобождает это (материалы — и из окружения atmosphere, иначе они копились бы в нём навсегда)
+  const partial = opts.partial || {};
+  Object.assign(partial, { owned, atmosphere, restoreBase, done: false });
   const rough = roughTex(THREE), leath = leatherTex(THREE), rune = runeTex(THREE);
   const mats = {
     metal: Mt(new Std({ name: 'gear-metal', color: P.metal, metalness: 1, roughness: 0.42, roughnessMap: rough, ...(physical ? { clearcoat: 0.25, clearcoatRoughness: 0.35 } : {}) })),
@@ -1281,6 +1297,7 @@ export function* dressHeroSteps(THREE, vrm, opts = {}) {
         quiverInfo = { obj: quiverObj, la, lb, r: 0.06, a: quiverObj.localToWorld(la.clone()), b: quiverObj.localToWorld(lb.clone()) };
       }
       hair = buildHair(THREE, { vrm, raw, bp, chestB, torsoR, bodyCaps, LEFT, UP, FWD, holder: model || vrm.scene, quality, atmosphere, hair: opts.hair, circlet: opts.circlet, cape: capeInfo, quiver: quiverInfo, stick, G, Mt, Std, mats, tube, gem });
+      partial.hair = hair;
     } catch (e) { hair = null; if (typeof console !== 'undefined') console.warn('[hair]', e); }
     if (hair) for (const n of hair.names) names.push(n);
   }
@@ -1291,7 +1308,8 @@ export function* dressHeroSteps(THREE, vrm, opts = {}) {
   // ---------------- плащ: ткань (modules/heroCloth.js) — прибит к плечам, падает, развевается на бегу,
   // не проходит сквозь ноги и корпус (капсулы по коже модели); вышитая кайма и герб (heroForge.capeTextures)
   let cloth = null, capeMat = null, panelMat = null;
-  const attireRel = [], attireFabrics = [];   // [W4-НАРЯДЫ] общие текстуры нарядов (release) и ткани с пульсом вышивки
+  const attireRel = [], attireFabrics = [];
+  partial.attireRel = attireRel;   // [W4-НАРЯДЫ] общие текстуры нарядов (release) и ткани с пульсом вышивки
   const _floorV = new THREE.Vector3();          // пол для ткани — без новой точки на каждый кадр
   // материал вышитой ткани (плащ, полы мантии): карта/рельеф/свечение вышивки, sheen, подкладка на изнанке
   const clothMat = (tx, name) => {
@@ -1860,6 +1878,7 @@ export function* dressHeroSteps(THREE, vrm, opts = {}) {
     if (trail) { trail.reset(); if (trail.mesh.parent) trail.mesh.parent.remove(trail.mesh); }
     tHave = false;
   }
+  partial.done = true;
   return {
     names, staffTip, bow, cloth, perf, get trail() { return trail; }, setGlow, get glow() { return glowNow; }, update, setLod, setQuality, setShading() {}, setBowHeld, setBlink, holdBlink(k) { if (lids) { lids.hold = k; setBlink(k); } }, get lids() { return lids ? lids.pivots.length : 0; }, dispose, park,
     parts: () => parts.map((p) => p.obj.name),

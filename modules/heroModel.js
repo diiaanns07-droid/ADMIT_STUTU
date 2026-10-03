@@ -25,7 +25,7 @@
 
 import { loadVRM, loadHumanoidGLB, retargetClip, createGltfLoader } from './vrmKit.js';
 import { createHeroPoses, rigFace, signaturePose, SIGNATURES } from './heroPoses.js'; // [W4-ПОЗЫ]
-import { createJob, ABORT, pinPrograms, retire, texturesOf, showTextures, hideTextures, uploadTextures, setRenderer, cacheInfo } from './heroCache.js'; // [W5-СМЕНА]
+import { createJob, ABORT, pinPrograms, pinShadowPrograms, touchPrograms, retire, texturesOf, showTextures, hideTextures, uploadTextures, setRenderer, cacheInfo } from './heroCache.js'; // [W5-СМЕНА]
 
 // Карточки героев: имя, класс, стихия и три строки описания — для меню №8 и витрины (heroShowcase).
 export const HEROES = Object.freeze({
@@ -354,7 +354,8 @@ export function createHeroModel({
   const built = new Map(), jobs = new Map(), fading = new Set();
   let buildChain = Promise.resolve();
   // [W5-СМЕНА] сколько собранных героев держать: low — 2 (слабое железо, память), иначе 3
-  const lruMax = () => (opts.quality === 'low' ? 2 : 3);
+  // соперник онлайн-дуэли (remote) — только свой показанный: соседей по меню у него нет, прежний ему не нужен
+  const lruMax = () => (remote ? 1 : opts.quality === 'low' ? 2 : 3);
   // уровень сборки: на low материалы Standard и текстуры меньше — запись с другим уровнем пересобирается
   const recKey = () => (opts.quality === 'low' ? 'low' : 'hi');
   // соседи по карточкам меню (по кругу): следующий — первым
@@ -364,7 +365,7 @@ export function createHeroModel({
   // без загрузки (иначе видеокарта заново грузит ~50 текстур с мипмапами). На low — только показанный. Бюджет
   // текстур (config.visualBudget): показанный + один спрятанный ≈ +20–25 текстур, в пределах medium/high.
   let residentHidden = null;
-  const keepResident = () => opts.quality !== 'low';
+  const keepResident = () => !remote && opts.quality !== 'low';
   function releaseResident() {
     const r = residentHidden;
     residentHidden = null;
@@ -394,7 +395,9 @@ export function createHeroModel({
   // (pinPrograms) — следующая сборка того же героя их не собирает; общие кэшированные текстуры отдают только
   // видеопамять (холсты остаются в кэшах модулей).
   function disposeRec(rec) {
-    if (!rec || rec.disposed) return;
+    if (!rec) return;
+    if (built.get(rec.id) === rec) built.delete(rec.id);   // освобождённая запись не остаётся в LRU ни при каком пути
+    if (rec.disposed) return;
     rec.disposed = true;
     if (residentHidden === rec) residentHidden = null;
     fading.delete(rec);
@@ -404,6 +407,8 @@ export function createHeroModel({
     if (rec.texShown) { hideTextures(rec.texShown); rec.texShown = null; }
     const R = defaults.renderer;
     try { pinPrograms(R, rec.slot); } catch (e) { /* ignore */ }
+    // силуэт растворения и проходы теней: их программы тоже собирались заново в кадре следующего показа героя
+    try { if (rec.ghost && rec.ghost.materials) pinPrograms(R, null, rec.ghost.materials()); pinShadowPrograms(R); } catch (e) { /* ignore */ }
     const tex = (() => { try { return texturesOf(rec.slot); } catch (e) { return null; } })();
     if (rec.face) { try { rec.face.dispose(); } catch (e) { /* ignore */ } }
     if (rec.mixer) { rec.mixer.stopAllAction(); if (rec.vrm) rec.mixer.uncacheRoot(rec.vrm.scene); }
@@ -464,16 +469,21 @@ export function createHeroModel({
     if (!out.size) out.add(opts.quality === 'low' ? 'screen' : 'rt');
     return out;
   }
+  const warmKeyOf = () => [...compileTargets()].sort().join(',') + '|' + opts.quality + '|' + opts.shading;
   async function warmRec(rec, job) {
     const R = defaults.renderer, cam = defaults.camera;
     if (!R || typeof R.compile !== 'function' || !cam) return;
     const sc = sceneOfRoot();
     if (!sc) return;
     const want = compileTargets();
-    const key = [...want].sort().join(',') + '|' + opts.quality + '|' + opts.shading;
+    const key = warmKeyOf();
     if (rec.warmKey === key) return;
     const objs = [];
     rec.slot.traverse((o) => { if (o.material && (o.isMesh || o.isPoints || o.isLine || o.isSprite)) objs.push(o); });
+    // [W5-СМЕНА] силуэт растворения (heroGhost): при подмене он появляется в первом же кадре — его программа тоже заранее
+    let ghostG = null;
+    try { ghostG = rec.ghost && rec.ghost.prepare ? rec.ghost.prepare(rec.model) : null; } catch (e) { ghostG = null; }
+    if (ghostG) for (const c of ghostG.children) objs.push(c);
     const done = new Set();
     const progs0 = R.info && R.info.programs ? R.info.programs.length : -1;
     for (const v of want) {
@@ -491,6 +501,7 @@ export function createHeroModel({
       }
     }
     if (warmRT) { warmRT.dispose(); warmRT = null; }   // 1×1 буфер нужен только на время сборки
+    if (ghostG) try { rec.ghost.unprepare(); } catch (e) { /* ignore */ }
     rec.warmKey = key;
     // метка готовности GPU: с KHR_parallel_shader_compile — опрос программ, без него — fenceSync; новых программ
     // нет (все закреплены или уже собраны) — ждать нечего
@@ -510,29 +521,35 @@ export function createHeroModel({
     gl.flush();
     return s ? { sync: s } : null;
   }
-  async function gpuReady(rec, job, maxFrames = 240) {
+  // [W5-СМЕНА] метку могут ждать два показа одной записи (быстрые клики A→B→A): кто дождался — помечает done и
+  // удаляет её, второй выходит сразу (раньше он опрашивал удалённую метку все 240 кадров). alive() — смена ещё нужна.
+  async function gpuReady(rec, job, maxFrames = 240, alive = null) {
     const g = rec.gpu, R = defaults.renderer;
     if (!g || !R) return;
     const gl = R.getContext();
-    for (let i = 0; i < maxFrames; i++) {
+    for (let i = 0; i < maxFrames && !g.done; i++) {
       let ok = true;
       try {
-        if (g.sync) ok = gl.getSyncParameter(g.sync, gl.SYNC_STATUS) === gl.SIGNALED;
+        if (g.sync) { const st = gl.getSyncParameter(g.sync, gl.SYNC_STATUS); ok = st === null || st === gl.SIGNALED; }
         else for (const m of g.mats) { const p = R.properties.get(m).currentProgram; if (p && !p.isReady()) { ok = false; break; } }
       } catch (e) { ok = true; }
       if (ok) break;
       await job.frame();
-      if (job.aborted) break;
+      if (job.aborted || (alive && !alive())) return;
     }
-    if (g.sync) { try { gl.deleteSync(g.sync); } catch (e) { /* ignore */ } }
+    if (!g.done) { g.done = true; if (g.sync) { try { gl.deleteSync(g.sync); } catch (e) { /* ignore */ } } }
     if (rec.gpu === g) rec.gpu = null;
   }
 
   // [W5-СМЕНА] сборка героя в отцепленный слот — по кускам (job.slice) и в очереди (одна сборка за раз)
   function requestBuild(def, { idle = true, tm = null } = {}) {
     const have = jobs.get(def.id);
-    if (have) { if (!idle) have.job.hurry(); if (tm) have.tm = tm; return have.p; }
-    if (!idle) for (const e of jobs.values()) if (e.job.idle) e.job.abort();   // спешная сборка не ждёт предсборку соседей
+    // спешная сборка не ждёт ни предсборку соседей, ни сборки героев, которых игрок уже пролистал (быстрые клики):
+    // их задачи отменяются (дешево — байты, клипы, перекраска и холсты остаются в кэшах), очередь сразу доходит до цели
+    if (!idle) for (const e of jobs.values()) if (e !== have) e.job.abort();
+    // отменённую задачу не переиспользуем: её промис уже вернёт null (раньше спешный выбор получал null и уходил
+    // в запасного процедурного героя)
+    if (have && !have.job.aborted) { if (!idle) have.job.hurry(); if (tm) have.tm = tm; return have.p; }
     const entry = { job: createJob({ idle }), tm, def };
     const run = () => (entry.job.aborted ? Promise.reject(ABORT) : buildRec(def, entry));
     entry.p = buildChain.then(run, run).then(
@@ -662,6 +679,7 @@ export function createHeroModel({
   }
   // показать запись: слот в сцену, состояние экземпляра — под неё (запись могла быть показана раньше)
   function activateRec(rec) {
+    if (rec.disposed) return false;
     cur = rec;
     built.delete(rec.id); built.set(rec.id, rec);   // свежий в LRU
     root.add(rec.slot);
@@ -682,18 +700,8 @@ export function createHeroModel({
       if (lo) { if (!lo.isRunning()) lo.play(); lo.setEffectiveWeight(0); }
     }
     if (rec.hands) for (const side of ['left', 'right']) { const hh = rec.hands[side]; if (hh) for (const kk of Object.keys(hh.w)) hh.w[kk] = kk === 'relax' ? 1 : 0; }
-    // качество и вид сменились, пока герой был спрятан
-    if (rec.quality !== opts.quality) {
-      rec.quality = opts.quality;
-      if (rec.shade && rec.shade.setQuality) rec.shade.setQuality(opts.quality);
-      if (rec.gear && rec.gear.setQuality) rec.gear.setQuality(opts.quality);
-      if (rec.aura && rec.aura.setQuality) rec.aura.setQuality(opts.quality);
-    }
-    if (rec.shading !== opts.shading) {
-      rec.shading = opts.shading;
-      if (rec.shade && rec.shade.setMode) rec.shade.setMode(opts.shading);
-      if (rec.gear && rec.gear.setShading) rec.gear.setShading(opts.shading);
-    }
+    syncRec(rec);   // обычно уже сделано в showRec (до сборки шейдеров) — здесь на всякий случай
+    rec.key = recKey();   // переведена на текущий уровень на месте (как показанный при setQuality)
     rec.simReset = true;   // ткань, пряди и пружины волос — с места (их частицы в мировых координатах)
     bindPoses();
     parentAnchors();
@@ -705,6 +713,22 @@ export function createHeroModel({
     S.loading = false;
     S.appear = 1;   // появление: вспышка ауры (меню)
     if (stance) setStance(stance);
+    return true;
+  }
+  // качество и вид сменились, пока герой был спрятан: материалы — под текущие, пока слот вне сцены (showRec вызывает
+  // это до warmRec, иначе новые материалы собирали бы шейдеры в кадре подмены)
+  function syncRec(rec) {
+    if (rec.quality !== opts.quality) {
+      rec.quality = opts.quality;
+      if (rec.shade && rec.shade.setQuality) rec.shade.setQuality(opts.quality);
+      if (rec.gear && rec.gear.setQuality) rec.gear.setQuality(opts.quality);
+      if (rec.aura && rec.aura.setQuality) rec.aura.setQuality(opts.quality);
+    }
+    if (rec.shading !== opts.shading) {
+      rec.shading = opts.shading;
+      if (rec.shade && rec.shade.setMode) rec.shade.setMode(opts.shading);
+      if (rec.gear && rec.gear.setShading) rec.gear.setShading(opts.shading);
+    }
   }
   // [W5-СМЕНА] подмена в один кадр: прежний герой рассыпается светящимся силуэтом (heroGhost) — новый выходит
   // из вспышки (его силуэт сгорает поверх, открывая героя); витрина в тот же кадр даёт волну и вспышку портала
@@ -714,31 +738,41 @@ export function createHeroModel({
       prevShown = old.id;
       if (old.ghost) { try { if (old.ghost.snap(old.model)) fading.add(old); } catch (e) { /* без растворения */ } }
     }
-    activateRec(rec);   // сначала новые текстуры — общие с прежним героем не выгружаются
+    if (!activateRec(rec)) { if (old) fading.delete(old); return false; }   // сначала новые текстуры — общие с прежним не выгружаются
     if (old) parkRec(old);
     swaps++;
-    if (old && rec.ghost) { try { rec.model.updateMatrixWorld(true); rec.ghost.snap(rec.model); } catch (e) { /* ignore */ } }
+    // силуэт нового — после первого кадра позы (update): у героя из кэша кости ещё в позе прошлой парковки.
+    // «Уменьшенное движение» — без него: прежний просто растворяется, новый проявляется без вспышки силуэта
+    S.swapGhost = !!(old && rec.ghost && !opts.reduced);
     if (tm) { tm.ready = nowMs() - tm.t0; }
     trimLru();
+    return true;
   }
   // показать готовую запись: программы на видеокарте собраны, текстуры загружены — подмена в один кадр
   async function showRec(rec, token, tm) {
     const job = createJob({ idle: false });
-    if (!rec.warmKey || rec.warmKey.split('|')[0] !== [...compileTargets()].sort().join(',')) await warmRec(rec, job);
-    await gpuReady(rec, job);
-    if (S.disposed || token !== S.token) return false;
+    const alive = () => !S.disposed && token === S.token && !rec.disposed;
+    syncRec(rec);   // качество и вид — до сборки шейдеров
+    if (rec.warmKey !== warmKeyOf()) await warmRec(rec, job);
+    await gpuReady(rec, job, 240, alive);
+    if (!alive()) return false;
     tm.compile = nowMs() - tm.t0;
     // текстуры — заранее и кусками (раньше — все в первом кадре с героем); затем ждём, пока видеокарта их загрузит
     const tex = texturesOf(rec.slot);
     showTextures(tex);   // пока грузятся — заняты (не выгружаются чужой сменой)
-    const sent = await uploadTextures(defaults.renderer, tex, job);
-    tm.upload = nowMs() - tm.t0;
-    if (sent) { rec.gpu = gpuFence(); await gpuReady(rec, job); }   // всё уже в видеопамяти — подмена сразу
-    tm.gpu = nowMs() - tm.t0;
-    if (S.disposed || token !== S.token) { if (rec !== cur) hideTextures(tex); return false; }
-    swapTo(rec, tm);
-    hideTextures(tex);   // набор перешёл в rec.texShown (activateRec)
-    return true;
+    let ok = false;
+    try {
+      const sent = await uploadTextures(defaults.renderer, tex, job);
+      tm.upload = nowMs() - tm.t0;
+      if (sent && alive()) { rec.gpu = gpuFence(); await gpuReady(rec, job, 240, alive); }   // всё уже в видеопамяти — подмена сразу
+      // первое использование программ — заранее и разом (см. heroCache.touchPrograms), пока на сцене прежний герой
+      if (alive()) { try { touchPrograms(defaults.renderer, rec.slot, rec.ghost && rec.ghost.materials ? rec.ghost.materials() : null); } catch (e) { /* ignore */ } }
+      tm.gpu = nowMs() - tm.t0;
+      ok = alive() && swapTo(rec, tm);
+    } finally {
+      hideTextures(tex);   // показан — набор перешёл в rec.texShown (activateRec); нет — текстуры больше не заняты
+    }
+    return ok;
   }
 
   async function setHero(id) {
@@ -749,13 +783,16 @@ export function createHeroModel({
     if (def.id === S.hero && S.loading) return;   // [W5-СМЕНА] уже собирается — повторный выбор не начинает заново
     const token = ++S.token;
     S.hero = def.id;
+    // [W5-СМЕНА] пролистанные герои: их сборки больше не нужны (предсборку соседей витрина запустит снова)
+    for (const [jid, e] of jobs) if (jid !== def.id) e.job.abort();
     const modelHero = !!(def.vrm || def.glb);
     // [PERF] хронометраж появления героя (мс от начала setHero, нарастающим итогом) — панель F3 и tools/perf_bench.mjs
     const tm = { id: def.id, t0: nowMs(), fetch: null, parse: null, prep: null, clips: null, setup: null, dress: null, compile: null, ready: null, cached: false };
     S.timing = tm;
     clearFallback();
     // [W5-СМЕНА] вернулись к герою, который ещё на сцене (пока собирался другой) — он и остаётся
-    if (cur && cur.id === def.id && cur.key === recKey()) { S.ready = true; S.loading = false; tm.cached = true; tm.ready = nowMs() - tm.t0; return; }
+    // (ключ уровня не сверяем: setQuality уже перевёл показанного героя на текущий уровень)
+    if (cur && cur.id === def.id) { S.ready = true; S.loading = false; tm.cached = true; tm.ready = nowMs() - tm.t0; return; }
     // [HERO] процедурный герой мира (страж без модели)
     if (!modelHero) { if (cur) parkRec(cur); showProcedural(true); parentAnchors(); S.ready = !!heroBody; S.loading = false; return; }
     S.ready = false;
@@ -779,17 +816,27 @@ export function createHeroModel({
       if (heroBody) armFallback();
     }
     try {
-      let rec = built.get(def.id);
-      if (rec && rec.key !== recKey()) { disposeRec(rec); rec = null; }   // собран на другом уровне качества
-      if (rec) { tm.cached = true; for (const k of ['fetch', 'parse', 'prep', 'clips', 'setup', 'dress']) tm[k] = 0; }
-      else rec = await requestBuild(def, { idle: false, tm });
-      if (S.disposed || token !== S.token) return;   // пока собирали, выбрали другого героя — запись осталась в LRU
-      if (!rec) throw new Error('сборка героя отменена');
-      await showRec(rec, token, tm);
+      // запись, собранную на другом уровне качества (low ↔ medium/high), — заново; отменённую или освобождённую
+      // (смена качества во время показа) — тоже заново; показанного героя не трогаем никогда
+      for (let attempt = 0; attempt < 3; attempt++) {
+        let rec = built.get(def.id);
+        if (rec && rec !== cur && (rec.key !== recKey() || rec.disposed)) { disposeRec(rec); rec = null; }
+        if (rec) { tm.cached = true; for (const k of ['fetch', 'parse', 'prep', 'clips', 'setup', 'dress']) tm[k] = 0; }
+        else rec = await requestBuild(def, { idle: false, tm });
+        if (S.disposed || token !== S.token) return;   // пока собирали, выбрали другого героя — запись осталась в LRU
+        if (!rec) continue;   // сборку отменили (смена качества) — ещё раз
+        if (await showRec(rec, token, tm)) return;
+        if (S.disposed || token !== S.token) return;
+      }
+      throw new Error('сборка героя отменена');
     } catch (e) {
       if (e === ABORT) return;
+      if (token !== S.token) return;
+      clearFallback(); S.loading = false;
+      // [W5-СМЕНА] на сцене уже есть собранный герой — он и остаётся (без пустого места и без процедурного тела)
+      if (cur) { console.warn('[ASHEN] модель героя не загрузилась — остаётся прежний:', e && e.message); S.hero = cur.id; S.ready = true; return; }
       console.warn('[ASHEN] модель героя не загрузилась — процедурный герой:', e && e.message);
-      if (token === S.token) { clearFallback(); S.loading = false; if (cur) parkRec(cur); S.hero = heroBody ? 'ashen' : def.id; showProcedural(true); parentAnchors(); S.ready = !!heroBody; }
+      S.hero = heroBody ? 'ashen' : def.id; showProcedural(true); parentAnchors(); S.ready = !!heroBody;
     }
   }
   // [W5-СМЕНА] тихая предсборка героев (соседи по меню) в простое браузера; signal — отмена (выход из меню)
@@ -1048,10 +1095,13 @@ export function createHeroModel({
       const gOpts = { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null, circlet: c.def.circlet || null, lashes: c.def.lashes || null, hoodTrim: c.def.hoodTrim || null, fx: c.def.fx || null, grips: c.hands ? { R: c.hands.staffGrip, L: c.hands.bowGrip } : null };
       // [W5-СМЕНА] dressHeroSteps — то же снаряжение по частям: между частями поток отдаётся (job.slice)
       if (typeof g.dressHeroSteps === 'function') {
-        const it = g.dressHeroSteps(THREE, c.vrm, gOpts);
-        let r = it.next();
-        while (!r.done) { await job.slice(); r = it.next(); }
-        c.gear = r.value;
+        const partial = {};
+        const it = g.dressHeroSteps(THREE, c.vrm, { ...gOpts, partial });
+        try {
+          let r = it.next();
+          while (!r.done) { await job.slice(); r = it.next(); }
+          c.gear = r.value;
+        } catch (e) { if (g.abortDress) g.abortDress(partial); throw e; }   // отмена посреди одевания — уже созданное освободить
       } else c.gear = g.dressHero(THREE, c.vrm, gOpts);
       if (c.full.Idle) c.full.Idle.stop();
     } catch (e) { if (e === ABORT) throw e; console.warn('[HERO] heroGear недоступен, без снаряжения:', e && e.message); }
@@ -1093,11 +1143,12 @@ export function createHeroModel({
     if (cur && cur.shade && cur.shade.setQuality) cur.shade.setQuality(q);
     if (cur && cur.gear && cur.gear.setQuality) cur.gear.setQuality(q);
     if (cur && cur.aura && cur.aura.setQuality) cur.aura.setQuality(q);   // [W4-АУРА] после пересборки материалов — патч rim сразу
-    if (cur) cur.quality = q;
+    if (cur) { cur.quality = q; cur.key = recKey(); }   // показанный переведён на месте
     // [W5-СМЕНА] спрятанные: на другом уровне сборки (low ↔ medium/high) — освободить (соберутся заново), на том же —
     // качество применится при показе; сборки в работе — отменить (собраны бы на прежнем уровне)
     for (const e of jobs.values()) if (e.job.idle) e.job.abort();
-    for (const r of [...built.values()]) if (r !== cur && r.key !== recKey() && !fading.has(r)) disposeRec(r);
+    // цель идущей смены (S.hero) не трогаем: её проверит setHero/showRec (освобождённую соберёт заново)
+    for (const r of [...built.values()]) if (r !== cur && r.id !== S.hero && r.key !== recKey() && !fading.has(r)) disposeRec(r);
     if (!keepResident()) releaseResident();   // на low видеопамять держит только показанный герой
     trimLru();
   }
@@ -1725,6 +1776,7 @@ export function createHeroModel({
     if (cur.aura) cur.aura.update(heroTimeU ? heroTimeU.value : time);
     if (cur.ghost) {
       if (S.ghostWarm) { S.ghostWarm = false; try { cur.ghost.snap(cur.model, true); } catch (e) { /* ignore */ } }
+      if (S.swapGhost) { S.swapGhost = false; try { cur.ghost.snap(cur.model); } catch (e) { /* ignore */ } }   // [W5-СМЕНА] выход из вспышки
       if (S.ghostQ) {
         for (let i = S.ghostQ.length - 1; i >= 0; i--) {
           S.ghostQ[i] -= dt;
@@ -1821,7 +1873,8 @@ export function createHeroModel({
     get vrm() { return cur ? cur.vrm : null; },
     get gear() { return cur ? cur.gear : null; },   // QA
     // остаточные образы рывка своей формы (modules/heroGhost.js) — effects.js тогда не рисует свой силуэт-заглушку
-    get afterimages() { return !!(cur && cur.ghost && S.ready && S.lod < 2); },
+    get afterimages() { return !!(cur && cur.ghost && S.lod < 2); },   // [W5-СМЕНА] по показанному герою (и пока собирается следующий)
+    setReducedMotion(b) { opts.reduced = !!b; },   // [W5-СМЕНА] «Уменьшенное движение»: подмена без силуэта поверх нового
     get shade() { return cur ? cur.shade : null; },   // QA
     get mixer() { return cur ? cur.mixer : null; },
     state: () => {

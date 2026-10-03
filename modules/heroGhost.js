@@ -11,6 +11,9 @@
 // export: createAfterimages(THREE, { color, sets, life }) →
 //   { snap(root, warmOnly), update(dt), setColor(hex), setQuality(q), active(), dispose() }
 //   warmOnly — невидимый снимок на 0.1 с при загрузке: шейдер призрака собирается сразу, а не на первом рывке.
+//   [W5-СМЕНА] prepare(root) → Group с мешами призрака для root вне сцены (renderer.compile до показа героя: при смене
+//   героя силуэт рассыпается в первом же кадре — его программа не должна собираться в этом кадре);
+//   materials() — материалы пула (закрепление программ при вытеснении героя из кэша смены).
 //   root — модель героя (берутся видимые SkinnedMesh), scene — первый предок-сцена (ищется сам).
 
 const GH_NOISE = /* glsl */`
@@ -63,43 +66,63 @@ export function createAfterimages(THREE, { color = 0x9ff4ff, sets = 4, life = 0.
     return m;
   }
   function sceneOf(o) { let r = o; while (r && r.parent) r = r.parent; return r && r.isScene ? r : null; }
+  // видимые кожи героя и набор пула под них (при другом составе — пересобрать)
+  function sources(root) {
+    const srcs = [];
+    root.traverseVisible((o) => { if (o.isSkinnedMesh && o.skeleton && o.geometry && !o.userData.noGhost) srcs.push(o); });
+    return srcs;
+  }
+  function fit(set, srcs) {
+    const same = set.meshes.length === srcs.length && set.meshes.every((m, i) => m.src === srcs[i]);
+    if (same) return;
+    const sks = new Set(set.meshes.map((m) => m.sk));
+    for (const m of set.meshes) if (m.g.parent) m.g.parent.remove(m.g);
+    for (const sk of sks) if (sk.boneTexture) sk.boneTexture.dispose();
+    // один замороженный скелет на исходный скелет (у кожи героя он обычно общий)
+    const skOf = new Map();
+    set.meshes = srcs.map((src) => {
+      let sk = skOf.get(src.skeleton);
+      if (!sk) {
+        sk = new THREE.Skeleton(src.skeleton.bones, src.skeleton.boneInverses);
+        sk.update = () => {};               // замороженный: рендер не пересчитывает матрицы
+        skOf.set(src.skeleton, sk);
+      }
+      const g = new THREE.SkinnedMesh(src.geometry, set.mat);
+      g.name = 'hero-afterimage'; g.userData.src = src.name; g.frustumCulled = false; g.castShadow = false; g.receiveShadow = false;
+      g.matrixAutoUpdate = false; g.matrixWorldAutoUpdate = false;
+      // режим 'attached' (по умолчанию): bindMatrixInverse = (matrixWorld = I)⁻¹ = I — и при пересчёте мира
+      g.skeleton = sk; g.bindMatrix.copy(src.bindMatrix); g.bindMatrixInverse.identity();
+      g.renderOrder = 2;
+      return { g, sk, src };
+    });
+  }
+  const setAt = (i) => { let set = pool[i]; if (!set) { set = { meshes: [], mat: makeMat(), age: 0, on: false, src: null }; pool[i] = set; } return set; };
+  // [W5-СМЕНА] меши призрака вне сцены — только для сборки программы (renderer.compile); снимок потом перенесёт их в сцену
+  let prep = null;
+  function prepare(root) {
+    if (disposed || !root) return null;
+    const srcs = sources(root);
+    if (!srcs.length) return null;
+    const set = setAt(next);
+    fit(set, srcs);
+    if (!prep) prep = new THREE.Group();
+    for (const m of set.meshes) if (!m.g.parent) prep.add(m.g);
+    root.updateWorldMatrix(true, true);
+    return prep;
+  }
+  function unprepare() { if (prep) for (const c of [...prep.children]) prep.remove(c); }
   // снимок: для каждой видимой кожи героя — призрак с копией матриц костей
   function snap(root, warmOnly = false) {
     if (disposed || !root) return false;
     if (!warmOnly && clock - lastSnap < minGap) return false;   // low: один образ на рывок
     const scene = sceneOf(root);
     if (!scene) return false;
-    const srcs = [];
-    root.traverseVisible((o) => { if (o.isSkinnedMesh && o.skeleton && o.geometry && !o.userData.noGhost) srcs.push(o); });
+    const srcs = sources(root);
     if (!srcs.length) return false;
     root.updateWorldMatrix(true, true);   // кости — на позу этого кадра (мир пересчитался бы только при рендере)
-    let set = pool[next];
-    if (!set) { set = { meshes: [], mat: makeMat(), age: 0, on: false, src: null }; pool[next] = set; }
+    const set = setAt(next);
     next = (next + 1) % sets;
-    // набор привязан к своим исходным мешам: при другом составе — пересобрать
-    const same = set.meshes.length === srcs.length && set.meshes.every((m, i) => m.src === srcs[i]);
-    if (!same) {
-      const sks = new Set(set.meshes.map((m) => m.sk));
-      for (const m of set.meshes) if (m.g.parent) m.g.parent.remove(m.g);
-      for (const sk of sks) if (sk.boneTexture) sk.boneTexture.dispose();
-      // один замороженный скелет на исходный скелет (у кожи героя он обычно общий)
-      const skOf = new Map();
-      set.meshes = srcs.map((src) => {
-        let sk = skOf.get(src.skeleton);
-        if (!sk) {
-          sk = new THREE.Skeleton(src.skeleton.bones, src.skeleton.boneInverses);
-          sk.update = () => {};               // замороженный: рендер не пересчитывает матрицы
-          skOf.set(src.skeleton, sk);
-        }
-        const g = new THREE.SkinnedMesh(src.geometry, set.mat);
-        g.name = 'hero-afterimage'; g.userData.src = src.name; g.frustumCulled = false; g.castShadow = false; g.receiveShadow = false;
-        g.matrixAutoUpdate = false; g.matrixWorldAutoUpdate = false;
-        // режим 'attached' (по умолчанию): bindMatrixInverse = (matrixWorld = I)⁻¹ = I — и при пересчёте мира
-        g.skeleton = sk; g.bindMatrix.copy(src.bindMatrix); g.bindMatrixInverse.identity();
-        g.renderOrder = 2;
-        return { g, sk, src };
-      });
-    }
+    fit(set, srcs);
     // матрицы костей на сейчас; призрак в мире: model = I, bindMatrixInverse = I → вершины уже в мире
     const done = new Set();
     for (const m of set.meshes) {
@@ -133,7 +156,8 @@ export function createAfterimages(THREE, { color = 0x9ff4ff, sets = 4, life = 0.
     }
   }
   return {
-    snap, update,
+    snap, update, prepare, unprepare,
+    materials: () => pool.filter(Boolean).map((s) => s.mat),
     setColor(hex) { col.copy(ghostCol(hex)); col2.copy(hotCol(col)); for (const s of pool) if (s) { s.mat.color.copy(col); s.mat.userData.ghU.ghC2.value.copy(col2); } },
     setQuality(q) { minGap = q === 'low' ? 0.3 : 0; },
     active() { return pool.filter((s) => s && s.on && !s.warm).length; },

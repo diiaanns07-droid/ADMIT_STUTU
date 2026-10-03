@@ -178,7 +178,15 @@ async function run(browser, server, q) {
     if (!PREBUILD_WAIT) return 0;
     const t0 = Date.now();
     await sleep(2800);   // витрина начинает предсборку через 2,5 с простоя
-    await page.waitForFunction(() => { const h = window.__ASHEN__.hero(); return !h || !h.cache || !h.cache.jobs.length; }, null, { timeout: 120000, polling: 250 }).catch(() => log('предсборка не закончилась за 2 мин'));
+    // следующий по карточкам собран (или предсборки нет: main, low, ?prebuild=0 — тогда хватает пустой очереди после 6 с)
+    await page.waitForFunction((t0) => {
+      const h = window.__ASHEN__.hero();
+      if (!h || !h.cache) return true;
+      if (h.cache.jobs.length) return false;
+      const ord = ['ashen', 'elf', 'dark', 'ranger', 'archmage'], i = ord.indexOf(h.cache.shown);
+      const next = i < 0 ? null : ord[(i + 1) % ord.length];
+      return !next || h.cache.built.includes(next) || performance.now() - t0 > 6000;
+    }, await page.evaluate(() => performance.now()), { timeout: 180000, polling: 250 }).catch(() => log('предсборка не закончилась за 3 мин'));
     return Date.now() - t0;
   };
   async function switchTo(id, r, phase) {
