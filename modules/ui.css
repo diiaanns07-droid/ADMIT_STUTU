@@ -5440,6 +5440,7 @@ html.ao-bdo .ao-boss__diff[data-level="nightmare"] { border-color: rgba(255, 70,
   background: rgba(216, 179, 106, 0.16);
 }
 .ao-fhall__place { color: var(--ao-muted); }
+.ao-fhall__mode { color: var(--ao-muted); font-size: 0.8em; }
 .ao-fhall__lv { font-weight: 600; }
 .ao-fhall__lv[data-level="hard"] { color: #ffb27a; }
 .ao-fhall__lv[data-level="nightmare"] { color: #ff8c7a; }

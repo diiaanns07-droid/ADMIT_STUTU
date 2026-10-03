@@ -18,16 +18,17 @@ function snapAt(t, o) {
     status: 'playing', time: t, difficulty: o.level,
     player: { position: { x, y: 0, z }, velocity: { x: w * 6.5 * Math.cos(a), z: -w * 6.5 * Math.sin(a) }, hp: 100, energy: o.energy ? o.energy(t) : 80, maxEnergy: 100 },
     boss: { position: { x: 0, y: 0, z: 0 }, hp: o.hp ? o.hp(t) : 1000, maxHp: 1000 },
-    cooldowns: { dashRemaining: 0 },
+    cooldowns: { dashRemaining: o.dash !== undefined ? o.dash : 0 },
   };
 }
 // прогон мозга: все выпущенные AttackSpec, отмены, переходы стадии
-function run(level, { seed = 7, sec = 240, hp, energy } = {}) {
+function run(level, { seed = 7, sec = 240, hp, energy, dash } = {}) {
   const b = createBossBrain({ seed });
-  const out = { specs: [], cancels: [], stage2At: null, decisions: 0, brain: b };
+  const out = { specs: [], cancels: [], impacts: new Map(), stage2At: null, decisions: 0, brain: b };
   for (let i = 0; i < sec / DT; i++) {
     const t = i * DT;
-    const d = b.update(DT, snapAt(t, { level, hp, energy }));
+    const d = b.update(DT, snapAt(t, { level, hp, energy, dash }));
+    for (const id of d.impactIds) if (!out.impacts.has(id)) out.impacts.set(id, t + DT);
     out.decisions++;
     for (const s of d.attacks) out.specs.push({ t, ...s });
     if (d.cancelIds) out.cancels.push({ t, ids: d.cancelIds.slice(), next: d.attacks.map((s) => s.id) });
@@ -117,12 +118,43 @@ test('финт: отмена объявленного замаха и в том 
     for (const c of r.cancels) {
       const first = r.specs.find((s) => s.id === c.ids[0]);
       assert(first && c.t - first.t < first.windup - 0.15, `финт обрывает до удара (за ${first && (first.windup - (c.t - first.t)).toFixed(2)} с)`);
+      // «!» значит «удар будет»: финт — до того, как «!» появился
+      assert(first.windup - (c.t - first.t) > first.cue + 0.05, `финт после «!»: до удара ${(first.windup - (c.t - first.t)).toFixed(2)} с, cue ${first.cue}`);
       assert(c.next.length >= 1, 'после финта — новая атака');
       for (const id of c.next) { const s = r.specs.find((x) => x.id === id); assert(s && s.windup >= floor - 1e-9, `замах после финта ${s && s.windup}`); }
       checked++;
     }
   }
   assert(checked >= 3, `финтов ${checked}`);
+});
+
+test('нова честна и в связке: без энергии рывок готов к удару с запасом dashSlack (по настоящему замаху)', () => {
+  for (const lv of ['hard', 'nightmare']) {
+    let novas = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      const r = run(lv, { seed, sec: 200, hp: hpLine(3), energy: () => 0, dash: 0.55 });
+      const slack = r.brain.getConfig().novaFairness.dashSlack;
+      for (const s of r.specs.filter((x) => x.kind === 'nova')) {
+        novas++;
+        assert(s.windup - 0.55 >= slack - 1e-9, `${lv}: нова с замахом ${s.windup} — рывок готов за ${(s.windup - 0.55).toFixed(2)} с до удара`);
+      }
+    }
+    assert(novas > 0, `${lv}: нов не было`);
+  }
+});
+
+test('залп: удар каждой сферы помечается в свой кадр (impactIds), как у одиночной атаки', () => {
+  let n = 0;
+  for (let seed = 1; seed <= 4; seed++) {
+    const r = run('nightmare', { seed, sec: 160, hp: hpLine(2) });
+    for (const s of r.specs.filter((x) => x.move === 'volley')) {
+      const at = r.impacts.get(s.id);
+      if (at === undefined) continue;   // залп оборван (смена стойки / конец прогона)
+      n++;
+      assert(Math.abs(at - (s.t + s.windup)) <= DT + 1e-9, `${s.id}: удар помечен в ${at.toFixed(3)}, а должен в ${(s.t + s.windup).toFixed(3)}`);
+    }
+  }
+  assert(n >= 6, `сфер залпа ${n}`);
 });
 
 test('залп сфер: 3–4 сферы веером, разные цели, одна за другой; капкан — круги в ряд с одним замахом', () => {

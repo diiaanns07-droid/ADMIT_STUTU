@@ -42,6 +42,14 @@ export const SCORE = Object.freeze({
   perSecondLeft: 60,       // за каждую оставшуюся секунду при победе
 });
 
+// [W5-СЛОЖНОСТЬ] Обычный бой (не испытание): урон в очках — как у прежней «Лёгкой» (700 HP: Регент целиком = 7000) на
+// любом уровне; победа быстрее нормы уровня — FIGHT_PER_SECOND очков за каждую секунду (затянуть бой ради чар невыгодно);
+// затем множитель сложности (config.js combat.difficulty.*.scoreMul). Нормы — с запасом: в 1,5–2 раза дольше медианы
+// «среднего» бота (tools/balance_bot.mjs).
+export const FIGHT_DAMAGE_BASE = 700;
+export const FIGHT_PAR = Object.freeze({ easy: 240, normal: 330, hard: 420, nightmare: 480 });
+export const FIGHT_PER_SECOND = 30;
+
 export const RANKS = Object.freeze([
   Object.freeze({ id: 'S', min: 12000, title: 'Легенда арены' }),
   Object.freeze({ id: 'A', min: 7000, title: 'Мастер клятвы' }),
@@ -154,7 +162,9 @@ export function scoreChallenge(tally) {
   parts.push({ id: 'magic', label: 'Магия и ультимейт', detail: magicDetail, points: magicPts });
   if (T.victory) {
     const left = Math.max(0, Math.floor(num(T.timeLeft)));
-    parts.push({ id: 'victory', label: 'Регент повержен', detail: left ? `+${left} с в запасе` : '', points: SCORE.victory + left * SCORE.perSecondLeft });
+    const rate = fin(T.perSecondLeft) && T.perSecondLeft >= 0 ? T.perSecondLeft : SCORE.perSecondLeft;   // [W5-СЛОЖНОСТЬ] обычный бой — своя цена секунды
+    const detail = left ? (T.fight ? `быстрее нормы на ${left} с` : `+${left} с в запасе`) : '';
+    parts.push({ id: 'victory', label: 'Регент повержен', detail, points: SCORE.victory + left * rate });
   }
   for (const p of parts) p.points = Math.max(0, Math.round(p.points));
   const mul = fin(T.scoreMul) && T.scoreMul > 0 ? T.scoreMul : 1;
@@ -369,7 +379,8 @@ export function createChallengeSession(rules = CHALLENGE) {
 
 // Итог попытки (или обычного боя) для экрана, зала славы и постера.
 // [W5-СЛОЖНОСТЬ] difficulty = { level, name, scoreMul } (combat.getDifficulty + название): в обычном бою урон в очках —
-// на 1000 HP Регента (у уровней разное здоровье, очки сравнимы), затем множитель сложности. «Испытание» — без изменений.
+// как у прежней «Лёгкой» (FIGHT_DAMAGE_BASE), победа быстрее нормы — бонус за секунды, затем множитель сложности.
+// «Испытание» — без изменений.
 export function buildResult({ tally, snap, coach, session, kind = 'challenge', mode = 'novice', hero = '', heroName = '', difficulty = null } = {}) {
   const T = tally && typeof tally.read === 'function' ? tally.read(snap, coach) : {};
   const won = !!(snap && snap.status === 'victory');
@@ -378,9 +389,12 @@ export function buildResult({ tally, snap, coach, session, kind = 'challenge', m
   const maxHp = num(snap && snap.boss && snap.boss.maxHp);
   const fight = kind === 'fight';
   const scoreMul = fight && fin(D.scoreMul) && D.scoreMul > 0 ? D.scoreMul : 1;
+  const par = fight && typeof D.level === 'string' && FIGHT_PAR[D.level] ? FIGHT_PAR[D.level] : 0;
+  const fightLeft = par && won ? Math.max(0, par - num(snap && snap.time)) : 0;
   const sc = scoreChallenge({
-    ...T, victory: won, timeLeft: kind === 'challenge' ? timeLeft : 0,
-    damageScale: fight && maxHp > 0 ? 1000 / maxHp : 1, scoreMul, difficultyName: typeof D.name === 'string' ? D.name : '',
+    ...T, victory: won, timeLeft: kind === 'challenge' ? timeLeft : fightLeft,
+    damageScale: fight && maxHp > 0 ? FIGHT_DAMAGE_BASE / maxHp : 1, scoreMul, difficultyName: typeof D.name === 'string' ? D.name : '',
+    fight, perSecondLeft: fight ? FIGHT_PER_SECOND : undefined,
   });
   return {
     difficulty: typeof D.level === 'string' ? D.level : '', difficultyName: typeof D.name === 'string' ? D.name : '', scoreMul,   // [W5-СЛОЖНОСТЬ]

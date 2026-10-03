@@ -1341,7 +1341,7 @@ function finishFight(win) {
     const all = chal.fightHall.all();
     const me = all.findIndex((e) => e.id === h.entry.id);
     hall = all.map((e, i) => i).filter((i) => i < 5 || i === me)
-      .map((i) => { const e = all[i]; return { id: e.id, place: i + 1, score: e.score, diff: e.diff, time: e.sec, heroName: (HEROES[e.hero] || {}).name || '', name: e.name }; });
+      .map((i) => { const e = all[i]; return { id: e.id, place: i + 1, score: e.score, diff: e.diff, time: e.sec, heroName: (HEROES[e.hero] || {}).name || '', name: e.name, mode: e.mode }; });
   }
   chal.fight = { ...r, ...extra, hall };
 }

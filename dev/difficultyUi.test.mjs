@@ -90,28 +90,34 @@ test('HUD: финал боя — «Регент повержен · время �
   assert(has(fc.texts, /Регент повержен · время боя 4:32 · «Сложная»/), fc.texts.filter((t) => /Регент/.test(t)).join(' | '));
 });
 
-test('очки: обычный бой — урон на 1000 HP Регента, множитель «Сложная» ×1,5 и «Кошмар» ×2 отдельной строкой', () => {
-  const T = { damage: 12000, maxCombo: 20, accuracy: 80, gestures: 20, magic: 2, magicKinds: 1, ultimates: 2 };
-  const mk = (lv, maxHp, mul) => {
+test('очки: обычный бой — урон как у прежней «Лёгкой», бонус за скорость, множитель «Сложная» ×1,5 и «Кошмар» ×2', () => {
+  const mk = (lv, maxHp, mul, time = 270, extra = {}) => {
     const tally = createTally();
-    const s0 = { time: 0, stats: { damageDealt: 0 } };
-    tally.reset(s0);
-    const snapEnd = { status: 'victory', time: 270, stats: { damageDealt: maxHp }, boss: { maxHp } };
+    tally.reset({ time: 0, stats: { damageDealt: 0 } });
+    for (let k = 0; k < (extra.casts || 0); k++) tally.add([{ id: `m${k}`, type: 'sigil_cast', data: { sigil: 'gate' } }], 1);
+    const snapEnd = { status: 'victory', time, stats: { damageDealt: maxHp }, boss: { maxHp } };
     return buildResult({ tally, snap: snapEnd, coach: { accuracy: 80, good: 16, mistakes: 4 }, kind: 'fight', difficulty: { level: lv, name: DIFFICULTY_NAMES[lv].name, scoreMul: mul } });
   };
   const n = mk('normal', 10000, 1), h = mk('hard', 12000, 1.5), k = mk('nightmare', 12500, 2);
   assert(n.difficulty === 'normal' && h.scoreMul === 1.5 && k.scoreMul === 2, 'уровень и множитель в итоге');
-  const dmgPts = (r) => r.parts.find((p) => p.id === 'damage').points;
-  assert(dmgPts(n) === 10000 && dmgPts(h) === 10000 && dmgPts(k) === 10000, `урон на 1000 HP: ${dmgPts(n)} ${dmgPts(h)} ${dmgPts(k)}`);
+  const pts = (r, id) => (r.parts.find((p) => p.id === id) || {}).points;
+  assert(pts(n, 'damage') === 7000 && pts(h, 'damage') === 7000 && pts(k, 'damage') === 7000, `урон: ${pts(n, 'damage')} ${pts(h, 'damage')} ${pts(k, 'damage')}`);
   assert(!n.parts.some((p) => p.id === 'difficulty'), 'Обычная: без строки множителя');
   const base = h.parts.filter((p) => p.id !== 'difficulty').reduce((a, p) => a + p.points, 0);
   const part = h.parts.find((p) => p.id === 'difficulty');
   assert(part && /×1,5/.test(part.detail) && /Сложная/.test(part.detail) && h.score === base + Math.round(base * 0.5), `Сложная: ${h.score} vs ${base}`);
   const baseK = k.parts.filter((p) => p.id !== 'difficulty').reduce((a, p) => a + p.points, 0);
   assert(k.score === baseK * 2, `Кошмар ×2: ${k.score} vs ${baseK}`);
-  // «Испытание» — как раньше: урон 1:1, без множителя
-  const sc = scoreChallenge({ ...T, victory: false });
-  assert(sc.parts.find((p) => p.id === 'damage').points === 120000 && !sc.parts.some((p) => p.id === 'difficulty'), 'испытание без изменений');
+  // быстрее нормы — бонус; затянуть бой ради лишних чар невыгодно
+  const fast = mk('easy', 4600, 1, 116, { casts: 4 }), slow = mk('easy', 4600, 1, 240, { casts: 8 });
+  assert(/быстрее нормы на 124 с/.test(fast.parts.find((p) => p.id === 'victory').detail), fast.parts.find((p) => p.id === 'victory').detail);
+  assert(fast.score > slow.score, `быстрая победа ${fast.score} не выше медленной ${slow.score}`);
+  // без чар и скорости победа — не S (ранг зависит от игры)
+  const plain = buildResult({ tally: (() => { const t = createTally(); t.reset({ time: 0, stats: { damageDealt: 0 } }); return t; })(), snap: { status: 'victory', time: 300, stats: { damageDealt: 4600 }, boss: { maxHp: 4600 } }, coach: null, kind: 'fight', difficulty: { level: 'easy', name: 'Лёгкая', scoreMul: 1 } });
+  assert(plain.rank !== 'S' && plain.score === 9500, `победа без всего: ${plain.score} ${plain.rank}`);
+  // «Испытание» — как раньше: урон 1:1, секунды в запасе по 60, без множителя
+  const sc = scoreChallenge({ damage: 12000, maxCombo: 20, accuracy: 80, gestures: 20, magic: 2, magicKinds: 1, ultimates: 2, victory: true, timeLeft: 10 });
+  assert(sc.parts.find((p) => p.id === 'damage').points === 120000 && sc.parts.find((p) => p.id === 'victory').points === 2500 + 600 && !sc.parts.some((p) => p.id === 'difficulty'), 'испытание без изменений');
   assert(CHALLENGE.difficulty === 'challenge', 'у испытания своя сложность');
 });
 

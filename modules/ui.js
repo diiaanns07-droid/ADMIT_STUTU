@@ -2823,14 +2823,15 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         const all = win_ && fight && Array.isArray(fight.hall) ? fight.hall : [];
         const hallRowsF = all.filter((e, i) => i < 3 || e.id === meId).slice(0, 4);
         setHidden(fhall, !hallRowsF.length);
-        const hk = JSON.stringify(hallRowsF.map((e) => [e.id, e.score, e.diff, e.time]).concat([meId]));
+        const hk = JSON.stringify(hallRowsF.map((e) => [e.id, e.score, e.diff, e.time, e.mode]).concat([meId]));
         if (hk !== fhallKey) {
           fhallKey = hk;
           fhallList.replaceChildren(...hallRowsF.map((e, i) => el('li', {
             class: `ao-fhall__row${meId && e.id === meId ? ' is-me' : ''}`,
-            title: [e.heroName || e.name || '', Number.isFinite(e.time) ? `бой ${fmtClock(e.time)}` : ''].filter(Boolean).join(' · '),
+            title: [e.heroName || e.name || '', Number.isFinite(e.time) ? `бой ${fmtClock(e.time)}` : '', e.mode === 'debug' ? 'клавиатура' : e.mode === 'master' ? 'режим «Мастер»' : ''].filter(Boolean).join(' · '),
           },
           el('span', { class: 'ao-fhall__place', text: `${e.place || i + 1}.` }),
+          e.mode === 'debug' || e.mode === 'master' ? el('span', { class: 'ao-fhall__mode', text: e.mode === 'debug' ? '⌨' : 'М' }) : null,   // как в зале «Испытания»
           el('span', { class: 'ao-fhall__lv', 'data-level': e.diff || '', text: DIFFICULTY_NAMES[e.diff] ? DIFFICULTY_NAMES[e.diff].name : '—' }),
           el('span', { class: 'ao-fhall__score', text: fmtInt(e.score) }))));
         }
