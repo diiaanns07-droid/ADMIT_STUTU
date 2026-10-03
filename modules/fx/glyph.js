@@ -448,11 +448,11 @@ void styleSigil(float r, float ac, float a01, float rv0, float rv1, float rv2, i
   if (rings > 2.5) L += (ring(r, 0.70, 0.002) * 0.6 + ln(polyD(r, ac, 3.0, R, PI / 3.0), 0.002) * inside * 0.45) * rv2;
 }
 
-void symbolLayer(vec2 p, float r, inout float L, inout float H, inout float G) {
+void symbolLayer(vec2 p, float r, float bare, inout float L, inout float H, inout float G) {
   float side = max(vC.y, 0.05) * 1.3;
   vec2 q = vec2(p.x / side + 0.5, 0.5 - p.y / side);
   vec2 cuv = MARGIN + q * (1.0 - 2.0 * MARGIN);
-  G += 0.035 * (1.0 - smoothstep(0.0, side * 0.75, r)) * vC.w;  // тёплое «дыхание» под знаком
+  G += 0.035 * (1.0 - smoothstep(0.0, side * 0.75, r)) * vC.w * (1.0 - bare);  // тёплое «дыхание» под знаком (у знака в воздухе — нет: форма чище)
   if (cuv.x <= 0.0 || cuv.x >= 1.0 || cuv.y <= 0.0 || cuv.y >= 1.0) return;
   vec2 cell = vec2(mod(vC.x, GXF), floor(vC.x / GXF + 0.001));
   vec4 t = texture2D(uAtlas, (cell + clamp(cuv, HTX, 1.0 - HTX)) / vec2(GXF, GYF));
@@ -486,7 +486,7 @@ void main() {
   else if (st < 2.5) styleHex(r, ac, a01, rv0, rv1, rv2, L, H, G);
   else if (st < 3.5) styleSigil(r, ac, a01, rv0, rv1, rv2, L, H, G);
   float bare = step(3.5, st);   // [W4-ЗАКЛИНАНИЯ] знак в воздухе: без колец, импульсов и дымки
-  if (vC.x > -0.5) symbolLayer(p, r, L, H, G);
+  if (vC.x > -0.5) symbolLayer(p, r, bare, L, H, G);
   float age = vD.y;
   // бегущие по внешнему кольцу импульсы
   float o = ring(r, 0.985, 0.006) * (1.0 - bare);

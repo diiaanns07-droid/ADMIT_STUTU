@@ -219,10 +219,12 @@ export function register(fx) {
     // свежий заряд — его точка; иначе (стенд/тест без заряда) — перед грудью
     if (kit.clock - S.t > 0.5) corePos(S.pos);
     const P = S.pos, sf = soft(), gate = d.sigil === 'gate';
-    pickLook();                                            // [W4-ЗАКЛИНАНИЯ] стихия героя; белое ядро и звезда ярче
+    pickLook();                                            // [W4-ЗАКЛИНАНИЯ] стихия героя
     const ar = gate ? LK.h : LK.v;
-    kit.flash(P, { ramp: 'whiteHold', size: [1.1 + 0.9 * pw, 0.2], curve: 0.6, dur: 0.16, intensity: 4.5 * sf, sprite: 'glow', pull: 0.3 });
-    kit.flash(P, { ramp: ar, size: [0.5, 2.6 + 1.6 * pw], dur: 0.24, intensity: 3.6 * sf, sprite: 'star', pull: 0.35 });
+    // [W4-ЗАКЛИНАНИЯ] выпуск — у ладоней, в нескольких метрах от камеры: звезда в 3–4 м с bloom засвечивала весь кадр;
+    // теперь вспышка компактная, а яркость отдана вратам/столпу у цели
+    kit.flash(P, { ramp: 'whiteHold', size: [0.8 + 0.5 * pw, 0.2], curve: 0.6, dur: 0.14, intensity: 3.2 * sf, sprite: 'glow', pull: 0.3 });
+    kit.flash(P, { ramp: ar, size: [0.4, 1.4 + 0.8 * pw], dur: 0.2, intensity: 2.4 * sf, sprite: 'star', pull: 0.35 });
     kit.emit({ at: P, shape: 'shell', radius: 0.08, count: Math.round(26 + 34 * pw), radial: 5 + 4 * pw, speed: [0, 0.4], life: [0.18, 0.32], size: [0.06, 0.01], ramp: ar, intensity: 3, sprite: 'spark', stretch: 0.05, drag: 2.5 });
     if (hum && typeof L.loopStop === 'function') { hum = false; L.loopStop(HUM, 0.05); }
     S.active = false; S.charge = 0;
