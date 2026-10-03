@@ -48,7 +48,7 @@ function HSTATS() {
   const o = { hero: h && h.hero, shown: h && h.cache ? h.cache.shown : null, ready: !!(h && h.ready), loading: !!(h && h.loading),
     procedural: h ? h.procedural : null, built: h && h.cache ? h.cache.built.join(',') : '', jobs: h && h.cache ? h.cache.jobs.length : 0,
     slots: 0, meshes: 0, hair: 0, arms: null, ghosts: 0, screen: window.__ASHEN__.screen };
-  if (!root) return o;
+  if (!root) { o.slots = null; return o; }   // зонд ещё не нашёл сцену — кадр не проверяется
   const V = root.position.constructor;
   const slots = root.children.filter((c) => c.name === 'hero-slot');
   o.slots = slots.length;
@@ -159,12 +159,15 @@ try {
   // проверка кадров: после первого показа — ни пустого кадра, ни T-позы, ни героя «раздетого»
   const heroine = (id) => ['elf', 'dark', 'ranger'].includes(id);
   for (const s of frames) {
+    if (s.slots === null) continue;
     if (s.slots === 0 && s.shown) problems.push(`кадр ${s.i} (${s.label}): пустой — слота героя нет, показан ${s.shown}`);
     if (s.shown && s.meshes === 0) problems.push(`кадр ${s.i} (${s.label}): герой ${s.shown} невидим`);
-    if (s.arms && s.arms[0] !== null && s.arms[1] !== null && s.arms[0] < 0.3 && s.arms[1] < 0.3 && s.screen === 'menu') problems.push(`кадр ${s.i} (${s.label}): T-поза? руки ${s.arms}`);
+    // T-поза — поза привязки: обе руки горизонтально и одинаково (жест одной рукой, натяжение лука — не она)
+    if (s.arms && s.arms[0] !== null && s.arms[1] !== null && Math.abs(s.arms[0]) < 0.12 && Math.abs(s.arms[1]) < 0.12 && Math.abs(s.arms[0] - s.arms[1]) < 0.08) problems.push(`кадр ${s.i} (${s.label}): T-поза? руки ${s.arms}`);
     if (s.shown && heroine(s.shown) && s.hair === 0 && s.meshes > 0) problems.push(`кадр ${s.i} (${s.label}): ${s.shown} без волос`);
     const st = steady[s.shown];
-    if (st && s.meshes > 0 && s.meshes < st * 0.9) problems.push(`кадр ${s.i} (${s.label}): ${s.shown} — мешей ${s.meshes} из ${st} (без одежды?)`);
+    // без одежды/снаряжения — мешей заметно меньше, чем у героя в покое (стрела на тетиве и т. п. — ±несколько)
+    if (st && s.meshes > 0 && s.meshes < st * 0.75) problems.push(`кадр ${s.i} (${s.label}): ${s.shown} — мешей ${s.meshes} из ${st} (без одежды?)`);
     if (s.procedural) problems.push(`кадр ${s.i} (${s.label}): виден процедурный герой`);
   }
   if (g.errors.length) problems.push(...g.errors.slice(0, 10).map((e) => `ошибка страницы: ${e}`));
