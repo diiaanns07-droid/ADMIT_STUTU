@@ -18,6 +18,20 @@ import { createArenaFx } from './arenaFx.js';   // [W4-ARENA] огни, возд
 import { createElfVillage, ELF_VILLAGE } from './elfVillage.js';
 import { createBrightForest, BRIGHT_FOREST, brightForestHeight, brightForestTint } from './brightForest.js'; // [FOREST] Сияющий лес
 
+// [W5-ПОЛ] Высота корня героя по земле: сглаживается только скачок (ступень арены — быстрее 2,5 м/с по вертикали),
+// плавный склон корень повторяет сразу — иначе на подъёме он отставал на v·уклон/16 (до 10 см на бегу), а у
+// героя-модели нет IK стоп по земле, и стопы уходили в склон. st: { rootY, groundY } (меняется), y — земля сейчас.
+export function followRootY(st, y, dt) {
+  if (!Number.isFinite(st.rootY) || Math.abs(y - st.rootY) > 1.2 || dt <= 0) st.rootY = y;
+  else {
+    const dg = Number.isFinite(st.groundY) ? y - st.groundY : 0;
+    if (Math.abs(dg) <= Math.max(0.02, 2.5 * dt)) st.rootY += dg;
+    st.rootY += (y - st.rootY) * dampK(y > st.rootY ? 16 : 11, dt);
+  }
+  st.groundY = y;
+  return st.rootY;
+}
+
 export const API_VERSION = 'ASHEN_V1';
 
 const TAU = Math.PI * 2;
@@ -4512,16 +4526,7 @@ float ashPuddle( vec2 xz ) {
     const pos = vec3(p && p.position, DEF_HERO.x, DEF_HERO.y, DEF_HERO.z);
     const bpos = vec3(b && b.position, 0, 0, 0);
     // [V4] корпус по высоте сглажен (ступени, кочки не дёргают героя); стопы IK встают на настоящую землю
-    // [W5-ПОЛ] сглаживается только скачок земли (ступень: быстрее 2,5 м/с по вертикали); плавный склон корень
-    // повторяет сразу — иначе на подъёме он отставал на v·уклон/16 (до 10 см на бегу), а у героя-модели нет IK
-    // стоп по земле, и стопы уходили в склон
-    if (!Number.isFinite(hs.rootY) || Math.abs(pos.y - hs.rootY) > 1.2 || dt <= 0) hs.rootY = pos.y;
-    else {
-      const dg = Number.isFinite(hs.groundY) ? pos.y - hs.groundY : 0;
-      if (Math.abs(dg) <= Math.max(0.02, 2.5 * dt)) hs.rootY += dg;
-      hs.rootY += (pos.y - hs.rootY) * dampK(pos.y > hs.rootY ? 16 : 11, dt);
-    }
-    hs.groundY = pos.y;
+    followRootY(hs, pos.y, dt);   // [W5-ПОЛ] склон — без отставания
     heroRoot.position.set(pos.x, hs.rootY, pos.z);
     const faceYaw = Math.atan2(bpos.x - pos.x, bpos.z - pos.z);
     const tYaw = num(p && p.yaw, faceYaw) + num(wc.yawOffset, 0);

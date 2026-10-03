@@ -132,7 +132,7 @@ async function run() {
     for (let c = 0, r = 0; c * 20 < BATTLE; c++) for (const [tc, act, k] of CYCLE) { const i = Math.round(((c * 20 + tc) * 1000) / STEP); if (c * 20 + tc < BATTLE) events.push([i, act, k === 'RUNE' ? RUNES[r++ % RUNES.length] : k]); }
     for (const h of HEROES) {
       if (A.has('--no-battle')) break;
-      const g = await openGame(browser, server, { size: SIZE, seed: SEED, settings: { quality: Q, hero: h }, patch: { bossHp: 1, bossDamage: 0.25 }, log: (m) => log(`${Q} бой ${h}: ${m}`) });
+      const g = await openGame(browser, server, { size: SIZE, seed: SEED, settings: { quality: Q, hero: h }, patch: { bossHp: 2.5, bossDamage: 0.25 }, log: (m) => log(`${Q} бой ${h}: ${m}`) });
       const { page } = g;
       await g.toBattle();
       await noRender(page);

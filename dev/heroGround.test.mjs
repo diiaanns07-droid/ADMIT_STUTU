@@ -7,6 +7,7 @@
 //      удары по герою, победа, поражение, снова покой; смены героев между кругами. Подошва никогда не глубже
 //      2 см под полом; стоя — |подошва − пол| ≤ 2 см; таз и подошва в покое в конце — там же, где в начале.
 //   3. low / high: то же для покоя и победы; пол сцены выше корня (витрина) — подошва на нём.
+//   4. Корень героя по земле (world.followRootY): склон — без отставания, ступень арены — плавно.
 // three.js: ASHEN_THREE или vendor/ (как остальные тесты); 'three/addons/' и '@pixiv/three-vrm' — из vendor/.
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
@@ -224,6 +225,22 @@ model.setQuality('medium');
   log(`пол витрины: подошва ${cm(lo)}…${cm(hi)} от него`);
 }
 model.dispose();
+
+// ---------------------------------------------------------------- 4. корень героя по земле (world.followRootY)
+{
+  const { followRootY } = await import('../modules/world.js');
+  // склон: подъём 1,6 м/с (спринт в гору 20%) — корень на земле в каждом кадре, без отставания
+  const st = { rootY: NaN, groundY: NaN };
+  let y = 0, lag = 0;
+  for (let i = 0; i < 120; i++) { y += 1.6 / 60; followRootY(st, y, 1 / 60); lag = Math.max(lag, y - st.rootY); }
+  assert.ok(lag < 1e-6, `склон: корень отстаёт на ${cm(lag)}`);
+  // ступень арены 0,3 м — сглажена (не телепорт), за 0,3 с догоняет
+  followRootY(st, y + 0.3, 1 / 60);
+  assert.ok(st.rootY < y + 0.3 - 0.1, 'ступень: корень не прыгает на 0,3 м за кадр');
+  for (let i = 0; i < 18; i++) followRootY(st, y + 0.3, 1 / 60);
+  assert.ok(Math.abs(st.rootY - (y + 0.3)) < 0.02, `ступень: догнал за 0,3 с (${cm(y + 0.3 - st.rootY)})`);
+  log(`корень: склон без отставания, ступень 0,3 м — плавно`);
+}
 console.error = quiet.error; console.warn = quiet.warn;
 for (const m of out) console.log('  ' + m);
 console.log('heroGround.test: ok');

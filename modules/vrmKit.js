@@ -211,26 +211,47 @@ export function soleMarkers(THREE, vrm) {
     return { all: boneSubtree(foot), toes: boneSubtree(toes), nf: H.getNormalizedBoneNode(s + 'Foot'), nt: H.getNormalizedBoneNode(s + 'Toes'), pts: [] };
   };
   const sides = { L: side('left'), R: side('right') };
+  // один проход по сырым массивам весов (getComponent и множества — в десятки раз медленнее на ~20 тыс. вершин)
+  const SIDE = [sides.L, sides.R];
   vrm.scene.traverse((o) => {
     if (!o.isSkinnedMesh || !o.skeleton || !o.visible || !o.geometry || !o.geometry.attributes.skinIndex) return;
-    const bones = o.skeleton.bones, si = o.geometry.attributes.skinIndex, sw = o.geometry.attributes.skinWeight, n = o.geometry.attributes.position.count;
-    for (const S of Object.values(sides)) {
-      if (!S.nf || !S.all.size) continue;
-      const inF = new Set(), inT = new Set();
-      bones.forEach((b, i) => { if (S.all.has(b)) inF.add(i); if (S.toes.has(b)) inT.add(i); });
-      if (!inF.size) continue;
-      for (let i = 0; i < n; i++) {
-        let wf = 0, wt = 0;
-        for (let j = 0; j < 4; j++) { const b = si.getComponent(i, j), w = sw.getComponent(i, j); if (inF.has(b)) { wf += w; if (inT.has(b)) wt += w; } }
-        if (wf < 0.5) continue;
-        skinnedVertexWorld(o, i, v);
-        loc.copy(v).applyMatrix4(toScene);
-        S.pts.push({ w: v.clone(), l: loc.clone(), toe: wt > wf - wt, mesh: o, i });
+    const bones = o.skeleton.bones, SI = o.geometry.attributes.skinIndex, SW = o.geometry.attributes.skinWeight, n = o.geometry.attributes.position.count;
+    // кость → 1/2 (стопа левой/правой), +2 — носок
+    const tag = new Uint8Array(bones.length);
+    let any = false;
+    bones.forEach((b, i) => { for (let s2 = 0; s2 < 2; s2++) { const S = SIDE[s2]; if (S.nf && S.all.has(b)) { tag[i] = 1 + s2 + (S.toes.has(b) ? 2 : 0); any = true; } } });
+    if (!any) return;
+    const si = SI.array, sw = SW.array, ws = SI.itemSize, ww = SW.itemSize;
+    const wk = SW.normalized ? 1 / (sw instanceof Uint8Array ? 255 : sw instanceof Uint16Array ? 65535 : 1) : 1;
+    // кость · обратная привязки → в осях vrm.scene: один раз на кость (по требованию)
+    const BM = new Array(bones.length).fill(null), bind = o.bindMatrix, pos = o.geometry.attributes.position;
+    const bm = (k) => BM[k] || (BM[k] = new THREE.Matrix4().multiplyMatrices(toScene, new THREE.Matrix4().multiplyMatrices(bones[k].matrixWorld, o.skeleton.boneInverses[k])));
+    for (let i = 0; i < n; i++) {
+      let fL = 0, tL = 0, fR = 0, tR = 0;
+      for (let j = 0; j < 4; j++) {
+        const t = tag[si[i * ws + j]];
+        if (!t) continue;
+        const w = sw[i * ww + j] * wk;
+        if (t === 1 || t === 3) fL += w; else fR += w;
+        if (t === 3) tL += w; else if (t === 4) tR += w;
       }
+      const s2 = fL >= 0.5 ? 0 : fR >= 0.5 ? 1 : -1;
+      if (s2 < 0) continue;
+      const wf = s2 ? fR : fL, wt = s2 ? tR : tL;
+      // вершина в осях vrm.scene: Σ w · (кость · обратная привязки) · bindMatrix · v
+      v.fromBufferAttribute(pos, i).applyMatrix4(bind);
+      let x = 0, y = 0, z = 0;
+      for (let j = 0; j < 4; j++) {
+        const w = sw[i * ww + j] * wk;
+        if (!w) continue;
+        loc.copy(v).applyMatrix4(bm(si[i * ws + j]));
+        x += loc.x * w; y += loc.y * w; z += loc.z * w;
+      }
+      SIDE[s2].pts.push({ x, y, z, toe: wt > wf - wt, mesh: o, i });
     }
   });
   let restY = Infinity;
-  for (const S of Object.values(sides)) for (const p of S.pts) restY = Math.min(restY, p.l.y);
+  for (const S of Object.values(sides)) for (const p of S.pts) restY = Math.min(restY, p.y);
   if (!Number.isFinite(restY)) { SOLES.set(vrm, null); return null; }
   const out = { L: [], R: [], restY, v: new THREE.Vector3(), bones: [] };
   const d = new THREE.Vector3();
@@ -242,13 +263,13 @@ export function soleMarkers(THREE, vrm) {
         const ar = (a * Math.PI) / 180, rr = (r * Math.PI) / 180;
         d.set(Math.sin(rr), -Math.cos(rr) * Math.cos(ar), Math.cos(rr) * Math.sin(ar));
         let best = null, bd = -Infinity;
-        for (const p of S.pts) { const q = p.l.dot(d); if (q > bd) { bd = q; best = p; } }
+        for (const p of S.pts) { const q = p.x * d.x + p.y * d.y + p.z * d.z; if (q > bd) { bd = q; best = p; } }
         pick.add(best);
       }
     }
     for (const p of pick) {
       const node = p.toe && S.nt ? S.nt : S.nf;
-      out[k].push({ node, p: node.worldToLocal(p.w.clone()), mesh: p.mesh, i: p.i });
+      out[k].push({ node, p: node.worldToLocal(skinnedVertexWorld(p.mesh, p.i, new THREE.Vector3())), mesh: p.mesh, i: p.i });
     }
   }
   // для точного замера (soleHeightSkinned): сырые кости, на которых висят точки (голень, стопа, носок…)
