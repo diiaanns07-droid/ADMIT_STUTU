@@ -1398,7 +1398,7 @@ test('C16 ASHEN_V2: по умолчанию корпус героя не дви�
   ok(lean.every((f) => 'dashDir' in f && 'stick' in f && 'spark' in f && 'slash' in f && 'parry' in f && 'burstHand' in f), 'поля InputFrame V2');
 }));
 
-test('C12 worker не отвечает на кадр → таймаут → воркер CPU; CPU тоже молчит → главный поток [W5-КАМЕРА]', () => withShell({ worker: true, config: { workerFrameTimeoutMs: 1000, workerFirstFrameTimeoutMs: 1000 } }, async (env, v) => {
+test('C12 worker не отвечает на кадр → таймаут → воркер CPU; CPU тоже молчит → главный поток [W5-КАМЕРА]', () => withShell({ worker: true, config: { workerFrameTimeoutMs: 1000, workerFirstFrameTimeoutMs: 1000, cpuWorkerFrameTimeoutMs: 1000 } }, async (env, v) => {
   await v.start();
   await pump(env, 300, null, { worker: true });
   FakeWorker.hooks.dropFrames = true;

@@ -281,6 +281,12 @@ export const DEFAULT_VISION_CONFIG = Object.freeze({
   // Дольше этого — видеокарта не успевает: воркер на CPU (без GPU) запускается за 2–5 с и не зависит от рендера.
   workerWarmupTimeoutMs: 15000,
   workerFirstFrameTimeoutMs: 8000, // первые кадры нового движка (размер кадра, точки позы и кистей — новые шейдеры)
+  // снимок кадра видео для воркера (createImageBitmap в главном потоке) не готов дольше — воркер ни при чём: сразу
+  // главный поток (он берёт кадр из <video> сам). Пока грузится витрина, снимок бывает готов через 7–12 с.
+  captureStallMs: 20000,
+  // воркер на CPU не ответил на кадр дольше — завис: главный поток. Медленный воркер на CPU всё равно лучше главного
+  // потока (процессор тот же, а интерфейс не висит), поэтому таймаут кадра 2,5 с — только для воркера на GPU.
+  cpuWorkerFrameTimeoutMs: 8000,
   firstFramesGraceMs: 10000,       // столько после запуска движка без результатов — «Ожидание первых кадров», не «нет кадров»
   slowGpuHz: 3,                    // GPU-движок отвечает реже этого (камера ≥ 10 к/с) дольше slowGpuMs — ступень ниже
   slowGpuMs: 8000,
@@ -1271,6 +1277,7 @@ export async function createVision(options = {}) {
     lastKey: undefined, busy: false, busySince: 0, dirty: false, dirtyKey: undefined,
     seq: 0, inflightSeq: null, lastRvfcT: 0, pollFrames: -1, pollFramesT: 0, rvfcStarved: false,
     vfN: -1, vfT: -Infinity, // [W5-КАМЕРА] счётчик кадров плеера и когда он последний раз вырос
+    postedAt: null, wdT: 0,  // [W5-КАМЕРА] когда кадр ушёл воркеру; прошлый тик сторожа (стоял ли главный поток)
   };
   const perf = {
     arrivals: [], hz: 0, inferMs: null, latencyMs: null, results: 0,
@@ -1596,14 +1603,17 @@ export async function createVision(options = {}) {
   }
   // таймаут ответа воркера на кадр: первые кадры нового движка компилируют шейдеры — ждём дольше
   function frameTimeoutMs() {
-    return ladder.results < 3 ? Math.max(cfg.workerFrameTimeoutMs, cfg.workerFirstFrameTimeoutMs) : cfg.workerFrameTimeoutMs;
+    const base = engine && engine.delegate === 'CPU' ? Math.max(cfg.workerFrameTimeoutMs, cfg.cpuWorkerFrameTimeoutMs) : cfg.workerFrameTimeoutMs;
+    return ladder.results < 3 ? Math.max(base, cfg.workerFirstFrameTimeoutMs) : base;
   }
   // Текущий движок не справился во время работы — следующая ступень (раньше: сразу главный поток).
-  async function stepDown(reason) {
+  // toMain — сразу главный поток: беда не в воркере (снимок кадра для него не готов), воркер на CPU не поможет
+  async function stepDown(reason, toMain = false) {
     if (switching || disposed || !engine) return;
     const steps = ladderSteps();
     const cur = engine;
-    const next = stepIndex(steps, cur) + 1;
+    let next = stepIndex(steps, cur) + 1;
+    if (toMain && next > 0) while (next < steps.length && steps[next].kind === 'worker') next++;
     if (next <= 0 || next >= steps.length) {
       fail('model-failed', 'Распознавание позы остановилось и не перезапустилось. Обновите страницу.', new Error(reason));
       return;
@@ -1892,7 +1902,7 @@ export async function createVision(options = {}) {
     stopLoop();
     loop.lastKey = undefined; loop.busy = false; loop.dirty = false; loop.inflightSeq = null;
     loop.rvfcStarved = false; loop.pollFrames = -1;
-    loop.vfN = -1; loop.vfT = -Infinity; // [W5-КАМЕРА]
+    loop.vfN = -1; loop.vfT = -Infinity; loop.postedAt = null; loop.wdT = Date.now(); // [W5-КАМЕРА]
     let fr = 30;
     try {
       const vt = stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
@@ -1989,6 +1999,7 @@ export async function createVision(options = {}) {
   async function captureToWorker(e) {
     loop.busy = true;
     loop.busySince = nowMs();
+    loop.postedAt = null; // [W5-КАМЕРА]
     loop.dirty = false;
     const seq = ++loop.seq;
     loop.inflightSeq = seq;
@@ -2012,6 +2023,7 @@ export async function createVision(options = {}) {
     }
     try {
       e.worker.postMessage({ type: 'frame', seq, tMs, w, h, bitmap: bmp }, [bmp]);
+      loop.postedAt = nowMs(); // [W5-КАМЕРА] кадр ушёл воркеру (до этого — снимок кадра видео в главном потоке)
     } catch (err) {
       try { bmp.close(); } catch { /* ignore */ }
       loop.inflightSeq = null; loop.busy = false;
@@ -2170,10 +2182,20 @@ export async function createVision(options = {}) {
       loop.mode = 'poll';
       schedulePoll();
     }
-    // [W5-КАМЕРА] таймаут кадра — ступень ниже по лестнице; первые кадры нового движка ждём дольше
+    // [W5-КАМЕРА] таймаут кадра — ступень ниже по лестнице; первые кадры нового движка ждём дольше.
+    // Время — с передачи кадра воркеру, а не с начала снимка: снимок (createImageBitmap) делает главный поток, и пока
+    // грузится витрина (курсор-кисть включает камеру прямо в меню), он бывает готов через 7–12 с — раньше это
+    // считалось молчанием воркера, и распознавание уходило в главный поток, где ему ещё хуже.
+    // Главный поток стоял (долгая задача, вкладка в фоне) — это время воркеру тоже не в счёт: его ответ ждал в очереди.
+    // Тик сторожа — раз в 200 мс; паузу между тиками меряют настенные часы.
+    const wall = Date.now();
+    const gap = wall - loop.wdT;
+    loop.wdT = wall;
+    if (gap > 400 && loop.postedAt !== null) loop.postedAt += gap - 200;
     const frameMs = frameTimeoutMs();
-    if (engine && engine.kind === 'worker' && loop.busy && now - loop.busySince > frameMs) {
-      stepDown(`worker не ответил на кадр за ${frameMs} мс`);
+    if (engine && engine.kind === 'worker' && loop.busy) {
+      if (loop.postedAt !== null && now - loop.postedAt > frameMs) stepDown(`worker не ответил на кадр за ${frameMs} мс`);
+      else if (loop.postedAt === null && now - loop.busySince > cfg.captureStallMs) stepDown(`снимок кадра для воркера не готов ${Math.round((now - loop.busySince) / 1000)} с`, true);
     }
     checkSlowGpu(now);
     interp.tick(now);

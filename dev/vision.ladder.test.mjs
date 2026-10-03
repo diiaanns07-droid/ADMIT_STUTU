@@ -348,7 +348,7 @@ test('L04 кадры на GPU идут по 3 с (после первых) → �
   ok(messages(env).some((m) => /Видеокарта не успевает/.test(m)), 'игрок видит причину');
 }));
 
-test('L05 воркер GPU и воркер CPU молчат на кадрах → главный поток GPU; затем повторные ошибки GPU → главный поток CPU', () => withShell({ config: { workerFirstFrameTimeoutMs: 1000, workerFrameTimeoutMs: 1000 } }, async (env, v) => {
+test('L05 воркер GPU и воркер CPU молчат на кадрах → главный поток GPU; затем повторные ошибки GPU → главный поток CPU', () => withShell({ config: { workerFirstFrameTimeoutMs: 1000, workerFrameTimeoutMs: 1000, cpuWorkerFrameTimeoutMs: 1000 } }, async (env, v) => {
   SlowWorker.hooks.frameDelayMs = () => Infinity;
   await v.start();
   await pump(env, 1400);
@@ -566,6 +566,77 @@ test('L16 «Играть», пока меню докачивает MediaPipe: ф
     eq(seen[seen.length - 1], 9 * 1048576, 'в конце — всё скачано');
   } finally { restore(); }
 });
+
+test('L17 снимок кадра для воркера готов через 6 с (грузится витрина) — воркер не виноват: без отката', () => withShell({}, async (env, v) => {
+  await v.start();
+  await pump(env, 400);
+  eq(v.getStatus().status, 'ready');
+  let release = null;
+  globalThis.createImageBitmap = () => new Promise((res) => { release = () => res(fakeBitmap('capture')); });
+  await pump(env, 6000);
+  ok(!!release, 'снимок кадра начат');
+  let s = v.getStatus();
+  eq(s.debug.engineStep, 'worker-gpu', 'ступень прежняя');
+  eq(s.debug.ladderHistory.length, 0, `откатов нет: ${JSON.stringify(s.debug.ladderHistory)}`);
+  globalThis.createImageBitmap = env.createImageBitmap;
+  release();
+  await pump(env, 600);
+  s = v.getStatus();
+  eq(s.status, 'ready', 'трекинг продолжается в воркере');
+  eq(s.mode, 'worker');
+}));
+
+test('L18 снимок кадра не готов дольше captureStallMs → сразу главный поток (воркер на CPU не поможет)', () => withShell({ config: { captureStallMs: 3000 } }, async (env, v) => {
+  await v.start();
+  await pump(env, 400);
+  globalThis.createImageBitmap = () => new Promise(() => {});
+  await pump(env, 3600);
+  await waitFor(() => v.getStatus().mode === 'main', 3000, env);
+  const s = v.getStatus();
+  eq(s.mode, 'main', 'главный поток');
+  eq(s.debug.ladderHistory.map((h) => h.step).join(','), 'worker-gpu', 'воркер на CPU пропущен');
+  ok(/снимок кадра для воркера не готов/.test(s.debug.ladderHistory[0].reason), s.debug.ladderHistory[0].reason);
+  await pump(env, 600);
+  eq(v.getStatus().status, 'ready', 'трекинг продолжается');
+}));
+
+test('L19 главный поток стоял 3 с, ответ воркера ждал в очереди — сторож не винит воркер; настоящее молчание — ступень ниже', () => withShell({}, async (env, v) => {
+  SlowWorker.hooks.frameDelayMs = (d, n) => (n <= 5 ? 0 : n === 6 ? 100 : Infinity);
+  await v.start();
+  await pump(env, 400);
+  eq(v.getStatus().status, 'ready');
+  // кадр №6 ушёл воркеру; ответ готов через 100 мс, но главный поток стоит 3 с (часы и настенное время идут вместе)
+  await pump(env, 300, { until: () => SlowWorker.held.length > 0 });
+  const realNow = Date.now;
+  let skew = 0;
+  Date.now = () => realNow() + skew;
+  try {
+    clock.t += 3000; skew += 3000;
+    await realWait(260);   // первым после простоя сработал сторож, ответ ещё в очереди
+    await settle(3);
+    eq(v.getStatus().debug.ladderHistory.length, 0, `простой главного потока не засчитан воркеру: ${JSON.stringify(v.getStatus().debug.ladderHistory)}`);
+  } finally { Date.now = realNow; }
+  // дальше воркер молчит по-настоящему — таймаут кадра считается как обычно
+  await pump(env, 3200);
+  await waitFor(() => v.getStatus().debug.engineStep === 'worker-cpu', 3000, env);
+  ok(/не ответил на кадр/.test(v.getStatus().debug.ladderHistory[0].reason), JSON.stringify(v.getStatus().debug.ladderHistory));
+}));
+
+test('L20 воркер на CPU: кадр 4 с (процессор занят загрузкой) — остаёмся в воркере; завис дольше 8 с — главный поток', () => withShell({ config: { delegate: 'CPU' } }, async (env, v) => {
+  SlowWorker.hooks.frameDelayMs = (d, n) => (n <= 5 ? 0 : n === 6 ? 4000 : n <= 12 ? 0 : Infinity);
+  await v.start();
+  await pump(env, 400);
+  eq(v.getStatus().debug.engineStep, 'worker-cpu');
+  await pump(env, 5000);
+  let s = v.getStatus();
+  eq(s.debug.ladderHistory.length, 0, `медленный кадр — не повод уходить: ${JSON.stringify(s.debug.ladderHistory)}`);
+  eq(s.mode, 'worker');
+  await pump(env, 9000);
+  await waitFor(() => v.getStatus().mode === 'main', 3000, env);
+  s = v.getStatus();
+  eq(s.mode, 'main', 'завис — главный поток');
+  ok(/не ответил на кадр за 8000 мс/.test(s.debug.ladderHistory[0].reason), s.debug.ladderHistory[0].reason);
+}));
 
 // ───────────────────────────── запуск ─────────────────────────────
 const only = process.argv[2] ? new RegExp(process.argv[2]) : null;

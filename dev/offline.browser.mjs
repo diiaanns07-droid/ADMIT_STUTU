@@ -122,7 +122,7 @@ const browser = await pw.chromium.launch({
 });
 
 async function newContext() {
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, permissions: ['camera'], ignoreHTTPSErrors: true });
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, permissions: ['camera', 'clipboard-read', 'clipboard-write'], ignoreHTTPSErrors: true });
   await ctx.addInitScript(() => { try { if (!localStorage.getItem('ashen-oath.settings.v1')) localStorage.setItem('ashen-oath.settings.v1', JSON.stringify({ quality: 'low', qualityAuto: false, reducedMotion: true })); } catch (e) { /* ignore */ } });
   // точное время появления window.__ASHEN__ (main.js выполнился — меню на экране)
   await ctx.addInitScript(() => {
@@ -148,6 +148,10 @@ async function newContext() {
       Worker.prototype.postMessage = function (m, ...rest) { if (m && m.type === 'init' && m.delegate) m = { ...m, delegate: 'CPU' }; return pm.call(this, m, ...rest); };
     });
   }
+  await ctx.addInitScript(() => {
+    window.__aoLong = [];
+    try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__aoLong.push([Math.round(e.startTime), Math.round(e.duration)]); }).observe({ type: 'longtask', buffered: true }); } catch (e) { /* нет longtask */ }
+  });
   const errors = [];
   ctx.on('page', (p) => {
     p.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
@@ -195,12 +199,31 @@ async function run(ctx, label, query = '', opts = {}) {
   out.cameraMs = Math.round((await p.evaluate(() => performance.now())) - tClick);
   out.cameraStatus = st;
   await sleep(2500);
-  out.tracking = await p.evaluate(() => { const t = window.__ASHEN__.tracking; const d = t.debug || {}; return { status: t.status, message: t.message, mode: t.mode, delegate: t.delegate, hands: !!(t.hands && t.hands.ready), model: d.poseModel, hz: d.inferenceHz, results: d.results, fallback: d.workerFallbackReason }; }).catch(() => null);
+  out.tracking = await p.evaluate(() => { const t = window.__ASHEN__.tracking; const d = t.debug || {}; return { status: t.status, message: t.message, mode: t.mode, delegate: t.delegate, hands: !!(t.hands && t.hands.ready), model: d.poseModel, hz: d.inferenceHz, results: d.results, fallback: d.workerFallbackReason, ladder: d.ladderHistory }; }).catch(() => null);
+  // [W5-КАМЕРА] долгие задачи главного потока после «Играть» (> 300 мс): рядом с откатом по лестнице — причина в нём
+  out.longTasks = await p.evaluate((t) => (window.__aoLong || []).filter((x) => x[0] >= t - 1000 && x[1] > 300), tClick).catch(() => null);
   await shot(p, `${label}_2_camera.png`);
+  // [W5-КАМЕРА] экран камеры: «Диагностика» раскрывается, «Скопировать отчёт» отдаёт текст отчёта
+  out.screen = await p.evaluate(() => window.__ASHEN__.screen).catch(() => null);
+  out.diag = await (async () => {
+    const sum = p.locator('details.ao-camdiag:visible > summary').first();
+    if (!(await sum.count())) return { error: 'нет «Диагностики» на экране' };
+    await sum.click();
+    await sleep(400);
+    const rows = await p.locator('details.ao-camdiag[open] dt').allInnerTexts();
+    await p.getByRole('button', { name: 'Скопировать отчёт' }).first().click();
+    await sleep(400);
+    const note = await p.locator('details.ao-camdiag[open] .ao-camdiag__note').first().innerText().catch(() => '');
+    let text = await p.evaluate(() => navigator.clipboard.readText()).catch(() => '');
+    if (!/отчёт камеры/.test(text)) text = await p.locator('details.ao-camdiag[open] textarea').first().inputValue().catch(() => '');
+    await shot(p, `${label}_3_diag.png`);
+    return { rows, note, report: text.split('\n').slice(0, 3).join(' / '), reportLines: text ? text.split('\n').length : 0 };
+  })().catch((e) => ({ error: String((e && e.message) || e).split('\n')[0] }));
   out.wireMB = MB(wire.bytes - w0);
   out.wireReq = wire.log.length - l0;
   out.wireSample = wire.log.slice(l0).filter((u) => !/\.(js|css|html)(\?|$)|^\/(\?|$)/.test(u)).slice(0, 12);
   out.wallMs = Date.now() - t0;
+  out.tClick = Math.round(tClick);
   return { out, page: p };
 }
 
@@ -264,6 +287,13 @@ try {
   check('офлайн: игра стартовала', off.booted, off.bootErr || `меню за ${off.menuMs} мс`);
   check('офлайн: модель распознавания инициализировалась и обрабатывает кадры', works(off) && !!off.tracking && off.tracking.results > 0, `${off.cameraStatus} за ${off.cameraMs} мс; ${JSON.stringify(off.tracking)}`);
   check('офлайн: кисти (HandLandmarker) тоже готовы', !!(off.tracking && off.tracking.hands), JSON.stringify(off.tracking));
+  // [W5-КАМЕРА] экран камеры, «Диагностика» и «Скопировать отчёт» — и без сети (modules/camReport.js в кэше sw.js)
+  for (const o of [first, off]) {
+    check(`${o.label}: экран камеры открылся`, ['camera', 'calibration'].includes(o.screen), `экран ${o.screen}`);
+    const dg = o.diag || {};
+    check(`${o.label}: «Диагностика» раскрывается — камера, распознавания, где считается`, !dg.error && ['Камера', 'Распознаваний', 'Где считается'].every((k) => (dg.rows || []).includes(k)), dg.error || (dg.rows || []).join(', '));
+    check(`${o.label}: «Скопировать отчёт» даёт отчёт`, /отчёт камеры/.test(dg.report || '') && dg.reportLines >= 8, `${dg.note || ''}; строк ${dg.reportLines}; ${dg.report || dg.error || ''}`);
+  }
   // [W5-КАМЕРА] медленный кадр — ступень ниже в воркере (CPU), а не главный поток: раньше здесь был откат
   // «worker не ответил на кадр за 2500 мс» → главный поток, 0,5 распознавания в секунду и «Нет новых кадров с камеры»
   for (const o of [first, second, off]) if (works(o) && o.tracking) check(`${o.label}: распознавание в воркере, не в главном потоке`, o.tracking.mode === 'worker', JSON.stringify(o.tracking));
