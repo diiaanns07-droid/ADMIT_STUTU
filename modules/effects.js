@@ -1316,6 +1316,8 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
   let matchEndPlayed = false;
   // [SFX] звук события боя — один на действие, независимо от того, какой слой (V6 или старый) рисует эффект
   function playEventSfx(type, ev, d) {
+    // [W5-СЛОЖНОСТЬ] замах оборван (финт Регента, оглушение, уход с арены): в сэмпле замаха — звук удара, его гасим
+    if (type === 'telegraph_cancel') { audio.stopCat('windup', 0.08); return; }
     const list = sfxForEvent(type, d);
     if (!list) return;
     const remote = d && d.remote === true;
@@ -4344,6 +4346,8 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
     stopLoops();
     for (const v of voices.slice()) stopVoice(v, 0.05);
   }
+  // [W5-СЛОЖНОСТЬ] заглушить голоса одной категории (оборванный замах Регента — сэмпл замаха с ударом внутри)
+  function stopCat(cat, fade) { for (const v of voices.slice()) if (v.cat === cat && !v.loop) stopVoice(v, fade ?? 0.08); }
   // [SFX] Пауза: гасим петли и боевые голоса, шина эффектов в ноль, эмбиент тише; интерфейсная шина работает.
   function setPaused(p) {
     p = !!p;
@@ -4404,5 +4408,5 @@ function createAudioEngine({ panFor, distGain, volume: initialVolume, maxVoices,
     ctx = null; noise = null;
   }
 
-  return { unlock, setVolume, setPaused, play, fx, loop, loopStop, loopCtl, stopLoops, stopAll, duck, update, state, dispose };
+  return { unlock, setVolume, setPaused, play, fx, loop, loopStop, loopCtl, stopLoops, stopAll, stopCat, duck, update, state, dispose };
 }

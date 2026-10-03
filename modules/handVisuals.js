@@ -234,7 +234,7 @@ export function createHandVisuals({ THREE, scene, config } = {}) {
   // ---------------------------------------------------------------- текстуры
   function canvasOf(w, h) {
     if (typeof document === 'undefined' || !document.createElement) return null;
-    const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
+    const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d', { willReadFrequently: true }); return c;   // [W5-СТАРТ] программный 2D-холст
   }
   // Атлас 4×128: 0 мягкое свечение · 1 звезда-вспышка · 2 кольцо · 3 горячая точка
   function makeAtlas() {

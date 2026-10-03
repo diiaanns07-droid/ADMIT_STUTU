@@ -92,6 +92,7 @@ const clipsFor = (d) => (d.mode === 'walk' ? ['Walk', 'Idle'] : d.mode === 'sit'
 function canvas(w, h) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
+  c.getContext('2d', { willReadFrequently: true });   // [W5-СТАРТ] программный 2D-холст (willReadFrequently): рисуется на CPU страницы, не в очереди GPU-процесса — там его ждала сборка шейдеров
   return c;
 }
 function valueNoise(seed) {
@@ -385,6 +386,10 @@ export function createElfVillage({
 } = {}) {
   if (!THREE || !parent || typeof groundY !== 'function') throw new Error('[elfVillage] нужны THREE, parent и groundY');
   const V = ELF_VILLAGE, CX = V.x, CZ = V.z;
+  // [W5-ПОЛ] луг лежит на MEADOW_LIFT выше рельефа и тает к краю; floorLift(x, z) — его высота для земли героя
+  // (world.layoutGroundY), иначе стопы уходили в луг на 3,5 см
+  const MEADOW_LIFT = 0.035, MEADOW_R = V.r + 1;
+  const floorLift = (x, z) => { const d = Math.hypot(x - CX, z - CZ); return d >= MEADOW_R ? 0 : MEADOW_LIFT * (1 - smoothstep(MEADOW_R - 8, MEADOW_R - 0.5, d)); };
   const rnd = mulberry32(seed);
   const gy = (x, z) => { const y = groundY(x, z); return Number.isFinite(y) ? y : V.level; };
   const W = (dx, dz) => ({ x: CX + dx, z: CZ + dz });
@@ -1078,10 +1083,10 @@ export function createElfVillage({
   // зазоров; край растворяется (альфа вершин). Трещины и лужи пепельного камня под ней не видны.
   {
     const texMeadow = tex(paintMeadow(256, seed + 8));
-    const Rm = V.r + 1, N = 46, step = (2 * Rm) / N, pos = [], col = [], uv = [], idx = [];
+    const Rm = MEADOW_R, N = 46, step = (2 * Rm) / N, pos = [], col = [], uv = [], idx = [];
     for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
       const x = CX - Rm + i * step, z = CZ - Rm + j * step, d = Math.hypot(x - CX, z - CZ);
-      pos.push(x, gy(x, z) + 0.035, z);
+      pos.push(x, gy(x, z) + MEADOW_LIFT, z);   // [W5-ПОЛ]
       uv.push(x / 7, z / 7);
       col.push(1, 1, 1, 1 - smoothstep(Rm - 8, Rm - 0.5, d));
     }
@@ -2022,6 +2027,7 @@ export function createElfVillage({
     radius: V.r,
     colliders,
     groundAt,
+    floorLift,   // [W5-ПОЛ]
     get weight() { return state.weight; },
     get ready() { return state.npcReady; },
     loadNpcs,   // [LOAD] загрузить жителей сейчас (стенды, QA)

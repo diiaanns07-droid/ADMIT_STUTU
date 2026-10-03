@@ -20,7 +20,7 @@
 // createVoiceDirector(coach) — что говорить в игре: подсказки input.hint (новые по code|tMs), события боя,
 // здоровье Регента («Добей его!»), тренировка (счёт, ошибка повтора, итог подхода), «Распознано!» в обучении.
 
-import { hintPhrase, trainPhrase, countWord, setSummary, ANNOUNCER, SIGIL_PHRASES, ULT_PHRASES } from '../core/voicePhrases.js';
+import { hintPhrase, trainPhrase, countWord, setSummary, ANNOUNCER, SIGIL_PHRASES, ULT_PHRASES, NEXT_DIFFICULTY_PHRASES } from '../core/voicePhrases.js';
 
 export const PRIORITY = Object.freeze({ count: 1, info: 2, event: 3, error: 4, final: 5 });
 const TTL = Object.freeze({ count: 900, info: 2500, event: 2500, error: 1400, final: 4000 });
@@ -238,7 +238,7 @@ export function createVoiceRecords(storage, key = VOICE_RECORDS_KEY) {
   let data = null;
   function load() {
     if (data) return data;
-    data = { win: null, acc: null, reps: {} };
+    data = { win: null, acc: null, reps: {}, levels: {} };
     try {
       const raw = storage && typeof storage.getItem === 'function' ? storage.getItem(key) : null;
       const o = raw ? JSON.parse(raw) : null;
@@ -246,15 +246,19 @@ export function createVoiceRecords(storage, key = VOICE_RECORDS_KEY) {
         if (fin(o.win) && o.win > 0) data.win = o.win;
         if (fin(o.acc)) data.acc = o.acc;
         if (o.reps && typeof o.reps === 'object') for (const [k, v] of Object.entries(o.reps)) if (fin(v) && v > 0) data.reps[k] = v;
+        // [W5-СЛОЖНОСТЬ] рекорд победы — свой на каждой сложности (быстрая «Лёгкая» не перебивает «Кошмар»)
+        if (o.levels && typeof o.levels === 'object') for (const [k, v] of Object.entries(o.levels)) if (v && typeof v === 'object') data.levels[k] = { win: fin(v.win) && v.win > 0 ? v.win : null, acc: fin(v.acc) ? v.acc : null };
       }
     } catch (e) { /* хранилище недоступно или испорчено — начинаем с нуля */ }
     return data;
   }
   function save() { try { if (storage && typeof storage.setItem === 'function') storage.setItem(key, JSON.stringify(data)); } catch (e) { /* ignore */ } }
   return {
-    // победа за timeSec с точностью accuracy (%, может быть null) → true, если это рекорд
-    win(timeSec, accuracy) {
-      const d = load();
+    // победа за timeSec с точностью accuracy (%, может быть null) → true, если это рекорд.
+    // [W5-СЛОЖНОСТЬ] level — сложность боя: у каждой свой рекорд; без него — прежний общий
+    win(timeSec, accuracy, level) {
+      const all = load();
+      const d = typeof level === 'string' && level ? (all.levels[level] || (all.levels[level] = { win: null, acc: null })) : all;
       const hadWin = d.win !== null;
       const faster = fin(timeSec) && timeSec > 0 && hadWin && timeSec < d.win - 0.5;
       const sharper = fin(accuracy) && d.acc !== null && hadWin && accuracy > d.acc;
@@ -268,7 +272,7 @@ export function createVoiceRecords(storage, key = VOICE_RECORDS_KEY) {
       const d = load();
       if (fin(n) && n > (d.reps[exercise] || 0)) { d.reps[exercise] = Math.floor(n); save(); }
     },
-    get data() { return { ...load(), reps: { ...load().reps } }; },
+    get data() { return { ...load(), reps: { ...load().reps }, levels: { ...load().levels } }; },
   };
 }
 
@@ -321,9 +325,11 @@ export function createVoiceDirector(coach, { records = null } = {}) {
         if (records) {
           const f = view.fight || {};
           let rec = false;
-          try { rec = records.win(f.time, f.accuracy); } catch (err) { rec = false; }
+          try { rec = records.win(f.time, f.accuracy, view.difficulty); } catch (err) { rec = false; }
           if (rec) coach.final(ANNOUNCER.record, { ttl: 7000 });
         }
+        // [W5-СЛОЖНОСТЬ] совет следующей сложности (после «Победа!» и «Новый рекорд!» — ниже приоритетом, ждёт очереди)
+        if (view.difficulty && NEXT_DIFFICULTY_PHRASES[view.difficulty]) coach.info(NEXT_DIFFICULTY_PHRASES[view.difficulty], { ttl: 9000 });
         break;
       case 'defeat': if (!S.outcome && !view.pvp) { S.outcome = true; coach.final(ANNOUNCER.defeat); } break;
       case 'pvp_round':

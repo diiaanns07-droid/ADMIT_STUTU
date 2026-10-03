@@ -28,6 +28,9 @@ const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a)
 // шёлка (широкий цветной блик) — поверх общего света героя (heroShading.patchHeroLight: heroKey*).
 // o: { Mt, physical, name, tex: { map, bumpAlpha, emissive }, kind: 'silk'|'velvet'|'leather', color, sheen,
 //      lining, alpha, emissiveK, side }
+// [W5-СВЕТ] вышивка и бусины тканей (лепестки эльфийки, звёзды чародейки, вихри накидки лучницы) — ×0,65:
+// при полном всплеске заклинаний (×2,4, heroGear) бусины лепестков 0,81 по яркости вместо 1,25 — ниже порога bloom
+const FAB_GLOW = 0.65;
 export function fabricMaterial(THREE, o) {
   const { Mt, physical = true, name = 'gear-fabric', tex = {}, kind = 'silk', color = 0xffffff, sheen = 0xffffff, lining = null, alpha = false, emissiveK = 1, side = THREE.DoubleSide } = o;
   const Std = physical ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
@@ -35,7 +38,9 @@ export function fabricMaterial(THREE, o) {
   const m = new Std({
     name, color, map: tex.map || null, bumpMap: tex.bumpAlpha || null, bumpScale: leather ? 1.3 : velvet ? 0.9 : 0.7,
     alphaMap: alpha && tex.bumpAlpha ? tex.bumpAlpha : null, alphaTest: alpha && tex.bumpAlpha ? 0.5 : 0,
-    emissive: 0xffffff, emissiveMap: tex.emissive || null, emissiveIntensity: tex.emissive ? emissiveK : 0,
+    // [W5-СВЕТ] без карты свечения — чёрный emissive: обновление кадра (heroGear, update ниже) ставит силу всем тканям,
+    // и ткань без вышивки не должна светиться белым целиком
+    emissive: tex.emissive ? 0xffffff : 0x000000, emissiveMap: tex.emissive || null, emissiveIntensity: tex.emissive ? emissiveK * FAB_GLOW : 0,
     roughness: velvet ? 0.88 : leather ? 0.58 : 0.4, metalness: 0, side,
     ...(physical ? {
       sheen: velvet ? 1 : leather ? 0.25 : 0.75, sheenRoughness: velvet ? 0.42 : leather ? 0.6 : 0.3, sheenColor: new THREE.Color(sheen),
@@ -48,7 +53,7 @@ export function fabricMaterial(THREE, o) {
     fabTint: { value: new THREE.Color(sheen) },
     fabRim: { value: velvet ? 0.55 : leather ? 0.12 : 0.22 },
     fabRimP: { value: velvet ? 2.2 : 3.5 },
-    fabSilk: { value: kind === 'silk' ? 0.32 : leather ? 0.12 : 0.05 },
+    fabSilk: { value: kind === 'silk' ? 0.22 : leather ? 0.12 : 0.05 },   // [W5-СВЕТ] шёлк 0,32 → 0,22: блик ключа витрины на светлом шёлке не заливает лепестки
     fabLining: { value: new THREE.Color(lining == null ? 0xffffff : lining) },
   };
   const prev = m.onBeforeCompile;
@@ -72,7 +77,7 @@ export function fabricMaterial(THREE, o) {
   };
   const pk = m.customProgramCacheKey;
   m.customProgramCacheKey = () => `fabric:${kind}:${lining != null}:` + (pk ? pk.call(m) : '');
-  m.userData.fabric = { kind, base: emissiveK };
+  m.userData.fabric = { kind, base: emissiveK * FAB_GLOW };   // [W5-СВЕТ]
   return m;
 }
 
@@ -423,11 +428,12 @@ function sparkles(THREE, anchors, color, holder) {
   const pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3).setUsage(THREE.DynamicDrawUsage));
-  const mat = new THREE.PointsMaterial({ name: 'gear-sparkle', map: glintTexture(THREE), size: 0.055, sizeAttenuation: true, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: true });
+  const mat = new THREE.PointsMaterial({ name: 'gear-sparkle', map: glintTexture(THREE), size: 0.045, sizeAttenuation: true, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: true });   // [W5-СВЕТ] размер блёсток: было 0,055
   const pts = new THREE.Points(geo, mat);
   pts.name = 'attire-sparkles'; pts.frustumCulled = false; pts.renderOrder = 4;
   holder.add(pts);
-  const base = new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.45);
+  // [W5-СВЕТ] блёстки — цветом свечения героя (было 45 % белого: у лица эльфийки белые звёзды)
+  const base = new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.2);
   const v = new THREE.Vector3(), inv = new THREE.Matrix4();
   const ph = anchors.map((_, i) => ({ w: 1.3 + ((i * 0.618) % 1) * 1.7, p: i * 2.39 }));
   return {
@@ -441,7 +447,7 @@ function sparkles(THREE, anchors, color, holder) {
         // вспышка: короткий острый пик раз в 2–5 с и слабое мерцание между ними; с заклинанием — ярче
         const s = Math.sin(t * ph[i].w + ph[i].p), s2 = Math.sin(t * ph[i].w * 2.3 + ph[i].p * 1.7);
         const tw = 1.1 * Math.pow(Math.max(0, s), 10) + 0.45 * Math.pow(Math.max(0, s2), 6) + 0.3 + 0.08 * Math.sin(t * 7.3 + i);
-        const k = tw * (0.75 + 0.45 * Math.min(2.4, glow));
+        const k = tw * (0.6 + 0.3 * Math.min(2, glow));   // [W5-СВЕТ] было 0,75 + 0,45·min(2,4, glow)
         col[i * 3] = base.r * k; col[i * 3 + 1] = base.g * k; col[i * 3 + 2] = base.b * k;
       }
       geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true;

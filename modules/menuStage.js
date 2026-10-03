@@ -45,6 +45,9 @@ const MAX_PARTS = 420, MAX_ROCKS = 22, MAX_MIST = 4;
 // Центр кольца — на высоте ≈2,8 м: с камеры витрины он ложится за голову героя (вихрь — ореол за силуэтом).
 const PORTAL = { x: -1.2, z: -9.3, rMid: 2.45, thick: 0.5, depth: 0.78, lift: 0.36 };
 const FLOOR_R = 9.5;
+// [W5-ПОЛ] пол витрины на 1,2 см выше корня героя: накрывает неровные плиты арены (±1,1–1,6 см) под ним.
+// Герой встаёт на этот пол (floorY → heroModel.setFloorLift), а не на корень — иначе пол закрывал низ подошв.
+const FLOOR_Y = 0.012;
 
 // ---------------------------------------------------------------- GLSL: общий шум и туман
 const NOISE = /* glsl */`
@@ -424,6 +427,21 @@ void main(){
   ${OUT}
 }`;
 
+// [W5-СВЕТ] яркость цвета стихии не выше Lmax (Rec. 709, линейная): оттенок тот же, насыщенность ×sat.
+// Светлые пары эльфийки, лучницы и архимага (L 0,8–0,9 — почти белый) иначе делают портал за головой героя
+// и свет на нём ярче порога bloom (сердцевина вихря 1,7 против 0,7–1,0 у стража и чародейки), и светлые волосы
+// и лицо тонут в засветке. Тёмные стихии (страж, чародейка) не меняются. Тот же предел — у света витрины.
+export function glowCap(c, Lmax, sat = 1.3) {
+  const lum = (x) => 0.2126 * x.r + 0.7152 * x.g + 0.0722 * x.b;
+  const l = lum(c);
+  if (l <= Lmax) return c;
+  c.multiplyScalar(Lmax / l);
+  c.setRGB(Math.max(0, Lmax + (c.r - Lmax) * sat), Math.max(0, Lmax + (c.g - Lmax) * sat), Math.max(0, Lmax + (c.b - Lmax) * sat));
+  return c.multiplyScalar(Lmax / Math.max(1e-4, lum(c)));
+}
+// [W5-СВЕТ] пределы яркости цветов стихии на сцене витрины (основной и второй)
+export const STAGE_COL_L = [0.42, 0.7];
+
 export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotion = false, prebuild = false } = {}) {
   const root = new THREE.Group();
   root.name = 'menu-stage';
@@ -722,7 +740,7 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
       uTexM: { value: new THREE.Matrix4() }, uWave: { value: -1 }, uWaveR: { value: 7.5 }, uR: { value: FLOOR_R }, uSummon: { value: 0 },
     }, { ...premul, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
     floor.name = 'menu-stage-floor';
-    floor.position.y = 0.012;
+    floor.position.y = FLOOR_Y;
     floor.renderOrder = -1;
     floor.onBeforeRender = (renderer, sc, camera) => { M.renderer = renderer; try { renderMirror(renderer, sc, camera); } catch (e) { M.on = false; freeMirror(); console.warn('[W4-ВИТРИНА] отражение отключено', e && e.message); } };
     own(floor);
@@ -837,7 +855,7 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
 
   function setElement(fx, element) {
     const key = element || (fx && fx.style) || '';
-    if (fx) { S.colT.set(fx.color); S.col2T.set(fx.color2 || fx.color); }
+    if (fx) { glowCap(S.colT.set(fx.color), STAGE_COL_L[0]); glowCap(S.col2T.set(fx.color2 || fx.color), STAGE_COL_L[1]); }   // [W5-СВЕТ]
     if (key === S.elem && S.pend === null) return;
     if (key === S.pend) return;
     if (key === S.elem) { S.pend = null; S.swap = 0; return; }   // вернулись к прежней стихии до конца смены
@@ -957,5 +975,7 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
     if (root.parent) root.parent.remove(root);
   }
 
-  return { group: root, update, setQuality, setReducedMotion, setReflect, wave, portalWorld, info, dispose, get quality() { return S.q; } };
+  return { group: root, update, setQuality, setReducedMotion, setReflect, wave, portalWorld, info, dispose, get quality() { return S.q; },
+    // [W5-ПОЛ] высота видимого пола витрины над корнем героя (м): пол тает вместе со сценой (uK), скрыт — 0
+    get floorY() { return S.built && root.visible ? FLOOR_Y * U.uK.value : 0; } };
 }

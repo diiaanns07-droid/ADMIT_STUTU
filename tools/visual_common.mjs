@@ -211,7 +211,8 @@ function FRAME_STATS() {
 export const pageFns = { CLOCK, PROBE, FRAME_STATS };
 
 // Подмена ответа config.js: быстрые кадры до арены и управляемый Регент (HP, урон)
-export function configPatcher({ bossHp, bossDamage, normalHp, normalDamage } = {}) {
+// [W5-СЛОЖНОСТЬ] levels: { hard: { bossHp, bossDamage }, … } — то же для любого уровня (строка «уровень: { bossHp: N, bossDamage: N»)
+export function configPatcher({ bossHp, bossDamage, normalHp, normalDamage, levels } = {}) {
   return async (route) => {
     const r = await route.fetch();
     let body = (await r.text())
@@ -224,12 +225,16 @@ export function configPatcher({ bossHp, bossDamage, normalHp, normalDamage } = {
       body = body.replace(/normal:\s*\{\s*bossHp:\s*[\d.]+,\s*bossDamage:\s*[\d.]+\s*\}/,
         `normal: { bossHp: ${normalHp ?? 1}, bossDamage: ${normalDamage ?? 1} }`);
     }
+    for (const [lv, o] of Object.entries(levels || {})) {
+      body = body.replace(new RegExp(`${lv}:\\s*\\{\\s*bossHp:\\s*[\\d.]+,\\s*bossDamage:\\s*[\\d.]+`),
+        `${lv}: { bossHp: ${o.bossHp ?? 1}, bossDamage: ${o.bossDamage ?? 1}`);
+    }
     return route.fulfill({ response: r, body, headers: { ...r.headers(), 'content-type': 'text/javascript' } });
   };
 }
 
 // Новый контекст с игрой: настройки игрока, часы, подмена config.js; ждёт меню и загрузку ассетов
-export async function openGame(browser, server, { size = [1280, 720], settings = {}, patch = {}, query = '?uncapped=1', seed = 20261002, log = () => {} } = {}) {
+export async function openGame(browser, server, { size = [1280, 720], settings = {}, patch = {}, query = '?uncapped=1', seed = 20261002, log = () => {}, beforeGoto = null } = {}) {
   const ctx = await browser.newContext({ viewport: { width: size[0], height: size[1] }, deviceScaleFactor: 1, ignoreHTTPSErrors: true });
   const s = { qualityAuto: false, reducedMotion: false, difficulty: 'easy', volume: 0, muted: true, voice: false, ...settings };
   await ctx.addInitScript((st) => {
@@ -240,6 +245,7 @@ export async function openGame(browser, server, { size = [1280, 720], settings =
   }, s);
   await ctx.addInitScript(CLOCK, seed);
   await ctx.route(/\/config\.js(\?.*)?$/, configPatcher(patch));
+  if (beforeGoto) await beforeGoto(ctx);   // [W5-СВЕТ] свои маршруты опыта (tools/hero_haze_ab.mjs) — до загрузки страницы
   const page = await ctx.newPage();
   page.setDefaultTimeout(240000);   // программный рендер под нагрузкой (параллельные уровни) отвечает медленно
   const errors = [];
