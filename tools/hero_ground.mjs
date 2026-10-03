@@ -8,8 +8,8 @@
 // Каждый кадр — window.__ASHEN__.heroFeet(): нижняя точка подошвы (вершины сетки стоп) и видимый пол под ней.
 //   node tools/hero_ground.mjs --quality medium --out /tmp/hg-medium.json [--heroes ashen,elf] [--root DIR] [--quick]
 //        [--reduced] (настройка «уменьшенное движение») [--no-menu] [--no-battle] [--no-defeat]
-//   node tools/hero_ground.mjs --report docs/hero-ground --after a.json,b.json [--before c.json,d.json]
-//        — без прогона: таблица .md и графики .svg (|зазор| по времени у каждого героя, до и после)
+//   node tools/hero_ground.mjs --report docs/hero-ground --after a.json,b.json [--before c.json,d.json] [--mid e.json]
+//        — без прогона: таблица .md и графики .svg (|зазор| по времени у каждого героя, до, [промежуточный] и после)
 //   node tools/hero_ground.mjs --cost [--quality low,medium] [--out FILE.json] — цена подошвы за кадр в браузере
 //        (window.__ASHEN__.heroFeetCost: как сейчас и прежним точным скиннингом), каждый герой в меню и в бою
 
@@ -232,33 +232,38 @@ function chart(title, series, { w = 760, h = 230, tMax = null, yMin = -0.1, yMax
 function report() {
   const DIR = resolve(A.of('--report', join(HERE, 'docs', 'hero-ground')));
   const load = (list) => (list || '').split(',').filter(Boolean).map((f) => JSON.parse(readFileSync(resolve(f), 'utf8')));
-  const after = load(A.of('--after', '')), before = load(A.of('--before', ''));
+  const after = load(A.of('--after', '')), before = load(A.of('--before', '')), mid = load(A.of('--mid', ''));
+  const LB = { before: A.of('--before-label', 'до'), mid: A.of('--mid-label', 'main'), after: A.of('--after-label', 'после') };
   mkdirSync(DIR, { recursive: true });
   const NAMES = { ashen: 'Пепельный страж', elf: 'Эльфийка', dark: 'Тёмная чародейка', ranger: 'Лучница', archmage: 'Архимаг' };
-  const COL = { before: '#2a78d6', after: '#eb6834' };   // слоты 1 и 2 категориальной палитры
+  const COL = { before: '#2a78d6', after: '#eb6834', mid: '#1baf7a' };   // слоты 1, 2, 3 категориальной палитры (проверены вместе)
   const cm = (x) => (x == null ? '—' : (x * 100).toFixed(1));
   let md = '# Стопы героев и пол: |подошва − пол|\n\n';
   md += 'Замер `node tools/hero_ground.mjs` (виртуальное время, `window.__ASHEN__.heroFeet()`): зазор = нижняя точка подошвы ' +
-    '(вершины сетки стоп) − видимый пол под ней; меньше нуля — стопа в полу. Цель — не глубже 2 см. «Дрейф» — средний зазор ' +
-    'в первой и последней четверти кадров, когда стопа на земле.\n\n';
-  const qualities = [...new Set([...after, ...before].map((r) => r.quality))];
+    '(вершины сетки стоп) − видимый пол под ней (луч сверху); меньше нуля — стопа в полу. «Стоя» — кадры без законного полёта ' +
+    'клипа: меню, покой, касты, щит, удары по герою, «Небесный суд», победа, поражение (бег и рывок — только «не ниже пола»). ' +
+    'Цель: стоя |подошва − пол| ≤ 2 см, ни в одном кадре не глубже 2 см. «Дрейф» — средний зазор стоя в первой и последней ' +
+    'четверти ряда (бой — около 2 мин). Меню — 6 кругов смены пяти героев по 2 с.\n\n';
+  const qualities = [...new Set([...after, ...before, ...mid].map((r) => r.quality))];
   for (const q of qualities) {
-    const a = after.find((r) => r.quality === q), b = before.find((r) => r.quality === q);
-    // ячейка — «до → после», см (без замера «до» — только «после»)
-    md += `## ${q}\n\n| Сцена | Герой | медиана \\|подошва − пол\\| | максимум \\|подошва − пол\\| стоя | глубже всего | кадров глубже 2 см | дрейф стоя: начало → конец |\n|---|---|---|---|---|---|---|\n`;
-    const line = (scene, hero, rb, ra) => {
+    const a = after.find((r) => r.quality === q), b = before.find((r) => r.quality === q), mq = mid.find((r) => r.quality === q);
+    // ячейка — «до → [промежуточный →] после», см
+    const order = [b && LB.before, mq && LB.mid, a && `**${LB.after}**`].filter(Boolean).join(' → ');
+    md += `## ${q}\n\nВ ячейке: ${order}, см.\n\n| Сцена | Герой | медиана \\|подошва − пол\\| | максимум \\|подошва − пол\\| стоя | глубже всего | кадров глубже 2 см | дрейф стоя: начало … конец |\n|---|---|---|---|---|---|---|\n`;
+    const line = (scene, hero, rb, ra, rm) => {
       const S = (r) => { const x = r && r.length ? summarizeRows(r) : null; return x && x.frames ? x : null; };
-      const sb = S(rb), sa = S(ra);
-      const pair = (f) => (sb && sa ? `${f(sb)} → **${f(sa)}**` : sa ? `**${f(sa)}**` : sb ? `${f(sb)} → —` : '—');
+      const sb = S(rb), sa = S(ra), sm = S(rm);
+      const pair = (f) => [sb ? f(sb) : null, mq ? (sm ? f(sm) : '—') : null, sa ? `**${f(sa)}**` : null].filter((x) => x !== null).join(' → ') || '—';
       const dr = (x) => (x.driftFirst != null ? `${cm(x.driftFirst)}…${cm(x.driftLast)}` : '—');
       md += `| ${scene} | ${NAMES[hero] || hero} | ${pair((x) => cm(x.absMedian))} | ${pair((x) => cm(x.standMax))} | ${pair((x) => cm(-x.sinkMax))} | ${pair((x) => (x.over * 100).toFixed(0) + '%')} | ${pair(dr)} |\n`;
     };
+    const def = (r, h) => r && r.defeat[h] && r.defeat[h].filter((x) => x.phase === 'defeat');
     for (const h of HERO_IDS) {
-      const pick = (r, f) => (r ? r.menu.filter((x) => x.hero === h) : null);
-      line('меню, 6 кругов', h, pick(b), pick(a));
+      const pick = (r) => (r ? r.menu.filter((x) => x.hero === h) : null);
+      line('меню, 6 кругов', h, pick(b), pick(a), pick(mq));
     }
-    for (const h of HERO_IDS) line('бой 2 мин', h, b && b.battle[h], a && a.battle[h]);
-    for (const h of HERO_IDS) line('поражение', h, b && b.defeat[h] && b.defeat[h].filter((x) => x.phase === 'defeat'), a && a.defeat[h] && a.defeat[h].filter((x) => x.phase === 'defeat'));
+    for (const h of HERO_IDS) line('бой 2 мин', h, b && b.battle[h], a && a.battle[h], mq && mq.battle[h]);
+    for (const h of HERO_IDS) line('поражение', h, def(b, h), def(a, h), def(mq, h));
     md += '\n';
     // графики: меню (все герои подряд) и бой каждого героя
     const ser = (rows, name, color, tKey = 't') => ({ name, color, pts: (rows || []).filter((r) => Number.isFinite(r.gap)).map((r) => [r[tKey], r.gap]) });
@@ -267,13 +272,13 @@ function report() {
     // меню: визиты героя подряд (6 кругов по 2 с), время — внутри его визитов
     const menuOf = (r, h) => { if (!r) return null; let t = 0, prev = null; return r.menu.filter((x) => x.hero === h).map((x) => { t += prev === null || x.t - prev > 0.2 ? 1 / 15 : x.t - prev; prev = x.t; return { ...x, t: +t.toFixed(3) }; }); };
     for (const h of HERO_IDS) {
-      const mb = menuOf(b, h), ma = menuOf(a, h);
-      if ((mb && mb.length) || (ma && ma.length)) put(`${q}-menu-${h}.svg`, chart(`${q}, меню — ${NAMES[h]}: 6 появлений на витрине по 2 с`, [ser(mb, 'до', COL.before), ser(ma, 'после', COL.after)]));
-      if ((a && a.battle[h]) || (b && b.battle[h])) put(`${q}-battle-${h}.svg`, chart(`${q}, бой — ${NAMES[h]}: ходьба, рывки, заклинания, «Небесный суд», победа`, [ser(b && b.battle[h], 'до', COL.before), ser(a && a.battle[h], 'после', COL.after)], { yMin: -0.14, yMax: 0.4 }));
+      const mb = menuOf(b, h), ma = menuOf(a, h), mm = menuOf(mq, h);
+      if ((mb && mb.length) || (ma && ma.length)) put(`${q}-menu-${h}.svg`, chart(`${q}, меню — ${NAMES[h]}: 6 появлений на витрине по 2 с`, [ser(mb, LB.before, COL.before), ser(mm, LB.mid, COL.mid), ser(ma, LB.after, COL.after)]));
+      if ((a && a.battle[h]) || (b && b.battle[h])) put(`${q}-battle-${h}.svg`, chart(`${q}, бой — ${NAMES[h]}: ходьба, рывки, заклинания, «Небесный суд», победа`, [ser(b && b.battle[h], LB.before, COL.before), ser(mq && mq.battle[h], LB.mid, COL.mid), ser(a && a.battle[h], LB.after, COL.after)], { yMin: -0.26, yMax: 0.4 }));
     }
     md += files.map((f) => `![${f}](${f})`).join('\n') + '\n\n';
   }
-  const notes = [...after, ...before].flatMap((r) => (r.notes || []).map((n) => `${r.quality}: ${n}`));
+  const notes = [...after, ...before, ...mid].flatMap((r) => (r.notes || []).map((n) => `${r.quality}: ${n}`));
   if (notes.length) md += '## Заметки прогона\n\n' + notes.map((n) => `- ${n}`).join('\n') + '\n';
   writeFileSync(join(DIR, 'README.md'), md);
   console.log(md);
