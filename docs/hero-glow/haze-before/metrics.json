@@ -1,0 +1,621 @@
+{
+ "label": "before",
+ "size": "1366x768",
+ "seed": 20261002,
+ "commit": "63f908a",
+ "branch": "HEAD",
+ "generatedAt": "2026-10-03T17:58:48Z",
+ "results": {
+  "high": {
+   "elf": {
+    "haze": [
+     {
+      "t": 0.5,
+      "over": 0.351,
+      "heroMean": 0.887,
+      "face": 0.992,
+      "faceSd": 0.005,
+      "faceOver": 1,
+      "facePx": 1056,
+      "bg": 0.745,
+      "contrast": 1.332,
+      "rect": {
+       "x0": 747,
+       "y0": 202,
+       "x1": 1003,
+       "y1": 739
+      },
+      "faceRect": {
+       "x0": 848,
+       "y0": 293,
+       "x1": 880,
+       "y1": 326,
+       "facing": 0.95
+      },
+      "file": "high_elf_haze_0_5s.jpg",
+      "showcase": {
+       "weight": 1,
+       "zoom": 0,
+       "lights": [],
+       "stage": {
+        "built": true,
+        "visible": true,
+        "quality": "high",
+        "element": "Гроза",
+        "wave": 0.51,
+        "summon": 0,
+        "particles": 420,
+        "rocks": 22,
+        "mist": 4,
+        "mirror": [
+         640,
+         360
+        ],
+        "lights": 0,
+        "meshes": 7,
+        "push": 0.43,
+        "plate": "elf",
+        "plateOp": 0.756
+       }
+      }
+     },
+     {
+      "t": 1,
+      "over": 0.181,
+      "heroMean": 0.78,
+      "face": 0.963,
+      "faceSd": 0.022,
+      "faceOver": 0.748,
+      "facePx": 1720,
+      "bg": 0.543,
+      "contrast": 1.772,
+      "rect": {
+       "x0": 720,
+       "y0": 147,
+       "x1": 1033,
+       "y1": 768
+      },
+      "faceRect": {
+       "x0": 846,
+       "y0": 271,
+       "x1": 886,
+       "y1": 314,
+       "facing": 0.96
+      },
+      "file": "high_elf_haze_1s.jpg",
+      "showcase": {
+       "weight": 1,
+       "zoom": 0,
+       "lights": [],
+       "stage": {
+        "built": true,
+        "visible": true,
+        "quality": "high",
+        "element": "Гроза",
+        "wave": 0.87,
+        "summon": 0,
+        "particles": 420,
+        "rocks": 22,
+        "mist": 4,
+        "mirror": [
+         640,
+         360
+        ],
+        "lights": 0,
+        "meshes": 7,
+        "push": 0.93,
+        "plate": "elf",
+        "plateOp": 0.819
+       }
+      }
+     },
+     {
+      "t": 2,
+      "over": 0.017,
+      "heroMean": 0.526,
+      "face": 0.886,
+      "faceSd": 0.087,
+      "faceOver": 0.256,
+      "facePx": 3717,
+      "bg": 0.159,
+      "contrast": 5.567,
+      "rect": {
+       "x0": 667,
+       "y0": 62,
+       "x1": 1092,
+       "y1": 768
+      },
+      "faceRect": {
+       "x0": 840,
+       "y0": 255,
+       "x1": 899,
+       "y1": 318,
+       "facing": 0.97
+      },
+      "file": "high_elf_haze_2s.jpg",
+      "showcase": {
+       "weight": 1,
+       "zoom": 0,
+       "lights": [],
+       "stage": {
+        "built": true,
+        "visible": true,
+        "quality": "high",
+        "element": "Гроза",
+        "wave": -1,
+        "summon": 0,
+        "particles": 420,
+        "rocks": 22,
+        "mist": 4,
+        "mirror": [
+         640,
+         360
+        ],
+        "lights": 0,
+        "meshes": 6,
+        "push": 1.93,
+        "plate": "elf",
+        "plateOp": 0.12
+       }
+      }
+     },
+     {
+      "t": 4,
+      "over": 0.042,
+      "heroMean": 0.545,
+      "face": 0.928,
+      "faceSd": 0.049,
+      "faceOver": 0.417,
+      "facePx": 1368,
+      "bg": 0.328,
+      "contrast": 2.83,
+      "rect": {
+       "x0": 735,
+       "y0": 155,
+       "x1": 1033,
+       "y1": 768
+      },
+      "faceRect": {
+       "x0": 845,
+       "y0": 266,
+       "x1": 881,
+       "y1": 304,
+       "facing": 0.92
+      },
+      "file": "high_elf_haze_4s.jpg",
+      "showcase": {
+       "weight": 1,
+       "zoom": 0,
+       "lights": [],
+       "stage": {
+        "built": true,
+        "visible": true,
+        "quality": "high",
+        "element": "Гроза",
+        "wave": -1,
+        "summon": 0,
+        "particles": 420,
+        "rocks": 22,
+        "mist": 4,
+        "mirror": [
+         640,
+         360
+        ],
+        "lights": 0,
+        "meshes": 6,
+        "push": 3.93,
+        "plate": "elf",
+        "plateOp": 1
+       }
+      }
+     },
+     {
+      "t": 8,
+      "over": 0.04,
+      "heroMean": 0.526,
+      "face": 0.913,
+      "faceSd": 0.058,
+      "faceOver": 0.332,
+      "facePx": 990,
+      "bg": 0.383,
+      "contrast": 2.381,
+      "rect": {
+       "x0": 746,
+       "y0": 199,
+       "x1": 1021,
+       "y1": 727
+      },
+      "faceRect": {
+       "x0": 839,
+       "y0": 289,
+       "x1": 869,
+       "y1": 322,
+       "facing": 0.85
+      },
+      "file": "high_elf_haze_8s.jpg",
+      "showcase": {
+       "weight": 1,
+       "zoom": 0,
+       "lights": [],
+       "stage": {
+        "built": true,
+        "visible": true,
+        "quality": "high",
+        "element": "Гроза",
+        "wave": -1,
+        "summon": 0,
+        "particles": 420,
+        "rocks": 22,
+        "mist": 4,
+        "mirror": [
+         640,
+         360
+        ],
+        "lights": 0,
+        "meshes": 6,
+        "push": -1,
+        "plate": "elf",
+        "plateOp": 1
+       }
+      }
+     },
+     {
+      "t": 12,
+      "over": 0.026,
+      "heroMean": 0.497,
+      "face": 0.918,
+      "faceSd": 0.055,
+      "faceOver": 0.334,
+      "facePx": 960,
+      "bg": 0.377,
+      "contrast": 2.435,
+      "rect": {
+       "x0": 742,
+       "y0": 192,
+       "x1": 1023,
+       "y1": 728
+      },
+      "faceRect": {
+       "x0": 837,
+       "y0": 305,
+       "x1": 867,
+       "y1": 337,
+       "facing": 0.83
+      },
+      "file": "high_elf_haze_12s.jpg",
+      "showcase": {
+       "weight": 1,
+       "zoom": 0,
+       "lights": [],
+       "stage": {
+        "built": true,
+        "visible": true,
+        "quality": "high",
+        "element": "Гроза",
+        "wave": -1,
+        "summon": 0,
+        "particles": 420,
+        "rocks": 22,
+        "mist": 4,
+        "mirror": [
+         640,
+         360
+        ],
+        "lights": 0,
+        "meshes": 6,
+        "push": -1,
+        "plate": "elf",
+        "plateOp": 1
+       }
+      }
+     }
+    ]
+   },
+   "dark": {
+    "haze": [
+     {
+      "t": 0.5,
+      "over": 0.002,
+      "heroMean": 0.349,
+      "face": 0.468,
+      "faceSd": 0.24,
+      "faceOver": 0.025,
+      "facePx": 990,
+      "bg": 0.312,
+      "contrast": 1.497,
+      "rect": {
+       "x0": 732,
+       "y0": 165,
+       "x1": 1025,
+       "y1": 734
+      },
+      "faceRect": {
+       "x0": 828,
+       "y0": 282,
+       "x1": 858,
+       "y1": 315,
+       "facing": 0.84
+      },
+      "file": "high_dark_haze_0_5s.jpg",
+      "showcase": {
+       "weight": 1,
+       "zoom": 0,
+       "lights": [],
+       "stage": {
+        "built": true,
+        "visible": true,
+        "quality": "high",
+        "element": "Тьма и лёд",
+        "wave": 0.69,
+        "summon": 0.01,
+        "particles": 420,
+        "rocks": 22,
+        "mist": 4,
+        "mirror": [
+         640,
+         360
+        ],
+        "lights": 0,
+        "meshes": 7,
+        "push": 0.47,
+        "plate": "dark",
+        "plateOp": 1
+       }
+      }
+     },
+     {
+      "t": 1,
+      "over": 0.002,
+      "heroMean": 0.311,
+      "face": 0.354,
+      "faceSd": 0.277,
+      "faceOver": 0.013,
+      "facePx": 1599,
+      "bg": 0.203,
+      "contrast": 1.741,
+      "rect": {
+       "x0": 705,
+       "y0": 154,
+       "x1": 1067,
+       "y1": 768
+      },
+      "faceRect": {
+       "x0": 826,
+       "y0": 309,
+       "x1": 865,
+       "y1": 350,
+       "facing": 0.89
+      },
+      "file": "high_dark_haze_1s.jpg",
+      "showcase": {
+       "weight": 1,
+       "zoom": 0,
+       "lights": [],
+       "stage": {
+        "built": true,
+        "visible": true,
+        "quality": "high",
+        "element": "Тьма и лёд",
+        "wave": -1,
+        "summon": 0,
+        "particles": 420,
+        "rocks": 22,
+        "mist": 4,
+        "mirror": [
+         640,
+         360
+        ],
+        "lights": 0,
+        "meshes": 6,
+        "push": 0.97,
+        "plate": "dark",
+        "plateOp": 0.723
+       }
+      }
+     },
+     {
+      "t": 2,
+      "over": 0.002,
+      "heroMean": 0.282,
+      "face": 0.319,
+      "faceSd": 0.306,
+      "faceOver": 0.018,
+      "facePx": 3360,
+      "bg": 0.134,
+      "contrast": 2.372,
+      "rect": {
+       "x0": 651,
+       "y0": 76,
+       "x1": 1132,
+       "y1": 768
+      },
+      "faceRect": {
+       "x0": 826,
+       "y0": 302,
+       "x1": 882,
+       "y1": 362,
+       "facing": 0.94
+      },
+      "file": "high_dark_haze_2s.jpg",
+      "showcase": {
+       "weight": 1,
+       "zoom": 0,
+       "lights": [],
+       "stage": {
+        "built": true,
+        "visible": true,
+        "quality": "high",
+        "element": "Тьма и лёд",
+        "wave": -1,
+        "summon": 0,
+        "particles": 420,
+        "rocks": 22,
+        "mist": 4,
+        "mirror": [
+         640,
+         360
+        ],
+        "lights": 0,
+        "meshes": 6,
+        "push": 1.97,
+        "plate": "dark",
+        "plateOp": 0.12
+       }
+      }
+     },
+     {
+      "t": 4,
+      "over": 0.002,
+      "heroMean": 0.29,
+      "face": 0.366,
+      "faceSd": 0.289,
+      "faceOver": 0.013,
+      "facePx": 1258,
+      "bg": 0.215,
+      "contrast": 1.703,
+      "rect": {
+       "x0": 725,
+       "y0": 154,
+       "x1": 1039,
+       "y1": 768
+      },
+      "faceRect": {
+       "x0": 832,
+       "y0": 290,
+       "x1": 866,
+       "y1": 327,
+       "facing": 0.9
+      },
+      "file": "high_dark_haze_4s.jpg",
+      "showcase": {
+       "weight": 1,
+       "zoom": 0,
+       "lights": [],
+       "stage": {
+        "built": true,
+        "visible": true,
+        "quality": "high",
+        "element": "Тьма и лёд",
+        "wave": -1,
+        "summon": 0,
+        "particles": 420,
+        "rocks": 22,
+        "mist": 4,
+        "mirror": [
+         640,
+         360
+        ],
+        "lights": 0,
+        "meshes": 6,
+        "push": 3.97,
+        "plate": "dark",
+        "plateOp": 1
+       }
+      }
+     },
+     {
+      "t": 8,
+      "over": 0.003,
+      "heroMean": 0.313,
+      "face": 0.462,
+      "faceSd": 0.255,
+      "faceOver": 0.02,
+      "facePx": 960,
+      "bg": 0.237,
+      "contrast": 1.946,
+      "rect": {
+       "x0": 747,
+       "y0": 160,
+       "x1": 1008,
+       "y1": 728
+      },
+      "faceRect": {
+       "x0": 837,
+       "y0": 281,
+       "x1": 867,
+       "y1": 313,
+       "facing": 0.94
+      },
+      "file": "high_dark_haze_8s.jpg",
+      "showcase": {
+       "weight": 1,
+       "zoom": 0,
+       "lights": [],
+       "stage": {
+        "built": true,
+        "visible": true,
+        "quality": "high",
+        "element": "Тьма и лёд",
+        "wave": -1,
+        "summon": 0,
+        "particles": 420,
+        "rocks": 22,
+        "mist": 4,
+        "mirror": [
+         640,
+         360
+        ],
+        "lights": 0,
+        "meshes": 6,
+        "push": -1,
+        "plate": "dark",
+        "plateOp": 1
+       }
+      }
+     },
+     {
+      "t": 12,
+      "over": 0.004,
+      "heroMean": 0.309,
+      "face": 0.577,
+      "faceSd": 0.27,
+      "faceOver": 0.059,
+      "facePx": 1023,
+      "bg": 0.237,
+      "contrast": 2.433,
+      "rect": {
+       "x0": 747,
+       "y0": 173,
+       "x1": 995,
+       "y1": 736
+      },
+      "faceRect": {
+       "x0": 846,
+       "y0": 297,
+       "x1": 877,
+       "y1": 330,
+       "facing": 0.98
+      },
+      "file": "high_dark_haze_12s.jpg",
+      "showcase": {
+       "weight": 1,
+       "zoom": 0,
+       "lights": [],
+       "stage": {
+        "built": true,
+        "visible": true,
+        "quality": "high",
+        "element": "Тьма и лёд",
+        "wave": -1,
+        "summon": 0,
+        "particles": 420,
+        "rocks": 22,
+        "mist": 4,
+        "mirror": [
+         640,
+         360
+        ],
+        "lights": 0,
+        "meshes": 6,
+        "push": -1,
+        "plate": "dark",
+        "plateOp": 1
+       }
+      }
+     }
+    ]
+   }
+  }
+ },
+ "errors": []
+}
