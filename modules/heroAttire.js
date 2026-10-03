@@ -428,7 +428,7 @@ function sparkles(THREE, anchors, color, holder) {
   const pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3).setUsage(THREE.DynamicDrawUsage));
-  const mat = new THREE.PointsMaterial({ name: 'gear-sparkle', map: glintTexture(THREE), size: 0.045,   // [W5-СВЕТ] было 0,055 sizeAttenuation: true, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: true });
+  const mat = new THREE.PointsMaterial({ name: 'gear-sparkle', map: glintTexture(THREE), size: 0.045, sizeAttenuation: true, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: true });   // [W5-СВЕТ] размер блёсток: было 0,055
   const pts = new THREE.Points(geo, mat);
   pts.name = 'attire-sparkles'; pts.frustumCulled = false; pts.renderOrder = 4;
   holder.add(pts);

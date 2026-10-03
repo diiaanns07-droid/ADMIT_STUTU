@@ -23,6 +23,10 @@ if (!THREE) { console.log('SKIP heroGlow: three.js не найден (npm i thre
 const { createHeroAura, glowTint } = await import('../modules/heroAura.js');
 const { createMenuStage, glowCap, STAGE_COL_L } = await import('../modules/menuStage.js');
 const { HEROES } = await import('../modules/heroModel.js');
+// модули света героя загружаются (heroModel грузит их динамически: ошибка разбора — герой без снаряжения и волос)
+const { fabricMaterial } = await import('../modules/heroAttire.js');
+await import('../modules/heroGear.js');
+await import('../modules/heroHair.js');
 
 const L = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
 const sat = (c) => { const mx = Math.max(c.r, c.g, c.b), mn = Math.min(c.r, c.g, c.b); return mx > 0 ? (mx - mn) / mx : 0; };
@@ -41,6 +45,17 @@ assert.ok(ids.length >= 5, `герои меню с fx: ${ids}`);
   assert.ok(a.equals(a0), 'glowCap не трогает тёмный цвет');
   const e = glowCap(new THREE.Color(0xfff3c0), 0.5);
   assert.ok(Math.abs(L(e) - 0.5) < 1e-3, `glowCap режет яркость: ${L(e)}`);
+}
+
+// ---------------------------------------------------------------- ткани нарядов: свечение вышивки ниже порога
+{
+  const Mt = (m) => m;
+  const tex = { emissive: new THREE.Texture() };
+  const silk = fabricMaterial(THREE, { Mt, tex, kind: 'silk', emissiveK: 1 });
+  // бусины лепестков эльфийки — 0,52 по яркости в карте свечения; всплеск заклинаний — ×2,4 (heroGear)
+  assert.ok(0.52 * silk.userData.fabric.base * 2.4 < 0.9 * BLOOM, `вышивка в пике ниже порога: ${(0.52 * silk.userData.fabric.base * 2.4).toFixed(2)}`);
+  const plain = fabricMaterial(THREE, { Mt, tex: {}, kind: 'velvet', emissiveK: 1 });
+  assert.equal(plain.emissive.getHex(), 0, 'ткань без карты свечения не светится');
 }
 
 // ---------------------------------------------------------------- аура: кромка, руки, волны
