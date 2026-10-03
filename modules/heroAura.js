@@ -26,6 +26,7 @@
 //   tick — раз в кадр из heroModel.update (снимок боя и события), update(t) — после позы (vrmTick).
 
 import { createFootprints, createDashBurst } from './heroTrail.js';
+import { retire } from './heroCache.js';   // [W5-СМЕНА] ShaderMaterial ауры — через «хранителя» программы (номер исходника не растёт)
 
 const VERT = /* glsl */`
 uniform float uTime;
@@ -462,9 +463,9 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
   function dropTrails() { if (prints) { prints.dispose(); prints = null; } if (burst) { burst.dispose(); burst = null; } }
   function applyTier() {
     g.setDrawRange(0, nOf(Q.pts));
-    const old = rune.material; rune.material = runeMat(Q.hq); old.dispose();
+    const old = rune.material; rune.material = runeMat(Q.hq); retire(old);   // [W5-СМЕНА]
     if (Q.waves && !waves) waves = makeWaves();
-    if (!Q.waves && waves) { holder.remove(waves); waves.geometry.dispose(); waves.material.dispose(); waves = null; }
+    if (!Q.waves && waves) { holder.remove(waves); waves.geometry.dispose(); retire(waves.material); waves = null; }   // [W5-СМЕНА]
     dropTrails();
     if (Q.prints || Q.burst) makeTrails();
   }
@@ -713,6 +714,8 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     update, tick, setQuality,
     setIntensity(v) { kExt = Math.max(0, v); U.uK.value = kExt; pts.visible = kExt > 0.01 && lod < 2; },
     setLod(l) { lod = l; pts.visible = l < 2 && kExt > 0.01; if (l >= 2) { rune.visible = false; if (waves) waves.visible = false; } },
+    // [W5-СМЕНА] герой спрятан (кэш смены героя): следы шагов и пыль рывка — из сцены (вернутся сами на первом тике)
+    park() { if (prints && prints.mesh.parent) prints.mesh.parent.remove(prints.mesh); if (burst && burst.points.parent) burst.points.parent.remove(burst.points); },
     // QA: что сейчас рисуется и с какой силой
     state: () => ({
       tier, lod, menu: st.menu, battle: !!(ticked && st.battle), fury: +st.fz.toFixed(3), ready: +st.rdy.toFixed(3), flash: +st.flash.toFixed(3),
@@ -725,10 +728,10 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     dispose() {
       disposed = true;
       if (pts.parent) pts.parent.remove(pts);
-      g.dispose(); m.dispose();
+      g.dispose(); retire(m);   // [W5-СМЕНА] материалы — через «хранителя» программы
       if (rune.parent) rune.parent.remove(rune);
-      runeGeo.dispose(); rune.material.dispose();
-      if (waves) { if (waves.parent) waves.parent.remove(waves); waves.geometry.dispose(); waves.material.dispose(); waves = null; }
+      runeGeo.dispose(); retire(rune.material);
+      if (waves) { if (waves.parent) waves.parent.remove(waves); waves.geometry.dispose(); retire(waves.material); waves = null; }
       dropTrails();
       // материалы героя освобождает heroShading/heroGear; кромку гасим на случай, если какие-то переживут героя
       RU.heroAuraRimK.value = 0; RU.heroAuraStateK.value = 0; RU.heroAuraHandK.value.set(0, 0); RU.heroAuraUnderK.value = 0;

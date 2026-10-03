@@ -1108,7 +1108,13 @@ export function facePainter(look) {
 // Правила применяются мягко: у порогов тона/насыщенности/яркости — полосы перехода, а веса правил
 // сглаживаются 3×3 (иначе на атласе 512² металл с шумной слабой насыщенностью покрывается «камуфляжем»).
 // rule.metal === false — не трогать металл, 'only' — только металл (маска — канал B карты ORM: orm = изображение).
-export function recolorTexture(THREE, tex, rules, paint = null, orm = null, scale = 1) {
+// [W5-СМЕНА] cacheKey — готовый результат по ключу (герой | материал | масштаб: правила и макияж заданы карточкой героя):
+// второй материал с тем же атласом (клон GLTFLoader с цветами вершин) и повторная сборка героя (кэш смены) берут
+// готовую текстуру — перекраска 1024² (сотни мс на слабом ЦП) не повторяется. Видеопамять у спрятанного героя
+// отдаётся (heroCache.hideTextures), холст остаётся здесь.
+const recolorCache = new Map();
+export function recolorTexture(THREE, tex, rules, paint = null, orm = null, scale = 1, cacheKey = null) {
+  if (cacheKey && recolorCache.has(cacheKey)) return recolorCache.get(cacheKey);
   const img = tex && tex.image;
   if (!img || typeof document === 'undefined' || !rules || !rules.length) return tex;
   // scale 2 — холст вдвое крупнее (лицо с макияжем: подводка и веснушки чётче вблизи)
@@ -1188,8 +1194,17 @@ export function recolorTexture(THREE, tex, rules, paint = null, orm = null, scal
   const hsv2rgb = (hue, sat, val, out) => {
     const C = val * sat, X = C * (1 - Math.abs(((hue / 60) % 2) - 1)), m = val - C;
     const k = Math.floor(hue / 60) % 6;
-    const t = [[C, X, 0], [X, C, 0], [0, C, X], [0, X, C], [X, 0, C], [C, 0, X]][k];
-    out[0] = t[0] + m; out[1] = t[1] + m; out[2] = t[2] + m;
+    // [W5-СМЕНА] без массивов на каждый пиксель (было 7 выделений на пиксель и правило — сборщик мусора на 1024²)
+    let r, g, b;
+    switch (k) {
+      case 0: r = C; g = X; b = 0; break;
+      case 1: r = X; g = C; b = 0; break;
+      case 2: r = 0; g = C; b = X; break;
+      case 3: r = 0; g = X; b = C; break;
+      case 4: r = X; g = 0; b = C; break;
+      default: r = C; g = 0; b = X;
+    }
+    out[0] = r + m; out[1] = g + m; out[2] = b + m;
   };
   const o = [0, 0, 0];
   for (let i = 0, p = 0; i < N; i++, p += 4) {
@@ -1212,6 +1227,7 @@ export function recolorTexture(THREE, tex, rules, paint = null, orm = null, scal
   t.flipY = tex.flipY; t.colorSpace = tex.colorSpace; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT;
   t.channel = tex.channel; t.anisotropy = tex.anisotropy || 4;
   if (paint) t.userData.faceAtlas = true;   // [W4-ЛИЦО] атлас лица с макияжем: shadeHero.setQuality подгоняет размер под уровень
+  if (cacheKey) recolorCache.set(cacheKey, t);   // [W5-СМЕНА]
   return t;
 }
 

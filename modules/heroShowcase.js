@@ -23,6 +23,11 @@
 //    не трогать позу; нет функции — обычный idle);
 //  • табличка героя (имя, класс, стихия с иконкой) — DOM в экране меню, стили — modules/ui.css;
 //  • пока модель грузится — столп призыва, спираль частиц и рунный круг с подписью «Призыв героя…».
+//  [W5-СМЕНА] Смена героя: пока новый собирается, на витрине стоит прежний (heroModel.shown); в кадр подмены прежний
+//  рассыпается светящимся силуэтом, новый выходит из вспышки (heroModel) — витрина в тот же кадр даёт волну, вспышку
+//  портала и наезд (по счётчику подмен heroModel.swaps). Стойка и поза — у показанного героя, табличка и цвет круга —
+//  у выбранного. В простое (2,5 с на витрине) собираются соседи по карточкам (heroModel.prebuild) — следующая смена
+//  мгновенная; выход из меню — отмена. ?prebuild=0 — без предсборки (QA: замер «холодной» смены).
 //  Анимации таблички и подписи — по performance.now (без CSS-переходов): идут и под виртуальными часами записи.
 //
 // createHeroShowcase({ THREE, scene, heroRoot, heroModel, getPostfx, settings, dom })
@@ -234,11 +239,27 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
   // Время — по часам (performance.now): dt кадра main.js режет до 1/20 с и на слабом железе отстаёт.
   const PF = { since: 0, ctl: null, done: false };
   const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  // [W5-СМЕНА] предсборка соседей: своя отмена (выход из меню, смена героя) и свой «уже собраны» — по показанному герою
+  const PB = { hero: null, ctl: null, off: typeof location !== 'undefined' && /[?&]prebuild=0/.test(location.search || '') };
+  function prebuildNeighbors(active) {
+    if (PB.off || !heroModel || typeof heroModel.prebuild !== 'function') return;
+    const shown = heroModel.shown;
+    if (!active || !heroModel.ready || !shown) { if (PB.ctl) { PB.ctl.abort(); PB.ctl = null; } PB.hero = null; return; }
+    if (PB.hero === shown || nowMs() - PF.since < 2500 || !PF.since) return;
+    if (PB.ctl) PB.ctl.abort();
+    PB.hero = shown;
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    PB.ctl = ctl;
+    const ids = heroModel.neighbors ? heroModel.neighbors(shown) : [];
+    const go = () => { if (PB.ctl === ctl && !(ctl && ctl.signal.aborted)) heroModel.prebuild(ids, { signal: ctl ? ctl.signal : undefined }).catch(() => {}); };
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 3000 }); else setTimeout(go, 0);
+  }
   function prefetchHeroes(dt, active) {
+    prebuildNeighbors(active);
     if (!active || !heroModel || !heroModel.ready) { if (PF.ctl) { if (PF.ctl.abort) PF.ctl.abort(); PF.ctl = null; } PF.since = 0; return; }
+    if (!PF.since) PF.since = nowMs();   // [W5-СМЕНА] отсчёт простоя — и для предсборки соседей
     if (PF.done || PF.ctl || typeof heroModel.prefetch !== 'function') return;
     if (typeof navigator !== 'undefined' && navigator.connection && navigator.connection.saveData) { PF.done = true; return; }
-    if (!PF.since) PF.since = nowMs();
     if (nowMs() - PF.since < 2500) return;
     const ctl = typeof AbortController === 'function' ? new AbortController() : null;
     PF.ctl = ctl || {};
@@ -260,7 +281,9 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       if (stage.quality !== settings.quality) stage.setQuality(settings.quality);
       stage.setReducedMotion(!!settings.reducedMotion);
       // отражение: новый герой загрузился — его меши в слой отражения
-      if (heroModel && heroModel.ready && heroModel.hero !== reflectKey) { reflectKey = heroModel.hero; stage.setReflect(heroRoot); }   // [W4-СБОРКА] без строки-ключа каждый кадр
+      // [W4-СБОРКА] без строки-ключа каждый кадр; [W5-СМЕНА] по номеру подмены: A→B→A и готовые из кэша — тоже в отражение
+      const rk = heroModel ? (heroModel.swaps !== undefined ? heroModel.swaps : heroModel.hero) : '';
+      if (heroModel && heroModel.ready && rk !== reflectKey) { reflectKey = rk; stage.setReflect(heroRoot); }
       const id = heroModel ? heroModel.hero : '';
       const H = HEROES && HEROES[id];
       V.w = w; V.active = active; V.heroPos = heroRoot.position; V.heroYaw = heroRoot.rotation.y; V.camera = camera;
@@ -365,13 +388,16 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     if (S.intro > 0) S.intro = Math.max(0, S.intro - dt / 3.2);
     if (S.ap > 0) S.ap = Math.max(0, S.ap - dt / 1.3);
     if (heroModel && heroModel.setStance) {
-      const id = heroModel.hero;
+      // [W5-СМЕНА] стойка, поза и жесты — у показанного героя (пока новый собирается, это прежний)
+      const id = heroModel.shown !== undefined ? heroModel.shown || heroModel.hero : heroModel.hero;
       const st = active ? (heroModel.menuStance ? heroModel.menuStance(id) : null) : null;
       if (st !== S.stance) { S.stance = st; heroModel.setStance(st); }
       // [W4-ВИТРИНА] выбран другой герой (или первый в меню) — появление: волна, наезд, поза-«визитка»
-      if (active && heroModel.ready && id !== S.lastHero) {
+      // [W5-СМЕНА] по номеру подмены (heroModel.swaps): появление ловится и при возврате к прежнему герою
+      const ak = heroModel.swaps !== undefined ? `${id}#${heroModel.swaps}` : id;
+      if (active && heroModel.ready && ak !== S.lastHero) {
         const first = !S.lastHero;
-        S.lastHero = id; S.idleT = 0; S.nextGesture = 7 + Math.random() * 4;
+        S.lastHero = ak; S.idleT = 0; S.nextGesture = 7 + Math.random() * 4;
         onAppear(id, first);
       }
       if (S.sigHold > 0) S.sigHold = Math.max(0, S.sigHold - dt);
