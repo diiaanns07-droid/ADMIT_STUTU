@@ -14,12 +14,15 @@
 // setPose (лук, чары рукой) и зеркало рук игрока setMirror (как world.setMirror у процедурного героя),
 // затем дыхание и оглядывание в покое. [W4-ПОЗЫ] Ещё выше — modules/heroPoses.js: смена опорной ноги и
 // контрапост (IK ног), каст-позы на жесты боя, мимика (кости лица), победа/поражение и визитки витрины.
+// [W5-ПОЛ] Последним — подошва не ниже пола (groundFeet): по точкам сетки стоп (vrmKit.soleMarkers); пол — корень
+// героя плюс подъём пола сцены (setFloorLift, витрина меню). Клипы уже стоят на полу (vrmKit.retargetClip).
 //
 // createHeroModel({ THREE, heroRoot?, heroBody?, extras?, markers?, scene?, hero, shading?, quality?,
 //                   atmosphere?, remote?, baseUrl?, vrmUrl?, heroesUrl? })
 //   → { root, update(dt, snapLike, events), setHero(id), setPose(p), setMirror(m), getAnchors(),
 //       setShading(mode), setQuality(q), setLod(level), get ready, get hero, state(), dispose(),
-//       signaturePose(id), setSignature(id | null | undefined) }   // [W4-ПОЗЫ] визитки витрины меню
+//       signaturePose(id), setSignature(id | null | undefined),   // [W4-ПОЗЫ] визитки витрины меню
+//       setFloorLift(h), feet() }                                 // [W5-ПОЛ] пол сцены; QA: стопы и подошва
 // heroRoot не задан — экземпляр создаёт свой root (для удалённого игрока) и сам ставит его по snapLike.player.
 // snapLike: нужен только { player: { position, yaw, velocity, action, hp, … как в snapshot } }.
 
