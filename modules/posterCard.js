@@ -409,6 +409,9 @@ function fitFont(ctx, text, weight, size, family, maxW) {
   return s;
 }
 
+// [W5-СЛОЖНОСТЬ] название уровня сложности обычного боя (у «Испытания» своя — не пишется)
+function levelOf(d) { return d.kind !== 'challenge' && typeof d.difficultyName === 'string' ? d.difficultyName.slice(0, 16) : ''; }
+
 export function drawPoster(ctx, data) {
   const d = isObj(data) ? data : {};
   const W = POSTER_W, H = POSTER_H, AW = 720, PX = 760;
@@ -420,7 +423,8 @@ export function drawPoster(ctx, data) {
   // итог боя поверх арта
   safe(() => {
     const out = OUTCOME[d.outcome] || (d.kind === 'challenge' ? OUTCOME.timeup : 'БОЙ С РЕГЕНТОМ');
-    const sub = d.outcome === 'victory' && fin(d.elapsed) && d.elapsed > 0 ? `за ${Math.round(d.elapsed)} с` : d.kind === 'challenge' ? 'испытание · 60 секунд' : 'бой с Регентом Нимба';
+    const sub0 = d.outcome === 'victory' && fin(d.elapsed) && d.elapsed > 0 ? `за ${Math.round(d.elapsed)} с` : d.kind === 'challenge' ? 'испытание · 60 секунд' : 'бой с Регентом Нимба';
+    const sub = sub0 + (levelOf(d) ? ` · сложность «${levelOf(d)}»` : '');   // [W5-СЛОЖНОСТЬ]
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     ctx.shadowColor = 'rgba(0,0,0,0.85)'; ctx.shadowBlur = 12;
     ctx.fillStyle = PARCH; ctx.font = `400 42px ${CAPS}`;
@@ -441,7 +445,8 @@ export function drawPoster(ctx, data) {
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = GOLD; ctx.font = `600 44px ${NUM}`;
     ctx.fillText('ASHEN OATH', PX, 92);
-    const kick = d.kind === 'challenge' ? 'ИСПЫТАНИЕ · 60 С · КАМЕРА ВМЕСТО ДЖОЙСТИКА' : 'БОЙ С РЕГЕНТОМ · КАМЕРА ВМЕСТО ДЖОЙСТИКА';
+    const lv = levelOf(d), mul = fin(d.scoreMul) && d.scoreMul > 1 ? ` ×${String(d.scoreMul).replace('.', ',')}` : '';   // [W5-СЛОЖНОСТЬ]
+    const kick = d.kind === 'challenge' ? 'ИСПЫТАНИЕ · 60 С · КАМЕРА ВМЕСТО ДЖОЙСТИКА' : `БОЙ С РЕГЕНТОМ${lv ? ` · «${lv.toUpperCase()}»${mul}` : ''} · КАМЕРА ВМЕСТО ДЖОЙСТИКА`;
     fitFont(ctx, kick, 600, 15, SANS, W - 46 - PX - 2);
     ctx.fillStyle = MUTED; ctx.fillText(kick, PX + 2, 120);
     ctx.strokeStyle = 'rgba(196,162,101,0.5)'; ctx.lineWidth = 1;

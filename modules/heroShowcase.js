@@ -23,13 +23,18 @@
 //    не трогать позу; нет функции — обычный idle);
 //  • табличка героя (имя, класс, стихия с иконкой) — DOM в экране меню, стили — modules/ui.css;
 //  • пока модель грузится — столп призыва, спираль частиц и рунный круг с подписью «Призыв героя…».
+//  [W5-СМЕНА] Смена героя: пока новый собирается, на витрине стоит прежний (heroModel.shown); в кадр подмены прежний
+//  рассыпается светящимся силуэтом, новый выходит из вспышки (heroModel) — витрина в тот же кадр даёт волну, вспышку
+//  портала и наезд (по счётчику подмен heroModel.swaps). Стойка и поза — у показанного героя, табличка и цвет круга —
+//  у выбранного. В простое (2,5 с на витрине) собираются соседи по карточкам (heroModel.prebuild) — следующая смена
+//  мгновенная; выход из меню — отмена. ?prebuild=0 — без предсборки (QA: замер «холодной» смены).
 //  Анимации таблички и подписи — по performance.now (без CSS-переходов): идут и под виртуальными часами записи.
 //
 // createHeroShowcase({ THREE, scene, heroRoot, heroModel, getPostfx, settings, dom })
 //   → { update(dt, active, camera) → true, если камера выставлена витриной; get weight; get stage; dispose() }
 // Свет включается только в меню (active) и плавно гаснет при выходе в бой; тени витрина не бросает.
 
-import { createMenuStage } from './menuStage.js';   // [W4-ВИТРИНА] сцена витрины — сразу, до общей сборки шейдеров
+import { createMenuStage, glowCap } from './menuStage.js';   // [W4-ВИТРИНА] сцена витрины — сразу, до общей сборки шейдеров; [W5-СВЕТ] glowCap
 
 // [W4-ВИТРИНА] иконки стихий (по id героя: у эльфийки стиль частиц «wind», а стихия — гроза)
 const ELEMENT_ICON = {
@@ -44,6 +49,15 @@ const ELEMENT_ICON = {
   // буря: смерч с разрядом
   archmage: '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" opacity=".75"><path d="M10 14h44"/><path d="M15 23h34"/><path d="M20 32h24"/><path d="M25 41h14"/></g><path d="M35 30 27 44h6l-3 12 10-16h-6z" fill="#f2f9ff"/>',
 };
+
+// [W5-СВЕТ] свет витрины на героях: яркость цвета контрового (стихии) не выше RIM_L — у стража и чародейки
+// (0,43) почти без изменений, у эльфийки, лучницы и архимага (0,6–0,84) — до того же уровня
+const RIM_L = 0.4;
+// [W5-СВЕТ] экспозиция ключевого света по герою: светлые альбедо (волосы 0xd9cfb6, белый шёлк ×1,55, замша ×1,45
+// и кожа ×1,3 эльфийки) под ключом 2,0 уходят за порог bloom целиком — лицо и наряд тонут в белой пелене.
+// Замер (tools/hero_glow.mjs, high, 1366×768): эльфийка ×1 — пересвет рамки 2,9 %, лицо 0,91 (σ 0,06);
+// ×0,5 — 0,2 %, лицо 0,79 (σ 0,11), черты читаются. Лучница при ×1 — 0,0 %, лицо 0,62: ей не нужно.
+const KEY_GAIN = { ashen: 1, elf: 0.5, dark: 1, ranger: 1, archmage: 1 };
 
 export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, getPostfx = null, settings = {}, dom = null } = {}) {
   const group = new THREE.Group();
@@ -234,11 +248,27 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
   // Время — по часам (performance.now): dt кадра main.js режет до 1/20 с и на слабом железе отстаёт.
   const PF = { since: 0, ctl: null, done: false };
   const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  // [W5-СМЕНА] предсборка соседей: своя отмена (выход из меню, смена героя) и свой «уже собраны» — по показанному герою
+  const PB = { hero: null, ctl: null, off: typeof location !== 'undefined' && /[?&]prebuild=0/.test(location.search || '') };
+  function prebuildNeighbors(active) {
+    if (PB.off || !heroModel || typeof heroModel.prebuild !== 'function') return;
+    const shown = heroModel.shown;
+    if (!active || !heroModel.ready || !shown) { if (PB.ctl) { PB.ctl.abort(); PB.ctl = null; } PB.hero = null; return; }
+    if (PB.hero === shown || nowMs() - PF.since < 2500 || !PF.since) return;
+    if (PB.ctl) PB.ctl.abort();
+    PB.hero = shown;
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    PB.ctl = ctl;
+    const ids = heroModel.neighbors ? heroModel.neighbors(shown) : [];
+    const go = () => { if (PB.ctl === ctl && !(ctl && ctl.signal.aborted)) heroModel.prebuild(ids, { signal: ctl ? ctl.signal : undefined }).catch(() => {}); };
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 3000 }); else setTimeout(go, 0);
+  }
   function prefetchHeroes(dt, active) {
+    prebuildNeighbors(active);
     if (!active || !heroModel || !heroModel.ready) { if (PF.ctl) { if (PF.ctl.abort) PF.ctl.abort(); PF.ctl = null; } PF.since = 0; return; }
+    if (!PF.since) PF.since = nowMs();   // [W5-СМЕНА] отсчёт простоя — и для предсборки соседей
     if (PF.done || PF.ctl || typeof heroModel.prefetch !== 'function') return;
     if (typeof navigator !== 'undefined' && navigator.connection && navigator.connection.saveData) { PF.done = true; return; }
-    if (!PF.since) PF.since = nowMs();
     if (nowMs() - PF.since < 2500) return;
     const ctl = typeof AbortController === 'function' ? new AbortController() : null;
     PF.ctl = ctl || {};
@@ -255,12 +285,14 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
   let stage = null, reflectKey = '';
   try { stage = createMenuStage({ THREE, scene, quality: settings.quality, reducedMotion: !!settings.reducedMotion, prebuild: true }); } catch (e) { console.warn('[W4-ВИТРИНА] сцена витрины', e); stage = null; }
   function stageTick(dt, active, camera, w, fxc, zc) {
-    if (!stage) return;
+    if (!stage) { if (heroModel && heroModel.setFloorLift) heroModel.setFloorLift(0); return; }   // [W5-ПОЛ]
     try {
       if (stage.quality !== settings.quality) stage.setQuality(settings.quality);
       stage.setReducedMotion(!!settings.reducedMotion);
       // отражение: новый герой загрузился — его меши в слой отражения
-      if (heroModel && heroModel.ready && heroModel.hero !== reflectKey) { reflectKey = heroModel.hero; stage.setReflect(heroRoot); }   // [W4-СБОРКА] без строки-ключа каждый кадр
+      // [W4-СБОРКА] без строки-ключа каждый кадр; [W5-СМЕНА] по номеру подмены: A→B→A и готовые из кэша — тоже в отражение
+      const rk = heroModel ? (heroModel.swaps !== undefined ? heroModel.swaps : heroModel.hero) : '';
+      if (heroModel && heroModel.ready && rk !== reflectKey) { reflectKey = rk; stage.setReflect(heroRoot); }
       const id = heroModel ? heroModel.hero : '';
       const H = HEROES && HEROES[id];
       V.w = w; V.active = active; V.heroPos = heroRoot.position; V.heroYaw = heroRoot.rotation.y; V.camera = camera;
@@ -268,7 +300,8 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       V.appear = S.ap || 0;
       V.loading = S.loadT; V.fogColor = scene.fog && scene.fog.color ? scene.fog.color : null; V.zoom = zc; V.orbit = S.orbit || 0;
       stage.update(dt, V);
-    } catch (e) { console.warn('[W4-ВИТРИНА] сцена витрины отключена', e); try { stage.dispose(); } catch (err) { /* ignore */ } stage = null; }
+      if (heroModel && heroModel.setFloorLift) heroModel.setFloorLift(stage.floorY || 0);   // [W5-ПОЛ] герой — на полу витрины
+    } catch (e) { console.warn('[W4-ВИТРИНА] сцена витрины отключена', e); try { stage.dispose(); } catch (err) { /* ignore */ } stage = null; if (heroModel && heroModel.setFloorLift) heroModel.setFloorLift(0); }
   }
   const V = { w: 0, active: false, heroPos: null, heroYaw: 0, camera: null, fx: null, element: '', key: null, appear: 0, loading: 0, fogColor: null, zoom: 0, orbit: 0 };
 
@@ -298,6 +331,7 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     if (stage) stage.wave();
     // своя огибающая вспышки (1,3 с): heroModel.appear в меню у края арены не гаснет (там его update — боевой)
     S.ap = 1;
+    S.apT0 = nowMs();   // [W5-СВЕТ] огибающая вспышки — по часам страницы (см. update)
     S.pushT = first || settings.reducedMotion ? -1 : 0;
     S.sigHold = 0;
     // поза-«визитка» героя (агент №4): строка — клип для flourish, число — сколько секунд не трогать позу
@@ -315,7 +349,8 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
         const fx = heroModel && heroModel.heroFx ? heroModel.heroFx(id) : null;
         _p.copy(heroRoot.position).setY(heroRoot.position.y + 0.9);
         pf.pulse('shockwave', 0.32, { x: _p.x, y: _p.y, z: _p.z });
-        pf.pulse('flash', 0.14, undefined, { color: fx ? fx.color : 0xffd08a, dur: 0.7 });
+        // [W5-СВЕТ] засветка экрана — цветом стихии без белизны (у эльфийки 0x9ff4ff — почти белая пелена) и слабее
+        pf.pulse('flash', 0.1, undefined, { color: fx ? glowCap(_elemC.set(fx.color), RIM_L).getHex() : 0xffd08a, dur: 0.7 });
       } catch (e) { /* ignore */ }
     }
   }
@@ -363,15 +398,21 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     if (S.push < 1e-3 && pushT === 0) S.push = 0;
     const push = S.push;
     if (S.intro > 0) S.intro = Math.max(0, S.intro - dt / 3.2);
-    if (S.ap > 0) S.ap = Math.max(0, S.ap - dt / 1.3);
+    // [W5-СВЕТ] вспышка появления гаснет за 1,3 с по часам страницы, а не по dt кадра: кадр длиннее 0,25 с
+    // (загрузка и сборка шейдеров нового героя на слабой видеокарте) main.js считает разрывом (dt = 0) —
+    // вспышка (контровой ×1,5, круг, портал) замирала на пике, пока герой «догружается»
+    if (S.ap > 0) S.ap = S.apT0 ? Math.max(0, 1 - (nowMs() - S.apT0) / 1300) : Math.max(0, S.ap - dt / 1.3);
     if (heroModel && heroModel.setStance) {
-      const id = heroModel.hero;
+      // [W5-СМЕНА] стойка, поза и жесты — у показанного героя (пока новый собирается, это прежний)
+      const id = heroModel.shown !== undefined ? heroModel.shown || heroModel.hero : heroModel.hero;
       const st = active ? (heroModel.menuStance ? heroModel.menuStance(id) : null) : null;
       if (st !== S.stance) { S.stance = st; heroModel.setStance(st); }
       // [W4-ВИТРИНА] выбран другой герой (или первый в меню) — появление: волна, наезд, поза-«визитка»
-      if (active && heroModel.ready && id !== S.lastHero) {
+      // [W5-СМЕНА] по номеру подмены (heroModel.swaps): появление ловится и при возврате к прежнему герою
+      const ak = heroModel.swaps !== undefined ? `${id}#${heroModel.swaps}` : id;
+      if (active && heroModel.ready && ak !== S.lastHero) {
         const first = !S.lastHero;
-        S.lastHero = id; S.idleT = 0; S.nextGesture = 7 + Math.random() * 4;
+        S.lastHero = ak; S.idleT = 0; S.nextGesture = 7 + Math.random() * 4;
         onAppear(id, first);
       }
       if (S.sigHold > 0) S.sigHold = Math.max(0, S.sigHold - dt);
@@ -412,10 +453,11 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
     }
     // появление героя: рунный круг вспыхивает вместе с аурой
     const ap = S.ap || 0;
-    pool.material.uniforms.uK.value = 0.9 * w * (1 + 1.4 * ap * ap) * (S.loadT > 0 ? 1.25 + 0.35 * Math.sin(S.t * 3.2) : 1);
+    // [W5-СВЕТ] вспышка появления круга мягче (было ×(1 + 1,4·ap²): с альфой в квадрате — ×5,8 у ног)
+    pool.material.uniforms.uK.value = 0.9 * w * (1 + 0.5 * ap * ap) * (S.loadT > 0 ? 1.25 + 0.35 * Math.sin(S.t * 3.2) : 1);
     pool.material.uniforms.uTime.value = S.t;
     // цвет круга — стихия выбранного героя
-    if (fxc && fxc.color !== S.poolHex) { S.poolHex = fxc.color; pool.material.uniforms.uColor.value.set(fxc.color); }
+    if (fxc && fxc.color !== S.poolHex) { S.poolHex = fxc.color; glowCap(pool.material.uniforms.uColor.value.set(fxc.color), RIM_L); }   // [W5-СВЕТ] светлая стихия — не белый круг
     if (!active || !camera) {
       if ((S.bloomK ?? 1) !== 1) { const pf0 = getPostfx && getPostfx(); if (pf0 && pf0.setBloomK) { try { pf0.setBloomK(1); } catch (e) { /* ignore */ } } S.bloomK = 1; }
       if (HL && HL.heroKeyColor.value) { HL.heroKeyColor.value.multiplyScalar(0.9); HL.heroRimColor.value.multiplyScalar(0.9); HL.heroFillColor.value.multiplyScalar(0.9); }
@@ -467,9 +509,15 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       HL.heroRimDir.value.copy(_portal).sub(c).normalize().setY(0).normalize().multiplyScalar(0.85);
       HL.heroRimDir.value.y = 0.45;
       HL.heroRimDir.value.normalize().transformDirection(camera.matrixWorldInverse);
-      HL.heroKeyColor.value.copy(_keyC).multiplyScalar(2.0 * w * q * (1 + 0.3 * zc) * (1 + 0.25 * ap * ap));   // портретный ключ сбоку — чуть ярче
+      // [W5-СВЕТ] ключ — с экспозицией героя (KEY_GAIN: светлые волосы, шёлк и кожа эльфийки под ключом 2,0 ярче
+      // порога bloom), появление и наезд к лицу — без прибавки яркости (было ×1,25 и ×1,3: лицо в пелене)
+      const kg = KEY_GAIN[heroModel ? heroModel.hero : ''] || 1;
+      HL.heroKeyColor.value.copy(_keyC).multiplyScalar(2.0 * kg * w * q * (1 + 0.1 * zc) * (1 + 0.08 * ap * ap));   // портретный ключ сбоку — чуть ярче
       if (fxc) _elemC.set(fxc.color).lerp(_rimC, 0.18); else _elemC.copy(_rimC);
-      HL.heroRimColor.value.copy(_elemC).multiplyScalar(1.9 * w * (1 + 1.2 * ap * ap));
+      // [W5-СВЕТ] контровой — цветной и мягкий: яркость цвета не выше RIM_L (у эльфийки было 0,79 — почти белый,
+      // кромка 1,5 по яркости при пороге bloom 1,0), вспышка появления ×1,5 вместо ×2,2
+      glowCap(_elemC, RIM_L);
+      HL.heroRimColor.value.copy(_elemC).multiplyScalar(1.9 * w * (1 + 0.5 * ap * ap));
       HL.heroFillColor.value.copy(_fillC).multiplyScalar(0.42 * w);
     }
     const pf = getPostfx && getPostfx();

@@ -444,10 +444,17 @@ function weaveFill(g, W, H, css) {
 // рассчитана на 0.5–0.66 м ширины и на полосе 9–17 см сжимается в нитку. Кайма «ёлочкой» по краям,
 // по центру — стебель с медальонами-ромбами и листьями, подол — полосы, зубцы и кисти.
 // Свечение — сердцевины медальонов и нить стебля (цвет магии героя). → { map, bump, emissive }, 192×1024.
-export function panelTextures(THREE, { base = 0x2a1a17, trim = 0xd8b070, glow = 0xff8a3a } = {}) {
+// [W5-СМЕНА] холсты ткани детерминированы параметрами — второй раз (повторная сборка героя, кэш смены) не рисуются
+const fabricCache = new Map();
+const cachedFabric = (key, make) => { if (!fabricCache.has(key)) fabricCache.set(key, make()); return fabricCache.get(key); };
+export function panelTextures(THREE, opts = {}) {
+  const { base = 0x2a1a17, trim = 0xd8b070, glow = 0xff8a3a } = opts;
+  return cachedFabric(`panel|${base}|${trim}|${glow}`, () => panelTexturesRaw(THREE, opts));
+}
+function panelTexturesRaw(THREE, { base = 0x2a1a17, trim = 0xd8b070, glow = 0xff8a3a } = {}) {
   if (typeof document === 'undefined') return {};
   const W = 192, H = 1024;
-  const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+  const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d', { willReadFrequently: true }); return c; };   // [W5-СТАРТ] программный 2D-холст
   const col = (hex, k = 1) => { const c = new THREE.Color(hex).multiplyScalar(k); return `rgb(${Math.round(Math.min(1, c.r) * 255)},${Math.round(Math.min(1, c.g) * 255)},${Math.round(Math.min(1, c.b) * 255)})`; };
   const cm = mk(), cb = mk(), ce = mk();
   const gm = cm.getContext('2d'), gb = cb.getContext('2d'), ge = ce.getContext('2d');
@@ -531,10 +538,14 @@ export function panelTextures(THREE, { base = 0x2a1a17, trim = 0xd8b070, glow = 
 
 // Ткань с плетением, вышитая кайма (побеги и ромбы) по краям и подолу, герб на спине.
 // → { map (sRGB), bump, emissive } — холсты 512×1024, u поперёк, v сверху вниз.
-export function capeTextures(THREE, { base = 0x2a1a17, trim = 0xd8b070, glow = 0xff8a3a, emblem = 'flame', key = '', stars = false } = {}) {
+export function capeTextures(THREE, opts = {}) {
+  const { base = 0x2a1a17, trim = 0xd8b070, glow = 0xff8a3a, emblem = 'flame', stars = false } = opts;
+  return cachedFabric(`cape|${base}|${trim}|${glow}|${emblem}|${!!stars}`, () => capeTexturesRaw(THREE, opts));   // [W5-СМЕНА]
+}
+function capeTexturesRaw(THREE, { base = 0x2a1a17, trim = 0xd8b070, glow = 0xff8a3a, emblem = 'flame', key = '', stars = false } = {}) {
   if (typeof document === 'undefined') return {};
   const W = 512, H = 1024;
-  const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+  const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d', { willReadFrequently: true }); return c; };   // [W5-СТАРТ] программный 2D-холст
   const col = (hex, k = 1) => { const c = new THREE.Color(hex).multiplyScalar(k); return `rgb(${Math.round(Math.min(1, c.r) * 255)},${Math.round(Math.min(1, c.g) * 255)},${Math.round(Math.min(1, c.b) * 255)})`; };
   const cm = mk(), cb = mk(), ce = mk();
   const gm = cm.getContext('2d'), gb = cb.getContext('2d'), ge = ce.getContext('2d');
@@ -641,7 +652,7 @@ export function glintTexture(THREE) {
   if (glintTex) return glintTex;
   if (typeof document === 'undefined') return null;
   const N = 128, cv = document.createElement('canvas'); cv.width = N; cv.height = N;
-  const g = cv.getContext('2d');
+  const g = cv.getContext('2d', { willReadFrequently: true });   // [W5-СТАРТ] программный 2D-холст
   g.fillStyle = '#000'; g.fillRect(0, 0, N, N);
   const c = N / 2;
   const core = g.createRadialGradient(c, c, 0, c, c, N * 0.22);
@@ -661,11 +672,14 @@ export function glintTexture(THREE) {
 }
 
 // Руны по кругу (для кольца посоха): белые знаки на чёрном, альфа по яркости.
+// [W5-СМЕНА] одна на сессию (рисунок постоянный, зерно 99): раньше — новый холст на каждую загрузку героя
+let ringTex = null;
 export function runeRingTexture(THREE) {
+  if (ringTex) return ringTex;
   if (typeof document === 'undefined') return null;
   const W = 1024, H = 64;
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  const g = cv.getContext('2d');
+  const g = cv.getContext('2d', { willReadFrequently: true });   // [W5-СТАРТ] программный 2D-холст
   g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
   g.strokeStyle = '#fff'; g.lineWidth = 3; g.lineCap = 'round'; g.shadowColor = '#fff'; g.shadowBlur = 6;
   g.beginPath(); g.moveTo(0, 8); g.lineTo(W, 8); g.moveTo(0, H - 8); g.lineTo(W, H - 8); g.stroke();
@@ -681,6 +695,7 @@ export function runeRingTexture(THREE) {
   }
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.anisotropy = 4;
+  ringTex = t;
   return t;
 }
 
@@ -701,15 +716,16 @@ export function sharedTextures(key, make) {
       if (done) return;
       done = true;
       if (--e.refs > 0) return;
+      // [W5-СМЕНА] последняя ссылка: видеопамять — отдать, холсты — оставить (тот же наряд при повторной сборке героя
+      // не рисуется заново; раньше A→B→A перерисовывал всё, потому что прежний герой освобождался до сборки нового)
       for (const t of Object.values(e.tex)) if (t && t.dispose) t.dispose();
-      sharedTex.delete(key);
     },
   };
 }
-export const sharedTexCount = () => sharedTex.size;   // QA: освобождаются ли холсты
+export const sharedTexCount = () => [...sharedTex.values()].filter((e) => e.refs > 0).length;   // QA: занятые наборы (холсты свободных — в кэше)
 
 const cssOf = (THREE, hex, k = 1, a = 1) => { const c = new THREE.Color(hex).multiplyScalar(k); return `rgba(${Math.round(Math.min(1, c.r) * 255)},${Math.round(Math.min(1, c.g) * 255)},${Math.round(Math.min(1, c.b) * 255)},${a})`; };
-const mkCanvas = (W, H) => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+const mkCanvas = (W, H) => { const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d', { willReadFrequently: true }); return c; };   // [W5-СТАРТ] программный 2D-холст
 function canvasTexture(THREE, cv, { color = false, wrapS = false, wrapT = false } = {}) {
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace;

@@ -1,12 +1,12 @@
 // [OFFLINE] Игра без интернета: первый запуск онлайн → context.setOffline(true) → перезагрузка.
 // Проверяет, что повторный запуск стартует целиком из кэша service worker (sw.js) и что модель
 // распознавания (MediaPipe: модуль, WASM, модели позы и кистей) инициализируется без сети.
-// Печатает цифры: время до меню, время «Разрешить камеру» → распознавание работает, байты по сети.
+// Печатает цифры: время до меню, время «Играть» → распознавание работает, байты по сети.
 //
 //   node dev/offline.browser.mjs [--mbps 25] [--menu-wait 8000] [--out DIR] [--browser PATH] [--no-before] [--draw] [--gpu] [--report]
 //
 //   --mbps N      сеть площадки: все запросы идут через прокси с общей полосой N Мбит/с (0 — без ограничения)
-//   --menu-wait   сколько «человек смотрит меню» перед «Начать» → «Разрешить камеру», мс
+//   --menu-wait   сколько «человек смотрит меню» перед «Играть» (сразу просит камеру), мс
 //   --no-before   без прогона «до» (?sw=0&preload=0: MediaPipe качается только после нажатия, как раньше)
 //   --draw        рисовать WebGL всегда (по умолчанию выключено между скриншотами: в headless рендер
 //                 программный и съедает CPU — worker MediaPipe тогда не успевает за 30 с)
@@ -122,7 +122,7 @@ const browser = await pw.chromium.launch({
 });
 
 async function newContext() {
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, permissions: ['camera'], ignoreHTTPSErrors: true });
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, permissions: ['camera', 'clipboard-read', 'clipboard-write'], ignoreHTTPSErrors: true });
   await ctx.addInitScript(() => { try { if (!localStorage.getItem('ashen-oath.settings.v1')) localStorage.setItem('ashen-oath.settings.v1', JSON.stringify({ quality: 'low', qualityAuto: false, reducedMotion: true })); } catch (e) { /* ignore */ } });
   // точное время появления window.__ASHEN__ (main.js выполнился — меню на экране)
   await ctx.addInitScript(() => {
@@ -148,6 +148,10 @@ async function newContext() {
       Worker.prototype.postMessage = function (m, ...rest) { if (m && m.type === 'init' && m.delegate) m = { ...m, delegate: 'CPU' }; return pm.call(this, m, ...rest); };
     });
   }
+  await ctx.addInitScript(() => {
+    window.__aoLong = [];
+    try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__aoLong.push([Math.round(e.startTime), Math.round(e.duration)]); }).observe({ type: 'longtask', buffered: true }); } catch (e) { /* нет longtask */ }
+  });
   const errors = [];
   ctx.on('page', (p) => {
     p.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
@@ -165,7 +169,7 @@ async function shot(p, name) {
   } catch (e) { /* ignore */ }
 }
 
-// Один запуск: меню → «человек смотрит меню» → «Начать» → «Разрешить камеру» → распознавание.
+// Один запуск: меню → «человек смотрит меню» → «Играть» (сразу просит камеру) → распознавание.
 async function run(ctx, label, query = '', opts = {}) {
   const p = await ctx.newPage();
   const w0 = wire.bytes;
@@ -184,23 +188,42 @@ async function run(ctx, label, query = '', opts = {}) {
   await sleep(MENU_WAIT);
   out.offline = await p.evaluate(() => (window.__aoOffline ? window.__aoOffline.state() : null)).catch(() => null);
   await shot(p, `${label}_1_menu.png`);
-  const btn = (text) => p.locator('button:visible', { hasText: text }).first();
-  await btn('Начать').click();
-  await p.waitForFunction(() => window.__ASHEN__.screen === 'camera', null, { timeout: 10000, polling: 50 }).catch(() => {});
+  // [W5-КАМЕРА] быстрый вход: «Играть» сразу просит камеру — кнопок «Начать» и «Разрешить камеру» больше нет
+  const btn = (text) => p.getByRole('button', { name: text, exact: true }).first();
   const tClick = await p.evaluate(() => performance.now());
-  await btn('Разрешить камеру').click();
+  await btn('Играть').click();
+  await p.waitForFunction(() => window.__ASHEN__.screen === 'camera', null, { timeout: 10000, polling: 50 }).catch(() => {});
   // распознавание запущено: статус ready/lost/calibrating и пришёл хотя бы один результат
   const st = await p.waitForFunction(() => { const t = window.__ASHEN__.tracking; const ok = t && ['ready', 'lost', 'calibrating'].includes(t.status) && t.debug && t.debug.results > 0; return ok ? t.status : (t && t.status === 'error' ? 'error' : false); }, null, { timeout: 120000, polling: 50 })
     .then((h) => h.jsonValue(), () => 'timeout');
   out.cameraMs = Math.round((await p.evaluate(() => performance.now())) - tClick);
   out.cameraStatus = st;
   await sleep(2500);
-  out.tracking = await p.evaluate(() => { const t = window.__ASHEN__.tracking; const d = t.debug || {}; return { status: t.status, message: t.message, mode: t.mode, delegate: t.delegate, hands: !!(t.hands && t.hands.ready), model: d.poseModel, hz: d.inferenceHz, results: d.results, fallback: d.workerFallbackReason }; }).catch(() => null);
+  out.tracking = await p.evaluate(() => { const t = window.__ASHEN__.tracking; const d = t.debug || {}; return { status: t.status, message: t.message, mode: t.mode, delegate: t.delegate, hands: !!(t.hands && t.hands.ready), model: d.poseModel, hz: d.inferenceHz, results: d.results, fallback: d.workerFallbackReason, ladder: d.ladderHistory }; }).catch(() => null);
+  // [W5-КАМЕРА] долгие задачи главного потока после «Играть» (> 300 мс): рядом с откатом по лестнице — причина в нём
+  out.longTasks = await p.evaluate((t) => (window.__aoLong || []).filter((x) => x[0] >= t - 1000 && x[1] > 300), tClick).catch(() => null);
   await shot(p, `${label}_2_camera.png`);
+  // [W5-КАМЕРА] экран камеры: «Диагностика» раскрывается, «Скопировать отчёт» отдаёт текст отчёта
+  out.screen = await p.evaluate(() => window.__ASHEN__.screen).catch(() => null);
+  out.diag = await (async () => {
+    const sum = p.locator('details.ao-camdiag:visible > summary').first();
+    if (!(await sum.count())) return { error: 'нет «Диагностики» на экране' };
+    await sum.click();
+    await sleep(400);
+    const rows = await p.locator('details.ao-camdiag[open] dt').allInnerTexts();
+    await p.getByRole('button', { name: 'Скопировать отчёт' }).first().click();
+    await sleep(400);
+    const note = await p.locator('details.ao-camdiag[open] .ao-camdiag__note').first().innerText().catch(() => '');
+    let text = await p.evaluate(() => navigator.clipboard.readText()).catch(() => '');
+    if (!/отчёт камеры/.test(text)) text = await p.locator('details.ao-camdiag[open] textarea').first().inputValue().catch(() => '');
+    await shot(p, `${label}_3_diag.png`);
+    return { rows, note, report: text.split('\n').slice(0, 3).join(' / '), reportLines: text ? text.split('\n').length : 0 };
+  })().catch((e) => ({ error: String((e && e.message) || e).split('\n')[0] }));
   out.wireMB = MB(wire.bytes - w0);
   out.wireReq = wire.log.length - l0;
   out.wireSample = wire.log.slice(l0).filter((u) => !/\.(js|css|html)(\?|$)|^\/(\?|$)/.test(u)).slice(0, 12);
   out.wallMs = Date.now() - t0;
+  out.tClick = Math.round(tClick);
   return { out, page: p };
 }
 
@@ -256,7 +279,7 @@ try {
       pre ? `${pre.status}, ${MB(pre.loaded)} из ${MB(pre.total)} МБ за ${MENU_WAIT / 1000} с меню` : 'нет состояния');
   }
   check('первый запуск: распознавание запустилось', works(first), `${first.cameraStatus} за ${first.cameraMs} мс`);
-  if (before && works(before) && works(first)) check('«Разрешить камеру» быстрее, чем без предзагрузки', first.cameraMs < before.cameraMs, `${before.cameraMs} → ${first.cameraMs} мс`);
+  if (before && works(before) && works(first)) check('«Играть» → распознавание быстрее, чем без предзагрузки', first.cameraMs < before.cameraMs, `${before.cameraMs} → ${first.cameraMs} мс`);
   check('service worker управляет страницей' + (LOOPBACK ? '' : ' и докачал всё'), !!(sw && sw.controlled && sw.state && sw.state.ready && sw.state.warm.errors === 0 && (LOOPBACK || sw.state.warm.status === 'done')), JSON.stringify(sw).slice(0, 240));
   check('второй запуск: игра стартовала', second.booted, second.bootErr || `меню за ${second.menuMs} мс`);
   if (!LOOPBACK) check('второй запуск: по сети меньше 0,5 МБ (только сверка 304)', second.wireMB < 0.5, `${second.wireMB} МБ, запросов ${second.wireReq}`);
@@ -264,6 +287,16 @@ try {
   check('офлайн: игра стартовала', off.booted, off.bootErr || `меню за ${off.menuMs} мс`);
   check('офлайн: модель распознавания инициализировалась и обрабатывает кадры', works(off) && !!off.tracking && off.tracking.results > 0, `${off.cameraStatus} за ${off.cameraMs} мс; ${JSON.stringify(off.tracking)}`);
   check('офлайн: кисти (HandLandmarker) тоже готовы', !!(off.tracking && off.tracking.hands), JSON.stringify(off.tracking));
+  // [W5-КАМЕРА] экран камеры, «Диагностика» и «Скопировать отчёт» — и без сети (modules/camReport.js в кэше sw.js)
+  for (const o of [first, off]) {
+    check(`${o.label}: экран камеры открылся`, ['camera', 'calibration'].includes(o.screen), `экран ${o.screen}`);
+    const dg = o.diag || {};
+    check(`${o.label}: «Диагностика» раскрывается — камера, распознавания, где считается`, !dg.error && ['Камера', 'Распознаваний', 'Где считается'].every((k) => (dg.rows || []).includes(k)), dg.error || (dg.rows || []).join(', '));
+    check(`${o.label}: «Скопировать отчёт» даёт отчёт`, /отчёт камеры/.test(dg.report || '') && dg.reportLines >= 8, `${dg.note || ''}; строк ${dg.reportLines}; ${dg.report || dg.error || ''}`);
+  }
+  // [W5-КАМЕРА] медленный кадр — ступень ниже в воркере (CPU), а не главный поток: раньше здесь был откат
+  // «worker не ответил на кадр за 2500 мс» → главный поток, 0,5 распознавания в секунду и «Нет новых кадров с камеры»
+  for (const o of [first, second, off]) if (works(o) && o.tracking) check(`${o.label}: распознавание в воркере, не в главном потоке`, o.tracking.mode === 'worker', JSON.stringify(o.tracking));
   check('офлайн: по сети 0 байт', off.wireMB === 0, `${off.wireMB} МБ`);
   const errs = errors.filter((e) => !/GPU|WebGL|gpu|delegate|OpenGL|INFO:|favicon|ERR_INTERNET_DISCONNECTED|net::ERR_|Failed to load resource/.test(e));
   check('нет ошибок страницы', errs.length === 0, errs.slice(0, 4).join(' | '));

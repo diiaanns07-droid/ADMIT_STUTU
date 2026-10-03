@@ -17,7 +17,7 @@
 'use strict';
 
 // <AO_MANIFEST> — генерирует node tools/sw_manifest.mjs, руками не править
-const VERSION = 'ebb2ec4d0951';
+const VERSION = '4c9ff433d308';
 const VENDOR_VERSION = 'b3f563930682';
 const SHELL = [
   "./",
@@ -26,7 +26,9 @@ const SHELL = [
   "core/bdoHud.js",
   "core/bdoMinimap.js",
   "core/bdoTheme.js",
+  "core/bootPlan.js",
   "core/bowGesture.js",
+  "core/camWarm.js",
   "core/cameraRig.js",
   "core/cinemaFeed.js",
   "core/coachOverlay.js",
@@ -63,6 +65,7 @@ const SHELL = [
   "modules/bdoIcons.js",
   "modules/boss.js",
   "modules/brightForest.js",
+  "modules/camReport.js",
   "modules/challenge.css",
   "modules/challenge.js",
   "modules/characterLooks.js",
@@ -99,6 +102,7 @@ const SHELL = [
   "modules/handVisuals.js",
   "modules/heroAttire.js",
   "modules/heroAura.js",
+  "modules/heroCache.js",
   "modules/heroCloth.js",
   "modules/heroForge.js",
   "modules/heroGear.js",
@@ -389,7 +393,8 @@ async function networkFirst(e, req, cacheName, timeoutMs) {
   });
   const fromCache = async () => (await cache.match(req, { ignoreSearch: true }))
     || (await caches.match(req, { ignoreSearch: true }))
-    || (req.mode === 'navigate' ? (await caches.match(abs('index.html'))) || (await caches.match(abs('./'))) : undefined);
+    // страницы вне игры (презентация pitch/) не подменяем игрой: на медленной сети — ждём сеть
+    || (req.mode === 'navigate' && !/\/pitch\//.test(new URL(req.url).pathname) ? (await caches.match(abs('index.html'))) || (await caches.match(abs('./'))) : undefined);
   if (timeoutMs > 0) {
     const first = await Promise.race([net.catch(() => 'fail'), new Promise((r) => setTimeout(r, timeoutMs, 'slow'))]);
     if (first !== 'slow' && first !== 'fail') return first;
