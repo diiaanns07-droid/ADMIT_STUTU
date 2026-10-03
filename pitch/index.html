@@ -3,9 +3,33 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ASHEN OATH — финал ADMIT</title>
-<meta name="description" content="ASHEN OATH: камера вместо джойстика. Презентация для финала ADMIT, кейс Motion.">
+<title>ASHEN OATH — питч финала ADMIT</title>
+<meta name="description" content="Тёмное фэнтези в браузере: управление телом и руками через веб-камеру. Презентация для финала ADMIT, кейс Motion.">
+<meta name="theme-color" content="#0b0a09">
+<!-- Превью ссылки (Telegram, WhatsApp, соцсети): адрес картинки — абсолютный, иначе превью не покажут. -->
+<meta property="og:type" content="website">
+<meta property="og:locale" content="ru_RU">
+<meta property="og:site_name" content="ASHEN OATH">
+<meta property="og:title" content="ASHEN OATH — питч финала ADMIT">
+<meta property="og:description" content="Тёмное фэнтези в браузере: управление телом и руками через веб-камеру">
+<meta property="og:url" content="https://diiaanns07-droid.github.io/ADMIT_STUTU/pitch/">
+<meta property="og:image" content="https://diiaanns07-droid.github.io/ADMIT_STUTU/pitch/media/p1/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="ASHEN OATH — камера вместо джойстика">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ASHEN OATH — питч финала ADMIT">
+<meta name="twitter:description" content="Тёмное фэнтези в браузере: управление телом и руками через веб-камеру">
+<meta name="twitter:image" content="https://diiaanns07-droid.github.io/ADMIT_STUTU/pitch/media/p1/og.jpg">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0a09'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23c4a265' stroke-width='1.6'/%3E%3Cpath d='M16 4v24M12 20l4 3 4-3' fill='none' stroke='%23c4a265' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<!-- Шрифты первого экрана (метка, логотип, подпись, lead) — заранее; остальные грузятся по мере надобности.
+     Только по http(s): из file:// предзагрузка шрифта упирается в CORS (сами шрифты из file:// грузятся и так). -->
+<script>
+  if (location.protocol !== 'file:') ['CormorantGaramond-var-latin', 'CormorantGaramond-500i-cyrillic', 'Forum-400-cyrillic', 'Forum-400-latin', 'AlegreyaSans-400-cyrillic'].forEach(function (f) {
+    var l = document.createElement('link'); l.rel = 'preload'; l.as = 'font'; l.type = 'font/woff2'; l.crossOrigin = 'anonymous'; l.href = 'fonts/' + f + '.woff2';
+    document.head.appendChild(l);
+  });
+</script>
 <!-- Порядок подключения — часть общего контракта: шрифты, движок, затем стили трёх частей. -->
 <link rel="stylesheet" href="fonts/fonts.css">
 <link rel="stylesheet" href="deck.css">

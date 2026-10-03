@@ -49,6 +49,8 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--ink); }
+/* Горизонтальные жесты — презентации (свайп листает), а не браузеру: иначе свайп вправо уводит «назад» по истории. */
+html, body { touch-action: pan-y pinch-zoom; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
 body {
   color: var(--text); font-family: var(--f-body); font-size: 32px; line-height: 1.375;
   font-variant-numeric: lining-nums; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
@@ -59,26 +61,60 @@ a { color: inherit; }
 .noscript { position: fixed; inset: auto 0 40px; text-align: center; color: var(--muted); }
 
 /* ---------- Сцена: 1920×1080, масштаб --s = min(ширина/1920, высота/1080), вёрстка одна на любом экране */
+/* fixed: сцена не раздувает документ, иначе на телефоне браузер расширяет страницу и слайд не вписывается */
 .deck {
-  position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px;
+  position: fixed; left: 50%; top: 50%; width: 1920px; height: 1080px;
   transform: translate(-50%, -50%) scale(var(--s)); transform-origin: 50% 50%;
   background: var(--ink); overflow: hidden;
 }
 .slide {
   position: absolute; inset: 0; z-index: 1; padding: 120px; overflow: hidden;
-  background: var(--grad-panel), var(--ink);
-  opacity: 0; visibility: hidden; transform: translateY(8px);
-  transition: opacity .4s var(--ease), transform .4s var(--ease), visibility 0s linear .4s;
+  background: var(--grad-panel), var(--ink); visibility: hidden;
 }
-.slide.is-active {
-  z-index: 2; opacity: 1; visibility: visible; transform: none;
-  transition: opacity .4s var(--ease), transform .4s var(--ease), visibility 0s;
-}
+.slide.is-active { z-index: 3; visibility: visible; }
 .notes { display: none; }
 
-/* ---------- Шаги: data-step="1", "2"… скрыты до показа, раскрываются по одному (300 мс) */
-[data-step] { transition: opacity .3s var(--ease), translate .3s var(--ease); }
+/* ---------- Переход «чернила света»: новый слайд проявляется за светлой чертой (500 мс), старый гаснет под ним */
+.slide.is-leaving { z-index: 2; visibility: visible; }
+.slide.is-dim { animation: ink-dim .5s var(--ease) both; }
+.slide.is-wipe { animation: ink-wipe .5s var(--ease) both; }
+.slide.is-wipe-back { animation: ink-wipe-back .5s var(--ease) both; }
+@keyframes ink-wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes ink-wipe-back { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0 0 0 0); } }
+@keyframes ink-dim { from { opacity: 1; } to { opacity: .2; } }
+.ink {
+  position: absolute; left: 0; top: 0; z-index: 4; width: 3px; height: 1080px; opacity: 0; pointer-events: none;
+  background: var(--gold-hi); box-shadow: 0 0 18px 4px rgba(243, 220, 160, .55), 0 0 60px 12px rgba(216, 179, 106, .22);
+}
+.ink::before {
+  content: ''; position: absolute; top: 0; bottom: 0; right: 3px; width: 140px;
+  background: linear-gradient(90deg, rgba(216, 179, 106, 0), rgba(216, 179, 106, .16));
+}
+
+/* ---------- «Волшебный переход» (data-morph): призраки летят поверх слайдов, оригиналы ждут */
+.morph-layer { position: absolute; inset: 0; z-index: 16; pointer-events: none; }
+.morph-ghost { position: absolute; margin: 0; transform-origin: 0 0; box-sizing: border-box; }
+.is-morphing { visibility: hidden; }
+
+/* ---------- Шаги: data-step="1", "2"… скрыты до показа, раскрываются по одному (300 мс), элементы шага — лесенкой */
+[data-step] { transition: opacity .3s var(--ease) var(--sd, 0ms), translate .3s var(--ease) var(--sd, 0ms); }
 [data-step]:not(.is-on) { opacity: 0; translate: 0 8px; }
+/* .reveal — проявляется при входе вперёд лесенкой (задержку --rd ставит deck.js) */
+.reveal { opacity: 0; translate: 0 14px; transition: opacity .45s var(--ease) var(--rd, 0ms), translate .45s var(--ease) var(--rd, 0ms); }
+.reveal.is-shown { opacity: 1; translate: none; }
+/* Текст из искр: пока искры летят, сам текст скрыт */
+[data-sparks] { transition: opacity .3s var(--ease); }
+[data-sparks].is-sparking { opacity: 0; transition: none; }
+
+/* ---------- Фон слайда из data-bg; параллакс слоёв с data-depth (deck.js ставит --px/--py от мыши) */
+/* z-index −1: слой фона под всем содержимым слайда (слайд — свой контекст наложения), раскладку частей не трогаем */
+.slide__bg { position: absolute; inset: -16px; z-index: -1; overflow: hidden; pointer-events: none; }
+.slide__bg img, .slide__bg video { width: 100%; height: 100%; object-fit: cover; }
+.slide__bg::after { content: ''; position: absolute; inset: 0; }
+.slide__bg--left::after { background: linear-gradient(90deg, var(--ink) 0%, rgba(11, 10, 9, .82) 34%, rgba(11, 10, 9, .25) 72%, rgba(11, 10, 9, .45) 100%); }
+.slide__bg--bottom::after { background: linear-gradient(0deg, var(--ink) 0%, rgba(11, 10, 9, .7) 40%, rgba(11, 10, 9, .2) 100%); }
+.slide__bg--full::after { background: var(--ink); opacity: .72; }
+[data-depth] { translate: calc(var(--px, 0) * var(--depth, 0px)) calc(var(--py, 0) * var(--depth, 0px)); }
 
 /* ---------- К5. Общие классы */
 .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 24px; }
@@ -221,7 +257,24 @@ a { color: inherit; }
 .regent.is-defeated .regent__name { color: var(--gold-hi); }
 
 /* ---------- К9 (б). Пепел и угольки: один canvas 1920×1080 (DPR 1), только слайды 1 и 13 */
-.ash { position: absolute; inset: 0; z-index: 10; width: 1920px; height: 1080px; pointer-events: none; }
+.ash { position: absolute; inset: 0; z-index: 10; width: 1920px; height: 1080px; pointer-events: none; translate: calc(var(--px, 0) * 22px) calc(var(--py, 0) * 22px); }
+
+/* ---------- Удар по Регенту: вспышка, цифры урона, призрак полосы в финале */
+.flash {
+  position: absolute; inset: 0; z-index: 18; opacity: 0; pointer-events: none;
+  background: radial-gradient(70% 60% at 50% 40%, rgba(243, 220, 160, .55), rgba(216, 179, 106, .12) 60%, transparent 80%);
+  mix-blend-mode: screen;
+}
+.dmg {
+  position: absolute; z-index: 21; pointer-events: none; white-space: nowrap;
+  font-family: var(--f-num); font-weight: 600; font-size: 26px; line-height: 1; letter-spacing: .04em;
+  color: var(--gold-hi); text-shadow: 0 1px 2px #000, 0 0 12px rgba(0, 0, 0, .8);
+}
+.dmg--big { font-size: 46px; text-shadow: 0 2px 3px #000, 0 0 18px rgba(176, 38, 42, .8); }
+.regent-ghost { position: absolute; z-index: 1; transform-origin: 50% 50%; }
+.regent-ghost .regent__frame { height: 100%; }
+.regent-ghost__crack { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; }
+.regent-ghost__crack path { fill: none; stroke: var(--gold-hi); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 4px rgba(243, 220, 160, .9)); }
 
 /* ---------- Заглушка слайда, которого ещё нет в сборке */
 .slide--stub { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 28px; }
@@ -232,6 +285,31 @@ a { color: inherit; }
 }
 .slide--stub .thesis { color: var(--muted); }
 .slide--stub .cap { max-width: 900px; }
+
+/* ---------- Зритель без докладчика: подсказка, автопросмотр, «поверните телефон» (в пикселях окна) */
+.hint, .autopill {
+  position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 90;
+  display: flex; align-items: center; gap: 10px; padding: 9px 18px 10px;
+  font-family: var(--f-body); font-size: clamp(14px, 1.15vw, 18px); line-height: 1.3; color: var(--text); white-space: nowrap;
+  background: rgba(14, 15, 18, .86); border: 1px solid var(--line); border-radius: 999px; box-shadow: var(--shadow-panel);
+  opacity: 0; visibility: hidden; transform: translate(-50%, 8px); pointer-events: none;
+  transition: opacity .5s var(--ease), transform .5s var(--ease), visibility 0s linear .5s;
+}
+.hint.is-on, .autopill.is-on { opacity: 1; visibility: visible; transform: translate(-50%, 0); transition: opacity .5s var(--ease), transform .5s var(--ease), visibility 0s; }
+.hint .arr { color: var(--gold-hi); }
+.autopill svg { width: 1em; height: 1em; color: var(--gold-hi); }
+.rotate { display: none; }
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate {
+    position: fixed; inset: 0; z-index: 130; display: grid; place-items: center; padding: 24px;
+    background: var(--grad-panel), var(--ink); text-align: center;
+  }
+  .rotate__box { display: grid; justify-items: center; gap: 12px; color: var(--parch); }
+  .rotate__box svg { width: 96px; height: 96px; fill: none; stroke: var(--gold-b); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .rotate__box p { font-family: var(--f-display); font-weight: 600; font-size: 28px; }
+  .rotate__box .rotate__cap { font-family: var(--f-body); font-weight: 400; font-size: 17px; color: var(--muted); }
+  .hint, .autopill { display: none; }
+}
 
 /* ---------- Служебное: чёрный экран, помощь, подсказки */
 .blackout {
@@ -272,6 +350,8 @@ kbd {
 
 /* ---------- Мгновенный показ: вход назад, переход по hash, печать — сразу конечное состояние */
 .slide.is-instant [data-step],
+.slide.is-instant .reveal,
+.slide.is-instant [data-sparks],
 .slide.is-instant .kicker::after,
 .slide.is-instant .num[data-ignite],
 .slide.is-instant .num[data-ignite]::before,
@@ -307,5 +387,9 @@ kbd {
   .num[data-ignite]::before, .num[data-ignite]::after { display: none !important; }
   video { display: none !important; }
   .print-poster { display: block !important; }
-  .regent, .ash, .notes, .blackout, .help, .toast { display: none !important; }
+  .reveal { opacity: 1 !important; translate: none !important; }
+  [data-sparks] { opacity: 1 !important; }
+  [data-depth], .slide__bg { translate: none !important; }
+  .slide.is-dim, .slide.is-wipe, .slide.is-wipe-back { opacity: 1 !important; clip-path: none !important; }
+  .regent, .ash, .notes, .blackout, .help, .toast, .ink, .morph-layer, .flash, .dmg, .hint, .autopill, .rotate { display: none !important; }
 }

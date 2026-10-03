@@ -7,12 +7,6 @@
   var TEAM = [];
 
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-  function reduced() { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
-  // Буквы логотипа по отдельности: разрядка «сходится» сдвигом букв (transform), а не анимацией letter-spacing.
-  function letters(word) {
-    return word.split('').map(function (c, i) { return '<span style="--i:' + i + '">' + c + '</span>'; }).join('');
-  }
-
   // Сигил из заставки игры (modules/ui.js, ICONS.sigil).
   var SIGIL =
     '<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
@@ -20,6 +14,16 @@
     '<path d="M32 9v46"/><path d="M24.5 39.5 32 45l7.5-5.5"/>' +
     '<path d="M32 19.5c3.2 3 3.6 6.2 0 9.8-3.6-3.6-3.2-6.8 0-9.8z" fill="currentColor" fill-opacity=".28"/>' +
     '<path d="M11 32h6M47 32h6" stroke-opacity=".7"/></svg>';
+
+  // Логотип как в заставке игры: ASHEN — линия с сигилом — OATH. Один и тот же на титуле и в углу слайда 2,
+  // поэтому «волшебный переход» (data-morph="logo") просто уменьшает его. Линии — .spk-solid: их тоже собирают искры.
+  function logo(cls, attrs) {
+    return '<span class="logo ' + cls + '" lang="en" ' + attrs + '>' +
+      '<span class="logo__word">ASHEN</span>' +
+      '<span class="logo__rule" aria-hidden="true"><i class="logo__line spk-solid"></i><span class="logo__sigil">' + SIGIL + '</span><i class="logo__line logo__line--long spk-solid"></i></span>' +
+      '<span class="logo__word">OATH</span></span>';
+  }
+  var PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>';
 
   // Иконки слайда 2: 48 px, золотая линия 2 px.
   var ICON = {
@@ -48,43 +52,36 @@
 
   var Q = (window.DECK_QUEUE = window.DECK_QUEUE || []);
 
-  /* ---------- 1. Титул */
-  var t1 = 0;
+  /* ---------- 1. Титул: логотип собирается из искр (deck.js, data-sparks), справа — облёт арены Регента */
   Q.push({
     n: 1, sec: 20,
     html: `<section class="slide s1" data-slide="1" data-title="ASHEN OATH">
-      <div class="s1__art" aria-hidden="true"><img src="media/p1/arena-far.jpg" alt="" width="956" height="508"></div>
-      <p class="kicker">Финал ADMIT · кейс Motion</p>
-      <div class="s1__body">
-        <h1 class="s1__logo" lang="en" aria-label="ASHEN OATH">
-          <span class="s1__word" aria-hidden="true">${letters('ASHEN')}</span>
-          <span class="s1__rule" aria-hidden="true"><span class="s1__sigil">${SIGIL}</span></span>
-          <span class="s1__word" aria-hidden="true">${letters('OATH')}</span>
-        </h1>
-        <p class="s1__tag">Камера вместо джойстика</p>
-        <p class="lead s1__lead">Тёмное фэнтези в браузере. Управление телом и руками через обычную веб-камеру.</p>
+      <div class="s1__art" data-depth="14" aria-hidden="true">
+        <video data-src="../docs/video/arena.mp4" poster="media/p1/title-poster.jpg" muted loop playsinline preload="none"></video>
+        <img class="print-poster" src="media/p1/title-poster.jpg" alt="">
       </div>
+      <p class="kicker">Финал ADMIT · кейс Motion</p>
+      <div class="s1__body" data-depth="6">
+        <h1 class="s1__title">${logo('s1__logo', 'data-sparks data-morph="logo" aria-label="ASHEN OATH"')}</h1>
+        <p class="s1__tag reveal">Камера вместо джойстика</p>
+        <p class="lead s1__lead reveal">Тёмное фэнтези в браузере. Управление телом и руками через обычную веб-камеру.</p>
+      </div>
+      <nav class="s1__actions reveal" aria-label="Просмотр">
+        <button type="button" class="btn btn--primary" data-action="autoplay" aria-pressed="false">${PLAY}<span>Автопросмотр</span><kbd>A</kbd></button>
+        <div class="s1__links">
+          <a class="btn" href="ASHEN_OATH_pitch.pdf" download>PDF</a>
+          <a class="btn" href="../index.html" target="_blank" rel="noopener">Играть</a>
+        </div>
+      </nav>
       <aside class="notes">ASHEN OATH — игра, в которой контроллер — это вы. Обычный ноутбук, веб-камера, ссылка — и вы сражаетесь с боссом руками и телом. Ничего не нужно устанавливать. За восемь минут покажем, как это работает и что изменилось со 2 октября.</aside>
-    </section>`,
-    // Логотип проявляется за 600 мс (буквы сходятся от разрядки .24em к .17em), строки ниже — через 300 мс.
-    // Анимируем при первом открытии и при входе вперёд; назад, по hash и с «уменьшенным движением» — сразу итог.
-    enter: function (el, dir, info) {
-      clearTimeout(t1);
-      el.classList.remove('is-intro', 'is-play');
-      if ((dir > 0 || info.prev === null) && !reduced()) {
-        el.classList.add('is-intro');
-        void el.offsetWidth;
-        el.classList.add('is-play');
-        t1 = setTimeout(function () { el.classList.remove('is-intro', 'is-play'); }, 1200);
-      }
-    },
-    leave: function (el) { clearTimeout(t1); el.classList.remove('is-intro', 'is-play'); }
+    </section>`
   });
 
-  /* ---------- 2. Проблема */
+  /* ---------- 2. Проблема: логотип титула уезжает в угол */
   Q.push({
     n: 2, sec: 30,
     html: `<section class="slide s2" data-slide="2" data-title="Игры с движением требуют железа — а камера уже есть">
+      ${logo('logo--mark s2__mark', 'data-morph="logo" aria-hidden="true"')}
       <p class="kicker">Проблема</p>
       <h2 class="thesis">Игры с движением требуют железа — а&nbsp;камера уже есть</h2>
       <ol class="s2__list">
@@ -97,20 +94,18 @@
     </section>`
   });
 
-  /* ---------- 13. Клятва — сигнатурный момент */
-  var t13 = [];
-  function clear13() { t13.forEach(clearTimeout); t13 = []; }
+  /* ---------- 13. Клятва — финал: полоса Регента слетает в центр, трескается, искры собираются в клятву (deck.js) */
   Q.push({
     n: 13, sec: 25,
     html: `<section class="slide s13" data-slide="13" data-title="Наша клятва">
       <div class="s13__bg" aria-hidden="true"><img src="media/p1/oath-bg.jpg" alt="" width="1920" height="1080"></div>
       <p class="kicker">Клятва</p>
       <div class="s13__main">
-        <h2 class="thesis s13__oath">Любой ноутбук с&nbsp;камерой — игра, тренер и&nbsp;урок движения.</h2>
-        <p class="s13__hands">Ваши руки — это джойстик. Сыграйте сами.</p>
+        <h2 class="thesis s13__oath" data-sparks>Любой ноутбук с&nbsp;камерой — игра, тренер и&nbsp;урок движения.</h2>
+        <p class="s13__hands reveal">Ваши руки — это джойстик. Сыграйте сами.</p>
         <div class="s13__row">
-          <a class="s13__live" href="../index.html?demo&amp;present&amp;fury=100" target="_blank" rel="noopener">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>Живой показ</a>
+          <a class="btn btn--primary s13__live" href="../index.html?demo&amp;present&amp;fury=100" target="_blank" rel="noopener">${PLAY}<span>Живой показ</span></a>
+          <a class="btn" href="ASHEN_OATH_pitch.pdf" download>PDF</a>
           ${team()}
         </div>
       </div>
@@ -120,20 +115,6 @@
       </figure>
       <p class="src s13__src">three.js · MediaPipe (Google) · three-vrm (pixiv) · PeerJS · Quaternius · KayKit · VRoid · Poly Haven · Google Fonts (OFL). Звук и мир — свои.</p>
       <aside class="notes">Наша клятва простая: любой ноутбук с камерой — это игра, тренер и урок движения. Отсканируйте QR — игра откроется в браузере. Сейчас покажем вживую. Спасибо!</aside>
-    </section>`,
-    // Вперёд с 12-го: deck.js опустошает полосу Регента и рассыпает её угольками (0–1,7 с),
-    // строка клятвы проявляется слева направо (1,1–1,9 с), строка про руки — следом (до 2,2 с).
-    // По hash, назад, с «уменьшенным движением» и в печати — сразу конечное состояние.
-    enter: function (el, dir, info) {
-      clear13();
-      el.classList.remove('is-sig', 'is-oath');
-      if (dir > 0 && info.prev === 12 && !reduced()) {
-        el.classList.add('is-sig');
-        void el.offsetWidth;
-        t13.push(setTimeout(function () { el.classList.add('is-oath'); }, 1100));
-        t13.push(setTimeout(function () { el.classList.remove('is-sig', 'is-oath'); }, 2600));
-      }
-    },
-    leave: function (el) { clear13(); el.classList.remove('is-sig', 'is-oath'); }
+    </section>`
   });
 })();
