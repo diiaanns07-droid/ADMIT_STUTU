@@ -53,7 +53,7 @@ async function run() {
   const res = { quality: Q, root: ROOT, menu: [], battle: {}, defeat: {}, notes: [] };
   // В странице: n кадров по ms, клавиши — события keydown/keyup на window (как у core/debugInput.js) по номерам кадров,
   // после каждого кадра — heroFeet() и состояние боя; autoUlt — U, как только шкала ярости полна; stop — до конца боя
-  const PAGE_RUN = async ({ n, ms, events, stop, autoUlt, phase, t0, every }) => {
+  const PAGE_RUN = async ({ n, ms, events, stop, autoUlt, phase, t0, every, fast }) => {
     const A = window.__ASHEN__, vb = window.__vb, rows = [];
     const key = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code, key: code, bubbles: true }));
     const at = new Map();
@@ -61,7 +61,7 @@ async function run() {
     let t = t0, ult = false, i = 0;
     for (; i < n; i++) {
       for (const [, act, code] of at.get(i) || []) { if (act !== 'up') key('keydown', code); if (act !== 'down') key('keyup', code); }
-      await vb.step(ms);
+      if (fast) { vb.step(ms, false); if (i % 30 === 29) await new Promise((r) => setTimeout(r, 0)); } else await vb.step(ms);
       t += ms / 1000;
       const s = A.snapshot();
       if (!every || i % every === 0) {
@@ -76,6 +76,14 @@ async function run() {
     const s = A.snapshot();
     return { rows, t, ult, steps: i, status: s ? s.status : null };
   };
+  // Без отрисовки (по умолчанию; --render — рисовать): логика героя и боя идёт в кадре до renderer.render, хук сам
+  // обновляет матрицы героя, а программный рендер без видеокарты — секунды на кадр. Кадр игры не ждёт браузер.
+  const RENDER = A.has('--render');
+  const noRender = async (page) => {
+    if (RENDER) return;
+    await page.waitForFunction(() => !!(window.__vb.probe && window.__vb.probe.renderer), null, { timeout: 120000, polling: 100 });
+    await page.evaluate(() => { const r = window.__vb.probe.renderer; if (!r.__hgRender) { r.__hgRender = r.render; r.render = function () {}; } });
+  };
   // пачками по 240 кадров (один вызов страницы не упирается в тайм-аут Playwright)
   const runPaged = async (page, o) => {
     const rows = [];
@@ -83,7 +91,7 @@ async function run() {
     for (let s0 = 0; s0 < o.n; s0 += 240) {
       const n = Math.min(240, o.n - s0);
       const ev = (o.events || []).filter((e) => e[0] >= s0 && e[0] < s0 + n).map((e) => [e[0] - s0, e[1], e[2]]);
-      const r = await page.evaluate(PAGE_RUN, { ...o, n, events: ev, t0: t, autoUlt: !ult });
+      const r = await page.evaluate(PAGE_RUN, { ...o, n, events: ev, t0: t, autoUlt: !ult, fast: !RENDER });
       rows.push(...r.rows); t = r.t; steps += r.steps; status = r.status; ult = ult || r.ult;
       if (o.stop && status !== 'playing') break;
     }
@@ -94,6 +102,7 @@ async function run() {
     if (!A.has('--no-menu')) {
       const g = await openGame(browser, server, { size: SIZE, seed: SEED, settings: { quality: Q, hero: HEROES[0] }, log: (m) => log(`${Q} меню: ${m}`) });
       const { page } = g;
+      await noRender(page);
       let t = 0;
       const cycles = QUICK ? 2 : 6, per = QUICK ? 30 : 60;
       for (let c = 0; c < cycles; c++) {
@@ -102,7 +111,7 @@ async function run() {
           await page.locator('label.ao-herocard', { has: page.locator(`input[value="${h}"]`) }).click({ timeout: 240000 });
           await page.waitForFunction((id) => { const s = window.__ASHEN__.hero(); return s && s.hero === id && s.ready; }, h, { timeout: 240000, polling: 200 }).catch(() => res.notes.push(`меню ${h}: не загрузился`));
           await g.virtual(true);
-          const r = await page.evaluate(PAGE_RUN, { n: per, ms: 1000 / 30, events: [], phase: 'menu', t0: t, every: 2 });
+          const r = await page.evaluate(PAGE_RUN, { n: per, ms: 1000 / 30, events: [], phase: 'menu', t0: t, every: 2, fast: !RENDER });
           t = r.t;
           for (const x of r.rows) res.menu.push({ ...x, cycle: c });
         }
@@ -126,6 +135,7 @@ async function run() {
       const g = await openGame(browser, server, { size: SIZE, seed: SEED, settings: { quality: Q, hero: h }, patch: { bossHp: 1, bossDamage: 0.25 }, log: (m) => log(`${Q} бой ${h}: ${m}`) });
       const { page } = g;
       await g.toBattle();
+      await noRender(page);
       const rows = [];
       let r = await runPaged(page, { n: Math.round((BATTLE * 1000) / STEP), ms: STEP, events, stop: true, autoUlt: true, phase: 'battle', t0: 0 });
       rows.push(...r.rows);
@@ -139,7 +149,7 @@ async function run() {
         rows.push(...r.rows);
       }
       if (r.status !== 'victory') res.notes.push(`бой ${h}: победы нет (status ${r.status})`);
-      r = await page.evaluate(PAGE_RUN, { n: 120, ms: STEP, events: [], phase: 'victory', t0: r.t });
+      r = await page.evaluate(PAGE_RUN, { n: 120, ms: STEP, events: [], phase: 'victory', t0: r.t, fast: !RENDER });
       rows.push(...r.rows);
       res.battle[h] = rows;
       log(`${Q} бой ${h}: ${rows.length} кадров, ${JSON.stringify(summarizeRows(rows))}`);
@@ -151,10 +161,11 @@ async function run() {
       const g = await openGame(browser, server, { size: SIZE, seed: SEED, settings: { quality: Q, hero: h }, patch: { bossHp: 3, bossDamage: 3 }, log: (m) => log(`${Q} поражение ${h}: ${m}`) });
       const { page } = g;
       await g.toBattle();
+      await noRender(page);
       let r = await runPaged(page, { n: 1500, ms: 100, events: [[0, 'down', 'KeyW'], [45, 'up', 'KeyW']], stop: true, phase: 'wait', t0: 0, every: 5 });
       const rows = [...r.rows];
       if (r.status !== 'defeat') res.notes.push(`поражение ${h}: нет (status ${r.status})`);
-      r = await page.evaluate(PAGE_RUN, { n: 90, ms: STEP, events: [], phase: 'defeat', t0: r.t });
+      r = await page.evaluate(PAGE_RUN, { n: 90, ms: STEP, events: [], phase: 'defeat', t0: r.t, fast: !RENDER });
       rows.push(...r.rows);
       res.defeat[h] = rows;
       log(`${Q} поражение ${h}: ${JSON.stringify(summarizeRows(rows.filter((x) => x.phase === 'defeat')))}`);

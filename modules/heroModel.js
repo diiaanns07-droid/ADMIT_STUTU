@@ -1471,7 +1471,7 @@ export function createHeroModel({
   // точкам soleMarkers (как считает перенос клипов) — в мире, вместе с x, z нижней точки (пол меряется под ней)
   function feet() {
     if (!cur || !S.ready) return null;
-    cur.model.updateMatrixWorld(true);
+    cur.model.updateWorldMatrix(true, true);
     const H = cur.vrm.humanoid, v = new THREE.Vector3();
     const by = (n) => { const b = H.getNormalizedBoneNode(n); return b ? +b.getWorldPosition(v).y.toFixed(4) : null; };
     if (!cur.footV) {
