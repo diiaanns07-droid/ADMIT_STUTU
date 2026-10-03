@@ -214,4 +214,60 @@ function FakeRenderer() {
   for (const k of ['prebuild', 'neighbors', 'get shown()', 'get swaps()', 'warmsPrograms']) assert.ok(src.includes(k), `heroModel: ${k}`);
 }
 
+// ---------------------------------------------------------------- 9. отмена будит ожидание простоя; первое использование и тени
+{
+  // requestIdleCallback, который «никогда» не зовёт колбэк (программный рендер, занятый поток): abort() не ждёт его
+  const saved = globalThis.requestIdleCallback;
+  let cancelled = 0;
+  globalThis.requestIdleCallback = () => 7;
+  globalThis.cancelIdleCallback = () => { cancelled++; };
+  const HC2 = await import('../modules/heroCache.js?idle');
+  const job = HC2.createJob({ idle: true });
+  const spin = performance.now(); while (performance.now() - spin < 10) { /* кусок исчерпан */ }
+  const p = job.slice();
+  setTimeout(() => job.abort(), 5);
+  const t0 = performance.now();
+  await assert.rejects(() => p, (e) => e === HC2.ABORT, 'abort() во время ожидания простоя — ABORT сразу');
+  assert.ok(performance.now() - t0 < 500, 'ожидание простоя прервано, а не дождалось таймаута');
+  assert.equal(cancelled, 1, 'запрос простоя отменён');
+  const job2 = HC2.createJob({ idle: true });
+  const spin2 = performance.now(); while (performance.now() - spin2 < 10) { /* кусок исчерпан */ }
+  const p2 = job2.slice();
+  setTimeout(() => job2.hurry(), 5);
+  await p2;
+  assert.equal(job2.idle, false, 'hurry() будит ожидание и переводит задачу в спешную');
+  if (saved) globalThis.requestIdleCallback = saved; else delete globalThis.requestIdleCallback;
+  delete globalThis.cancelIdleCallback;
+
+  // touchPrograms: getUniforms один раз на программу
+  let touched = 0;
+  const prog = { getUniforms: () => { touched++; }, getAttributes: () => {} };
+  const m = new THREE.MeshBasicMaterial();
+  const R = { properties: { get: () => ({ programs: new Map([['k', prog]]) }) } };
+  assert.equal(HC.touchPrograms(R, null, [m]), 1);
+  assert.equal(HC.touchPrograms(R, null, [m]), 0, 'второй раз — уже использована');
+  assert.equal(touched, 1);
+  // pinShadowPrograms: только программы проходов теней
+  const progs = [{ cacheKey: 'depth,highp,a', usedTimes: 1 }, { cacheKey: 'physical,STANDARD,b', usedTimes: 1 }, { cacheKey: 'distance,highp,c', usedTimes: 1 }];
+  assert.equal(HC.pinShadowPrograms({ info: { programs: progs } }), 2, 'закреплены depth и distance');
+  assert.equal(progs[1].usedTimes, 1, 'обычная программа не закреплена');
+  assert.equal(HC.pinShadowPrograms({ info: { programs: progs } }), 0, 'повторно — не закрепляются');
+}
+
+// ---------------------------------------------------------------- 10. краевые случаи смены (по исходнику heroModel)
+{
+  const src = (await import('node:fs')).readFileSync(new URL('../modules/heroModel.js', import.meta.url), 'utf8');
+  const G = await import('../modules/heroGear.js');
+  assert.equal(typeof G.abortDress, 'function', 'heroGear.abortDress — освобождение отменённого одевания');
+  const rb = src.slice(src.indexOf('  function requestBuild('), src.indexOf('  async function buildRec('));
+  assert.ok(/have && !have\.job\.aborted/.test(rb), 'отменённая задача не отдаётся спешному выбору (иначе — процедурный герой)');
+  const sh = src.slice(src.indexOf('  async function setHero(id) {'), src.indexOf('  // [W5-СМЕНА] тихая предсборка'));
+  assert.ok(/rec && rec !== cur && \(rec\.key !== recKey\(\)/.test(sh), 'показанный герой не освобождается при смене качества');
+  assert.ok(/if \(cur\) \{[^}]*S\.hero = cur\.id/.test(sh), 'ошибка сборки при собранном прежнем — прежний остаётся');
+  const sq = src.slice(src.indexOf('  function setQuality(q) {'), src.indexOf('  // LOD: 0'));
+  assert.ok(/r\.id !== S\.hero/.test(sq), 'setQuality не освобождает цель идущей смены');
+  assert.ok(/cur\.key = recKey\(\)/.test(sq), 'показанный переведён на новый уровень — ключ обновлён');
+  assert.ok(/remote \? 1/.test(src), 'соперник дуэли держит одного героя');
+}
+
 console.log('heroSwitch.test: ok');

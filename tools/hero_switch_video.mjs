@@ -97,7 +97,10 @@ try {
       await page.screenshot({ path: s.file, type: 'jpeg', quality: 88, timeout: 300000 });
       s.frame = n;
     }
+    const prev = frames[frames.length - 1];
     frames.push(s);
+    // подмена: на сцене другой герой (в любом сценарии — и между кликами)
+    if (save && prev && s.shown !== prev.shown) marks.push({ label, from: prev.shown, to: s.shown, frame: s.frame, idx: frames.length - 1 });
     return s;
   };
   const idle = async (k) => { for (let i = 0; i < k; i++) await step(false); };
@@ -115,10 +118,9 @@ try {
   log(`старт: ${s0.shown}, мешей ${s0.meshes}, волос ${s0.hair}`);
   // ждём, пока на сцене герой target, и ещё after кадров (с записью)
   const follow = async (target, label, maxFrames = 900) => {
-    let swapAt = -1, prevShown = (frames[frames.length - 1] || {}).shown;
+    let swapAt = -1;
     for (let i = 0; i < maxFrames; i++) {
       const s = await step(true, label);
-      if (s.shown !== prevShown) { marks.push({ label, from: prevShown, to: s.shown, frame: s.frame, idx: frames.length - 1 }); prevShown = s.shown; }
       if (s.shown === target && s.ready && swapAt < 0) swapAt = i;
       if (swapAt >= 0 && i - swapAt >= AFTER) break;
       if (swapAt < 0) await sleep(20);   // сборка идёт в настоящем времени между шагами
