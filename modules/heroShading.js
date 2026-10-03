@@ -104,6 +104,9 @@ export function patchHeroLight(THREE, mat) {
   mat.onBeforeCompile = (shader, r) => {
     if (prev) prev.call(mat, shader, r);
     Object.assign(shader.uniforms, HERO_LIGHT);
+    // [W4-ЛИЦО] кожа: «обёрнутый» ключевой свет с тёплой полосой у терминатора (дешёвая имитация SSS)
+    // и просвет тонких мест (уши, крылья носа, кромка щёк) против контрового — без новых источников и проходов
+    const skin = mat.userData.heroKind === 'skin';
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform vec3 heroKeyColor;\nuniform vec3 heroKeyDir;\nuniform vec3 heroRimColor;\nuniform vec3 heroRimDir;\nuniform vec3 heroFillColor;')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
@@ -111,9 +114,13 @@ export function patchHeroLight(THREE, mat) {
     vec3 hN = normal;
     vec3 hV = normalize( vViewPosition );
     float hNL = dot( hN, heroKeyDir );
-    float hDiff = mix( saturate( hNL ), saturate( ( hNL + 0.35 ) / 1.35 ), 0.35 );
     float hMet = 1.0 - 0.8 * metalnessFactor;
-    totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * hDiff * hMet;
+    ${skin ? `float hDiff = saturate( hNL );
+    float hWrap = saturate( ( hNL + 0.5 ) / 1.5 );
+    totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * ( hDiff + max( hWrap - hDiff, 0.0 ) * vec3( 0.5, 0.31, 0.25 ) ) * hMet;
+    float hTr = pow( saturate( dot( hV, - heroRimDir ) ), 3.0 ) * pow( 1.0 - saturate( dot( hN, hV ) ), 1.5 );
+    totalEmissiveRadiance += heroRimColor * diffuseColor.rgb * vec3( 1.0, 0.36, 0.24 ) * hTr * 1.4;` : `float hDiff = mix( saturate( hNL ), saturate( ( hNL + 0.35 ) / 1.35 ), 0.35 );
+    totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * hDiff * hMet;`}
     vec3 hH = normalize( heroKeyDir + hV );
     float hSpec = pow( saturate( dot( hN, hH ) ), mix( 90.0, 12.0, roughnessFactor ) ) * ( 1.0 - roughnessFactor );
     totalEmissiveRadiance += heroKeyColor * hSpec * mix( vec3( 0.1 ), diffuseColor.rgb * 1.8 + 0.06, metalnessFactor ) * ( 1.0 + 0.6 * metalnessFactor );
@@ -123,7 +130,7 @@ export function patchHeroLight(THREE, mat) {
   }`);
   };
   const prevKey = mat.customProgramCacheKey;
-  mat.customProgramCacheKey = () => 'heroLight:' + (prevKey ? prevKey.call(mat) : '');
+  mat.customProgramCacheKey = () => 'heroLight:' + (mat.userData.heroKind === 'skin' ? 'S:' : '') + (prevKey ? prevKey.call(mat) : '');
   mat.needsUpdate = true;
   return mat;
 }
@@ -189,6 +196,8 @@ export function patchMicro(THREE, mat, { unit = 1, mode = 'gear', lips = false }
   if (!mat || mat.userData.heroMicro || !mat.isMeshStandardMaterial) return mat;
   mat.userData.heroMicro = true;
   const U = { heroMicroK: HERO_MICRO, heroMicroUnit: { value: unit } };
+  // [W4-ЛИЦО] шероховатость губ — юниформом (у каждой героини свой блеск, программа общая)
+  if (lips) U.heroLipRough = { value: 0.32 - 0.16 * (typeof lips === 'number' ? Math.max(0, Math.min(1, lips)) : 0.6) };
   if (mode === 'hair') { initHeroLight(THREE); U.heroMicroKeyC = HERO_LIGHT.heroKeyColor; U.heroMicroKeyD = HERO_LIGHT.heroKeyDir; }
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (shader, r) => {
@@ -202,7 +211,7 @@ export function patchMicro(THREE, mat, { unit = 1, mode = 'gear', lips = false }
       .replace('#include <common>', `#include <common>
 varying vec3 vHeroMicro;${hair ? '\nvarying vec3 vHeroMicroN;\nuniform vec3 heroMicroKeyC;\nuniform vec3 heroMicroKeyD;' : ''}
 uniform float heroMicroK;
-uniform float heroMicroUnit;
+uniform float heroMicroUnit;${lips ? '\nuniform float heroLipRough;' : ''}
 float hmHash( vec3 p ) { p = fract( p * 0.1031 ); p += dot( p, p.zyx + 31.32 ); return fract( ( p.x + p.y ) * p.z ); }
 float hmNoise( vec3 x ) {
   vec3 i = floor( x ), f = fract( x ); f = f * f * ( 3.0 - 2.0 * f );
@@ -235,9 +244,9 @@ float hmAA( float lambda, float fw ) { return 1.0 - smoothstep( 0.3 * lambda, 0.
     // пятна «захватанности»: металл местами матовее, местами полирован; ткань — чуть неровная
     float sm = hmNoise( hmP * 16.0 ) * 0.5 + hmNoise( hmP * 47.0 ) * 0.5 - 0.5;
     ${mode === 'skin' ? 'roughnessFactor = clamp( roughnessFactor + sm * 0.1 * heroMicroK, 0.2, 1.0 );' : 'roughnessFactor = clamp( roughnessFactor + sm * mix( 0.08, 0.16, hmMet ) * heroMicroK, 0.06, 1.0 );'}
-    ${lips ? `// губы (атлас женского лица Quaternius: центр 92,133 из 512) — влажный блеск
-    vec2 hmL = ( vMapUv - vec2( 0.1797, 0.2598 ) ) / vec2( 0.03, 0.0125 );
-    roughnessFactor = mix( roughnessFactor, 0.2, ( 1.0 - smoothstep( 0.55, 1.0, length( hmL ) ) ) * 0.85 );` : ''}
+    ${lips ? `// губы (атлас женского лица Quaternius: центр 94.1, 133.5 из 512 — на оси лица) — влажный блеск
+    vec2 hmL = ( vMapUv - vec2( 0.18376, 0.2607 ) ) / vec2( 0.031, 0.0128 );
+    roughnessFactor = mix( roughnessFactor, heroLipRough, ( 1.0 - smoothstep( 0.5, 1.0, length( hmL ) ) ) * 0.88 );` : ''}
   }`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
   {
@@ -324,9 +333,12 @@ function patchSkin(THREE, mat, uniforms) {
 		float heroW = saturate( ( dot( geometryNormal, directLight.direction ) + heroSkinWrap ) / ( 1.0 + heroSkinWrap ) );
 		reflectedLight.directDiffuse += max( heroW - dotNL, 0.0 ) * directLight.color * heroSkinTint * BRDF_Lambert( material.diffuseContribution );
 	}`);
+    shader.uniforms.heroSkinAmb = uniforms.amb;
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float heroSkinWrap;\nuniform vec3 heroSkinTint;')
-      .replace(`#include <${pars}>`, patched);
+      .replace('#include <common>', '#include <common>\nuniform float heroSkinWrap;\nuniform vec3 heroSkinTint;\nuniform vec3 heroSkinAmb;')
+      .replace(`#include <${pars}>`, patched)
+      // [W4-ЛИЦО] рассеянный свет на коже теплее (свет, прошедший под кожей, — красноватый): тень на лице живая, не серая
+      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.indirectDiffuse *= heroSkinAmb;');
   };
   const prevKey = mat.customProgramCacheKey;
   mat.customProgramCacheKey = () => 'heroSkin:' + (prevKey ? prevKey.call(mat) : '');
@@ -402,6 +414,598 @@ export function makeupPainter(spec) {
   };
 }
 
+// =====================================================================================================
+// [W4-ЛИЦО] Лица героинь (одна модель Quaternius Ranger на трёх; описание — characterLooks.FACE_LOOKS).
+// Морфов и костей лица у модели нет, поэтому всё — на загрузке, один раз:
+//   пропорции — деформация вершин кожи, глаз и подводки в позе привязки (нормали — через якобиан деформации,
+//               шов шеи с телом не двигается); глаза — «линза» вокруг центра яблока (яблоко, веки и ресницы
+//               вместе, heroGear строит веки уже по новым глазам);
+//   брови     — треугольники бровей-«плашек» убраны из меша Eyebrows, вместо них лента по коже (проекция на
+//               лицо) с процедурной текстурой волосков: тонкая, с изломом и «омбре» от головки к хвосту;
+//               тот же меш (1 вызов отрисовки вместо прежнего), тени не бросает;
+//   подводка  — полоски век из меша Eyebrows: тоньше, «стрелка» короче (у чародейки — полная), цвет подводки;
+//   макияж    — facePainter: консилер запечённых теней вокруг глаз, тени век по стихии, контур носа и скул,
+//               румянец, губы по маске их собственного цвета, нежные веснушки (холст атласа 1024², на low 512²);
+//   радужка   — масштаб внутри глаза (userData.heroIris на материале глаз, читает buildFromStandard).
+// Атлас женского лица Quaternius (512²): центры глаз (68.6, 91) и (119.6, 91), разрез глаза 12×12 px,
+// кончик носа (94.1, 113.5), губы — центр (94.1, 133.5), рот — v ≈ 133.5.
+const FACE_UV = { eyeL: [119.6, 91.0], eyeR: [68.6, 91.0], mid: 94.08, eyeW: 6.2, eyeTop: 85.2, eyeBot: 96.9, nose: 113.5, sub: 121.5, lips: 133.5 };
+const faceTexCache = new Map();
+const fss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+// части головы героини: кожа лица (MI_Regular_Female, самый высокий меш), глаза (MI_Eyes), брови (меш Eyebrows)
+function faceParts(vrm) {
+  const P = { face: null, eyes: null, brows: null };
+  let top = -Infinity;
+  vrm.scene.traverse((o) => {
+    if (!o.isMesh || Array.isArray(o.material) || !o.material || !o.geometry || !o.geometry.attributes.position) return;
+    const n = o.material.name || '';
+    if (/^MI_Regular_Female/.test(n) && o.geometry.attributes.uv && o.geometry.index) {
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      if (o.geometry.boundingBox.max.y > top) { top = o.geometry.boundingBox.max.y; P.face = o; }
+    } else if (/^MI_Eyes/.test(n)) P.eyes = o;
+    else if (/Eyebrow/i.test(o.name) && o.geometry.index) P.brows = o;
+  });
+  if (!P.face || !P.eyes) return null;
+  // сферы глаз по половинам меша глаз (ось «лево–право» — x позы привязки)
+  const pa = P.eyes.geometry.attributes.position, eyes = [];
+  for (const s of [1, -1]) {
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < pa.count; i++) {
+      if (Math.sign(pa.getX(i)) !== s) continue;
+      const v = [pa.getX(i), pa.getY(i), pa.getZ(i)];
+      for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], v[k]); hi[k] = Math.max(hi[k], v[k]); }
+    }
+    if (!Number.isFinite(lo[0])) return null;
+    eyes.push({ s, c: lo.map((x, k) => (x + hi[k]) / 2), r: Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2 });
+  }
+  if (!(eyes[0].r > 0.005 && eyes[0].r < 0.04)) return null;   // не та развёртка/масштаб — лицо не трогаем
+  P.eyeList = eyes;
+  return P;
+}
+
+// поле деформации лица (метры позы привязки): возвращает out = f(p)
+function faceWarp(P, shape, eyeK) {
+  const eyes = P.eyeList, ey = eyes[0].c[1], r = eyes[0].r;
+  const jaw = 0.075 * (shape.jaw || 0), chin = shape.chin || 0, nose = shape.nose || 0, cheek = shape.cheek || 0;
+  // ориентиры от глаз (у модели: глаза y ≈ 1.656, кончик носа на 0.039 ниже, рот на 0.069, подбородок на 0.104)
+  const yNose = ey - 0.0393, yMouth = ey - 0.069, yChin = ey - 0.104, zNose = eyes[0].c[2] + 0.0528;
+  return (x, y, z, out) => {
+    let X = x, Y = y, Z = z;
+    const ax = Math.abs(x), sx = Math.sign(x) || 1;
+    // челюсть: уже от скул к углу челюсти, у шеи и на затылке — без изменений (шов с телом на y ≈ 1.45)
+    if (jaw > 0) {
+      const wy = fss(ey - 0.024, ey - 0.068, y) * (1 - fss(ey - 0.112, ey - 0.142, y));
+      const wz = fss(-0.045, -0.012, z), wx = fss(0.008, 0.045, ax);
+      const w = wy * wz * wx;
+      if (w > 0) { X = x * (1 - jaw * w); Y = y + 0.0018 * (jaw / 0.075) * w * fss(0.03, 0.06, ax); }
+    }
+    // подбородок: чуть уже, мягче и чуть меньше выступает вперёд
+    if (chin > 0) {
+      const d2 = (x / 0.02) ** 2 + ((y - yChin - 0.004) / 0.016) ** 2 + ((z - (zNose - 0.035)) / 0.03) ** 2;
+      const w = Math.exp(-d2);
+      if (w > 1e-3) { X *= 1 - 0.12 * chin * w; Z -= 0.0022 * chin * w; Y += 0.0012 * chin * w; }
+    }
+    // нос: уже крылья и спинка, кончик аккуратнее (чуть меньше, назад и вверх)
+    if (nose > 0 && z > zNose - 0.04) {
+      const wn = fss(zNose - 0.036, zNose - 0.02, z) * Math.exp(-(((y - yNose - 0.006) / 0.02) ** 2)) * (1 - fss(0.016, 0.03, ax));
+      if (wn > 1e-3) X *= 1 - 0.2 * nose * wn;
+      const dt = ((x / 0.009) ** 2 + ((y - yNose) / 0.008) ** 2 + ((z - zNose) / 0.012) ** 2);
+      const wt = Math.exp(-dt);
+      if (wt > 1e-3) { X *= 1 - 0.1 * nose * wt; Z -= 0.0016 * nose * wt; Y += 0.0007 * nose * wt; }
+    }
+    // скулы: яблочки чуть выше и мягче
+    if (cheek > 0) {
+      for (const e of eyes) {
+        const d2 = ((x - e.c[0] * 0.95) / 0.016) ** 2 + ((y - (ey - 0.03)) / 0.014) ** 2;
+        const w = Math.exp(-d2) * fss(0.02, 0.05, z);
+        if (w > 1e-3) { Y += 0.0012 * cheek * w; Z += 0.0006 * cheek * w; }
+      }
+    }
+    // глаза: «линза» вокруг центра яблока — внутри 1.15 r масштаб полный, к 2.3 r гаснет
+    if (eyeK && eyeK !== 1) {
+      for (const e of eyes) {
+        const dx = X - e.c[0], dy = Y - e.c[1], dz = Z - e.c[2];
+        const rho = Math.hypot(dx, dy, dz);
+        if (rho > 2.3 * e.r) continue;
+        const k = 1 + (eyeK - 1) * (1 - fss(1.15 * e.r, 2.3 * e.r, rho));
+        X = e.c[0] + dx * k; Y = e.c[1] + dy * k; Z = e.c[2] + dz * k;
+      }
+    }
+    void sx; void yMouth; void r;
+    out[0] = X; out[1] = Y; out[2] = Z;
+  };
+}
+
+// применить поле к своей копии геометрии меша; нормали (и касательные) — через якобиан конечными разностями
+function warpMesh(mesh, warp) {
+  const g = mesh.geometry.clone();
+  const pa = g.attributes.position, na = g.attributes.normal, ta = g.attributes.tangent;
+  const q = [0, 0, 0], qx = [0, 0, 0], qy = [0, 0, 0], qz = [0, 0, 0], e = 2e-4;
+  let moved = 0;
+  for (let i = 0; i < pa.count; i++) {
+    const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i);
+    warp(x, y, z, q);
+    if ((q[0] - x) ** 2 + (q[1] - y) ** 2 + (q[2] - z) ** 2 < 1e-14) continue;
+    moved++;
+    if (na || ta) {
+      warp(x + e, y, z, qx); warp(x, y + e, z, qy); warp(x, y, z + e, qz);
+      // J — столбцы ∂f/∂x, ∂f/∂y, ∂f/∂z
+      const a = (qx[0] - q[0]) / e, b = (qy[0] - q[0]) / e, c = (qz[0] - q[0]) / e;
+      const d = (qx[1] - q[1]) / e, f = (qy[1] - q[1]) / e, h = (qz[1] - q[1]) / e;
+      const k = (qx[2] - q[2]) / e, l = (qy[2] - q[2]) / e, m = (qz[2] - q[2]) / e;
+      if (na) {
+        // n' ∝ cof(J)·n (= det·J^-T·n; n'_i = Σ_j C_ij·n_j): без деления на определитель
+        const nx = na.getX(i), ny = na.getY(i), nz = na.getZ(i);
+        const c00 = f * m - h * l, c01 = -(d * m - h * k), c02 = d * l - f * k;
+        const c10 = -(b * m - c * l), c11 = a * m - c * k, c12 = -(a * l - b * k);
+        const c20 = b * h - c * f, c21 = -(a * h - c * d), c22 = a * f - b * d;
+        let ox = c00 * nx + c01 * ny + c02 * nz, oy = c10 * nx + c11 * ny + c12 * nz, oz = c20 * nx + c21 * ny + c22 * nz;
+        const L = Math.hypot(ox, oy, oz) || 1;
+        na.setXYZ(i, ox / L, oy / L, oz / L);
+      }
+      if (ta) {
+        const tx = ta.getX(i), ty = ta.getY(i), tz = ta.getZ(i);
+        let ox = a * tx + b * ty + c * tz, oy = d * tx + f * ty + h * tz, oz = k * tx + l * ty + m * tz;
+        const L = Math.hypot(ox, oy, oz) || 1;
+        ta.setXYZ(i, ox / L, oy / L, oz / L);
+      }
+    }
+    pa.setXYZ(i, q[0], q[1], q[2]);
+  }
+  pa.needsUpdate = true; if (na) na.needsUpdate = true; if (ta) ta.needsUpdate = true;
+  g.computeBoundingBox(); g.computeBoundingSphere();
+  if (mesh.geometry.userData && mesh.geometry.userData.faceW4) mesh.geometry.dispose();   // своя прежняя копия
+  g.userData.faceW4 = true;
+  mesh.geometry = g;
+  return moved;
+}
+
+// фронтальная проекция на кожу лица: самое переднее пересечение луча вдоль −z (область бровей и век).
+// Треугольники области — в сетке 4 мм по (x, y): запрос проверяет только свою клетку
+function faceSurface(P, box) {
+  const g = P.face.geometry, pa = g.attributes.position, na = g.attributes.normal, ix = g.index;
+  const C = 0.004, nx = Math.max(1, Math.ceil((box[1] - box[0]) / C)), ny = Math.max(1, Math.ceil((box[3] - box[2]) / C));
+  const cells = Array.from({ length: nx * ny }, () => []);
+  const T = [];   // по 12 чисел: x0 y0 z0 x1 y1 z1 x2 y2 z2, вершины a b c
+  for (let t = 0; t < ix.count; t += 3) {
+    const a = ix.getX(t), b = ix.getX(t + 1), c = ix.getX(t + 2);
+    const x0 = pa.getX(a), x1 = pa.getX(b), x2 = pa.getX(c), y0 = pa.getY(a), y1 = pa.getY(b), y2 = pa.getY(c);
+    const z0 = pa.getZ(a), z1 = pa.getZ(b), z2 = pa.getZ(c);
+    const lx = Math.min(x0, x1, x2), hx = Math.max(x0, x1, x2), ly = Math.min(y0, y1, y2), hy = Math.max(y0, y1, y2);
+    if (hx < box[0] || lx > box[1] || hy < box[2] || ly > box[3] || Math.max(z0, z1, z2) < box[4]) continue;
+    const k = T.length / 12;
+    T.push(x0, y0, z0, x1, y1, z1, x2, y2, z2, a, b, c);
+    const cx0 = Math.max(0, Math.floor((lx - box[0]) / C)), cx1 = Math.min(nx - 1, Math.floor((hx - box[0]) / C));
+    const cy0 = Math.max(0, Math.floor((ly - box[2]) / C)), cy1 = Math.min(ny - 1, Math.floor((hy - box[2]) / C));
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) cells[cy * nx + cx].push(k);
+  }
+  return (x, y, outP, outN) => {
+    const cx = Math.floor((x - box[0]) / C), cy = Math.floor((y - box[2]) / C);
+    if (cx < 0 || cy < 0 || cx >= nx || cy >= ny) return false;
+    let best = -Infinity, hit = -1, w0 = 0, w1 = 0, w2 = 0;
+    for (const k of cells[cy * nx + cx]) {
+      const o = k * 12, ax = T[o], ay = T[o + 1], bx = T[o + 3], by = T[o + 4], qx = T[o + 6], qy = T[o + 7];
+      const d = (by - qy) * (ax - qx) + (qx - bx) * (ay - qy);
+      if (Math.abs(d) < 1e-14) continue;
+      const l0 = ((by - qy) * (x - qx) + (qx - bx) * (y - qy)) / d;
+      const l1 = ((qy - ay) * (x - qx) + (ax - qx) * (y - qy)) / d;
+      const l2 = 1 - l0 - l1;
+      if (l0 < -1e-6 || l1 < -1e-6 || l2 < -1e-6) continue;
+      const z = l0 * T[o + 2] + l1 * T[o + 5] + l2 * T[o + 8];
+      if (z > best) { best = z; hit = o; w0 = l0; w1 = l1; w2 = l2; }
+    }
+    if (hit < 0) return false;
+    outP[0] = x; outP[1] = y; outP[2] = best;
+    const a = T[hit + 9], b = T[hit + 10], c = T[hit + 11];
+    const mx = na.getX(a) * w0 + na.getX(b) * w1 + na.getX(c) * w2, my = na.getY(a) * w0 + na.getY(b) * w1 + na.getY(c) * w2, mz = na.getZ(a) * w0 + na.getZ(b) * w1 + na.getZ(c) * w2;
+    const L = Math.hypot(mx, my, mz) || 1;
+    outN[0] = mx / L; outN[1] = my / L; outN[2] = mz / L;
+    return true;
+  };
+}
+
+// средняя линия брови (x от головки к хвосту): подъём к излому с замедлением, спуск к хвосту с ускорением
+function browCurve(b) {
+  const [xi, yi] = b.inner, [xp, yp] = b.peak, [xt, yt] = b.tail;
+  return (t) => {
+    const x = xi + (xt - xi) * t;
+    let y;
+    if (x <= xp) { const s = (x - xi) / (xp - xi); y = yi + (yp - yi) * (1 - (1 - s) * (1 - s)); }
+    else { const s = (x - xp) / (xt - xp); y = yp - (yp - yt) * Math.pow(s, 1.7); }
+    return [x, y];
+  };
+}
+// толщина: скруглённая головка, полная к излому, тонкий хвост
+function browWidth(b, t) {
+  const [w0, w1, w2] = b.w, tp = b.peakT ?? 0.62;
+  const w = t < tp ? w0 + (w1 - w0) * fss(0, tp, t) : w1 + (w2 - w1) * Math.pow(fss(tp, 1, t), 0.85);
+  return w * (0.72 + 0.28 * fss(0, 0.07, t));
+}
+
+// текстура бровей и подводки (один холст — один материал, один вызов отрисовки):
+//   верх холста (BROW_ROWS) — бровь: x — вдоль (головка → хвост), y — поперёк (верх холста — верх брови).
+//   «Омбре»: головка прозрачнее и мягче, тон набирается к излому, хвост тает. Волоски «ёлочкой»: у головки
+//   растут вверх, ниже средней линии — вверх-наружу, выше — вниз-наружу, в хвосте — вдоль;
+//   низ холста — подводка: сплошная полоса с мягкими кромками (сглаживание тонкой линии).
+// Между областями — прозрачный зазор (мип-уровни не смешивают бровь и подводку). Кэш по стилю брови.
+const BROW_MARGIN = 1.7;
+function browTexture(THREE, b, N) {
+  const soft = b.soft ?? 0.7, hair = b.hair ?? 0.8, seed0 = b.seed ?? 3;
+  const key = `brow:${soft}:${hair}:${seed0}:${N}`;
+  if (faceTexCache.has(key)) return faceTexCache.get(key);
+  if (typeof document === 'undefined') return null;
+  const W = N, Hb = Math.max(16, N / 8), gap = Math.max(4, N / 64), Hl = Math.max(4, N / 64), H = Hb + gap + Hl;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  // холст в памяти (не на видеокарте): штрихи и маска читаются обратно — без синхронного чтения из GPU
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  const B = 1 / BROW_MARGIN;
+  // маска формы брови (альфа 0…1)
+  const mask = new Float32Array(W * Hb);
+  for (let y = 0; y < Hb; y++) for (let x = 0; x < W; x++) {
+    const u = (x + 0.5) / W, s = 1 - (2 * (y + 0.5)) / Hb;
+    const along = (0.3 + 0.7 * Math.pow(fss(0.0, 0.32, u), 0.55 + soft)) * (1 - Math.pow(fss(0.72, 1.0, u), 1.2));
+    const half = B * (1.0 + 0.12 * (1 - u));
+    const edge = 1 - fss(half * (0.42 - 0.12 * soft * (1 - u)), half * 1.05, Math.abs(s - 0.06 * (1 - u)));
+    mask[y * W + x] = along * edge;
+  }
+  // «пудра» — мягкая база
+  const img = g.createImageData(W, H);
+  for (let i = 0; i < W * Hb; i++) { img.data[i * 4] = 236; img.data[i * 4 + 1] = 230; img.data[i * 4 + 2] = 224; img.data[i * 4 + 3] = Math.round(255 * Math.min(1, mask[i] * (0.62 - 0.22 * hair))); }
+  // подводка: полоса на всю ширину, мягкие кромки поперёк
+  for (let y = 0; y < Hl; y++) {
+    const s = Math.abs((y + 0.5) / Hl - 0.5) * 2, a = 1 - fss(0.45, 1.0, s);
+    for (let x = 0; x < W; x++) { const i = ((Hb + gap + y) * W + x) * 4; img.data[i] = img.data[i + 1] = img.data[i + 2] = 255; img.data[i + 3] = Math.round(255 * a); }
+  }
+  g.putImageData(img, 0, 0);
+  // волоски
+  let sd = seed0 * 7919 + 17;
+  const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+  const n = Math.round((N / 512) * 520 * (0.6 + 0.6 * hair));
+  g.save();
+  g.beginPath(); g.rect(0, 0, W, Hb); g.clip();
+  g.lineCap = 'round';
+  for (let i = 0; i < n; i++) {
+    const u = Math.pow(rnd(), 0.9), s = (rnd() * 2 - 1) * B * 0.95;
+    const m = mask[Math.min(Hb - 1, Math.max(0, Math.round((1 - s) * 0.5 * Hb - 0.5))) * W + Math.min(W - 1, Math.round(u * W - 0.5))];
+    if (m < 0.08 || rnd() > m + 0.15) continue;
+    // угол роста к оси брови (радианы, + — вверх)
+    const head = 1 - fss(0.06, 0.2, u), tail = fss(0.62, 0.95, u);
+    let ang = (s < 0 ? 0.42 : -0.3) * (1 - head) * (1 - tail) + 1.25 * head + 0.08 * tail;
+    ang += (rnd() - 0.5) * 0.35;
+    // холст почти изотропный: длина брови ≈ 48 мм на W px, ширина ленты ≈ 6 мм на Hb = W/8 px
+    const len = (2.0 + rnd() * 1.6) * (1 - 0.35 * tail) * (W / 48);
+    const x0 = u * W, y0 = (1 - s) * 0.5 * Hb;
+    const dx = Math.cos(ang) * len, dy = -Math.sin(ang) * len;
+    const v = 205 + rnd() * 50, a = (0.28 + rnd() * 0.42) * (0.55 + 0.45 * hair);
+    g.strokeStyle = `rgba(${v | 0},${(v * 0.96) | 0},${(v * 0.92) | 0},${a.toFixed(3)})`;
+    g.lineWidth = (0.7 + rnd() * 0.6) * (N / 512) * 1.4;
+    g.beginPath(); g.moveTo(x0, y0); g.quadraticCurveTo(x0 + dx * 0.55, y0 + dy * 0.45, x0 + dx, y0 + dy); g.stroke();
+  }
+  g.restore();
+  // форма — по маске (волоски у кромки тают, не торчат за контур)
+  const d = g.getImageData(0, 0, W, Hb);
+  for (let i = 0; i < W * Hb; i++) d.data[i * 4 + 3] = Math.round(d.data[i * 4 + 3] * Math.min(1, mask[i] * 1.6));
+  g.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  // доли высоты холста (uv.v снизу вверх, flipY): подводка — [0, liner], бровь — [brow, 1]
+  t.userData.faceV = { liner: Hl / H, brow: (Hl + gap) / H };
+  faceTexCache.set(key, t);
+  return t;
+}
+
+// верхнее веко по контуру разреза глаза: пересечения рёбер кожи со сферой глаза (передняя половина),
+// выше линии уголков → функция y(x) на [xi, xo] (|x|, от внутреннего угла к внешнему)
+function upperLid(P, e) {
+  const g = P.face.geometry, pa = g.attributes.position, ix = g.index;
+  const [cx, cy, cz] = e.c, r = e.r, s = Math.sign(cx) || 1;
+  const pts = [];
+  const sd = (i) => Math.hypot(pa.getX(i) - cx, pa.getY(i) - cy, pa.getZ(i) - cz) - r;
+  for (let t = 0; t < ix.count; t += 3) for (let k = 0; k < 3; k++) {
+    const a = ix.getX(t + k), b = ix.getX(t + ((k + 1) % 3));
+    const da = sd(a), db = sd(b);
+    if ((da < 0) === (db < 0)) continue;
+    const w = da / (da - db);
+    const z = pa.getZ(a) + (pa.getZ(b) - pa.getZ(a)) * w;
+    if (z < cz) continue;
+    pts.push([(pa.getX(a) + (pa.getX(b) - pa.getX(a)) * w) * s, pa.getY(a) + (pa.getY(b) - pa.getY(a)) * w]);
+  }
+  if (pts.length < 8) return null;
+  let iIn = 0, iOut = 0;
+  pts.forEach((p, i) => { if (p[0] < pts[iIn][0]) iIn = i; if (p[0] > pts[iOut][0]) iOut = i; });
+  const [xi, yi] = pts[iIn], [xo, yo] = pts[iOut];
+  const up = pts.filter((p) => p[1] >= yi + ((yo - yi) * (p[0] - xi)) / (xo - xi || 1) + 0.12 * r);
+  up.push([xi, yi], [xo, yo]);
+  up.sort((p, q) => p[0] - q[0]);
+  // сглаживание 1-2-1 (рёбра сетки — ломаная)
+  const sm = up.map((p, i) => (i === 0 || i === up.length - 1 ? p : [p[0], (up[i - 1][1] + 2 * p[1] + up[i + 1][1]) / 4]));
+  const yAt = (x) => {
+    if (x <= sm[0][0]) return sm[0][1];
+    for (let i = 1; i < sm.length; i++) if (x <= sm[i][0]) { const t = (x - sm[i - 1][0]) / (sm[i][0] - sm[i - 1][0] || 1); return sm[i - 1][1] + (sm[i][1] - sm[i - 1][1]) * t; }
+    return sm[sm.length - 1][1];
+  };
+  return { xi, xo, yi, yo, yAt };
+}
+
+// лента бровей и подводки на коже (обе стороны в одной геометрии, скиннинг — целиком на кость головы)
+function buildBrows(THREE, P, b, E, quality, home) {
+  const face = P.face, bones = face.skeleton && face.skeleton.bones;
+  if (!bones) return null;
+  let head = bones.findIndex((x) => /^head$/i.test(x.name));
+  if (head < 0) head = bones.findIndex((x) => /head/i.test(x.name));
+  if (head < 0) return null;
+  const e0 = P.eyeList[0];
+  const surf = faceSurface(P, [-0.09, 0.09, e0.c[1] - 1.4 * e0.r, e0.c[1] + 0.05, 0.0]);
+  const tex = browTexture(THREE, b, quality === 'low' ? 256 : 512);
+  const fv = (tex && tex.userData.faceV) || { liner: 0.08, brow: 0.12 };
+  const pos = [], nor = [], uv = [], col = [], idx = [], sI = [], sW = [], linerV = [];
+  const p = [0, 0, 0], nn = [0, 0, 0];
+  const cB = new THREE.Color(b.color ?? 0x3a2a20), cL = new THREE.Color(E.liner ?? 0x1a1010);
+  const lin = [Math.min(1, cL.r / Math.max(1e-4, cB.r)), Math.min(1, cL.g / Math.max(1e-4, cB.g)), Math.min(1, cL.b / Math.max(1e-4, cB.b))];
+  // лента: centre(t) → [x, y], half(t) — полуширина, tan — направление; ряды поперёк → вершины на коже.
+  // eye — сфера глаза: точка, спроецированная внутрь яблока (у самых уголков контур века грубый), поднимается
+  // по коже, пока не выйдет на веко
+  function ribbon(side, NA, rows, centre, half, vMap, rgb, lift = 0.00032, eye = null) {
+    const base = pos.length / 3;
+    for (let i = 0; i <= NA; i++) {
+      const t = i / NA, [cx, cy] = centre(t), [ax, ay] = centre(Math.min(1, t + 0.01)), [bx, by] = centre(Math.max(0, t - 0.01));
+      let tx = ax - bx, ty = ay - by; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+      const hw = half(t);
+      for (const v of rows) {
+        const o = (v - 0.5) * 2 * hw;
+        const qx = cx - ty * o;
+        let qy = cy + tx * o;
+        if (!surf(qx, qy, p, nn)) return false;
+        if (eye) for (let k = 0; k < 24 && Math.hypot(p[0] - eye.c[0], p[1] - eye.c[1], p[2] - eye.c[2]) < eye.r * 1.03; k++) { qy += 0.0001; if (!surf(qx, qy, p, nn)) return false; }
+        pos.push(side * (p[0] + nn[0] * lift), p[1] + nn[1] * lift, p[2] + nn[2] * lift);
+        nor.push(side * nn[0], nn[1], nn[2]);
+        uv.push(t, vMap(v)); col.push(rgb[0], rgb[1], rgb[2], 1);
+        sI.push(head, 0, 0, 0); sW.push(1, 0, 0, 0);
+      }
+    }
+    const R = rows.length;
+    for (let i = 0; i < NA; i++) for (let j = 0; j < R - 1; j++) {
+      const a = base + i * R + j, c = a + R;
+      if (side > 0) idx.push(a, c, a + 1, c, c + 1, a + 1); else idx.push(a, a + 1, c, c, a + 1, c + 1);
+    }
+    return true;
+  }
+  const curve = browCurve(b);
+  for (const side of [1, -1]) {
+    if (!ribbon(side, 30, [0, 0.25, 0.5, 0.75, 1], curve, (t) => browWidth(b, t) * BROW_MARGIN * 0.5, (v) => fv.brow + v * (1 - fv.brow), [1, 1, 1])) return null;
+    // подводка: от внутреннего угла (тонко) к внешнему (толще) по краю века, дальше — «стрелка» вверх-наружу
+    const e = P.eyeList.find((q) => Math.sign(q.c[0]) === 1) || e0;
+    const lid = E.linerW ? upperLid(P, e) : null;
+    if (lid) {
+      const W0 = E.linerW, wl = E.wing || 0, up = E.wingUp ?? 0.3;
+      // по веку — до 90% разреза (у самого угла веко круто уходит вниз — подводка от него отрывается),
+      // дальше «стрелка» наружу и вверх под углом wingUp к горизонтали
+      const span = lid.xo - lid.xi, x0 = lid.xi + span * 0.1, x1 = lid.xi + span * 0.85;
+      const wx = Math.cos(up), wy = Math.sin(up);
+      const lidLen = x1 - x0, tot = lidLen + wl, tl = lidLen / (tot || 1);
+      const centre = (t) => {
+        if (t <= tl || wl <= 0) { const x = x0 + (lidLen * Math.min(t, tl)) / (tl || 1); return [x, lid.yAt(x) + half(t) + 0.00012]; }
+        const d = ((t - tl) / (1 - tl)) * wl;
+        return [x1 + wx * d, lid.yAt(x1) + half(tl) + 0.00012 + wy * d];
+      };
+      function half(t) {
+        const k = t <= tl ? 0.25 + 0.75 * fss(0, 0.8, t / (tl || 1)) : 1 - fss(0, 1, (t - tl) / (1 - tl || 1)) * 0.8;
+        return W0 * 0.5 * k;
+      }
+      const v0 = pos.length / 3;
+      if (ribbon(side, wl > 0.002 ? 28 : 20, [0, 0.5, 1], centre, half, (v) => v * fv.liner, lin, 0.00028, e)) linerV.push([v0, pos.length / 3]);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(sI, 4));
+  g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sW, 4));
+  g.setIndex(idx);
+  // лицевая сторона треугольников — наружу (по нормали кожи)
+  {
+    const A = new THREE.Vector3().fromArray(pos, idx[0] * 3), Bv = new THREE.Vector3().fromArray(pos, idx[1] * 3), C = new THREE.Vector3().fromArray(pos, idx[2] * 3);
+    const fn = Bv.sub(A).cross(C.sub(A));
+    if (fn.dot(new THREE.Vector3().fromArray(nor, idx[0] * 3)) < 0) { for (let k = 0; k < idx.length; k += 3) { const tmp = idx[k + 1]; idx[k + 1] = idx[k + 2]; idx[k + 2] = tmp; } g.setIndex(idx); }
+  }
+  g.computeBoundingBox(); g.computeBoundingSphere();
+  g.userData.faceW4 = true;
+  const mat = new THREE.MeshStandardMaterial({
+    name: 'FaceBrow#W4', map: tex, color: cB, vertexColors: true, transparent: true, depthWrite: false,
+    roughness: 0.78, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  });
+  mat.userData.faceRibbon = true;
+  const mesh = new THREE.SkinnedMesh(g, mat);
+  mesh.name = 'BrowStrands';
+  mesh.bind(face.skeleton, face.bindMatrix);
+  mesh.bindMode = face.bindMode;
+  mesh.position.copy(face.position); mesh.quaternion.copy(face.quaternion); mesh.scale.copy(face.scale);
+  mesh.frustumCulled = false; mesh.receiveShadow = true;
+  mesh.userData.noGhost = true;   // остаточные образы рывка (heroGhost) и «призрак» соперника — без ленты бровей
+  noShadowCast(mesh);
+  mesh.renderOrder = 1;
+  face.parent.add(mesh);
+  if (linerV.length) blinkLiner(mesh, linerV, home || face.parent);
+  return mesh;
+}
+
+// Моргание: подводка лежит на неподвижной коже века, а шторка века (heroGear, группа 'eyelid') опускается —
+// пока она закрыта, подводка тает (альфа вершинами; выгружается только диапазон подводки и только на моргании).
+// Угол шторки — от её положения при открытом глазе (у открытого глаза шторка в нулевом масштабе).
+// Веки ищутся только в своей модели (home — сцена героини): в мире бывают и другие герои (дуэль, стенд A/B).
+function blinkLiner(mesh, ranges, home) {
+  const ca = mesh.geometry.attributes.color;
+  const pivots = [], q0 = [];
+  let tries = 0, alpha = 1;
+  mesh.onBeforeRender = () => {
+    // веки сняты (смена снаряжения) — найти заново
+    for (let i = 0; i < pivots.length; i++) if (!pivots[i].parent) { pivots.length = 0; q0.length = 0; tries = 0; break; }
+    if (!pivots.length) {
+      if (tries > 240) return;   // у героини нет век — больше не ищем
+      tries++;
+      home.traverse((o) => { if (o.name === 'eyelid' && o.children.length) pivots.push(o); });
+      if (!pivots.length) return;
+      for (const pv of pivots) q0.push(pv.quaternion.clone());
+    }
+    let ang = 0;
+    for (let i = 0; i < pivots.length; i++) {
+      const pv = pivots[i], lid = pv.children[0];
+      if (lid && lid.scale.x < 0.01) { q0[i].copy(pv.quaternion); continue; }   // открыт — запомнить покой
+      const d = Math.abs(q0[i].dot(pv.quaternion));
+      ang = Math.max(ang, 2 * Math.acos(Math.min(1, d)));
+    }
+    const a = 1 - fss(0.06, 0.32, ang);
+    if (Math.abs(a - alpha) < 0.02) return;
+    alpha = a;
+    ca.clearUpdateRanges();
+    for (const [lo, hi] of ranges) { for (let i = lo; i < hi; i++) ca.setW(i, a); ca.addUpdateRange(lo * 4, (hi - lo) * 4); }
+    ca.needsUpdate = true;
+  };
+}
+// тонкие детали лица теней не бросают (LOD героя переключает castShadow у всех мешей — здесь всегда «нет»)
+function noShadowCast(o) {
+  try { Object.defineProperty(o, 'castShadow', { get: () => false, set: () => {}, configurable: true }); } catch (e) { o.castShadow = false; }
+}
+
+// Лицо героини: пропорции, глаза, брови и подводка. Вызывать на свежезагруженной модели (поза привязки),
+// до shadeHero и heroGear (они строят материалы, веки и ресницы по уже изменённому лицу).
+// → { brows, moved } или null, если это не женская голова Quaternius
+export function beautifyFace(THREE, vrm, look, { quality = 'medium' } = {}) {
+  if (!look) return null;
+  const P = faceParts(vrm);
+  if (!P) return null;
+  const eyeK = (look.eyes && look.eyes.scale) || 1;
+  const warp = faceWarp(P, look.shape || {}, eyeK);
+  const moved = warpMesh(P.face, warp) + warpMesh(P.eyes, warp);
+  // глаза — новые центры и радиус после «линзы» (для подводки и проекции)
+  const P2 = faceParts(vrm) || P;
+  // брови-«плашки» и полоски век модели (меш Eyebrows) не рисуются: вместо них — лента бровей и подводки
+  // (не собралась — например, другая сетка лица — остаются брови модели, сдвинутые вместе с кожей)
+  let brows = null;
+  try { brows = look.brow ? buildBrows(THREE, P2, look.brow, look.eyes || {}, quality, vrm.scene) : null; } catch (e) { brows = null; }
+  if (P.brows && brows) {
+    // из сцены совсем (скрытый меш всё равно попал бы в предкомпиляцию шейдеров): геометрия, материал, текстуры
+    const bm = P.brows.material;
+    if (P.brows.parent) P.brows.parent.remove(P.brows);
+    P.brows.geometry.dispose();
+    if (bm) { for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap']) if (bm[k]) bm[k].dispose(); bm.dispose(); }
+  } else if (P.brows) warpMesh(P.brows, warp);
+  // радужка крупнее (читает buildFromStandard) и тёплый подповерхностный оттенок кожи
+  if (look.eyes && look.eyes.iris) P.eyes.material.userData.heroIris = look.eyes.iris;
+  if (look.skin && look.skin.glow !== undefined) P.face.material.userData.heroSkinGlow = look.skin.glow;
+  if (look.lips && look.lips.gloss !== undefined) P.face.material.userData.heroLipGloss = look.lips.gloss;
+  // флаг для heroModel: брови модели заменены лентой (без ленты heroModel по-прежнему сужает брови модели)
+  if (brows) vrm.scene.userData.faceW4 = true;
+  return { brows, moved };
+}
+
+// Макияж на атласе лица по описанию FACE_LOOKS (поверх перекрашенного холста; src — исходные пиксели атласа
+// до перекраски, по ним — маска губ). Масштаб холста любой (координаты — в долях атласа 512²).
+export function facePainter(look) {
+  if (!look) return null;
+  const hex = (c, a) => `rgba(${(c >> 16) & 255},${(c >> 8) & 255},${c & 255},${a})`;
+  const E = look.eyes || {}, Sk = look.skin || {}, Lp = look.lips || null;
+  const paint = (g, W, H, src = null) => {
+    const S = W / 512, X = (u) => u * S, Y = (v) => (v * H) / 512;
+    const eyes = [[FACE_UV.eyeL, 1], [FACE_UV.eyeR, -1]];   // side: +1 — к внешнему углу +u
+    const blob = (cx, cy, rx, ry, rot, col, a, op = 'source-over', inner = 0) => {
+      g.save(); g.globalCompositeOperation = op;
+      g.translate(X(cx), Y(cy)); g.rotate(rot); g.scale(1, ry / rx);
+      const gr = g.createRadialGradient(0, 0, X(rx) * inner, 0, 0, X(rx));
+      gr.addColorStop(0, hex(col, a)); gr.addColorStop(1, hex(col, 0));
+      g.fillStyle = gr; g.beginPath(); g.arc(0, 0, X(rx), 0, Math.PI * 2); g.fill(); g.restore();
+    };
+    // тон кожи: средний цвет лба (после перекраски) — для консилера и бликов
+    let skin = 0xd8a088;
+    try {
+      const d = g.getImageData(X(FACE_UV.mid - 8), Y(56), Math.max(1, X(16)), Math.max(1, Y(8))).data;
+      let r = 0, gg = 0, b = 0, n = 0; for (let i = 0; i < d.length; i += 4) { r += d[i]; gg += d[i + 1]; b += d[i + 2]; n++; }
+      if (n) skin = (Math.round(r / n) << 16) | (Math.round(gg / n) << 8) | Math.round(b / n);
+    } catch (e) { /* холст без чтения — тон по умолчанию */ }
+    const lift = (c, k) => { const f = (x) => Math.min(255, Math.round(x + (255 - x) * k)); return (f((c >> 16) & 255) << 16) | (f((c >> 8) & 255) << 8) | f(c & 255); };
+    // 1. консилер: запечённые тени вокруг глаз (впалые глаза) мягче, под глазами свежее
+    const conceal = Sk.conceal ?? 0;
+    if (conceal > 0) for (const [[u, v], s] of eyes) {
+      blob(u + s * 1.0, v + 1.5, 12.5, 10, 0, skin, 0.42 * conceal, 'source-over', 0.45);
+      blob(u + s * 0.5, v + 8.5, 9.5, 4.0, 0, lift(skin, 0.06), 0.4 * conceal, 'source-over', 0.2);
+    }
+    // 2. контур: тонкий нос (тень по бокам спинки, свет по спинке), лёгкий свет на скулах
+    const ct = Sk.contour ?? 0;
+    if (ct > 0) {
+      for (const s of [1, -1]) blob(FACE_UV.mid + s * 5.6, 107, 2.2, 10, 0, 0x8a5a44, 0.22 * ct, 'multiply', 0.1);
+      blob(FACE_UV.mid, 104, 1.6, 9.5, 0, lift(skin, 0.22), 0.14 * ct, 'source-over', 0.2);
+      // крылья носа: меньше светлого альбедо под контровым светом (не «колечко» по краю ноздри)
+      for (const s of [1, -1]) blob(FACE_UV.mid + s * 5, 111.5, 2.8, 1.9, 0, 0x8a5a44, 0.22, 'multiply', 0.2);
+      for (const [[u], s] of eyes) blob(u + s * 4, 104.5, 7.5, 3.4, s * -0.35, lift(skin, 0.18), 0.2 * ct, 'source-over', 0.1);
+    }
+    // 3. тени век по стихии: основной тон по подвижному веку, второй — к внешнему углу, дымка по нижнему веку
+    // тон — режимом «цвет» (оттенок тени при яркости кожи: цветные, а не грязные тени), глубина — «умножением»
+    if (E.shadow !== undefined) for (const [[u, v], s] of eyes) {
+      const A = E.shadowA ?? 0.4;
+      blob(u + s * 1.2, FACE_UV.eyeTop - 1.4, 9.5, 4.2, s * -0.18, E.shadow, A * 0.45, 'multiply', 0.15);
+      blob(u + s * 1.6, FACE_UV.eyeTop - 1.6, 10.5, 4.8, s * -0.2, E.shadow, A * 1.1, 'color', 0.2);
+      if (E.shadow2 !== undefined) blob(u + s * 5.5, FACE_UV.eyeTop - 2.6, 6.5, 3.2, s * -0.5, E.shadow2, A * 0.8, 'color', 0.1);
+      blob(u - s * 1.0, FACE_UV.eyeTop - 2.2, 4.0, 2.4, 0, lift(skin, 0.28), 0.18, 'source-over', 0.1);   // свет в центре века
+      if (E.lower) { blob(u + s * 4.5, FACE_UV.eyeBot + 1.1, 4.5, 1.5, s * 0.12, E.shadow, E.lower, 'multiply', 0.1); blob(u + s * 4.5, FACE_UV.eyeBot + 1.2, 5, 1.8, s * 0.12, E.shadow, E.lower * 1.5, 'color', 0.1); }
+    }
+    // 4. румянец на «яблочках» щёк
+    if (Sk.blush !== undefined) for (const [[u], s] of eyes) blob(u + s * 4.5, 107.5, 13, 8, s * -0.35, Sk.blush, Sk.blushA ?? 0.18, 'source-over', 0.05);
+    // 5. губы: маска — собственный цвет губ на исходном атласе (краснее кожи), тон — к центру нижней губы
+    if (Lp && src) {
+      const x0 = Math.floor(X(74)), x1 = Math.ceil(X(114)), y0 = Math.floor(Y(123)), y1 = Math.ceil(Y(144));
+      const w = x1 - x0, h = y1 - y0;
+      try {
+        const d = g.getImageData(x0, y0, w, h), px = d.data;
+        const lc = [(Lp.color >> 16) & 255, (Lp.color >> 8) & 255, Lp.color & 255], tc = Lp.tint !== undefined ? [(Lp.tint >> 16) & 255, (Lp.tint >> 8) & 255, Lp.tint & 255] : lc;
+        const a = Lp.a ?? 0.6;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+          const gx = x0 + x, gy = y0 + y, lx = gx - src.x, ly = gy - src.y;
+          if (lx < 0 || ly < 0 || lx >= src.w || ly >= src.h) continue;
+          const si = (ly * src.w + lx) * 4;
+          const R = src.data[si], G = src.data[si + 1];
+          const red = (R - G) / (R + 1);
+          const u = gx / S, v = (gy * 512) / H;
+          const ell = 1 - fss(0.82, 1.08, Math.hypot((u - FACE_UV.mid) / 17, (v - FACE_UV.lips) / 9.5));
+          const m = fss(0.23, 0.38, red) * ell;
+          if (m < 0.01) continue;
+          // нижняя губа (v > рта) светлее к центру — объём; линия рта темнее
+          const low = fss(FACE_UV.lips + 0.5, FACE_UV.lips + 3.5, v) * (1 - fss(2, 11, Math.abs(u - FACE_UV.mid)));
+          const line = (1 - fss(0.4, 1.6, Math.abs(v - FACE_UV.lips))) * (1 - fss(14, 18, Math.abs(u - FACE_UV.mid)));
+          const i = (y * w + x) * 4, k = m * a;
+          for (let q = 0; q < 3; q++) {
+            const c = lc[q] + (tc[q] - lc[q]) * low * 0.8;
+            // цвет помады: смесь «умножения» на кожу губ (сохраняет рельеф атласа) и самого тона
+            const tgt = Math.min(255, (c * px[i + q]) / 255 * 1.18) * 0.48 + c * 0.52;
+            px[i + q] = (px[i + q] * (1 - k) + tgt * k) * (1 - 0.1 * line * m);
+          }
+        }
+        g.putImageData(d, x0, y0);
+      } catch (e) { /* без губ */ }
+    }
+    // 6. веснушки: мелкие и редкие, по спинке носа и верху щёк, гуще к центру — едва заметные
+    if (Sk.freckles !== undefined && S >= 1.5) {
+      let sd = 29;
+      const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+      const fa = Sk.frecklesA ?? 0.5;
+      for (let i = 0; i < 110; i++) {
+        const s = rnd() < 0.5 ? -1 : 1, k = rnd();
+        const du = s * (1.5 + k * k * 30), dv = (rnd() - 0.5) * 11 - Math.abs(du) * 0.06;
+        const u = FACE_UV.mid + du, v = 106 + dv;
+        if (Math.abs(du) < 4.5 && v > 109) continue;   // кончик носа и ноздри — чистые
+        const fall = Math.exp(-(((Math.abs(du) - 10) / 16) ** 2));
+        const a = (0.16 + rnd() * 0.22) * fa * (0.35 + 0.65 * fall);
+        blob(u, v, 0.7 + rnd() * 0.45, 0.55 + rnd() * 0.35, rnd() * 3, Sk.freckles, a, 'multiply', 0.3);
+      }
+    }
+  };
+  paint.srcRect = [74, 123, 114, 144];   // исходные пиксели губ (доли атласа 512²) — для маски губ
+  return paint;
+}
+
 // Правила применяются мягко: у порогов тона/насыщенности/яркости — полосы перехода, а веса правил
 // сглаживаются 3×3 (иначе на атласе 512² металл с шумной слабой насыщенностью покрывается «камуфляжем»).
 // rule.metal === false — не трогать металл, 'only' — только металл (маска — канал B карты ORM: orm = изображение).
@@ -417,6 +1021,18 @@ export function recolorTexture(THREE, tex, rules, paint = null, orm = null, scal
   g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
   g.drawImage(img, 0, 0, w, h);
   const d = g.getImageData(0, 0, w, h), px = d.data;
+  // [W4-ЛИЦО] исходные пиксели нужной художнику области (губы — по маске их цвета): только прямоугольник paint.srcRect
+  let src0 = null;
+  if (paint && paint.srcRect) {
+    const [ru0, rv0, ru1, rv1] = paint.srcRect;
+    const sx = Math.max(0, Math.floor((ru0 * w) / 512)), sy = Math.max(0, Math.floor((rv0 * h) / 512));
+    const sw = Math.min(w, Math.ceil((ru1 * w) / 512)) - sx, sh = Math.min(h, Math.ceil((rv1 * h) / 512)) - sy;
+    if (sw > 0 && sh > 0) {
+      const data = new Uint8ClampedArray(sw * sh * 4);
+      for (let y = 0; y < sh; y++) data.set(px.subarray(((sy + y) * w + sx) * 4, ((sy + y) * w + sx + sw) * 4), y * sw * 4);
+      src0 = { data, x: sx, y: sy, w: sw, h: sh };
+    }
+  }
   let met = null;
   if (orm && orm.width && rules.some((R) => R.metal === false || R.metal === 'only')) {
     try {
@@ -492,10 +1108,11 @@ export function recolorTexture(THREE, tex, rules, paint = null, orm = null, scal
     px[p] = (r * 255 + px[p] * left); px[p + 1] = (gg * 255 + px[p + 1] * left); px[p + 2] = (b * 255 + px[p + 2] * left);
   }
   g.putImageData(d, 0, 0);
-  if (paint) { try { paint(g, w, h); } catch (e) { /* без макияжа */ } }
+  if (paint) { try { paint(g, w, h, src0); } catch (e) { /* без макияжа */ } }
   const t = new THREE.CanvasTexture(cv);
   t.flipY = tex.flipY; t.colorSpace = tex.colorSpace; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT;
   t.channel = tex.channel; t.anisotropy = tex.anisotropy || 4;
+  if (paint) t.userData.faceAtlas = true;   // [W4-ЛИЦО] атлас лица с макияжем: shadeHero.setQuality подгоняет размер под уровень
   return t;
 }
 
@@ -543,7 +1160,17 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
   const owned = [];
   const hidden = new THREE.MeshBasicMaterial({ visible: false });
   owned.push(hidden);
-  const skinU = { wrap: { value: 0.55 }, tint: { value: new THREE.Color(1.0, 0.42, 0.32) } };
+  // [W4-ЛИЦО] подповерхностный оттенок кожи: у героинь — по FACE_LOOKS.skin.glow (userData.heroSkinGlow на материале лица)
+  const skinU = { wrap: { value: 0.55 }, tint: { value: new THREE.Color(1.0, 0.42, 0.32) }, amb: { value: new THREE.Color(1.04, 0.98, 0.95) } };
+  vrm.scene.traverse((o) => {
+    const mt = o.isMesh && !Array.isArray(o.material) ? o.material : null;
+    const g = mt && mt.userData ? mt.userData.heroSkinGlow : undefined;
+    if (g === undefined) return;
+    const k = Math.max(0, Math.min(1, g));
+    skinU.wrap.value = 0.5 + 0.1 * k;
+    skinU.tint.value.setRGB(1.0, 0.46, 0.36).multiplyScalar(0.72 + 0.2 * k);
+    skinU.amb.value.setRGB(1.03 + 0.04 * k, 0.98, 0.95 - 0.03 * k);
+  });
   let curMode = null, curQ = quality;
 
   function build(orig, q) {
@@ -610,64 +1237,110 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
       roughness: orig.roughness, metalness: orig.metalness, emissive: orig.emissive.clone(), emissiveMap: orig.emissiveMap, emissiveIntensity: orig.emissiveIntensity,
     });
     if (orig.normalMap) m.normalScale.copy(orig.normalScale);
+    // [W4-ЛИЦО] лента бровей и подводки: цвет подводки — вершинами, смещение полигонов — поверх кожи без мерцания
+    // (только у своей ленты: у GLB почти все меши с COLOR_0, а шторка века heroGear берёт материал лица без него)
+    if (orig.vertexColors && orig.userData && orig.userData.faceRibbon) m.vertexColors = true;
+    // лента бровей вдали (меню, бой): волоски усредняются мип-уровнями и бровь бледнеет до цвета кожи —
+    // плотность восстанавливается по размеру текселя на экране (вблизи без изменений)
+    if (orig.userData && orig.userData.faceRibbon && m.map) {
+      const prevR = m.onBeforeCompile;
+      m.onBeforeCompile = (sh, r) => {
+        if (prevR) prevR.call(m, sh, r);
+        sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+  {
+    vec2 fwT = fwidth( vMapUv ) * vec2( textureSize( map, 0 ) );
+    float lodT = log2( max( max( fwT.x, fwT.y ), 1.0 ) );
+    diffuseColor.a = min( 1.0, diffuseColor.a * ( 1.0 + 0.9 * smoothstep( 0.6, 3.2, lodT ) ) );
+  }`);
+      };
+      const pkR = m.customProgramCacheKey;
+      m.customProgramCacheKey = () => 'heroRibbon:' + (pkR ? pkR.call(m) : '');
+    }
+    if (orig.polygonOffset) { m.polygonOffset = true; m.polygonOffsetFactor = orig.polygonOffsetFactor; m.polygonOffsetUnits = orig.polygonOffsetUnits; }
     if (kind === 'skin') { m.roughness = Math.max(0.45, orig.roughness * 0.85); }
     // брови и волосы модели — в цвет причёски героини (серая текстура × цвет)
     if (kind === 'hair' && hairColor !== null && hairColor !== undefined) m.color.set(hairColor).multiplyScalar(1.35);
     if (kind === 'iris') {
       m.roughness = 0.2;
-      // светящаяся радужка (стихия героя): светится тёмная часть текстуры глаза, белок — нет
-      if (fx && fx.eyes) {
-        m.emissive = new THREE.Color(fx.eyes); m.emissiveIntensity = fx.eyesK || 1.6;
-        const prevE = m.onBeforeCompile;
-        m.onBeforeCompile = (sh, r) => {
-          if (prevE) prevE.call(m, sh, r);
-          sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-  totalEmissiveRadiance *= 1.0 - smoothstep( 0.3, 0.62, dot( diffuseColor.rgb, vec3( 0.333 ) ) );`);
-        };
-        const pk = m.customProgramCacheKey;
-        m.customProgramCacheKey = () => 'heroEyes:' + (pk ? pk.call(m) : '');
-      }
+      // светящаяся радужка (стихия героя): светится радужка (тёмная часть текстуры глаза), белок — нет
+      const glow = !!(fx && fx.eyes);
+      if (glow) { m.emissive = new THREE.Color(fx.eyes); m.emissiveIntensity = fx.eyesK || 1.6; }
       // [HERO] радужка вблизи: лимбальное кольцо, радиальные волокна, светлый венчик у зрачка; запечённый в
       // текстуру блик убран (глаз теперь поворачивается — блик «ездил» бы с ним; живой блик — ниже).
       // Текстура Quaternius: радужка — диск в центре (0.5, 0.5), радиус ≈ 0.105.
-      if (m.map) {
-        const prevI = m.onBeforeCompile;
-        m.onBeforeCompile = (sh, r) => {
-          if (prevI) prevI.call(m, sh, r);
-          sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      // [W4-ЛИЦО] радужка крупнее (userData.heroIris у героинь: выборка внутри 1.1 R сжата, к 1.5 R — как была);
+      // глубина глаза: тень верхнего века и уголков на яблоке (оси глаза — из patchGaze), каустика — свет
+      // сверху собирается роговицей в нижней части радужки; искра — чёткое ядро, ореол и вторая точка снизу.
+      const irisU = { heroIrisK: { value: Math.max(1, Math.min(1.25, (orig.userData && orig.userData.heroIris) || 1)) } };
+      const hasMap = !!m.map;
+      const prevI = m.onBeforeCompile;
+      m.onBeforeCompile = (sh, r) => {
+        if (prevI) prevI.call(m, sh, r);
+        Object.assign(sh.uniforms, irisU);
+        let fs = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float heroIrisK;');
+        fs = fs.replace('#include <map_fragment>', hasMap ? `vec2 irUv = vMapUv;
   {
-    vec2 irD = ( vMapUv - vec2( 0.5 ) ) / 0.105;
-    float irR = length( irD ), irA = atan( irD.y, irD.x );
-    float irIn = 1.0 - smoothstep( 0.96, 1.06, irR );
+    vec2 d0 = vMapUv - vec2( 0.5 );
+    float r0 = length( d0 ) / 0.105, a0 = 1.1 * heroIrisK;
+    float r1 = r0 < a0 ? r0 / heroIrisK : ( r0 < 1.5 ? mix( 1.1, 1.5, ( r0 - a0 ) / max( 1.5 - a0, 1e-3 ) ) : r0 );
+    irUv = vec2( 0.5 ) + d0 * ( r1 / max( r0, 1e-4 ) );
+  }
+  diffuseColor *= texture2D( map, irUv );
+  vec3 heroEyeTex = diffuseColor.rgb;
+  vec2 irD = ( irUv - vec2( 0.5 ) ) / 0.105;
+  float irR = length( irD ), irA = atan( irD.y, irD.x );
+  float heroIrM = 1.0 - smoothstep( 0.96, 1.06, irR );
+  // верх яблока под веком: веко заслоняет небо — без отражения неба и лака (иначе белая «зарубка» под ресницами)
+  float heroLid = smoothstep( 0.05, 0.3, vHeroEyeL.y ) * heroEyeOk;
+  {
     float irL = dot( diffuseColor.rgb, vec3( 0.333 ) );
     // запечённый блик: яркие пиксели внутри радужки → цвет зрачка/радужки вокруг
-    float irHi = smoothstep( 0.55, 0.8, irL ) * ( 1.0 - smoothstep( 0.55, 0.75, irR ) );
-    diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * 0.12 + vec3( 0.02 ), irHi );
+    // у Quaternius блик — светлый квадрат на зрачке (сверху) и точка в радужке (снизу справа): на зрачке
+    // (r < 0.55) всё светлее 0.28 — блик, заливка — чёрный зрачок; в радужке — заливка радужкой напротив
+    // (кромка блика размыта фильтрацией — яркость берётся максимальной по соседям: без серого ободка)
+    float irHL = irL;
+    irHL = max( irHL, dot( texture2D( map, irUv + vec2( 0.006, 0.0 ) ).rgb, vec3( 0.333 ) ) );
+    irHL = max( irHL, dot( texture2D( map, irUv - vec2( 0.006, 0.0 ) ).rgb, vec3( 0.333 ) ) );
+    irHL = max( irHL, dot( texture2D( map, irUv + vec2( 0.0, 0.006 ) ).rgb, vec3( 0.333 ) ) );
+    irHL = max( irHL, dot( texture2D( map, irUv - vec2( 0.0, 0.006 ) ).rgb, vec3( 0.333 ) ) );
+    float irHiP = smoothstep( 0.2, 0.4, irHL ) * ( 1.0 - smoothstep( 0.42, 0.55, irR ) );
+    float irHi = smoothstep( 0.5, 0.7, irL ) * smoothstep( 0.5, 0.62, irR ) * ( 1.0 - smoothstep( 0.92, 1.05, irR ) );
+    diffuseColor.rgb = mix( diffuseColor.rgb, texture2D( map, vec2( 1.0 ) - irUv ).rgb * diffuse, irHi );
+    diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.015 ), irHiP );
     // волокна и венчик
     float fib = 0.5 + 0.5 * sin( irA * 41.0 + sin( irA * 7.0 ) * 2.0 + irR * 5.0 ) * sin( irA * 23.0 - irR * 9.0 );
     float band = smoothstep( 0.3, 0.45, irR ) * ( 1.0 - smoothstep( 0.9, 1.0, irR ) );
-    diffuseColor.rgb *= 1.0 + ( fib - 0.5 ) * 0.45 * band * irIn;
-    diffuseColor.rgb *= 1.0 + 0.22 * smoothstep( 0.36, 0.5, irR ) * ( 1.0 - smoothstep( 0.5, 0.66, irR ) );
+    diffuseColor.rgb *= 1.0 + ( fib - 0.5 ) * 0.45 * band * heroIrM;
+    diffuseColor.rgb *= 1.0 + 0.12 * smoothstep( 0.36, 0.5, irR ) * ( 1.0 - smoothstep( 0.5, 0.66, irR ) );
     // лимбальное кольцо — тёмный ободок по краю радужки
     diffuseColor.rgb *= 1.0 - 0.6 * smoothstep( 0.8, 0.97, irR ) * ( 1.0 - smoothstep( 1.0, 1.12, irR ) );
-  }`);
-        };
-        const pkI = m.customProgramCacheKey;
-        m.customProgramCacheKey = () => 'heroIris:' + (pkI ? pkI.call(m) : '');
-      }
-      // блик в глазах: отражение «студийного» источника сверху-слева (глаза — сферы, выходит точка)
-      const prevC = m.onBeforeCompile;
-      m.onBeforeCompile = (sh, r) => {
-        if (prevC) prevC.call(m, sh, r);
-        sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+    // глубина: тень верхнего века и уголков, белок к уголкам теплее; каустика в нижней части радужки
+    // (heroEyeOk = 0 — меш глаз не найден, осей глаза нет: без тени и каустики)
+    float lidSh = smoothstep( 0.12, 0.32, vHeroEyeL.y ) * 0.42 * heroEyeOk;
+    float cornerSh = smoothstep( 0.55, 0.95, abs( vHeroEyeL.x ) ) * ( 1.0 - heroIrM ) * heroEyeOk;
+    diffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.86, 0.84, 0.86 ), lidSh ) * mix( vec3( 1.0 ), vec3( 0.93, 0.89, 0.87 ), cornerSh );
+    float caus = heroIrM * smoothstep( 0.02, -0.34, vHeroEyeP.y ) * smoothstep( 0.3, 0.62, irR ) * heroEyeOk;
+    diffuseColor.rgb *= 1.0 + 0.5 * caus;
+  }` : '#include <map_fragment>\n  vec3 heroEyeTex = diffuseColor.rgb;\n  float heroIrM = 1.0;\n  float irR = 1.0;\n  float heroLid = 0.0;');
+        fs = fs.replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
+  material.specularColor *= 1.0 - 0.9 * heroLid; material.specularColorBlended *= 1.0 - 0.9 * heroLid; material.specularF90 *= 1.0 - 0.9 * heroLid;
+  #ifdef USE_CLEARCOAT
+    material.clearcoat *= 1.0 - heroLid;
+  #endif`);
+        fs = fs.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  ${glow ? 'totalEmissiveRadiance *= heroIrM * smoothstep( 0.32, 0.46, irR ) * ( 1.0 - smoothstep( 0.3, 0.62, dot( heroEyeTex, vec3( 0.333 ) ) ) );   // зрачок не светится' : ''}
   {
+    // блик в глазах: отражение «студийного» источника сверху-слева (глаза — сферы, выходит точка)
     vec3 eyR = reflect( - normalize( vViewPosition ), normalize( normal ) );
-    float eyC = pow( saturate( dot( eyR, normalize( vec3( -0.35, 0.55, 0.76 ) ) ) ), 220.0 );
+    // искра — в верхней левой части радужки (не под ресницами), вторая — маленькая снизу справа
+    float d1 = dot( eyR, normalize( vec3( -0.3, 0.34, 0.89 ) ) ), d2 = dot( eyR, normalize( vec3( 0.42, -0.2, 0.88 ) ) );
+    float eyC = smoothstep( 0.9935, 0.9975, d1 ) * 1.6 + pow( saturate( d1 ), 90.0 ) * 0.16 + smoothstep( 0.9986, 0.9994, d2 ) * 0.3;
     totalEmissiveRadiance += vec3( 1.25 ) * eyC;
   }`);
+        sh.fragmentShader = fs;
       };
-      const pkC = m.customProgramCacheKey;
-      m.customProgramCacheKey = () => 'heroCatch:' + (pkC ? pkC.call(m) : '');
+      const pkI = m.customProgramCacheKey;
+      m.customProgramCacheKey = () => 'heroIris:' + (glow ? 'G' : '') + (hasMap ? 'M' : '') + ':' + (pkI ? pkI.call(m) : '');
       patchGaze(m);
     }
     if (physical) {
@@ -678,7 +1351,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     }
     if (kind === 'skin') patchSkin(THREE, m, skinU);
     if (kind === 'armor' && q !== 'low') patchMicro(THREE, m, { unit: armorUnit });
-    if (kind === 'skin' && q !== 'low' && m.map) patchMicro(THREE, m, { unit: armorUnit, mode: 'skin', lips: /^MI_Regular_Female/.test(orig.name) });
+    if (kind === 'skin' && q !== 'low' && m.map) patchMicro(THREE, m, { unit: armorUnit, mode: 'skin', lips: /^MI_Regular_Female/.test(orig.name) ? (orig.userData && orig.userData.heroLipGloss !== undefined ? orig.userData.heroLipGloss : true) : false });   // [W4-ЛИЦО] сила блеска губ
     if (kind === 'hair' && q !== 'low' && /^MI_Hair/.test(orig.name || '')) patchMicro(THREE, m, { unit: bodyUnit, mode: 'hair' });
     if (kind === 'armor' && fx && fx.armor && q !== 'low') { patchArmorGlow(THREE, m, { color: fx.armor, strength: fx.armorK || 2.4, unit: armorUnit, mode: fx.armorMode || 'veins', gild: fx.gild || null }); armorUs.push({ U: m.userData.heroArmorU, base: fx.armorK || 2.4 }); }
     if (atmosphere) { try { atmosphere.patchLit(m, 'hero'); atmosphere.useEnv(m, P.env); } catch (e) { /* ignore */ } }
@@ -698,7 +1371,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
   // [HERO] взгляд: глазные яблоки (MI_Eyes — две сферы в одном меше) поворачиваются вокруг своих центров
   // в вершинном шейдере (оси позы привязки). Направление — по трём вершинам глаз (кадр «привязка → мир»)
   // каждый кадр; «вперёд»/«вверх» головы в осях привязки — один раз (от затылка к глазам, мировой верх).
-  const gazeU = { heroGazeRot: { value: new THREE.Matrix3() }, heroEyeCL: { value: new THREE.Vector3() }, heroEyeCR: { value: new THREE.Vector3() }, heroEyeLR: { value: new THREE.Vector3(1, 0, 0) }, heroEyeMid: { value: new THREE.Vector3() } };
+  const gazeU = { heroGazeRot: { value: new THREE.Matrix3() }, heroEyeCL: { value: new THREE.Vector3() }, heroEyeCR: { value: new THREE.Vector3() }, heroEyeLR: { value: new THREE.Vector3(1, 0, 0) }, heroEyeMid: { value: new THREE.Vector3() }, heroEyeR: { value: 0.0165 }, heroEyeOk: { value: 0 } };
   const G = { mesh: null, idx: null, b: null, fwd: null, up: null, left: null, yaw: 0, pitch: 0, ok: false };
   {
     const e = entries.find((x) => /^MI_Eye/.test(x.orig && x.orig.name) && x.mesh.isSkinnedMesh && x.index < 0);
@@ -721,6 +1394,7 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
       gazeU.heroEyeCL.value.copy(box[0][0]).add(box[0][1]).multiplyScalar(0.5);
       gazeU.heroEyeCR.value.copy(box[1][0]).add(box[1][1]).multiplyScalar(0.5);
       gazeU.heroEyeLR.value.copy(lr); gazeU.heroEyeMid.value.copy(mid);
+      { const ext0 = box[0][1].clone().sub(box[0][0]); const rr = Math.max(ext0.x, ext0.y, ext0.z) / 2; if (rr > 1e-5) { gazeU.heroEyeR.value = rr; gazeU.heroEyeOk.value = 1; } }   // [W4-ЛИЦО] радиус яблока
       G.mesh = e.mesh; G.idx = [iA, iB, iC];
       G.b = G.idx.map((i) => new THREE.Vector3().fromBufferAttribute(pa, i));
       G.eyeMid = mid;
@@ -731,14 +1405,19 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
     m.onBeforeCompile = (sh, r) => {
       if (prevG) prevG.call(m, sh, r);
       Object.assign(sh.uniforms, gazeU);
+      // [W4-ЛИЦО] vHeroEyeP — точка в осях яблока (радиусы, без поворота взгляда), vHeroEyeL — после поворота
+      // (оси головы: y — вверх): по ним тень века, уголки и каустика радужки
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform mat3 heroGazeRot;\nuniform vec3 heroEyeCL;\nuniform vec3 heroEyeCR;\nuniform vec3 heroEyeLR;\nuniform vec3 heroEyeMid;')
+        .replace('#include <common>', '#include <common>\nuniform mat3 heroGazeRot;\nuniform vec3 heroEyeCL;\nuniform vec3 heroEyeCR;\nuniform vec3 heroEyeLR;\nuniform vec3 heroEyeMid;\nuniform float heroEyeR;\nvarying vec3 vHeroEyeL;\nvarying vec3 vHeroEyeP;')
         .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n  objectNormal = heroGazeRot * objectNormal;')
         .replace('#include <begin_vertex>', `#include <begin_vertex>
   {
     vec3 hgC = dot( position - heroEyeMid, heroEyeLR ) > 0.0 ? heroEyeCL : heroEyeCR;
+    vHeroEyeP = ( position - hgC ) / heroEyeR;
     transformed = heroGazeRot * ( transformed - hgC ) + hgC;
+    vHeroEyeL = ( transformed - hgC ) / heroEyeR;
   }`);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vHeroEyeL;\nvarying vec3 vHeroEyeP;\nuniform float heroEyeOk;');
     };
     const pk = m.customProgramCacheKey;
     m.customProgramCacheKey = () => 'heroGaze:' + (pk ? pk.call(m) : '');
@@ -809,10 +1488,36 @@ export function shadeHero(THREE, vrm, { mode = 'realistic', atmosphere = null, q
   }
 
   function setMode(m) { if (m !== 'realistic' && m !== 'anime') return; if (m !== curMode) apply(m); }
+  // [W4-ЛИЦО] атлас лица с макияжем (recolorTexture, faceAtlas): на low — 512², выше — исходный 1024².
+  // Уменьшенная копия делается из холста 1024² один раз; видеопамять ненужного варианта освобождается.
+  function fitFaceAtlas(q) {
+    for (const e of entries) {
+      const m = e.orig;
+      if (!m || !m.map) continue;
+      const hi = (m.userData && m.userData.faceAtlasHi) || (m.map.userData && m.map.userData.faceAtlas ? m.map : null);
+      if (!hi || !hi.image || !(hi.image.width > 512)) continue;
+      if (q === 'low') {
+        if (m.map !== hi) continue;
+        let lo = m.userData.faceAtlasLo;
+        if (!lo && typeof document !== 'undefined') {
+          const cv = document.createElement('canvas'); cv.width = 512; cv.height = 512;
+          const g2 = cv.getContext('2d'); g2.imageSmoothingQuality = 'high'; g2.drawImage(hi.image, 0, 0, 512, 512);
+          lo = new THREE.CanvasTexture(cv);
+          lo.flipY = hi.flipY; lo.colorSpace = hi.colorSpace; lo.wrapS = hi.wrapS; lo.wrapT = hi.wrapT; lo.channel = hi.channel; lo.anisotropy = hi.anisotropy;
+          m.userData.faceAtlasLo = lo;
+        }
+        if (!lo) continue;
+        m.userData.faceAtlasHi = hi; m.map = lo; m.needsUpdate = true; hi.dispose();
+      } else if (m.map !== hi) {
+        const lo = m.map; m.map = hi; m.needsUpdate = true; if (lo) lo.dispose();
+      }
+    }
+  }
   function setQuality(q) {
     const tier = (x) => (x === 'low' || x === 'high' ? x : 'medium');
     if (tier(q) === tier(curQ)) { curQ = q; return; }
     curQ = q;
+    fitFaceAtlas(tier(q));
     if (curMode === 'realistic') apply('realistic');
   }
   function dispose() {

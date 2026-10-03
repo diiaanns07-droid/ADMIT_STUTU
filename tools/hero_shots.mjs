@@ -113,7 +113,7 @@ try {
     const log = [];
     page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') log.push(`${m.type()}: ${m.text()}`); });
     page.on('pageerror', (e) => log.push('EXC: ' + e.message));
-    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.goto(`http://127.0.0.1:${PORT}/`, { timeout: 180000 });   // на программном рендере high грузится дольше 30 с
     await page.waitForFunction(() => !!window.__ASHEN__, null, { timeout: 60000 });
     await page.waitForFunction(() => { const a = __ASHEN__.worldAssets(); return a && a.pending === 0; }, null, { timeout: 60000 }).catch(() => {});
     await page.waitForFunction(() => { const h = __ASHEN__.hero(); return h && h.ready; }, null, { timeout: 90000 }).catch(() => log.push('hero not ready'));

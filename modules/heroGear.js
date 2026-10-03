@@ -147,18 +147,24 @@ function hairStrandTex(THREE) {
 // ресницы: белые изогнутые волоски на прозрачном (цвет — в материале), корень внизу холста, кончик вверху;
 // dense — верхние (пучками, гуще к внешнему углу), иначе — редкие нижние
 function lashTex(THREE, dense) {
-  return canvasTex(THREE, dense ? 'lashU2' : 'lashL2', 256, (g, N) => {
+  // [W4-ЛИЦО] ресницы тоньше и чаще (было 46 клиньев по 7–11 px — «паучьи лапки» вблизи); «3» — новый холст
+  const t = canvasTex(THREE, dense ? 'lashU3' : 'lashL3', 256, (g, N) => {
+    // свой генератор: общий rnd() модуля продвигаем на столько же, сколько брал прежний холст, —
+    // узоры остальных процедурных текстур (волосы, кайма, колчан) не сдвигаются
+    for (let i = 0; i < (dense ? 184 : 88); i++) rnd();
+    let ls = dense ? 101 : 211;
+    const lr = () => { ls = (ls * 16807) % 2147483647; return ls / 2147483647; };
     g.clearRect(0, 0, N, N);
     g.fillStyle = '#fff';
     // сплошная линия роста у корня (читается как подводка, не рассыпается при альфа-тесте)
-    g.fillRect(0, N * (dense ? 0.86 : 0.9), N, N);
+    g.fillRect(0, N * (dense ? 0.88 : 0.955), N, N);
     // пучки: клин от корня к кончику, загиб наружу (к внешнему углу — сильнее)
-    const n = dense ? 46 : 22;
+    const n = dense ? 64 : 13;
     for (let i = 0; i < n; i++) {
-      const u = (i + 0.3 + rnd() * 0.4) / n;
-      const x0 = u * N, lean = (u - 0.3) * 0.55 + (rnd() - 0.5) * 0.25;
-      const h = N * (dense ? 0.78 + 0.22 * rnd() : 0.55 + 0.45 * rnd());
-      const w0 = dense ? 7 + rnd() * 4 : 4 + rnd() * 2;
+      const u = (i + 0.3 + lr() * 0.4) / n;
+      const x0 = u * N, lean = (u - 0.3) * 0.55 + (lr() - 0.5) * 0.25;
+      const h = N * (dense ? 0.72 + 0.28 * lr() : 0.5 + 0.4 * lr());
+      const w0 = dense ? 4.5 + lr() * 2.5 : 3 + lr() * 1.5;
       const x1 = x0 + lean * h, xm = x0 + lean * h * 0.3;
       g.beginPath();
       g.moveTo(x0 - w0 / 2, N);
@@ -167,6 +173,10 @@ function lashTex(THREE, dense) {
       g.closePath(); g.fill();
     }
   }, true);
+  // [W4-ЛИЦО] без повтора по v: иначе фильтрация у кончиков подмешивала сплошную линию корня —
+  // вдоль кончиков ресниц шла тонкая пунктирная «нитка» (над верхним веком и под нижним)
+  if (t) t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
 }
 
 // кончики прядей (альфа по uv1: u — обход сечения, v — доля длины): до 70% длины сплошь, дальше —
@@ -1054,7 +1064,8 @@ export function dressHero(THREE, vrm, opts = {}) {
         up.name = 'lash-up';
         piv.add(lid, up);
         const low = new THREE.Group(); low.name = 'lash-low';
-        low.add(new THREE.Mesh(lashStrip(e, -0.7, 1.15, yL, F.dL, (t) => F.lenL * 0.2 * (0.3 + 0.7 * Math.sin(Math.PI * t)) * (0.6 + 0.6 * t), -1), mLow));
+        // [W4-ЛИЦО] нижние ресницы — от середины к внешнему углу и короче (у внутреннего угла читались чёрными «колючками»)
+        low.add(new THREE.Mesh(lashStrip(e, -0.25, 1.1, yL, F.dL, (t) => F.lenL * 0.12 * (0.3 + 0.7 * Math.sin(Math.PI * t)) * (0.5 + 0.7 * t), -1), mLow));
         const tear = new THREE.Mesh(tearStrip(e), mTear); tear.name = 'tearline'; tear.renderOrder = 3; low.add(tear);
         stick(piv, 'head', e.c, new THREE.Quaternion());
         stick(low, 'head', e.c, new THREE.Quaternion());
