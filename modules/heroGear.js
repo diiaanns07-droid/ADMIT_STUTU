@@ -82,6 +82,7 @@ const PRESETS = {
 };
 
 import { patchHeroLight } from './heroShading.js';
+import { memo, memoHas } from './heroCache.js';   // [W5-СМЕНА] лучи по телу и радиусы ткани — один раз на героя
 import { buildStaff, buildBow, buildArrow, buildQuiver, buildBrooch, capeTextures, panelTextures, runeRingTexture, glintTexture, tube, gem, gem as gemGeo } from './heroForge.js';
 import { createCloth, createStrands, fitCapsules } from './heroCloth.js';
 import { createTrail } from './heroTrail.js';
@@ -267,7 +268,15 @@ function plateGeo(THREE, r, arc, lames, drop) {
   }
   return geos;
 }
+// [W5-СМЕНА] dressHero — то же снаряжение по частям: генератор отдаёт управление между частями (наплечники,
+// цепочка, посох, волосы, плащ…), heroModel собирает героя кусками в простое или кадр за кадром. dressHero — сразу.
 export function dressHero(THREE, vrm, opts = {}) {
+  const it = dressHeroSteps(THREE, vrm, opts);
+  let r = it.next();
+  while (!r.done) r = it.next();
+  return r.value;
+}
+export function* dressHeroSteps(THREE, vrm, opts = {}) {
   const { preset = 'ranger', model = null, atmosphere = null, quality = 'medium' } = opts;
   const P = PRESETS[preset] || PRESETS.ranger;
   const H = vrm.humanoid;
@@ -282,6 +291,8 @@ export function dressHero(THREE, vrm, opts = {}) {
   };
   const physical = quality !== 'low';
   const Std = physical ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
+  // [W5-СМЕНА] ключ результатов, которые зависят только от тела героя в позе одевания (лучи, радиусы ткани)
+  const MK = `${preset}|${opts.heroId || ''}|${opts.hair ? opts.hair.style || 'h' : '-'}`;
   // [W4-НАРЯДЫ] детали костюма, которые заменяет наряд (наручи, ремни, наплечник) — до замеров тела
   const restoreBase = hideBase(vrm.scene, P.attire && P.attire.hide);
   const rough = roughTex(THREE), leath = leatherTex(THREE), rune = runeTex(THREE);
@@ -307,7 +318,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     cm0.customProgramCacheKey = () => 'gearCrystal:' + (pk ? pk.call(cm0) : '');
   }
   mats.core = Mt(new THREE.MeshBasicMaterial({ name: 'gear-core', color: new THREE.Color(glowHex).multiplyScalar(3.2), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
-  const ringTex = runeRingTexture(THREE); if (ringTex) owned.tex.push(ringTex);
+  const ringTex = runeRingTexture(THREE);   // [W5-СМЕНА] одна на сессию (heroForge) — не своя, не освобождается с героем
   mats.runeRing = Mt(new THREE.MeshBasicMaterial({ name: 'gear-runering', map: ringTex, color: new THREE.Color(glowHex).multiplyScalar(2.4), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
   mats.inlay = Mt(new THREE.MeshBasicMaterial({ name: 'gear-inlay', color: new THREE.Color(P.glow).multiplyScalar(2.2) }));
   mats.glint = Mt(new THREE.SpriteMaterial({ name: 'gear-glint', map: glintTexture(THREE), color: new THREE.Color(glowHex).lerp(new THREE.Color(1, 1, 1), 0.35).multiplyScalar(1.6), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
@@ -401,10 +412,12 @@ export function dressHero(THREE, vrm, opts = {}) {
   if (bp.hips && bp[chestB]) {
     const pairs = capPairs.filter(([x, y]) => raw(x) && raw(y));
     let radii = [];
-    try { radii = fitCapsules(THREE, vrm.scene, pairs.map(([x, y]) => ({ a: wpos(raw(x)), b: wpos(raw(y)) }))); } catch (e) { radii = []; }
+    // [W5-СМЕНА] радиусы — по вершинам кожи в позе одевания (одинаковой у каждой сборки): один раз на героя
+    try { radii = memo(`caps|${MK}`, () => fitCapsules(THREE, vrm.scene, pairs.map(([x, y]) => ({ a: wpos(raw(x)), b: wpos(raw(y)) })))); } catch (e) { radii = []; }
     const defR = { hips: 0.15, leftUpperLeg: 0.085, rightUpperLeg: 0.085, leftLowerLeg: 0.065, rightLowerLeg: 0.065, leftUpperArm: 0.055, rightUpperArm: 0.055 };
     pairs.forEach(([x, y], i) => bodyCaps.push({ a: raw(x), b: raw(y), r: (radii[i] || defR[x] || 0.13) + 0.018, name: x }));
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
   const torsoR = bodyCaps.length ? Math.max(bodyCaps[0].r, bodyCaps[1] ? bodyCaps[1].r : 0) : 0.16;
 
   // ---------------- наплечники
@@ -440,6 +453,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       stick(grp, side + 'UpperArm', pos, q);
     }
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
 
   // ---------------- нагрудник (страж)
   if (P.chest && bp[chestB]) {
@@ -450,6 +464,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     gorget.rotation.set(Math.PI / 2, 0, -Math.PI * 0.1); gorget.position.set(0, 0.13, 0.02); grp.add(gorget);
     stick(grp, chestB, bp[chestB].clone().addScaledVector(UP, -0.02).addScaledVector(FWD, 0.015), modelQ);
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
 
   // ---------------- брошь-эмблема на груди (кованая, с камнем): ставится на поверхность груди лучом по коже
   if (P.sigil && bp[chestB]) {
@@ -458,34 +473,49 @@ export function dressHero(THREE, vrm, opts = {}) {
     const at = bp[chestB].clone().addScaledVector(UP, 0.03);
     let surf = at.clone().addScaledVector(FWD, 0.17);
     try {
-      vrm.scene.updateMatrixWorld(true);
-      const rc = new THREE.Raycaster(at.clone().addScaledVector(FWD, 0.6), FWD.clone().negate(), 0, 0.6);
-      const meshes = [];
-      vrm.scene.traverse((o) => { if (o.isSkinnedMesh && o.visible) meshes.push(o); });
-      const hit = rc.intersectObjects(meshes, false)[0];
-      if (hit) surf = hit.point.clone().addScaledVector(FWD, 0.004);
+      // [W5-СМЕНА] глубина поверхности груди (вдоль «вперёд» героя) — один луч на героя за сессию
+      const d = memo(`sigil|${MK}`, () => {
+        vrm.scene.updateMatrixWorld(true);
+        const rc = new THREE.Raycaster(at.clone().addScaledVector(FWD, 0.6), FWD.clone().negate(), 0, 0.6);
+        const meshes = [];
+        vrm.scene.traverse((o) => { if (o.isSkinnedMesh && o.visible) meshes.push(o); });
+        const hit = rc.intersectObjects(meshes, false)[0];
+        return hit ? hit.point.clone().sub(at).dot(FWD) : null;
+      });
+      if (d !== null) surf = at.clone().addScaledVector(FWD, d + 0.004);
     } catch (e) { /* без луча — прежнее смещение */ }
     stick(grp, chestB, surf, modelQ);
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
 
   // ---------------- цепочка с кулоном (героини): тонкая цепь по поверхности груди от боков шеи к кулону
   // у грудины. Точки — лучами к оси груди по коже и костюму (капюшон не в счёт: по бокам цепь уходит под
   // него); кулон — огранённый камень в оправе цвета стихии.
   if (P.necklace && bp[chestB] && bp.neck) {
     try {
-      vrm.scene.updateMatrixWorld(true);
-      const meshes = [];
-      vrm.scene.traverse((o) => { if (o.isSkinnedMesh && o.visible && !/Hood|Hair|Eye|Brow/i.test(o.name)) meshes.push(o); });
       const axis = bp[chestB].clone(), yTop = bp.neck.y - 0.03, yV = bp.neck.y - (P.necklace.drop ?? 0.13);
-      const rc = new THREE.Raycaster(), pts = [];
-      for (let i = 0; i <= 16; i++) {
-        const u = i / 8 - 1, az = u * 1.15, y = yV + (yTop - yV) * u * u;
-        const dir = new THREE.Vector3().addScaledVector(FWD, Math.cos(az)).addScaledVector(LEFT, Math.sin(az));
-        const from = new THREE.Vector3(axis.x, y, axis.z).addScaledVector(dir, 0.4);
-        rc.set(from, dir.clone().negate()); rc.far = 0.4;
-        const hit = rc.intersectObjects(meshes, false)[0];
-        if (hit) pts.push(hit.point.clone().addScaledVector(dir, 0.0035));
+      // [W5-СМЕНА] 17 лучей по скиннированной коже — самая дорогая часть снаряжения героинь (три.js скинирует каждый
+      // треугольник на каждый луч): точки — в осях героя от груди, один раз на героя; первый раз — по лучу за кусок
+      const nk = `necklace|${MK}`;
+      let rel = memoHas(nk) ? memo(nk) : null;
+      if (!rel) {
+        vrm.scene.updateMatrixWorld(true);
+        const meshes = [];
+        vrm.scene.traverse((o) => { if (o.isSkinnedMesh && o.visible && !/Hood|Hair|Eye|Brow/i.test(o.name)) meshes.push(o); });
+        const rc = new THREE.Raycaster();
+        rel = [];
+        for (let i = 0; i <= 16; i++) {
+          const u = i / 8 - 1, az = u * 1.15, y = yV + (yTop - yV) * u * u;
+          const dir = new THREE.Vector3().addScaledVector(FWD, Math.cos(az)).addScaledVector(LEFT, Math.sin(az));
+          const from = new THREE.Vector3(axis.x, y, axis.z).addScaledVector(dir, 0.4);
+          rc.set(from, dir.clone().negate()); rc.far = 0.4;
+          const hit = rc.intersectObjects(meshes, false)[0];
+          if (hit) { const q = hit.point.clone().addScaledVector(dir, 0.0035).sub(axis); rel.push([q.dot(FWD), q.dot(LEFT), q.dot(UP)]); }
+          yield;
+        }
+        memo(nk, () => rel);
       }
+      const pts = rel.map(([f, l, u]) => axis.clone().addScaledVector(FWD, f).addScaledVector(LEFT, l).addScaledVector(UP, u));
       if (pts.length >= 12) {
         const grp = new THREE.Group(); grp.name = 'necklace';
         const curve = new THREE.CatmullRomCurve3(pts);
@@ -506,6 +536,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       }
     } catch (e) { /* без цепочки */ }
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
 
   // ---------------- наручи
   if (P.bracers && bp.leftLowerArm) {
@@ -527,6 +558,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       stick(grp, side + 'LowerArm', lo.clone().lerp(hd, 0.62), q);
     }
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
 
   // ---------------- пояс, подсумки, пряжка, кинжал
   if (P.belt && bp.hips) {
@@ -568,14 +600,18 @@ export function dressHero(THREE, vrm, opts = {}) {
     const c = bp.hips.clone(); c.y = y;
     stick(grp, 'hips', c, modelQ);
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
 
   // ---------------- глаза в прорези шлема (страж): два светящихся уголька
   let visorMat = null;
   if (opts.fx && opts.fx.visorEyes && bp.head) {
     const headBone = raw('head');
+    // [W5-СМЕНА] высота глаз, край шлема и щель (52 луча по скиннированному шлему, ~1 с на слабом ЦП) — числа
+    // в осях головы, одинаковые у каждой сборки стража: считаются один раз
+    const vk = `visor|${MK}`, vm = memoHas(vk) ? memo(vk) : null;
     let front = -1e9, minY = 1e9, maxY = -1e9;
     const hv = new THREE.Vector3(), rel = new THREE.Vector3();
-    vrm.scene.traverse((o) => {
+    if (!vm) vrm.scene.traverse((o) => {
       if (!o.isSkinnedMesh || !o.geometry.attributes.skinIndex) return;
       const bi = o.skeleton.bones.indexOf(headBone);
       if (bi < 0) return;
@@ -588,9 +624,10 @@ export function dressHero(THREE, vrm, opts = {}) {
         const y = rel.dot(UP); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
       }
     });
-    const eyeY = minY < maxY ? minY + (maxY - minY) * 0.56 : 0.1;
+    const eyeY = vm ? vm.eyeY : minY < maxY ? minY + (maxY - minY) * 0.56 : 0.1;
     // передний край шлема на высоте глаз
-    vrm.scene.traverse((o) => {
+    if (vm) front = vm.front;
+    else vrm.scene.traverse((o) => {
       if (!o.isSkinnedMesh || !o.geometry.attributes.skinIndex) return;
       const bi = o.skeleton.bones.indexOf(headBone);
       if (bi < 0) return;
@@ -612,7 +649,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     }
     // смотровая щель: лучи спереди по высоте около глаз — щель там, где попадание глубже всего; угли — внутри
     let slitY = eyeY, slitZ = front + 0.004;
-    try {
+    if (vm) { slitY = vm.slitY; slitZ = vm.slitZ; } else try {
       const meshes = [];
       vrm.scene.traverse((o) => { if (o.isSkinnedMesh && o.visible) meshes.push(o); });
       const rc = new THREE.Raycaster();
@@ -626,6 +663,7 @@ export function dressHero(THREE, vrm, opts = {}) {
           if (hit) { const z = hit.point.clone().sub(bp.head).dot(FWD); zs += z; n++; }
         }
         if (n) rows.push({ dy, z: zs / n });
+        yield;   // [W5-СМЕНА] первый раз — по ряду лучей за кусок
       }
       if (rows.length > 4) {
         // глубина относительно соседей (±12 мм): щель — провал в профиле
@@ -648,8 +686,10 @@ export function dressHero(THREE, vrm, opts = {}) {
         }
       }
     } catch (e) { /* по краю шлема */ }
+    if (!vm) memo(vk, () => ({ eyeY, front, slitY, slitZ }));
     stick(grp, 'head', bp.head.clone().addScaledVector(UP, slitY).addScaledVector(FWD, slitZ), modelQ);
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
 
   // ---------------- острые уши эльфа (сквозь капюшон — узнаваемый силуэт): лист с загнутым кончиком из
   // выдавленного контура, от настоящего уха модели (крайние вершины лица у висков); материал — кожа лица
@@ -717,6 +757,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       }
     }
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
 
   // ---------------- [W4-ВОЛОСЫ] волосы героинь — modules/heroHair.js: карты прядей, блеск Каджия-Кей, движение
   // в вершинном шейдере. Причёска собирается после лука и колчана (пряди их обтекают); капюшон снимается
@@ -867,6 +908,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       // ось поворота — «влево» героя в осях шторки (она поставлена в мировых осях позы привязки)
     }
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
   // ---------------- вышитая кайма капюшона (героини): лента по переднему краю капюшона вокруг лица.
   // Капюшон Quaternius — замкнутая сетка с валиком по краю (граничных рёбер нет), поэтому кромка — это
   // самые передние вершины капюшона по направлениям вокруг лица; дуга от скулы через лоб к другой скуле
@@ -988,6 +1030,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       }
     }
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
 
   const _bq = new THREE.Quaternion();
   function setBlink(k) {
@@ -1083,6 +1126,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       }
     }
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
 
   // ---------------- кольца-руны
   if (P.rings) {
@@ -1098,6 +1142,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       stick(ring, bn, p.clone().lerp(child ? wpos(child) : p, 0.45), qFromTo(new THREE.Vector3(0, 0, 1), dir));
     }
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
 
   // ---------------- посох: в кулаке правой (узел хвата heroModel: древко поперёк пальцев, навершие у большого)
   let staffTip = null, staffRig = null, ribbons = null, trail = null;
@@ -1147,6 +1192,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       ribbons.pendants = pend;
         } catch (e) { ribbons = null; }
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
 
   // ---------------- лук за спиной (в бою — в кулаке левой) и колчан
   let bow = null, bowRig = null, arrow = null, quiverObj = null;
@@ -1216,6 +1262,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       quiverObj = qv;   // [W4-ВОЛОСЫ] пряди обтекают колчан
     }
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
 
   // [W4-ВОЛОСЫ] причёска героини: исходная форма плаща (волосы лежат поверх него) и колчан — препятствия
   if (opts.hair && bp.head) {
@@ -1237,6 +1284,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     } catch (e) { hair = null; if (typeof console !== 'undefined') console.warn('[hair]', e); }
     if (hair) for (const n of hair.names) names.push(n);
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
   // причёска не собралась — капюшон обратно (иначе героиня без волос и без капюшона)
   if (!hair && hoodBack) { hoodBack(); hoodBack = null; }
 
@@ -1248,7 +1296,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   // материал вышитой ткани (плащ, полы мантии): карта/рельеф/свечение вышивки, sheen, подкладка на изнанке
   const clothMat = (tx, name) => {
     const { color, trim, lining } = P.cape;
-    for (const k of ['map', 'bump', 'emissive']) if (tx[k]) owned.tex.push(tx[k]);
+    // [W5-СМЕНА] холсты плаща и пол — в кэше heroForge (не свои у героя; видеопамять скрытого героя отдаёт heroCache)
     const m = Mt(new Std({
       name, color: 0xffffff, map: tx.map || null, bumpMap: tx.bump || null, bumpScale: 1.4,
       emissive: 0xffffff, emissiveMap: tx.emissive || null, emissiveIntensity: tx.emissive ? 1.1 : 0,
@@ -1346,6 +1394,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     for (const m of grp.children) { m.position.sub(c0); m.updateMatrix(); }
     stick(grp, chestB, c0, new THREE.Quaternion());
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
   if (P.cape && P.cape.kind !== 'mantle' && bp[chestB] && bp.hips && bp.leftUpperArm) {
     const { w, len, color, trim, emblem } = P.cape;
     // поверх копны волос по спине — корпус для ткани толще
@@ -1412,6 +1461,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     grp.children.forEach((m) => m.updateMatrix());
     stick(grp, chestB, c0, new THREE.Quaternion());
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
 
   // ---------------- полы мантии (чародейка, эльфийка): полотнища ткани с пояса — силуэт мантии, а не
   // костюма лучницы. Полотнище с гербом — холст плаща; узкие — своя вышивка в масштабе полосы
@@ -1552,6 +1602,7 @@ export function dressHero(THREE, vrm, opts = {}) {
     }
     names.push('tabard');
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
 
   // ---------------- [W4-НАРЯДЫ] наряд героини (modules/heroAttire.js): наплечник-лист, воротник, корсет и
   // наручи, украшения с искрами; ткани нарядов пульсируют вышивкой вместе со свечением героя (setGlow)
@@ -1562,6 +1613,7 @@ export function dressHero(THREE, vrm, opts = {}) {
       names.push(...attire.names);
     } catch (e) { console.warn('[W4-НАРЯДЫ] наряд не собран:', e && e.message); attire = null; }
   }
+  yield;   // [W5-СМЕНА] часть снаряжения готова — поток можно отдать (сборка кусками)
   let calmNow = 1;
 
   // ---------------- кадр: ткань, свечение, LOD
@@ -1802,8 +1854,14 @@ export function dressHero(THREE, vrm, opts = {}) {
   const glowBase = mats.glow.color.clone(), inlayBase = mats.inlay.color.clone();
   let glowNow = 1;
   function setGlow(k) { glowNow = k; }
+  // [W5-СМЕНА] герой спрятан (кэш смены героя): лента следа — из сцены (она в корне сцены, а не в модели), скорость
+  // навершия при показе — заново (иначе первый кадр дал бы ложный взмах)
+  function park() {
+    if (trail) { trail.reset(); if (trail.mesh.parent) trail.mesh.parent.remove(trail.mesh); }
+    tHave = false;
+  }
   return {
-    names, staffTip, bow, cloth, perf, get trail() { return trail; }, setGlow, get glow() { return glowNow; }, update, setLod, setQuality, setShading() {}, setBowHeld, setBlink, holdBlink(k) { if (lids) { lids.hold = k; setBlink(k); } }, get lids() { return lids ? lids.pivots.length : 0; }, dispose,
+    names, staffTip, bow, cloth, perf, get trail() { return trail; }, setGlow, get glow() { return glowNow; }, update, setLod, setQuality, setShading() {}, setBowHeld, setBlink, holdBlink(k) { if (lids) { lids.hold = k; setBlink(k); } }, get lids() { return lids ? lids.pivots.length : 0; }, dispose, park,
     parts: () => parts.map((p) => p.obj.name),
   };
 }

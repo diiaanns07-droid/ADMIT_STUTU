@@ -1520,8 +1520,10 @@ function applySettings() {
     perfTuner.setAuto(settings.qualityAuto !== false);
     if (settings.qualityAuto !== false) settings.quality = perfTuner.tier;
   }
-  renderer.setPixelRatio(targetPixelRatio());
-  resize();
+  // [W5-СМЕНА] размер холста — только если изменился: setSize переприсваивает canvas.width (буфер холста сбрасывается),
+  // а applySettings зовётся на каждый выбор в меню (герой, громкость…) — пропуск кадра perfTuner показал бы пустой холст
+  { const pr = targetPixelRatio(), sz = renderer.getSize(new THREE.Vector2());
+    if (Math.abs(renderer.getPixelRatio() - pr) > 1e-3 || sz.x !== viewW() || sz.y !== viewH() || !app.sized) { app.sized = true; renderer.setPixelRatio(pr); resize(); } }
   if (app.appliedQuality !== settings.quality) {
     const first = app.appliedQuality === null;
     app.appliedQuality = settings.quality;
@@ -2016,7 +2018,8 @@ function backgroundCompile() {
 function precompileTick() {
   if (app.camWarm) return;   // [W5-КАМЕРА] шейдеры героя и боя — после запуска камеры: прогрев MediaPipe не делит с ними GPU
   const hk = heroModel ? `${heroModel.hero}|${heroModel.ready}` : null;
-  if (hk !== precomp.heroKey) { precomp.heroKey = hk; if (heroModel && heroModel.ready) schedulePrecompile('герой'); }
+  // [W5-СМЕНА] герой собирает свои программы сам (heroModel: до показа, в варианте кадра) — без пересборки всей сцены
+  if (hk !== precomp.heroKey) { precomp.heroKey = hk; if (heroModel && heroModel.ready && !heroModel.warmsPrograms) schedulePrecompile('герой'); }
   if (!precomp.fight && app.screen === 'playing') { precomp.fight = true; schedulePrecompile('бой'); }
 }
 const CALM_SCREENS = new Set(['menu', 'paused', 'camera', 'calibration', 'tutorial', 'oath', 'training', 'technique', 'victory', 'defeat', 'challenge']); // [W3-CHALLENGE] + challenge
