@@ -198,6 +198,8 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
   // табличка: при смене героя гаснет (0,22 с), меняет текст, въезжает справа с разрядкой букв (0,8 с)
   function platePulse(active, id, zc) {
     if (!plate || !mounted) return;
+    // [W4-СБОРКА] вне меню табличка погасла — без строк стиля каждый кадр (витрина тикает и в бою)
+    if (!active && !P.out && P.shown <= 0 && P.op === '0.000' && id === P.hero) return;
     const now = nowMs();
     if (id !== P.hero) {
       if (!P.hero || P.shown < 0.05) { if (fillPlate(id)) { P.hero = id; P.swapT = now; } }
@@ -258,8 +260,7 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       if (stage.quality !== settings.quality) stage.setQuality(settings.quality);
       stage.setReducedMotion(!!settings.reducedMotion);
       // отражение: новый герой загрузился — его меши в слой отражения
-      const rk = heroModel ? `${heroModel.hero}|${heroModel.ready}` : '';
-      if (rk !== reflectKey && heroModel && heroModel.ready) { reflectKey = rk; stage.setReflect(heroRoot); }
+      if (heroModel && heroModel.ready && heroModel.hero !== reflectKey) { reflectKey = heroModel.hero; stage.setReflect(heroRoot); }   // [W4-СБОРКА] без строки-ключа каждый кадр
       const id = heroModel ? heroModel.hero : '';
       const H = HEROES && HEROES[id];
       V.w = w; V.active = active; V.heroPos = heroRoot.position; V.heroYaw = heroRoot.rotation.y; V.camera = camera;
