@@ -48,7 +48,7 @@ const QUERY = argOf('--query', 'cursor=0');
 // поддельная камера Chromium даёт 20 к/с, а на встроенной AMD в Edge — кадры 2×2). Файл делает make_y4m.py (см. README замера).
 const VIDEO = argOf('--video', '');
 const BROWSER = [argOf('--browser'), 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
-  'C:/Program Files/Google/Chrome/Application/chrome.exe'].filter(Boolean).find((p) => existsSync(p));
+  'C:/Program Files/Google/Chrome/Application/chrome.exe', '/opt/pw-browsers/chromium'].filter(Boolean).find((p) => existsSync(p)); // [W5-КАМЕРА] + Chromium Playwright (Linux)
 if (!BROWSER) { console.error('браузер не найден'); process.exit(1); }
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -186,7 +186,9 @@ async function launch(gpu) {
   const profile = join(tmpdir(), `ashen_bench_${gpu}_${Date.now()}`);
   const dbg = 9700 + Math.floor(Math.random() * 90);
   const flags = ['--headless=new', `--remote-debugging-port=${dbg}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check',
-    '--disable-extensions', `--window-size=${W},${H}`, '--hide-scrollbars', '--use-angle=d3d11', '--ignore-gpu-blocklist', '--enable-gpu',
+    '--disable-extensions', `--window-size=${W},${H}`, '--hide-scrollbars', '--ignore-gpu-blocklist', '--enable-gpu',
+    // [W5-КАМЕРА] Windows — Direct3D 11; Linux без видеокарты (облако, CI) — программный SwiftShader, root — без песочницы
+    ...(process.platform === 'win32' ? ['--use-angle=d3d11'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', ...(process.getuid && process.getuid() === 0 ? ['--no-sandbox'] : [])]),
     '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'];
   if (gpu === 'nvidia') flags.push('--force_high_performance_gpu');
   if (VIDEO) flags.push(`--use-file-for-fake-video-capture=${resolve(VIDEO)}`);
@@ -267,7 +269,7 @@ async function enterFight(page) {
   clicks.push(await page.click('Играть')); await sleep(250);
   clicks.push(await page.click('Продолжить без камеры (демо)')); await sleep(400);
   clicks.push(await page.click('В бой')); await sleep(300);
-  if (!(await page.waitFor(`__ASHEN__.screen === 'playing'`, 15000))) {
+  if (!(await page.waitFor(`__ASHEN__.screen === 'playing'`, 45000))) {   // [W5-КАМЕРА] было 15 с: облёт на программном рендере длиннее
     const scr = await page.eval('({ screen: __ASHEN__.screen, buttons: [...document.querySelectorAll("button")].filter((b) => b.offsetParent !== null).map((b) => b.textContent.trim()).slice(0, 12) })');
     throw new Error(`бой не начался: клики ${clicks.join(',')}; экран ${scr.screen}; кнопки: ${scr.buttons.join(' | ')}`);
   }
@@ -380,3 +382,4 @@ try {
   writeFileSync(join(OUT, 'results.json'), JSON.stringify(results, null, 1));
   console.log('\nJSON и снимки:', OUT);
 }
+process.exit(0); // [W5-КАМЕРА] открытые сокеты CDP и дочерние процессы браузера не держат замер после итогов

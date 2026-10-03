@@ -44,6 +44,7 @@ import { createVoiceCoach, createVoiceDirector, createVoiceRecords } from './mod
 import { DIFFICULTY_ORDER, DIFFICULTY_NAMES } from './core/voicePhrases.js'; // [W5-СЛОЖНОСТЬ] названия уровней сложности
 import { createHandCursor } from './core/handCursor.js'; // [W3-CURSOR] курсор-кисть вместо мыши
 import { menuDrawables, menuFrustum, compileSet, createLateStart, createTrickleCompile } from './core/bootPlan.js'; // [W5-СТАРТ] что до меню, что после
+import { camWarmWanted, createFightGuard, CAM_WARM } from './core/camWarm.js'; // [W5-КАМЕРА] рендер уступает видеокарту распознаванию
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
 // [W5-СТАРТ] вехи загрузки (Performance → Timings; tools/load_budget.mjs): код загружен → мир → меню → первый кадр → герой
@@ -213,6 +214,8 @@ const app = {
   autoResume: null,          // { at, badSince } — performance.now() продолжения боя
   gate: { ok: true, reason: '', since: 0, flashUntil: 0 }, // причина недоступности «В бой»/«Продолжить» для кнопок UI
   outroAt: 0,                // [FEEL] performance.now() исхода боя: экран итогов — после замедленного финала
+  // [W5-КАМЕРА] «дешёвый кадр», пока камера запускается (core/camWarm.js); fightCap — предел 30 к/с от стража трекинга в бою
+  camWarm: false, camWarmDraw: -1e9, fightCap: false,
 };
 // [W3-CHALLENGE] «Испытание · 60 с»: фазы попытки, подсчёт очков (в каждом бою — для постера), зал славы дня,
 // кадр боя и линии скелета в момент последнего удара. Логика — modules/challenge.js, функции — блок ниже.
@@ -1505,7 +1508,8 @@ function targetPixelRatio() {
   const q = config.qualityPresets[settings.quality] || config.qualityPresets.medium;
   const base = Math.min(window.devicePixelRatio || 1, q.pixelRatioCap);
   const k = perfTuner && settings.qualityAuto !== false ? perfTuner.scale : 1;
-  return Math.max(0.5, Math.round(base * k * 100) / 100);
+  const warm = app.camWarm ? CAM_WARM.prK : 1;   // [W5-КАМЕРА] пока камера запускается — меньше пикселей
+  return Math.max(0.5, Math.round(base * k * warm * 100) / 100);
 }
 function applyPixelRatio() {
   const pr = targetPixelRatio();
@@ -1629,7 +1633,29 @@ function renderUI() {
     autoResumeMs: app.autoResume ? Math.max(0, app.autoResume.at - performance.now()) : null,
     onboard: { quick: QUICK, restored: app.onb.restored, demo: DEMO,
       starting: app.screen === 'camera' && app.onb.autoEnabled && !app.error && (!vision || visionStatus().status === 'idle') }, // камера уже запрошена
+    camDiag: app.screen === 'camera' || app.screen === 'calibration' ? camDiagView() : null, // [W5-КАМЕРА] «Диагностика» экрана камеры
   });
+}
+// [W5-КАМЕРА] для «Диагностики» и «Скопировать отчёт» на экране камеры: кадры игры, видеокарта, дешёвый кадр, офлайн;
+// собирается не чаще 4 раз в секунду
+const camDiagCache = { t: -1e9, v: null };
+function camDiagView() {
+  const now = performance.now();
+  if (now - camDiagCache.t < 250 && camDiagCache.v) return camDiagCache.v;
+  let p = null;
+  try { p = perfTuner ? perfTuner.state() : null; } catch (e) { p = null; }
+  let off = null;
+  try { const o = window.__aoOffline && window.__aoOffline.state(); off = o ? { sw: o.sw, preload: o.preload && o.preload.status } : null; } catch (e) { off = null; }
+  let embedded = false;
+  try { embedded = window.self !== window.top; } catch (e) { embedded = true; }
+  camDiagCache.t = now;
+  camDiagCache.v = {
+    fps: Math.round(perf.fps), quality: settings.quality, qualityAuto: settings.qualityAuto !== false,
+    perf: p && { tier: p.tier, scale: p.scale, capFps: p.capFps, fps: p.fps, gpu: p.gpu, gpuClass: p.gpuClass, gpuMs: p.gpuMs, cores: p.cores, memory: p.memory, refreshHz: p.refreshHz, auto: p.auto },
+    warm: app.camWarm, fightCap: app.fightCap, warmLog: camLoad.warmLog.slice(-4), guard: camLoad.guard.state(),
+    secure: window.isSecureContext !== false, embedded, url: location.origin + location.pathname, ua: navigator.userAgent, offline: off,
+  };
+  return camDiagCache.v;
 }
 // [W3-SQUAT] модель позы и частота распознавания — для подготовки и диагностики
 function squatPoseInfo() {
@@ -1988,11 +2014,65 @@ function backgroundCompile() {
   report();
 }
 function precompileTick() {
+  if (app.camWarm) return;   // [W5-КАМЕРА] шейдеры героя и боя — после запуска камеры: прогрев MediaPipe не делит с ними GPU
   const hk = heroModel ? `${heroModel.hero}|${heroModel.ready}` : null;
   if (hk !== precomp.heroKey) { precomp.heroKey = hk; if (heroModel && heroModel.ready) schedulePrecompile('герой'); }
   if (!precomp.fight && app.screen === 'playing') { precomp.fight = true; schedulePrecompile('бой'); }
 }
 const CALM_SCREENS = new Set(['menu', 'paused', 'camera', 'calibration', 'tutorial', 'oath', 'training', 'technique', 'victory', 'defeat', 'challenge']); // [W3-CHALLENGE] + challenge
+// ---------------------------------------------------------------- [W5-КАМЕРА] рендер уступает видеокарту распознаванию
+// Пока камера запускается (статус permission / loading / calibrating, на экранах камеры и калибровки — и до калибровки):
+// плотность пикселей ×0.6, без частиц, портала, дымки и пола-зеркала витрины, без пепла мира, карта теней не обновляется,
+// кадр не чаще ~30 к/с, автоподстройка (perfTuner) на это время не принимает решений. После «ready» — всё как было.
+// В бою: распознаваний < 12/с дольше 3 с — уровень качества ниже через perfTuner, затем предел 30 к/с (core/camWarm.js).
+const CAM_WARM_HIDE = ['menu-stage-portal', 'menu-stage-particles', 'menu-stage-mist', 'menu-stage-floor'];
+const camLoad = { hidden: [], guard: createFightGuard(), guardT: 0, guardLast: null, warmSince: 0, warmLog: [] };
+function camWarmNow() {
+  const s = lastVisionStatus;   // каждый кадр — без полного getStatus(): статус и калибровку освежают onStatus и visionStatus()
+  return camWarmWanted({ screen: app.screen, status: vision && s ? s.status : 'idle', calibrated: s && s.calibrated, debug: app.debug, off: UNCAPPED || BENCH_CAM });
+}
+function setCamWarm(on) {
+  if (app.camWarm === on) return;
+  app.camWarm = on;
+  const now = performance.now();
+  renderer.shadowMap.autoUpdate = !on;
+  if (!on) renderer.shadowMap.needsUpdate = true;
+  try { world.configure({ ambientAsh: on ? false : !(config.world && config.world.ambientAsh === false) }); } catch (e) { /* нет пепла */ }
+  if (!on) camWarmStage(false);
+  applyPixelRatio();
+  if (perfTuner) perfTuner.noteStall(now);
+  camLoad.warmLog.push({ t: Math.round(now), on, screen: app.screen, status: visionStatus().status, ms: on ? 0 : Math.round(now - camLoad.warmSince) });
+  if (camLoad.warmLog.length > 8) camLoad.warmLog.shift();
+  if (on) camLoad.warmSince = now;
+  console.info(`[perf] запуск камеры: ${on ? 'дешёвый кадр (меньше пикселей, без частиц и портала, ≈30 к/с)' : `обычный кадр (дешёвый держался ${Math.round((now - camLoad.warmSince) / 100) / 10} с)`}`);
+}
+// частицы, портал, дымка и пол-зеркало витрины (второй проход сцены) — прячутся; витрина сама их не трогает
+function camWarmStage(hide) {
+  if (hide) {
+    const root = scene.getObjectByName('menu-stage');
+    if (!root || !root.visible) return;
+    for (const n of CAM_WARM_HIDE) { const o = root.getObjectByName(n); if (o && o.visible) { o.visible = false; camLoad.hidden.push(o); } }
+  } else {
+    for (const o of camLoad.hidden) o.visible = true;
+    camLoad.hidden.length = 0;
+  }
+}
+// уровень качества от стража: тот же путь, что смена уровня самим perfTuner (без записи в выученное)
+function guardApply(a) {
+  if (!a) return;
+  camLoad.guardLast = { ...a, t: Math.round(performance.now()) };
+  if (a.tier && perfTuner && settings.qualityAuto !== false) { perfTuner.setTier(a.tier); settings.quality = perfTuner.tier; applySettings(); }
+  app.fightCap = !!a.cap;
+  console.info(`[perf] трекинг в бою: ${a.why} → ступень ${a.level}${a.tier ? `, качество ${a.tier}` : ''}${a.cap ? ', 30 к/с' : ''}`);
+}
+function fightGuardTick(now) {
+  if (now - camLoad.guardT < 250) return;
+  camLoad.guardT = now;
+  const fighting = !app.debug && !!vision && (app.screen === 'playing' || app.screen === 'intro');
+  if (!fighting && app.screen !== 'paused') { guardApply(camLoad.guard.reset(now)); return; }   // бой окончен — всё как было
+  const d = visionStatus().debug || {};
+  guardApply(camLoad.guard.update(now, { active: fighting && !app.outroAt, hz: d.inferenceHz, cameraFps: d.cameraFps, tier: settings.quality, auto: settings.qualityAuto !== false && !!perfTuner }));
+}
 let perfHud = null;
 try { perfHud = createPerfHud({ root: document.body }); } catch (e) { console.warn('[PERF] панель', e); }
 if (perfTuner) perfTuner.onChange((why, st) => {
@@ -2004,6 +2084,14 @@ function frame(now) {
   requestAnimationFrame(frame);
   // [PERF] предел кадров кратно частоте экрана: лишние вызовы rAF пропускаются (время и dt — от прошлого кадра)
   if (perfTuner && !perfTuner.beginFrame(now, UNCAPPED)) return;
+  // [W5-КАМЕРА] дешёвый кадр на время запуска камеры и предел стража в бою: ≈30 к/с. Пропуск — после beginFrame
+  // и без endFrame: автоподстройка видит обычный интервал кадра, а не «просадку до 30».
+  setCamWarm(camWarmNow());
+  if (app.camWarm && perfTuner) perfTuner.noteStall(now);
+  if ((app.camWarm || app.fightCap) && !UNCAPPED) {
+    if (now - app.camWarmDraw < CAM_WARM.gapMs) return;
+    app.camWarmDraw = now;
+  }
   const tFrame0 = performance.now();
   const raw = Math.max(0, (now - last) / 1000);
   last = now;
@@ -2207,6 +2295,7 @@ function frame(now) {
 
   if (spirit) spirit.frame(dtReal, now, { screen: app.screen, debug: app.debug, vision, status: vision ? visionStatus() : null, input, events, snapshot: lastSnapshot, hero: heroModel ? heroModel.hero : settings.hero }); // [W3-SPIRIT]
   if (heroShowcase) { try { heroShowcase.update(dtReal, app.screen === 'menu', camera); } catch (e) { console.warn('[HERO] витрина', e); heroShowcase = null; } } // [HERO] свет и облёт витрины
+  if (app.camWarm) camWarmStage(true);   // [W5-КАМЕРА] без частиц и портала витрины, пока камера запускается
   if (pvpCtl) { try { pvpCtl.frame(lastSnapshot, app.screen); } catch (e) { console.error('[PVP] frame', e); } } // [PVP] фазы хоста, готовность, панель
   if (postfx && typeof postfx.setMode === 'function') { try { postfx.setMode(app.screen, settings); } catch (e) { /* ignore */ } } // [BDO] DOF меню и грейд по экрану
   if (postfx) feedPostFx(events);   // [W3-КИНО] и на low: цвет фаз, ранение, засветка
@@ -2237,8 +2326,9 @@ function frame(now) {
   // [PERF] статистика кадра → автоподстройка; распознавание → ей же; шейдеры заранее; панель F3
   if (perfTuner) {
     try {
-      perfTuner.setCalm(CALM_SCREENS.has(app.screen));
+      perfTuner.setCalm(CALM_SCREENS.has(app.screen) && !app.camWarm);   // [W5-КАМЕРА] уровень вверх — не во время запуска камеры
       perfVisionTick(now);
+      fightGuardTick(now);   // [W5-КАМЕРА]
       perfTuner.endFrame(performance.now(), performance.now() - tFrame0);
     } catch (e) { console.warn('[PERF] подстройка', e); }
   }
@@ -2301,6 +2391,7 @@ window.__ASHEN__ = Object.freeze({
   get pauseReason() { return app.pauseReason; },
   get fps() { return Math.round(perf.fps); },
   perf: () => (perfTuner ? perfTuner.state() : null), // [PERF] автоподстройка: предел кадров, разрешение, уровень
+  camLoad: () => JSON.parse(JSON.stringify({ warm: app.camWarm, fightCap: app.fightCap, guard: camLoad.guard.state(), last: camLoad.guardLast, log: camLoad.warmLog, hidden: camLoad.hidden.map((o) => o.name) })), // [W5-КАМЕРА] QA: дешёвый кадр и страж трекинга
   programs: () => (renderer.info.programs || []).map((p) => ({ id: p.id, name: p.name, key: String(p.cacheKey).slice(0, 240) })), // [PERF] QA: какие шейдеры компилируются
   get tracking() { return visionStatus(); },
   hands: () => { try { const h = vision && vision.getHands(); return h ? JSON.parse(JSON.stringify({ ...h, left: h.left && { shape: h.left.shape, palmFacing: h.left.palmFacing, charge: h.left.charge }, right: h.right && { shape: h.right.shape, palmFacing: h.right.palmFacing, charge: h.right.charge } })) : null; } catch (e) { return null; } },

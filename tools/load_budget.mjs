@@ -13,13 +13,18 @@
 //               замер — второй заход в том же профиле (включает --prod)
 //   --runs N    [W5-СТАРТ] N прогонов каждого сценария, в отчёте — медиана вех (облачная машина шумит на ±2 с)
 //   --menu-wait S  [W5-СТАРТ] fight: сколько секунд игрок смотрит на героиню в меню перед «Играть» (по умолчанию 0)
+//   --nodraw    WebGL не рисует (вызовы draw* пустые): в облаке без видеокарты программный рендер забирает все ядра
+//               процессора, а на настоящей видеокарте — нет; так распознавание меряется без этой помехи [W5-КАМЕРА]
 // Сценарии (каждый — в новом профиле, без кэша):
 //   menu  — до меню на экране (заставка снята и показан первый кадр), до героя на витрине (hero.ready) и сколько
 //           докачивается в меню; вехи ao:* из main.js (performance.mark) — в отчёте отдельно;
 //   fight — меню → «Отладка с клавиатуры» → («--menu-wait» с) → «Играть» → «Продолжить без камеры» → «В бой»: от нажатия
 //           «Играть» до первого кадра боя на экране (play→fight; в нём и реакция меню на клик — click→play), длинные
 //           кадры (> 250 мс) за следующие 15 с боя;
-//   track — меню → «Начать» → «Разрешить камеру» (фейковая камера): байты до работающего трекинга.
+//   track — меню → «Играть» (сразу просит камеру; фейковая камера): байты до работающего трекинга и первого ответа
+//           распознавания, ступень лестницы отката и причина, если она понадобилась; trackSteady — распознаваний
+//           ≥ 3 в секунду (трекинг пригоден для боя). Адрес — как у игрока (?cursor=0: камера не включается
+//           в меню курсором-кистью; без ?uncapped=1 — с дешёвым кадром на время запуска камеры). [W5-КАМЕРА]
 // Байты — тела ответов (без сжатия на лету), включая CDN и модели MediaPipe.
 // Канал моделируется одной общей «трубой» FIFO: ответ занимает её на размер/ширину, плюс задержка.
 
@@ -48,6 +53,7 @@ const PROD = WARM || argv.includes('--prod');
 const RUNS = Math.max(1, +argOf('--runs', '1') || 1);
 const MENU_WAIT = Math.max(0, +argOf('--menu-wait', '0') || 0) * 1000;
 const HOST = 'ashen.test';
+const NODRAW = argv.includes('--nodraw');
 const TEXT = /javascript|css|html|json|text\//;
 mkdirSync(OUT, { recursive: true });
 
@@ -98,9 +104,17 @@ const MENU_PROBE = () => {
     if (!window.__aoMenuAt) requestAnimationFrame(() => setTimeout(() => { if (!window.__aoMenuAt) window.__aoMenuAt = performance.now(); }, 0));
   } });
 };
-async function runScenario(browser, base, name, steps) {
+async function runScenario(browser, base, name, steps, query = '?uncapped=1') {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, permissions: ['camera'] });
   await ctx.addInitScript(MENU_PROBE);
+  if (NODRAW) {
+    await ctx.addInitScript(() => {
+      for (const C of [window.WebGLRenderingContext, window.WebGL2RenderingContext]) {
+        if (!C) continue;
+        for (const k of ['drawElements', 'drawArrays', 'drawElementsInstanced', 'drawArraysInstanced', 'drawRangeElements']) if (typeof C.prototype[k] === 'function') C.prototype[k] = function () {};
+      }
+    });
+  }
   if (WARM) {
     // первый заход: service worker, код и ассеты в кэше, докачка offline.js — не в отчёт
     const p0 = await ctx.newPage();
@@ -151,7 +165,7 @@ async function runScenario(browser, base, name, steps) {
   const pageMark = async (k, fn) => { const pt = await page.evaluate(fn).catch(() => null); return Number.isFinite(pt) ? mark(k, Math.round(navT0 + pt)) : mark(k); };
   t0.v = Date.now();
   let navT0 = 0;
-  await page.goto(base + '?uncapped=1', { waitUntil: 'commit' });
+  await page.goto(base + query, { waitUntil: 'commit' });
   navT0 = (await page.evaluate(() => performance.timeOrigin).catch(() => t0.v)) - t0.v;   // часы страницы → часы сценария
   const shots = [];
   try { await steps({ page, mark, now, sleep, log, shots, marks, pageMark }); } catch (e) { errors.push('сценарий: ' + (e && e.message)); }
@@ -251,13 +265,18 @@ async function main() {
 
   }   // [W5-СТАРТ] конец цикла --runs (track — один прогон)
 
+  // [W5-КАМЕРА] «Играть» сразу просит камеру (быстрый вход): кнопок «Начать» и «Разрешить камеру» в меню больше нет
   if (ONLY.includes('track')) results.push(await runScenario(browser, base, 'track', async ({ page, mark }) => {
     await waitFor(page, () => !!window.__ASHEN__, TO); mark('menu');
-    await page.getByRole('button', { name: 'Начать' }).first().click();
-    await page.getByRole('button', { name: 'Разрешить камеру' }).click();
+    await waitFor(page, () => [...document.querySelectorAll('button')].some((b) => b.offsetParent && b.textContent.trim() === 'Играть'), TO);
+    await page.getByRole('button', { name: 'Играть', exact: true }).first().click();
     mark('cameraClick');
     await waitFor(page, () => { const s = window.__ASHEN__.tracking; return s && ['ready', 'lost', 'calibrating'].includes(s.status); }, TO * 2); mark('tracking');
-  }));
+    await waitFor(page, () => { const s = window.__ASHEN__.tracking; return s && s.debug && s.debug.results > 0; }, TO * 2).then(() => mark('firstResult')).catch(() => {});
+    await waitFor(page, () => { const s = window.__ASHEN__.tracking; return s && s.debug && s.debug.inferenceHz >= 3 && s.debug.results >= 10; }, 90000).then(() => mark('trackSteady')).catch(() => {});
+    const t = await page.evaluate(() => { const s = window.__ASHEN__.tracking || {}; const d = s.debug || {}; return { status: s.status, message: s.message, step: d.engineStep, ladder: d.ladderHistory, hz: d.inferenceHz, firstResultMs: d.firstResultMs, fps: window.__ASHEN__.fps }; }).catch(() => null);
+    if (t) mark('_track').info = t;
+  }, '?cursor=0'));
 
   srv.close();
   await browser.close();
@@ -272,6 +291,7 @@ async function main() {
     if (r.marks.click && r.marks.fightFrame) lines.push(`- клик «Играть» → первый кадр боя: ${s(r.marks.fightFrame.t - r.marks.click.t)} с (реакция на клик ${s(r.marks.play.t - r.marks.click.t)} с)`);   // [W5-СТАРТ]
     if (r.marks._frames) lines.push(`- кадры > 250 мс за первые 15 с боя: ${r.marks._frames.info.long} шт., ${s(r.marks._frames.info.sum)} с, худший ${s(r.marks._frames.info.max)} с`);
     if (r.ao && r.ao.length) lines.push(`- вехи main.js (ao:*, часы страницы): ${r.ao.map(([n, t]) => `${n} ${s(t)}`).join(' · ')}`);
+    if (r.marks._track && r.marks._track.info) lines.push(`- распознавание: ${JSON.stringify(r.marks._track.info)}`); // [W5-КАМЕРА]
     const top = Object.entries(r.files).sort((a, b) => b[1] - a[1]).slice(0, 25);
     lines.push('', '| файл | МБ |', '|---|---|', ...top.map(([f, b]) => `| ${f} | ${MB(b)} |`), '');
     if (r.errors.length) lines.push('ошибки:', ...r.errors.map((e) => '  ' + e), '');
