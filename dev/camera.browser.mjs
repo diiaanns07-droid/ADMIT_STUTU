@@ -231,9 +231,17 @@ async function flow(w, h) {
       // быстрый поток: «Пропустить обучение» → итог обучения с «В бой» (надпись — причина, пока трекинг не готов)
       const skipAll = page.getByRole('button', { name: 'Пропустить обучение' }).first();
       if (await skipAll.isVisible().catch(() => false)) await skipAll.click();
-      const go = page.getByRole('button', { name: 'В бой', exact: true }).first();
-      await go.waitFor({ state: 'visible', timeout: 60000 }).catch(() => {});
-      await go.click({ timeout: 60000 }).catch((e) => console.log('  «В бой» не нажалась:', String(e.message || e).split('\n')[0]));
+      await sleep(1500);
+      const btnInfo = await page.evaluate(() => [...document.querySelectorAll('button')].filter((b) => b.offsetParent).slice(0, 4).map((b) => ({ text: b.textContent.trim(), disabled: b.disabled || b.getAttribute('aria-disabled') === 'true', color: getComputedStyle(b).color })));
+      console.log(`  ${tag}: итог обучения, кнопки: ${JSON.stringify(btnInfo)}`);
+      await shot(page, `${tag}_5b_summary.png`);
+      // трекинг на стенде мигает (готов ↔ «не успевает»), и подпись «В бой» сменяется причиной — жмём, как только доступна
+      const pressed = await page.waitForFunction(() => {
+        const b = [...document.querySelectorAll('button')].find((x) => x.offsetParent && x.textContent.trim() === 'В бой' && !x.disabled && x.getAttribute('aria-disabled') !== 'true');
+        if (b) b.click();
+        return !!b;
+      }, null, { timeout: 90000, polling: 100 }).then(() => true, () => false);
+      if (!pressed) console.log(`  ${tag}: «В бой» так и не стала доступна`);
       await page.waitForFunction(() => ['intro', 'playing'].includes(window.__ASHEN__.screen), null, { timeout: 60000 }).catch(() => {});
     }
     await sleep(6000);
