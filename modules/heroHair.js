@@ -62,7 +62,7 @@ function atlasJob(N) {
   if (typeof document === 'undefined') return null;
   const cv = document.createElement('canvas');
   cv.width = cv.height = N;
-  const g = cv.getContext('2d');
+  const g = cv.getContext('2d', { willReadFrequently: true });   // [W5-СТАРТ] программный 2D-холст
   if (!g) return null;   // холст недоступен (лимит памяти) — запасная клетка в acquireAtlas
   const k = N / 1024, C = N / 4;
   let sd = 20240611;
@@ -172,8 +172,8 @@ function drawAtlas(N) {
   delete atlasJobs[N];
   return atlasCanvas[N] || null;
 }
-// Атлас 1024² — заранее, по шагу в простое главного потока (модуль грузится вместе с оболочкой героя, ещё
-// до одевания): первая героиня одевается без рисования холста. Без requestIdleCallback — ничего не делаем.
+// Атлас — заранее, по шагу в простое главного потока, пока модель героини качается и разбирается: она одевается
+// без рисования холста. Без requestIdleCallback — ничего не делаем. N — как у makeMats: 512 на low, иначе 1024.
 export function warmHairAtlas(N = 1024) {
   if (atlasCanvas[N] || typeof requestIdleCallback !== 'function') return;
   const job = atlasJob(N);
@@ -186,7 +186,8 @@ export function warmHairAtlas(N = 1024) {
   };
   requestIdleCallback(tick, { timeout: 3000 });
 }
-if (typeof window !== 'undefined' && typeof requestIdleCallback === 'function') requestIdleCallback(() => warmHairAtlas(1024), { timeout: 5000 });
+// [W5-СТАРТ] не при загрузке модуля (он грузится и для стража без волос): атлас нужного размера заранее рисует
+// modules/heroModel.js (warmHairFor) — для выбранной героини с волосами и героинь, которых витрина качает заранее.
 // QA: рисунок атласа (RGBA, N×N, предумноженный) — для стенда и снимков (читает пиксели — только для QA)
 export function hairAtlasData(N = 1024) { const cv = drawAtlas(N); return cv ? cv.getContext('2d').getImageData(0, 0, N, N).data : null; }
 function acquireAtlas(THREE, N) {
