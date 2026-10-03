@@ -1719,7 +1719,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     } else if (sg === 'cor') {
       P.regen = S.duration; P.regenRate = S.heal * dmod('heal') / Math.max(0.1, S.duration);   // [W5-СЛОЖНОСТЬ]
       P.ward = S.ward;
-      emit('sigil_cast', chest, { sigil: 'cor', heal: S.heal, duration: S.duration, ward: S.ward, from: vcopy(chest), to: vcopy(chest) });
+      emit('sigil_cast', chest, { sigil: 'cor', heal: Math.round(S.heal * dmod('heal')), duration: S.duration, ward: S.ward, from: vcopy(chest), to: vcopy(chest) });   // [W5-СЛОЖНОСТЬ] подпись «+N HP» — по уровню
       emit('ward_start', pp, { duration: S.ward });
     }
   }
@@ -1813,7 +1813,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       emit('rune_cast', chest, { rune, from: vcopy(chest), to: vcopy(chest), duration: R.duration, radius: R.radius });
     } else if (rune === 'lemnis') {
       P.regen = R.duration; P.regenRate = R.heal * dmod('heal') / Math.max(0.1, R.duration);   // [W5-СЛОЖНОСТЬ]
-      emit('rune_cast', chest, { rune, from: vcopy(chest), to: vcopy(chest), heal: R.heal, duration: R.duration });
+      emit('rune_cast', chest, { rune, from: vcopy(chest), to: vcopy(chest), heal: Math.round(R.heal * dmod('heal')), duration: R.duration });   // [W5-СЛОЖНОСТЬ] сколько вылечит на самом деле
     } else if (rune === 'caret') {
       const S = C.spark;
       emit('rune_cast', chest, { rune, from: vcopy(chest), to: vcopy(to), count: R.count });

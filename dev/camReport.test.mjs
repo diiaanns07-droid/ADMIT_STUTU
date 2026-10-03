@@ -104,6 +104,8 @@ test('R06 «Диагностика»: частота камеры, распоз�
   ok(/^58 к\/с/.test(rows['Игра']) && /дешёвый кадр/.test(rows['Игра']), rows['Игра']);
   ok(/UHD Graphics 620/.test(rows['Видеокарта']), rows['Видеокарта']);
   ok(/распознаются/.test(rows['Кисти']), rows['Кисти']);
+  const noCam = Object.fromEntries(diagRows({ ...TRACK, debug: { ...TRACK.debug, cameraFps: null, camera: { fps: null, videoFps: 19.9, fresh: true } } }, DIAG));
+  ok(/19,9 к\/с \(плеер\)/.test(noCam['Камера']), `основной поток не успевает — частота по плееру: ${noCam['Камера']}`);
   const empty = diagRows(null, null);
   ok(empty.length >= 5 && empty.every(([k, v]) => typeof k === 'string' && typeof v === 'string'), 'без данных — прочерки, не падает');
 });

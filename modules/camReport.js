@@ -107,7 +107,10 @@ export function diagRows(tracking, diag) {
   const p = g.perf && typeof g.perf === 'object' ? g.perf : {};
   const rows = [];
   const video = d.video && d.video.w ? `${d.video.w}×${d.video.h}` : '—';
-  rows.push(['Камера', `${num(d.cameraFps) ? `${r1(d.cameraFps)} к/с` : '— к/с'} · кадр ${video}${d.cameraFallback ? ` · ${d.cameraFallback}` : ''}`]);
+  // частота по кадрам, дошедшим до распознавания; нет её (основной поток не успевает) — по счётчику кадров плеера
+  const vf = d.camera && num(d.camera.videoFps) ? d.camera.videoFps : null;
+  const camFps = num(d.cameraFps) ? `${r1(d.cameraFps)} к/с` : vf !== null ? `${r1(vf)} к/с (плеер)` : '— к/с';
+  rows.push(['Камера', `${camFps} · кадр ${video}${d.cameraFallback ? ` · ${d.cameraFallback}` : ''}`]);
   rows.push(['Распознаваний', `${num(d.inferenceHz) ? r1(d.inferenceHz) : '—'} в секунду · поза ${num(d.inferMs) ? `${r1(d.inferMs)} мс` : '—'} · задержка ${num(d.latencyMs) ? `${r1(d.latencyMs)} мс` : '—'}`]);
   const where = t.mode === 'worker' ? 'воркер (фоновый поток)' : t.mode === 'main' ? 'основной поток' : '—';
   const dev = t.delegate === 'GPU' ? 'видеокарта (GPU)' : t.delegate === 'CPU' ? 'процессор (CPU)' : '—';
