@@ -211,7 +211,8 @@ function FRAME_STATS() {
 export const pageFns = { CLOCK, PROBE, FRAME_STATS };
 
 // Подмена ответа config.js: быстрые кадры до арены и управляемый Регент (HP, урон)
-export function configPatcher({ bossHp, bossDamage, normalHp, normalDamage } = {}) {
+// [W5-СЛОЖНОСТЬ] levels: { hard: { bossHp, bossDamage }, … } — то же для любого уровня (строка «уровень: { bossHp: N, bossDamage: N»)
+export function configPatcher({ bossHp, bossDamage, normalHp, normalDamage, levels } = {}) {
   return async (route) => {
     const r = await route.fetch();
     let body = (await r.text())
@@ -223,6 +224,10 @@ export function configPatcher({ bossHp, bossDamage, normalHp, normalDamage } = {
     if (normalHp != null || normalDamage != null) {
       body = body.replace(/normal:\s*\{\s*bossHp:\s*[\d.]+,\s*bossDamage:\s*[\d.]+\s*\}/,
         `normal: { bossHp: ${normalHp ?? 1}, bossDamage: ${normalDamage ?? 1} }`);
+    }
+    for (const [lv, o] of Object.entries(levels || {})) {
+      body = body.replace(new RegExp(`${lv}:\\s*\\{\\s*bossHp:\\s*[\\d.]+,\\s*bossDamage:\\s*[\\d.]+`),
+        `${lv}: { bossHp: ${o.bossHp ?? 1}, bossDamage: ${o.bossDamage ?? 1}`);
     }
     return route.fulfill({ response: r, body, headers: { ...r.headers(), 'content-type': 'text/javascript' } });
   };
