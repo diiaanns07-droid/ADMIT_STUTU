@@ -92,6 +92,7 @@ const clipsFor = (d) => (d.mode === 'walk' ? ['Walk', 'Idle'] : d.mode === 'sit'
 function canvas(w, h) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
+  c.getContext('2d', { willReadFrequently: true });   // [W5-СТАРТ] программный 2D-холст (willReadFrequently): рисуется на CPU страницы, не в очереди GPU-процесса — там его ждала сборка шейдеров
   return c;
 }
 function valueNoise(seed) {

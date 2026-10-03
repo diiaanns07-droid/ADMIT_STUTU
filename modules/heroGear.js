@@ -99,7 +99,7 @@ function canvasTex(THREE, key, N, draw, color = false) {
   if (typeof document === 'undefined') return null;
   const cv = document.createElement('canvas');
   cv.width = N; cv.height = N;
-  draw(cv.getContext('2d'), N);
+  draw(cv.getContext('2d', { willReadFrequently: true }), N);   // [W5-СТАРТ] программный 2D-холст (тысячи дуг и штрихов — на CPU, не в очереди GPU)
   const t = new THREE.CanvasTexture(cv);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace;

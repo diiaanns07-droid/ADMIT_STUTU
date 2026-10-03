@@ -62,7 +62,7 @@ function atlasJob(N) {
   if (typeof document === 'undefined') return null;
   const cv = document.createElement('canvas');
   cv.width = cv.height = N;
-  const g = cv.getContext('2d');
+  const g = cv.getContext('2d', { willReadFrequently: true });   // [W5-СТАРТ] программный 2D-холст
   if (!g) return null;   // холст недоступен (лимит памяти) — запасная клетка в acquireAtlas
   const k = N / 1024, C = N / 4;
   let sd = 20240611;
