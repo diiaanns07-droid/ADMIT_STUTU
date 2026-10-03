@@ -9,15 +9,9 @@
 .p3-slide ul, .p3-slide ol { list-style: none; margin: 0; padding: 0; }
 .p3-slide figure { margin: 0; }
 .p3-slide b { font-weight: 500; color: var(--parch); }
-/* запасной вид общей стрелки .arr: золотой наконечник маской, цвет — текущий цвет текста */
-.p3-slide .arr {
-  display: inline-block; width: .82em; height: .42em; margin: 0 .2em; vertical-align: .14em; font-style: normal;
-  background: currentColor;
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 12'%3E%3Cpath d='M1 6h21M17 1.5 22.5 6 17 10.5' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 12'%3E%3Cpath d='M1 6h21M17 1.5 22.5 6 17 10.5' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
-}
-/* у цифр текст прозрачный (градиент по тексту) — стрелке нужен свой цвет */
+/* общая стрелка .arr (deck.css) красится currentColor, а у цифр текст прозрачный (градиент по тексту) — даём свой цвет и размер */
 .p3-slide .num .arr { background: var(--gold); width: .5em; height: .3em; margin: 0 .16em; vertical-align: .3em; }
+.p3-slide .arr { margin: 0 .2em; }
 /* вход назад, прыжок, reduced motion: движок держит .is-instant — состояния без анимации */
 .p3-slide.is-instant [class*="p3-"], .p3-slide.is-instant [class*="p3-"]::before, .p3-slide.is-instant [class*="p3-"]::after { transition: none !important; animation: none !important; }
 
