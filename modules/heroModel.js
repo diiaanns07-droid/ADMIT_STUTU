@@ -23,7 +23,7 @@
 //   → { root, update(dt, snapLike, events), setHero(id), setPose(p), setMirror(m), getAnchors(),
 //       setShading(mode), setQuality(q), setLod(level), get ready, get hero, state(), dispose(),
 //       signaturePose(id), setSignature(id | null | undefined),   // [W4-ПОЗЫ] визитки витрины меню
-//       setFloorLift(h), feet({ legs }), feetCost(n, now) }        // [W5-ПОЛ] пол сцены; QA: стопы, подошва, колено; цена
+//       setFloorLift(h), setGround(fn), feet({ legs }), feetCost(n, now) }   // [W5-ПОЛ] пол сцены, земля мира; QA
 // heroRoot не задан — экземпляр создаёт свой root (для удалённого игрока) и сам ставит его по snapLike.player.
 // snapLike: нужен только { player: { position, yaw, velocity, action, hp, … как в snapshot } }.
 
@@ -1749,6 +1749,22 @@ export function createHeroModel({
     const settle = !S.inMenu && (S.standK || 0) >= 0.5 && !(act && !actUpper);
     S.lift = pen > 1e-4 || (settle && pen < -1e-4) ? pen : 0;
     if (S.lift) cur.model.position.y = fl + S.lift;
+    // ступень под одной стопой (край ступеней арены, бордюр): земля под пяткой или носком выше пола героя — эта стопа
+    // поднимается на неё IK ноги (heroPoses.raiseFoot), вторая остаётся внизу; вся модель не прыгает
+    const gf = S.groundFn;
+    if (!gf || S.inMenu || !m.fast || !poses.raiseFoot) return;
+    const F = pen + lo + 0.01;   // пол героя (корень или земля под ним) + 1 см
+    const res = m.fast.res;
+    for (let i = 0; i < 2; i++) {
+      const toes = cur.toesN || (cur.toesN = [cur.vrm.humanoid.getNormalizedBoneNode('leftToes'), cur.vrm.humanoid.getNormalizedBoneNode('rightToes')]);
+      const a = cur.bones[i ? 'rightFoot' : 'leftFoot'], b = toes[i];
+      if (!a) continue;
+      const ea = a.matrixWorld.elements, eb = b ? b.matrixWorld.elements : ea;
+      const g1 = gf(ea[12], ea[14]), g2 = gf(eb[12], eb[14]), g = (g1 > g2 ? g1 : g2) + fl;
+      if (!(g > F)) continue;
+      const d = g - (res[i] + S.lift);   // подошва этой стопы — с подъёмом модели
+      if (d > 0.005) poses.raiseFoot(i, d < 0.45 ? d : 0.45);
+    }
   }
 
   // VRM: моргание раз в 2–5 с, обновление (нормализованный скелет → меш, пружины волос и одежды), ткань
@@ -1885,13 +1901,19 @@ export function createHeroModel({
     };
   }
 
-  // [W5-ПОЛ] QA: цена подошвы за кадр, мкс — как groundFeet сейчас (fast: soleHeightFast) и прежним точным скиннингом
+  // [W5-ПОЛ] QA: цена подошвы за кадр, мкс — как groundFeet сейчас (fast: soleLowFast и земля под стопами) и прежним точным скиннингом
   // (exact: humanoid.update + soleHeightSkinned); n повторов, часы now (при виртуальном времени замера — настоящие)
   function feetCost(n = 2000, now = () => performance.now()) {
     if (!cur || !S.ready || !cur.soles) return null;
     const m = cur.soles, H = cur.vrm.humanoid;
     const time = (fn) => { for (let i = 0; i < 50; i++) fn(); const t0 = now(); for (let i = 0; i < n; i++) fn(); return +(((now() - t0) / n) * 1000).toFixed(2); };
-    const fastUs = time(() => { root.getWorldPosition(_gf); if (m.fast) soleLowFast(m, m.fast.res); else soleHeightFast(m); });
+    // сейчас: подошва и земля под пяткой и носком обеих стоп (на ровном — без IK ступени)
+    const gf = S.groundFn, fe = cur.bones.leftFoot && cur.bones.leftFoot.matrixWorld.elements;
+    const fastUs = time(() => {
+      root.getWorldPosition(_gf);
+      if (m.fast) soleLowFast(m, m.fast.res); else soleHeightFast(m);
+      if (gf && fe) { gf(fe[12], fe[14]); gf(fe[12], fe[14] + 0.1); gf(fe[12] + 0.2, fe[14]); gf(fe[12] + 0.2, fe[14] + 0.1); }
+    });
     const exactUs = time(() => { H.update(); root.getWorldPosition(_gf); soleHeightSkinned(m); });
     return { hero: S.hero, quality: opts.quality, points: m.L.length + m.R.length, nodes: m.fast ? m.fast.nodes.length : 0, fastUs, exactUs };
   }
@@ -1944,6 +1966,8 @@ export function createHeroModel({
     setGaze(k) { const g = k > 0.5 ? 1 : 0; if (g !== (S.gaze || 0)) { S.gaze = g; if (g) S.lookT = 0; } },
     // [W5-ПОЛ] видимый пол сцены выше корня героя на h м (витрина меню: пол над плитами арены) — модель стоит на нём
     setFloorLift(h) { S.floorLift = clamp(num(h), 0, 0.1); },
+    // [W5-ПОЛ] земля мира (x, z) → y: стопа на ступени — IK ноги (groundFeet); без неё — пол по корню героя
+    setGround(fn) { S.groundFn = typeof fn === 'function' ? fn : null; },
     flourish(name = 'CastRaise') {
       // [W4-ПОЗЫ] жест визитки (у лучницы — новый выстрел-натяг), клип поверх визитки не играем
       if (cur && S.inMenu && posesOn() && poses.signature) { if (!poses.flourish()) S.sigDrawT = 0; S.sigIdle = 0; return; }

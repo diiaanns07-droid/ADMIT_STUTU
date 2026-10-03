@@ -3053,7 +3053,7 @@ float ashPuddle( vec2 xz ) {
   /* ======================= РАСКЛАДКА КАРТЫ (ASHEN_V2) ======================= */
   // Земля: ступени арены (как в buildFloor) и плато за ней (groundY); проходимо до края обрыва.
   function layoutGroundY(x, z) {
-    const r = Math.hypot(x, z) / K;
+    const r = Math.sqrt(x * x + z * z) / K;   // [W5-ПОЛ] не Math.hypot: он аллоцирует, а землю спрашивают много раз за кадр
     if (r < 3.26) return 0.02;
     if (r < 9.65) return 0;
     if (r < 10.9) return 0.03;

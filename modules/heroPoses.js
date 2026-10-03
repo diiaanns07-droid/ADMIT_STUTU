@@ -875,6 +875,24 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
       rigLegs = [[B.leftUpperLeg, B.leftLowerLeg, B.leftFoot], [B.rightUpperLeg, B.rightLowerLeg, B.rightFoot]];
     },
     unbind() { rig = null; st.a = null; },
+    // [W5-ПОЛ] стопа i (0 — левая, 1 — правая) выше на dy м в мире — IK ноги (колено гнётся, поворот стопы в мире тот
+    // же): стопа на ступени, когда земля под ней выше пола героя (heroModel.groundFeet). Вызывать после позы кадра.
+    raiseFoot(i, dy) {
+      const L = rigLegs && rigLegs[i];
+      if (!rig || !L || !L[0] || !L[1] || !L[2] || !(dy > 0)) return false;
+      const u = L[0], l = L[1], f = L[2];
+      u.updateWorldMatrix(true, false); l.updateWorldMatrix(false, false); f.updateWorldMatrix(false, false);
+      f.matrixWorld.decompose(_p, _qF, _s);
+      getPos(f, _t); _t.y += dy;
+      // колено — туда же, куда смотрело: 2·колено − бедро − стопа
+      getPos(l, _m); getPos(u, _w); getPos(f, _o);
+      _u.copy(_m).multiplyScalar(2).sub(_w).sub(_o);
+      ik2(u, l, f, _t, _u, 1, 0.9995);
+      l.matrixWorld.decompose(_p, _pq, _s);
+      f.quaternion.copy(_pq.invert().multiply(_qF));
+      f.updateWorldMatrix(false, false);
+      return true;
+    },
     setHero(id, opts = {}) { st.hero = id; st.female = !!opts.female; st.stance = opts.stance || 'staff'; st.victory = null; if (st.sig) setSignature(id); },
     setQuality(q) { st.q = q === 'low' || q === 'high' ? q : 'medium'; },
     events, claims, claimsHold, body, arms, fingers, expression,

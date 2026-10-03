@@ -245,6 +245,7 @@ try {
   // [HERO] C5: общие настройки (атмосфера, шейдинг) — и для удалённого героя NET
   configureHeroes({ atmosphere: world && world.atmosphere, shading: settings.heroShading, quality: settings.quality, camera, renderer }); // [LOAD] renderer — шейдеры героя собираются до показа
   if (world && world.hero) heroModel = createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, markers: world.hero.markers, atmosphere: world.atmosphere, shading: settings.heroShading, quality: settings.quality, hero: settings.hero, baseUrl: new URL('./assets/quaternius/', import.meta.url).href }); // [HERO] markers/atmosphere/shading
+  if (heroModel && heroModel.setGround && worldLayout && typeof worldLayout.groundY === 'function') heroModel.setGround(worldLayout.groundY);   // [W5-ПОЛ] стопа на ступени
 } catch (e) { console.warn('[ASHEN] heroModel', e); }
 if (settings.reducedMotion) import('./modules/heroGear.js').then((m) => m.configureGear({ reducedMotion: true })).catch(() => {}); // [W4-НАРЯДЫ] ткань нарядов спокойнее
 // [HERO] витрина героя в меню: кинематографичный свет и облёт (modules/heroShowcase.js); ошибка — прежняя камера меню

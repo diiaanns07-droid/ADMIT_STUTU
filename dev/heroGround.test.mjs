@@ -157,6 +157,7 @@ const log = (m) => out.push(m);
 // ---------------------------------------------------------------- 2. пять героев по кругу (medium)
 HM.configureHeroes({ quality: 'medium', shading: 'realistic' });
 const model = HM.createHeroModel({ THREE, hero: HM.HERO_ORDER[0], quality: 'medium', heroesUrl: HEROES_URL, baseUrl: pathToFileURL(join(HERE, '../assets/quaternius/')).href });
+model.setGround(() => 0);   // земля мира ровная — путь «стопа на ступени» проходит в каждом кадре и ничего не меняет
 async function ready(id) {
   for (let i = 0; i < 4000 && !(model.ready && model.hero === id); i++) await new Promise((r) => setTimeout(r, 5));
   assert.ok(model.ready && model.hero === id, `герой ${id} загрузился (${noise.slice(-3).join(' | ')})`);
@@ -300,8 +301,24 @@ P.yaw = 0;
     lo = Math.min(lo, g); hi = Math.max(hi, g);
   }
   assert.ok(lo >= -TOL && hi <= TOL, `ступень 0,33 м: подошва ${cm(lo)}…${cm(hi)} от её верха`);
-  m2.dispose();
   log(`ступень арены (корень догоняет 0,2 с): подошва ${cm(lo)}…${cm(hi)} от верха ступени`);
+  // ступень под одной стопой: земля 0,3 м слева от героя (+x), корень и центр — внизу. Левая стопа — на ступени
+  // (IK ноги), правая — на полу, модель не поднимается целиком
+  hr.position.y = 0;
+  m2.setGround((x) => (x > 0.03 ? 0.3 : 0));
+  let wl = { lo: Infinity, hi: -Infinity }, wr = { lo: Infinity, hi: -Infinity };
+  for (let i = 0; i < 45; i++) {
+    m2.update(DT, at(0), []);
+    if (i < 10) continue;
+    const f = m2.feet();
+    wl.lo = Math.min(wl.lo, f.soleL - 0.3); wl.hi = Math.max(wl.hi, f.soleL - 0.3);
+    wr.lo = Math.min(wr.lo, f.soleR); wr.hi = Math.max(wr.hi, f.soleR);
+  }
+  assert.ok(wl.lo >= -TOL && wl.hi <= TOL, `стопа на ступени: левая подошва ${cm(wl.lo)}…${cm(wl.hi)} от верха ступени`);
+  assert.ok(wr.lo >= -TOL && wr.hi <= TOL, `стопа на ступени: правая подошва ${cm(wr.lo)}…${cm(wr.hi)} от пола`);
+  m2.setGround(null);
+  m2.dispose();
+  log(`ступень под одной стопой: левая ${cm(wl.lo)}…${cm(wl.hi)} от ступени, правая ${cm(wr.lo)}…${cm(wr.hi)} от пола`);
 }
 
 // ---------------------------------------------------------------- долгий покой: таз не уплывает за 2 минуты

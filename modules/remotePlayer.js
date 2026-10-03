@@ -247,6 +247,8 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, h
       if (hm && typeof hm.setHero === 'function') { hm.setHero(id); return; }
       // без heroBody: страж у удалённого игрока — на запасной VRM (№4), своё процедурное тело — пока грузится
       hm = heroFactory({ heroRoot: root, heroBody: null, extras: [], hero: id, remote: true });
+      // [W5-ПОЛ] земля мира — стопа соперника на ступени (IK ноги), как у своего героя
+      if (hm && hm.setGround && world && world.layout && typeof world.layout.groundY === 'function') hm.setGround(world.layout.groundY);
     } catch (e) { console.warn('[NET] модель соперника — процедурное тело:', e && e.message); hm = null; }
   }
 
