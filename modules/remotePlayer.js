@@ -12,6 +12,7 @@
 // с багровой руной. При обрыве связи — призрачный силуэт и надпись «Связь потеряна».
 
 import { createInterpBuffer } from '../net/interp.js';
+import { followRootY } from './rootFollow.js';   // [W5-ПОЛ] корень по земле — как у своего героя
 
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -226,7 +227,7 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, h
   const buf = createInterpBuffer({ delayMs });
   const S = {
     name: 'Соперник', hero: 'ashen', connected: true, visible: true, got: false,
-    yaw: 0, rootY: null, walk: 0, t: 0, st: null, lastRecv: 0,
+    yaw: 0, rootY: null, groundY: null, px: null, pz: 0, walk: 0, t: 0, st: null, lastRecv: 0,
     slashT: 9, castT: 9, burstT: 9, dashT: 9, parryT: 9,
   };
   let events = [];
@@ -246,6 +247,8 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, h
       if (hm && typeof hm.setHero === 'function') { hm.setHero(id); return; }
       // без heroBody: страж у удалённого игрока — на запасной VRM (№4), своё процедурное тело — пока грузится
       hm = heroFactory({ heroRoot: root, heroBody: null, extras: [], hero: id, remote: true });
+      // [W5-ПОЛ] земля мира — стопа соперника на ступени (IK ноги), как у своего героя
+      if (hm && hm.setGround && world && world.layout && typeof world.layout.groundY === 'function') hm.setGround(world.layout.groundY);
     } catch (e) { console.warn('[NET] модель соперника — процедурное тело:', e && e.message); hm = null; }
   }
 
@@ -326,8 +329,10 @@ export function createRemotePlayer({ THREE, scene, world, heroFactory, camera, h
     // позиция и высота по земле мира
     const gy = groundAt(s.x, s.z);
     const y = gy !== null ? gy : s.y;
-    if (S.rootY === null || Math.abs(y - S.rootY) > 1.2 || dt <= 0) S.rootY = y;
-    else S.rootY += (y - S.rootY) * damp(y > S.rootY ? 16 : 11, dt);
+    // [W5-ПОЛ] склон без отставания корня (у модели соперника нет IK стоп по земле — иначе стопы в склоне)
+    const ddx = S.px === null ? 0 : s.x - S.px, ddz = S.px === null ? 0 : s.z - S.pz;
+    followRootY(S, y, dt, Math.sqrt(ddx * ddx + ddz * ddz));
+    S.px = s.x; S.pz = s.z;
     root.position.set(s.x, S.rootY, s.z);
     if (world && typeof world.setForestHero2 === 'function') { try { world.setForestHero2(root.position); } catch (e) { /* ignore */ } } // трава Сияющего леса мнётся и под соперником
     // поворот: интерполированный yaw + сглаживание

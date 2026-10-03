@@ -17,20 +17,10 @@ import { createAtmosphere, ECLIPSE } from './atmosphere.js';
 import { createArenaFx } from './arenaFx.js';   // [W4-ARENA] огни, воздух и отражения арены
 import { createElfVillage, ELF_VILLAGE } from './elfVillage.js';
 import { createBrightForest, BRIGHT_FOREST, brightForestHeight, brightForestTint } from './brightForest.js'; // [FOREST] Сияющий лес
+import { followRootY } from './rootFollow.js';   // [W5-ПОЛ]
 
-// [W5-ПОЛ] Высота корня героя по земле: сглаживается только скачок (ступень арены — быстрее 2,5 м/с по вертикали),
-// плавный склон корень повторяет сразу — иначе на подъёме он отставал на v·уклон/16 (до 10 см на бегу), а у
-// героя-модели нет IK стоп по земле, и стопы уходили в склон. st: { rootY, groundY } (меняется), y — земля сейчас.
-export function followRootY(st, y, dt) {
-  if (!Number.isFinite(st.rootY) || Math.abs(y - st.rootY) > 1.2 || dt <= 0) st.rootY = y;
-  else {
-    const dg = Number.isFinite(st.groundY) ? y - st.groundY : 0;
-    if (Math.abs(dg) <= Math.max(0.02, 2.5 * dt)) st.rootY += dg;
-    st.rootY += (y - st.rootY) * dampK(y > st.rootY ? 16 : 11, dt);
-  }
-  st.groundY = y;
-  return st.rootY;
-}
+// [W5-ПОЛ] Высота корня героя по земле — modules/rootFollow.js (общая с соперником в дуэли)
+export { followRootY };
 
 export const API_VERSION = 'ASHEN_V1';
 
@@ -3063,7 +3053,7 @@ float ashPuddle( vec2 xz ) {
   /* ======================= РАСКЛАДКА КАРТЫ (ASHEN_V2) ======================= */
   // Земля: ступени арены (как в buildFloor) и плато за ней (groundY); проходимо до края обрыва.
   function layoutGroundY(x, z) {
-    const r = Math.hypot(x, z) / K;
+    const r = Math.sqrt(x * x + z * z) / K;   // [W5-ПОЛ] не Math.hypot: он аллоцирует, а землю спрашивают много раз за кадр
     if (r < 3.26) return 0.02;
     if (r < 9.65) return 0;
     if (r < 10.9) return 0.03;
@@ -4527,7 +4517,9 @@ float ashPuddle( vec2 xz ) {
     const pos = vec3(p && p.position, DEF_HERO.x, DEF_HERO.y, DEF_HERO.z);
     const bpos = vec3(b && b.position, 0, 0, 0);
     // [V4] корпус по высоте сглажен (ступени, кочки не дёргают героя); стопы IK встают на настоящую землю
-    followRootY(hs, pos.y, dt);   // [W5-ПОЛ] склон — без отставания
+    // [W5-ПОЛ] склон — без отставания, и в рывке (порог перепада — от пройденного за кадр)
+    const ddx = hs.hasPrev ? pos.x - hs.prev.x : 0, ddz = hs.hasPrev ? pos.z - hs.prev.z : 0;
+    followRootY(hs, pos.y, dt, Math.sqrt(ddx * ddx + ddz * ddz));
     heroRoot.position.set(pos.x, hs.rootY, pos.z);
     const faceYaw = Math.atan2(bpos.x - pos.x, bpos.z - pos.z);
     const tYaw = num(p && p.yaw, faceYaw) + num(wc.yawOffset, 0);

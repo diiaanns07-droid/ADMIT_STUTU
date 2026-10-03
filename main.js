@@ -245,6 +245,7 @@ try {
   // [HERO] C5: общие настройки (атмосфера, шейдинг) — и для удалённого героя NET
   configureHeroes({ atmosphere: world && world.atmosphere, shading: settings.heroShading, quality: settings.quality, camera, renderer }); // [LOAD] renderer — шейдеры героя собираются до показа
   if (world && world.hero) heroModel = createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, markers: world.hero.markers, atmosphere: world.atmosphere, shading: settings.heroShading, quality: settings.quality, hero: settings.hero, baseUrl: new URL('./assets/quaternius/', import.meta.url).href }); // [HERO] markers/atmosphere/shading
+  if (heroModel && heroModel.setGround && worldLayout && typeof worldLayout.groundY === 'function') heroModel.setGround(worldLayout.groundY);   // [W5-ПОЛ] стопа на ступени
 } catch (e) { console.warn('[ASHEN] heroModel', e); }
 if (settings.reducedMotion) import('./modules/heroGear.js').then((m) => m.configureGear({ reducedMotion: true })).catch(() => {}); // [W4-НАРЯДЫ] ткань нарядов спокойнее
 // [HERO] витрина героя в меню: кинематографичный свет и облёт (modules/heroShowcase.js); ошибка — прежняя камера меню
@@ -2297,7 +2298,7 @@ function frame(now) {
   }
 
   if (spirit) spirit.frame(dtReal, now, { screen: app.screen, debug: app.debug, vision, status: vision ? visionStatus() : null, input, events, snapshot: lastSnapshot, hero: heroModel ? heroModel.hero : settings.hero }); // [W3-SPIRIT]
-  if (heroShowcase) { try { heroShowcase.update(dtReal, app.screen === 'menu', camera); } catch (e) { console.warn('[HERO] витрина', e); heroShowcase = null; } } // [HERO] свет и облёт витрины
+  if (heroShowcase) { try { heroShowcase.update(dtReal, app.screen === 'menu', camera); } catch (e) { console.warn('[HERO] витрина', e); heroShowcase = null; if (heroModel && heroModel.setFloorLift) heroModel.setFloorLift(0); } } // [HERO] свет и облёт витрины; [W5-ПОЛ] без витрины — пол героя снова корень
   if (app.camWarm) camWarmStage(true);   // [W5-КАМЕРА] без частиц и портала витрины, пока камера запускается
   if (pvpCtl) { try { pvpCtl.frame(lastSnapshot, app.screen); } catch (e) { console.error('[PVP] frame', e); } } // [PVP] фазы хоста, готовность, панель
   if (postfx && typeof postfx.setMode === 'function') { try { postfx.setMode(app.screen, settings); } catch (e) { /* ignore */ } } // [BDO] DOF меню и грейд по экрану

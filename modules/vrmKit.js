@@ -12,7 +12,8 @@
 // (со скруткой предплечья и кисти), покой VRM сначала совмещается с покоем источника по направлению.
 //
 // export: loadVRM(THREE, url) → Promise<vrm>,
-//         retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo' | 'kaykit') → AnimationClip,
+//         retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo' | 'kaykit', { ground = true }) → AnimationClip
+//           (ground: таз по опоре подошвы — groundHips; clip.userData.contact — кадры касания),
 //         createGltfLoader() → Promise<GLTFLoader> (с распаковщиком meshopt — для всех моделей assets/)
 
 const MIXAMO_TO_VRM = {
@@ -172,6 +173,7 @@ export const RIGS = Object.freeze({ mixamo: RIG, kaykit: RIG_KAYKIT });
 //   soleMarkers(THREE, vrm) → { L: [{ node, p, mesh, i }], R: [...], restY, bones, fast, knee } | null (нет костей стоп
 //                             или сетки); fast, knee — наборы pointTerms для termsLow
 //   termsLow(f, res) → нижняя точка набора в мире ([L, R, min] в res); termsLowSide(f, s, res) — одна нога в res[s]
+//   kneeMayTouch(m.knee, floorY) → false: колени заведомо выше пола (точки колена не считать)
 //   soleLowFast(m, res) → нижняя точка подошвы в мире ([L, R, min] в res): те же вершины сетки, но по нормализованным
 //                         костям (точно, без humanoid.update и перемножения матриц, без аллокаций) — для кадра игры
 //   soleHeightFast(m, out?) → то же числом (перенос клипов, проверки)
@@ -215,10 +217,11 @@ export function soleMarkers(THREE, vrm) {
   const toScene = new THREE.Matrix4().copy(vrm.scene.matrixWorld).invert();
   const v = new THREE.Vector3(), loc = new THREE.Vector3();
   const side = (s) => {
-    const foot = raw(s + 'Foot'), toes = raw(s + 'Toes'), all = boneSubtree(foot);
-    // нога выше стопы: бедро и голень (их дочерние кости, кроме стопы) — для точек колена (kp)
-    const leg = new Set([...boneSubtree(raw(s + 'UpperLeg'))].filter((b) => !all.has(b)));
-    return { all, toes: boneSubtree(toes), leg, nf: H.getNormalizedBoneNode(s + 'Foot'), nt: H.getNormalizedBoneNode(s + 'Toes'), pts: [], kp: [] };
+    const foot = raw(s + 'Foot'), toes = raw(s + 'Toes'), all = boneSubtree(foot), knee = raw(s + 'LowerLeg');
+    // нога выше стопы — для точек колена (kp): голень (её дочерние кости, кроме стопы) и бедро (кроме голени)
+    const shin = new Set([...boneSubtree(knee)].filter((b) => !all.has(b)));
+    const thigh = new Set([...boneSubtree(raw(s + 'UpperLeg'))].filter((b) => !all.has(b) && !shin.has(b)));
+    return { all, toes: boneSubtree(toes), shin, thigh, knee, foot, nk: H.getNormalizedBoneNode(s + 'LowerLeg'), nf: H.getNormalizedBoneNode(s + 'Foot'), nt: H.getNormalizedBoneNode(s + 'Toes'), pts: [], kp: [] };
   };
   const sides = { L: side('left'), R: side('right') };
   // один проход по сырым массивам весов, матрицы костей — один раз на сетку (без getComponent и множеств на вершину)
@@ -226,46 +229,54 @@ export function soleMarkers(THREE, vrm) {
   vrm.scene.traverse((o) => {
     if (!o.isSkinnedMesh || !o.skeleton || !o.visible || !o.geometry || !o.geometry.attributes.skinIndex) return;
     const bones = o.skeleton.bones, SI = o.geometry.attributes.skinIndex, SW = o.geometry.attributes.skinWeight, n = o.geometry.attributes.position.count;
-    // кость → 1/2 (стопа левой/правой), +2 — носок; 5/6 — бедро и голень левой/правой
+    // кость → 1/2 (стопа левой/правой), +2 — носок; 5/6 — бедро, 7/8 — голень левой/правой
     const tag = new Uint8Array(bones.length);
     let any = false;
     bones.forEach((b, i) => {
       for (let s2 = 0; s2 < 2; s2++) {
         const S = SIDE[s2];
-        if (S.nf && S.all.has(b)) { tag[i] = 1 + s2 + (S.toes.has(b) ? 2 : 0); any = true; } else if (S.nf && S.leg.has(b)) { tag[i] = 5 + s2; any = true; }
+        if (!S.nf) continue;
+        if (S.all.has(b)) { tag[i] = 1 + s2 + (S.toes.has(b) ? 2 : 0); any = true; } else if (S.thigh.has(b)) { tag[i] = 5 + s2; any = true; } else if (S.shin.has(b)) { tag[i] = 7 + s2; any = true; }
       }
     });
     if (!any) return;
-    const si = SI.array, sw = SW.array, ws = SI.itemSize, ww = SW.itemSize;
+    // сырые массивы весов; перемежённый буфер (byteStride) — шаг и смещение его данных
+    const si = SI.isInterleavedBufferAttribute ? SI.data.array : SI.array, sw = SW.isInterleavedBufferAttribute ? SW.data.array : SW.array;
+    const ws = SI.isInterleavedBufferAttribute ? SI.data.stride : SI.itemSize, ww = SW.isInterleavedBufferAttribute ? SW.data.stride : SW.itemSize;
+    const so = SI.isInterleavedBufferAttribute ? SI.offset : 0, wo = SW.isInterleavedBufferAttribute ? SW.offset : 0;
     const wk = SW.normalized ? 1 / (sw instanceof Uint8Array ? 255 : sw instanceof Uint16Array ? 65535 : 1) : 1;
     // кость · обратная привязки → в осях vrm.scene: один раз на кость (по требованию)
     const BM = new Array(bones.length).fill(null), bind = o.bindMatrix, pos = o.geometry.attributes.position;
     const bm = (k) => BM[k] || (BM[k] = new THREE.Matrix4().multiplyMatrices(toScene, new THREE.Matrix4().multiplyMatrices(bones[k].matrixWorld, o.skeleton.boneInverses[k])));
     for (let i = 0; i < n; i++) {
-      let fL = 0, tL = 0, fR = 0, tR = 0, gL = 0, gR = 0;
+      let fL = 0, tL = 0, fR = 0, tR = 0, hL = 0, hR = 0, kL = 0, kR = 0;
       for (let j = 0; j < 4; j++) {
-        const t = tag[si[i * ws + j]];
+        const t = tag[si[i * ws + so + j]];
         if (!t) continue;
-        const w = sw[i * ww + j] * wk;
-        if (t === 5) gL += w; else if (t === 6) gR += w;
+        const w = sw[i * ww + wo + j] * wk;
+        if (t === 5) hL += w; else if (t === 6) hR += w; else if (t === 7) kL += w; else if (t === 8) kR += w;
         else if (t === 1 || t === 3) fL += w; else fR += w;
         if (t === 3) tL += w; else if (t === 4) tR += w;
       }
       const s2 = fL >= 0.5 ? 0 : fR >= 0.5 ? 1 : -1;
-      const g2 = s2 >= 0 ? -1 : gL >= 0.5 ? 0 : gR >= 0.5 ? 1 : -1;   // вершина ноги выше стопы
+      const g2 = s2 >= 0 ? -1 : hL + kL >= 0.5 ? 0 : hR + kR >= 0.5 ? 1 : -1;   // вершина ноги выше стопы
       if (s2 < 0 && g2 < 0) continue;
       const wf = s2 ? fR : fL, wt = s2 ? tR : tL;
       // вершина в осях vrm.scene: Σ w · (кость · обратная привязки) · bindMatrix · v
       v.fromBufferAttribute(pos, i).applyMatrix4(bind);
       let x = 0, y = 0, z = 0;
       for (let j = 0; j < 4; j++) {
-        const w = sw[i * ww + j] * wk;
+        const w = sw[i * ww + wo + j] * wk;
         if (!w) continue;
-        loc.copy(v).applyMatrix4(bm(si[i * ws + j]));
+        loc.copy(v).applyMatrix4(bm(si[i * ws + so + j]));
         x += loc.x * w; y += loc.y * w; z += loc.z * w;
       }
       if (s2 >= 0) SIDE[s2].pts.push({ x, y, z, toe: wt > wf - wt, mesh: o, i });
-      else SIDE[g2].kp.push({ x, y, z, mesh: o, i });
+      else {
+        // w — доля голени в весах ноги (0 — бедро, 1 — голень)
+        const wk2 = g2 ? kR : kL, wh2 = g2 ? hR : hL;
+        SIDE[g2].kp.push({ x, y, z, mesh: o, i, w: wk2 / (wk2 + wh2) });
+      }
     }
   });
   let restY = Infinity;
@@ -298,22 +309,60 @@ export function soleMarkers(THREE, vrm) {
   }
   out.bones = [...bs].filter(Boolean);
   out.fast = pointTerms(THREE, H, out);
-  // [W5-ПОЛ] колено и голень (бедро и голень выше стопы): опорные точки по 64 направлениям сферы — выпуклая оболочка
-  // сетки ноги, любая её точка может лечь на пол (колено поражения). Для слоя поз: таз выше, если голень ушла в пол.
-  const knee = { L: [], R: [] };
+  // [W5-ПОЛ] Колено и голень (поза на колене — поражение): вершины ноги выше стопы в шаре вокруг сустава колена радиусом
+  // 0,6 длины голени (низ голени у стопы не ложится на пол раньше подошвы). Вершина при скиннинге — смесь положений с
+  // бедром и с голенью (w — доля голени, p′ — от сустава): y − y_сустава = d_бедра·(1 − w)p′ + d_голени·w·p′, то есть
+  // линейна по (wp′, (1 − w)p′) ∈ R⁶ для любой позы ноги. Нижняя вершина в любой позе — опорная точка этого облака в 6D:
+  // берём опорные точки по парам направлений (бедро, голень) — 32 × 32 точки сферы (жёсткие — частный случай w = 0 и 1;
+  // на 600 случайных позах ноги промах — до 9 мм).
+  // Для слоя поз: таз выше, если колено ушло в пол. Расстояние вершины до сустава колена при поворотах бедра и голени
+  // не растёт — reach: колено выше пола на столько — точки не считаем.
+  const knee = { L: [], R: [] }, joint = [null, null], reach = [0, 0];
+  const kj = new THREE.Vector3(), ka = new THREE.Vector3();
+  const SD = [];
+  for (let j = 0, N = 32; j < N; j++) {
+    const yy = 1 - (2 * (j + 0.5)) / N, r = Math.sqrt(1 - yy * yy), ph = j * Math.PI * (3 - Math.sqrt(5));
+    SD.push([r * Math.cos(ph), yy, r * Math.sin(ph)]);
+  }
   for (const [k, S] of Object.entries(sides)) {
-    if (!S.kp.length) continue;
+    if (!S.kp.length || !S.knee || !S.foot || !S.nk) continue;
+    S.knee.getWorldPosition(kj).applyMatrix4(toScene); S.foot.getWorldPosition(ka).applyMatrix4(toScene);
+    const R = 0.6 * kj.distanceTo(ka), dist = (p) => Math.hypot(p.x - kj.x, p.y - kj.y, p.z - kj.z);
+    // вершины-двойники (швы UV, жёсткие края): то же место (до 1 мм) и та же доля голени — одна
+    const seen = new Set(), zone = [];
+    for (const p of S.kp) {
+      if (dist(p) > R) continue;
+      const key = `${Math.round(p.x * 1000)},${Math.round(p.y * 1000)},${Math.round(p.z * 1000)},${Math.round(p.w * 100)}`;
+      if (!seen.has(key)) { seen.add(key); zone.push(p); }
+    }
+    const nz = zone.length;
+    if (!nz) continue;
+    // облако в 6D: (w p′, (1 − w) p′)
+    const U = new Float64Array(nz * 6);
+    zone.forEach((p, i) => {
+      const w = p.w, x = p.x - kj.x, y = p.y - kj.y, z = p.z - kj.z;
+      U[i * 6] = w * x; U[i * 6 + 1] = w * y; U[i * 6 + 2] = w * z; U[i * 6 + 3] = (1 - w) * x; U[i * 6 + 4] = (1 - w) * y; U[i * 6 + 5] = (1 - w) * z;
+    });
+    // проекции на направления — заранее (по 32 на каждую половину), на пару направлений — сумма
+    const ND = SD.length, PG = new Float64Array(ND * nz), PT = new Float64Array(ND * nz);
+    for (let a = 0; a < ND; a++) {
+      const [dx, dy, dz] = SD[a];
+      for (let i = 0, o = 0; i < nz; i++, o += 6) { PG[a * nz + i] = dx * U[o] + dy * U[o + 1] + dz * U[o + 2]; PT[a * nz + i] = dx * U[o + 3] + dy * U[o + 4] + dz * U[o + 5]; }
+    }
     const pick = new Set();
-    for (let j = 0, N = 64; j < N; j++) {
-      const yy = 1 - (2 * (j + 0.5)) / N, r = Math.sqrt(1 - yy * yy), ph = j * Math.PI * (3 - Math.sqrt(5));
-      d.set(r * Math.cos(ph), yy, r * Math.sin(ph));
-      let best = null, bd = -Infinity;
-      for (const p of S.kp) { const q = p.x * d.x + p.y * d.y + p.z * d.z; if (q > bd) { bd = q; best = p; } }
+    for (let a = 0; a < ND; a++) for (let b = 0; b < ND; b++) {
+      let best = 0, bd = -Infinity;
+      for (let i = 0, ia = a * nz, ib = b * nz; i < nz; i++) { const q = PG[ia + i] + PT[ib + i]; if (q > bd) { bd = q; best = i; } }
       pick.add(best);
     }
-    knee[k] = [...pick];
+    knee[k] = [...pick].map((i) => zone[i]);
+    const si = k === 'L' ? 0 : 1;
+    joint[si] = S.nk;
+    for (const p of knee[k]) reach[si] = Math.max(reach[si], dist(p));
+    reach[si] += 0.01;
   }
   out.knee = knee.L.length || knee.R.length ? pointTerms(THREE, H, knee) : null;
+  if (out.knee) { out.knee.joint = joint; out.knee.reach = reach; }
   SOLES.set(vrm, out);
   return out;
 }
@@ -328,7 +377,9 @@ export function soleMarkers(THREE, vrm) {
 function pointTerms(THREE, H, m) {
   const name = new Map();
   for (const b of Object.keys(H.humanBones || {})) { const r = H.getRawBoneNode ? H.getRawBoneNode(b) : null; if (r) name.set(r, b); }
-  const normOf = (bone) => { for (let o = bone; o; o = o.parent) if (name.has(o)) return H.getNormalizedBoneNode(name.get(o)); return null; };
+  // кость без предка-гуманоида (у ranger.glb — корень скелета «root», вес до 0,02): three-vrm её не двигает — узлом
+  // становится она сама (C — единичная)
+  const normOf = (bone) => { for (let o = bone; o; o = o.parent) if (name.has(o)) return H.getNormalizedBoneNode(name.get(o)); return bone; };
   const nodes = [], term = [], pt = [], side = [];
   const v = new THREE.Vector3(), t = new THREE.Vector3(), C = new THREE.Matrix4();
   for (const [k, s] of [['L', 0], ['R', 1]]) {
@@ -407,11 +458,22 @@ export function termsLow(f, res) {
   return res;
 }
 export function soleLowFast(m, res) { return termsLow(m.fast, res); }
+// Может ли колено (набор m.knee) лечь на пол floorY: сустав колена хоть одной ноги ниже floorY + reach (с масштабом
+// модели). Узлы колена должны быть обновлены (после IK ног).
+export function kneeMayTouch(k, floorY) {
+  for (let s = 0; s < 2; s++) {
+    const n = k.joint[s];
+    if (!n) continue;
+    const e = n.matrixWorld.elements, sc = Math.sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
+    if (e[13] - k.reach[s] * sc <= floorY) return true;
+  }
+  return false;
+}
 // Одна нога (s: 0 — левая, 1 — правая) в res[s]: узлы этой стороны — только от родителя (без цепочки до корня), для IK
 // ног слоя поз, где бедро, голень и стопа уже обновлены, а носок — нет
 export function termsLowSide(f, s, res) {
   const N = f.nodes, T = f.term, P = f.pt, sd = f.side, ns = f.nodeSide;
-  for (let i = 0; i < N.length; i++) if (ns[i] === s) N[i].updateWorldMatrix(false, false);
+  for (let i = 0; i < N.length; i++) if (ns[i] === s) N[i].updateWorldMatrix(false, false); else if (ns[i] === 2) N[i].updateWorldMatrix(f.chain[i] === 1, false);
   let lo = Infinity;
   for (let p = 0, n = P.length - 1; p < n; p++) {
     if (sd[p] !== s) continue;
@@ -459,7 +521,14 @@ export const CONTACT = 0.1;
 // таз цели сдвигается по вертикали так, чтобы нижняя точка её подошвы была ровно на полу покоя. Между касаниями
 // (полёт бега, прыжок, подскок рывка) поправка идёт линейно от соседних касаний — полёт клипа сохраняется,
 // но подошва и там не ниже пола.
+// Ложное касание: у источника носок ещё на полу (отрыв, конец опоры на беге), а стопа цели с другими пропорциями уже
+// поднята — поправка «на пол» уводит таз вниз на 6–14 см на один ключ (рывок корпуса раз в шаг). Касание, где
+// поправка ниже медианы соседних касаний (±3 кадра) больше чем на DIP, считается полётом.
+// Зацикленный клип (первый и последний кадр — одна поза): промежутки без касания на краях заполняются через шов,
+// последний кадр = первому (иначе на шве бега и стрейфов таз прыгал на 5–11 см раз за цикл).
 // Скелет цели ставится в позу кадра (прямая кинематика нормализованных костей) и в конце возвращается в покой.
+// → Uint8Array: кадры, принятые за касание (подошва в них ровно на полу)
+const DIP = 0.03, SMOOTH = 0.5;
 function groundHips(THREE, vrm, bones, hips, qv, hp, lift, eps, soles, hipsParentInv) {
   const n = lift.length, H = vrm.humanoid;
   // нормализованный скелет → сырые кости (сетка): нужно только точному скиннингу, быстрые точки берут нормализованный
@@ -480,24 +549,72 @@ function groundHips(THREE, vrm, bones, hips, qv, hp, lift, eps, soles, hipsParen
   if (H.resetNormalizedPose) H.resetNormalizedPose();
   sync();
   vrm.scene.updateMatrixWorld(true);
-  // промежутки без касания — линейно между соседними касаниями (по краям — ближайшее); касаний нет — без поправки
-  let prev = -1;
-  for (let f = 0; f <= n; f++) {
-    if (f < n && Number.isNaN(corr[f])) continue;
-    for (let g = prev + 1; g < f; g++) {
-      corr[g] = prev < 0 ? (f < n ? corr[f] : 0) : f >= n ? corr[prev] : corr[prev] + (corr[f] - corr[prev]) * ((g - prev) / (f - prev));
-    }
-    prev = f;
+  // цикл: последний кадр — почти та же поза ног, что первый (таз — до 2 мм, кости таза и ног — до ~1,6°, опора — до
+  // 2 мм); руки не в счёт — у прицела из лука кисть на краях клипа развёрнута по-разному
+  let loop = n > 2 && Math.abs(lift[0] - lift[n - 1]) < 0.002;
+  for (let k = 0; loop && k < 3; k++) if (Math.abs(hp[k] - hp[(n - 1) * 3 + k]) > 0.002) loop = false;
+  for (const b of bones) {
+    if (!loop) break;
+    if (!/^(hips|left(Upper|Lower)?Leg|right(Upper|Lower)?Leg|leftFoot|rightFoot|leftToes|rightToes)$/.test(b.vName)) continue;
+    const q = qv.get(b), e = (n - 1) * 4;
+    if (Math.abs(q[0] * q[e] + q[1] * q[e + 1] + q[2] * q[e + 2] + q[3] * q[e + 3]) < 1 - 1e-4) loop = false;
   }
+  const P = loop ? n - 1 : n;   // кадры одного оборота (в цикле последний — копия первого)
+  // ложные касания — в полёт (медиана поправок соседних касаний, по кругу — в цикле)
+  const keep = Float32Array.from(corr), near = [];
+  for (let f = 0; f < P; f++) {
+    if (Number.isNaN(keep[f])) continue;
+    near.length = 0;
+    for (let d = -3; d <= 3; d++) {
+      let g = f + d;
+      if (loop) g = ((g % P) + P) % P; else if (g < 0 || g >= P) continue;
+      if (!Number.isNaN(keep[g])) near.push(keep[g]);
+    }
+    near.sort((x, y) => x - y);
+    if (keep[f] < near[near.length >> 1] - DIP) corr[f] = NaN;
+  }
+  const contact = new Uint8Array(n);
+  for (let f = 0; f < P; f++) if (!Number.isNaN(corr[f])) contact[f] = 1;
+  // промежутки без касания — линейно между соседними касаниями: в цикле — через шов, иначе по краям — ближайшее;
+  // касаний нет — без поправки
+  const C = [];
+  for (let f = 0; f < P; f++) if (contact[f]) C.push(f);
+  for (let g = 0; g < P; g++) {
+    if (contact[g]) continue;
+    if (!C.length) { corr[g] = 0; continue; }
+    let p = -1, q = -1;
+    for (const c of C) { if (c < g) p = c; else if (q < 0) q = c; }
+    // соседние касания (позиция и поправка); в цикле недостающее — с другого края через шов
+    let pf = null, qf = null, pc = 0, qc = 0;
+    if (p >= 0) { pf = p; pc = corr[p]; } else if (loop) { pf = C[C.length - 1] - P; pc = corr[C[C.length - 1]]; }
+    if (q >= 0) { qf = q; qc = corr[q]; } else if (loop) { qf = C[0] + P; qc = corr[C[0]]; }
+    corr[g] = pf === null ? qc : qf === null ? pc : pc + (qc - pc) * ((g - pf) / (qf - pf));
+  }
+  // гладкая поправка: в касаниях — к «подошва на полу», между ними — прямая, подошва не ниже пола ни в одном кадре
+  // (Гаусс — Зейдель: min Σ_касания (c − floor)² + SMOOTH · Σ (c[f+1] − c[f])², c ≥ floor). Жёсткое «ровно на пол»
+  // в каждом касании переносило в таз шум высоты подошвы (подшаг удара, перекат стопы: 3–7 см от кадра к кадру)
+  for (let f = 0; f < P; f++) if (corr[f] < floor[f]) corr[f] = floor[f];
+  for (let it = 0; it < 150; it++) {
+    for (let f = 0; f < P; f++) {
+      let s = 0, k = 0;
+      if (f > 0) { s += corr[f - 1]; k++; } else if (loop) { s += corr[P - 1]; k++; }
+      if (f < P - 1) { s += corr[f + 1]; k++; } else if (loop) { s += corr[0]; k++; }
+      const w = contact[f] ? 1 : 0;
+      const c = k ? (w * floor[f] + SMOOTH * s) / (w + SMOOTH * k) : corr[f];
+      corr[f] = c < floor[f] ? floor[f] : c;
+    }
+  }
+  if (loop) { corr[n - 1] = corr[0]; contact[n - 1] = contact[0]; }
   const d = new THREE.Vector3();
   for (let f = 0; f < n; f++) {
     if (corr[f] < floor[f]) corr[f] = floor[f];   // и в полёте подошва не уходит под пол
     d.set(0, corr[f], 0).applyQuaternion(hipsParentInv);
     hp[f * 3] += d.x; hp[f * 3 + 1] += d.y; hp[f * 3 + 2] += d.z;
   }
+  return contact;
 }
 
-export function retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo') {
+export function retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo', { ground = true } = {}) {
   const H = vrm.humanoid;
   const TABLE = RIGS[rig] || RIG;
   if (H.resetNormalizedPose) H.resetNormalizedPose();
@@ -592,9 +709,11 @@ export function retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo
     if (lift) { let m = Infinity; for (const [o, y0] of srcFeet) m = Math.min(m, wp(o).y - y0); lift[f] = m; }
   }
   action.stop(); mixer.uncacheRoot(srcScene);
-  if (lift) groundHips(THREE, vrm, bones, hips, qv, hp, lift, CONTACT * Math.max(srcHipsH, 1e-3), soles, hipsParentInv);
+  const contact = lift && ground ? groundHips(THREE, vrm, bones, hips, qv, hp, lift, CONTACT * Math.max(srcHipsH, 1e-3), soles, hipsParentInv) : null;
   const tracks = [];
   for (const b of bones) tracks.push(new THREE.QuaternionKeyframeTrack(`${b.node.name}.quaternion`, times, qv.get(b)));
   if (hips) tracks.push(new THREE.VectorKeyframeTrack(`${hips.node.name}.position`, times, hp));
-  return new THREE.AnimationClip(clip.name.split('|').pop(), clip.duration, tracks);
+  const out = new THREE.AnimationClip(clip.name.split('|').pop(), clip.duration, tracks);
+  if (contact) out.userData = Object.assign(out.userData || {}, { contact });   // [W5-ПОЛ] кадры касания (проверки)
+  return out;
 }

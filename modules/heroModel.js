@@ -14,15 +14,16 @@
 // setPose (лук, чары рукой) и зеркало рук игрока setMirror (как world.setMirror у процедурного героя),
 // затем дыхание и оглядывание в покое. [W4-ПОЗЫ] Ещё выше — modules/heroPoses.js: смена опорной ноги и
 // контрапост (IK ног), каст-позы на жесты боя, мимика (кости лица), победа/поражение и визитки витрины.
-// [W5-ПОЛ] Последним — подошва не ниже пола (groundFeet): по точкам сетки стоп (vrmKit.soleMarkers); пол — корень
-// героя плюс подъём пола сцены (setFloorLift, витрина меню). Клипы уже стоят на полу (vrmKit.retargetClip).
+// [W5-ПОЛ] Последним — подошва не ниже пола (groundFeet): по точкам сетки стоп (vrmKit.soleMarkers, по нормализованным
+// костям — soleLowFast, без аллокаций); пол — корень героя плюс подъём пола сцены (setFloorLift, витрина меню). Клипы
+// уже стоят на полу (vrmKit.retargetClip: таз по опоре); IK ног слоя поз — подошва и колено не ниже пола (heroPoses).
 //
 // createHeroModel({ THREE, heroRoot?, heroBody?, extras?, markers?, scene?, hero, shading?, quality?,
 //                   atmosphere?, remote?, baseUrl?, vrmUrl?, heroesUrl? })
 //   → { root, update(dt, snapLike, events), setHero(id), setPose(p), setMirror(m), getAnchors(),
 //       setShading(mode), setQuality(q), setLod(level), get ready, get hero, state(), dispose(),
 //       signaturePose(id), setSignature(id | null | undefined),   // [W4-ПОЗЫ] визитки витрины меню
-//       setFloorLift(h), feet() }                                 // [W5-ПОЛ] пол сцены; QA: стопы и подошва
+//       setFloorLift(h), setGround(fn), feet({ legs }), feetCost(n, now) }   // [W5-ПОЛ] пол сцены, земля мира; QA
 // heroRoot не задан — экземпляр создаёт свой root (для удалённого игрока) и сам ставит его по snapLike.player.
 // snapLike: нужен только { player: { position, yaw, velocity, action, hp, … как в snapshot } }.
 
@@ -1232,10 +1233,11 @@ export function createHeroModel({
       turnW = smooth(1.1, 3, Math.abs(S.yawRate)) * 0.55; // yaw растёт — поворот влево
     }
     const want = {
-      Idle: Math.max(0, 1 - moveW - turnW),
+      Idle: Math.max(0, 1 - moveW - turnW),   // [W5-ПОЛ] доля «стоять» — S.standK, для посадки (groundFeet)
       Walk: moveW * wf * (1 - runK), Run: moveW * wf * runK,
       WalkBack: moveW * wb, StrafeL: moveW * wl + (S.yawRate > 0 ? turnW : 0), StrafeR: moveW * wr + (S.yawRate < 0 ? turnW : 0),
     };
+    S.standK = want.Idle;
     // фаза шага по пройденному пути: общий цикл для всех клипов ходьбы
     const st = cur.stride || {};
     const k = cur.scale || 1;
@@ -1567,10 +1569,14 @@ export function createHeroModel({
       applyFingers(dt, pz ? poses.fingers(handWants(), PC) : handWants());
       if (pz) faceTick(dt);
       S.inMenu = true;
+      S.groundY = NaN;
       vrmTick(dt);
       return;
     }
     S.inMenu = false;
+    // [W5-ПОЛ] земля под героем из снимка (бой: combat — LAY.groundY) — пол подошвы, когда корень ниже неё: на ступени
+    // арены (0,33 м) корень поднимается сглаженно (камера не дёргается), а стопы уходили в ступень на 0,1–0,2 с
+    S.groundY = P && P.position && Number.isFinite(P.position.y) ? P.position.y : NaN;
     pose.bowCarry = 0;   // [W4-ПОЗЫ] лук «у плеча» — только на витрине и в победе
     const status = snap.status || 'playing';
     const yaw = root.rotation.y;
@@ -1735,10 +1741,30 @@ export function createHeroModel({
     if (!m) { S.lift = 0; return; }
     // без быстрых точек — точный скиннинг по сырым костям в позе кадра
     const lo = m.fast ? soleLowFast(m, m.fast.res)[2] : (cur.vrm.humanoid.update(), soleHeightSkinned(m));
-    const fl = S.floorLift || 0;
-    const pen = root.getWorldPosition(_gf).y + fl - lo;
-    S.lift = pen > 1e-4 ? pen : 0;
+    const fl = S.floorLift || 0, ry = root.getWorldPosition(_gf).y;
+    const pen = (S.groundY > ry ? S.groundY : ry) + fl - lo;   // пол — корень или земля под героем, что выше
+    // посадка: герой стоит (вне меню, по снимку не идёт, нет действия на всё тело — у рывка, удара, победы свой полёт),
+    // а подошва над полом — модель вниз до касания. Висела она на переходе «бег, стрейф → покой»: клип бега в фазе
+    // полёта подмешан к покою, таз выше — стопы на 2–12 см над полом 0,2–0,3 с
+    const settle = !S.inMenu && (S.standK || 0) >= 0.5 && !(act && !actUpper);
+    S.lift = pen > 1e-4 || (settle && pen < -1e-4) ? pen : 0;
     if (S.lift) cur.model.position.y = fl + S.lift;
+    // ступень под одной стопой (край ступеней арены, бордюр): земля под пяткой или носком выше пола героя — эта стопа
+    // поднимается на неё IK ноги (heroPoses.raiseFoot), вторая остаётся внизу; вся модель не прыгает
+    const gf = S.groundFn;
+    if (!gf || S.inMenu || !m.fast || !poses.raiseFoot) return;
+    const F = pen + lo + 0.01;   // пол героя (корень или земля под ним) + 1 см
+    const res = m.fast.res;
+    for (let i = 0; i < 2; i++) {
+      const toes = cur.toesN || (cur.toesN = [cur.vrm.humanoid.getNormalizedBoneNode('leftToes'), cur.vrm.humanoid.getNormalizedBoneNode('rightToes')]);
+      const a = cur.bones[i ? 'rightFoot' : 'leftFoot'], b = toes[i];
+      if (!a) continue;
+      const ea = a.matrixWorld.elements, eb = b ? b.matrixWorld.elements : ea;
+      const g1 = gf(ea[12], ea[14]), g2 = gf(eb[12], eb[14]), g = (g1 > g2 ? g1 : g2) + fl;
+      if (!(g > F)) continue;
+      const d = g - (res[i] + S.lift);   // подошва этой стопы — с подъёмом модели
+      if (d > 0.005) poses.raiseFoot(i, d < 0.45 ? d : 0.45);
+    }
   }
 
   // VRM: моргание раз в 2–5 с, обновление (нормализованный скелет → меш, пружины волос и одежды), ткань
@@ -1807,7 +1833,7 @@ export function createHeroModel({
 
   // [W5-ПОЛ] QA: высота костей стоп и носков, нижняя точка подошвы каждой стопы (по вершинам сетки, точно) и по
   // точкам soleMarkers (как считает перенос клипов) — в мире, вместе с x, z нижней точки (пол меряется под ней)
-  function feet() {
+  function feet({ legs = false } = {}) {
     if (!cur || !S.ready) return null;
     cur.model.updateWorldMatrix(true, true);
     const H = cur.vrm.humanoid, v = new THREE.Vector3();
@@ -1826,6 +1852,27 @@ export function createHeroModel({
           if (list.length) cur.footV.push({ o, k, list });
         }
       });
+    }
+    // legs: нижняя вершина ног выше стопы (бедро и голень) полным скиннингом — проверка колена, независимая от точек
+    let legLow = null;
+    if (legs) {
+      if (!cur.legV) {
+        cur.legV = [];
+        const foot = new Set(['left', 'right'].flatMap((s) => [...boneSubtree(H.getRawBoneNode ? H.getRawBoneNode(s + 'Foot') : null)]));
+        const leg = new Set(['left', 'right'].flatMap((s) => [...boneSubtree(H.getRawBoneNode ? H.getRawBoneNode(s + 'UpperLeg') : null)]).filter((b) => !foot.has(b)));
+        cur.vrm.scene.traverse((o) => {
+          if (!o.isSkinnedMesh || !o.skeleton || !o.geometry.attributes.skinIndex) return;
+          const g = o.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+          const ids = new Set(o.skeleton.bones.map((b, i) => (leg.has(b) ? i : -1)).filter((i) => i >= 0));
+          if (!ids.size) return;
+          const list = [];
+          for (let i = 0; i < g.attributes.position.count; i++) { let w = 0; for (let j = 0; j < 4; j++) if (ids.has(si.getComponent(i, j))) w += sw.getComponent(i, j); if (w > 0.05) list.push(i); }
+          if (list.length) cur.legV.push({ o, list });
+        });
+      }
+      let lo = Infinity;
+      for (const { o, list } of cur.legV) { if (!o.visible) continue; for (const i of list) { const y = skinnedVertexWorld(o, i, v).y; if (y < lo) lo = y; } }
+      legLow = Number.isFinite(lo) ? +lo.toFixed(4) : null;
     }
     const low = { L: { y: Infinity, x: 0, z: 0 }, R: { y: Infinity, x: 0, z: 0 } };
     for (const { o, k, list } of cur.footV) {
@@ -1850,17 +1897,23 @@ export function createHeroModel({
       soleL: r4(low.L.y), soleR: r4(low.R.y), sole: r4(Math.min(low.L.y, low.R.y)),
       atL: [r4(low.L.x), r4(low.L.z)], atR: [r4(low.R.x), r4(low.R.z)],
       markL: r4(mk.L), markR: r4(mk.R), kneeL: kn ? r4(kn[0]) : null, kneeR: kn ? r4(kn[1]) : null, knee: kn ? r4(kn[2]) : null,
-      toeYawL: toeYaw('left'), toeYawR: toeYaw('right'), act: actName, pose: poses.active || '', loco: (() => { let n = 'Idle', w = -1; for (const l of LOCO) if (S.wLoco[l] > w) { w = S.wLoco[l]; n = l; } return n; })(),
+      toeYawL: toeYaw('left'), toeYawR: toeYaw('right'), legLow, act: actName, pose: poses.active || '', loco: (() => { let n = 'Idle', w = -1; for (const l of LOCO) if (S.wLoco[l] > w) { w = S.wLoco[l]; n = l; } return n; })(),
     };
   }
 
-  // [W5-ПОЛ] QA: цена подошвы за кадр, мкс — как groundFeet сейчас (fast: soleHeightFast) и прежним точным скиннингом
+  // [W5-ПОЛ] QA: цена подошвы за кадр, мкс — как groundFeet сейчас (fast: soleLowFast и земля под стопами) и прежним точным скиннингом
   // (exact: humanoid.update + soleHeightSkinned); n повторов, часы now (при виртуальном времени замера — настоящие)
   function feetCost(n = 2000, now = () => performance.now()) {
     if (!cur || !S.ready || !cur.soles) return null;
     const m = cur.soles, H = cur.vrm.humanoid;
     const time = (fn) => { for (let i = 0; i < 50; i++) fn(); const t0 = now(); for (let i = 0; i < n; i++) fn(); return +(((now() - t0) / n) * 1000).toFixed(2); };
-    const fastUs = time(() => { root.getWorldPosition(_gf); if (m.fast) soleLowFast(m, m.fast.res); else soleHeightFast(m); });
+    // сейчас: подошва и земля под пяткой и носком обеих стоп (на ровном — без IK ступени)
+    const gf = S.groundFn, fe = cur.bones.leftFoot && cur.bones.leftFoot.matrixWorld.elements;
+    const fastUs = time(() => {
+      root.getWorldPosition(_gf);
+      if (m.fast) soleLowFast(m, m.fast.res); else soleHeightFast(m);
+      if (gf && fe) { gf(fe[12], fe[14]); gf(fe[12], fe[14] + 0.1); gf(fe[12] + 0.2, fe[14]); gf(fe[12] + 0.2, fe[14] + 0.1); }
+    });
     const exactUs = time(() => { H.update(); root.getWorldPosition(_gf); soleHeightSkinned(m); });
     return { hero: S.hero, quality: opts.quality, points: m.L.length + m.R.length, nodes: m.fast ? m.fast.nodes.length : 0, fastUs, exactUs };
   }
@@ -1913,6 +1966,8 @@ export function createHeroModel({
     setGaze(k) { const g = k > 0.5 ? 1 : 0; if (g !== (S.gaze || 0)) { S.gaze = g; if (g) S.lookT = 0; } },
     // [W5-ПОЛ] видимый пол сцены выше корня героя на h м (витрина меню: пол над плитами арены) — модель стоит на нём
     setFloorLift(h) { S.floorLift = clamp(num(h), 0, 0.1); },
+    // [W5-ПОЛ] земля мира (x, z) → y: стопа на ступени — IK ноги (groundFeet); без неё — пол по корню героя
+    setGround(fn) { S.groundFn = typeof fn === 'function' ? fn : null; },
     flourish(name = 'CastRaise') {
       // [W4-ПОЗЫ] жест визитки (у лучницы — новый выстрел-натяг), клип поверх визитки не играем
       if (cur && S.inMenu && posesOn() && poses.signature) { if (!poses.flourish()) S.sigDrawT = 0; S.sigIdle = 0; return; }

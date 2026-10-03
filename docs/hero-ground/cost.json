@@ -1,0 +1,185 @@
+{
+ "n": 4000,
+ "rows": [
+  {
+   "quality": "low",
+   "scene": "menu",
+   "hero": "ashen",
+   "points": 30,
+   "nodes": 6,
+   "fastUs": 4.05,
+   "exactUs": 36.4
+  },
+  {
+   "quality": "low",
+   "scene": "menu",
+   "hero": "elf",
+   "points": 36,
+   "nodes": 6,
+   "fastUs": 3.8,
+   "exactUs": 37.73
+  },
+  {
+   "quality": "low",
+   "scene": "menu",
+   "hero": "dark",
+   "points": 36,
+   "nodes": 6,
+   "fastUs": 3.98,
+   "exactUs": 37.55
+  },
+  {
+   "quality": "low",
+   "scene": "menu",
+   "hero": "ranger",
+   "points": 36,
+   "nodes": 6,
+   "fastUs": 4.27,
+   "exactUs": 42.53
+  },
+  {
+   "quality": "low",
+   "scene": "menu",
+   "hero": "archmage",
+   "points": 60,
+   "nodes": 6,
+   "fastUs": 4.43,
+   "exactUs": 34.82
+  },
+  {
+   "quality": "low",
+   "scene": "battle",
+   "hero": "ashen",
+   "points": 30,
+   "nodes": 6,
+   "fastUs": 5.02,
+   "exactUs": 47.08
+  },
+  {
+   "quality": "low",
+   "scene": "battle",
+   "hero": "elf",
+   "points": 36,
+   "nodes": 6,
+   "fastUs": 3.95,
+   "exactUs": 43
+  },
+  {
+   "quality": "low",
+   "scene": "battle",
+   "hero": "dark",
+   "points": 36,
+   "nodes": 6,
+   "fastUs": 4.17,
+   "exactUs": 36.88
+  },
+  {
+   "quality": "low",
+   "scene": "battle",
+   "hero": "ranger",
+   "points": 36,
+   "nodes": 6,
+   "fastUs": 5.07,
+   "exactUs": 42.07
+  },
+  {
+   "quality": "low",
+   "scene": "battle",
+   "hero": "archmage",
+   "points": 60,
+   "nodes": 6,
+   "fastUs": 4.65,
+   "exactUs": 35.35
+  },
+  {
+   "quality": "medium",
+   "scene": "menu",
+   "hero": "ashen",
+   "points": 30,
+   "nodes": 6,
+   "fastUs": 5.38,
+   "exactUs": 42.5
+  },
+  {
+   "quality": "medium",
+   "scene": "menu",
+   "hero": "elf",
+   "points": 36,
+   "nodes": 6,
+   "fastUs": 4.02,
+   "exactUs": 41.95
+  },
+  {
+   "quality": "medium",
+   "scene": "menu",
+   "hero": "dark",
+   "points": 36,
+   "nodes": 6,
+   "fastUs": 3.93,
+   "exactUs": 36.42
+  },
+  {
+   "quality": "medium",
+   "scene": "menu",
+   "hero": "ranger",
+   "points": 36,
+   "nodes": 6,
+   "fastUs": 3.92,
+   "exactUs": 35.57
+  },
+  {
+   "quality": "medium",
+   "scene": "menu",
+   "hero": "archmage",
+   "points": 60,
+   "nodes": 6,
+   "fastUs": 5.07,
+   "exactUs": 37.03
+  },
+  {
+   "quality": "medium",
+   "scene": "battle",
+   "hero": "ashen",
+   "points": 30,
+   "nodes": 6,
+   "fastUs": 5.25,
+   "exactUs": 40.68
+  },
+  {
+   "quality": "medium",
+   "scene": "battle",
+   "hero": "elf",
+   "points": 36,
+   "nodes": 6,
+   "fastUs": 3.97,
+   "exactUs": 39.92
+  },
+  {
+   "quality": "medium",
+   "scene": "battle",
+   "hero": "dark",
+   "points": 36,
+   "nodes": 6,
+   "fastUs": 4.2,
+   "exactUs": 37.6
+  },
+  {
+   "quality": "medium",
+   "scene": "battle",
+   "hero": "ranger",
+   "points": 36,
+   "nodes": 6,
+   "fastUs": 3.82,
+   "exactUs": 35.65
+  },
+  {
+   "quality": "medium",
+   "scene": "battle",
+   "hero": "archmage",
+   "points": 60,
+   "nodes": 6,
+   "fastUs": 4.92,
+   "exactUs": 39.02
+  }
+ ]
+}

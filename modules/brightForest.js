@@ -479,7 +479,7 @@ export function createBrightForest({
 
   return {
     root, colliders, groundAt, update, setQuality, configure, dispose, drainEvents, mood, plan, map,
-    floorLift: (x, z) => forestFloorLift(BF, plan, x, z),   // [W5-ПОЛ] высота подстилки над рельефом
+    floorLift: (x, z) => floorGridLift(ctx.floorGrid, x, z),   // [W5-ПОЛ] высота подстилки над рельефом (нет её — 0)
     center: plan.center, radius: BF.r,
     get weight() { return state.weight; },
     get inside() { return state.inside; },
@@ -595,18 +595,23 @@ function buildLight(ctx) {
 /* ------------------------------ Лесная подстилка ------------------------------ */
 // Сетка 1.2 м по зоне точно по рельефу (+5 см): мох и трава с пятнами, тропы (утоптанная земля с
 // камешками), влажно у воды, солнечные пятна сквозь листву (дрожат на ветру). Край зоны — дизеринг.
-// [W5-ПОЛ] подстилка лежит на FLOOR_LIFT выше рельефа (иначе рельеф с другой сеткой проступал бы сквозь неё); у края
-// зоны тает — floorLift(x, z) повторяет её высоту для земли героя (world.layoutGroundY), иначе стопы уходили в неё на 5 см
+// [W5-ПОЛ] подстилка лежит на FLOOR_LIFT выше рельефа (иначе рельеф с другой сеткой проступал бы сквозь неё). Земля героя
+// (world.layoutGroundY) — на ней: floorLift(x, z) — билинейно по той же сетке 1,2 м (ctx.floorGrid), подъём вершины —
+// FLOOR_LIFT, у края зоны (там подстилка тает в прозрачность) — меньше, нет вершины (глубокая вода) — 0. Без waterDist
+// на каждый вызов (он аллоцирует, а землю спрашивают ~10 раз за кадр) и без ступеньки у воды; подстилки нет — 0.
 export const FLOOR_LIFT = 0.05;
-export function forestFloorLift(BF, plan, x, z) {
-  const R = BF.r + 24, d = Math.hypot(x - BF.x, z - BF.z);
-  if (d > R || plan.waterDist(x, z) < -1.6) return 0;
-  return FLOOR_LIFT * (1 - smoothstep(R - 20, R, d));
+export function floorGridLift(G, x, z) {
+  if (!G) return 0;
+  const fx = (x - G.x0) / G.step, fz = (z - G.z0) / G.step, N = G.N;
+  if (!(fx >= 0 && fz >= 0 && fx < N && fz < N)) return 0;
+  const i = fx | 0, j = fz | 0, u = fx - i, v = fz - j, L = G.lift, r = N + 1;
+  const a = L[j * r + i], b = L[j * r + i + 1], c = L[(j + 1) * r + i], d = L[(j + 1) * r + i + 1];
+  return (a + (b - a) * u) + ((c + (d - c) * u) - (a + (b - a) * u)) * v;
 }
 function buildFloor(ctx) {
   const { THREE, BF, plan, gy, map } = ctx;
   const R = BF.r + 24, step = 1.2, N = Math.ceil((2 * R) / step);
-  const pos = [], col = [], attr = [], idx = [], id = new Int32Array((N + 1) * (N + 1)).fill(-1);
+  const pos = [], col = [], attr = [], idx = [], id = new Int32Array((N + 1) * (N + 1)).fill(-1), lift = new Float32Array((N + 1) * (N + 1));
   for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
     const x = BF.x - R + i * step, z = BF.z - R + j * step, d = Math.hypot(x - BF.x, z - BF.z);
     if (d > R + step) continue;
@@ -616,6 +621,7 @@ function buildFloor(ctx) {
     pos.push(x, gy(x, z) + FLOOR_LIFT, z);   // [W5-ПОЛ]
     const s = map.sample(x, z);
     const fade = 1 - ctx.smoothstep(R - 20, R, d);
+    lift[j * (N + 1) + i] = FLOOR_LIFT * fade;   // [W5-ПОЛ] земля героя
     let shade = 0;
     for (const g of plan.giants) { const dg = Math.hypot(x - g.x, z - g.z); shade = Math.max(shade, ctx.smoothstep(g.crown * 1.1, g.crown * 0.35, dg)); }
     col.push(1, 1, 1, fade);
@@ -633,6 +639,7 @@ function buildFloor(ctx) {
   g.setIndex(idx);
   g.computeVertexNormals();
   g.computeBoundingSphere();
+  ctx.floorGrid = { x0: BF.x - R, z0: BF.z - R, step, N, lift };   // [W5-ПОЛ] высота подстилки для земли героя
   // край — мягкая прозрачность (альфа вершин); рисуется первой из прозрачных и пишет глубину
   const mat = ctx.M(new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.92, metalness: 0, transparent: true, depthWrite: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
   const U = { uTime: ctx.shared.uTime, uMotion: ctx.shared.uMotion, uWind: ctx.shared.uWind };
