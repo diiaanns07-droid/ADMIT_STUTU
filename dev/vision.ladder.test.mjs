@@ -549,6 +549,24 @@ test('L14 загрузка встала (ни байта дольше prefetchSt
   } finally { restore(); }
 });
 
+test('L16 «Играть», пока меню докачивает MediaPipe: файл, который уже качается, не качается второй раз — прогресс общий', async () => {
+  const f = fakeFetch({ delayMs: 30 });
+  const restore = setGlobals({ fetch: f });
+  try {
+    const urls = ['https://fake.invalid/l16/a.wasm', 'https://fake.invalid/l16/b.task', 'https://fake.invalid/l16/c.task'];
+    const seen = [];
+    const menu = V.preloadMediaPipe(urls, { priority: 'low' });            // предзагрузка меню (offline.js)
+    await realWait(50);                                                     // первый файл уже идёт
+    const cam = V.preloadMediaPipe(urls, { priority: 'high', onProgress: (p) => seen.push(p.loaded) }); // запуск камеры
+    const [a, b] = await Promise.all([menu, cam]);
+    ok(a.ok && b.ok, `обе загрузки без ошибок: ${a.errors} ${b.errors}`);
+    const per = urls.map((u) => f.calls.filter((c) => c.url === u).length);
+    eq(per.join(','), '1,1,1', 'каждый файл — один запрос');
+    ok(seen.some((n) => n > 0 && n < 9 * 1048576), `прогресс чужой загрузки виден: ${seen.slice(0, 8).join(', ')}`);
+    eq(seen[seen.length - 1], 9 * 1048576, 'в конце — всё скачано');
+  } finally { restore(); }
+});
+
 // ───────────────────────────── запуск ─────────────────────────────
 const only = process.argv[2] ? new RegExp(process.argv[2]) : null;
 let passed = 0;

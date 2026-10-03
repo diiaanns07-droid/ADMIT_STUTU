@@ -77,6 +77,10 @@ async function cdnTwinMediaPipe(mp) {
 // service worker (sw.js, cache-first), без него — в HTTP-кэше. Повторный вызов с теми же URL не качает заново.
 // opts: { onProgress({ loaded, total, file, done }), signal, priority: 'low' }. Ошибки не бросает: { ok, errors }.
 const preloadSeen = new Map();
+// [W5-КАМЕРА] файлы, которые качаются прямо сейчас: url → { loaded, size, subs, done }. Второй вызов (запуск камеры,
+// пока меню ещё докачивает модель) ждёт ту же загрузку и видит её прогресс, а не качает файл второй раз.
+const preloadLive = new Map();
+const abortWait = (signal) => new Promise((res) => { if (signal.aborted) res(false); else signal.addEventListener('abort', () => res(false), { once: true }); });
 export function mediaPipePreloadList(mp, extraModels = []) {
   const r = resolveMediaPipe(mp);
   const list = [r.moduleUrl, `${r.wasmRoot}/vision_wasm_module_internal.js`, `${r.wasmRoot}/vision_wasm_module_internal.wasm`];
@@ -102,6 +106,21 @@ export async function preloadMediaPipe(urls, opts = {}) {
     if (opts.signal && opts.signal.aborted) break;
     file = url.split('/').pop();
     if (preloadSeen.has(url)) { const n = preloadSeen.get(url); sizes.set(url, n); loaded.set(url, n); emit(); continue; }
+    const live = preloadLive.get(url);
+    if (live) {
+      const sub = () => { sizes.set(url, live.size); loaded.set(url, live.loaded); emit(); };
+      live.subs.add(sub);
+      sub();
+      const got = await (opts.signal ? Promise.race([live.done, abortWait(opts.signal)]) : live.done);
+      live.subs.delete(sub);
+      if (got && preloadSeen.has(url)) { const n = preloadSeen.get(url); sizes.set(url, n); loaded.set(url, n); emit(); continue; }
+      if (opts.signal && opts.signal.aborted) break;
+      // та загрузка не удалась — пробуем сами
+    }
+    const mine = { loaded: 0, size: 0, subs: new Set(), done: null, end: null };
+    mine.done = new Promise((res) => { mine.end = res; });
+    preloadLive.set(url, mine);
+    const tell = () => { for (const f of mine.subs) { try { f(); } catch { /* ignore */ } } };
     try {
       const init = { priority: opts.priority || 'low', credentials: 'same-origin' };
       if (opts.signal) init.signal = opts.signal;
@@ -118,7 +137,9 @@ export async function preloadMediaPipe(urls, opts = {}) {
           n += value.byteLength;
           loaded.set(url, n);
           if (!len) sizes.set(url, n);
+          mine.loaded = n; mine.size = sizes.get(url);
           emit();
+          tell();
         }
         sizes.set(url, Math.max(len, n));
       } else {
@@ -128,8 +149,12 @@ export async function preloadMediaPipe(urls, opts = {}) {
       }
       preloadSeen.set(url, sizes.get(url));
       emit();
+      mine.end(true);
     } catch (e) {
       errors.push(`${file}: ${(e && e.message) || e}`);
+      mine.end(false);
+    } finally {
+      if (preloadLive.get(url) === mine) preloadLive.delete(url);
     }
   }
   emit(true);
@@ -1553,18 +1578,21 @@ export async function createVision(options = {}) {
   function activateEngine(e) {
     const i = stepIndex(ladderSteps(), e);
     if (i >= 0) ladder.floor = i;
+    const stepChanged = ladder.cur !== ladderName(e);
     ladder.cur = ladderName(e);
     ladder.since = nowMs();
     ladder.results = 0;
     ladder.slowSince = null;
     ladder.firstResultMs = null;
     ladder.stageText = null;
-    perf.consecutiveErrors = 0;
-    // частота и время распознавания прошлого движка не переносятся (иначе лимит частоты главного потока
-    // считался бы по медленному GPU-воркеру)
-    perf.arrivals.length = 0;
-    perf.hz = 0;
-    perf.inferMs = null;
+    // новая ступень: ошибки, частота и время распознавания прошлого движка не переносятся (иначе лимит частоты
+    // главного потока считался бы по медленному GPU-воркеру). Смена модели позы на той же ступени — как раньше.
+    if (stepChanged) {
+      perf.consecutiveErrors = 0;
+      perf.arrivals.length = 0;
+      perf.hz = 0;
+      perf.inferMs = null;
+    }
   }
   // таймаут ответа воркера на кадр: первые кадры нового движка компилируют шейдеры — ждём дольше
   function frameTimeoutMs() {
