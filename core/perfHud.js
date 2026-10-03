@@ -4,6 +4,8 @@
 //
 // createPerfHud({ root, storage? }) → { update(now, { perf, tracking, screen, extra? }), toggle(), get visible, dispose() }
 
+import { hybridTipDue, HYBRID_TIP_TEXT } from './visionPlan.js';   // [PERF] подсказка про гибридный ноутбук
+
 const TIER_RU = { low: 'низкое', medium: 'среднее', high: 'высокое' };
 const CLASS_RU = { discrete: 'дискретная', integrated: 'встроенная', 'integrated-strong': 'встроенная (мощная)', software: 'программный рендер', unknown: 'неизвестная' };
 const VIS_KEY = 'ashen-oath.perfhud.v1';
@@ -40,6 +42,7 @@ export function createPerfHud({ root, storage } = {}) {
   let visible = false;
   try { visible = (typeof location !== 'undefined' && /[?&]perf=1/.test(location.search)) || (st && st.getItem(VIS_KEY) === '1'); } catch (e) { visible = false; }
   let lastT = -1e9;
+  const tipSt = { since: null };   // [PERF] выдержка подсказки про гибридный ноутбук
   const apply = () => { el.style.display = visible ? 'block' : 'none'; };
   apply();
   const onKey = (e) => {
@@ -78,8 +81,10 @@ export function createPerfHud({ root, storage } = {}) {
         const v = d.video || {};
         const [g, cls] = grade(d.inferenceHz, d.cameraFps);
         lines.push(`Камера: ${v.w || '—'}×${v.h || '—'} · ${f0(d.cameraFps)} к/с${d.cameraFallback ? ' · понижена' : ''}`);
-        lines.push(`Распознавание: ${f0(d.inferenceHz)} Гц (${g}) · ${f1(d.inferMs)} мс · задержка ${f0(d.latencyMs)} мс`);
-        lines.push(`Модель позы: ${d.poseModel || '—'} · ${t.mode || '—'}/${t.delegate || '—'} · кисти: ${t.hands && t.hands.ready ? 'да' : 'нет'}`);
+        lines.push(`Распознавание: ${f0(d.inferenceHz)} Гц (${g}) · поза ${f1(d.inferMs)} мс · кисти ${f1(d.handsMs)} мс · задержка ${f0(d.latencyMs)} мс`);
+        lines.push(`Модель позы: ${d.poseModel || '—'} · ${t.mode || '—'}/${t.delegate || '—'} · кисти: ${t.hands && t.hands.ready ? 'да' : 'нет'}${d.poseEvery > 1 ? ` · поза на каждом ${d.poseEvery}-м кадре (${f0(d.poseHz)} Гц)` : ''}`);
+        // [PERF] гибридный ноутбук: Chrome на встроенной видеокарте и распознавание медленное — подсказать, как выбрать дискретную
+        if (p && hybridTipDue(now, { gpuClass: p.gpuClass, hz: d.inferenceHz, cameraFps: d.cameraFps }, tipSt)) lines.push(`Совет: ${HYBRID_TIP_TEXT}`);
         const rel = d.reliability || {};
         const state = t.status === 'lost' ? 'ПОТЕРЯН' : rel.handsKeepAlive ? 'плечи закрыты — держимся за кисти' : t.status === 'calibrating' ? 'калибровка' : t.calibrated ? 'уверенно' : 'нет калибровки';
         lines.push(`Состояние: ${state} · плечи ${f0(rel.conf != null ? rel.conf * 100 : null)}%${rel.scaleWarning ? ` · ${rel.scaleWarning === 'far' ? 'далеко' : 'близко'}` : ''}`);
