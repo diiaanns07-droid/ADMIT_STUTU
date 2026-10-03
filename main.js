@@ -2410,6 +2410,41 @@ window.__ASHEN__ = Object.freeze({
   hero: () => (heroModel ? heroModel.state() : null),
   heroShowcase: () => (heroShowcase ? { weight: heroShowcase.weight, zoom: +heroShowcase.zoom.toFixed(2), lights: heroShowcase.group.children.filter((o) => o.isLight).map((l) => [l.name, +l.intensity.toFixed(1)]), stage: heroShowcase.stage || null } : null), // [HERO] QA; [W4-ВИТРИНА] stage — сцена витрины
   heroAnchors: () => { if (!heroModel || !heroModel.getAnchors) return null; const a = heroModel.getAnchors(), v = new THREE.Vector3(); return Object.fromEntries(Object.entries(a).map(([k, o]) => { o.getWorldPosition(v); return [k, { x: +v.x.toFixed(3), y: +v.y.toFixed(3), z: +v.z.toFixed(3), attached: !!o.parent }]; })); }, // [HERO] C5
+  // [W5-ПОЛ] QA: стопы героя (кости, подошва по сетке) и пол под каждой стопой: видимая поверхность (луч сверху —
+  // непрозрачная или «накрывающая» сетка, не аддитивная, не сам герой, грань смотрит вверх) и функция высоты земли
+  heroFeet: () => {
+    const f = heroModel && heroModel.feet ? heroModel.feet() : null;
+    if (!f) return null;
+    const hero = world && world.hero ? world.hero.root : null, rc = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0), n = new THREE.Vector3(), sph = new THREE.Sphere();
+    const own = (o) => { for (let p = o; p; p = p.parent) if (p === hero) return true; return false; };
+    const floorAt = (x, z, y0) => {
+      rc.set(new THREE.Vector3(x, y0 + 1, z), down); rc.far = 3; rc.camera = camera;
+      const hits = [];
+      scene.traverseVisible((o) => {
+        // пол — обычная сетка (не инстансы травы и камней, не персонажи), под стопой по рамке
+        if (!o.isMesh || o.isSkinnedMesh || o.isInstancedMesh || o.isBatchedMesh || o.isSprite || own(o)) return;
+        const m = Array.isArray(o.material) ? o.material[0] : o.material;
+        if (!m || m.blending === THREE.AdditiveBlending || m.depthTest === false || (m.transparent && m.opacity < 0.3)) return;
+        const g = o.geometry;
+        if (!g || !g.attributes || !g.attributes.position) return;
+        if (!g.boundingSphere) g.computeBoundingSphere();
+        sph.copy(g.boundingSphere).applyMatrix4(o.matrixWorld);
+        if (Math.hypot(sph.center.x - x, sph.center.z - z) > sph.radius) return;
+        try { o.raycast(rc, hits); } catch (e) { /* не сетка пола */ }
+      });
+      hits.sort((a, b) => a.distance - b.distance);
+      const h = hits.find((q) => q.face && n.copy(q.face.normal).transformDirection(q.object.matrixWorld).y > 0.5);
+      return h ? { y: +h.point.y.toFixed(4), obj: h.object.name || h.object.type } : { y: null, obj: null };
+    };
+    const gy = (x, z) => (worldLayout && typeof worldLayout.groundY === 'function' ? +worldLayout.groundY(x, z).toFixed(4) : null);
+    const L = floorAt(f.atL[0], f.atL[1], f.soleL), R = floorAt(f.atR[0], f.atR[1], f.soleR);
+    const gapL = L.y === null ? null : +(f.soleL - L.y).toFixed(4), gapR = R.y === null ? null : +(f.soleR - R.y).toFixed(4);
+    // опорная стопа — та, что ближе к полу (зазор меньше)
+    const gap = gapL === null ? gapR : gapR === null ? gapL : Math.min(gapL, gapR);
+    return { ...f, floorL: L.y, floorR: R.y, floorObj: L.obj || R.obj, groundL: gy(f.atL[0], f.atL[1]), groundR: gy(f.atR[0], f.atR[1]), gapL, gapR, gap, screen: app.screen };
+  },
+  heroFeetCost: (n, now) => (heroModel && heroModel.feetCost ? heroModel.feetCost(n, now) : null),   // [W5-ПОЛ] QA: мкс подошвы за кадр
+  groundY: (x, z) => (worldLayout && typeof worldLayout.groundY === 'function' ? worldLayout.groundY(x, z) : null),   // [W5-ПОЛ] QA: земля героя (combat, камера)
   net: () => (netSession ? netSession.debug() : null),             // [NET]
   netSession: () => netSession,                                    // [NET] для тестов и №3
   hand: () => (handZone ? handZone.getDebug() : null), // [HAND] лук и магия рукой
