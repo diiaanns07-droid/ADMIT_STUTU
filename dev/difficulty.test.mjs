@@ -123,6 +123,21 @@ test('«Сложная» и «Кошмар»: меньше восстановл�
     healed[lv] = c.getSnapshot().player.hp - hp0;
   }
   assert(healed.normal > 0 && Math.abs(healed.nightmare / healed.normal - GAME.difficulty.nightmare.heal) < 0.05, `лечение ${JSON.stringify(healed)}`);
+  // «Кор» (печать) и «Лемниска» (руна): подпись «+N HP» в событии — сколько вылечит на самом деле
+  for (const [lv, k] of [['normal', 1], ['nightmare', GAME.difficulty.nightmare.heal]]) {
+    const c = createCombat({ config: SAME, bossBrain: idle });
+    c.setDifficulty(lv); c.reset();
+    c.update(DT, I({ sigil: 'cor' }));
+    let ev = c.drainEvents();
+    const cor = ev.find((e) => e.type === 'sigil_cast' && e.data.sigil === 'cor');
+    for (let i = 0; i < 2400; i++) c.update(DT, I());
+    c.drainEvents();
+    c.update(DT, I({ rune: 'lemnis' }));
+    ev = c.drainEvents();
+    const lem = ev.find((e) => e.type === 'rune_cast' && e.data.rune === 'lemnis');
+    assert(cor && cor.data.heal === Math.round(45 * k), `${lv}: «Кор» +${cor && cor.data.heal}`);
+    assert(lem && lem.data.heal === Math.round(45 * k), `${lv}: «Лемниска» +${lem && lem.data.heal}`);
+  }
 });
 
 test('финт: мозг обрывает замах (cancelIds) — телеграф снят с reason feint, новая атака принята в том же шаге', () => {

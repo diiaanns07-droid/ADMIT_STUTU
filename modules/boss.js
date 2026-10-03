@@ -66,6 +66,9 @@ const MOVES = Object.freeze(['slam', 'orb', 'nova', 'double', 'volley', 'trap'])
 const BASE_OF_MOVE = Object.freeze({ slam: 'slam', orb: 'orb', nova: 'nova', double: 'slam', volley: 'orb', trap: 'slam' });
 /** [W5-СЛОЖНОСТЬ] Абсолютный пол замаха: задержка камеры 100–200 мс + реакция — короче не бывает ни на одном уровне. */
 export const FAIR_MIN_WINDUP = 0.45;
+// [W5-СЛОЖНОСТЬ] финт обрывает замах не позже чем за FEINT_CUE_MARGIN до «!» и не раньше FEINT_MIN_SHOWN от начала
+const FEINT_CUE_MARGIN = 0.1;
+const FEINT_MIN_SHOWN = 0.2;
 
 /**
  * Начальный баланс. Пары [стадия1, стадия2]. Это настраиваемые предположения
@@ -320,6 +323,7 @@ export function createBossBrain(config) {
     return true;
   }
   const moveAllowed = (move, snap) => isAllowed(BASE_OF_MOVE[move] || move, snap);
+  let windupMulHint = 1;   // [W5-СЛОЖНОСТЬ] множитель замаха выбираемой атаки (связка короче) — для честности новы
 
   // NOVA честна, если у игрока есть реальная контригра: энергия на щит
   // или рывок, который успеет перезарядиться до удара.
@@ -327,7 +331,8 @@ export function createBossBrain(config) {
     const f = cfg.novaFairness;
     const energyKnown = isNum(snap.energy) && isNum(snap.maxEnergy) && snap.maxEnergy > 0;
     const energyOk = !energyKnown || snap.energy >= snap.maxEnergy * f.minEnergyFraction;
-    const windup = cfg.attacks.nova.windup[i];
+    // [W5-СЛОЖНОСТЬ] нова из связки — с укороченным замахом: проверяем тот замах, который будет на самом деле
+    const windup = windupMulHint === 1 ? cfg.attacks.nova.windup[i] : Math.max(cfg.windupFloor, cfg.attacks.nova.windup[i] * windupMulHint);
     const dashOk = isNum(snap.dashRemaining) && snap.dashRemaining <= Math.max(0, windup - f.dashSlack);
     return energyOk || dashOk;
   }
@@ -431,7 +436,7 @@ export function createBossBrain(config) {
       target,
       windup,
       radius: a.radius[i],
-      damage: Math.round(a.damage[i] * (o.damageMul || 1)),
+      damage: Math.round(a.damage[i] * (isNum(o.damageMul) ? o.damageMul : 1)),
       blockable: a.blockable,
       projectileSpeed,
       stage: st.stage, // расширение: для визуала стадии
@@ -444,7 +449,9 @@ export function createBossBrain(config) {
   function beginAttack(snap, opts) {
     const o = opts || {};
     const fu = o.followUp || null;
+    windupMulHint = fu && !fu.move && fu.windupMul ? fu.windupMul : 1;
     const move = fu && fu.move && !(BASE_OF_MOVE[fu.move] === 'nova' && isFar(snap)) ? fu.move : chooseKind(snap);   // [W5-ДАЛЬНОСТЬ]
+    windupMulHint = 1;
     const label = fu && fu.from ? fu.from : move;   // второй удар «двойного» подписан как «двойной»
     const kind = BASE_OF_MOVE[move] || 'slam';
     const i = st.stage - 1;
@@ -487,11 +494,16 @@ export function createBossBrain(config) {
     let feintAt = null;
     if (!fu && !o.noFeint && specs.length === 1 && cfg.feint.chance[i] > 0 && st.rng() < cfg.feint.chance[i]) {
       const f = cfg.feint.at;
-      feintAt = windup * (f[0] + st.rng() * Math.max(0, f[1] - f[0]));
+      const at = windup * (f[0] + st.rng() * Math.max(0, f[1] - f[0]));
+      // обрыв — до «!» над Регентом: «!» значит «удар будет», после него финта нет (замах слишком короткий — без финта)
+      const latest = windup - Math.min(cfg.telegraph.cue, windup) - FEINT_CUE_MARGIN;
+      if (latest >= FEINT_MIN_SHOWN) feintAt = Math.min(at, latest);
     }
     st.current = {
       id: last.id, ids: specs.map((s) => s.id), kind, move,
       attackDur: a.attack, recover: a.recover[i], aim, feintAt,
+      // [W5-СЛОЖНОСТЬ] залп: у каждой сферы свой момент удара — impactIds в свой кадр (по возрастанию замаха)
+      impacts: specs.map((sp) => ({ id: sp.id, at: sp.windup })).sort((x, y) => x.at - y.at),
     };
     st.history.push(kind);
     if (st.history.length > 4) st.history.shift();
@@ -584,10 +596,14 @@ export function createBossBrain(config) {
     st.phaseElapsed += step;
 
     // --- конец кадра ---
+    if (st.phase === 'windup' && st.current) {
+      const im = st.current.impacts;
+      while (im.length > 1 && im[0].at <= st.phaseElapsed + BOSS_TIME_EPSILON) out.impactIds.push(im.shift().id);
+    }
     for (let guard = 0; guard < 6 && reached(); guard++) {
       const carry = Math.max(0, st.phaseElapsed - st.phaseDuration);
       if (st.phase === 'windup') {
-        out.impactIds.push(...st.current.ids);
+        out.impactIds.push(...st.current.impacts.map((x) => x.id));
         setPhase('attack', st.current.attackDur, carry);
       } else if (st.phase === 'attack') {
         afterAttack(out, carry);

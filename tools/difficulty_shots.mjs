@@ -104,10 +104,12 @@ try {
   }
 
   if (want('06')) {
-    await session({ difficulty: 'hard' }, { levels: { hard: { bossHp: 12, bossDamage: 3 } } }, async (g) => {
+    await session({ difficulty: 'hard' }, { levels: { hard: { bossHp: 2, bossDamage: 1.6 } } }, async (g) => {
       await g.toBattle();
       await g.walkToBoss();
+      await g.page.keyboard.down('KeyJ');   // огонь до конца: у Регента на итогах — часть здоровья
       const r = await g.stepUntil('(s, A) => A.screen === "defeat"', { max: 900, ms: 100 });
+      await g.page.keyboard.up('KeyJ');
       await g.virtual(false);
       await sleep(800);
       report.defeat = { ok: r.ok, steps: r.n, ...(await g.page.evaluate(() => ({
