@@ -85,8 +85,10 @@
 [data-slide="8"] .p3-tile .p3-hz { font-size: 64px; margin-left: 18px; color: var(--gold-b); -webkit-text-fill-color: var(--gold-b); }
 /* шкала под цифрой: заполняется вместе со счётом (transform, 600 мс) */
 [data-slide="8"] .p3-meter { position: relative; display: block; width: 320px; height: 8px; margin-top: 26px; background: var(--coal-deep); box-shadow: 0 0 0 1px var(--bronze), inset 0 1px 3px color-mix(in srgb, var(--ink) 80%, transparent); }
-[data-slide="8"] .p3-meter__fill { position: absolute; inset: 0; transform-origin: 0 50%; transform: scaleX(var(--v, 1)); background: linear-gradient(90deg, var(--gold-deep), var(--gold-hi)); transition: transform .6s var(--ease); }
-[data-slide="8"] .p3-meter.is-reset .p3-meter__fill { transform: scaleX(0); transition: none; }
+[data-slide="8"] .p3-meter__fill { position: absolute; inset: 0; transform-origin: 0 50%; transform: scaleX(var(--v, 1)); background: linear-gradient(90deg, var(--gold-deep), var(--gold-hi)); }
+[data-slide="8"].is-active .p3-tile:not([data-step]) .p3-meter__fill,
+[data-slide="8"] .p3-tile.is-on .p3-meter__fill { animation: p3-meter .6s var(--ease) both; }
+@keyframes p3-meter { from { transform: scaleX(0); } }
 /* 8 Гц: сплошная заливка — 83 %, светлый хвост до 100 % — разброс по жестам */
 [data-slide="8"] .p3-meter--range::before { content: ''; position: absolute; top: 0; bottom: 0; left: 83%; right: 0; background: color-mix(in srgb, var(--gold) 35%, transparent); }
 /* 1050+: засечка — сколько наборов было на отборе (31 из 59) */
@@ -150,7 +152,8 @@
   cursor: ew-resize; touch-action: none; user-select: none; -webkit-user-select: none;
 }
 [data-slide="10"]:has([data-step="1"].is-on) .p3-wipe { --p3-xb: 0%; }
-[data-slide="10"] .p3-wipe.p3-morph-hide { opacity: 0; }
+/* пока миниатюра со слайда 9 летит в кадр «после» (data-morph движка), старый Регент под ней не виден */
+[data-slide="10"] .p3-wipe:has(.is-morphing) .p3-wipe__pair--a > .p3-wipe__img { visibility: hidden; }
 [data-slide="10"] .p3-wipe__pair { position: absolute; inset: 0; transition: opacity .3s var(--ease); }
 [data-slide="10"] .p3-wipe__pair--b { opacity: 0; }
 [data-slide="10"]:has([data-step="1"].is-on) .p3-wipe__pair--a { opacity: 0; }
@@ -185,8 +188,6 @@
 [data-slide="10"] .p3-wipe__tag--after { right: 18px; color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
 /* в меню метка «до» уходит вниз, чтобы не закрывать название */
 [data-slide="10"] .p3-wipe__pair--b .p3-wipe__tag--before { top: auto; bottom: 18px; }
-/* полёт миниатюры Регента со слайда 9 (запасной морф, если движок не делает его сам) */
-.p3-morph { position: absolute; z-index: 15; object-fit: cover; transform-origin: 0 0; transition: transform .6s var(--ease); pointer-events: none; box-shadow: var(--shadow-panel); outline: 1px solid var(--bronze); }
 
 [data-slide="10"] .p3-s10__caps { position: absolute; left: 1088px; top: 0; width: 592px; display: flex; flex-direction: column; gap: 34px; }
 [data-slide="10"] .p3-s10__cap { margin: 0; font-family: 'Alegreya Sans', sans-serif; font-size: 34px; line-height: 44px; color: var(--text); padding-left: 26px; border-left: 2px solid var(--gold-deep); transition: opacity .3s var(--ease); }
@@ -259,7 +260,6 @@
   [data-slide="10"] .p3-wipe__tag--after { right: 8px; }
   [data-slide="10"] .p3-wipe__pair--b .p3-wipe__tag--before { top: auto; bottom: 8px; }
   [data-slide="10"] .p3-s10__cap--a { opacity: 1 !important; }
-  .p3-morph { display: none !important; }
   /* сгорание: три пары столбцами, «до» сверху, «после» снизу */
   [data-slide="11"] .p3-burn { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: none; box-shadow: none; outline: 0; }
   [data-slide="11"] .p3-burn__pair { position: relative; inset: auto; opacity: 1 !important; display: grid; grid-template-rows: 1fr 1fr; gap: 8px; }

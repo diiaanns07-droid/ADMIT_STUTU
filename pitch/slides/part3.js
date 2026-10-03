@@ -4,7 +4,8 @@
  * Обычный скрипт без модулей: работает и из file://. Регистрация — в window.DECK_QUEUE (контракт К3).
  * Конечное состояние каждого слайда описано в part3.css (через .is-on шагов) и стоит по умолчанию:
  * вход назад, переход по hash, печать и «уменьшенное движение» показывают его сразу. Скрипт только
- * проигрывает путь к нему при входе вперёд: счёт цифр, проезд шторки, морф Регента, сгорание кадров.
+ * проигрывает путь к нему при входе вперёд: проезд шторки и сгорание кадров. Счёт цифр (data-countup)
+ * и перелёт миниатюры Регента (data-morph="regent") делает движок deck.js — общий договор с каркасом.
  * Цифры сверены на 63f908a (слияние PR №38, 03.10), база сравнения — версия отбора 15298a8 (30.09). */
 (function () {
   'use strict';
@@ -96,34 +97,7 @@
   });
 
   // ================================================================ 8. Проверено: счётчики и шкалы
-  // Цифра считается от нуля (600 мс), полоска под ней заполняется вместе с ней. Если движок сам умеет
-  // data-countup (window.DECK.countup), считает он, а этот запасной счётчик молчит.
-  var counting = [];
-  function countStop() { counting.forEach(cancelAnimationFrame); counting = []; }
-  function countRun(node) {
-    var to = +node.getAttribute('data-countup'), text = node.getAttribute('data-final') || node.textContent;
-    node.setAttribute('data-final', text);
-    var meter = node.closest('.p3-tile') && node.closest('.p3-tile').querySelector('.p3-meter');
-    if (meter) { meter.classList.add('is-reset'); void meter.offsetWidth; meter.classList.remove('is-reset'); }
-    var t0 = 0, DUR = 600;
-    function tick(t) {
-      if (!t0) t0 = t;
-      var k = Math.min(1, (t - t0) / DUR), e = 1 - Math.pow(1 - k, 3);
-      node.textContent = k < 1 ? String(Math.round(to * e)) : text;
-      if (k < 1) counting.push(requestAnimationFrame(tick));
-    }
-    node.textContent = '0';
-    counting.push(requestAnimationFrame(tick));
-  }
-  function countAll(el, step) {
-    if (reduced() || (window.DECK && typeof window.DECK.countup === 'function')) return;
-    el.querySelectorAll('[data-countup]').forEach(function (n) { if (stepOf(n, el) === step) countRun(n); });
-  }
-  function countFinal(el) {
-    countStop();
-    el.querySelectorAll('[data-countup][data-final]').forEach(function (n) { n.textContent = n.getAttribute('data-final'); });
-  }
-
+  // Цифры считает движок (data-countup, 600 мс), шкала под цифрой заполняется за то же время (part3.css).
   Q.push({
     n: 8, sec: 35,
     html: `<section class="slide p3-slide p3-s8" data-slide="8" data-title="Проверено">
@@ -156,15 +130,12 @@
     <p class="src p3-s8__src">dev/handGestures.real.test.mjs · dev/lowfps.test.mjs · прогон всех наборов</p>
   </div>
   <aside class="notes">Жесты проверены на 135 реальных фотографиях рук из датасета HaGRID: 96 % форм кисти распознаются верно. В синтетическом тесте при 8 кадрах распознавания в секунду — это старый школьный ноутбук — жесты срабатывают в 83–100 % попыток и ни разу не ложно. Наборов тестов стало 59 вместо 31 — отметка на шкале, — больше 1050 проверок, ни одного падения.</aside>
-</section>`,
-    enter: function (el, dir) { countFinal(el); if (dir > 0) countAll(el, 0); },
-    step: function (el, k) { countAll(el, k); },
-    leave: function (el) { countFinal(el); }
+</section>`
   });
 
   // ================================================================ 9. После отбора: таймлайн «Ярость клятвы»
   // На каждом шаге шкала доливается до узла, узел раскрывается и показывает две миниатюры волны.
-  // Миниатюра Регента (data-morph="regent") при переходе на слайд 10 вырастает в большой кадр шторки.
+  // Миниатюра Регента (data-morph="regent") при переходе на слайд 10 вырастает в кадр «после» шторки (движок).
   function thumbs(a, b) {
     return '<span class="p3-tl__thumbs">' + [a, b].map(function (t) {
       return '<img class="p3-tl__thumb" src="' + t[0] + '" alt="' + t[1] + '"' + (t[2] ? ' data-morph="' + t[2] + '"' : '') + ' width="400" height="225" decoding="async">';
@@ -210,11 +181,11 @@
   // Конечные положения (Регент — 50 %, меню — 0 %) заданы в part3.css; скрипт только проигрывает проезд.
   var wipeT = [];
   function wipeOf(el) { return el.querySelector('.p3-wipe'); }
-  function wipeClear() { wipeT.forEach(clearTimeout); wipeT = []; var m = document.querySelector('.p3-morph'); if (m) m.remove(); }
+  function wipeClear() { wipeT.forEach(clearTimeout); wipeT = []; }
   function wipeReset(el) {
     var w = wipeOf(el); if (!w) return;
     w.style.removeProperty('--p3-xa'); w.style.removeProperty('--p3-xb');
-    w.classList.remove('is-drag', 'is-split', 'is-pre', 'p3-morph-hide');
+    w.classList.remove('is-drag', 'is-split', 'is-pre');
   }
   function wipeBind(el) {
     var w = wipeOf(el); if (!w || w.p3Bound) return; w.p3Bound = true;
@@ -222,7 +193,7 @@
       var r = w.getBoundingClientRect(); if (!r.width) return;
       var x = Math.min(100, Math.max(0, (e.clientX - r.left) / r.width * 100));
       var second = !!el.querySelector('[data-step="1"].is-on');
-      wipeClear(); w.classList.remove('is-pre', 'p3-morph-hide');
+      wipeClear(); w.classList.remove('is-pre');
       w.style.setProperty(second ? '--p3-xb' : '--p3-xa', x.toFixed(2) + '%');
       w.classList.toggle('is-split', x > 0.5 && x < 99.5);
     }
@@ -241,31 +212,12 @@
     w.addEventListener('touchstart', function (e) { e.stopPropagation(); }, { passive: true });
     w.addEventListener('touchend', function (e) { e.stopPropagation(); });
   }
-  // Морф «миниатюра Регента → большой кадр» — общий договор с каркасом: data-morph="regent" на обоих слайдах.
-  // Если движок делает морф сам (window.DECK.morph), этот запасной полёт не запускается.
-  function morph(el) {
-    if (window.DECK && typeof window.DECK.morph === 'function') return 0;
-    var deck = el.parentNode, src = deck && deck.querySelector('.slide[data-slide="9"] [data-morph="regent"]'), dst = el.querySelector('[data-morph="regent"]');
-    if (!src || !dst || !src.getBoundingClientRect().width) return 0;
-    var d = deck.getBoundingClientRect(), s = d.width / 1920 || 1;
-    function box(e) { var r = e.getBoundingClientRect(); return { x: (r.left - d.left) / s, y: (r.top - d.top) / s, w: r.width / s, h: r.height / s }; }
-    var a = box(src), b = box(dst);
-    var img = document.createElement('img');
-    img.className = 'p3-morph'; img.alt = ''; img.src = src.currentSrc || src.src;
-    img.style.cssText = 'left:' + a.x + 'px;top:' + a.y + 'px;width:' + a.w + 'px;height:' + a.h + 'px';
-    deck.appendChild(img);
-    dst.classList.add('p3-morph-hide');
-    void img.offsetWidth;
-    img.style.transform = 'translate(' + (b.x - a.x) + 'px,' + (b.y - a.y) + 'px) scale(' + (b.w / a.w) + ',' + (b.h / a.h) + ')';
-    wipeT.push(setTimeout(function () { dst.classList.remove('p3-morph-hide'); }, 620));
-    wipeT.push(setTimeout(function () { img.remove(); }, 700));
-    return 640;
-  }
   function wipeIntro(el, info) {
     var w = wipeOf(el); if (!w || reduced()) return;
     // Регент: стоит «после» целиком, затем шторка сама уезжает к середине и открывает «было» слева.
     w.classList.add('is-drag', 'is-pre'); w.style.setProperty('--p3-xa', '0%'); void w.offsetWidth; w.classList.remove('is-drag');
-    var wait = (info && info.prev === 9 ? morph(el) : 0) + 200;
+    // со слайда 9 сюда перелетает миниатюра Регента (data-morph, 550 мс) — шторка трогается после посадки
+    var wait = (info && info.prev === 9 ? 600 : 0) + 200;
     wipeT.push(setTimeout(function () { w.classList.remove('is-pre'); w.style.removeProperty('--p3-xa'); }, wait));
   }
 
@@ -275,12 +227,12 @@
   <p class="kicker">Было ${AR} стало</p>
   <h2 class="thesis">Та же игра, другой уровень</h2>
   <div class="p3-body">
-    <figure class="p3-wipe" data-interactive data-morph="regent" aria-label="Шторка «до и после»: её можно тянуть мышью">
+    <figure class="p3-wipe" data-interactive aria-label="Шторка «до и после»: её можно тянуть мышью">
       <div class="p3-wipe__pair p3-wipe__pair--a">
         <img class="p3-wipe__img" src="media/p3/regent_before.jpg" alt="Регент Нимба в версии отбора">
         <span class="p3-wipe__tag p3-wipe__tag--before">версия отбора · 30.09</span>
         <div class="p3-wipe__after">
-          <img class="p3-wipe__img" src="media/p3/regent_after.jpg" alt="Регент Нимба 3 октября: обсидиан с золотом">
+          <img class="p3-wipe__img" src="media/p3/regent_after.jpg" alt="Регент Нимба 3 октября: обсидиан с золотом" data-morph="regent">
           <span class="p3-wipe__tag p3-wipe__tag--after">03.10</span>
         </div>
         <i class="p3-wipe__edge" aria-hidden="true"></i>
