@@ -478,7 +478,7 @@ export function register(fx) {
       kDrop.remote = R; kDrop.ramp = R ? undefined : 'reset'; kDrop.dur = fd;
       const cm = dropComet.start(from, 'time', kDrop);
       let acc = 0;
-      kit.actor({
+      const act = kit.actor({
         dur: fd,
         update(t, k, dt) {
           _dp.lerpVectors(from, tgt, Math.min(1, t / fd));
@@ -492,6 +492,8 @@ export function register(fx) {
           startBubble(b, kind, Math.max(0.5, dur - tL - fd), true);
         },
       });
+      // пул акторов полон: комету закрываем, пузырь всё равно раскрываем
+      if (!act) { if (cm) cm.end(tgt); b.pendingUntil = -1; startBubble(b, kind, Math.max(0.5, dur - tL - fd), true); }
     });
     audio('cast', c.hand);
     return true;

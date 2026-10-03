@@ -601,7 +601,7 @@ export function createGlyphs(deps) {
       try {
         if (hasVec(o.pos)) { s.px = o.pos.x; s.py = o.pos.y; s.pz = o.pos.z; }
         if (isNum(o.radius) && o.radius > 0) s.radius = clamp(o.radius, 0.02, 60);
-        if (isNum(o.intensity)) s.intensity = Math.min(2.4, clamp(o.intensity, 0, 30) * 0.85); // [W4-ЗАКЛИНАНИЯ] та же калибровка, что в spawn
+        if (isNum(o.intensity)) s.intensity = clamp(o.intensity, 0, 30);
         if (isNum(o.hands)) { s.hands = o.hands; s.handsSet = true; }
         if (isNum(o.symbolGlow)) s.symGlow = clamp(o.symbolGlow, 0, 10);
         if (isNum(o.color)) hexLin(o.color & 0xffffff, s.col);
@@ -641,7 +641,7 @@ export function createGlyphs(deps) {
   }
   function release(s) { s.alive = false; s.follow = null; s.gen++; }
   function activeCount() { let n = 0; for (let i = 0; i < POOL_MAX; i++) if (slots[i].alive) n++; return n; }
-  function takeSlot() {
+  function takeSlot(noSteal) {
     let free = null, oldest = null, n = 0;
     for (let i = 0; i < POOL_MAX; i++) {
       const s = slots[i];
@@ -651,6 +651,7 @@ export function createGlyphs(deps) {
       if (finite && (!oldest || s.order < oldest.order)) oldest = s;
     }
     if (free && n < cap) return free;
+    if (noSteal) return null;   // [W4-ЗАКЛИНАНИЯ] короткие знаки (предвестник) не вытесняют чужие
     if (oldest) { release(oldest); return oldest; }
     return null;
   }
@@ -659,7 +660,7 @@ export function createGlyphs(deps) {
     try {
       const o = opts || {};
       if (!hasVec(o.pos)) return null;
-      const s = takeSlot();
+      const s = takeSlot(o.steal === false);
       if (!s) return null;
       s.alive = true; s.order = ++orderSeq; s.gen++;
       s.px = o.pos.x; s.py = o.pos.y; s.pz = o.pos.z;

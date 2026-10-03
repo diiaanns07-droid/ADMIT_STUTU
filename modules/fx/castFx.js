@@ -268,7 +268,7 @@ export function register(fx) {
   const recs = new Map();
   const pool = [];
   function makeRec() {
-    return { id: '', cls: 0, prism: false, pos: new V3(), prev: new V3(), vel: new V3(), rad: 0.3, pw: 0.6, age: 0, tag: 0, accA: 0, accB: 0, comet: null, scope: null };
+    return { id: '', cls: 0, prism: false, pos: new V3(), prev: new V3(), vel: new V3(), rad: 0.3, pw: 0.6, age: 0, tag: 0, accA: 0, accB: 0, comet: null, scope: null, el: '' };
   }
   for (let i = 0; i < POOL_N; i++) pool.push(makeRec());
   let tag = 0, playing = false, boltLightT = -1e9;
@@ -293,15 +293,20 @@ export function register(fx) {
       // сфера/призма: комета по радиусу, один мягкий свет за головой (на low → нет; на medium слот уступает вспышкам)
       r.scope = takeThrowScope(key) || sceneScope('');
       cOrb.size = Math.min(0.8, r.rad * 1.3); cOrb.lightK = (0.45 + 0.35 * r.pw) / 0.55; cOrb.scope = r.scope;
-      r.comet = comets.start(r.pos, r.prism ? 'reset' : elOf(false), cOrb);
+      const sEl = typeof pr.spell === 'string' ? RUNE_EL[pr.spell] : undefined;   // PvP: ignis/clepsydra — стихия руны
+      r.el = r.prism ? 'reset' : (sEl || elOf(false));
+      r.comet = comets.start(r.pos, r.el, cOrb);
       cOrb.scope = null;
     } else if (cls === 2) {
-      // «OK»: сцена потока 'bolt'; свет — первому болту потока, дальше не чаще BOLT_LIGHT
-      r.scope = sceneScope('bolt');
-      cBolt.light = kit.clock - boltLightT >= BOLT_LIGHT;
-      if (cBolt.light) boltLightT = kit.clock;
+      // «OK»: сцена потока 'bolt'; свет — первому болту потока, дальше не чаще BOLT_LIGHT.
+      // PvP: руна-выстрел (pr.spell — fulgur, vee, frame…) — в стихии руны и в своей сцене, не в потоке «OK»
+      const runeEl = typeof pr.spell === 'string' ? RUNE_EL[pr.spell] : undefined;
+      r.scope = sceneScope(runeEl ? '' : 'bolt');
+      cBolt.light = !!runeEl || kit.clock - boltLightT >= BOLT_LIGHT;
+      if (cBolt.light && !runeEl) boltLightT = kit.clock;
       cBolt.scope = r.scope;
-      r.comet = comets.start(r.pos, elOf(false), cBolt);
+      r.el = runeEl || elOf(false);
+      r.comet = comets.start(r.pos, r.el, cBolt);
       cBolt.scope = null;
     } else r.scope = sceneScope('spark');
     return r;
@@ -325,7 +330,7 @@ export function register(fx) {
   }
   function fizzle(r) {
     const prev = kit.enterScope(r.scope);
-    const ramp = rampOf(elOf(false), false);
+    const ramp = rampOf(r.el || elOf(false), false);
     fFizz.ramp = ramp; kit.flash(r.pos, fFizz);
     eFizz.at = r.pos; eFizz.ramp = ramp; kit.emit(eFizz); eFizz.at = null;
     kit.enterScope(prev);
@@ -380,7 +385,7 @@ export function register(fx) {
       const cls = kind === 'sphere' || kind === 'prism' ? 1 : kind === 'bolt' ? 2 : kind === 'spark' ? 3 : 0;
       if (!cls) continue;
       const key = typeof pr.id === 'string' ? pr.id : String(pr.id);
-      if (cls === 3 && key.startsWith('caret:')) continue;   // иглы «Акус» — runesWild.js
+      if (key.startsWith('caret:')) continue;   // иглы «Акус» (и в PvP, где они kind 'bolt') — runesWild.js
       let r = recs.get(key);
       if (!r) { r = recGet(key, pr, cls); recs.set(key, r); }
       r.tag = tag;
@@ -436,7 +441,8 @@ export function register(fx) {
       if (_hd.lengthSq() > 1e-6) _hd.normalize(); else dir = null;
     } else if (to) dir = null;                            // руна на себя (лечение, ветер, оберег)
     else aimFrom(_h, R, _hd);
-    hrd(_h, el, R, 1, dir, rune || undefined, true);
+    // знак у руки не нужен: у руны есть крупный знак в воздухе (handMagic) — пул знаков бережём
+    hrd(_h, el, R, 1, dir, rune || undefined, false);
   });
 
   // ============================================================ по снимку

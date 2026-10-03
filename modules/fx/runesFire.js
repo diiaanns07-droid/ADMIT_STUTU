@@ -68,7 +68,7 @@ export function register(fx) {
       const tr2 = low() ? null : trail(fx, 'fire', R, { style: 'fire', width: 0.26, life: 0.22, intensity: 2.2, spiral: 0.2, spiralRate: -22, maxPoints: 24 });
       const nSp = low() ? 1 : 2, vSpear = dist / dur;
       let spin = 0;
-      fly(fx, from, c.target, dur, {
+      const flight = fly(fx, from, c.target, dur, {
         lift: 0.2,
         onStep(pos, sdir, k, dt) {
           sp.copy(pos);
@@ -105,6 +105,8 @@ export function register(fx) {
           fx.legacy.audio && fx.legacy.audio('burst', p);
         },
       });
+      // пул акторов полон (тяжёлое комбо): полёта не будет — комету, ленту и марево закрываем сразу
+      if (!flight) { if (cm) cm.end(c.target); if (tr2) tr2.stop(); if (haze && haze.kill) haze.kill(); }
     });
     fx.legacy.audio && fx.legacy.audio('cast', c.hand);
     return true;

@@ -174,7 +174,7 @@ export function register(fx) {
   const kNeedle = { color: 0xc8f4ff, intensity: 0.6, range: 7, dur: 0.4, attack: 0.1, follow: null };
   const TR_NEEDLE = { style: 'energy', width: 0.14, life: 0.2, intensity: 2.6, maxPoints: 18, head: 1.2 };
   function needleRec() {
-    const n = nPool.pop() || { id: '', tr: null, seen: 0, R: false, hc: 0, pos: new V3(), vel: new V3(), acc: 0, accS: 0, accF: 0, scope: null, follow: null };
+    const n = nPool.pop() || { id: '', tr: null, seen: 0, R: false, hc: 0, pos: new V3(), vel: new V3(), acc: 0, accS: 0, accF: 0, scope: null, follow: null, ls: null };
     if (!n.follow) n.follow = () => n.pos;
     return n;
   }
@@ -182,11 +182,12 @@ export function register(fx) {
     const prev = kit.enterScope(n.scope);
     if (n.scope) kit.touchScope(n.scope, 0.2);
     const R = n.R, ramp = R ? 'rival' : 'frost';
-    n.acc += dt * 60;
+    const lo = !!(kit.Q && kit.Q.name === 'low');   // low: голова вдвое реже и без отдельного белого ядра
+    n.acc += dt * (lo ? 30 : 60);
     if (n.acc >= 1) {
       n.acc = Math.min(1, n.acc - 1);
       oHalo.at = n.pos; oHalo.vel = n.vel; oHalo.color = n.hc; oHalo.rival = R; kit.emit(oHalo);
-      oCore.at = n.pos; oCore.vel = n.vel; oCore.rival = R; kit.emit(oCore);
+      if (!lo) { oCore.at = n.pos; oCore.vel = n.vel; oCore.rival = R; kit.emit(oCore); }
     }
     n.accS += dt * 30;
     if (n.accS >= 1) { n.accS = Math.min(1, n.accS - 1); oNeedle.at = n.pos; oNeedle.vel = n.vel; oNeedle.ramp = ramp; oNeedle.rival = R; kit.emit(oNeedle); }
@@ -196,7 +197,7 @@ export function register(fx) {
     kit.enterScope(prev);
   }
   if (typeof fx.onClear === 'function') fx.onClear(() => {
-    for (let i = 0; i < nLive.length; i++) { const n = nLive[i]; n.tr = null; n.scope = null; if (nPool.length < 16) nPool.push(n); }
+    for (let i = 0; i < nLive.length; i++) { const n = nLive[i]; if (n.ls && n.ls.follow === n.follow) n.ls.follow = null; n.tr = null; n.scope = null; n.ls = null; if (nPool.length < 16) nPool.push(n); }
     nLive.length = 0; needles.clear(); CAR.L = CAR.R = null;
   });
   fx.every((dt, snap) => {
@@ -231,7 +232,7 @@ export function register(fx) {
       const n = fresh[nFresh >> 1];
       lastLight = kit.clock;
       kNeedle.color = fx.pal('frost', n.R ? D_REMOTE : D_LOCAL).hot; kNeedle.follow = n.follow;
-      kit.light(n.pos, kNeedle);
+      n.ls = kit.light(n.pos, kNeedle);
       kNeedle.follow = null;
     }
     for (let i = 0; i < nFresh; i++) fresh[i] = null;
@@ -240,7 +241,9 @@ export function register(fx) {
       const n = nLive[i];
       if (n.seen === tag) continue;
       if (n.tr) { try { n.tr.stop(); } catch (e) { /* ignore */ } }
-      n.tr = null; n.scope = null;
+      // свет пула ещё догорает — отцепляем от записи (она вернётся в пул и полетит с другой иглой)
+      if (n.ls && n.ls.follow === n.follow) n.ls.follow = null;
+      n.tr = null; n.scope = null; n.ls = null;
       needles.delete(n.id);
       nLive[i] = nLive[nLive.length - 1]; nLive.pop();
       if (nPool.length < 16) nPool.push(n);
@@ -332,6 +335,7 @@ export function register(fx) {
     if (air) { air.plan('through', ctr); from.copy(air.pos); tLa = launchIn(air, 0.26); }
     const tf = clamp(from.distanceTo(tip0) / 140, 0.04, 0.08);
     if (!air) tLa = Math.max(0, 0.14 - tf);
+    else tLa = Math.min(tLa, 0.26 - tf);   // взмах не позже прежнего +0.12 с при любой дальности
     kit.after(tLa, () => {
       kVee.remote = R; kVee.dur = tf;
       const cm = veeComet.start(from, 'void', kVee);

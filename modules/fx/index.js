@@ -196,7 +196,10 @@ export function createFxV6(deps) {
     const r = d && d.remote ? 'r:' : '';
     switch (type) {
       case 'rune_cast': return r + 'rune:' + (d && d.rune);
-      case 'player_cast': return r + (d && d.ability === 'rune' ? 'rune:' + d.rune : d && (d.ability === 'bolt' || d.ability === 'spark') ? d.ability : '');
+      case 'player_cast': {
+        const k = d && d.ability === 'rune' ? 'rune:' + d.rune : d && (d.ability === 'bolt' || d.ability === 'spark') ? d.ability : '';
+        return k ? r + k : '';   // бросок и прочее — своя (уникальная) сцена и у соперника
+      }
       case 'burst': return r + 'burst';
       case 'sigil_cast': return r + 'sigil:' + (d && d.sigil);
       case 'hand_spell_throw': case 'bow_release': case 'player_slash': case 'ultimate_cast': return '';

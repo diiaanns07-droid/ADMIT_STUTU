@@ -645,8 +645,7 @@ export function register(fx) {
     const p = fx.evPos(ev, new V3());
     const hand = p && p.y > fx.groundY(p.x, p.z, 0) + 0.4 ? p : fx.anchor('handR', new V3(), R);
     const dir = hasVec(d.velocity) ? d.velocity : null;
-    kit.flash(hand, { ramp: 'whiteHold', size: [0.1, 0.55], dur: 0.08, intensity: 4.2, sprite: 'star', pull: 0.6, rival: R });   // [W4-ЗАКЛИНАНИЯ] белое ядро
-    kit.flash(hand, { ramp: sr, size: [0.2, 0.7], dur: 0.13, intensity: 2.4, sprite: 'glow', pull: 0.6, rival: R });           // [W4-ЗАКЛИНАНИЯ] ореол стихии
+    // [W4-ЗАКЛИНАНИЯ] звезда и ореол у ладони — предвестник castFx (common.herald), здесь только искры по выстрелу
     kit.emit({ at: hand, dir, cone: dir ? 0.5 : Math.PI, count: 4, speed: [3, 7], life: [0.1, 0.22], size: [0.05, 0.01], ramp: sr, intensity: 3.2, sprite: 'spark', stretch: 0.025, drag: 3, rival: R, essential: true });
     au('cast', hand);
     return true;

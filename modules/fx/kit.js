@@ -412,8 +412,9 @@ export function createFxKit(deps) {
     // [W4-ЗАКЛИНАНИЯ] «без каши»: при 3+ одновременных эффектах старые получают меньше частиц
     const sh = scopeShare(curScope);
     if (sh < 1) n *= o.essential ? Math.max(ESSENTIAL_FLOOR, sh) : sh;
-    // [W4-ЗАКЛИНАНИЯ] вероятностное округление: одиночные частицы по аккумуляторам тоже урезаются по доле, а не «всё или ничего»
-    n = Math.max(0, Math.floor(n + Math.random()));
+    // [W4-ЗАКЛИНАНИЯ] под урезанием — вероятностное округление: одиночные частицы по аккумуляторам тоже урезаются
+    // по доле, а не «всё или ничего»; без толчеи — как раньше (на low одиночный декор = 0)
+    n = Math.max(0, sh < 1 ? Math.floor(n + Math.random()) : Math.round(n));
     if (!n) return 0;
     const shape = o.shape || (num(o.radius, 0) > 0 ? 'sphere' : 'point');
     const R = num(o.radius, 0);

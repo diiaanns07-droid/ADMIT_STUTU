@@ -242,7 +242,7 @@ export function herald(fx, at, el, remote, o) {
       g.spawn({
         pos: at, billboard: true, radius: 0.36 * k, symbol: heraldSymbol(el, o.symbol), symbolScale: 0.62, style: 'rune', rings: 1, ticks: 12,
         color: P.mid, hot: P.core, intensity: 2.6, symbolGlow: 2, write: 0, flare: 1, pop: 0.45, unfold: 0.08, dur: 0.2, fade: 0.08, spin: 3,
-        rival: remote ? 1 : 0, dark: el === 'void' && !remote,
+        rival: remote ? 1 : 0, dark: el === 'void' && !remote, steal: false,   // пул полон — без знака (руна-спрайт уже есть)
       });
     } catch (e) { /* без знака */ }
   }
@@ -380,12 +380,13 @@ export function createComet(fx) {
   const eTail = { at: null, radius: 0.08, count: 1, dir: null, cone: 0.5, speed: [0.5, 2.2], life: [0.16, 0.32], size: [0.06, 0.01], ramp: 'gold', intensity: 3, sprite: 'spark', stretch: 0.035, drag: 2.6, gravity: 0.8, essential: false, rival: false };
   const eEl = { at: null, radius: 0.1, count: 1, dir: null, cone: 1.1, speed: [0.3, 1.2], life: [0.22, 0.42], size: [0.3, 0.06], ramp: 'gold', intensity: 2.2, sprite: 'spark', stretch: 0, drag: 2, gravity: 0, turb: 0, spin: [-3, 3], essential: false, rival: false };
   const kLight = { color: 0xffffff, intensity: 0.6, range: 7, dur: 0.6, attack: 0.1, follow: null };
+  const oTrail = { style: 'energy', width: 0.3, life: 0.28, head: 1.1, taper: 1, color: 0, hot: 0, intensity: 2.4, rival: 0, maxPoints: 26, minDist: 0.06 };
 
   function make() {
     const c = {
       alive: false, el: 'gold', look: COMET_DEF, P: null, remote: false, size: 0.3, ramp: 'gold', dark: false,
       pos: new V3(), prev: new V3(), dir: new V3(0, 0, -1), back: new V3(0, 0, 1), lp: new V3(), started: false,
-      accA: 0, accB: 0, accC: 0, tr: null, scope: null, follow: null, rate: 1,
+      accA: 0, accB: 0, accC: 0, tr: null, scope: null, follow: null, rate: 1, ls: null,
       step(p, d, dt) { stepC(c, p, d, dt); },
       end(hit) { endC(c, hit); },
     };
@@ -397,7 +398,7 @@ export function createComet(fx) {
   function start(p, el, o) {
     if (!p || !isNum(p.x)) return null;
     o = o || {};
-    if (live.length >= COMET_POOL) endC(live[0]);
+    if (live.length >= COMET_POOL) return null;   // не крадём: прежний владелец ещё держит ссылку на комету
     const c = pool.pop() || make();
     const remote = !!o.remote;
     const lookEl = o.look || el;
@@ -414,17 +415,16 @@ export function createComet(fx) {
     if (o.trail !== false && fx.trails) {
       try {
         const style = c.look.trail;
-        c.tr = fx.trails.create({
-          style, width: isNum(o.trailWidth) ? o.trailWidth : c.size * 1.25, life: isNum(o.trailLife) ? o.trailLife : 0.28, head: 1.1, taper: 1,
-          color: c.P.mid, hot: style === 'dark' ? c.P.hot : c.P.core, intensity: 2.4, rival: remote ? 1 : 0, maxPoints: 26, minDist: 0.06,
-        });
+        oTrail.style = style; oTrail.width = isNum(o.trailWidth) ? o.trailWidth : c.size * 1.25; oTrail.life = isNum(o.trailLife) ? o.trailLife : 0.28;
+        oTrail.color = c.P.mid; oTrail.hot = style === 'dark' ? c.P.hot : c.P.core; oTrail.rival = remote ? 1 : 0;
+        c.tr = fx.trails.create(oTrail);
         if (c.tr) c.tr.push(p);
       } catch (e) { c.tr = null; }
     }
     if (o.light !== false) {
       kLight.color = c.P.hot; kLight.intensity = 0.55 * (isNum(o.lightK) ? o.lightK : 1); kLight.range = 7;
       kLight.dur = isNum(o.dur) ? o.dur + 0.1 : 0.7; kLight.follow = c.follow;
-      kit.light(p, kLight);
+      c.ls = kit.light(p, kLight);
       kLight.follow = null;
     }
     live.push(c);
@@ -445,9 +445,10 @@ export function createComet(fx) {
     const s = c.size, seg = c.started ? c.prev.distanceTo(c.pos) : 0;
     c.started = true;
     // голова: ядро и ореол вдоль пройденного за кадр отрезка — на 30 кадрах/с голова сплошная, а не пунктир
-    // доля rate — дробное число частиц (kit округляет вероятностно): голова реже, но не пропадает надолго
-    const nHead = Math.min(4, 1 + Math.floor(seg / Math.max(0.12, s * 0.9))) * Math.max(0.5, c.rate);
+    // доля rate — дробное число частиц с вероятностным округлением: голова реже, но не пропадает надолго
+    const nHead = Math.floor(Math.min(4, 1 + Math.floor(seg / Math.max(0.12, s * 0.9))) * Math.max(0.5, c.rate) + Math.random());
     const line = seg > 0.02;
+    if (nHead <= 0) { headless(c, dt); kit.enterScope(prevScope); return; }
     eHalo.at = line ? c.prev : c.pos; eHalo.to = line ? c.pos : null; eHalo.shape = line ? 'line' : 'point'; eHalo.count = nHead;
     eHalo.ramp = c.ramp; eHalo.rival = c.remote; eHalo.size[0] = s * 2.5; eHalo.size[1] = s * 1.7;
     kit.emit(eHalo);
@@ -459,6 +460,12 @@ export function createComet(fx) {
     } else { eCore.size[0] = s * 1.05; eCore.size[1] = s * 0.7; eCore.ramp = 'whiteHold'; eCore.sprite = 'glow'; }
     eCore.at = eHalo.at; eCore.to = eHalo.to; eCore.shape = eHalo.shape; eCore.count = nHead; eCore.rival = c.remote;
     kit.emit(eCore);
+    headless(c, dt);
+    kit.enterScope(prevScope);
+  }
+  // слои хвоста (общие для кадров с головой и без)
+  function headless(c, dt) {
+    const s = c.size;
     // слой 1: искры-хвост назад по полёту
     c.accA += dt * 46 * c.rate;
     let n = Math.floor(c.accA);
@@ -479,12 +486,14 @@ export function createComet(fx) {
       eEl.size[0] = s * L.size; eEl.size[1] = s * L.size * 0.25;
       kit.emit(eEl);
     }
-    kit.enterScope(prevScope);
   }
   function endC(c, hit) {
     if (!c.alive) return;
     c.alive = false;
     if (c.tr) { if (hit && isNum(hit.x)) c.tr.push(hit); c.tr.stop(); c.tr = null; }
+    // свет из пула ещё горит — отцепляем от кометы (объект вернётся в пул и полетит с другим снарядом)
+    if (c.ls && c.ls.follow === c.follow) { c.ls.follow = null; if (hit && isNum(hit.x)) c.ls.l.position.set(hit.x, hit.y, hit.z); }
+    c.ls = null;
     c.scope = null;
     const i = live.indexOf(c);
     if (i >= 0) live.splice(i, 1);
