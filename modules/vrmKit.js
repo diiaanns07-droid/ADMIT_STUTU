@@ -168,8 +168,10 @@ export const RIGS = Object.freeze({ mixamo: RIG, kaykit: RIG_KAYKIT });
 // до 75° и «вниз-вбок» до 45°: нижняя часть выпуклой оболочки (пятка, края подошвы, загнутый вверх носок сабатона —
 // в покое он выше подошвы, но при наклоне стопы носком вниз первым уходит в пол). Точки — в осях нормализованных
 // костей стопы и носка. Пол модели в покое — нижняя из них (restY, в осях vrm.scene). Один раз на модель (кэш).
-//   soleMarkers(THREE, vrm) → { L: [{ node, p }], R: [...], restY } | null (нет костей стоп или сетки на них)
-//   soleHeight(m, out?) → нижняя точка подошвы в мире (кости — с актуальными matrixWorld); out = { L, R, min }
+//   soleMarkers(THREE, vrm) → { L: [{ node, p, mesh, i }], R: [...], restY, bones } | null (нет костей стоп или сетки)
+//   soleHeightSkinned(m, out?) → нижняя точка подошвы в мире по вершинам сетки (точно; сырые кости — в позе кадра)
+//   soleHeight(m, out?) → то же по точкам, жёстко сидящим на нормализованных костях (быстро, без сетки)
+//   out = { L, R, min }
 const SOLES = new WeakMap();
 // Вершина скин-сетки сразу в мире — как в шейдере: Σ w·(кость.matrixWorld · обратная привязки)·bindMatrix·v.
 // SkinnedMesh.getVertexPosition делит ещё на bindMatrixInverse, а её three обновляет только в updateMatrixWorld
@@ -211,7 +213,7 @@ export function soleMarkers(THREE, vrm) {
     return { all: boneSubtree(foot), toes: boneSubtree(toes), nf: H.getNormalizedBoneNode(s + 'Foot'), nt: H.getNormalizedBoneNode(s + 'Toes'), pts: [] };
   };
   const sides = { L: side('left'), R: side('right') };
-  // один проход по сырым массивам весов (getComponent и множества — в десятки раз медленнее на ~20 тыс. вершин)
+  // один проход по сырым массивам весов, матрицы костей — один раз на сетку (без getComponent и множеств на вершину)
   const SIDE = [sides.L, sides.R];
   vrm.scene.traverse((o) => {
     if (!o.isSkinnedMesh || !o.skeleton || !o.visible || !o.geometry || !o.geometry.attributes.skinIndex) return;
@@ -406,8 +408,8 @@ export function retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo
   const restHipsLocal = hips ? hips.node.position.clone() : new THREE.Vector3();
   const hipsParentInv = hips ? wq(hips.node.parent).invert() : new THREE.Quaternion();
   // [W5-ПОЛ] опора источника: на сколько голеностоп и носок каждой стопы поднялись над своим покоем (нижняя из
-  // четырёх точек); подошва цели — точки сетки стоп (soleMarkers). Высоту таза из масштаба по высоте таза
-  // («таз KayKit ниже корней ног» — масштаб не тот) поправляем по опоре: см. ниже, после семплирования.
+  // четырёх точек); подошва цели — точки сетки стоп (soleMarkers). Ход таза, масштабированный по высоте таза, опору
+  // не гарантирует (другие пропорции ног и стоп у героя) — поправляем по опоре: groundHips после семплирования.
   const srcFeet = [];
   for (const r of TABLE) if (r[0] === 'leftFoot' || r[0] === 'rightFoot') for (const o of [byName(r[1]), r[3] ? byName(r[3]) : null]) if (o) srcFeet.push([o, wp(o).y]);
   const soles = hips && srcFeet.length ? soleMarkers(THREE, vrm) : null;
