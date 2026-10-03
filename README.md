@@ -66,7 +66,7 @@ U при полной шкале «Ярость клятвы» — «Небес�
 | Надёжность | Библиотеки и модели с CDN | Всё в репозитории, работает без интернета после первого запуска (service worker) |
 | Тесты | 31 набор | 59 наборов, больше 1050 проверок; бюджет кадра — тоже автотестом |
 
-🎴 **Презентация:** [PDF](pitch/ASHEN_OATH_pitch.pdf) · [онлайн](https://diiaanns07-droid.github.io/ADMIT_STUTU/pitch/) · офлайн — откройте `pitch/index.html`
+🎴 **Презентация:** [PDF](pitch/ASHEN_OATH_pitch.pdf) · [онлайн](https://diiaanns07-droid.github.io/ADMIT_STUTU/pitch/) · офлайн — `python3 serve_game.py` → `/pitch/` · [прежняя версия](pitch/v1.html)
 (← → листать, F — полный экран).
 
 ---

@@ -240,6 +240,8 @@
       while (flakes.length < want && flakes.length + embers.length < MAX) flakes.push(flake(false));
       if (embers.length) {
         ctx.globalCompositeOperation = 'lighter';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = 'rgb(' + col.glow.join(',') + ')';
         for (i = 0; i < embers.length; i++) {
           p = embers[i];
           p.age += dt;
@@ -253,6 +255,7 @@
           ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 - k * .5), 0, 6.2832); ctx.fill();
         }
         ctx.globalCompositeOperation = 'source-over';
+        ctx.shadowBlur = 0;
       }
       if (want || flakes.length || embers.length) raf = requestAnimationFrame(frame);
       else last = 0;
@@ -283,7 +286,7 @@
         embers.push({
           x: x0 + (x1 - x0) * (i + Math.random()) / count, y: y + (Math.random() - .5) * 8,
           vx: (Math.random() - .5) * 90, vy: -(40 + Math.random() * 130),
-          r: 1.6 + Math.random() * 2.4, age: 0, life: .55 + Math.random() * .35
+          r: 2 + Math.random() * 2.6, age: 0, life: .55 + Math.random() * .35
         });
       }
       ashCanvas.style.opacity = '1';
@@ -529,7 +532,9 @@
   window.addEventListener('hashchange', function () { var i = fromHash(); if (i !== cur) go(i, 'jump'); });
   window.addEventListener('beforeunload', function () { if (presenter && !presenter.closed) { try { presenter.close(); } catch (e) { /* окно уже закрыто */ } } });
   fit();
-  go(fromHash(), 'jump');
+  // Открыли с первого слайда — показываем его с анимацией, как вход вперёд; с любого другого — сразу целиком.
+  var first = fromHash();
+  go(first, first === 0 ? 'fwd' : 'jump');
 
   // Небольшой API для частей: переход, текущий номер, признак «уменьшенного движения».
   window.DECK = {
