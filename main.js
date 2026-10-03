@@ -2070,7 +2070,7 @@ function frame(now) {
   let fxEvents = events, fxSnap = lastSnapshot;
   if (netSession) { try { const r = netSession.frame(dtReal, now, lastSnapshot, input, events, app.screen); fxEvents = r.events; fxSnap = r.snapshot; } catch (e) { console.warn('[NET] frame', e); } }
   try { world.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] world.update', e); }
-  if (heroModel) { try { heroModel.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] heroModel.update', e); } }
+  if (heroModel) { try { heroModel.update(dt, app.screen === 'menu' ? null : lastSnapshot, events); } catch (e) { console.error('[ASHEN] heroModel.update', e); } }   // [W4-ПОЗЫ] меню — ветка витрины (стойка, визитка), даже если снимок боя уже есть (место старта)
   if (effects.setInput) effects.setInput(input); // [VFX] след руны в воздухе, свечение ладоней
   if (heroBowPose) { try { heroBowPose.update(dt, { root: world.hero && world.hero.root, heroModel, snap: lastSnapshot }); } catch (e) { /* [HAND] */ } } // [HAND] поза лука/ладони
   try { effects.update(dt, fxSnap, fxEvents); } catch (e) { console.error('[ASHEN] effects.update', e); } // [NET] fxSnap/fxEvents
