@@ -114,12 +114,22 @@ export const config = {
     resumeGraceSec: 1.0,     // после «Продолжить бой» враг ещё столько стоит (успеть опустить руки)
   },
 
-  // [FEEL] сложность боя с Регентом (modules/combat.js → setDifficulty). Уровень выбирает игрок в меню
-  // (settings.difficulty, первый бой — «Лёгкая»); здесь — множители здоровья и урона стража.
+  // [FEEL][W5-СЛОЖНОСТЬ] сложность боя с Регентом (modules/combat.js → setDifficulty). Уровень выбирает игрок в меню
+  // (settings.difficulty, первый бой — «Лёгкая»). bossHp — здоровье от 1000, bossDamage — урон стража;
+  // fury — набор «Ярости клятвы», heal — лечение рун и печатей, shieldDrain — расход энергии щитом, energyRegen —
+  // восстановление энергии, scoreMul — множитель очков. Поведение Регента (замахи, связки, приёмы) — modules/boss.js
+  // BOSS_DIFFICULTY. Баланс замерен ботом: node tools/balance_bot.mjs (dev/balanceBot.mjs, «средний» игрок с камерой):
+  //   Лёгкая ≈ 2 мин, Обычная ≈ 3,2 мин, Сложная ≈ 4,5 мин и ~30% поражений, Кошмар — «средний» проигрывает.
+  // Урон за удар ниже прежнего: бой в разы дольше, а лечения в «Новичке» нет — у героя 100 HP на весь бой,
+  // поэтому опасность — в частоте и точности атак (упреждение, связки), а не в одном ударе.
+  // Строки easy/normal — ровно «{ bossHp: N, bossDamage: N }»: их подменяют tools/visual_common.mjs и видео-скрипты.
+  // «Испытание · 60 с» — своя сложность 'challenge' (modules/combat.js: прежняя «Лёгкая»), её здесь нет.
   combat: {
     difficulty: {
-      easy: { bossHp: 0.7, bossDamage: 0.7 },   // «Лёгкая»: Регент на 30% слабее — новичок побеждает за 1,5–3 мин
-      normal: { bossHp: 1, bossDamage: 1 },     // «Обычная»: прежний баланс
+      easy: { bossHp: 4.6, bossDamage: 0.38 },  // «Лёгкая»: первый бой — новичок побеждает за ~3 мин, средний — за ~2
+      normal: { bossHp: 10, bossDamage: 0.4 },  // «Обычная»: 3–4 мин
+      hard: { bossHp: 12, bossDamage: 0.35, fury: 0.8, heal: 0.75, shieldDrain: 1.2, energyRegen: 0.9, scoreMul: 1.5 },
+      nightmare: { bossHp: 12.5, bossDamage: 0.33, fury: 0.65, heal: 0.5, shieldDrain: 1.4, energyRegen: 0.8, scoreMul: 2 },
     },
   },
 
@@ -202,7 +212,7 @@ export const config = {
     muted: false,           // [SFX] «Без звука» (клавиша M)
     voice: true,            // [W3-VOICE] «Голос тренера»: подсказки «ОШИБКА» и реплики диктора вслух (клавиша V); без русского голоса молчит
     reducedMotion: false,
-    difficulty: 'easy',     // [FEEL] сложность боя с Регентом: 'easy' — «Лёгкая» (по умолчанию для первого боя), 'normal' — «Обычная»
+    difficulty: 'easy',     // [FEEL][W5-СЛОЖНОСТЬ] сложность боя с Регентом: 'easy' «Лёгкая» (первый бой), 'normal', 'hard', 'nightmare'
     sensitivity: 1.0,
     // [V5] схема движения левой рукой: 'steer' — «Руль» (высота руки — ход, в сторону — поворот),
     // 'stick' — прежний джойстик (поднять руку и замереть — центр)

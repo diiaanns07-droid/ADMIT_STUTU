@@ -457,6 +457,34 @@ export async function runUISelfTest({ createUI = defaultCreateUI, fixtures = DEF
     btnByText(dSec, 'Ещё раз').click();   // [FEEL] на поражении кнопка «Ещё раз»
     check('«Ещё раз» → onRestart', count('onRestart') === 1);
 
+    /* 15b. [W5-СЛОЖНОСТЬ] сложность: ряд в меню, значок у полосы Регента, итоги и кнопка следующей сложности */
+    reset();
+    ui.update(F('menu', { settings: { ...fixtures.menu.settings, difficulty: 'hard' } }));
+    const diffRow = section('menu').querySelector('.ao-fieldset--diff');
+    const diffOpts = diffRow ? [...diffRow.querySelectorAll('.ao-seg__label')].map((x) => x.textContent) : [];
+    check('меню: ряд «Сложность» из 4 кнопок на виду', diffOpts.join() === 'Лёгкая,Обычная,Сложная,Кошмар' && isVisible(diffRow), diffOpts.join());
+    check('меню: выбрана сохранённая сложность', !!diffRow && diffRow.querySelector('input:checked') && diffRow.querySelector('input:checked').value === 'hard');
+    diffRow.querySelector('input[value=nightmare]').click();
+    check('меню: «Кошмар» → onSettings({difficulty:"nightmare"})', JSON.stringify(last('onSettings')) === '{"difficulty":"nightmare"}', JSON.stringify(last('onSettings')));
+    diffRow.querySelector('input[value=nightmare]').blur();
+    ui.update(F('playing', { snapshot: { ...fixtures.playing.snapshot, difficulty: 'nightmare' } }));
+    check('бой: значок «Кошмар» у полосы Регента', isVisible($('.ao-boss__diff')) && $('.ao-boss__diff').textContent === 'Кошмар' && $('.ao-boss__diff').getAttribute('data-level') === 'nightmare');
+    ui.update(F('playing'));
+    check('бой без уровня (испытание) — без значка', !isVisible($('.ao-boss__diff')));
+    reset();
+    ui.update(F('victory-hard'));
+    const vh = section('victory');
+    check('победа на «Сложной»: сложность и очки с множителем', vh.querySelector('.ao-result__levelline').textContent.startsWith('«Сложная» ×1,5') && vh.querySelector('.ao-result__levelline').textContent.includes('24') && vh.querySelector('.ao-result__levelline').textContent.includes('24'));
+    check('победа: «Победа за 4:32 на «Сложной» — попробуй «Кошмар»!»', vh.querySelector('.ao-lead').textContent === 'Победа за 4:32 на «Сложной» — попробуй «Кошмар»!', vh.querySelector('.ao-lead').textContent);
+    check('победа: зал славы дня — тройка лидеров, своё место отмечено', vh.querySelectorAll('.ao-fhall__row').length === 3 && vh.querySelector('.ao-fhall__row.is-me .ao-fhall__score').textContent.replace(/\s/g, '') === '24180');
+    btnByText(vh, 'Сложнее: «Кошмар»').click();
+    check('«Сложнее: «Кошмар»» → onSettings + onRestart', JSON.stringify(last('onSettings')) === '{"difficulty":"nightmare"}' && count('onRestart') === 1);
+    reset();
+    ui.update(F('defeat-hard'));
+    const dh = section('defeat');
+    btnByText(dh, 'Полегче: «Обычная»').click();
+    check('поражение на «Сложной»: «Полегче: «Обычная»» → onSettings + onRestart', JSON.stringify(last('onSettings')) === '{"difficulty":"normal"}' && count('onRestart') === 1 && dh.querySelector('.ao-lead').textContent.includes('на «Сложной»') && dh.querySelector('.ao-lead').textContent.includes('Попробуйте «Обычную»'));
+
     /* 16. Escape */
     reset();
     ui.update(F('playing'));

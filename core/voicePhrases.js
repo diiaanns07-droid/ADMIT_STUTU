@@ -187,6 +187,38 @@ export const ULT_PHRASES = Object.freeze({
   cast: 'Небесный суд!',
 });
 
+// ───────── [W5-СЛОЖНОСТЬ] сложность боя с Регентом: названия и совет после победы ─────────
+export const DIFFICULTY_ORDER = Object.freeze(['easy', 'normal', 'hard', 'nightmare']);
+// name — как на кнопке; acc — «попробуй …» (винительный); prep — «на …» (предложный)
+export const DIFFICULTY_NAMES = Object.freeze({
+  easy: Object.freeze({ name: 'Лёгкая', acc: 'Лёгкую', prep: 'Лёгкой' }),
+  normal: Object.freeze({ name: 'Обычная', acc: 'Обычную', prep: 'Обычной' }),
+  hard: Object.freeze({ name: 'Сложная', acc: 'Сложную', prep: 'Сложной' }),
+  nightmare: Object.freeze({ name: 'Кошмар', acc: 'Кошмар', prep: 'Кошмаре' }),
+});
+export function nextDifficulty(level) {
+  const i = DIFFICULTY_ORDER.indexOf(level);
+  return i >= 0 && i < DIFFICULTY_ORDER.length - 1 ? DIFFICULTY_ORDER[i + 1] : null;
+}
+export function prevDifficulty(level) {
+  const i = DIFFICULTY_ORDER.indexOf(level);
+  return i > 0 ? DIFFICULTY_ORDER[i - 1] : null;
+}
+// Вслух после «Победа!» — следующий уровень (2–3 слова, как у диктора); на вершине — похвала.
+export const NEXT_DIFFICULTY_PHRASES = Object.freeze({
+  easy: 'Попробуй Обычную!',
+  normal: 'Попробуй Сложную!',
+  hard: 'Попробуй Кошмар!',
+  nightmare: 'Кошмар покорён!',
+});
+// На экране итогов: «Победа на «Обычной» — попробуй «Сложную»!»; неизвестный уровень — пусто.
+export function nextDifficultyText(level) {
+  const cur = DIFFICULTY_NAMES[level];
+  if (!cur) return '';
+  const next = nextDifficulty(level);
+  return next ? `Победа на «${cur.prep}» — попробуй «${DIFFICULTY_NAMES[next].acc}»!` : `Победа на «${cur.prep}» — выше уровня нет. Легенда!`;
+}
+
 // ───────── числа по-русски ─────────
 const UNITS = ['ноль', 'один', 'два', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять',
   'десять', 'одиннадцать', 'двенадцать', 'тринадцать', 'четырнадцать', 'пятнадцать', 'шестнадцать', 'семнадцать', 'восемнадцать', 'девятнадцать'];

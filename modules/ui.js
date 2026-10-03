@@ -32,6 +32,7 @@ import { createTutorialTrainer, TRAINER_STEPS } from '../core/tutorialTrainer.js
 import { COACH_GROUPS, hintPictogram } from '../core/gestureCoach.js'; // [ТВИСТ «ОШИБКА»] итоги: жесты и пиктограммы
 import { createTechniqueScreen } from './techniqueTrainer.js';            // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
 import { createChallengeScreen, createChallengeMenuButton } from './challenge.js'; // [W3-CHALLENGE] «Испытание · 60 с»
+import { DIFFICULTY_ORDER, DIFFICULTY_NAMES, nextDifficulty, prevDifficulty } from '../core/voicePhrases.js'; // [W5-СЛОЖНОСТЬ]
 
 export const API_VERSION = 'ASHEN_V1';
 
@@ -40,6 +41,9 @@ const TRACK_STATES = ['idle', 'loading', 'permission', 'calibrating', 'ready', '
 const CAMERA_RUNNING = ['ready', 'lost', 'calibrating'];
 const CAMERA_STARTING = ['permission', 'loading'];
 const BOSS_NAME = 'Регент Нимба';
+// [W5-СЛОЖНОСТЬ] множитель очков по уровню (как config.js combat.difficulty.*.scoreMul) — подпись значка и итогов
+const DIFF_MUL = Object.freeze({ easy: 1, normal: 1, hard: 1.5, nightmare: 2 });
+const mulText = (m) => `×${String(m).replace('.', ',')}`;
 // [PERF] 'auto' — уровень и разрешение подбирает автоподстройка под железо (core/perfTuner.js)
 const QUALITY_OPTIONS = [['auto', 'Авто'], ['low', 'Низкое'], ['medium', 'Среднее'], ['high', 'Высокое']];
 const QUALITY_VALUES = QUALITY_OPTIONS.map((q) => q[0]);
@@ -571,7 +575,7 @@ function normSettings(s) {
     startZone: o.startZone === 'forest' || o.startZone === 'edge' ? o.startZone : 'arena', // [FOREST] место старта; [ONBOARD] 'edge' — у края арены
     gestureMode: o.gestureMode === 'master' ? 'master' : 'novice', // [НОВИЧОК] набор жестов
     autoWalk: o.autoWalk !== false,                                 // [НОВИЧОК] автоход
-    difficulty: o.difficulty === 'normal' ? 'normal' : 'easy', // [FEEL] сложность боя с Регентом
+    difficulty: DIFFICULTY_ORDER.includes(o.difficulty) ? o.difficulty : 'easy', // [FEEL][W5-СЛОЖНОСТЬ] сложность боя с Регентом
     hero: HERO_OPTIONS.some(([v]) => v === o.hero) ? o.hero : DEFAULT_SETTINGS.hero,
     muted: o.muted === true, // [SFX] «Без звука» (клавиша M)
     spiritAvatar: o.spiritAvatar !== false, // [W3-SPIRIT] «Дух игрока»
@@ -911,6 +915,10 @@ function shortRaw(raw) {
 
 function telegraphText(tg) {
   const block = tg.blockable === true;
+  // [W5-СЛОЖНОСТЬ] составные приёмы «Сложной» и «Кошмара»
+  if (tg.move === 'double') return 'Двойной удар: уйдите из круга — и из второго.';
+  if (tg.move === 'volley') return block ? 'Залп сфер: держите щит до последней.' : 'Залп сфер: уходите с линии рывком.';
+  if (tg.move === 'trap') return 'Каменный капкан: рывком к Регенту или от него.';
   switch (tg.kind) {
     case 'slam':
       return block ? 'Регент бьёт ладонью: уйдите из круга или держите щит.' : 'Регент бьёт ладонью: уйдите из круга.';
@@ -1397,7 +1405,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const ctl = {
       sync(settings, force) {
         const m = settings.gestureMode === 'master' ? 'master' : 'novice';
-        setText(hint, `${TIPS[m]}${settings.autoWalk !== false ? '. Автоход ведёт героя к Регенту и вокруг него.' : '.'}`);
+        const full = `${TIPS[m]}${settings.autoWalk !== false ? '. Автоход ведёт героя к Регенту и вокруг него.' : '.'}`;
+        // [W5-СЛОЖНОСТЬ] в меню подсказка — одной строкой (под ней ряд «Сложность»); полностью — во всплывающей подсказке
+        setText(hint, prefix === 'menu' ? `${TIPS[m]}.` : full);
+        setAttr(hint, 'title', full);
         if (!force && fs.contains(doc.activeElement)) return;
         for (const i of inputs) { const on = i.value === m; if (i.checked !== on) i.checked = on; }
         if (auto.checked !== (settings.autoWalk !== false)) auto.checked = settings.autoWalk !== false;
@@ -1435,18 +1446,25 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     return fs;
   }
 
-  // [FEEL] «Сложность»: Лёгкая (Регент на 30% слабее, по умолчанию) / Обычная. Действует со следующего боя.
-  const DIFFICULTY_OPTIONS = [['easy', 'Лёгкая'], ['normal', 'Обычная']];
+  // [FEEL][W5-СЛОЖНОСТЬ] «Сложность»: Лёгкая (по умолчанию, первый бой) / Обычная / Сложная / Кошмар. Действует со
+  // следующего боя. В меню — ряд на виду под «Жестами» (prefix 'menutop': подпись слева, меню не растёт), и в «Настройках».
+  const DIFFICULTY_OPTIONS = DIFFICULTY_ORDER.map((v) => [v, DIFFICULTY_NAMES[v].name]);
+  const DIFFICULTY_TIPS = {
+    easy: 'Первый бой: Регент медленный и бьёт слабо — победа за 2–3 минуты',
+    normal: 'Регент в полную силу — бой на 3–4 минуты',
+    hard: 'Короткие замахи, связки, двойной удар, залп сфер и финты; ярость копится медленнее, лечения меньше. Очки ×1,5',
+    nightmare: 'Для опытных: удары на упреждение, «Каменный капкан», вторая стадия почти сразу — проиграть реально. Очки ×2',
+  };
   function buildDifficulty(prefix) {
     const name = `${uid}-${prefix}-difficulty`;
-    const seg = el('div', { class: 'ao-seg' });
-    const fs = el('fieldset', { class: 'ao-field ao-fieldset' }, el('legend', { class: 'ao-field__legend', text: 'Сложность' }), seg);
+    const seg = el('div', { class: 'ao-seg ao-seg--diff' });
+    const top = prefix === 'menutop';
+    const fs = el('fieldset', { class: `ao-field ao-fieldset${top ? ' ao-fieldset--diff' : ''}` }, el('legend', { class: 'ao-field__legend', text: 'Сложность' }), seg);
     const inputs = [];
-    const TIPS = { easy: 'Для первого боя: у Регента на 30% меньше здоровья и урона', normal: 'Полная сила Регента' };
     for (const [value, label] of DIFFICULTY_OPTIONS) {
       const input = el('input', { type: 'radio', name, value, class: 'ao-seg__input' });
       inputs.push(input);
-      seg.append(el('label', { class: 'ao-seg__opt', title: `${label}: ${TIPS[value]}` }, input, el('span', { class: 'ao-seg__label', text: label })));
+      seg.append(el('label', { class: 'ao-seg__opt', 'data-level': value, title: `${label}: ${DIFFICULTY_TIPS[value]}` }, input, el('span', { class: 'ao-seg__label', text: label })));
       listen(input, 'change', () => { if (input.checked) invoke('onSettings', { difficulty: value }); });
     }
     const ctl = {
@@ -1597,7 +1615,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       title,
       el('p', { class: 'ao-subtitle', text: 'Бой с Регентом Нимба' }),
       el('p', { class: 'ao-cvnote' }, icon('camera', 'ao-cvnote__icon'), el('span', { text: 'Управление телом и руками через веб-камеру' })),
-      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, chalBtn.node /* [W3-CHALLENGE] */, techBtn.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode', 'spiritAvatar'], 'menu')), // [НОВИЧОК] режим жестов — на виду; [W3-SPIRIT] «Дух игрока»
+      el('div', { class: 'ao-menu__cta' }, el('div', { class: 'ao-menu__row' }, start.node, chalBtn.node /* [W3-CHALLENGE] */, techBtn.node, oathBtn.node, oathPts, netBtn.node /* [NET] */, bookM.node), el('p', { class: 'ao-note', text: 'Сидя на устойчивом стуле или стоя в паре шагов от камеры. Нужны веб-камера, Chrome или Edge.' }), buildSettings(['gestureMode', 'spiritAvatar'], 'menu'), buildDifficulty('menutop')), // [НОВИЧОК] режим жестов — на виду; [W3-SPIRIT] «Дух игрока»; [W5-СЛОЖНОСТЬ] сложность — на виду
       buildHeroPick('menu'),
       el('div', { class: 'ao-menu__settings' }, el('h2', { class: 'ao-h3 ao-menu__sethead' }, setToggle), setBody),
       el('div', { class: 'ao-menu__foot' }, el('div', { class: 'ao-menu__toggles' }, dbg, presentBtn), dbgKeys),
@@ -2746,17 +2764,32 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const oathR = btn('Клятва героя', () => invoke('onOath', { from: kind }));
     const exit = btn('В меню', () => invoke('onExit'), { variant: 'quiet' });
     const posterR = btn('Сохранить постер', () => invoke('onPosterSave', { from: kind })); // [W3-CHALLENGE] постер и после обычного боя
+    // [W5-СЛОЖНОСТЬ] победа — «попробуй следующую сложность», поражение — «полегче»: выбрать уровень и сразу в бой
+    let otherLevel = null;
+    const levelR = btn('Сложнее', () => { if (otherLevel) { invoke('onSettings', { difficulty: otherLevel }); invoke('onRestart'); } }, { variant: 'secondary' });
+    levelR.node.classList.add('ao-result__level');
+    // [W5-СЛОЖНОСТЬ] сложность и очки боя — строкой под итогом; зал славы дня (победы над Регентом, у «Испытания» свой) —
+    // одной строкой: тройка лидеров и своё место (панель на 1366×768 не растёт)
+    const levelLine = el('p', { class: 'ao-result__levelline', hidden: true });
+    const fhallList = el('ol', { class: 'ao-fhall__list' });
+    const fhall = el('section', { class: 'ao-fhall', hidden: true, 'aria-label': 'Зал славы дня: победы над Регентом' },
+      el('span', { class: 'ao-fhall__head', text: 'Зал славы дня' }), fhallList);
+    let fhallKey = '';
+    // [W5-СЛОЖНОСТЬ] с кнопкой смены сложности кнопок шесть — ряд компактнее (ao-actions--six), чтобы остаться в одну строку
+    const actionsR = el('div', { class: 'ao-actions ao-actions--center' }, again.node, levelR.node, posterR.node /* [W3-CHALLENGE] */, techR.node, oathR.node, exit.node);
     const panel = el(
       'div',
       { class: `ao-panel ao-panel--result ao-panel--${kind} ao-frame ao-has-tech` },
       el('div', { class: 'ao-result__mark', html: ICONS.sigil, 'aria-hidden': 'true' }),
       h,
       summary,
+      levelLine, // [W5-СЛОЖНОСТЬ]
+      fhall,
       stats,
       tech.node,
       coachTip,
       tip,
-      el('div', { class: 'ao-actions ao-actions--center' }, again.node, posterR.node /* [W3-CHALLENGE] */, techR.node, oathR.node, exit.node),
+      actionsR,
     );
     return {
       section: screenSection(kind, panel, hid),
@@ -2769,7 +2802,37 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           for (const dd of Object.values(rows)) setText(dd, '—');
           setText(summary, win_ ? 'Бой окончен победой.' : 'Бой окончен.');
           setHidden(tip, true);
+          setHidden(levelR.node, true); setHidden(fhall, true); setHidden(levelLine, true); setClass(actionsR, 'ao-actions--six', false);
           return;
+        }
+        // [W5-СЛОЖНОСТЬ] уровень боя (из снимка), очки с множителем (итог боя от main.js), совет и зал славы
+        const fight = ctx.vm && ctx.vm.fight && typeof ctx.vm.fight === 'object' ? ctx.vm.fight : null;
+        const lv = DIFFICULTY_NAMES[s.difficulty] ? s.difficulty : null;
+        const mul = fight && Number.isFinite(fight.scoreMul) ? fight.scoreMul : (lv ? DIFF_MUL[lv] : 1);
+        const res = fight && fight.result && typeof fight.result === 'object' ? fight.result : null;
+        const lvText = lv ? `«${DIFFICULTY_NAMES[lv].name}»${mul > 1 ? ` ${mulText(mul)}` : ''}` : '';
+        const scText = res && Number.isFinite(res.score) ? `${fmtInt(res.score)} очков${res.rank ? ` · ранг ${res.rank}` : ''}${res.isRecord ? ' · рекорд дня!' : res.place ? ` · ${res.place}-е место дня` : ''}` : '';
+        setText(levelLine, [lvText, scText].filter(Boolean).join(' · '));
+        setHidden(levelLine, !win_ || (!lvText && !scText));   // поражение: уровень — в строке итога
+        otherLevel = lv ? (win_ ? nextDifficulty(lv) : prevDifficulty(lv)) : null;
+        setHidden(levelR.node, !otherLevel);
+        setClass(actionsR, 'ao-actions--six', !!otherLevel);
+        if (otherLevel) setBtn(levelR, { label: win_ ? `Сложнее: «${DIFFICULTY_NAMES[otherLevel].name}»` : `Полегче: «${DIFFICULTY_NAMES[otherLevel].name}»` });
+        // зал: тройка лидеров и своё место (если ниже); всплывающая подсказка — герой и время
+        const meId = res && res.entryId;
+        const all = win_ && fight && Array.isArray(fight.hall) ? fight.hall : [];
+        const hallRowsF = all.filter((e, i) => i < 3 || e.id === meId).slice(0, 4);
+        setHidden(fhall, !hallRowsF.length);
+        const hk = JSON.stringify(hallRowsF.map((e) => [e.id, e.score, e.diff, e.time]).concat([meId]));
+        if (hk !== fhallKey) {
+          fhallKey = hk;
+          fhallList.replaceChildren(...hallRowsF.map((e, i) => el('li', {
+            class: `ao-fhall__row${meId && e.id === meId ? ' is-me' : ''}`,
+            title: [e.heroName || e.name || '', Number.isFinite(e.time) ? `бой ${fmtClock(e.time)}` : ''].filter(Boolean).join(' · '),
+          },
+          el('span', { class: 'ao-fhall__place', text: `${e.place || i + 1}.` }),
+          el('span', { class: 'ao-fhall__lv', 'data-level': e.diff || '', text: DIFFICULTY_NAMES[e.diff] ? DIFFICULTY_NAMES[e.diff].name : '—' }),
+          el('span', { class: 'ao-fhall__score', text: fmtInt(e.score) }))));
         }
         const st = s.stats && typeof s.stats === 'object' ? s.stats : {};
         const p = s.player || {};
@@ -2788,7 +2851,11 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         if (win_) {
           const maxHp = Math.max(1, num(p.maxHp, 1));
           setText(rows.remain, `${Math.ceil(clamp(num(p.hp), 0, maxHp))} из ${Math.round(maxHp)}`);
-          setText(summary, `Победа за ${fmtClock(s.time)}. ${num(st.damageTaken) === 0 ? 'Бой без единого пропущенного удара.' : 'Обет исполнен: страж больше не поднимется.'}`);
+          // [W5-СЛОЖНОСТЬ] «Победа за 3:21 на «Обычной» — попробуй «Сложную»!»
+          const nx = lv ? nextDifficulty(lv) : null;
+          const flavor = num(st.damageTaken) === 0 ? 'Бой без единого пропущенного удара.' : 'Обет исполнен: страж больше не поднимется.';
+          setText(summary, lv ? `Победа за ${fmtClock(s.time)} на «${DIFFICULTY_NAMES[lv].prep}» — ${nx ? `попробуй «${DIFFICULTY_NAMES[nx].acc}»!` : 'выше уровня нет. Легенда!'}`
+            : `Победа за ${fmtClock(s.time)}. ${flavor}`);
           setHidden(tip, true);
         } else {
           const maxHp = Math.max(1e-6, num(b.maxHp, 1));
@@ -2796,9 +2863,11 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           setText(rows.remain, pct(left));
           // [FEEL] дружелюбный итог: заголовок по прогрессу, совет про «Лёгкую» сложность
           setText(h, left <= 0.5 ? 'Почти получилось!' : 'Хорошая попытка!');
-          let text = `Регент устоял: у него осталось ${pct(left)} здоровья.`;
+          let text = `Регент устоял${lv ? ` на «${DIFFICULTY_NAMES[lv].prep}»` : ''}: у него осталось ${pct(left)} здоровья.`;   // [W5-СЛОЖНОСТЬ]
           if (b.stage === 2) text += ' Вы довели бой до второй стадии.';
-          text += ctx.settings.difficulty === 'normal' ? ' На «Лёгкой» сложности (меню → Настройки) Регент на 30% слабее.' : ' Новый бой — с полным здоровьем.';
+          // [W5-СЛОЖНОСТЬ] совет на уровень ниже (кнопка «Полегче» — тут же); на «Лёгкой» — просто новый бой
+          const easier = lv ? prevDifficulty(lv) : null;
+          text += easier ? ` Попробуйте «${DIFFICULTY_NAMES[easier].acc}».` : ' Новый бой — с полным здоровьем.';
           setText(summary, text);
           setText(tip, defeatTip(st, s));
           setHidden(tip, false);
@@ -3389,10 +3458,11 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
   const hud = (() => {
     const bossBar = bar('boss', 'Здоровье Регента');
     const stage = el('span', { class: 'ao-boss__stage', hidden: true, text: 'вторая стадия' });
+    const diffBadge = el('span', { class: 'ao-boss__diff', hidden: true });   // [W5-СЛОЖНОСТЬ] сложность боя у полосы Регента
     const teleText = el('span', { class: 'ao-tele__text' });
     const teleFill = el('span', { class: 'ao-tele__fill' });
     const tele = el('div', { class: 'ao-tele', hidden: true, role: 'status' }, teleText, el('span', { class: 'ao-tele__time', 'aria-hidden': 'true' }, teleFill));
-    const boss = el('div', { class: 'ao-boss' }, el('div', { class: 'ao-boss__head' }, el('span', { class: 'ao-boss__name', text: BOSS_NAME }), stage),
+    const boss = el('div', { class: 'ao-boss' }, el('div', { class: 'ao-boss__head' }, diffBadge, el('span', { class: 'ao-boss__name', text: BOSS_NAME }), stage),
       el('div', { class: 'ao-boss__frame' }, bossBar.node, el('span', { class: 'ao-boss__phase', 'aria-hidden': 'true' })), tele); // [W4-UI] рамка с крыльями и делением фаз
 
     const hp = bar('hp', 'Здоровье героя');
@@ -3476,6 +3546,14 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setHidden(stage, !stage2);
         setClass(boss, 'is-stage2', stage2);
         setClass(boss, 'is-dead', !!b && b.action === 'dead');
+        // [W5-СЛОЖНОСТЬ] уровень боя — из снимка (у «Испытания» своя сложность — без значка)
+        const lv = s && s.mode !== 'pvp' && typeof s.difficulty === 'string' && DIFFICULTY_NAMES[s.difficulty] ? s.difficulty : null;   // в дуэли — без значка
+        setHidden(diffBadge, !lv);
+        if (lv) {
+          setText(diffBadge, DIFFICULTY_NAMES[lv].name);
+          setAttr(diffBadge, 'data-level', lv);
+          setAttr(diffBadge, 'title', `Сложность боя: ${DIFFICULTY_NAMES[lv].name}${DIFF_MUL[lv] > 1 ? ` · очки ×${String(DIFF_MUL[lv]).replace('.', ',')}` : ''}`);
+        }
         if (b) {
           const stg = stage2 ? 2 : 1;
           if (stg === 2 && state.stage !== 2 && playing) showBanner('Нимб трескается. Вторая стадия.');

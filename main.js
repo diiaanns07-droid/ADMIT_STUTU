@@ -41,6 +41,7 @@ import { createCoachOverlay } from './core/coachOverlay.js'; // [ТВИСТ «О
 import { createTechniqueTrainer } from './modules/techniqueTrainer.js'; // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
 import { createUltimateGesture, ultTimeScale, ultCameraKeys } from './core/ultimate.js'; // [W3-ULT] «Небесный суд»
 import { createVoiceCoach, createVoiceDirector, createVoiceRecords } from './modules/voiceCoach.js'; // [W3-VOICE] подсказки и диктор — вслух
+import { DIFFICULTY_ORDER, DIFFICULTY_NAMES } from './core/voicePhrases.js'; // [W5-СЛОЖНОСТЬ] названия уровней сложности
 import { createHandCursor } from './core/handCursor.js'; // [W3-CURSOR] курсор-кисть вместо мыши
 import { menuDrawables, menuFrustum, compileSet, createLateStart, createTrickleCompile } from './core/bootPlan.js'; // [W5-СТАРТ] что до меню, что после
 
@@ -88,7 +89,7 @@ function sanitizeSettings(patch, base) {
   if (Number.isFinite(+patch.volume) && patch.volume !== null && patch.volume !== '') out.volume = Math.max(0, Math.min(1, +patch.volume));
   if (Number.isFinite(+patch.sensitivity) && patch.sensitivity !== null && patch.sensitivity !== '') out.sensitivity = Math.max(0.5, Math.min(2, +patch.sensitivity));
   if ('reducedMotion' in patch) out.reducedMotion = !!patch.reducedMotion;
-  if (patch.difficulty === 'easy' || patch.difficulty === 'normal') out.difficulty = patch.difficulty; // [FEEL] сложность боя с Регентом
+  if (DIFFICULTY_ORDER.includes(patch.difficulty)) out.difficulty = patch.difficulty; // [FEEL][W5-СЛОЖНОСТЬ] сложность боя с Регентом
   if ('muted' in patch) out.muted = patch.muted === true; // [SFX] «Без звука» (кнопка в меню и паузе, клавиша M)
   if ('voice' in patch) out.voice = patch.voice !== false; // [W3-VOICE] «Голос тренера» (кнопка рядом с «Без звука», клавиша V)
   if (patch.moveMode === 'steer' || patch.moveMode === 'stick') out.moveMode = patch.moveMode; // [V5] «Руль» / «Джойстик»
@@ -226,6 +227,9 @@ const chal = {
   shot: { canvas: null, want: false, at: 0, has: false },
   skeleton: null,
   hudAt: 0, live: { score: 0, rank: 'D' },
+  // [W5-СЛОЖНОСТЬ] обычный бой: итог (очки с множителем сложности) и свой зал славы дня — победы над Регентом
+  fight: null,
+  fightHall: (() => { try { return createHall(window.localStorage, { key: 'ashen-oath.hall-fight.v1' }); } catch (e) { return createHall(null, { key: 'ashen-oath.hall-fight.v1' }); } })(),
 };
 
 // [ASHEN_V2] мир создаётся первым: его раскладка (коллайдеры, земля, арена, старт) нужна бою и камере.
@@ -593,6 +597,7 @@ function resetFight() {
   applyStartZone();            // [FOREST] место старта
   if (typeof combat.setDifficulty === 'function') { try { combat.setDifficulty(chal.session.active ? CHALLENGE.difficulty : settings.difficulty); } catch (e) { console.warn('[FEEL] сложность', e); } } // [FEEL] HP и урон Регента
   combat.reset();              // сбрасывает и bossBrain
+  chal.fight = null;           // [W5-СЛОЖНОСТЬ] итог прошлого боя
   world.reset();
   effects.reset();
   if (bossFinale) bossFinale.reset();   // [W3-КИНО] осколки и кинокамера прошлого боя
@@ -856,6 +861,7 @@ function voiceFrame(now, input, events) {
       screen: scr, hint, events, pvp, countdown, training, recognized: voiceTut.ok,
       boss: b && !app.outroAt ? { hp: b.hp, maxHp: b.maxHp } : null,
       fight: won && lastSnapshot ? { time: lastSnapshot.time, accuracy: coachStats.summary().accuracy } : null, // рекорд победы
+      difficulty: won && !chal.session.active && diffInfo().selectable ? diffInfo().level : null, // [W5-СЛОЖНОСТЬ] рекорд по уровню и совет «попробуй …»
     });
   } catch (e) { console.warn('[VOICE] кадр', e); }
 }
@@ -1304,7 +1310,7 @@ try { chal.hud = createChallengeHud({ root: uiRoot }); } catch (e) { console.war
 function refreshHall() { const all = chal.hall.all(); chal.hallView = { list: all, best: all[0] || null }; }   // экран сам выбирает топ-10 и своё место
 refreshHall();
 if (PERF_Q.has('reset-hall')) {
-  chal.hall.clear(); refreshHall();
+  chal.hall.clear(); chal.fightHall.clear(); refreshHall();   // [W5-СЛОЖНОСТЬ] и зал побед над Регентом
   try { const u = new URL(location.href); u.searchParams.delete('reset-hall'); history.replaceState(null, '', u.href); } catch (e) { /* адрес останется прежним */ }
   setTimeout(() => flashRecNote('Зал славы дня очищен — можно начинать финал'), 400);
 }
@@ -1315,6 +1321,7 @@ function challengePrepare() {
   try { bossBrain.useChallenge(on); } catch (e) { console.warn('[W3-CHALLENGE] seed', e); }
   applyUpgrades();
   chal.result = null; chal.skeleton = null; chal.shot.has = false; chal.shot.want = false; chal.shot.at = 0;
+  chal.fight = null;   // [W5-СЛОЖНОСТЬ]
   setPosterUrl('');
 }
 // бой сброшен: подсчёт с нуля; в испытании — сразу на арену и отсчёт 3-2-1 (true — облёт не нужен)
@@ -1338,7 +1345,37 @@ function challengeResult(kind) {
   return buildResult({
     tally: chal.tally, snap: lastSnapshot, coach: coachEnd || coachStats.summary(), session: kind === 'challenge' ? chal.session : null, kind,
     mode: app.debug ? 'debug' : settings.gestureMode, hero: settings.hero, heroName: hero.name || '',
+    difficulty: diffInfo(),   // [W5-СЛОЖНОСТЬ] очки обычного боя — с множителем сложности
   });
+}
+// [W5-СЛОЖНОСТЬ] уровень, с которым идёт бой (combat.setDifficulty в resetFight): { level, name, scoreMul, selectable }
+function diffInfo() {
+  let d = null;
+  try { d = typeof combat.getDifficulty === 'function' ? combat.getDifficulty() : null; } catch (e) { d = null; }
+  const level = (d && d.level) || settings.difficulty;
+  return { level, name: DIFFICULTY_NAMES[level] ? DIFFICULTY_NAMES[level].name : '', scoreMul: d && Number.isFinite(d.scoreMul) ? d.scoreMul : 1, selectable: !!(d && d.selectable) };
+}
+// [W5-СЛОЖНОСТЬ] конец обычного боя: итог с очками; победа — в зал славы дня (у «Испытания» свой зал)
+function finishFight(win) {
+  if (chal.fight || chal.session.active || (pvpCtl && pvpCtl.active)) return;
+  const r = challengeResult('fight');
+  let extra = {}, hall = [];
+  if (win && DIFFICULTY_NAMES[r.difficulty]) {
+    const h = chal.fightHall.add({ ...r, name: '' });
+    extra = { place: h.place, total: h.total, isRecord: h.isRecord && h.total > 1, entryId: h.entry.id };
+    // строки зала для экрана итогов — один раз (не читать хранилище каждый кадр): топ-5 и своё место
+    const all = chal.fightHall.all();
+    const me = all.findIndex((e) => e.id === h.entry.id);
+    hall = all.map((e, i) => i).filter((i) => i < 5 || i === me)
+      .map((i) => { const e = all[i]; return { id: e.id, place: i + 1, score: e.score, diff: e.diff, time: e.sec, heroName: (HEROES[e.hero] || {}).name || '', name: e.name }; });
+  }
+  chal.fight = { ...r, ...extra, hall };
+}
+// [W5-СЛОЖНОСТЬ] итоги обычного боя для экрана: уровень, множитель, итог и зал славы (топ-5 и своё место)
+function fightView() {
+  const d = diffInfo();
+  const end = app.screen === 'victory' || app.screen === 'defeat';
+  return { level: d.level, scoreMul: d.scoreMul, result: end ? chal.fight : null, hall: app.screen === 'victory' && chal.fight ? chal.fight.hall : [] };
 }
 // конец попытки: итог → зал славы дня (имя впишут на экране итогов) → постер
 function finishChallenge() {
@@ -1401,7 +1438,7 @@ function grabShot() {
   } catch (e) { chal.shot.has = false; }
 }
 function posterData() {
-  const r = chal.result || challengeResult('fight');
+  const r = chal.result || chal.fight || challengeResult('fight');   // [W5-СЛОЖНОСТЬ] итог обычного боя — с сохранённым местом в зале
   const hero = HEROES[settings.hero] || {};
   return {
     ...r, heroName: hero.name || '', heroCls: [hero.cls, hero.element].filter(Boolean).join(' · '),
@@ -1586,6 +1623,7 @@ function renderUI() {
     voice: voiceView(), // [W3-VOICE] «Голос тренера»: включён ли и найден ли русский голос
     coach: app.screen === 'victory' || app.screen === 'defeat' ? (coachEnd || coachStats.summary()) : null, // [ТВИСТ «ОШИБКА»] итог, сравнение с прошлым боем
     challenge: { result: app.screen === 'challenge' ? chal.result : null, hall: chal.hallView.list, best: chal.hallView.best, posterUrl: chal.posterUrl }, // [W3-CHALLENGE]
+    fight: fightView(),   // [W5-СЛОЖНОСТЬ] итог обычного боя: сложность, очки, зал славы
     // [ONBOARD] причина на кнопках «В бой»/«Продолжить бой»; отсчёт автопродолжения; калибровка из сохранения
     gate: { ok: app.gate.ok, reason: app.gate.reason },
     autoResumeMs: app.autoResume ? Math.max(0, app.autoResume.at - performance.now()) : null,
@@ -2040,7 +2078,7 @@ function frame(now) {
     events = checkEmbers(lastSnapshot, events);
     events = forestZoneEvents(events, lastSnapshot);   // [FOREST]
     challengeFrame(now, events);                       // [W3-CHALLENGE] очки, таймер, момент удара
-    if (lastSnapshot.status === 'victory' || lastSnapshot.status === 'defeat') finishCoach();   // [ТВИСТ «ОШИБКА»] итог — в историю (один раз; жесты финала уже не считаются)
+    if (lastSnapshot.status === 'victory' || lastSnapshot.status === 'defeat') { finishCoach(); finishFight(lastSnapshot.status === 'victory'); }   // [ТВИСТ «ОШИБКА»] итог — в историю (один раз; жесты финала уже не считаются); [W5-СЛОЖНОСТЬ] итог боя
     if (lastSnapshot.status === 'victory' || lastSnapshot.status === 'defeat') {
       // [FEEL] экран итогов — после замедленного финала (в дуэли и при «Уменьшенном движении» — короче)
       const win = lastSnapshot.status === 'victory';

@@ -227,6 +227,43 @@ export const FIXTURES = {
     }),
     coach: COACH_WIN,
   }),
+  // [W5-СЛОЖНОСТЬ] победа на «Сложной»: строка сложности и очков, совет «попробуй «Кошмар»», зал славы дня (6 строк)
+  'victory-hard': vm({
+    screen: 'victory',
+    tracking: { ...READY },
+    settings: { ...DEFAULT_SETTINGS, difficulty: 'hard' },
+    snapshot: makeSnapshot({
+      status: 'victory', time: 271.6, difficulty: 'hard',
+      player: { hp: 23 },
+      boss: { hp: 0, maxHp: 12000, stage: 2, action: 'dead' },
+      stats: { damageDealt: 12000, damageTaken: 77, dodges: 21, blocks: 34 },
+    }),
+    coach: COACH_WIN,
+    fight: {
+      level: 'hard', scoreMul: 1.5,
+      result: { score: 24180, rank: 'S', difficulty: 'hard', scoreMul: 1.5, place: 2, total: 6, isRecord: false, entryId: 'f2' },
+      hall: [
+        { id: 'f1', place: 1, score: 33900, diff: 'nightmare', time: 238.2, heroName: 'Эльфийка' },
+        { id: 'f2', place: 2, score: 24180, diff: 'hard', time: 271.6, heroName: 'Пепельный страж' },
+        { id: 'f3', place: 3, score: 16020, diff: 'normal', time: 201.3, heroName: 'Лучница' },
+        { id: 'f4', place: 4, score: 15400, diff: 'easy', time: 118.0, heroName: 'Архимаг' },
+        { id: 'f5', place: 5, score: 14950, diff: 'easy', time: 131.9, heroName: 'Тёмная чародейка' },
+      ],
+    },
+  }),
+  'defeat-hard': vm({
+    screen: 'defeat',
+    tracking: { ...READY },
+    settings: { ...DEFAULT_SETTINGS, difficulty: 'hard' },
+    snapshot: makeSnapshot({
+      status: 'defeat', time: 226.0, difficulty: 'hard',
+      player: { hp: 0, action: 'dead' },
+      boss: { hp: 2500, maxHp: 12000, stage: 2, action: 'idle' },
+      stats: { damageDealt: 9500, damageTaken: 100, dodges: 12, blocks: 20 },
+    }),
+    coach: COACH_LOSS,
+    fight: { level: 'hard', scoreMul: 1.5, result: { score: 14200, rank: 'S', difficulty: 'hard', scoreMul: 1.5 }, hall: [] },
+  }),
   defeat: vm({
     screen: 'defeat',
     tracking: { ...READY },
