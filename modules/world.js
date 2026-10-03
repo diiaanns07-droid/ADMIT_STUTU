@@ -4186,7 +4186,7 @@ float ashPuddle( vec2 xz ) {
       case 'burst': hs.burstT = 0; hs.amulet = 1.5; es.sigilFlash = 1; break;
       case 'boss_hit':
         bs.hitT = 0; bs.hitFlash = 1;
-        {   // [W4-BOSS] тело: сила вздрагивания (серия попаданий не гасит предыдущее)
+        if (!d.dot && d.source !== 'burn') {   // [W4-BOSS] тело: сила вздрагивания (серия попаданий не гасит предыдущее); тики горения — без рывка ([W4-СБОРКА], как в fx/hitFx)
           const k = clamp(num(d.amount, num(d.damage, 20)) / 35, 0.4, 1.4);
           bs.w4HitK = bs.w4HitT < 0.12 ? Math.max(bs.w4HitK, k) : k; bs.w4HitT = 0;
         }
@@ -4721,9 +4721,7 @@ float ashPuddle( vec2 xz ) {
       _v.set(q.fx, q.fy, q.fz);
       sw.setMatrixAt(i, _m4.compose(_v, _q, _s));
     }
-    sw.instanceMatrix.clearUpdateRanges();
-    sw.instanceMatrix.addUpdateRange(0, n * 16);
-    sw.instanceMatrix.needsUpdate = true;
+    sw.instanceMatrix.needsUpdate = true;   // [W4-СБОРКА] целиком (≤ 24 матриц): addUpdateRange создавал объект каждый кадр
   }
   function updateBoss(dt, snap) {
     const b = snap && snap.boss ? snap.boss : null;
@@ -5006,6 +5004,7 @@ float ashPuddle( vec2 xz ) {
     lavaU.kinoLavaP.value.z = 0;
     crackClear();   // [W4-УДАР]
     bossBlob.visible = true;
+    B.swarm.visible = B.swarm.count > 0;   // [W4-СБОРКА] качество могли поднять, пока тело рассыпано (рой тогда не записан в hidden)
   }
   // [W3-КИНО] тело рассыпалось (осколки рисует bossFinale): нимб и обломки срываются и падают, остальное
   // скрываем по мешам — сам bossBody видимым оставляем, чтобы не выключать свет ядра (иначе перекомпиляция).

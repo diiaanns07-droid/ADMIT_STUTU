@@ -1155,7 +1155,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       fill,
     );
     if (kind === 'boss') node.append(el('span', { class: 'ao-bar__mark', 'aria-hidden': 'true' }));
-    return { node, trail, fill };
+    return { node, trail, fill, kind };
   }
   function paintBar(b, frac) {
     const q = Math.round(clamp(num(frac), 0, 1) * 1000) / 1000;
@@ -1164,7 +1164,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     setStyle(b.trail, 'transform', v);
     setAttr(b.node, 'aria-valuenow', String(Math.round(q * 100)));
     // [W4-UI] вспышка рамки при потере: классы a/b по очереди перезапускают CSS-анимацию без reflow
-    if (isNum(b.q) && q < b.q - 0.001) { b.hit = !b.hit; setClass(b.node, 'is-hit-a', b.hit); setClass(b.node, 'is-hit-b', !b.hit); }
+    // [W4-СБОРКА] энергия тает и непрерывно (щит — 25 в секунду): вспышка — только на заметный расход, иначе рамка горит всё удержание
+    if (isNum(b.q) && q < b.q - (b.kind === 'energy' ? 0.015 : 0.001)) { b.hit = !b.hit; setClass(b.node, 'is-hit-a', b.hit); setClass(b.node, 'is-hit-b', !b.hit); }
     b.q = q;
   }
   function screenSection(name, panel, headingId) {

@@ -319,10 +319,13 @@ function highCollar(ctx, spec) {
 // ---------------------------------------------------------------- край капюшона у лица (для заколок и тики)
 // Самые передние вершины капюшона по направлениям вокруг лица: ph — угол в плоскости «влево–вверх»
 // от центра у переносицы (0 — левый висок, π/2 — над лбом). → rimAt(ph) | null
-function hoodRim(THREE, vrm, head, LEFT, UP, FWD) {
+function hoodRim(THREE, vrm, head, LEFT, UP, FWD, holder = null) {
   let hood = null;
   vrm.scene.traverse((o) => { if (o.isMesh && /Hood/i.test(o.name) && o.visible) hood = o; });
+  // [W4-СБОРКА] капюшон снят причёской (heroHair, hood: false) — вместо его края берём край волос у лица
+  if (!hood && holder) holder.traverse((o) => { if (!hood && o.isMesh && o.visible && o.name === 'hair-core') hood = o; });
   if (!hood) return null;
+  hood.updateWorldMatrix(true, false);
   const cy = 0.08, B = 36, best = new Array(B).fill(null), v = new THREE.Vector3(), pa = hood.geometry.attributes.position;
   for (let i = 0; i < pa.count; i++) {
     hood.getVertexPosition(i, v); v.applyMatrix4(hood.matrixWorld).sub(head);
@@ -469,7 +472,7 @@ export function dressAttire(ctx) {
   if (A.collar && ctx.panelMat) add(highCollar(ctx, { ...A.collar, material: ctx.panelMat }), ctx.chestB);
   // украшения у края капюшона: заколка у виска, тика на лбу
   if ((A.pin || A.tikka) && bp.head) {
-    const rim = hoodRim(THREE, vrm, bp.head, LEFT, UP, FWD);
+    const rim = hoodRim(THREE, vrm, bp.head, LEFT, UP, FWD, holder);
     if (rim && A.pin) {
       const ph = A.pin.side === 'right' ? Math.PI * 0.82 : Math.PI * 0.18;
       const p = rim(ph);

@@ -537,7 +537,8 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     st.dead = status === 'defeat' || P.action === 'dead' || !!P.dead;
     st.victory = status === 'victory';
     st.battle = !st.dead;
-    st.engaged = P.encounter === 'engaged' || snap.mode === 'pvp';
+    // [W4-СБОРКА] соперник в дуэли (remotePlayer) — всегда в бою: ни encounter, ни mode по сети не приходят
+    st.engaged = P.encounter === 'engaged' || snap.mode === 'pvp' || remoteHero;
     st.fury = fin(P.fury) && num(P.furyMax, 100) > 0 ? clamp01(P.fury / num(P.furyMax, 100)) : 0;
     st.ready = !!P.furyReady;
     readCharge(P);

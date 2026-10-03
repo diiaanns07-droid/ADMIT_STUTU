@@ -836,7 +836,7 @@ function buildBrows(THREE, P, b, E, quality, home) {
   const surf = faceSurface(P, [-0.09, 0.09, e0.c[1] - 1.4 * e0.r, e0.c[1] + 0.05, 0.0]);
   const tex = browTexture(THREE, b, quality === 'low' ? 256 : 512);
   const fv = (tex && tex.userData.faceV) || { liner: 0.08, brow: 0.12 };
-  const pos = [], nor = [], uv = [], col = [], idx = [], sI = [], sW = [], linerV = [];
+  const pos = [], nor = [], uv = [], col = [], idx = [], sI = [], sW = [], linerV = [], browV = [];
   const p = [0, 0, 0], nn = [0, 0, 0];
   const cB = new THREE.Color(b.color ?? 0x3a2a20), cL = new THREE.Color(E.liner ?? 0x1a1010);
   const lin = [Math.min(1, cL.r / Math.max(1e-4, cB.r)), Math.min(1, cL.g / Math.max(1e-4, cB.g)), Math.min(1, cL.b / Math.max(1e-4, cB.b))];
@@ -870,7 +870,9 @@ function buildBrows(THREE, P, b, E, quality, home) {
   }
   const curve = browCurve(b);
   for (const side of [1, -1]) {
+    const vb = pos.length / 3;
     if (!ribbon(side, 30, [0, 0.25, 0.5, 0.75, 1], curve, (t) => browWidth(b, t) * BROW_MARGIN * 0.5, (v) => fv.brow + v * (1 - fv.brow), [1, 1, 1])) return null;
+    browV.push([vb, pos.length / 3]);
     // подводка: от внутреннего угла (тонко) к внешнему (толще) по краю века, дальше — «стрелка» вверх-наружу
     const e = P.eyeList.find((q) => Math.sign(q.c[0]) === 1) || e0;
     const lid = E.linerW ? upperLid(P, e) : null;
@@ -910,6 +912,7 @@ function buildBrows(THREE, P, b, E, quality, home) {
   }
   g.computeBoundingBox(); g.computeBoundingSphere();
   g.userData.faceW4 = true;
+  g.userData.browV = browV;   // [W4-СБОРКА] вершины бровей без подводки — мимика бровей (heroPoses.rigFace)
   const mat = new THREE.MeshStandardMaterial({
     name: 'FaceBrow#W4', map: tex, color: cB, vertexColors: true, transparent: true, depthWrite: false,
     roughness: 0.78, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,

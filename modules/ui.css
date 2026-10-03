@@ -4485,6 +4485,9 @@ html.ao-present .ao-perfhud {
   .ao-heroplate { top: 5%; width: 40%; }
   .ao-heroplate__desc { display: none; }
 }
+/* [W4-СБОРКА] режим презентации (P): витрине — правые 60% окна, пропорция как у узкого экрана */
+html.ao-present .ao-heroplate { top: 5%; width: 40%; }
+html.ao-present .ao-heroplate__desc { display: none; }
 /* узкий экран: панель меню на всю ширину — табличке места нет */
 @media (max-width: 760px) {
   .ao-heroplate { display: none; }
@@ -4523,6 +4526,7 @@ html.ao-present .ao-perfhud {
   width: 1.6em;
   text-align: left;
   letter-spacing: 0.1em;
+}
 
 /* =====================================================================================
  * [W4-UI] Интерфейс уровня дорогой RPG: орнаментальные рамки панелей, полосы здоровья/энергии
@@ -4565,6 +4569,13 @@ html.ao-bdo .ao-frame {
   border-image: var(--w4-frame) 42 / 34px / 3px stretch;
   outline: none;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 22px 60px rgba(0, 0, 0, 0.6), inset 0 0 70px rgba(0, 0, 0, 0.35);
+}
+/* [W4-СБОРКА] рамка border-image закрывает цвет верхней кромки паузы («камера потеряна / вернулась») — полоса тенью */
+html.ao-bdo .ao-panel--pause[data-variant='lost'] {
+  box-shadow: inset 0 3px 0 var(--ao-bad), 0 0 0 1px rgba(0, 0, 0, 0.55), 0 22px 60px rgba(0, 0, 0, 0.6), inset 0 0 70px rgba(0, 0, 0, 0.35);
+}
+html.ao-bdo .ao-panel--pause[data-variant='restored'] {
+  box-shadow: inset 0 3px 0 var(--ao-busy), 0 0 0 1px rgba(0, 0, 0, 0.55), 0 22px 60px rgba(0, 0, 0, 0.6), inset 0 0 70px rgba(0, 0, 0, 0.35);
 }
 html.ao-bdo .ao-hero,
 html.ao-bdo .ao-cvdock,
@@ -4992,6 +5003,7 @@ html.ao-bdo .ao-btn--quiet::after {
 }
 html.ao-bdo .ao-btn[aria-disabled='true'],
 html.ao-bdo .ao-btn.is-disabled {
+  color: #9a917f;   /* [W4-СБОРКА] иначе у главной кнопки остаётся тёмный текст .ao-btn--primary — на тёмном фоне не читается */
   background: #1d1c1e;
   border-color: #3e3a33;
   box-shadow: none;
@@ -5032,7 +5044,8 @@ html.ao-bdo .ao-hud:not([hidden]) .ao-hero {
   animation: ao-w4-from-left 0.55s cubic-bezier(0.16, 0.84, 0.24, 1) both;
 }
 html.ao-bdo .ao-hud:not([hidden]) .ao-boss {
-  animation: ao-w4-from-top 0.6s cubic-bezier(0.16, 0.84, 0.24, 1) 0.08s both;
+  /* [W4-СБОРКА] backwards, не both: конечный кадр не держит opacity 1 — полоса павшего Регента снова тускнеет (.is-dead) */
+  animation: ao-w4-from-top 0.6s cubic-bezier(0.16, 0.84, 0.24, 1) 0.08s backwards;
 }
 @keyframes ao-w4-from-left { from { opacity: 0; transform: translateX(-24px); } to { opacity: 1; transform: none; } }
 @keyframes ao-w4-from-top { from { opacity: 0; transform: translate(-50%, -18px); } to { opacity: 1; transform: translateX(-50%); } }

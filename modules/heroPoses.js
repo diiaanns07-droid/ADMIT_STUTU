@@ -881,7 +881,9 @@ export function rigFace(THREE, vrm, { mouth = true } = {}) {
   vrm.scene.traverse((o) => {
     if (!o.isSkinnedMesh || !o.skeleton || !o.geometry || !o.geometry.attributes.skinIndex) return;
     const mat = Array.isArray(o.material) ? null : o.material;
-    const brows = /Eyebrow/i.test(o.name);
+    // [W4-СБОРКА] у героинь с лицом волны 4 брови модели заменены лентой BrowStrands (heroShading): в ней брови
+    // и подводка — мимика двигает только вершины бровей (geometry.userData.browV)
+    const brows = /Eyebrow/i.test(o.name) || (o.name === 'BrowStrands' && Array.isArray(o.geometry.userData.browV));
     const face = !!mat && /^MI_Regular_Female/.test(mat.name || '');
     if (brows || (face && mouth)) meshes.push({ o, brows });
   });
@@ -924,9 +926,10 @@ export function rigFace(THREE, vrm, { mouth = true } = {}) {
     };
     if (brows) {
       // две брови в одной сетке: сторона — по знаку x; внутренний/внешний край — по |x|
+      const bv = g.userData.browV, inBrow = (i) => !bv || bv.some(([a, b]) => i >= a && i < b);
       for (const side of [1, -1]) {
         let x0 = Infinity, x1 = -Infinity; const ids = [];
-        for (let i = 0; i < n; i++) { const x = pa.getX(i); if (Math.sign(x) !== side) continue; ids.push(i); const ax = Math.abs(x); x0 = Math.min(x0, ax); x1 = Math.max(x1, ax); }
+        for (let i = 0; i < n; i++) { const x = pa.getX(i); if (Math.sign(x) !== side || !inBrow(i)) continue; ids.push(i); const ax = Math.abs(x); x0 = Math.min(x0, ax); x1 = Math.max(x1, ax); }
         if (ids.length < 6 || x1 - x0 < 1e-3) continue;
         const cIn = new THREE.Vector3(), cOut = new THREE.Vector3(); let nIn = 0, nOut = 0;
         for (const i of ids) { const t = (Math.abs(pa.getX(i)) - x0) / (x1 - x0); _v.fromBufferAttribute(pa, i); if (t < 0.35) { cIn.add(_v); nIn++; } else if (t > 0.65) { cOut.add(_v); nOut++; } }

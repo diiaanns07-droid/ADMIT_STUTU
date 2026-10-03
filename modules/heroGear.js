@@ -1225,7 +1225,8 @@ export function dressHero(THREE, vrm, opts = {}) {
         const neck = bp.neck || bp[chestB].clone().addScaledVector(UP, 0.14);
         const yTop = Math.max(Math.max(bp.leftUpperArm.y, bp.rightUpperArm.y) + 0.035, neck.y - 0.035), halfTop = shoulderW * 0.5 + 0.025, base = neck.clone().setY(yTop);
         const collar = [-1, -0.5, 0, 0.5, 1].map((u) => base.clone().addScaledVector(LEFT, u * halfTop).addScaledVector(FWD, -torsoR * 0.72 * (1 - 0.6 * u * u) + 0.015 * u * u).addScaledVector(UP, 0.02 * (1 - u * u)));
-        capeInfo = { w: P.cape.w, len: P.cape.len, yTop, halfTop, collar };
+        // [W4-СБОРКА] у пелерины (mantle) нет ширины w — берём её обхват по плечам (Rx ниже), иначе в волосах NaN
+        capeInfo = { w: P.cape.kind === 'mantle' ? shoulderW + 0.1 : P.cape.w, len: P.cape.len, yTop, halfTop, collar };
       }
       if (quiverObj) {
         quiverObj.updateWorldMatrix(true, true);
@@ -1299,6 +1300,8 @@ export function dressHero(THREE, vrm, opts = {}) {
       }
     };
     vrm.scene.traverse((o) => { if (o.isMesh && o.visible && !/Eye|Brow|Arms|Bracer/i.test(o.name) && (o.isSkinnedMesh || /hair/i.test(o.name))) scan(o); });
+    // [W4-СБОРКА] волосы heroHair висят на модели, а не в vrm.scene (как в highCollar у нарядов)
+    { const hold = model || vrm.scene; if (hold !== vrm.scene) { hold.updateMatrixWorld(true); hold.traverse((o) => { if (o.isMesh && o.visible && /hair/i.test(o.name)) scan(o); }); } }
     const rN = (az) => { const x = (((az % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2) * SEC, k = Math.floor(x); return Math.max(0.07, rS[k % SEC], rS[(k + 1) % SEC] * 0.9, rS[(k + SEC - 1) % SEC] * 0.9) + 0.014; };
     const Rx = shoulderW * 0.5 + 0.05, Rz = torsoR + 0.045;
     const rSh = (az) => 1 / Math.sqrt((Math.cos(az) / Rz) ** 2 + (Math.sin(az) / Rx) ** 2);
