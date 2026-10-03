@@ -16,8 +16,9 @@
 // Сценарии (каждый — в новом профиле, без кэша):
 //   menu  — до меню на экране (заставка снята и показан первый кадр), до героя на витрине (hero.ready) и сколько
 //           докачивается в меню; вехи ao:* из main.js (performance.mark) — в отчёте отдельно;
-//   fight — меню → «Отладка с клавиатуры» → «Играть» → «Продолжить без камеры» → «В бой»: время и байты от «Играть»
-//           до первого кадра боя на экране (play→fight), длинные кадры (> 250 мс) за следующие 15 с боя;
+//   fight — меню → «Отладка с клавиатуры» → («--menu-wait» с) → «Играть» → «Продолжить без камеры» → «В бой»: от нажатия
+//           «Играть» до первого кадра боя на экране (play→fight; в нём и реакция меню на клик — click→play), длинные
+//           кадры (> 250 мс) за следующие 15 с боя;
 //   track — меню → «Начать» → «Разрешить камеру» (фейковая камера): байты до работающего трекинга.
 // Байты — тела ответов (без сжатия на лету), включая CDN и модели MediaPipe.
 // Канал моделируется одной общей «трубой» FIFO: ответ занимает её на размер/ширину, плюс задержка.
@@ -214,7 +215,6 @@ async function main() {
     await waitFor(page, () => !!window.__aoMenuAt, TO); await pageMark('menu', () => window.__aoMenuAt);
     await waitFor(page, () => { const h = window.__ASHEN__.hero(); return h && h.ready; }, TO)
       .then(() => pageMark('heroReady', () => { const t = window.__ASHEN__.hero().timing; return t && t.t0 + t.ready; })).catch(() => {});
-    if (MENU_WAIT) { await sleep(MENU_WAIT); mark('menuWait'); }
     await page.evaluate(() => {   // момент входа в бой и длинные кадры после него — по часам страницы
       const fr = []; window.__aoFr = fr; let last = 0;
       const loop = (t) => {
@@ -229,6 +229,9 @@ async function main() {
     // клик — событием в странице, как у человека: обычный click Playwright ждёт «стабильности» кнопки (2–3 кадра),
     // а в SwiftShader кадр меню идёт секундами — замер мерил бы ожидание теста, а не игру
     await page.getByRole('button', { name: 'Отладка с клавиатуры' }).first().dispatchEvent('click', {}, { timeout: TO });
+    if (MENU_WAIT) { await sleep(MENU_WAIT); mark('menuWait'); }
+    // click — когда игрок нажал «Играть»; play — когда игра обработала нажатие (главный поток бывает занят кадром)
+    mark('click');   // кнопка уже на экране (героиня готова); любой запрос к странице ждал бы её главный поток
     await page.getByRole('button', { name: 'Играть' }).first().dispatchEvent('click', {}, { timeout: TO });
     await pageMark('play', () => performance.now());
     await page.getByRole('button', { name: /Продолжить без камеры/ }).first().dispatchEvent('click', {}, { timeout: TO });
@@ -266,7 +269,7 @@ async function main() {
   for (const r of results) {
     lines.push(`## ${r.name} (${r.requests} запросов)`);
     for (const [k, m] of Object.entries(r.marks)) if (!k.startsWith('_')) lines.push(`- ${k}: ${s(m.t)} с, ${MB(m.bytes)} МБ${GZIP ? ` (по сети ${MB(m.wire)} МБ)` : ''}`);
-    if (r.marks.play && r.marks.fightFrame) lines.push(`- play→fight (до первого кадра боя): ${s(r.marks.fightFrame.t - r.marks.play.t)} с`);   // [W5-СТАРТ]
+    if (r.marks.click && r.marks.fightFrame) lines.push(`- клик «Играть» → первый кадр боя: ${s(r.marks.fightFrame.t - r.marks.click.t)} с (реакция на клик ${s(r.marks.play.t - r.marks.click.t)} с)`);   // [W5-СТАРТ]
     if (r.marks._frames) lines.push(`- кадры > 250 мс за первые 15 с боя: ${r.marks._frames.info.long} шт., ${s(r.marks._frames.info.sum)} с, худший ${s(r.marks._frames.info.max)} с`);
     if (r.ao && r.ao.length) lines.push(`- вехи main.js (ao:*, часы страницы): ${r.ao.map(([n, t]) => `${n} ${s(t)}`).join(' · ')}`);
     const top = Object.entries(r.files).sort((a, b) => b[1] - a[1]).slice(0, 25);
@@ -279,9 +282,10 @@ async function main() {
     for (const name of [...new Set(results.map((r) => r.name))]) {
       const rs = results.filter((r) => r.name === name);
       const keys = [...new Set(rs.flatMap((r) => Object.keys(r.marks).filter((k) => !k.startsWith('_'))))];
-      if (rs.some((r) => r.marks.play && r.marks.fightFrame)) keys.push('play→fight');
+      if (rs.some((r) => r.marks.click && r.marks.fightFrame)) keys.push('play→fight', 'click→play');
       for (const k of keys) {
-        const v = rs.map((r) => (k === 'play→fight' ? (r.marks.fightFrame && r.marks.play ? r.marks.fightFrame.t - r.marks.play.t : NaN) : r.marks[k] ? r.marks[k].t : NaN));
+        const d = (r, a, b) => (r.marks[a] && r.marks[b] ? r.marks[b].t - r.marks[a].t : NaN);
+        const v = rs.map((r) => (k === 'play→fight' ? d(r, 'click', 'fightFrame') : k === 'click→play' ? d(r, 'click', 'play') : r.marks[k] ? r.marks[k].t : NaN));
         lines.push(`| ${name} | ${k} | ${s(med(v))} | ${v.map((x) => (Number.isFinite(x) ? s(x) : '—')).join(' · ')} |`);
       }
     }
