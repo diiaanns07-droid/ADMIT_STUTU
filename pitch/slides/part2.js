@@ -1,8 +1,9 @@
-/* ASHEN OATH — презентация финала, слайды 3, 4, 5, 6 и 12.
+/* ASHEN OATH — презентация финала, слайды 4–7 (управление и режим «ОШИБКА») и 12.
  * Обычный скрипт без модулей и сетевых запросов: работает и из file://.
  * Слайды регистрируются в общей очереди DECK_QUEUE, её разбирает deck.js.
  * Метка раздела и тезис стоят прямо в слайде (их место задаёт deck.css), содержимое — в .p2-body (полоса 260–960).
- * Анимации — по шагам и при входе вперёд; вход назад, переход по hash, «уменьшенное движение» и печать — сразу конечный вид. */
+ * Схемы на 4 и 6 — интерактивные: этапы идут по шагам доклада или кнопками на слайде; вход назад, переход по hash,
+ * «уменьшенное движение» и печать — сразу конечный этап. */
 (function () {
   'use strict';
   var Q = (window.DECK_QUEUE = window.DECK_QUEUE || []);
@@ -10,19 +11,137 @@
   // Орнаментальная рамка поверх кадра (класс .frame из deck.css): отдельным слоем, чтобы уголки не прятались под картинкой
   var RING = '<i class="frame p2-ring" aria-hidden="true"></i>';
 
-  function reduced() { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
+  /* ---------- Кисть: 21 точка MediaPipe Hands (те же координаты, что в схеме слайдов 7–11) ---------- */
+  // 0 — запястье; 1–4 большой; 5–8 указательный; 9–12 средний; 13–16 безымянный; 17–20 мизинец
+  var HP = [[150,320],[105,295],[75,260],[55,228],[40,198],[115,190],[108,140],[104,108],[100,78],[150,185],[150,130],[150,95],[150,62],[183,192],[190,142],[194,110],[197,82],[212,208],[225,170],[233,146],[240,122]];
+  var HB = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[0,17],[17,18],[18,19],[19,20]];
+  // «OK» правой: указательный загнут к большому, остальные прямо. NEAR — кончики 4 и 8 не сомкнуты, OK — сомкнуты.
+  function pose(over) { return HP.map(function (p, i) { return over[i] || p; }); }
+  var NEAR = pose({ 1: [108,290], 2: [82,258], 3: [66,226], 4: [58,196], 6: [100,150], 7: [80,132], 8: [64,146] });
+  var OK = pose({ 1: [108,290], 2: [82,258], 3: [66,226], 4: [58,196], 6: [98,152], 7: [76,156], 8: [62,188] });
 
-  /* ---------- 3. Тело — это контроллер ---------- */
+  // Кисть в SVG: кости и точки; k — масштаб, (cx, cy) — куда встаёт центр кисти (140, 191)
+  function hand(P, k, cx, cy, cls) {
+    function q(i) { return [(cx + (P[i][0] - 140) * k).toFixed(1), (cy + (P[i][1] - 191) * k).toFixed(1)]; }
+    return '<g class="p2-hand ' + (cls || '') + '"><g class="p2-hand-bones">' + HB.map(function (b, j) {
+      var a = q(b[0]), c = q(b[1]);
+      return '<line style="--j:' + j + '" x1="' + a[0] + '" y1="' + a[1] + '" x2="' + c[0] + '" y2="' + c[1] + '"/>';
+    }).join('') + '</g><g class="p2-hand-pts">' + P.map(function (_, i) {
+      var a = q(i);
+      return '<circle class="p2-pt p2-pt--' + i + '" style="--i:' + i + '" cx="' + a[0] + '" cy="' + a[1] + '" r="' + (i % 4 === 0 ? 7 : 5.5) + '"/>';
+    }).join('') + '</g></g>';
+  }
+  function at(P, i, k, cx, cy) { return [cx + (P[i][0] - 140) * k, cy + (P[i][1] - 191) * k]; }
+
+  /* ---------- Интерактивная схема: этапы по шагам доклада или кнопками ---------- */
+  // На слайде классы p2-st1…p2-stN (накопительно). Скрытые метки data-step нужны движку, чтобы считать шаги.
+  function stager(N, AUTO_MS) {
+    var st = { k: 0, t: 0 };
+    function set(el, k) {
+      st.k = Math.max(0, Math.min(N, k));
+      for (var i = 1; i <= N; i++) el.classList.toggle('p2-st' + i, i <= st.k);
+      el.setAttribute('data-p2-stage', st.k);
+    }
+    function stop() { clearTimeout(st.t); st.t = 0; }
+    function run(el) {
+      stop();
+      if (st.k >= N) set(el, 0);
+      (function tick() { set(el, st.k + 1); if (st.k < N) st.t = setTimeout(tick, AUTO_MS); else st.t = 0; })();
+    }
+    return {
+      enter: function (el, dir) {
+        stop(); set(el, dir < 0 ? N : 0);
+        if (el.__p2) return;
+        el.__p2 = true;
+        el.addEventListener('click', function (e) {
+          var b = e.target.closest && e.target.closest('[data-p2]');
+          if (!b) return;
+          var a = b.getAttribute('data-p2');
+          if (a === 'run') run(el); else { stop(); set(el, a === 'next' ? st.k + 1 : 0); }
+        });
+        window.addEventListener('beforeprint', function () { stop(); set(el, N); });
+      },
+      step: function (el, k) { stop(); if (k > st.k) set(el, k); },
+      leave: function () { stop(); }
+    };
+  }
+  function marks(N) { var s = ''; for (var i = 1; i <= N; i++) s += '<i class="p2-mark" data-step="' + i + '" aria-hidden="true"></i>'; return s; }
+  function buttons(list) {
+    return '<div class="p2-ctl" data-interactive>' + list.map(function (b) {
+      return '<button type="button" class="p2-btn' + (b[2] ? ' p2-btn--main' : '') + '" data-p2="' + b[0] + '">' + b[1] + '</button>';
+    }).join('') + '</div>';
+  }
+
+  /* ---------- 4. Как рука становится командой ---------- */
+  // Конвейер распознавания (core/handGestures.js): кадр → 21 точка → геометрия → автомат состояний → действие.
+  var S4 = stager(5, 1100);
+  var K4 = 1.5, CX4 = 330, CY4 = 232;          // кисть на «экране» схемы (1680×470)
+  var palm = [0, 5, 9, 13, 17].reduce(function (a, i) { var p = at(HP, i, K4, CX4, CY4); return [a[0] + p[0] / 5, a[1] + p[1] / 5]; }, [0, 0]);
+  var STAGES4 = ['Кадр камеры', '21&nbsp;точка кисти', 'Геометрия', 'Автомат состояний', 'Действие'];
+  Q.push({
+    n: 4, sec: 50,
+    html: `<section class="slide" data-slide="4" data-title="Как рука становится командой">
+  <p class="kicker">Кейс Motion · как это работает</p>
+  <h2 class="thesis">Как рука становится командой</h2>
+  <div class="p2-body">
+    ${marks(5)}
+    <ol class="p2-pipe">
+      ${STAGES4.map(function (t, i) { return '<li class="p2-pipe-n p2-pn' + (i + 1) + '"><b>' + (i + 1) + '</b><span>' + t + '</span></li>'; }).join('')}
+      <li class="p2-pipe-line" aria-hidden="true"><i></i></li>
+    </ol>
+    <figure class="p2-shot p2-s4-screen">
+      <div class="p2-crop p2-screen">
+        <svg class="p2-s4-svg" viewBox="0 0 1662 452" aria-hidden="true" focusable="false">
+          <g class="p2-cam">
+            <rect x="70" y="18" width="520" height="416" rx="10"/>
+            <path d="M70 70V18h52M538 18h52v52M590 382v52h-52M122 434H70v-52"/>
+            <g class="p2-cam-blur">${HB.map(function (b) { var a = at(HP, b[0], K4, CX4, CY4), c = at(HP, b[1], K4, CX4, CY4); return '<line x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) + '" x2="' + c[0].toFixed(1) + '" y2="' + c[1].toFixed(1) + '"/>'; }).join('')}</g>
+          </g>
+          ${hand(HP, K4, CX4, CY4, 'p2-s4-hand')}
+          <g class="p2-geo">
+            ${[6, 10, 14].map(function (i) { var p = at(HP, i, K4, CX4, CY4); return '<circle class="p2-geo-arc" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="17"/>'; }).join('')}
+            <circle class="p2-geo-n0" cx="${palm[0].toFixed(1)}" cy="${palm[1].toFixed(1)}" r="12"/><circle class="p2-geo-n1" cx="${palm[0].toFixed(1)}" cy="${palm[1].toFixed(1)}" r="4"/>
+            <path class="p2-geo-v" d="M500 330h60M500 350h86M500 370h60"/><path class="p2-geo-va" d="M586 350l-14-9v18z"/>
+            <path class="p2-geo-lead" d="M${(at(HP, 10, K4, CX4, CY4)[0] + 18).toFixed(0)} ${at(HP, 10, K4, CX4, CY4)[1].toFixed(0)}H640M${(palm[0] + 14).toFixed(0)} ${palm[1].toFixed(0)}H640M590 350H640"/>
+            <text x="652" y="${(at(HP, 10, K4, CX4, CY4)[1] + 9).toFixed(0)}">сгибы пальцев</text>
+            <text x="652" y="${(palm[1] + 9).toFixed(0)}">нормаль ладони</text>
+            <text x="652" y="359">скорость</text>
+          </g>
+          <g class="p2-fsm">
+            <g class="p2-fsm-n"><rect x="900" y="186" width="200" height="84" rx="42"/><text x="1000" y="238">Кулак</text></g>
+            <path class="p2-fsm-a" d="M1104 228H1172"/><path class="p2-fsm-h" d="M1180 228l-14-9v18z"/>
+            <g class="p2-fsm-n"><rect x="1184" y="186" width="230" height="84" rx="42"/><text x="1299" y="238">Раскрыть резко</text></g>
+            <path class="p2-fsm-a" d="M1418 228H1470"/><path class="p2-fsm-h" d="M1478 228l-14-9v18z"/>
+            <g class="p2-fsm-out"><rect x="1482" y="186" width="160" height="84" rx="10"/><text x="1562" y="238">Выброс</text></g>
+            <circle class="p2-fsm-dot" cx="1104" cy="228" r="7"/>
+          </g>
+          <g class="p2-act">
+            <image href="media/p2/burst.jpg" x="882" y="64" width="760" height="299" preserveAspectRatio="xMidYMid slice"/>
+            <rect class="p2-act-ring" x="882" y="64" width="760" height="299"/>
+          </g>
+        </svg>
+      </div>
+      ${RING}
+    </figure>
+    ${buttons([['run', 'Запустить', true], ['next', 'Дальше'], ['reset', 'Сначала']])}
+    <p class="cap p2-s4-cap">В&nbsp;браузере · 0&nbsp;кадров в&nbsp;сеть · 21&nbsp;точка × 2 + поза</p>
+  </div>
+  <aside class="notes">Как рука становится командой. Камера даёт кадр — он не уходит в сеть. MediaPipe прямо в браузере ставит 21 точку на каждую кисть и ещё точки позы. Дальше наш код считает геометрию: насколько согнут каждый палец, куда смотрит ладонь — её нормаль, и как быстро движется кисть. Автомат состояний ждёт последовательность: кулак подержали, потом резко раскрыли — это «Выброс», и он летит в Регента. Кнопками «Запустить», «Дальше», «Сначала» можно пройти этапы ещё раз.</aside>
+</section>`,
+    enter: S4.enter, step: S4.step, leave: S4.leave
+  });
+
+  /* ---------- 5. Левая — движение, правая — магия ---------- */
   // Клип «Дух игрока» (docs/video/spirit.mp4, 0–8,6 с). Справа внизу кадра игра сама пишет, что делает каждая рука
   // («ЛЕВАЯ: …», «ПРАВАЯ: …»): от этих строк к подписям по шагам прочерчиваются золотые выноски, подпись — следом.
   // Координаты выносок — в системе .p2-body (1680×700): строки состояния рук — x 1022, y 496 и 516.
   Q.push({
-    n: 3, sec: 40,
-    html: `<section class="slide" data-slide="3" data-title="Тело — это контроллер">
-  <p class="kicker">Кейс Motion · камера вместо джойстика</p>
-  <h2 class="thesis">Тело — это контроллер</h2>
+    n: 5, sec: 40,
+    html: `<section class="slide" data-slide="5" data-title="Левая — движение, правая — магия">
+  <p class="kicker">Управление</p>
+  <h2 class="thesis">Левая — движение, правая — магия</h2>
   <div class="p2-body">
-    <figure class="p2-shot p2-s3-shot">
+    <figure class="p2-shot p2-s5-shot">
       <div class="p2-crop">
         <video data-src="media/p2/spirit_cut.mp4" poster="media/p2/spirit_poster.jpg" muted loop playsinline preload="none" aria-label="Бой: «Дух игрока» повторяет руки, справа внизу — что делает каждая рука"></video>
         <img class="print-poster" src="media/p2/spirit_poster.jpg" alt="">
@@ -36,138 +155,72 @@
       <g class="p2-lead p2-lead--b" data-step="3"><path d="M1030 506C1082 506 1056 400 1104 400" pathLength="1"/></g>
     </svg>
     <ol class="p2-hands">
-      <li class="p2-tick p2-tick--l" data-step="1"><span class="p2-tick-k">Левая рука</span><span class="p2-tick-t">ход, бег, рывок, щит</span></li>
+      <li class="p2-tick p2-tick--l" data-step="1"><span class="p2-tick-k">Левая рука</span><span class="p2-tick-t">ход, рывок, щит</span></li>
       <li class="p2-tick p2-tick--r" data-step="2"><span class="p2-tick-k">Правая</span><span class="p2-tick-t">снаряды, выброс, руны</span></li>
       <li class="p2-tick p2-tick--b" data-step="3"><span class="p2-tick-k">Две руки</span><span class="p2-tick-t">сфера, печати, «Врата бури»</span></li>
     </ol>
-    <p class="cap p2-s3-cap">Без установки, датчиков и&nbsp;мыши.</p>
+    <p class="p2-s5-num"><span class="num" data-ignite>24</span><span class="unit">жеста</span></p>
   </div>
-  <aside class="notes">Камера видит скелет и 21 точку каждой кисти. Справа внизу игра пишет, что сейчас делает каждая рука. Левая — руль: ход, бег, рывок с неуязвимостью и щит — резкий толчок ладонью к камере. Правая колдует: снаряды жестом «OK», выброс — кулак резко раскрыть, руны указательным пальцем. Двумя руками собирают сферу, ставят печати и открывают «Врата бури». Мышь нужна один раз — разрешить камеру; дальше меню и паузу нажимают пальцем. Ролик снят с клавиатуры, живую камеру покажем на демо.</aside>
-</section>`
-  });
-
-  /* ---------- 4. Один жест — удар, как в кино ---------- */
-  // После шага «Меч из света» слайд ждёт удара меча в клипе (2,27 с от начала media/p2/ult_cinema.mp4 — резкая смена
-  // сцены по ffmpeg scene) и ровно тогда «получает удар» вместе с Регентом: DECK.hit из движка (или своя встряска
-  // и вспышка, если движок его ещё не умеет), счётчик «−28 %» и мини-полоса здоровья.
-  var HIT_T = 2.27;
-  var s4 = { raf: 0, armed: false, timer: 0 };
-  function s4Stop() { cancelAnimationFrame(s4.raf); clearTimeout(s4.timer); s4.armed = false; }
-  function s4Show(el, on) { el.querySelector('.p2-seq-hit').classList.toggle('p2-hit-on', on); if (on) el.querySelector('.p2-hit-n').textContent = '−28 %'; }
-  function s4Fire(el) {
-    s4Stop();
-    var n = el.querySelector('.p2-hit-n');
-    s4Show(el, true);
-    var D = window.DECK;
-    if (D && typeof D.hit === 'function') {
-      try { D.hit(28, { shake: true, flash: true }); } catch (e) { console.error('DECK.hit', e); }
-    } else {
-      el.classList.add('p2-hit-local');
-      s4.timer = setTimeout(function () { el.classList.remove('p2-hit-local'); }, 420);
-    }
-    var t0 = performance.now();
-    (function tick(now) {
-      var k = Math.min(1, (now - t0) / 500), e = 1 - Math.pow(1 - k, 3);
-      n.textContent = '−' + Math.round(28 * e) + ' %';
-      if (k < 1) s4.raf = requestAnimationFrame(tick);
-    })(t0);
-  }
-  function s4Arm(el) {
-    s4Stop();
-    var v = el.querySelector('video'), start = performance.now();
-    s4.armed = true;
-    (function watch(now) {
-      if (!s4.armed) return;
-      var playing = v && !v.paused && !v.error && v.readyState >= 2, t = v ? v.currentTime : 0;
-      // удар в кадре; запасной путь — клип не играет (нет кодека, не загрузился) или ждём дольше одного круга
-      if ((playing && t >= HIT_T && t < HIT_T + 0.5) || (!playing && now - start > 1200) || now - start > 4200) { s4Fire(el); return; }
-      s4.raf = requestAnimationFrame(watch);
-    })(start);
-  }
-  Q.push({
-    n: 4, sec: 40,
-    html: `<section class="slide" data-slide="4" data-title="Один жест — удар, как в кино">
-  <p class="kicker">Ультимейт «Небесный суд»</p>
-  <h2 class="thesis">Один жест — удар, как в&nbsp;кино</h2>
-  <div class="p2-body">
-    <figure class="p2-shot p2-s4-shot">
-      <div class="p2-crop">
-        <video data-src="media/p2/ult_cinema.mp4" poster="media/p2/ult_poster.jpg" muted loop playsinline preload="none" aria-label="«Небесный суд»: облёт камеры и меч из света"></video>
-        <img class="print-poster" src="media/p2/ult_poster.jpg" alt="">
-        <i class="p2-flash" aria-hidden="true"></i>
-      </div>
-      ${RING}
-      <figcaption class="cap p2-fig-note">Запись с клавиатуры; с&nbsp;камерой — на&nbsp;живом показе.</figcaption>
-    </figure>
-    <ol class="p2-seq">
-      <li data-step="1"><span class="p2-seq-t">Обе руки над головой</span><span class="p2-seq-v">0,8&nbsp;с</span></li>
-      <li data-step="2"><span class="p2-seq-t">Облёт камеры</span><span class="p2-seq-v">3,6&nbsp;с</span></li>
-      <li data-step="3"><span class="p2-seq-t">Меч из&nbsp;света</span></li>
-      <li class="p2-seq-hit">
-        <span class="num p2-hit-n">−28&nbsp;%</span>
-        <span class="unit">здоровья Регента</span>
-        <span class="p2-hp" aria-hidden="true"><i class="p2-hp-loss"></i><i class="p2-hp-fill"></i></span>
-      </li>
-    </ol>
-  </div>
-  <aside class="notes">Это «Небесный суд» — ультимейт. В бою копится шкала «Ярость клятвы»; когда она полна, игрок держит обе руки над головой меньше секунды — камера облетает героя, с неба падает меч из света и снимает 28 % здоровья Регента. После «меча» дождитесь удара в ролике — слайд вздрогнет вместе с Регентом. Такой момент хочется повторить, и для этого нужно встать.</aside>
-</section>`,
-    enter: function (el, dir) { s4Stop(); s4Show(el, dir < 0); },
-    step: function (el, k) {
-      if (k < 3 || el.querySelector('.p2-seq-hit').classList.contains('p2-hit-on')) return;
-      if (reduced()) s4Show(el, true); else s4Arm(el);
-    },
-    leave: function (el) { s4Stop(); el.classList.remove('p2-hit-local'); }
-  });
-
-  /* ---------- 5. Глубина RPG, а не мини-игра ---------- */
-  // Герои выходят по одному из золотой вспышки, как призыв на витрине меню; карточки режимов — лесенкой следом.
-  // Полоса героев — один кадр media/p2/heroes.jpg (1656×366): каждая ячейка показывает свою пятую часть (331 px).
-  var HEROES = ['Пепельный страж', 'Эльфийка', 'Тёмная чародейка', 'Лучница', 'Архимаг'];
-  var MODES = ['Бой с&nbsp;Регентом', 'Испытание · 60&nbsp;с', 'Тренажёр техники', 'Клятва героя', 'Онлайн-дуэль'];
-  Q.push({
-    n: 5, sec: 40,
-    html: `<section class="slide" data-slide="5" data-title="Глубина RPG, а не мини-игра">
-  <p class="kicker">Что внутри</p>
-  <h2 class="thesis">Глубина RPG, а&nbsp;не мини-игра</h2>
-  <div class="p2-body">
-    <figure class="p2-shot p2-s5-shot" data-morph="heroes">
-      <div class="p2-crop">
-        <ul class="p2-heroes" role="img" aria-label="Пять героев игры на витрине меню: ${HEROES.join(', ')}">
-          ${HEROES.map(function (h, i) { return '<li style="--i:' + i + '"><img src="media/p2/heroes.jpg" alt="" decoding="async"><span class="p2-hero-name">' + h + '</span></li>'; }).join('')}
-        </ul>
-      </div>
-      ${RING}
-    </figure>
-    <ul class="p2-stats">
-      <li><span class="num" data-ignite>24</span><span class="unit">жеста</span></li>
-      <li><span class="num">5</span><span class="unit">героев</span></li>
-      <li><span class="num">5</span><span class="unit">режимов</span></li>
-    </ul>
-    <ul class="p2-modes">
-      ${MODES.map(function (m, i) { return '<li style="--i:' + i + '">' + m + '</li>'; }).join('')}
-    </ul>
-  </div>
-  <aside class="notes">24 жеста, у каждого своё действие: 10 рун, 4 печати и две техники «ладони вместе» — «Врата бури» и «Столп небес». Пять героев и босс с двумя фазами. Пять режимов — на минуту и на вечер: бой с Регентом; «Испытание · 60 с» с рангом S–D и Залом славы дня; тренажёр техники; «Клятва героя» — отжимания и приседания; онлайн-дуэль до 2 побед из 3 — через интернет (WebRTC) или по локальной сети, если школьный Wi-Fi режет соединение.</aside>
+  <aside class="notes">Справа внизу игра пишет, что сейчас делает каждая рука, и цвет тот же, что в интерфейсе. Левая — синяя, это движение: ход и бег, рывок с неуязвимостью, щит — резкий толчок ладонью к камере. Правая — оранжевая, это магия: снаряды жестом «OK», выброс — кулак резко раскрыть, руны указательным пальцем. Двумя руками собирают сферу, ставят печати и открывают «Врата бури». Всего 24 жеста, у каждого своё действие. Ролик снят с клавиатуры, живую камеру покажем на демо.</aside>
 </section>`
   });
 
   /* ---------- 6. Не «не распознано», а «что исправить» ---------- */
-  // История на стенде приседаний (dev/squat_stand.html, камера низко, симуляция позы): шаг 1 — колени завалились
-  // внутрь, вокруг них прочерчивается красный круг и печатается голосовая подсказка игры «Колени наружу!»
-  // (core/voicePhrases.js, valgus); шаг 2 — тот же ракурс, чистый повтор: золотое свечение и «+2» («Новичок»).
+  // Почти правильное «OK»: кончики большого и указательного не сомкнуты. Этап 1 — игра подсвечивает, чего не хватает,
+  // и выводит свою подсказку (core/gestureCoach.js, ok_ring_open); этап 2 — пальцы смыкаются, «Распознано».
+  var S6 = stager(2, 1400);
+  var K6 = 1.4, CX6 = 300, CY6 = 228;
+  var t4 = at(NEAR, 4, K6, CX6, CY6), t8 = at(NEAR, 8, K6, CX6, CY6), gap = [(t4[0] + t8[0]) / 2, (t4[1] + t8[1]) / 2];
   Q.push({
     n: 6, sec: 45,
     html: `<section class="slide" data-slide="6" data-title="Не «не распознано», а «что исправить»">
   <p class="kicker">Твист кейса · ОШИБКА</p>
   <h2 class="thesis">Не «не распознано», а&nbsp;«что исправить»</h2>
   <div class="p2-body">
-    <figure class="p2-shot p2-s6-bat">
-      <div class="p2-crop"><img src="../docs/screenshots/spirit/09_battle_mistake.jpg" alt="Бой: правая рука подсвечена красным, подсказка «Сомкни кончики большого и указательного в кольцо»" decoding="async"></div>
+    ${marks(2)}
+    <figure class="p2-shot p2-s6-hand">
+      <div class="p2-crop p2-screen">
+        <svg class="p2-s6-svg" viewBox="0 0 582 452" aria-hidden="true" focusable="false">
+          ${hand(NEAR, K6, CX6, CY6, 'p2-near')}
+          ${hand(OK, K6, CX6, CY6, 'p2-ok')}
+          <circle class="p2-gap" cx="${gap[0].toFixed(1)}" cy="${gap[1].toFixed(1)}" r="44" pathLength="1"/>
+          <circle class="p2-ring-ok" cx="${at(OK, 4, K6, CX6, CY6)[0].toFixed(1)}" cy="${(at(OK, 4, K6, CX6, CY6)[1] - 22).toFixed(1)}" r="40" pathLength="1"/>
+        </svg>
+      </div>
       ${RING}
-      <figcaption class="cap p2-fig-note">Бой; снято с&nbsp;клавиатуры.</figcaption>
+      <figcaption class="src p2-fig-note">Схема по&nbsp;21&nbsp;точке кисти</figcaption>
     </figure>
-    <figure class="p2-shot p2-s6-sq">
+    <div class="p2-verdict">
+      <p class="p2-card-err"><span class="p2-card-k">Ошибка · «OK» · снаряд</span><span class="p2-card-t">Сомкни кончики большого и&nbsp;указательного в&nbsp;кольцо</span></p>
+      <p class="p2-card-ok"><span class="p2-card-k">Распознано</span><span class="p2-card-t">«OK» — снаряды летят</span></p>
+    </div>
+    ${buttons([['next', 'Дальше', true], ['reset', 'Сначала']])}
+    <figure class="p2-shot p2-s6-proof">
+      <div class="p2-crop"><img src="../docs/screenshots/spirit/09_battle_mistake.jpg" alt="Бой: та же подсказка «Сомкни кончики большого и указательного в кольцо» в окне «ОШИБКА»" decoding="async"></div>
+      ${RING}
+      <figcaption class="src p2-fig-note">Та же подсказка в&nbsp;бою · снято с&nbsp;клавиатуры</figcaption>
+    </figure>
+    <div class="p2-s6-hint">
+      <span class="num" data-ignite>63</span>
+      <p class="p2-s6-what"><span class="unit">подсказки</span><span class="cap">49 к&nbsp;жестам · 14 к&nbsp;технике</span></p>
+    </div>
+  </div>
+  <aside class="notes">Жест почти правильный: «OK», но кончики большого и указательного не сомкнуты. Обычная система скажет «не распознано». Наша подсвечивает, чего не хватает, и говорит, что исправить: «Сомкни кончики большого и указательного в кольцо» — та же подсказка, что в бою справа. Пальцы сомкнулись — «Распознано», снаряды летят. Таких подсказок 63: 49 к жестам и 14 к технике приседаний и отжиманий, голосом и пиктограммой.</aside>
+</section>`,
+    enter: S6.enter, step: S6.step, leave: S6.leave
+  });
+
+  /* ---------- 7. Тренер техники ---------- */
+  // Стенд приседаний (dev/squat_stand.html, камера низко, симуляция позы): шаг 1 — колени завалились внутрь,
+  // вокруг них прочерчивается красный круг и печатается голосовая подсказка игры «Колени наружу!»
+  // (core/voicePhrases.js, valgus); шаг 2 — тот же ракурс, чистый повтор: золотое свечение и «+2» («Новичок»).
+  Q.push({
+    n: 7, sec: 40,
+    html: `<section class="slide" data-slide="7" data-title="Тренер техники">
+  <p class="kicker">Клятва героя · приседания и&nbsp;отжимания</p>
+  <h2 class="thesis">Тренер, который видит технику</h2>
+  <div class="p2-body">
+    <figure class="p2-shot p2-s7-sq">
       <div class="p2-crop">
         <img class="p2-sq-in" src="media/p2/squat_in.jpg" alt="Стенд приседаний: колени завалились внутрь" decoding="async">
         <img class="p2-sq-out" data-step="2" src="media/p2/squat_out.jpg" alt="Тот же ракурс: чистый повтор, колени по линии носков" decoding="async">
@@ -177,20 +230,13 @@
       ${RING}
       <figcaption class="cap p2-fig-note">Стенд; с&nbsp;камерой — на&nbsp;живом показе.</figcaption>
     </figure>
-    <p class="p2-say" data-step="1"><span class="p2-say-t">Колени наружу!</span></p>
-    <p class="p2-plus" data-step="2"><span class="num">+2</span></p>
-    <div class="p2-s6-hint">
-      <span class="num" data-ignite>63</span>
-      <p class="p2-s6-what"><span class="unit">подсказки</span><span class="cap">49 к&nbsp;жестам · 14 к&nbsp;технике приседаний и&nbsp;отжиманий</span></p>
-    </div>
-    <ul class="p2-s6-steps">
-      <li class="p2-tick" data-step="1"><span class="p2-tick-t">Голос тренера</span></li>
-      <li class="p2-tick" data-step="2"><span class="p2-tick-t">Присед — очко клятвы, чистый — два<span class="p2-sep"> · </span>7&nbsp;улучшений героя</span></li>
-    </ul>
-    <a class="p2-live" href="../index.html?demo&amp;present&amp;fury=100" target="_blank" rel="noopener" title="Бой с полной шкалой ярости; нужен сайт или serve_game.py">
-      <svg viewBox="0 0 22 22" aria-hidden="true"><path d="M6 3.5 18 11 6 18.5z" fill="currentColor"/></svg>Живой показ</a>
+    <ol class="p2-s7-story">
+      <li class="p2-tick p2-tick--err" data-step="1"><span class="p2-tick-k">Колени внутрь</span><span class="p2-say"><span class="p2-say-t">«Колени наружу!»</span></span></li>
+      <li class="p2-tick p2-tick--gold" data-step="2"><span class="p2-tick-k">Чистый повтор</span><span class="p2-plus"><span class="num">+2</span><span class="unit">очка клятвы</span></span></li>
+    </ol>
+    <p class="lead p2-s7-line">7&nbsp;улучшений героя за&nbsp;очки клятвы</p>
   </div>
-  <aside class="notes">Когда жест не получился, игра не пишет «не распознано». Она говорит, что исправить, — 63 конкретные подсказки, голосом и пиктограммой. Пример на стенде приседаний: колени завалились внутрь — игра обводит ошибку и говорит «Колени наружу!»; следующий повтор чистый — «+2». Отжимание засчитывается только с правильной техникой — одно очко клятвы; приседание в «Новичке» — очко, чистое — два, в «Мастере» засчитываются только чистые. Очки открывают 7 улучшений героя. Живой показ — с сайта или через serve_game.py (из файла игра не стартует); приседания вживую: «Клятва героя» → «Тренировка» → «Приседания».</aside>
+  <aside class="notes">Тот же принцип в тренировке. Стенд приседаний: колени завалились внутрь — игра обводит ошибку и говорит голосом «Колени наружу!». Следующий повтор чистый — плюс два очка клятвы. В «Новичке» повтор с ошибкой — очко, чистый — два; в «Мастере» засчитываются только чистые; отжимание — только с правильной техникой, одно очко. За очки открываются 7 улучшений героя. Приседания вживую: «Клятва героя» → «Тренировка» → «Приседания».</aside>
 </section>`
   });
 
