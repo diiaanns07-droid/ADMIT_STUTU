@@ -1245,6 +1245,7 @@ export async function createVision(options = {}) {
     mode: null, rvfcId: null, pollId: null, watchdogId: null, frameIntervalMs: 33.3,
     lastKey: undefined, busy: false, busySince: 0, dirty: false, dirtyKey: undefined,
     seq: 0, inflightSeq: null, lastRvfcT: 0, pollFrames: -1, pollFramesT: 0, rvfcStarved: false,
+    vfN: -1, vfT: -Infinity, // [W5-КАМЕРА] счётчик кадров плеера и когда он последний раз вырос
   };
   const perf = {
     arrivals: [], hz: 0, inferMs: null, latencyMs: null, results: 0,
@@ -1326,11 +1327,17 @@ export async function createVision(options = {}) {
     };
   }
 
-  // [W5-КАМЕРА] камера сама присылает кадры (последний не старше секунды) — отличаем «нет кадров с камеры»
-  // от «распознавание не успевает»
+  // [W5-КАМЕРА] камера сама присылает кадры (последний не старше 2 с) — отличаем «нет кадров с камеры» от «распознавание
+  // не успевает». Кроме кадров, дошедших до распознавания, — счётчик кадров плеера: он растёт и тогда, когда основной
+  // поток занят (распознавание в основном потоке, тяжёлый кадр рендера) и обработчики кадров не вызываются.
   function cameraFresh(now) {
     const a = perf.camArrivals;
-    return a.length > 0 && now - a[a.length - 1] <= 1000;
+    return (a.length > 0 && now - a[a.length - 1] <= 2000) || now - loop.vfT <= 2000;
+  }
+  function sampleVideoFrames(now) {
+    let n = NaN;
+    try { if (typeof video.getVideoPlaybackQuality === 'function') n = video.getVideoPlaybackQuality().totalVideoFrames; } catch { /* нет счётчика */ }
+    if (finite(n) && n > 0 && n !== loop.vfN) { if (loop.vfN >= 0) loop.vfT = now; loop.vfN = n; }
   }
 
   function noteLoadStage(stage, progress, text = null) {
@@ -1609,7 +1616,9 @@ export async function createVision(options = {}) {
     const e = engine;
     const hidden = typeof document !== 'undefined' && document.hidden;
     const cam = cameraFps();
-    if (!e || e.delegate !== 'GPU' || switching || hidden || ladder.results < 3 || !(cam >= 10) || !(cfg.slowGpuHz > 0)) { ladder.slowSince = null; return; }
+    // камера сама даёт ≥ 10 к/с; частоту не измерить (основной поток занят распознаванием), но кадры идут — тоже
+    const camOk = cam >= 10 || (cam === null && cameraFresh(now));
+    if (!e || e.delegate !== 'GPU' || switching || hidden || ladder.results < 3 || !camOk || !(cfg.slowGpuHz > 0)) { ladder.slowSince = null; return; }
     const win = 3000;
     const recent = perf.arrivals.filter((t) => now - t <= win).length;
     if (recent >= cfg.slowGpuHz * (win / 1000)) { ladder.slowSince = null; return; }
@@ -1855,6 +1864,7 @@ export async function createVision(options = {}) {
     stopLoop();
     loop.lastKey = undefined; loop.busy = false; loop.dirty = false; loop.inflightSeq = null;
     loop.rvfcStarved = false; loop.pollFrames = -1;
+    loop.vfN = -1; loop.vfT = -Infinity; // [W5-КАМЕРА]
     let fr = 30;
     try {
       const vt = stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
@@ -2120,6 +2130,7 @@ export async function createVision(options = {}) {
   function watchdogTick() {
     if (!running) return;
     const now = nowMs();
+    sampleVideoFrames(now); // [W5-КАМЕРА]
     const hidden = typeof document !== 'undefined' && document.hidden;
     if (loop.mode === 'rvfc' && !hidden && now - loop.lastRvfcT > cfg.rvfcStarveMs && !video.paused && video.readyState >= 2) {
       // rVFC может не вызываться для невидимого <video>; переходим на опрос.

@@ -1285,13 +1285,15 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           if (showLine) {
             const info = describeTracking(tr, cfg);
             const secs = Math.floor((ctx.now - stSince) / 1000);
-            const extra = tr.status === 'loading' ? [tr.progress > 0 && tr.progress < 1 ? pct(tr.progress) : '', secs >= 3 ? `${secs} с` : ''].filter(Boolean).join(' · ') : '';
+            // проценты — уже под заголовком; здесь — сколько идёт этот этап (видно, что не зависло)
+            const extra = (tr.status === 'loading' || tr.status === 'permission') && secs >= 3 ? `${secs} с` : '';
             paintStatus(line, { tone: info.tone, label: tr.message || info.label }, extra);
           }
           setHidden(line.node, !showLine);
         }
         setHidden(node, !(showLine || hint));
         if (diag.open && ctx.now - paintedAt > 250) paintDiag();
+        return hint ? 'todo' : showLine ? 'line' : null;   // что показано: панель ужимает превью, чтобы кнопки остались в окне
       },
     };
   }
@@ -1841,7 +1843,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setHidden(msg, !text);
         if (st === 'error') err.show(ctx.errorText, ctx.tr.code);   // [W5-КАМЕРА] код ошибки vision
         else err.hide();
-        camStat.paint(ctx);   // [W5-КАМЕРА]
+        const shown = camStat.paint(ctx);   // [W5-КАМЕРА]
+        if (quick) { setAttr(quick.node, 'data-stat', shown); setAttr(quick.node, 'data-diag', camStat.diag.open ? 'open' : null); }
         let label = 'Разрешить камеру';
         if (st === 'permission') label = 'Ждём разрешения…';
         else if (st === 'loading') label = 'Загрузка модели…';

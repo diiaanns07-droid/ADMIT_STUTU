@@ -94,6 +94,7 @@ function resetFakeMP(over = {}) {
     calls: [], detects: [],
     detect(src, ts, inst) {
       h.detects.push({ delegate: inst.delegate, main: !src.__bitmap });
+      if (h.onDetect) h.onDetect(src, ts, inst);
       if (h.detectThrows && h.detectThrows(src, inst)) throw new Error('fake detect failure ' + inst.delegate);
       const r = { landmarks: [makeLandmarks(rng)], worldLandmarks: [], close() {} };
       return r;
@@ -468,6 +469,21 @@ test('L12 диагностика в статусе: ступень, лестни
   ok(d.cameraFps > 25 && d.cameraFps < 35, `камера ${d.cameraFps} к/с`);
   ok(d.inferenceHz > 20, `распознаваний ${d.inferenceHz}/с`);
   eq(JSON.parse(JSON.stringify(d)).engineStep, 'worker-gpu', 'сериализуется для отчёта');
+}));
+
+test('L15 основной поток: кадр на GPU идёт 3 с (интерфейс висит) → та же модель на CPU в основном потоке', () => withShell({ worker: false }, async (env, v) => {
+  await v.start();
+  await pump(env, 400);
+  eq(v.getStatus().debug.engineStep, 'main-gpu');
+  // видеокарту занял рендер: detect на GPU в основном потоке длится 3 с (поддельные часы идут вперёд)
+  env.h.onDetect = (src, ts, inst) => { if (inst.delegate === 'GPU' && !src.__bitmap) clock.t += 3000; };
+  await pump(env, 2000);
+  await waitFor(() => v.getStatus().debug.engineStep === 'main-cpu', 3000, env);
+  const s = v.getStatus();
+  eq(s.debug.engineStep, 'main-cpu', 'ступень ниже');
+  ok(/кадр на GPU в основном потоке \d+ мс/.test(s.debug.ladderHistory[0].reason), s.debug.ladderHistory[0].reason);
+  await pump(env, 400);
+  eq(v.getStatus().status, 'ready', 'трекинг продолжается');
 }));
 
 // файлы MediaPipe до воркера: поддельный fetch с потоковым телом (порции по 1 МБ через delayMs настоящего времени)

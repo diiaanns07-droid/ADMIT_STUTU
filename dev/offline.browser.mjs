@@ -264,6 +264,9 @@ try {
   check('офлайн: игра стартовала', off.booted, off.bootErr || `меню за ${off.menuMs} мс`);
   check('офлайн: модель распознавания инициализировалась и обрабатывает кадры', works(off) && !!off.tracking && off.tracking.results > 0, `${off.cameraStatus} за ${off.cameraMs} мс; ${JSON.stringify(off.tracking)}`);
   check('офлайн: кисти (HandLandmarker) тоже готовы', !!(off.tracking && off.tracking.hands), JSON.stringify(off.tracking));
+  // [W5-КАМЕРА] медленный кадр — ступень ниже в воркере (CPU), а не главный поток: раньше здесь был откат
+  // «worker не ответил на кадр за 2500 мс» → главный поток, 0,5 распознавания в секунду и «Нет новых кадров с камеры»
+  for (const o of [first, second, off]) if (works(o) && o.tracking) check(`${o.label}: распознавание в воркере, не в главном потоке`, o.tracking.mode === 'worker', JSON.stringify(o.tracking));
   check('офлайн: по сети 0 байт', off.wireMB === 0, `${off.wireMB} МБ`);
   const errs = errors.filter((e) => !/GPU|WebGL|gpu|delegate|OpenGL|INFO:|favicon|ERR_INTERNET_DISCONNECTED|net::ERR_|Failed to load resource/.test(e));
   check('нет ошибок страницы', errs.length === 0, errs.slice(0, 4).join(' | '));

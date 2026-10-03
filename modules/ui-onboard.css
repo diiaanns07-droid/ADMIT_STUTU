@@ -146,6 +146,21 @@
   .ao-onb__stage { width: min(100%, calc(44vh * 4 / 3)); }
   .ao-onb__head { min-height: 0; }
 }
+/* [W5-КАМЕРА] строка статуса, «Что делать» и раскрытая «Диагностика» — превью меньше, общие подсказки уступают место
+   конкретным: кнопки и «Диагностика» остаются в окне без прокрутки */
+.ao-panel--onb[data-stat='line'] .ao-onb__stage { width: min(100%, calc(46vh * 4 / 3)); }
+.ao-panel--onb[data-stat='todo'] .ao-onb__stage { width: min(100%, calc(40vh * 4 / 3)); }
+.ao-panel--onb[data-stat='todo'] .ao-onb__tips,
+.ao-panel--onb[data-diag='open'] .ao-onb__tips { display: none; }
+.ao-panel--onb[data-diag='open'] .ao-onb__stage { width: min(100%, calc(26vh * 4 / 3)); }
+.ao-panel--onb .ao-camstat { margin-bottom: 0.45rem; }
+.ao-panel--onb .ao-camdiag[open] .ao-camdiag__list { max-height: 30vh; }
+@media (max-height: 700px) {
+  .ao-panel--onb[data-stat='line'] .ao-onb__stage { width: min(100%, calc(40vh * 4 / 3)); }
+  .ao-panel--onb[data-stat='todo'] .ao-onb__stage { width: min(100%, calc(32vh * 4 / 3)); }
+  .ao-panel--onb[data-diag='open'] .ao-onb__stage { width: min(100%, calc(18vh * 4 / 3)); }
+  .ao-panel--onb .ao-camstat__line .ao-status__label { font-size: 1.08rem; }
+}
 
 /* ------------------------------------------------------------ пауза: отсчёт 3-2-1 (внутри превью) */
 .ao-countdown {
