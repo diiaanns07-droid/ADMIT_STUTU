@@ -591,6 +591,22 @@ const LAVA_FRAG = /* glsl */`
     float kinoL = kinoCore * kinoA + kinoHalo * min( kinoA, 1.0 );
     totalEmissiveRadiance += kinoCol * ( kinoL * kinoIn * kinoFlow * 4.0 ) + vec3( 1.0, 0.86, 0.62 ) * ( ( kinoCore + kinoHalo ) * kinoEdge * 7.0 );
   }
+  // [W4-УДАР] трещины брони вспыхивают в точке удара (и в фазе 1): kinoHit[i].xyz — точка (мир), .w — накал;
+  // kinoHitC[i].rgb — цвет (линейный), .a — радиус пятна, м. Нет ударов — kinoHitK = 0, цикл не считается.
+  if ( kinoHitK > 0.0 ) {
+    float kinoM = smoothstep( 0.2, 0.8, emissiveColor.r ) + sqrt( emissiveColor.r ) * 0.45;
+    vec3 kinoAcc = vec3( 0.0 );
+    for ( int i = 0; i < 3; i ++ ) {
+      vec4 kh = kinoHit[ i ];
+      if ( kh.w > 0.001 ) {
+        float kd = distance( vKinoLavaPos, kh.xyz ) / max( kinoHitC[ i ].a, 0.05 );
+        float kg = kh.w * exp( - kd * kd * 2.2 );
+        // сильный накал — сердцевина трещин добела
+        kinoAcc += mix( kinoHitC[ i ].rgb, vec3( 1.0, 0.94, 0.82 ), clamp( kg - 0.8, 0.0, 1.0 ) * 0.6 ) * kg;
+      }
+    }
+    totalEmissiveRadiance += kinoAcc * kinoM * 8.0;
+  }
 #endif`;
 
 // [W4-BOSS] Затмение в нимбе Регента. Плоскость 2·EH; диск ~0,5 м, лимб — тонкое огненное кольцо, корона гаснет
@@ -1103,6 +1119,10 @@ export function createWorld({ THREE, scene, renderer, camera, config = {} } = {}
   const matBossRunes = std({ color: 0x3b3128, emissive: 0xffb060, emissiveIntensity: 0.9, roughness: 0.8, flatShading: true });
   // [W3-КИНО] лава в трещинах брони: общие униформы для matBoss, matBossDark, matBossMask (патч — у patchLit ниже)
   const lavaU = { kinoLavaO: { value: new THREE.Vector3(0, 3.4, 0) }, kinoLavaP: { value: new THREE.Vector4(0, 6, 0, 0) } };
+  // [W4-УДАР] вспышки трещин в точках ударов (bossFx.crackAt): 3 ячейки, накал гаснет в updateBoss
+  lavaU.kinoHit = { value: [new THREE.Vector4(0, -99, 0, 0), new THREE.Vector4(0, -99, 0, 0), new THREE.Vector4(0, -99, 0, 0)] };
+  lavaU.kinoHitC = { value: [new THREE.Vector4(1, 0.5, 0.2, 1), new THREE.Vector4(1, 0.5, 0.2, 1), new THREE.Vector4(1, 0.5, 0.2, 1)] };
+  lavaU.kinoHitK = { value: 0 };
   function patchLava(mat) {
     const prev = mat.onBeforeCompile;
     mat.onBeforeCompile = (shader, r) => {
@@ -1113,7 +1133,7 @@ export function createWorld({ THREE, scene, renderer, camera, config = {} } = {}
         .replace('#include <project_vertex>', '#include <project_vertex>' + LAVA_VERT);
       // токены <common>/<emissivemap_fragment> остаются на месте — их же ищет atmo.patchLit
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform vec3 kinoLavaO;\nuniform vec4 kinoLavaP;\nvarying vec3 vKinoLavaPos;')
+        .replace('#include <common>', '#include <common>\nuniform vec3 kinoLavaO;\nuniform vec4 kinoLavaP;\nvarying vec3 vKinoLavaPos;\nuniform vec4 kinoHit[3];\nuniform vec4 kinoHitC[3];\nuniform float kinoHitK;')   // [W4-УДАР] kinoHit*
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>' + LAVA_FRAG);
     };
     const prevKey = mat.customProgramCacheKey;
@@ -4082,6 +4102,41 @@ float ashPuddle( vec2 xz ) {
   initState();
   // [W3-КИНО] кинохуки Регента (modules/fx/bossFinale.js): ручной фронт лавы, рассыпанное тело, угли в пепле
   const kino = { lavaFront: null, lavaBoost: 0, shattered: false, hidden: [], ashEmbers: false, p2T: 0 };
+  // [W4-УДАР] трещины брони вспыхивают в точке удара: ячейки lavaU.kinoHit (накал w гаснет за ~0,6 с)
+  const crackHit = { next: 0 };
+  function crackAt(p, heat, color, radius) {
+    if (disposed || kino.shattered || !p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) return false;
+    const H = lavaU.kinoHit.value, C = lavaU.kinoHitC.value;
+    const n = quality === 'low' ? 1 : 3;
+    // слабейшая ячейка (на low — одна)
+    let k = 0;
+    for (let i = 1; i < n; i++) if (H[i].w < H[k].w) k = i;
+    if (n > 1 && H[k].w > 0.05) { k = crackHit.next % n; crackHit.next++; }
+    // точку удара — к броне: по горизонтали не дальше 0,8 м от оси (позвонки и ближняя кисть), по высоте — тело
+    const sc = bossRoot.scale.y;
+    let dx = p.x - bossRoot.position.x, dz = p.z - bossRoot.position.z;
+    const hr = Math.hypot(dx, dz), lim = 0.8 * sc;
+    if (hr > lim) { dx *= lim / hr; dz *= lim / hr; }
+    H[k].set(bossRoot.position.x + dx, clamp(p.y, 1.4 * sc + bossRoot.position.y, 4.9 * sc + bossRoot.position.y), bossRoot.position.z + dz,
+      clamp(num(heat, 1), 0, 3));
+    const c = num(color, 0xffb060);
+    C[k].set(srgbLin(((c >> 16) & 255) / 255), srgbLin(((c >> 8) & 255) / 255), srgbLin((c & 255) / 255), clamp(num(radius, 0.9), 0.2, 3) * sc);
+    lavaU.kinoHitK.value = 1;
+    return true;
+  }
+  const srgbLin = (v) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  function crackTick(dt) {
+    const H = lavaU.kinoHit.value;
+    let sum = 0;
+    for (let i = 0; i < 3; i++) {
+      if (H[i].w <= 0) continue;
+      H[i].w *= Math.exp(-dt * 4.2);
+      if (H[i].w < 0.01) H[i].w = 0;
+      sum += H[i].w;
+    }
+    lavaU.kinoHitK.value = sum;
+  }
+  function crackClear() { const H = lavaU.kinoHit.value; for (let i = 0; i < 3; i++) H[i].w = 0; lavaU.kinoHitK.value = 0; }
   const recentIds = new Set(), recentQ = [];
   let time = 0, quality = initialQuality, clothEvery = 1, disposed = false;
 
@@ -4701,6 +4756,7 @@ float ashPuddle( vec2 xz ) {
     bs.windT += dt; bs.strikeT += dt; bs.recoverT += dt; bs.roarT += dt; bs.hitT += dt;
     bs.hitFlash *= Math.exp(-dt * 7);
     bs.w4HitT += dt;   // [W4-BOSS]
+    if (lavaU.kinoHitK.value > 0) crackTick(dt);   // [W4-УДАР]
     if (isDead) bs.deadT += dt;
 
     // прогресс замаха: из телеграфа, иначе по таймеру
@@ -4948,6 +5004,7 @@ float ashPuddle( vec2 xz ) {
     kino.shattered = false;
     kino.lavaFront = null; kino.lavaBoost = 0;
     lavaU.kinoLavaP.value.z = 0;
+    crackClear();   // [W4-УДАР]
     bossBlob.visible = true;
   }
   // [W3-КИНО] тело рассыпалось (осколки рисует bossFinale): нимб и обломки срываются и падают, остальное
@@ -5247,6 +5304,8 @@ float ashPuddle( vec2 xz ) {
       shatter: kinoShatter,
       get shattered() { return kino.shattered; },
       get body() { return bossBody; },   // по его мешам bossFinale выбирает точки осколков
+      // [W4-УДАР] трещины брони вспыхивают у точки удара: p — мир, heat 0..3, color 0xRRGGBB, radius — м (~0,6…2)
+      crackAt,
       origin(out) {   // мировая точка ядра (boss.markers.core) → out (Vector3)
         const o = out || new THREE.Vector3();
         return o.setFromMatrixPosition(boss.markers.core.matrixWorld);
