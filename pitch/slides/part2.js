@@ -133,7 +133,7 @@
   <div class="p2-body">
     <figure class="p2-shot p2-s5-shot" data-morph="heroes">
       <div class="p2-crop">
-        <ul class="p2-heroes" role="img" aria-label="Пять героев игры: ${HEROES.join(', ')}">
+        <ul class="p2-heroes" role="img" aria-label="Пять героев игры на витрине меню: ${HEROES.join(', ')}">
           ${HEROES.map(function (h, i) { return '<li style="--i:' + i + '"><img src="media/p2/heroes.jpg" alt="" decoding="async"><span class="p2-hero-name">' + h + '</span></li>'; }).join('')}
         </ul>
       </div>

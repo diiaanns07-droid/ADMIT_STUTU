@@ -98,11 +98,12 @@
 }
 
 /* ================= Слайд 5 — «Глубина RPG, а не мини-игра» ================= */
-/* полоса 1656×322: media/p2/heroes.jpg 1656×366 — пять ячеек по 331 px, каждая сдвигает кадр на свою пятую часть */
+/* полоса 1656×322: media/p2/heroes.jpg 1656×366 — свежие кадры витрины меню (tools/visual_gallery.mjs, ракурс front),
+ * герои приведены к одному росту; пять ячеек по 331 px, каждая сдвигает кадр на свою пятую часть */
 [data-slide="5"] .p2-s5-shot { left: 3px; top: 10px; width: 1674px; height: 340px; }
 [data-slide="5"] .p2-heroes { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(5, 1fr); padding: 0; list-style: none; }
 [data-slide="5"] .p2-heroes > li { position: relative; overflow: hidden; }
-[data-slide="5"] .p2-heroes img { position: absolute; top: -22px; left: calc(var(--i) * -331.2px); width: 1656px; height: 366px; max-width: none; }
+[data-slide="5"] .p2-heroes img { position: absolute; top: -8px; left: calc(var(--i) * -331.2px); width: 1656px; height: 366px; max-width: none; }
 [data-slide="5"] .p2-heroes > li::after {
   content: ''; position: absolute; inset: 0; z-index: 1; opacity: 0; pointer-events: none;
   background: radial-gradient(48% 56% at 50% 46%, color-mix(in srgb, var(--gold-hi) 75%, transparent), color-mix(in srgb, var(--gold) 25%, transparent) 55%, transparent 80%);
@@ -222,6 +223,10 @@
 
 /* ---------- Печать: все шаги раскрыты, линии прочерчены, карточки лицом, удар уже случился ---------- */
 @media print {
+  /* золотой градиент по тексту (background-clip: text) Chrome печатает в PDF с рамкой-волоском — в печати цифры сплошным золотом */
+  .p2-body .num:not(.p2-s6-hint .num) { background: none; color: var(--gold-hi); -webkit-text-fill-color: var(--gold-hi); }
+  /* при печати Chrome не учитывает backface-visibility — рубашку карточек прячем явно */
+  [data-slide="12"] .p2-face--back { display: none; }
   [data-slide="3"] .p2-lead path { stroke-dashoffset: 0; }
   [data-slide="4"] .p2-seq > li + li::after { transform: none; }
   [data-slide="4"] .p2-seq-hit { opacity: 1 !important; }
