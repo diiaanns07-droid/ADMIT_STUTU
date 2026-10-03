@@ -1,0 +1,152 @@
+/* ASHEN OATH — презентация финала, слайды 3, 4, 5, 6 и 12.
+ * Стили только внутри своих слайдов ([data-slide="3|4|5|6|12"]) или с префиксом .p2-.
+ * Общие классы (.kicker, .thesis, .num, .frame, .chip…) и токены — из deck.css, здесь только раскладка.
+ * Цвета — только токены deck.css (полупрозрачные — через color-mix).
+ * Движение: шаги 300 мс, полоса здоровья 300 + 500 мс; только opacity, transform и translate.
+ * Мгновенный показ (.is-instant: вход назад, переход по hash, печать) и «уменьшенное движение» — сразу конечный вид. */
+
+/* ---------- Общий каркас: метку раздела и тезис ставит deck.css, содержимое — в полосе 260–960 ---------- */
+.p2-body { position: absolute; left: 120px; top: 260px; width: 1680px; height: 700px; }
+
+/* Кадр игры. Коробка .p2-shot — это рамка: орнамент .frame выступает на 3 px наружу (до поля 120 px),
+ * снимок внутри с отступом 9 px. Обрезку делает обёртка .p2-crop, координаты снимка — в её системе. */
+.p2-shot { position: absolute; margin: 0; }
+.p2-crop { position: absolute; inset: 9px; overflow: hidden; background: var(--coal-deep); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 60%, transparent), 0 18px 50px color-mix(in srgb, var(--ink) 55%, transparent); }
+.p2-crop > img, .p2-crop > video { position: absolute; max-width: none; }
+.p2-shot > .frame.p2-ring { position: absolute; inset: 0; z-index: 2; background: none; box-shadow: none; pointer-events: none; }
+.p2-fig-note { position: absolute; left: 9px; white-space: nowrap; }
+
+/* Шаг-строка с цветной кромкой слева — как список жестов в бою (синяя — левая рука, оранжевая — правая) */
+.p2-tick { position: relative; padding-left: 30px; }
+.p2-tick::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 4px; border-radius: 2px; background: var(--tick, var(--gold)); }
+.p2-tick-k { display: block; margin-bottom: 6px; font-family: var(--f-caps); font-size: 26px; line-height: 30px; letter-spacing: .12em; text-transform: uppercase; color: var(--tick, var(--gold)); }
+.p2-tick-t { display: block; font-size: 36px; line-height: 44px; color: var(--text); }
+
+/* ================= Слайд 3 — «Тело — это контроллер» ================= */
+/* кадр 702×522: media/p2/spirit.jpg 474×354 (окно «Что видит камера») ×1,5, срезана красная кромка 3 px */
+[data-slide="3"] .p2-s3-shot { left: 3px; top: 40px; width: 720px; height: 540px; }
+[data-slide="3"] .p2-s3-shot img { left: -5px; top: -5px; width: 711px; height: 531px; }
+[data-slide="3"] .p2-s3-shot .p2-fig-note { top: 554px; }
+/* Кольца цвета руки поверх кадра: прочерчиваются по шагам (stroke-dashoffset), без сдвига */
+[data-slide="3"] .p2-marks { position: absolute; left: 9px; top: 9px; z-index: 1; width: 702px; height: 522px; overflow: visible; }
+[data-slide="3"] .p2-mk {
+  fill: none; stroke: var(--hl); stroke-width: 2; /* 3 px на экране: кадр ×1,5 */
+  stroke-dasharray: 1; stroke-dashoffset: 0; filter: drop-shadow(0 0 7px var(--hl));
+  transition: opacity .3s var(--ease), stroke-dashoffset .5s var(--ease);
+}
+[data-slide="3"] .p2-mk[data-step]:not(.is-on) { translate: none; stroke-dashoffset: 1; }
+[data-slide="3"] .p2-mk--l { --hl: var(--hand-left); }
+[data-slide="3"] .p2-mk--r { --hl: var(--hand-right); }
+[data-slide="3"] .p2-mk--b { --hl: var(--gold); stroke-width: 1.4; stroke-dasharray: .012 .008; stroke-dashoffset: 0; }
+[data-slide="3"] .p2-mk--b[data-step]:not(.is-on) { stroke-dashoffset: 0; }
+[data-slide="3"] .p2-hands { position: absolute; left: 800px; top: 104px; width: 880px; padding: 0; list-style: none; }
+[data-slide="3"] .p2-hands > li + li { margin-top: 52px; }
+[data-slide="3"] .p2-hands .p2-tick-t { font-size: 40px; line-height: 48px; }
+[data-slide="3"] .p2-tick--l { --tick: var(--hand-left); }
+[data-slide="3"] .p2-tick--r { --tick: var(--hand-right); }
+[data-slide="3"] .p2-tick--b { --tick: var(--gold); }
+[data-slide="3"] .p2-s3-cap { position: absolute; left: 800px; top: 539px; }
+
+/* ================= Слайд 4 — «Один жест — удар, как в кино» ================= */
+/* снимок 1080×463: клип и постер 1120×480 (×0,964) уже обрезаны до кадра 7:3 — без чёрных полос и плашки отладки */
+[data-slide="4"] .p2-s4-shot { left: 3px; top: 40px; width: 1098px; height: 481px; }
+[data-slide="4"] .p2-s4-shot video, [data-slide="4"] .p2-s4-shot img { left: 0; top: 0; width: 1080px; height: 463px; object-fit: cover; }
+[data-slide="4"] .p2-s4-shot .p2-fig-note { top: 495px; }
+/* Последовательность ульты: узлы-ромбы, как заклёпки на полосах игры; линия к узлу прочерчивается вместе с шагом */
+[data-slide="4"] .p2-seq { position: absolute; left: 1150px; top: 49px; width: 530px; padding: 0; list-style: none; }
+[data-slide="4"] .p2-seq > li { position: relative; padding-left: 44px; min-height: 96px; }
+[data-slide="4"] .p2-seq > li::before {
+  content: ''; position: absolute; left: 3px; top: 12px; width: 14px; height: 14px; transform: rotate(45deg);
+  background: var(--gold-hi); box-shadow: 0 0 0 3px var(--ink), 0 0 0 4px var(--gold-deep), 0 0 14px color-mix(in srgb, var(--gold-hi) 45%, transparent);
+}
+[data-slide="4"] .p2-seq > li + li::after {
+  content: ''; position: absolute; left: 9px; top: -66px; width: 2px; height: 70px;
+  background: linear-gradient(180deg, var(--gold-deep), var(--gold-hi));
+  transform-origin: 50% 0; transform: scaleY(0); transition: transform .3s var(--ease) .05s;
+}
+[data-slide="4"] .p2-seq > li + li.is-on::after { transform: none; }
+[data-slide="4"] .p2-seq-t { display: block; font-size: 36px; line-height: 40px; color: var(--text); }
+[data-slide="4"] .p2-seq-v { display: block; margin-top: 4px; font-size: 28px; line-height: 32px; color: var(--gold-b); }
+[data-slide="4"] .p2-seq > li.p2-seq-hit { padding-left: 0; margin-top: 18px; }
+[data-slide="4"] .p2-seq > li.p2-seq-hit::before, [data-slide="4"] .p2-seq > li.p2-seq-hit::after { content: none; }
+[data-slide="4"] .p2-seq-hit .num { display: block; width: max-content; }
+[data-slide="4"] .p2-seq-hit .unit { display: block; margin-top: 8px; }
+/* Мини-полоса Регента, как полоса доклада: красная заливка сжимается на 28 %, светлый «хвост потери» догоняет */
+[data-slide="4"] .p2-hp {
+  position: relative; display: block; width: 440px; height: 10px; margin-top: 22px; overflow: hidden;
+  background: linear-gradient(180deg, var(--ink), var(--coal-deep));
+  box-shadow: 0 0 0 1px var(--bronze), 0 0 0 2px color-mix(in srgb, var(--ink) 70%, transparent), inset 0 1px 3px color-mix(in srgb, var(--ink) 80%, transparent);
+}
+[data-slide="4"] .p2-hp > i { position: absolute; inset: 0; transform-origin: 0 50%; }
+[data-slide="4"] .p2-hp-fill { background: var(--grad-hp); transition: transform .3s var(--ease) .35s; }
+[data-slide="4"] .p2-hp-loss { background: var(--parch); opacity: .85; transition: transform .5s var(--ease) .7s; }
+[data-slide="4"] .p2-seq-hit.is-on .p2-hp > i { transform: scaleX(.72); }
+
+/* ================= Слайд 5 — «Глубина RPG, а не мини-игра» ================= */
+/* снимок 1656×366: media/p2/heroes.jpg — пять героев в ряд, по 331 px на героя */
+[data-slide="5"] .p2-s5-shot { left: 3px; top: 10px; width: 1674px; height: 384px; }
+[data-slide="5"] .p2-s5-shot img { left: 0; top: 0; width: 1656px; height: 366px; }
+[data-slide="5"] .p2-names {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; display: grid; grid-template-columns: repeat(5, 1fr);
+  padding: 70px 0 18px; list-style: none; background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ink) 78%, transparent) 62%, color-mix(in srgb, var(--ink) 90%, transparent));
+}
+[data-slide="5"] .p2-names > li { text-align: center; font-family: var(--f-caps); font-size: 26px; line-height: 30px; letter-spacing: .1em; text-transform: uppercase; color: var(--parch); }
+/* Три цифры по сетке героев: 24 жеста · 5 героев · 5 режимов (загорается только первая) */
+[data-slide="5"] .p2-stats { position: absolute; left: 0; top: 446px; width: 1680px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; padding: 0; list-style: none; }
+[data-slide="5"] .p2-stats > li { display: flex; align-items: baseline; gap: 22px; padding-top: 22px; border-top: 1px solid var(--line); }
+
+/* ================= Слайд 6 — «Не „не распознано“, а „что исправить“» ================= */
+/* бой 615×444: 09_battle_mistake.jpg ×0,7325, кадр с x=440, y=70 — без плашки отладки и обрывка подсказки слева */
+[data-slide="6"] .p2-s6-bat { left: 3px; top: 0; width: 633px; height: 462px; }
+[data-slide="6"] .p2-s6-bat img { left: -322px; top: -51px; width: 938px; height: 527px; }
+/* тренировка 987×444: squat_demo.mp4 1366×768 ×1,0133 — окно «Тренировка клятвы» от превью до итога подхода, без служебной строки стенда */
+[data-slide="6"] .p2-s6-sq { left: 672px; top: 0; width: 1005px; height: 462px; }
+[data-slide="6"] .p2-s6-sq video, [data-slide="6"] .p2-s6-sq img { left: -203px; top: -187px; width: 1384px; height: 778px; }
+[data-slide="6"] .p2-fig-note { top: 474px; }
+[data-slide="6"] .p2-s6-hint { position: absolute; left: 0; top: 522px; display: flex; align-items: flex-end; gap: 24px; }
+[data-slide="6"] .p2-s6-hint .num { background: none; color: var(--error); -webkit-text-fill-color: var(--error); }
+[data-slide="6"] .p2-s6-what { display: flex; flex-direction: column; gap: 6px; padding-bottom: 14px; }
+[data-slide="6"] .p2-s6-steps { position: absolute; left: 790px; top: 536px; width: 560px; padding: 0; list-style: none; }
+[data-slide="6"] .p2-s6-steps > li + li { margin-top: 20px; }
+[data-slide="6"] .p2-s6-steps .p2-tick-t { font-size: 32px; line-height: 40px; }
+/* «·» между двумя частями шага — на экране перенос строки, в тексте для чтения — разделитель */
+[data-slide="6"] .p2-sep { display: block; height: 0; overflow: hidden; }
+[data-slide="6"] .p2-live {
+  position: absolute; right: 0; top: 556px; display: inline-flex; align-items: center; gap: 14px; height: 72px; padding: 0 30px;
+  font-family: var(--f-caps); font-size: 28px; letter-spacing: .12em; text-transform: uppercase; color: var(--gold-hi); text-decoration: none;
+  border: 1px solid var(--gold-deep); background: linear-gradient(180deg, color-mix(in srgb, var(--gold-b) 16%, transparent), color-mix(in srgb, var(--gold-b) 4%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gold-hi) 20%, transparent), 0 10px 26px color-mix(in srgb, var(--ink) 45%, transparent);
+  transition: border-color .2s var(--ease), box-shadow .2s var(--ease);
+}
+[data-slide="6"] .p2-live:hover, [data-slide="6"] .p2-live:focus-visible { border-color: var(--gold-hi); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gold-hi) 30%, transparent), 0 0 22px color-mix(in srgb, var(--gold-hi) 25%, transparent); outline: none; }
+[data-slide="6"] .p2-live svg { width: 22px; height: 22px; flex: none; }
+
+/* Постер под видео и на экране: пока клип грузится или если браузер его не играет, виден кадр, а не пустая рамка */
+[data-slide="4"] .p2-crop > .print-poster, [data-slide="6"] .p2-crop > .print-poster { display: block; }
+[data-slide="4"] .p2-crop > video, [data-slide="6"] .p2-crop > video { z-index: 1; }
+
+/* ================= Слайд 12 — «Кому это нужно и что дальше» ================= */
+[data-slide="12"] .p2-who { position: absolute; left: 0; top: 30px; width: 1020px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; padding: 0; list-style: none; }
+[data-slide="12"] .p2-who > li { position: relative; padding-top: 26px; border-top: 1px solid var(--line); }
+[data-slide="12"] .p2-who > li::before { content: ''; position: absolute; left: 0; top: -1px; width: 64px; height: 2px; background: var(--gold-b); }
+[data-slide="12"] .p2-who h3 { margin-bottom: 14px; font-family: var(--f-display); font-weight: 600; font-size: 48px; line-height: 1; color: var(--parch); }
+[data-slide="12"] .p2-who p { font-size: 30px; line-height: 40px; color: var(--muted); }
+/* постер 580×305: 9_poster_s.jpg 1200×630 ×0,483 */
+[data-slide="12"] .p2-s12-shot { left: 1079px; top: 21px; width: 598px; height: 323px; }
+[data-slide="12"] .p2-s12-shot img { left: 0; top: 0; width: 580px; height: 305px; }
+[data-slide="12"] .p2-next { position: absolute; left: 0; top: 410px; width: 1680px; }
+[data-slide="12"] .p2-next-row { display: flex; align-items: center; gap: 16px; }
+[data-slide="12"] .p2-next-row + .p2-next-row { margin-top: 22px; }
+[data-slide="12"] .p2-next-k { flex: none; width: 260px; font-family: var(--f-caps); letter-spacing: .12em; text-transform: uppercase; }
+[data-slide="12"] .p2-s12-cap { position: absolute; left: 0; top: 640px; }
+
+/* ---------- Мгновенный показ: линии и полоса сразу в конечном виде ---------- */
+[data-slide="4"].is-instant .p2-seq > li::after,
+[data-slide="4"].is-instant .p2-hp > i { transition: none; }
+
+/* ---------- Печать: все шаги раскрыты, подсветка, линии и полоса — в конечном виде ---------- */
+@media print {
+  [data-slide="3"] .p2-mk { stroke-dashoffset: 0; }
+  [data-slide="4"] .p2-seq > li + li::after { transform: none; }
+  [data-slide="4"] .p2-hp > i { transform: scaleX(.72); }
+}

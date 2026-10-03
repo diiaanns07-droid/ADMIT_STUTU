@@ -1,0 +1,225 @@
+/* Слайды 7–11. Все правила — внутри [data-slide="7…11"] или с префиксом .p3-.
+ * Цвета — только токены К6 (полупрозрачность — через color-mix от токена).
+ * Анимации — transform, opacity, clip-path, stroke-dashoffset; 200–600 мс; при reduced motion — сразу конечное состояние.
+ * Метка и тезис стоят по правилам deck.css (.slide > .kicker, тезис с y = 120); содержимое — в полосе 260–960. */
+
+/* ---------------------------------------------------------------- общее */
+.p3-body { position: absolute; left: 120px; top: 260px; width: 1680px; height: 700px; font-variant-numeric: lining-nums; }
+.p3-body *, .p3-body *::before, .p3-body *::after { box-sizing: border-box; }
+.p3-slide ul, .p3-slide ol { list-style: none; margin: 0; padding: 0; }
+.p3-slide figure { margin: 0; }
+.p3-slide b { font-weight: 500; color: var(--parch); }
+/* общая стрелка .arr (deck.css) красится currentColor, а у цифр текст прозрачный (градиент по тексту) — даём свой цвет и размер */
+.p3-slide .num .arr { background: var(--gold); width: .5em; height: .3em; margin: 0 .16em; vertical-align: .3em; }
+.p3-slide .arr { margin: 0 .2em; }
+/* вход назад, прыжок, reduced motion: движок держит .is-instant — состояния без анимации */
+.p3-slide.is-instant [class*="p3-"], .p3-slide.is-instant [class*="p3-"]::before, .p3-slide.is-instant [class*="p3-"]::after { transition: none !important; animation: none !important; }
+
+/* ---------------------------------------------------------------- 7. MediaPipe даёт точки — жесты наши */
+[data-slide="7"] .p3-s7__diagram { position: absolute; left: 0; top: 0; width: 1680px; height: 360px; }
+[data-slide="7"] .p3-d { width: 100%; height: 100%; display: block; overflow: visible; }
+[data-slide="7"] .p3-d-k { font-family: 'Forum', serif; font-size: 26px; letter-spacing: .14em; text-transform: uppercase; fill: var(--muted); text-anchor: middle; }
+[data-slide="7"] .p3-d-brace path { fill: none; stroke: var(--line); stroke-width: 1.5; }
+[data-slide="7"] .p3-d-brace--own path { stroke: var(--gold); }
+[data-slide="7"] .p3-d-brace--own .p3-d-k { fill: var(--gold-hi); }
+[data-slide="7"] .p3-d-box { fill: var(--coal); stroke: var(--line); stroke-width: 1.5; }
+[data-slide="7"] .p3-d-node--1 .p3-d-box { fill: var(--coal-deep); }
+[data-slide="7"] .p3-d-node--4 .p3-d-box, [data-slide="7"] .p3-d-node--5 .p3-d-box { stroke: var(--gold); fill: color-mix(in srgb, var(--gold) 6%, var(--coal)); }
+[data-slide="7"] .p3-d-gem { fill: var(--gold-b); stroke: var(--ink); stroke-width: 1.5; }
+[data-slide="7"] .p3-d-ico { fill: none; stroke: var(--gold-b); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+[data-slide="7"] .p3-d-ico .p3-d-pt { fill: var(--gold-hi); stroke: none; }
+[data-slide="7"] .p3-d-t { font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 44px; fill: var(--parch); text-anchor: middle; }
+[data-slide="7"] .p3-d-s { font-family: 'Alegreya Sans', sans-serif; font-size: 28px; fill: var(--muted); text-anchor: middle; }
+[data-slide="7"] .p3-d-a { stroke: var(--gold); stroke-width: 2.5; fill: none; marker-end: url(#p3-ah); }
+[data-slide="7"] .p3-d-ah { fill: var(--gold); }
+/* свет по линии — один проход после последнего узла: 4 отрезка по очереди, всего 600 мс */
+[data-slide="7"] .p3-d-run {
+  fill: none; stroke: var(--gold-hi); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 34 200; stroke-dashoffset: 34; opacity: 0;
+  filter: drop-shadow(0 0 6px var(--gold-hi));
+}
+[data-slide="7"]:has([data-step="4"].is-on) .p3-d-run { animation: p3-run .22s linear both; }
+[data-slide="7"]:has([data-step="4"].is-on) .p3-d-link--2 .p3-d-run { animation-delay: .126s; }
+[data-slide="7"]:has([data-step="4"].is-on) .p3-d-link--3 .p3-d-run { animation-delay: .253s; }
+[data-slide="7"]:has([data-step="4"].is-on) .p3-d-link--4 .p3-d-run { animation-delay: .38s; }
+@keyframes p3-run { 0% { stroke-dashoffset: 34; opacity: 1; } 90% { opacity: 1; } 100% { stroke-dashoffset: -100; opacity: 0; } }
+[data-slide="7"] .p3-s7__facts {
+  position: absolute; left: 0; right: 0; top: 420px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 40px;
+  opacity: 0; transform: translateY(8px); transition: opacity .3s var(--ease) .45s, transform .3s var(--ease) .45s;
+}
+[data-slide="7"]:has([data-step="4"].is-on) .p3-s7__facts { opacity: 1; transform: none; }
+[data-slide="7"] .p3-s7__facts li { display: flex; gap: 18px; align-items: flex-start; font-family: 'Alegreya Sans', sans-serif; font-size: 30px; line-height: 40px; color: var(--text); padding-top: 22px; border-top: 1px solid var(--line); }
+[data-slide="7"] .p3-s7__facts b { color: var(--gold-hi); }
+.p3-slide .p3-ico { flex: none; width: 44px; height: 44px; fill: none; stroke: var(--gold-b); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; margin-top: 0; }
+
+/* ---------------------------------------------------------------- 8. Проверено: три плитки */
+[data-slide="8"] .p3-s8__tiles { position: absolute; left: 0; top: 0; width: 1680px; height: 540px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+[data-slide="8"] .p3-tile { position: relative; isolation: isolate; padding: 44px 44px 40px; display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+[data-slide="8"] .p3-tile__bg { position: absolute; inset: 0; z-index: -1; background: var(--grad-panel), var(--coal-deep); box-shadow: var(--shadow-panel); border: 1px solid var(--line); }
+[data-slide="8"] .p3-tile__ico { width: 84px; height: 72px; fill: none; stroke: var(--gold-b); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+[data-slide="8"] .p3-tile__ico .p3-hand { transform: scale(1.5); }
+[data-slide="8"] .p3-tile__ico .p3-hand line { stroke-width: 1.4; }
+[data-slide="8"] .p3-tile__ico .p3-hand .p3-d-pt { fill: var(--gold-hi); stroke: none; }
+[data-slide="8"] .p3-tile__ico .p3-ticks { stroke: var(--gold-hi); }
+[data-slide="8"] .p3-tile__ico .p3-thin { stroke-opacity: .5; stroke-width: 1.2; }
+[data-slide="8"] .p3-tile .num { margin-top: 56px; }
+[data-slide="8"] .p3-tile .p3-hz { font-size: 64px; margin-left: 18px; color: var(--gold-b); -webkit-text-fill-color: var(--gold-b); }
+[data-slide="8"] .p3-tile__txt { margin: 30px 0 0; font-family: 'Alegreya Sans', sans-serif; font-size: 32px; line-height: 44px; color: var(--text); }
+[data-slide="8"] .p3-tile__txt .arr { color: var(--gold); }
+[data-slide="8"] .p3-dim { color: var(--muted); }
+.p3-slide .p3-nw { white-space: nowrap; }
+[data-slide="8"] .p3-s8__src { position: absolute; left: 0; bottom: 0; margin: 0; }
+
+/* ---------------------------------------------------------------- 9. После отбора: таймлайн-«Ярость клятвы» */
+[data-slide="9"] .p3-tl { position: absolute; left: 0; top: 10px; width: 1680px; height: 220px; }
+/* колонки: точка отсчёта 300, три волны по 420, промежуток 40 → центры камней на x = 20, 360, 820, 1280 */
+[data-slide="9"] .p3-tl__nodes { display: grid; grid-template-columns: 300px 420px 420px 1fr; column-gap: 40px; height: 100%; }
+[data-slide="9"] .p3-tl__rail {
+  position: absolute; left: 20px; top: 66px; width: 1260px; height: 14px;
+  background: var(--coal-deep); border: 1px solid var(--bronze);
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--ink) 80%, transparent), 0 0 0 1px color-mix(in srgb, var(--ink) 55%, transparent);
+}
+[data-slide="9"] .p3-tl__fill {
+  position: absolute; top: 0; bottom: 0; background: var(--grad-fury);
+  transform: scaleX(0); transform-origin: 0 50%; transition: transform .5s var(--ease);
+}
+[data-slide="9"] .p3-tl__fill--1 { left: 0; width: 340px; }
+[data-slide="9"] .p3-tl__fill--2 { left: 340px; width: 460px; }
+[data-slide="9"] .p3-tl__fill--3 { left: 800px; width: 460px; }
+[data-slide="9"]:has([data-step="1"].is-on) .p3-tl__fill--1,
+[data-slide="9"]:has([data-step="2"].is-on) .p3-tl__fill--2,
+[data-slide="9"]:has([data-step="3"].is-on) .p3-tl__fill--3 { transform: none; }
+[data-slide="9"] .p3-tl__node { position: relative; min-width: 0; }
+[data-slide="9"] .p3-tl__gem {
+  position: absolute; left: 6px; top: 59px; width: 28px; height: 28px; transform: rotate(45deg);
+  background: var(--coal-deep); border: 2px solid var(--gold-deep);
+}
+[data-slide="9"] .p3-tl__gem::after {
+  content: ''; position: absolute; inset: 5px; background: var(--gold-hi); opacity: 0;
+  box-shadow: 0 0 18px 4px color-mix(in srgb, var(--ember) 70%, transparent);
+  transition: opacity .3s var(--ease) .35s;
+}
+[data-slide="9"] .p3-tl__node.is-on .p3-tl__gem { border-color: var(--gold-hi); }
+[data-slide="9"] .p3-tl__node.is-on .p3-tl__gem::after { opacity: 1; }
+[data-slide="9"] .p3-tl__node--base .p3-tl__gem { border-color: var(--line); }
+[data-slide="9"] .p3-tl__date {
+  display: block; font-family: 'Cinzel', 'Forum', serif; font-weight: 600; font-size: 34px; line-height: 40px; letter-spacing: .04em;
+  background: var(--grad-num); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent;
+}
+[data-slide="9"] .p3-tl__node--base .p3-tl__date { background: none; color: var(--muted); -webkit-text-fill-color: var(--muted); }
+[data-slide="9"] .p3-tl__name { display: block; margin: 64px 0 0; font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 60px; line-height: 64px; color: var(--parch); }
+[data-slide="9"] .p3-tl__node--base .p3-tl__name { font-family: 'Alegreya Sans', sans-serif; font-weight: 400; font-size: 30px; line-height: 40px; color: var(--muted); margin-top: 70px; }
+[data-slide="9"] .p3-tl__hash { display: block; font-size: 26px; line-height: 34px; letter-spacing: .04em; color: var(--muted); opacity: .8; }
+/* результаты для игрока */
+[data-slide="9"] .p3-s9__nums {
+  position: absolute; left: 0; right: 0; top: 330px; padding-top: 40px; border-top: 1px solid var(--line);
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 48px;
+}
+[data-slide="9"] .p3-s9__nums::before { content: ''; position: absolute; left: 0; top: -1px; width: 240px; height: 1px; background: linear-gradient(90deg, var(--gold), transparent); }
+[data-slide="9"] .p3-s9__nums li { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+[data-slide="9"] .p3-s9__label { font-family: 'Forum', serif; font-size: 26px; line-height: 30px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold-b); }
+[data-slide="9"] .p3-s9__row { display: flex; align-items: baseline; gap: 18px; white-space: nowrap; }
+[data-slide="9"] .p3-s9__row .unit { color: var(--muted); }
+
+/* ---------------------------------------------------------------- 10. Шторка света */
+[data-slide="10"] .p3-wipe {
+  --p3-xa: 100%; --p3-xb: 100%;
+  position: absolute; left: 0; top: 0; width: 1040px; height: 585px; overflow: hidden;
+  background: var(--coal-deep); box-shadow: var(--shadow-panel); outline: 1px solid var(--bronze);
+  cursor: ew-resize; touch-action: none; user-select: none; -webkit-user-select: none;
+}
+[data-slide="10"]:has([data-step="1"].is-on) .p3-wipe { --p3-xa: 0%; }
+[data-slide="10"]:has([data-step="2"].is-on) .p3-wipe { --p3-xb: 0%; }
+[data-slide="10"] .p3-wipe__pair { position: absolute; inset: 0; transition: opacity .3s var(--ease); }
+[data-slide="10"] .p3-wipe__pair--b { opacity: 0; }
+[data-slide="10"]:has([data-step="2"].is-on) .p3-wipe__pair--a { opacity: 0; }
+[data-slide="10"]:has([data-step="2"].is-on) .p3-wipe__pair--b { opacity: 1; }
+[data-slide="10"] .p3-wipe__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; -webkit-user-drag: none; }
+[data-slide="10"] .p3-wipe__after { position: absolute; inset: 0; transition: clip-path .6s var(--ease); }
+[data-slide="10"] .p3-wipe__pair--a .p3-wipe__after { clip-path: inset(0 0 0 var(--p3-xa)); }
+[data-slide="10"] .p3-wipe__pair--b .p3-wipe__after { clip-path: inset(0 0 0 var(--p3-xb)); transition-delay: .3s; }
+/* край шторки — золотая линия 2 px со свечением; видна, пока шторка идёт или стоит посередине */
+[data-slide="10"] .p3-wipe__edge { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: transform .6s var(--ease); }
+[data-slide="10"] .p3-wipe__edge::before {
+  content: ''; position: absolute; left: -1px; top: 0; bottom: 0; width: 2px; background: var(--gold-hi);
+  box-shadow: 0 0 10px 2px color-mix(in srgb, var(--gold-hi) 85%, transparent), 0 0 34px 8px color-mix(in srgb, var(--gold) 45%, transparent);
+}
+[data-slide="10"] .p3-wipe__edge::after {
+  content: ''; position: absolute; left: -9px; top: 50%; width: 18px; height: 18px; margin-top: -9px; transform: rotate(45deg);
+  background: var(--gold-hi); border: 2px solid var(--ink);
+}
+[data-slide="10"] .p3-wipe__pair--a .p3-wipe__edge { transform: translateX(var(--p3-xa)); }
+[data-slide="10"] .p3-wipe__pair--b .p3-wipe__edge { transform: translateX(var(--p3-xb)); transition-delay: .3s; }
+[data-slide="10"]:has([data-step="1"].is-on) .p3-wipe__pair--a .p3-wipe__edge { animation: p3-edge .6s var(--ease) both; }
+[data-slide="10"]:has([data-step="2"].is-on) .p3-wipe__pair--b .p3-wipe__edge { animation: p3-edge .6s var(--ease) .3s both; }
+@keyframes p3-edge { 0% { opacity: 0; } 10% { opacity: 1; } 82% { opacity: 1; } 100% { opacity: 0; } }
+[data-slide="10"] .p3-wipe.is-drag .p3-wipe__after, [data-slide="10"] .p3-wipe.is-drag .p3-wipe__edge { transition: none; }
+[data-slide="10"] .p3-wipe.is-drag .p3-wipe__edge, [data-slide="10"] .p3-wipe.is-split .p3-wipe__edge { animation: none; opacity: 1; }
+[data-slide="10"] .p3-wipe__tag {
+  position: absolute; top: 18px; padding: 6px 14px 7px; font-family: 'Forum', serif; font-size: 26px; line-height: 30px; letter-spacing: .08em;
+  background: color-mix(in srgb, var(--ink) 82%, transparent); border: 1px solid var(--line); white-space: nowrap;
+}
+[data-slide="10"] .p3-wipe__tag--before { left: 18px; color: var(--muted); }
+[data-slide="10"] .p3-wipe__tag--after { right: 18px; color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+/* в меню метка «до» уходит вниз, чтобы не закрывать название */
+[data-slide="10"] .p3-wipe__pair--a .p3-wipe__tag--before { top: auto; bottom: 18px; }
+
+[data-slide="10"] .p3-s10__caps { position: absolute; left: 1088px; top: 0; width: 592px; display: flex; flex-direction: column; gap: 34px; }
+[data-slide="10"] .p3-s10__cap { margin: 0; font-family: 'Alegreya Sans', sans-serif; font-size: 34px; line-height: 44px; color: var(--text); padding-left: 26px; border-left: 2px solid var(--gold-deep); }
+[data-slide="10"] .p3-s10__cap b { color: var(--gold-hi); }
+[data-slide="10"] .p3-s10__cap .arr { color: var(--gold); }
+/* бой снят с разных точек — не шторкой, а парой «до → после» */
+[data-slide="10"] .p3-s10__battle { position: absolute; left: 1088px; top: 336px; width: 592px; display: grid; grid-template-columns: 1fr 36px 1fr; align-items: center; column-gap: 14px; row-gap: 18px; }
+[data-slide="10"] .p3-s10__battle .p3-s10__cap { grid-column: 1 / -1; }
+[data-slide="10"] .p3-s10__shot { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; outline: 1px solid var(--line); box-shadow: var(--shadow-panel); }
+[data-slide="10"] .p3-s10__battle > .arr { width: 36px; height: 18px; margin: 0; color: var(--gold); }
+[data-slide="10"] .p3-s10__note { position: absolute; left: 1088px; top: 618px; width: 592px; margin: 0; }
+
+/* ---------------------------------------------------------------- 11. Красивее — и загружается в 3,5 раза легче */
+[data-slide="11"] .p3-s11__look { position: absolute; left: 0; top: 0; width: 900px; height: 400px; overflow: hidden; box-shadow: var(--shadow-panel); }
+[data-slide="11"] .p3-s11__look img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+[data-slide="11"] .p3-s11__look .frame { position: absolute; inset: 0; pointer-events: none; background: none; box-shadow: none; }
+/* видео 960×1080 (две полосы «до/после»); справа в кадре пустое окно камеры — обрезаем правую четверть */
+[data-slide="11"] .p3-s11__vid { position: absolute; left: 924px; top: 0; width: 267px; height: 400px; overflow: hidden; background: var(--coal-deep); outline: 1px solid var(--bronze); box-shadow: var(--shadow-panel); }
+[data-slide="11"] .p3-s11__vid video, [data-slide="11"] .p3-s11__vid .print-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 0 50%; }
+[data-slide="11"] .p3-vid-failed video { visibility: hidden; }
+[data-slide="11"] .p3-vid-failed .print-poster { display: block; }
+[data-slide="11"] .p3-s11__stat { position: absolute; left: 1231px; top: 0; width: 449px; display: flex; flex-direction: column; align-items: flex-start; }
+[data-slide="11"] .p3-s11__stat .num { margin-left: -4px; }
+[data-slide="11"] .p3-s11__stat .unit { font-size: 36px; line-height: 44px; margin-top: 16px; white-space: nowrap; }
+[data-slide="11"] .p3-s11__stat .unit .arr { color: var(--gold); }
+[data-slide="11"] .p3-s11__stat .cap { margin: 14px 0 0; }
+[data-slide="11"] .p3-s11__steps { position: absolute; left: 0; right: 0; top: 452px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+[data-slide="11"] .p3-s11__steps li { font-family: 'Alegreya Sans', sans-serif; font-size: 30px; line-height: 40px; color: var(--text); padding-top: 18px; border-top: 1px solid var(--line); position: relative; }
+[data-slide="11"] .p3-s11__steps li::before { content: ''; position: absolute; left: 0; top: -1px; width: 64px; height: 1px; background: var(--gold); }
+[data-slide="11"] .p3-s11__steps b { display: block; color: var(--gold-hi); }
+[data-slide="11"] .p3-s11__src { position: absolute; left: 0; bottom: 0; margin: 0; }
+
+/* ---------------------------------------------------------------- reduced motion: сразу конечное состояние */
+@media (prefers-reduced-motion: reduce) {
+  .p3-slide [class*="p3-"], .p3-slide [class*="p3-"]::before, .p3-slide [class*="p3-"]::after { transition: none !important; animation: none !important; }
+  [data-slide="7"] .p3-d-run { opacity: 0; }
+}
+
+/* ---------------------------------------------------------------- печать: все шаги раскрыты, шторка — кадры рядом */
+@media print {
+  /* золотой градиент по тексту (background-clip: text) Chrome печатает в PDF с рамкой-волоском — в печати цифры сплошным золотом */
+  .p3-body .num, [data-slide="9"] .p3-tl__date { background: none; color: var(--gold-hi); -webkit-text-fill-color: var(--gold-hi); }
+  [data-slide="9"] .p3-tl__node--base .p3-tl__date { color: var(--muted); -webkit-text-fill-color: var(--muted); }
+  [data-slide="7"] .p3-d-run { display: none; }
+  [data-slide="7"] .p3-s7__facts { opacity: 1; transform: none; }
+  [data-slide="9"] .p3-tl__fill { transform: none; }
+  [data-slide="9"] .p3-tl__gem::after { opacity: 1; }
+  [data-slide="9"] .p3-tl__node--base .p3-tl__gem::after { opacity: 0; }
+  [data-slide="9"] .p3-tl__node:not(.p3-tl__node--base) .p3-tl__gem { border-color: var(--gold-hi); }
+  /* шторка: две пары «до | после» одна под другой */
+  [data-slide="10"] .p3-wipe { display: grid; grid-template-rows: 1fr 1fr; gap: 8px; background: none; box-shadow: none; outline: 0; }
+  [data-slide="10"] .p3-wipe__pair, [data-slide="10"] .p3-wipe__pair--b { position: relative; inset: auto; opacity: 1 !important; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  [data-slide="10"] .p3-wipe__pair > .p3-wipe__img, [data-slide="10"] .p3-wipe__after { position: relative; inset: auto; clip-path: none !important; width: 100%; height: 100%; }
+  [data-slide="10"] .p3-wipe__pair > .p3-wipe__img { grid-column: 1; grid-row: 1; }
+  [data-slide="10"] .p3-wipe__after { grid-column: 2; grid-row: 1; }
+  [data-slide="10"] .p3-wipe__edge { display: none; }
+  [data-slide="10"] .p3-wipe__tag { top: 8px; font-size: 20px; line-height: 24px; padding: 3px 9px; }
+  [data-slide="10"] .p3-wipe__tag--before { left: 8px; }
+  [data-slide="10"] .p3-wipe__tag--after { right: 8px; }
+  [data-slide="10"] .p3-wipe__pair--a .p3-wipe__tag--before { top: auto; bottom: 8px; }
+}

@@ -19,6 +19,7 @@ const GLYPHS = '0123456789АБВГДЕЖЗКМ#%+=/<>';
 const RUNE_NAME = { ignis: 'ИГНИС', fulgur: 'ФУЛЬГУР', orbis: 'ОРБИС', stella: 'СТЕЛЛА', spira: 'СПИРА', lemnis: 'ЛЕМНИСКА', caret: 'АКУС', vee: 'МЕССИС', clepsydra: 'КЛЕПСИДРА', alpha: 'АЛЬФА' };
 const RUNE_SUB = { ignis: 'огненное копьё', fulgur: 'страж оглушён', orbis: 'лечение и оберег', stella: 'звездопад', spira: 'вихрь гасит сферы', lemnis: 'вечность: лечение', caret: 'залп игл', vee: 'жатва', clepsydra: 'время Регента замедлено', alpha: 'откаты сброшены' };
 const KIND = { slam: 'УДАР', orb: 'СФЕРА', nova: 'НОВА' };
+const LEVEL_NAME = { easy: 'Лёгкая', normal: 'Обычная', hard: 'Сложная', nightmare: 'Кошмар' };   // [W5-СЛОЖНОСТЬ] итог боя — с уровнем
 // [ASHEN_V3] двуручные печати
 const SIGIL_NAME = { clap: 'ГРОМОВОЙ ХЛОПОК', gate: 'ВРАТА · БАСТИОН', frame: 'МЕТКА ЦЕЛИ', delta: 'ДЕЛЬТА · ЛУЧ', cor: 'КОР · СЕРДЦЕ' };
 
@@ -632,7 +633,7 @@ export function createBattleHud({ canvas } = {}) {
         case 'victory': case 'defeat':
           if (FEEL.outro && !(snap && snap.mode === 'pvp')) {   // в дуэли исход раунда показывает modules/pvp.js
             const B = snap && snap.boss;
-            outro = { kind: e.type, t: 0, time: num(d.time, num(snap && snap.time, 0)), bossPct: B ? Math.round(100 * num(B.hp, 0) / Math.max(1, num(B.maxHp, 1))) : 0 };
+            outro = { kind: e.type, t: 0, time: num(d.time, num(snap && snap.time, 0)), bossPct: B ? Math.round(100 * num(B.hp, 0) / Math.max(1, num(B.maxHp, 1))) : 0, level: snap && LEVEL_NAME[snap.difficulty] ? snap.difficulty : '' };   // [W5-СЛОЖНОСТЬ] + уровень
             if (e.type === 'victory') flash = { t: 0, dur: 0.6, color: 'rgba(255,207,74,', a: 0.45 };
           }
           break;
@@ -1022,9 +1023,11 @@ export function createBattleHud({ canvas } = {}) {
     for (let i = N; i >= 0; i--) { const u = i / N, x = o.x + dx * u - nx, z = o.z + dz * u - nz; out.push(proj({ x, y: groundAt(layout, x, z) + 0.04, z })); }
     return out;
   }
+  // [W5-СЛОЖНОСТЬ] «!» за cue секунд до удара: у каждой атаки свой (короче замах — короче cue), без него — BOSS_CUE_SEC
+  function cueOf(tl, dur) { const c = num(tl.cue, BOSS_CUE_SEC); return Math.min(c > 0 ? c : BOSS_CUE_SEC, dur); }
   function telK(tl) {
     const dur = Math.max(0.05, num(tl.duration, 1)), rem = Math.max(0, num(tl.remaining, 0));
-    return { dur, rem, k: clamp(1 - rem / dur, 0, 1), cue: rem <= Math.min(BOSS_CUE_SEC, dur) };
+    return { dur, rem, k: clamp(1 - rem / dur, 0, 1), cue: rem <= cueOf(tl, dur) };
   }
   function drawGroundZones(snap, proj, layout, rm) {
     const list = Array.isArray(snap.telegraphs) ? snap.telegraphs.slice(0, 4) : [];
@@ -1071,10 +1074,12 @@ export function createBattleHud({ canvas } = {}) {
     }
     // подпись у ног героя: что летит и чем ответить
     const { rem, cue } = lead ? telK(lead) : { rem: 0, cue: true };
-    const { name, counter } = lead ? telegraphCounter(lead.kind, !!lead.blockable) : { name: 'СФЕРА ЛЕТИТ', counter: 'ЩИТ или ПАРИРОВАНИЕ' };
+    const { name, counter } = lead ? telegraphCounter(lead.kind, !!lead.blockable, lead.move) : { name: 'СФЕРА ЛЕТИТ', counter: 'ЩИТ или ПАРИРОВАНИЕ' };   // [W5-СЛОЖНОСТЬ] + приём
     let line = counter, col = '#ffe2d6';
     // герой уже вне круга удара / радиуса новы — честно сказать, что он в безопасности
-    if (lead && lead.kind !== 'orb' && P && isObj(lead.center) && Math.hypot(P.x - lead.center.x, P.z - lead.center.z) > num(lead.radius, 2) + 0.5) { line = lead.kind === 'nova' ? 'вы вне зоны — хорошо' : 'вы вне круга — хорошо'; col = OK_GREEN; }
+    // [W5-СЛОЖНОСТЬ] кругов может быть несколько («Каменный капкан», двойной удар) — вне круга, только если вне всех
+    const inAny = P && list.some((q) => isObj(q) && q.kind !== 'orb' && isObj(q.center) && Math.hypot(P.x - q.center.x, P.z - q.center.z) <= num(q.radius, 2) + 0.5);
+    if (lead && lead.kind !== 'orb' && P && isObj(lead.center) && !inAny) { line = lead.kind === 'nova' ? 'вы вне зоны — хорошо' : 'вы вне круга — хорошо'; col = OK_GREEN; }
     const fs = Math.round(clamp(H * 0.034, 18, 30));
     ctx.font = `800 ${fs}px ${SANS}`;
     const wLine = ctx.measureText(line).width;
@@ -1113,7 +1118,7 @@ export function createBattleHud({ canvas } = {}) {
     let p = proj({ x: b.x, y: num(b.y, 0) + 6.4, z: b.z });
     if (!p || p.behind) { if (!lock.ok) return; p = { x: (lock.x0 + lock.x1) / 2, y: lock.y0 - 40 }; }
     const { rem, dur } = telK(tl);
-    const cueLen = Math.min(BOSS_CUE_SEC, dur);
+    const cueLen = cueOf(tl, dur);   // [W5-СЛОЖНОСТЬ]
     const r = clamp(H * 0.042, 22, 40) * (rm ? 1 : 1 + 0.12 * pulseAt(22));
     const x = clamp(p.x, r + 8, W - r - 8), y = clamp(p.y, H * 0.13 + r, H * 0.6);
     ctx.save();
@@ -1152,7 +1157,7 @@ export function createBattleHud({ canvas } = {}) {
       const g = ctx.createLinearGradient(0, -C.sz * 0.72, 0, C.sz * 0.05);
       if (win) { g.addColorStop(0, '#fffbe6'); g.addColorStop(0.45, '#ffd76a'); g.addColorStop(1, '#b8740e'); } else { g.addColorStop(0, '#ffffff'); g.addColorStop(0.5, '#cfd8e6'); g.addColorStop(1, '#6f7c92'); }
       C.grad = g;
-      C.sub = win ? `Регент повержен · время боя ${fmtClock(outro.time)}`
+      C.sub = win ? `Регент повержен · время боя ${fmtClock(outro.time)}${outro.level ? ` · «${LEVEL_NAME[outro.level]}»` : ''}`   // [W5-СЛОЖНОСТЬ]
         : outro.bossPct <= 50 ? `у Регента осталось ${outro.bossPct}% — ещё попытка, и он падёт`
           : `у Регента осталось ${outro.bossPct}% — ещё попытка: щит и рывок спасают от ударов`;
       ctx.font = C.font; C.tw = num(ctx.measureText(title).width, C.sz * title.length * 0.6);
