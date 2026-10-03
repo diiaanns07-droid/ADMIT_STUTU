@@ -7,6 +7,7 @@
 //   Отдельно — поражение (Регент бьёт втрое, герой стоит): 6 с на колене.
 // Каждый кадр — window.__ASHEN__.heroFeet(): нижняя точка подошвы (вершины сетки стоп) и видимый пол под ней.
 //   node tools/hero_ground.mjs --quality medium --out /tmp/hg-medium.json [--heroes ashen,elf] [--root DIR] [--quick]
+//        [--reduced] (настройка «уменьшенное движение») [--no-menu] [--no-battle] [--no-defeat]
 //   node tools/hero_ground.mjs --report docs/hero-ground --after a.json,b.json [--before c.json,d.json]
 //        — без прогона: таблица .md и графики .svg (|зазор| по времени у каждого героя, до и после)
 //   node tools/hero_ground.mjs --cost [--quality low,medium] [--out FILE.json] — цена подошвы за кадр в браузере
@@ -22,21 +23,29 @@ const log = (m) => console.error(`[hero_ground ${((Date.now() - T0) / 1000).toFi
 const TOL = 0.02;   // цель: |подошва − пол| ≤ 2 см
 
 // ------------------------------------------------------------------ сводка ряда кадров
+// «Стоя» — кадр без законного полёта клипа: меню (витрина, визитки, жест «выхода»), в бою — герой не идёт и не в
+// рывке (покой, касты, щит, удары по нему, «Небесный суд», победа, поражение). Бег и рывок — только «не ниже пола».
+export const standing = (r) => r.phase === 'menu' || r.phase === 'defeat' || (r.loco === 'Idle' && !r.dash && r.pa !== 'dash' && r.pa !== 'move');
 export function summarizeRows(rows) {
   const g = rows.map((r) => r.gap).filter(Number.isFinite);
   if (!g.length) return { frames: 0 };
   const s = [...g].sort((a, b) => a - b);
-  const q = (p) => s[Math.min(s.length - 1, Math.max(0, Math.round((s.length - 1) * p)))];
-  // «наземные» кадры: обе стопы не в полёте (зазор не больше 6 см) — по ним дрейф (первые и последние 25%)
-  const ground = rows.filter((r) => Number.isFinite(r.gap) && r.gap < 0.06);
+  const q = (p, a = s) => a[Math.min(a.length - 1, Math.max(0, Math.round((a.length - 1) * p)))];
+  const abs = g.map(Math.abs).sort((a, b) => a - b);
+  const st = rows.filter((r) => Number.isFinite(r.gap) && standing(r));
+  const sa = st.map((r) => Math.abs(r.gap)).sort((a, b) => a - b);
+  // дрейф: средний зазор стоя в первой и последней четверти ряда (по времени)
   const mean = (a) => (a.length ? a.reduce((x, y) => x + y.gap, 0) / a.length : null);
-  const k = Math.max(1, Math.floor(ground.length / 4));
-  const r4 = (x) => (x == null ? null : +x.toFixed(4));
+  const k = Math.max(1, Math.floor(st.length / 4));
+  const r4 = (x) => (x == null || !Number.isFinite(x) ? null : +x.toFixed(4));
   return {
     frames: g.length, min: r4(s[0]), p5: r4(q(0.05)), median: r4(q(0.5)), p95: r4(q(0.95)), max: r4(s[s.length - 1]),
+    absMedian: r4(q(0.5, abs)),                                              // медиана |подошва − пол|
     sinkMax: r4(Math.max(0, -s[0])),                                         // самое глубокое погружение
     over: +(g.filter((x) => x < -TOL).length / g.length).toFixed(3),        // доля кадров глубже 2 см
-    driftFirst: r4(mean(ground.slice(0, k))), driftLast: r4(mean(ground.slice(-k))),
+    standFrames: st.length, standMax: r4(sa.length ? sa[sa.length - 1] : null), standP95: r4(sa.length ? q(0.95, sa) : null),
+    standOver: sa.length ? +(sa.filter((x) => x > TOL).length / sa.length).toFixed(3) : null,   // стоя: доля кадров, где |зазор| > 2 см
+    driftFirst: r4(mean(st.slice(0, k))), driftLast: r4(mean(st.slice(-k))),
   };
 }
 
@@ -49,10 +58,11 @@ async function run() {
   const QUICK = A.has('--quick');
   const SIZE = A.of('--size', '400x225').split('x').map(Number);
   const SEED = +A.of('--seed', '20261003');
+  const RM = A.has('--reduced');
   const { chromium } = loadPlaywright();
   const server = await startServer(ROOT);
   const browser = await launchBrowser(chromium, chromiumPath());
-  const res = { quality: Q, root: ROOT, menu: [], battle: {}, defeat: {}, notes: [] };
+  const res = { quality: Q, reducedMotion: RM, root: ROOT, menu: [], battle: {}, defeat: {}, notes: [] };
   // В странице: n кадров по ms, клавиши — события keydown/keyup на window (как у core/debugInput.js) по номерам кадров,
   // после каждого кадра — heroFeet() и состояние боя; autoUlt — U, как только шкала ярости полна; stop — до конца боя
   const PAGE_RUN = async ({ n, ms, events, stop, autoUlt, phase, t0, every, fast }) => {
@@ -102,7 +112,7 @@ async function run() {
   try {
     // ---------------------------------------------------------------- меню
     if (!A.has('--no-menu')) {
-      const g = await openGame(browser, server, { size: SIZE, seed: SEED, settings: { quality: Q, hero: HEROES[0] }, log: (m) => log(`${Q} меню: ${m}`) });
+      const g = await openGame(browser, server, { size: SIZE, seed: SEED, settings: { quality: Q, hero: HEROES[0], reducedMotion: RM }, log: (m) => log(`${Q} меню: ${m}`) });
       const { page } = g;
       await noRender(page);
       let t = 0;
@@ -134,7 +144,7 @@ async function run() {
     for (let c = 0, r = 0; c * 20 < BATTLE; c++) for (const [tc, act, k] of CYCLE) { const i = Math.round(((c * 20 + tc) * 1000) / STEP); if (c * 20 + tc < BATTLE) events.push([i, act, k === 'RUNE' ? RUNES[r++ % RUNES.length] : k]); }
     for (const h of HEROES) {
       if (A.has('--no-battle')) break;
-      const g = await openGame(browser, server, { size: SIZE, seed: SEED, settings: { quality: Q, hero: h }, patch: { bossHp: 2.5, bossDamage: 0.25 }, log: (m) => log(`${Q} бой ${h}: ${m}`) });
+      const g = await openGame(browser, server, { size: SIZE, seed: SEED, settings: { quality: Q, hero: h, reducedMotion: RM }, patch: { bossHp: 2.5, bossDamage: 0.25 }, log: (m) => log(`${Q} бой ${h}: ${m}`) });
       const { page } = g;
       await g.toBattle();
       await noRender(page);
@@ -160,7 +170,7 @@ async function run() {
     // ---------------------------------------------------------------- поражение
     for (const h of HEROES) {
       if (A.has('--no-defeat')) break;
-      const g = await openGame(browser, server, { size: SIZE, seed: SEED, settings: { quality: Q, hero: h }, patch: { bossHp: 3, bossDamage: 3 }, log: (m) => log(`${Q} поражение ${h}: ${m}`) });
+      const g = await openGame(browser, server, { size: SIZE, seed: SEED, settings: { quality: Q, hero: h, reducedMotion: RM }, patch: { bossHp: 3, bossDamage: 3 }, log: (m) => log(`${Q} поражение ${h}: ${m}`) });
       const { page } = g;
       await g.toBattle();
       await noRender(page);
@@ -234,13 +244,14 @@ function report() {
   const qualities = [...new Set([...after, ...before].map((r) => r.quality))];
   for (const q of qualities) {
     const a = after.find((r) => r.quality === q), b = before.find((r) => r.quality === q);
-    md += `## ${q}\n\n| Сцена | Герой | до: глубже всего | до: медиана | до: кадров глубже 2 см | до: дрейф | после: глубже всего | после: медиана | после: кадров глубже 2 см | после: дрейф |\n|---|---|---|---|---|---|---|---|---|---|\n`;
+    // ячейка — «до → после», см (без замера «до» — только «после»)
+    md += `## ${q}\n\n| Сцена | Герой | медиана \\|подошва − пол\\| | максимум \\|подошва − пол\\| стоя | глубже всего | кадров глубже 2 см | дрейф стоя: начало → конец |\n|---|---|---|---|---|---|---|\n`;
     const line = (scene, hero, rb, ra) => {
       const S = (r) => { const x = r && r.length ? summarizeRows(r) : null; return x && x.frames ? x : null; };
       const sb = S(rb), sa = S(ra);
-      const dr = (s) => (s && s.driftFirst != null ? `${cm(s.driftFirst)} → ${cm(s.driftLast)}` : '—');
-      const cells = (s) => (s ? [cm(-s.sinkMax), cm(s.median), (s.over * 100).toFixed(0) + '%', dr(s)] : ['—', '—', '—', '—']);
-      md += `| ${scene} | ${NAMES[hero] || hero} | ${cells(sb).join(' | ')} | ${cells(sa).join(' | ')} |\n`;
+      const pair = (f) => (sb && sa ? `${f(sb)} → **${f(sa)}**` : sa ? `**${f(sa)}**` : sb ? `${f(sb)} → —` : '—');
+      const dr = (x) => (x.driftFirst != null ? `${cm(x.driftFirst)}…${cm(x.driftLast)}` : '—');
+      md += `| ${scene} | ${NAMES[hero] || hero} | ${pair((x) => cm(x.absMedian))} | ${pair((x) => cm(x.standMax))} | ${pair((x) => cm(-x.sinkMax))} | ${pair((x) => (x.over * 100).toFixed(0) + '%')} | ${pair(dr)} |\n`;
     };
     for (const h of HERO_IDS) {
       const pick = (r, f) => (r ? r.menu.filter((x) => x.hero === h) : null);
