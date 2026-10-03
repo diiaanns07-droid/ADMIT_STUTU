@@ -71,9 +71,9 @@ test('предел кадров — делитель частоты экрана
   eq(pickCap(null), 60, 'частота неизвестна');
 });
 
-test('стартовый профиль: RTX — высокое, точная поза, камера 960×720; UHD — низкое, быстрая поза; софт — ещё реже', () => {
+test('стартовый профиль: RTX — среднее (high с камерой упирается в процессор), точная поза, камера 960×720; UHD — низкое, быстрая поза; софт — ещё реже', () => {
   const d = pickProfile(hwRtx);
-  eq(d.tier, 'high'); eq(d.vision.poseModel, 'full'); eq(d.vision.camera.width, 960); eq(d.vision.camera.height, 720);
+  eq(d.tier, 'medium'); eq(d.vision.poseModel, 'full'); eq(d.vision.camera.width, 960); eq(d.vision.camera.height, 720);
   const i = pickProfile({ gpuClass: 'integrated', cores: 8, memory: 8 });
   eq(i.tier, 'low'); eq(i.vision.poseModel, 'lite'); eq(i.vision.camera.width, 640);
   const s = pickProfile({ gpuClass: 'software', cores: 8, memory: 8 });
@@ -129,20 +129,20 @@ test('GPU не успевает (19 мс при бюджете 18,2) → раз�
   sim(t, { hz: 165, ms: 15000, gpu, gpuFn: fn });
   ok(t.scale < 1 && t.scale >= 0.6, `разрешение ${t.scale}`);
   ok(fn(t.scale) / (1000 / 55) <= 0.86, `нагрузка после подстройки ${(fn(t.scale) / (1000 / 55)).toFixed(2)}`);
-  eq(t.tier, 'high', 'уровень качества не тронут, раз разрешения хватило');
+  eq(t.tier, 'medium', 'уровень качества не тронут, раз разрешения хватило');
   heavy = false;
   sim(t, { hz: 165, ms: 60000, gpu, gpuFn: fn, t0: 20000 });
   eq(t.scale, 1, 'лёгкая сцена — разрешение вернулось к 100%');
 });
 
-test('на минимуме разрешения всё ещё тяжело → уровень качества вниз (high → medium), событие tier', () => {
+test('на минимуме разрешения всё ещё тяжело → уровень качества вниз (medium → low), событие tier', () => {
   const gpu = fakeGpu();
   const events = [];
   const t = createPerfTuner({ hardware: hwRtx, storage: memStorage(), gpuTimer: gpu, refreshHint: 165 });
   t.onChange((why, st) => events.push([why, st.tier]));
-  sim(t, { hz: 165, ms: 30000, gpu, gpuFn: (sc, tier) => (tier === 'high' ? 30 : 8) });
-  eq(t.tier, 'medium');
-  ok(events.some(([w, q]) => w === 'tier' && q === 'medium'), JSON.stringify(events));
+  sim(t, { hz: 165, ms: 30000, gpu, gpuFn: (sc, tier) => (tier === 'medium' ? 30 : 8) });
+  eq(t.tier, 'low');
+  ok(events.some(([w, q]) => w === 'tier' && q === 'low'), JSON.stringify(events));
 });
 
 test('режим вручную: разрешение и уровень не меняются', () => {
@@ -150,7 +150,7 @@ test('режим вручную: разрешение и уровень не м�
   const t = createPerfTuner({ hardware: hwRtx, storage: memStorage(), gpuTimer: gpu, refreshHint: 165 });
   t.setAuto(false);
   sim(t, { hz: 165, ms: 20000, gpu, gpuFn: () => 30 });
-  eq(t.scale, 1); eq(t.tier, 'high');
+  eq(t.scale, 1); eq(t.tier, 'medium');
 });
 
 test('распознавание голодает при занятом GPU → разрешение вниз, но не от короткого прогрева (< 2,5 с)', () => {
@@ -182,27 +182,29 @@ test('разовые рывки (компиляция шейдеров, > 250 м
 test('уровень вверх только в меню/паузе и не выше стартового', () => {
   const gpu = fakeGpu();
   const st = memStorage();
-  st.setItem(PERF_STORAGE_KEY, JSON.stringify({ gpu: RTX, tier: 'medium', scale: 1, t: Date.now() }));
+  st.setItem(PERF_STORAGE_KEY, JSON.stringify({ gpu: RTX, tier: 'low', scale: 1, t: Date.now() }));
   const t = createPerfTuner({ hardware: hwRtx, storage: st, gpuTimer: gpu, refreshHint: 165 });
-  eq(t.tier, 'medium', 'выученный уровень');
+  eq(t.tier, 'low', 'выученный уровень');
   sim(t, { hz: 165, ms: 20000, gpu, gpuFn: () => 3 });
-  eq(t.tier, 'medium', 'в бою уровень не растёт');
+  eq(t.tier, 'low', 'в бою уровень не растёт');
   t.setCalm(true);
   sim(t, { hz: 165, ms: 15000, gpu, gpuFn: () => 3, t0: 30000 });
-  eq(t.tier, 'high', 'в меню с запасом — вверх');
+  eq(t.tier, 'medium', 'в меню с запасом — вверх');
   sim(t, { hz: 165, ms: 15000, gpu, gpuFn: () => 3, t0: 50000 });
-  eq(t.tier, 'high', 'выше стартового (high) не растёт');
+  eq(t.tier, 'medium', 'выше стартового (medium) не растёт');
 });
 
 // ───────────────────────────── память ─────────────────────────────
 test('выученное: свежий уровень берётся (не ниже стартового − 1), старше недели — нет; медленная поза → lite', () => {
   const low = memStorage({ [PERF_STORAGE_KEY]: JSON.stringify({ gpu: RTX, tier: 'low', scale: 0.7, t: Date.now() }) });
-  eq(createPerfTuner({ hardware: hwRtx, storage: low, gpuTimer: null }).tier, 'medium', 'low на RTX → medium (стартовый high − 1)');
+  eq(createPerfTuner({ hardware: hwRtx, storage: low, gpuTimer: null }).tier, 'low', 'low на RTX → low (стартовый medium − 1)');
+  const high = memStorage({ [PERF_STORAGE_KEY]: JSON.stringify({ gpu: RTX, tier: 'high', scale: 1, t: Date.now() }) });
+  eq(createPerfTuner({ hardware: hwRtx, storage: high, gpuTimer: null }).tier, 'medium', 'выученный high выше стартового — medium');
   const old = memStorage({ [PERF_STORAGE_KEY]: JSON.stringify({ gpu: RTX, tier: 'medium', scale: 0.7, t: Date.now() - 8 * 86400e3 }) });
   const t = createPerfTuner({ hardware: hwRtx, storage: old, gpuTimer: null });
-  eq(t.tier, 'high', 'старое не используется'); eq(t.scale, 1);
+  eq(t.tier, 'medium', 'старое не используется'); eq(t.scale, 1);
   const other = memStorage({ [PERF_STORAGE_KEY]: JSON.stringify({ gpu: UHD, tier: 'low', t: Date.now() }) });
-  eq(createPerfTuner({ hardware: hwRtx, storage: other, gpuTimer: null }).tier, 'high', 'чужая видеокарта');
+  eq(createPerfTuner({ hardware: hwRtx, storage: other, gpuTimer: null }).tier, 'medium', 'чужая видеокарта');
   const st = memStorage();
   const a = createPerfTuner({ hardware: hwRtx, storage: st, gpuTimer: null });
   eq(a.profile.vision.poseModel, 'full');

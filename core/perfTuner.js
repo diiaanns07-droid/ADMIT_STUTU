@@ -70,7 +70,10 @@ export function pickProfile(hw) {
   } else if (cls === 'integrated-strong') {
     tier = 'medium'; scale = 0.9;
   } else if (cls === 'discrete') {
-    tier = 'high'; scale = 1;
+    // medium, не high: с волны 4 (ткань, волосы, материалы арены) high с камерой упирается в процессор — на RTX 4050
+    // бой 15–56 к/с и распознавание 8–17 Гц, на medium 68–71 к/с и 21–25 Гц. Смена уровня посреди боя хуже
+    // (пересборка шейдеров на ~10 с глушит распознавание), поэтому сразу medium; high — вручную в настройках.
+    tier = 'medium'; scale = 1;
     // 960×720 (4:3): Chrome берёт родной 720p и обрезает края — тот же угол обзора, что у 640×480,
     // но в 1,5 раза больше пикселей на кисти (точнее кончики пальцев для рун)
     vision = { poseModel: 'full', camera: { width: 960, height: 720 }, captureMaxWidth: 960, maxInferenceHz: 30 };
@@ -172,8 +175,9 @@ export function createPerfTuner(opts = {}) {
   const wallNow = typeof Date !== 'undefined' ? Date.now() : 0;
   const savedFresh = !!(saved && fin(saved.t) && wallNow - saved.t < C.savedMaxAgeMs);
   // выученный уровень — не ниже стартового минус один (разовая просадка не приговаривает машину к low)
+  // и не выше стартового (как и подъём в меню): high, выученный до смены профиля, не возвращается
   const savedTier = savedFresh && TIERS.includes(saved.tier)
-    ? TIERS[Math.max(TIERS.indexOf(saved.tier), TIERS.indexOf(profile.tier) - 1, 0)] : null;
+    ? TIERS[Math.min(TIERS.indexOf(profile.tier), Math.max(TIERS.indexOf(saved.tier), TIERS.indexOf(profile.tier) - 1, 0))] : null;
 
   const s = {
     auto: true,
