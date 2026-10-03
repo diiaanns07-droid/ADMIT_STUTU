@@ -135,7 +135,7 @@ const probe = (page) => page.evaluate(() => {
   const cl = A.camLoad();
   const cv = [...document.querySelectorAll('canvas')].sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
   return {
-    t: Math.round(performance.now()), screen: A.screen, status: t.status, message: t.message, mode: t.mode, delegate: t.delegate, calibrated: t.calibrated,
+    t: Math.round(performance.now()), screen: A.screen, pause: A.pauseReason, status: t.status, message: t.message, mode: t.mode, delegate: t.delegate, calibrated: t.calibrated,
     step: d.engineStep, results: d.results, hz: d.inferenceHz, ladder: (d.ladderHistory || []).map((x) => x.step),
     warm: cl.warm, fightCap: cl.fightCap, guard: cl.guard.level, hidden: cl.hidden.length, fps: A.fps,
     pr: cv && cv.clientWidth ? Math.round((cv.width / cv.clientWidth) * 100) / 100 : null,
@@ -247,7 +247,9 @@ async function flow(w, h) {
     await sleep(6000);
     const fight = await probe(page);
     keep(fight);
-    check(`${tag}: бой — обычный кадр (дешёвый выключен)`, ['intro', 'playing'].includes(fight.screen) && fight.warm === false && fight.hidden === 0, JSON.stringify(fight));
+    // пауза «трекинг потерян» с автопродолжением — тоже бой: на стенде без видеокарты распознавание идёт 1–3 раза в секунду
+    const inFight = ['intro', 'playing'].includes(fight.screen) || (fight.screen === 'paused' && fight.pause === 'tracking');
+    check(`${tag}: бой — обычный кадр (дешёвый выключен)`, inFight && fight.warm === false && fight.hidden === 0 && fight.pr >= menu.pr - 0.01, JSON.stringify(fight));
     await shot(page, `${tag}_6_fight.png`);
     await sleep(6000);
     const fight2 = await probe(page);

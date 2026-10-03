@@ -622,20 +622,20 @@ test('L19 главный поток стоял 3 с, ответ воркера �
   ok(/не ответил на кадр/.test(v.getStatus().debug.ladderHistory[0].reason), JSON.stringify(v.getStatus().debug.ladderHistory));
 }));
 
-test('L20 воркер на CPU: кадр 4 с (процессор занят загрузкой) — остаёмся в воркере; завис дольше 8 с — главный поток', () => withShell({ config: { delegate: 'CPU' } }, async (env, v) => {
-  SlowWorker.hooks.frameDelayMs = (d, n) => (n <= 5 ? 0 : n === 6 ? 4000 : n <= 12 ? 0 : Infinity);
+test('L20 воркер на CPU: кадр 10 с (процессор занят загрузкой) — остаёмся в воркере; завис дольше 20 с — главный поток', () => withShell({ config: { delegate: 'CPU' } }, async (env, v) => {
+  SlowWorker.hooks.frameDelayMs = (d, n) => (n <= 5 ? 0 : n === 6 ? 10000 : n <= 12 ? 0 : Infinity);
   await v.start();
   await pump(env, 400);
   eq(v.getStatus().debug.engineStep, 'worker-cpu');
-  await pump(env, 5000);
+  await pump(env, 11000);
   let s = v.getStatus();
   eq(s.debug.ladderHistory.length, 0, `медленный кадр — не повод уходить: ${JSON.stringify(s.debug.ladderHistory)}`);
   eq(s.mode, 'worker');
-  await pump(env, 9000);
+  await pump(env, 21000, { until: () => v.getStatus().mode === 'main' });
   await waitFor(() => v.getStatus().mode === 'main', 3000, env);
   s = v.getStatus();
   eq(s.mode, 'main', 'завис — главный поток');
-  ok(/не ответил на кадр за 8000 мс/.test(s.debug.ladderHistory[0].reason), s.debug.ladderHistory[0].reason);
+  ok(/не ответил на кадр за 20000 мс/.test(s.debug.ladderHistory[0].reason), s.debug.ladderHistory[0].reason);
 }));
 
 test('L21 файлы уже скачаны: воркер на CPU молчит на прогреве дольше cpuWorkerInitTimeoutMs → главный поток; без скачанных файлов — прежние 30 с', async () => {
