@@ -182,26 +182,38 @@ async function run() {
 
 // ------------------------------------------------------------------ отчёт: таблица и графики
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-function chart(title, series, { w = 760, h = 220, tMax = null, yMin = -0.1, yMax = 0.1 } = {}) {
-  // series: [{ name, color, pts: [[t, gap]] }]; полоса ±2 см — допуск
-  const L = 46, R = 10, T = 26, B = 28, W = w - L - R, H = h - T - B;
+// цвета: ряды — категориальные слоты 1–2 (проверены на различимость, в т. ч. при дальтонизме), текст и сетка — нейтральные
+const INK = { text: '#0b0b0b', muted: '#52514e', grid: '#e4e3df', zero: '#8a8984', surface: '#fcfcfb', band: '#0b0b0b' };
+function chart(title, series, { w = 760, h = 230, tMax = null, yMin = -0.1, yMax = 0.1 } = {}) {
+  // series: [{ name, color, pts: [[t, gap]] }]; серая полоса — допуск ±2 см
+  const L = 46, R = 12, T = 44, B = 28, W = w - L - R, H = h - T - B;
   const tm = tMax || Math.max(1, ...series.flatMap((s) => s.pts.map((p) => p[0])));
   const X = (t) => L + (t / tm) * W, Y = (v) => T + (1 - (Math.min(yMax, Math.max(yMin, v)) - yMin) / (yMax - yMin)) * H;
-  let o = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" font-family="sans-serif" font-size="11">`;
-  o += `<rect width="${w}" height="${h}" fill="#fff"/><text x="${L}" y="16" font-size="13" font-weight="bold">${esc(title)}</text>`;
-  o += `<rect x="${L}" y="${Y(TOL)}" width="${W}" height="${Y(-TOL) - Y(TOL)}" fill="#2a9d8f" opacity="0.13"/>`;
-  for (let v = yMin; v <= yMax + 1e-9; v += 0.02) {
-    o += `<line x1="${L}" x2="${L + W}" y1="${Y(v)}" y2="${Y(v)}" stroke="${Math.abs(v) < 1e-9 ? '#333' : '#ddd'}"/>`;
-    o += `<text x="${L - 4}" y="${Y(v) + 4}" text-anchor="end">${Math.round(v * 100)}</text>`;
+  let o = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" font-family="system-ui, sans-serif" font-size="11">`;
+  o += `<rect width="${w}" height="${h}" fill="${INK.surface}"/><text x="${L}" y="17" font-size="13" font-weight="600" fill="${INK.text}">${esc(title)}</text>`;
+  o += `<rect x="${L}" y="${Y(TOL)}" width="${W}" height="${Y(-TOL) - Y(TOL)}" fill="${INK.band}" opacity="0.06"/>`;
+  const stepV = yMax - yMin > 0.3 ? 0.1 : 0.02;
+  for (let v = Math.ceil(yMin / stepV - 1e-9) * stepV; v <= yMax + 1e-9; v += stepV) {
+    const zero = Math.abs(v) < 1e-9;
+    o += `<line x1="${L}" x2="${L + W}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="${zero ? INK.zero : INK.grid}" stroke-width="1"/>`;
+    o += `<text x="${L - 6}" y="${(Y(v) + 4).toFixed(1)}" text-anchor="end" fill="${INK.muted}">${Math.round(v * 100)}</text>`;
   }
-  o += `<text x="10" y="${T + H / 2}" transform="rotate(-90 10 ${T + H / 2})" text-anchor="middle">см</text>`;
-  for (let s = 0; s <= tm; s += tm > 100 ? 20 : 10) o += `<text x="${X(s)}" y="${h - 8}" text-anchor="middle">${s} с</text>`;
-  series.forEach((s, i) => {
-    if (!s.pts.length) return;
+  o += `<text x="12" y="${T + H / 2}" transform="rotate(-90 12 ${T + H / 2})" text-anchor="middle" fill="${INK.muted}">зазор, см</text>`;
+  const tick = tm > 100 ? 20 : tm > 30 ? 10 : 2;
+  for (let s = 0; s <= tm + 1e-9; s += tick) o += `<text x="${X(s).toFixed(1)}" y="${h - 9}" text-anchor="middle" fill="${INK.muted}">${s} с</text>`;
+  // легенда: ключ-линия цвета ряда, подпись — нейтральным цветом
+  let lx = L;
+  for (const s of series) {
+    if (!s.pts.length) continue;
+    o += `<line x1="${lx}" x2="${lx + 16}" y1="31" y2="31" stroke="${s.color}" stroke-width="2" stroke-linecap="round"/><text x="${lx + 21}" y="35" fill="${INK.text}">${esc(s.name)}</text>`;
+    lx += 30 + 7 * s.name.length;
+  }
+  o += `<rect x="${lx}" y="26" width="16" height="10" fill="${INK.band}" opacity="0.12"/><text x="${lx + 21}" y="35" fill="${INK.text}">допуск ±2 см</text>`;
+  for (const s of series) {
+    if (!s.pts.length) continue;
     const d = s.pts.map((p, j) => `${j ? 'L' : 'M'}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
-    o += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="1.2" opacity="0.9"/>`;
-    o += `<rect x="${L + 8 + i * 120}" y="${T + 4}" width="10" height="10" fill="${s.color}"/><text x="${L + 22 + i * 120}" y="${T + 13}">${esc(s.name)}</text>`;
-  });
+    o += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>`;
+  }
   return o + '</svg>';
 }
 
@@ -211,7 +223,7 @@ function report() {
   const after = load(A.of('--after', '')), before = load(A.of('--before', ''));
   mkdirSync(DIR, { recursive: true });
   const NAMES = { ashen: 'Пепельный страж', elf: 'Эльфийка', dark: 'Тёмная чародейка', ranger: 'Лучница', archmage: 'Архимаг' };
-  const COL = { before: '#e63946', after: '#1d3557' };
+  const COL = { before: '#2a78d6', after: '#eb6834' };   // слоты 1 и 2 категориальной палитры
   const cm = (x) => (x == null ? '—' : (x * 100).toFixed(1));
   let md = '# Стопы героев и пол: |подошва − пол|\n\n';
   md += 'Замер `node tools/hero_ground.mjs` (виртуальное время, `window.__ASHEN__.heroFeet()`): зазор = нижняя точка подошвы ' +
@@ -220,11 +232,13 @@ function report() {
   const qualities = [...new Set([...after, ...before].map((r) => r.quality))];
   for (const q of qualities) {
     const a = after.find((r) => r.quality === q), b = before.find((r) => r.quality === q);
-    md += `## ${q}\n\n| Сцена | Герой | до: глубже всего, см | до: кадров глубже 2 см | до: дрейф, см | после: глубже всего, см | после: кадров глубже 2 см | после: дрейф, см |\n|---|---|---|---|---|---|---|---|\n`;
+    md += `## ${q}\n\n| Сцена | Герой | до: глубже всего | до: медиана | до: кадров глубже 2 см | до: дрейф | после: глубже всего | после: медиана | после: кадров глубже 2 см | после: дрейф |\n|---|---|---|---|---|---|---|---|---|---|\n`;
     const line = (scene, hero, rb, ra) => {
-      const sb = rb ? summarizeRows(rb) : null, sa = ra ? summarizeRows(ra) : null;
+      const S = (r) => { const x = r && r.length ? summarizeRows(r) : null; return x && x.frames ? x : null; };
+      const sb = S(rb), sa = S(ra);
       const dr = (s) => (s && s.driftFirst != null ? `${cm(s.driftFirst)} → ${cm(s.driftLast)}` : '—');
-      md += `| ${scene} | ${NAMES[hero] || hero} | ${sb ? cm(-sb.sinkMax) : '—'} | ${sb ? (sb.over * 100).toFixed(0) + '%' : '—'} | ${dr(sb)} | ${sa ? cm(-sa.sinkMax) : '—'} | ${sa ? (sa.over * 100).toFixed(0) + '%' : '—'} | ${dr(sa)} |\n`;
+      const cells = (s) => (s ? [cm(-s.sinkMax), cm(s.median), (s.over * 100).toFixed(0) + '%', dr(s)] : ['—', '—', '—', '—']);
+      md += `| ${scene} | ${NAMES[hero] || hero} | ${cells(sb).join(' | ')} | ${cells(sa).join(' | ')} |\n`;
     };
     for (const h of HERO_IDS) {
       const pick = (r, f) => (r ? r.menu.filter((x) => x.hero === h) : null);
@@ -237,10 +251,12 @@ function report() {
     const ser = (rows, name, color, tKey = 't') => ({ name, color, pts: (rows || []).filter((r) => Number.isFinite(r.gap)).map((r) => [r[tKey], r.gap]) });
     const files = [];
     const put = (name, svg) => { writeFileSync(join(DIR, name), svg); files.push(name); };
-    put(`${q}-menu.svg`, chart(`${q}: меню, 6 кругов смены героев (зазор подошвы, см)`, [ser(b && b.menu, 'до', COL.before), ser(a && a.menu, 'после', COL.after)]));
+    // меню: визиты героя подряд (6 кругов по 2 с), время — внутри его визитов
+    const menuOf = (r, h) => { if (!r) return null; let t = 0, prev = null; return r.menu.filter((x) => x.hero === h).map((x) => { t += prev === null || x.t - prev > 0.2 ? 1 / 15 : x.t - prev; prev = x.t; return { ...x, t: +t.toFixed(3) }; }); };
     for (const h of HERO_IDS) {
-      if (!(a && a.battle[h]) && !(b && b.battle[h])) continue;
-      put(`${q}-battle-${h}.svg`, chart(`${q}: бой — ${NAMES[h]} (зазор подошвы, см)`, [ser(b && b.battle[h], 'до', COL.before), ser(a && a.battle[h], 'после', COL.after)], { yMin: -0.14, yMax: 0.4 }));
+      const mb = menuOf(b, h), ma = menuOf(a, h);
+      if ((mb && mb.length) || (ma && ma.length)) put(`${q}-menu-${h}.svg`, chart(`${q}, меню — ${NAMES[h]}: 6 появлений на витрине по 2 с`, [ser(mb, 'до', COL.before), ser(ma, 'после', COL.after)]));
+      if ((a && a.battle[h]) || (b && b.battle[h])) put(`${q}-battle-${h}.svg`, chart(`${q}, бой — ${NAMES[h]}: ходьба, рывки, заклинания, «Небесный суд», победа`, [ser(b && b.battle[h], 'до', COL.before), ser(a && a.battle[h], 'после', COL.after)], { yMin: -0.14, yMax: 0.4 }));
     }
     md += files.map((f) => `![${f}](${f})`).join('\n') + '\n\n';
   }
