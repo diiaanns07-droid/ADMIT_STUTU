@@ -1,10 +1,15 @@
 // [W5-КАМЕРА] Экран камеры в браузере: «Играть» → камера → калибровка → бой, дешёвый кадр на время запуска,
 // «Диагностика» и «Скопировать отчёт», тексты при отказе в доступе, занятой камере и без камеры.
 //
-//   node dev/camera.browser.mjs [--sizes 1366x768,1366x650] [--only flow,errors] [--out DIR] [--browser PATH] [--cpu]
+//   node dev/camera.browser.mjs [--sizes 1366x768,1366x650] [--only flow,cursor,errors] [--out DIR] [--browser PATH] [--gpu] [--draw]
 //
-//   --cpu    MediaPipe в воркере сразу на CPU (быстрее в облаке без видеокарты). По умолчанию — как у игрока:
-//            лестница отката начинает с воркера на GPU (здесь это программный SwiftShader).
+//   --gpu    MediaPipe в воркере — как у игрока, с GPU (лестница отката начинает с воркера на GPU). Без видеокарты
+//            (облако, CI) GPU — программный SwiftShader: прогрев не укладывается в 15 с, и проверка идёт по всей
+//            лестнице до основного потока на CPU (минуты). По умолчанию воркер сразу на CPU.
+//   --draw   рисовать WebGL всегда. По умолчанию рисуется только для скриншотов: программный рендер съедает все
+//            ядра, и распознавание не успевает — на настоящей видеокарте этого нет. Дешёвый кадр видно и так
+//            (флаг, плотность пикселей холста, спрятанные объекты витрины).
+// Качество — «среднее» без автоподстройки: плотность пикселей в меню 1, в дешёвом кадре 0,6.
 // Поддельная камера Chromium показывает узор без человека: распознавание запускается и обрабатывает кадры,
 // но тела не находит. Чтобы пройти калибровку и войти в бой, после запуска распознавания ответы воркера
 // подменяются неподвижной позой «сидит в кадре, руки внизу» (window.__fakePose) — проверяется логика
@@ -23,8 +28,9 @@ const argv = process.argv.slice(2);
 const argOf = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 const OUT = resolve(argOf('--out', join(tmpdir(), 'ashen_camera')));
 const SIZES = argOf('--sizes', '1366x768,1366x650').split(',').map((s) => s.split('x').map(Number));
-const ONLY = argOf('--only', 'flow,errors').split(',');
-const CPU = argv.includes('--cpu');
+const ONLY = argOf('--only', 'flow,cursor,errors').split(',');
+const CPU = !argv.includes('--gpu');
+const DRAW = argv.includes('--draw');
 let pw;
 for (const p of ['playwright', '/opt/node22/lib/node_modules/playwright']) { try { pw = require(p); break; } catch (e) { /* дальше */ } }
 if (!pw) { console.error('playwright не найден'); process.exit(2); }
@@ -81,9 +87,22 @@ const browser = await pw.chromium.launch({
     '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'],
 });
 
-async function newPage(w, h, init = []) {
+async function newPage(w, h, init = [], query = '?cursor=0') {
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, permissions: ['camera', 'clipboard-read', 'clipboard-write'] });
   await ctx.addInitScript(fakePoseScript);
+  await ctx.addInitScript(() => { try { localStorage.setItem('ashen-oath.settings.v1', JSON.stringify({ quality: 'medium', qualityAuto: false })); } catch (e) { /* ignore */ } });
+  if (!DRAW) {
+    await ctx.addInitScript(() => {
+      window.__aoNoDraw = true;
+      for (const C of [window.WebGLRenderingContext, window.WebGL2RenderingContext]) {
+        if (!C) continue;
+        for (const k of ['drawElements', 'drawArrays', 'drawElementsInstanced', 'drawArraysInstanced', 'drawRangeElements']) {
+          const f = C.prototype[k];
+          if (typeof f === 'function') C.prototype[k] = function (...a) { if (window.__aoNoDraw) return undefined; return f.apply(this, a); };
+        }
+      }
+    });
+  }
   if (CPU) {
     await ctx.addInitScript(() => {
       const pm = Worker.prototype.postMessage;
@@ -95,13 +114,20 @@ async function newPage(w, h, init = []) {
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  await page.goto(server.url);
+  await page.goto(server.url + query);
   await page.waitForFunction(() => !!window.__ASHEN__, null, { timeout: 90000, polling: 100 });
   await page.waitForFunction(() => [...document.querySelectorAll('button')].some((b) => b.offsetParent && b.textContent.trim() === 'Играть'), null, { timeout: 30000 });
   return { ctx, page, errors };
 }
 
 // снимок состояния: экран, статус распознавания, дешёвый кадр, плотность пикселей холста
+// скриншот: на время снимка рисуем (без --draw между снимками рендер выключен)
+async function shot(page, name) {
+  if (!DRAW) { await page.evaluate(() => { window.__aoNoDraw = false; }); await sleep(1200); }
+  await page.screenshot({ path: join(OUT, name) });
+  if (!DRAW) await page.evaluate(() => { window.__aoNoDraw = true; });
+}
+
 const probe = (page) => page.evaluate(() => {
   const A = window.__ASHEN__;
   const t = A.tracking || {};
@@ -140,7 +166,7 @@ async function diagAndReport(page, tag) {
   await sleep(500);
   const note = await page.locator('details.ao-camdiag[open] .ao-camdiag__note').first().innerText().catch(() => '');
   const text = await page.evaluate(() => navigator.clipboard.readText()).catch(() => '');
-  await page.screenshot({ path: join(OUT, `${tag}_diag.png`) });
+  await shot(page, `${tag}_diag.png`);
   const lay = await layout(page);
   await sum.click();   // свернуть
   return { rows, vals, note, text, lay };
@@ -156,7 +182,7 @@ async function flow(w, h) {
     const menu = await probe(page);
     keep(menu);
     check(`${tag}: меню — обычный кадр`, menu.warm === false && menu.screen === 'menu', JSON.stringify(menu));
-    await page.screenshot({ path: join(OUT, `${tag}_1_menu.png`) });
+    await shot(page, `${tag}_1_menu.png`);
     const t0 = Date.now();
     await page.getByRole('button', { name: 'Играть', exact: true }).first().click();
     // запуск: дешёвый кадр включается, пока камера и распознавание запускаются
@@ -167,7 +193,7 @@ async function flow(w, h) {
       if (s.warm && !warmOn) warmOn = s;
       if (s.warm && s.status === 'loading' && !loadShot && Date.now() - t0 > 2500) {
         loadShot = true;
-        await page.screenshot({ path: join(OUT, `${tag}_2_loading.png`) });
+        await shot(page, `${tag}_2_loading.png`);
         const lay = await layout(page);
         check(`${tag}: экран камеры во время запуска помещается в окно`, lay.over.length === 0 && !lay.scroll, JSON.stringify(lay.over.length ? lay.over : lay.items.slice(-4)));
       }
@@ -179,7 +205,7 @@ async function flow(w, h) {
     check(`${tag}: дешёвый кадр включается на время запуска`, !!warmOn && warmOn.pr < menu.pr && warmOn.hidden > 0, warmOn ? `плотность ${menu.pr} → ${warmOn.pr}, спрятано объектов витрины ${warmOn.hidden}, статус ${warmOn.status}` : 'не включился');
     const run = await probe(page);
     check(`${tag}: без калибровки (нет тела) дешёвый кадр держится`, run.warm === true && run.screen === 'camera', JSON.stringify(run));
-    await page.screenshot({ path: join(OUT, `${tag}_3_camera.png`) });
+    await shot(page, `${tag}_3_camera.png`);
     const dg = await diagAndReport(page, tag);
     check(`${tag}: «Диагностика» — камера, распознавания, где считается, ступень`, !dg.error && ['Камера', 'Распознаваний', 'Где считается', 'Ступень отката', 'Игра'].every((k) => dg.rows.includes(k)), dg.error || dg.rows.map((k, i) => `${k}: ${dg.vals[i]}`).join(' | '));
     check(`${tag}: «Скопировать отчёт» → в буфере отчёт`, /^ASHEN OATH — отчёт камеры/.test(dg.text || '') && /Где считается: /.test(dg.text) && /скопирован/.test(dg.note), `${dg.note}; ${(dg.text || '').split('\n').length} строк`);
@@ -192,24 +218,29 @@ async function flow(w, h) {
     for (let i = 0; i < 480 && !left; i++) {
       const s = await probe(page);
       keep(s);
-      if (s.status === 'calibrating' && !calib) { calib = s; await page.screenshot({ path: join(OUT, `${tag}_4_calibrating.png`) }); }
+      if (s.status === 'calibrating' && !calib) { calib = s; await shot(page, `${tag}_4_calibrating.png`); }
       if (s.screen !== 'camera') left = s;
       await sleep(250);
     }
     check(`${tag}: поза в кадре → калибровка (дешёвый кадр держится)`, !!calib && calib.warm === true, calib ? JSON.stringify(calib) : 'калибровка не началась');
     check(`${tag}: откалиброван → дальше, дешёвый кадр выключен, плотность как в меню`, !!left && left.warm === false && left.calibrated === true && left.pr >= menu.pr - 0.01 && left.hidden === 0, left ? JSON.stringify(left) : 'остались на экране камеры');
     await sleep(800);
-    await page.screenshot({ path: join(OUT, `${tag}_5_${left ? left.screen : 'camera'}.png`) });
+    await shot(page, `${tag}_5_${left ? left.screen : 'camera'}.png`);
     // бой
     if (left && left.screen === 'tutorial') {
-      await page.getByRole('button', { name: 'В бой' }).first().click();
+      // быстрый поток: «Пропустить обучение» → итог обучения с «В бой» (надпись — причина, пока трекинг не готов)
+      const skipAll = page.getByRole('button', { name: 'Пропустить обучение' }).first();
+      if (await skipAll.isVisible().catch(() => false)) await skipAll.click();
+      const go = page.getByRole('button', { name: 'В бой', exact: true }).first();
+      await go.waitFor({ state: 'visible', timeout: 60000 }).catch(() => {});
+      await go.click({ timeout: 60000 }).catch((e) => console.log('  «В бой» не нажалась:', String(e.message || e).split('\n')[0]));
       await page.waitForFunction(() => ['intro', 'playing'].includes(window.__ASHEN__.screen), null, { timeout: 60000 }).catch(() => {});
     }
     await sleep(6000);
     const fight = await probe(page);
     keep(fight);
     check(`${tag}: бой — обычный кадр (дешёвый выключен)`, ['intro', 'playing'].includes(fight.screen) && fight.warm === false && fight.hidden === 0, JSON.stringify(fight));
-    await page.screenshot({ path: join(OUT, `${tag}_6_fight.png`) });
+    await shot(page, `${tag}_6_fight.png`);
     await sleep(6000);
     const fight2 = await probe(page);
     keep(fight2);
@@ -217,6 +248,28 @@ async function flow(w, h) {
     const errs = errors.filter((e) => !/GPU|WebGL|gpu|delegate|OpenGL|INFO:|favicon|Failed to load resource/.test(e));
     check(`${tag}: нет ошибок страницы`, errs.length === 0, errs.slice(0, 3).join(' | '));
     return { tag, menu, warmOn, running, calib, left, fight, fight2, timeline: tl.map((s) => ({ ...s, dt: s.t - tl[0].t })) };
+  } finally { await ctx.close(); }
+}
+
+// второй заход (разрешение на камеру запомнено): курсор-кисть включает камеру прямо в меню — дешёвый кадр на время
+// запуска и в меню, после запуска — снова полная витрина
+async function cursorMenu(w, h) {
+  const tag = `cursor_${w}x${h}`;
+  const { ctx, page, errors } = await newPage(w, h, [], '');
+  try {
+    let on = null, off = null;
+    for (let i = 0; i < 1200 && !off; i++) {
+      const s = await probe(page);
+      if (s.screen === 'menu' && s.warm && !on) on = s;
+      if (on && s.screen === 'menu' && !s.warm && ['ready', 'lost'].includes(s.status)) off = s;
+      await sleep(250);
+    }
+    check(`${tag}: камера курсора в меню — дешёвый кадр на время запуска`, !!on && on.pr <= 0.61 && on.hidden > 0, on ? `статус ${on.status}, плотность ${on.pr}, спрятано ${on.hidden}` : 'не включился (камера в меню не запускалась?)');
+    check(`${tag}: камера курсора заработала — меню снова в полном качестве`, !!off && off.pr >= 0.99 && off.hidden === 0, off ? `статус ${off.status}, плотность ${off.pr}, спрятано ${off.hidden}` : 'дешёвый кадр не выключился');
+    await shot(page, `${tag}_menu.png`);
+    const errs = errors.filter((x) => !/GPU|WebGL|gpu|delegate|OpenGL|INFO:|favicon|Failed to load resource/.test(x));
+    check(`${tag}: нет ошибок страницы`, errs.length === 0, errs.slice(0, 3).join(' | '));
+    return { tag, on, off };
   } finally { await ctx.close(); }
 }
 
@@ -246,7 +299,7 @@ async function camError(w, h, e) {
     });
     const btns = await page.evaluate(() => [...document.querySelectorAll('.ao-panel--camera button')].filter((b) => b.offsetParent).map((b) => b.textContent.trim()));
     const lay = await layout(page);
-    await page.screenshot({ path: join(OUT, `${tag}.png`) });
+    await shot(page, `${tag}.png`);
     check(`${tag}: код ${st && st.code}, текст «${box && box.title}»`, !!st && !!box && e.title.test(box.title) && box.steps.some((s) => e.steps.test(s)), box ? `${box.reason} · ${box.steps.join(' · ')}` : `нет плашки ошибки; статус ${JSON.stringify(st)}`);
     check(`${tag}: есть «Повторить», экран помещается в окно`, btns.some((b) => /Повторить|Включить камеру|Разрешить камеру/.test(b)) && lay.over.length === 0 && !lay.scroll, `${btns.join(' | ')}; за краем: ${JSON.stringify(lay.over)}`);
     const cl = await page.evaluate(() => window.__ASHEN__.camLoad());
@@ -257,9 +310,10 @@ async function camError(w, h, e) {
   } finally { await ctx.close(); }
 }
 
-const report = { sizes: SIZES, cpu: CPU, flows: [], errors: [] };
+const report = { sizes: SIZES, cpu: CPU, draw: DRAW, flows: [], errors: [] };
 try {
   if (ONLY.includes('flow')) for (const [w, h] of SIZES) report.flows.push(await flow(w, h));
+  if (ONLY.includes('cursor')) report.cursor = await cursorMenu(...SIZES[0]);
   if (ONLY.includes('errors')) for (const [w, h] of SIZES) for (const e of ERRORS) report.errors.push(await camError(w, h, e));
 } finally {
   report.results = results;
