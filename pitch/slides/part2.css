@@ -1,0 +1,131 @@
+/* ASHEN OATH — презентация финала, слайды 3, 4, 5, 6 и 12.
+ * Стили только внутри своих слайдов ([data-slide="3|4|5|6|12"]) или с префиксом .p2-.
+ * Общие классы (.kicker, .thesis, .num, .frame, .chip…) и токены — из deck.css, здесь только раскладка.
+ * Движение: шаги 300 мс, только opacity, transform и clip-path; при «уменьшенном движении» — сразу конечный вид. */
+
+/* ---------- Общий каркас: метка раздела и тезис сверху, содержимое в полосе 260–960 ---------- */
+.p2-head { position: absolute; left: 120px; right: 120px; top: 0; height: 240px; pointer-events: none; }
+.p2-head .kicker { position: absolute; left: 0; top: 58px; margin: 0; }
+.p2-head .thesis { position: absolute; left: 0; top: 120px; margin: 0; max-width: 1680px; line-height: 1.04; white-space: nowrap; }
+.p2-body { position: absolute; left: 120px; top: 260px; width: 1680px; height: 700px; }
+
+/* Кадр игры в орнаментальной рамке: рамка — отдельный слой поверх снимка, чтобы уголки не прятались под картинкой */
+.p2-shot { position: absolute; margin: 0; }
+.p2-crop { position: absolute; inset: 0; overflow: hidden; background: var(--coal-deep); box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 22px 60px rgba(0, 0, 0, .55); }
+.p2-crop > img, .p2-crop > video { position: absolute; display: block; max-width: none; }
+.p2-shot > .frame.p2-ring { position: absolute; inset: -9px; margin: 0; padding: 0; background: none; box-shadow: none; pointer-events: none; z-index: 2; }
+.p2-fig-note { position: absolute; left: 0; margin: 0; white-space: nowrap; }
+
+/* Шаг-строка с цветной кромкой слева, как список жестов в бою (синяя — левая рука, оранжевая — правая) */
+.p2-tick { position: relative; padding-left: 30px; }
+.p2-tick::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 4px; border-radius: 2px; background: var(--tick, var(--gold)); }
+.p2-tick-k { display: block; margin: 0 0 6px; font-family: 'Forum', serif; font-size: 26px; letter-spacing: .12em; text-transform: uppercase; color: var(--tick, var(--gold)); }
+.p2-tick-t { display: block; margin: 0; font-size: 36px; line-height: 44px; color: var(--text); }
+
+/* ================= Слайд 3 — «Тело — это контроллер» ================= */
+[data-slide="3"] .p2-s3-shot { left: 0; top: 52px; width: 1040px; height: 528px; }
+/* 10_present.jpg 1280×720 → ×0,8125; срезаны верхние 70 px с плашкой «DEBUG / НЕ CV» */
+[data-slide="3"] .p2-s3-shot img { width: 1040px; height: 585px; left: 0; top: -57px; }
+[data-slide="3"] .p2-s3-shot .p2-fig-note { top: 548px; }
+/* подсветка зоны кадра под каждый шаг: цвет руки, тонкая рамка и мягкое свечение */
+[data-slide="3"] .p2-hl { position: absolute; z-index: 1; border: 2px solid var(--hl); border-radius: 6px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .55), 0 0 24px color-mix(in srgb, var(--hl) 55%, transparent), inset 0 0 18px color-mix(in srgb, var(--hl) 22%, transparent); }
+[data-slide="3"] .p2-hl[data-step] { transform: scale(1.06); }
+[data-slide="3"] .p2-hl[data-step].is-on { transform: none; }
+[data-slide="3"] .p2-hl--l { --hl: var(--hand-left); left: 438px; top: 47px; width: 202px; height: 150px; }
+[data-slide="3"] .p2-hl--r { --hl: var(--hand-right); left: 438px; top: 199px; width: 202px; height: 148px; }
+[data-slide="3"] .p2-hl--b { --hl: var(--gold); left: 108px; top: 70px; width: 184px; height: 124px; }
+[data-slide="3"] .p2-s3-steps { position: absolute; left: 1120px; top: 52px; width: 560px; margin: 0; padding: 0; list-style: none; }
+[data-slide="3"] .p2-s3-steps > li { margin: 0 0 46px; }
+[data-slide="3"] .p2-s3-steps .p2-tick--l { --tick: var(--hand-left); }
+[data-slide="3"] .p2-s3-steps .p2-tick--r { --tick: var(--hand-right); }
+[data-slide="3"] .p2-s3-steps .p2-tick--b { --tick: var(--gold); }
+[data-slide="3"] .p2-s3-cap { position: absolute; left: 1120px; top: 548px; margin: 0; }
+
+/* ================= Слайд 4 — «Один жест — удар, как в кино» ================= */
+[data-slide="4"] .p2-s4-shot { left: 0; top: 40px; width: 1120px; height: 480px; }
+/* клип и постер уже обрезаны до кадра 7:3 (без чёрных полос и плашки отладки) */
+[data-slide="4"] .p2-s4-shot video, [data-slide="4"] .p2-s4-shot img { left: 0; top: 0; width: 1120px; height: 480px; object-fit: cover; }
+[data-slide="4"] .p2-s4-shot .p2-fig-note { top: 504px; }
+[data-slide="4"] .p2-seq { position: absolute; left: 1200px; top: 40px; width: 480px; margin: 0; padding: 0; list-style: none; }
+[data-slide="4"] .p2-seq > li { position: relative; padding-left: 44px; min-height: 96px; }
+/* узел последовательности — ромб, как заклёпка на полосах игры; линия к следующему узлу прочерчивается при показе */
+[data-slide="4"] .p2-seq > li::before { content: ''; position: absolute; left: 3px; top: 12px; width: 14px; height: 14px; transform: rotate(45deg);
+  background: var(--gold-hi); box-shadow: 0 0 0 3px var(--ink), 0 0 0 4px var(--gold-deep), 0 0 14px rgba(243, 220, 160, .45); }
+[data-slide="4"] .p2-seq > li + li::after { content: ''; position: absolute; left: 9px; top: -66px; width: 2px; height: 70px;
+  background: linear-gradient(180deg, var(--gold-deep), var(--gold-hi)); transform-origin: 50% 0; transform: scaleY(0);
+  transition: transform .3s var(--ease) .05s; }
+[data-slide="4"] .p2-seq > li.is-on + li::after, [data-slide="4"] .p2-seq > li + li.is-on::after { transform: none; }
+[data-slide="4"] .p2-seq-t { display: block; font-size: 36px; line-height: 40px; color: var(--text); }
+[data-slide="4"] .p2-seq-v { display: block; margin-top: 4px; font-size: 28px; line-height: 32px; color: var(--gold-b); }
+[data-slide="4"] .p2-seq > li.p2-seq-hit { padding-left: 0; margin-top: 18px; }
+[data-slide="4"] .p2-seq > li.p2-seq-hit::before, [data-slide="4"] .p2-seq > li.p2-seq-hit::after { content: none; }
+[data-slide="4"] .p2-seq-hit .num { display: block; line-height: 1; white-space: nowrap; }
+[data-slide="4"] .p2-seq-hit .unit { display: block; margin-top: 10px; }
+
+/* ================= Слайд 5 — «Глубина RPG, а не мини-игра» ================= */
+[data-slide="5"] .p2-s5-shot { left: 0; top: 14px; width: 1680px; height: 372px; }
+/* hero_v7_lineup.jpg 1800×594 → ×0,9333; срезаны служебная строка сверху и подписи снизу */
+[data-slide="5"] .p2-s5-shot img { left: 0; top: -36px; width: 1680px; height: 554px; }
+[data-slide="5"] .p2-names { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; display: grid; grid-template-columns: repeat(5, 1fr);
+  margin: 0; padding: 70px 0 18px; list-style: none; background: linear-gradient(180deg, transparent, rgba(11, 10, 9, .78) 62%, rgba(11, 10, 9, .9)); }
+[data-slide="5"] .p2-names > li { text-align: center; font-family: 'Forum', serif; font-size: 26px; letter-spacing: .1em; text-transform: uppercase; color: var(--parch); }
+[data-slide="5"] .p2-s5-stats { position: absolute; left: 0; top: 432px; width: 820px; margin: 0; }
+[data-slide="5"] .p2-s5-stats .num { line-height: 1; }
+[data-slide="5"] .p2-s5-big { display: flex; align-items: baseline; gap: 22px; margin: 0; }
+[data-slide="5"] .p2-s5-big .unit { font-size: 40px; }
+[data-slide="5"] .p2-s5-line { margin: 18px 0 0; font-size: 30px; line-height: 40px; color: var(--muted); }
+[data-slide="5"] .p2-s5-line b { font-weight: 500; color: var(--text); }
+[data-slide="5"] .p2-modes { position: absolute; left: 900px; top: 432px; width: 780px; margin: 0; padding: 0; list-style: none; }
+[data-slide="5"] .p2-modes > li { position: relative; padding-left: 30px; margin: 0 0 12px; font-size: 30px; line-height: 40px; color: var(--muted); white-space: nowrap; }
+[data-slide="5"] .p2-modes > li::before { content: ''; position: absolute; left: 2px; top: 15px; width: 10px; height: 10px; transform: rotate(45deg); background: var(--gold-b); }
+[data-slide="5"] .p2-modes b { font-weight: 500; color: var(--text); }
+
+/* ================= Слайд 6 — «Не „не распознано“, а „что исправить“» ================= */
+[data-slide="6"] .p2-s6-bat { left: 0; top: 14px; width: 640px; height: 462px; }
+/* 09_battle_mistake.jpg 1280×720 → ×0,711; кадр с x=380, y=70 (без плашки отладки) */
+[data-slide="6"] .p2-s6-bat img { width: 910px; height: 512px; left: -270px; top: -50px; }
+[data-slide="6"] .p2-s6-sq { left: 680px; top: 14px; width: 1000px; height: 462px; }
+/* squat_demo.mp4 1366×768 → ×1,047; окно «Тренировка клятвы» без служебной строки стенда */
+[data-slide="6"] .p2-s6-sq video, [data-slide="6"] .p2-s6-sq img { width: 1430px; height: 804px; left: -214px; top: -186px; }
+[data-slide="6"] .p2-fig-note { top: 482px; }
+[data-slide="6"] .p2-s6-hint { position: absolute; left: 0; top: 540px; width: 720px; margin: 0; }
+[data-slide="6"] .p2-s6-big { display: flex; align-items: baseline; gap: 20px; margin: 0; }
+[data-slide="6"] .p2-s6-big .num { line-height: 1; background: none; color: var(--error); -webkit-text-fill-color: var(--error); }
+[data-slide="6"] .p2-s6-big .unit { font-size: 40px; }
+[data-slide="6"] .p2-s6-hint .cap { margin: 10px 0 0; }
+[data-slide="6"] .p2-s6-steps { position: absolute; left: 760px; top: 556px; width: 600px; margin: 0; padding: 0; list-style: none; }
+[data-slide="6"] .p2-s6-steps > li { margin: 0 0 24px; }
+[data-slide="6"] .p2-s6-steps .p2-tick-t { font-size: 32px; line-height: 40px; }
+[data-slide="6"] .p2-live { position: absolute; right: 0; top: 572px; display: inline-flex; align-items: center; gap: 14px; height: 72px; padding: 0 30px;
+  font-family: 'Forum', serif; font-size: 28px; letter-spacing: .12em; text-transform: uppercase; color: var(--gold-hi); text-decoration: none;
+  border: 1px solid var(--gold-deep); background: linear-gradient(180deg, rgba(216, 179, 106, .16), rgba(216, 179, 106, .04));
+  box-shadow: inset 0 1px 0 rgba(243, 220, 160, .2), 0 10px 26px rgba(0, 0, 0, .45); transition: border-color .2s var(--ease), background-color .2s var(--ease); }
+[data-slide="6"] .p2-live:hover, [data-slide="6"] .p2-live:focus-visible { border-color: var(--gold-hi); background-color: rgba(216, 179, 106, .12); outline: none; }
+[data-slide="6"] .p2-live svg { width: 22px; height: 22px; flex: none; }
+
+/* ================= Слайд 12 — «Кому это нужно и что дальше» ================= */
+[data-slide="12"] .p2-who { position: absolute; left: 0; top: 30px; width: 1040px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; margin: 0; padding: 0; list-style: none; }
+[data-slide="12"] .p2-who > li { position: relative; padding-top: 26px; border-top: 1px solid var(--line); }
+[data-slide="12"] .p2-who > li::before { content: ''; position: absolute; left: 0; top: -1px; width: 64px; height: 2px; background: var(--gold-b); }
+[data-slide="12"] .p2-who h3 { margin: 0 0 14px; font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 48px; line-height: 1; color: var(--parch); }
+[data-slide="12"] .p2-who p { margin: 0; font-size: 30px; line-height: 40px; color: var(--muted); }
+[data-slide="12"] .p2-s12-shot { left: 1100px; top: 30px; width: 580px; height: 305px; }
+/* 9_poster_s.jpg 1200×630 → ×0,483 */
+[data-slide="12"] .p2-s12-shot img { left: 0; top: 0; width: 580px; height: 305px; }
+[data-slide="12"] .p2-next { position: absolute; left: 0; top: 410px; width: 1680px; margin: 0; }
+[data-slide="12"] .p2-next-row { display: flex; align-items: center; flex-wrap: nowrap; gap: 16px; margin: 0 0 22px; }
+[data-slide="12"] .p2-next-k { width: 300px; flex: none; font-family: 'Forum', serif; font-size: 26px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+[data-slide="12"] .p2-next .chip { margin: 0; white-space: nowrap; }
+[data-slide="12"] .p2-s12-cap { position: absolute; left: 0; top: 640px; margin: 0; }
+
+/* ---------- Без анимаций: сразу конечный вид ---------- */
+@media (prefers-reduced-motion: reduce) {
+  [data-slide="3"] .p2-hl[data-step], [data-slide="4"] .p2-seq > li + li::after { transition: none; }
+}
+
+/* ---------- Печать: все шаги раскрыты, подсветка и линии на месте ---------- */
+@media print {
+  [data-slide="3"] .p2-hl[data-step] { transform: none; }
+  [data-slide="4"] .p2-seq > li + li::after { transform: none; }
+}
