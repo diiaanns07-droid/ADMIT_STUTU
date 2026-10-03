@@ -195,6 +195,9 @@ export function register(fx) {
     if (t > W.T) { if (W.reach) return true; g = Math.max(0, 1 - (t - W.T) / 0.35); }
     if (g <= 0) return true;
     const dec = decor(), m = W.s * g;
+    // [W4-ЗАКЛИНАНИЯ] яркость по пройденному пути: стена стартует у героя (в нескольких метрах от камеры) — там
+    // 40%, полная — через ~2,4 м: иначе первые 0,15 с bloom засвечивал весь кадр и не было видно, откуда пошла волна
+    const nearK = Math.min(1, 0.4 + dd / 4);
     const hx = W.right.x * W.half, hz = W.right.z * W.half;
     const fy = W.front.y + 0.05;
     const fw = W.vf * 0.55;                            // огонь «несётся» вперёд вместе с фронтом
@@ -205,7 +208,7 @@ export function register(fx) {
       W.accFire -= n;
       emFire.at.set(x - hx, fy, z - hz); emFire.to.set(x + hx, fy, z + hz);
       emFire.vel.set(W.fwd.x * fw, 0, W.fwd.z * fw);
-      emFire.count = n; emFire.ramp = W.rFire; emFire.rival = W.R; emFire.intensity = 2.4 * W.sf;
+      emFire.count = n; emFire.ramp = W.rFire; emFire.rival = W.R; emFire.intensity = 2.4 * W.sf * nearK;
       emFire.speed[0] = 2.2 + 1.2 * W.s; emFire.speed[1] = 4.2 + 2.2 * W.s;
       kit.emit(emFire);
     }
@@ -216,7 +219,7 @@ export function register(fx) {
       W.accFlame -= n;
       emFlame.at.set(x - hx * 0.7, fy, z - hz * 0.7); emFlame.to.set(x + hx * 0.7, fy, z + hz * 0.7);
       emFlame.vel.set(W.fwd.x * fw, 0, W.fwd.z * fw);
-      emFlame.count = n; emFlame.ramp = W.rFlame; emFlame.rival = W.R; emFlame.intensity = 2.8 * W.sf;
+      emFlame.count = n; emFlame.ramp = W.rFlame; emFlame.rival = W.R; emFlame.intensity = 2.8 * W.sf * nearK;
       kit.emit(emFlame);
     }
     // раскалённая кромка у земли
@@ -226,7 +229,7 @@ export function register(fx) {
       W.accBase -= n;
       emBase.at.set(x - hx, fy + 0.1, z - hz); emBase.to.set(x + hx, fy + 0.1, z + hz);
       // [W4-ЗАКЛИНАНИЯ] кромка: белая (ярче), у тьмы — чёрная darkcore (blend alpha), у соперника — rival
-      emBase.count = n; emBase.ramp = W.LK.base; emBase.blend = W.LK.baseBlend; emBase.rival = W.R; emBase.intensity = 2.6 * W.sf;
+      emBase.count = n; emBase.ramp = W.LK.base; emBase.blend = W.LK.baseBlend; emBase.rival = W.R; emBase.intensity = 2.6 * W.sf * nearK;
       kit.emit(emBase);
     }
     // угли вверх
@@ -271,7 +274,7 @@ export function register(fx) {
         arcO.to.set(arcO.from.x + W.right.x * span, W.front.y + clamp(h0 + (Math.random() - 0.5) * 1.2, 0.1, 2.6), arcO.from.z + W.right.z * span);
       }
       arcO.color = W.PS.mid; arcO.core = W.PS.core; arcO.rival = W.r01;
-      arcO.width = 0.025 + 0.025 * W.s; arcO.intensity = (2.6 + 0.9 * W.s) * W.sf;   // [W4-ЗАКЛИНАНИЯ] ярче
+      arcO.width = 0.025 + 0.025 * W.s; arcO.intensity = (2.6 + 0.9 * W.s) * W.sf * nearK;   // [W4-ЗАКЛИНАНИЯ] ярче, у камеры — тусклее
       fx.bolts.arc(arcO);
     }
     return true;
