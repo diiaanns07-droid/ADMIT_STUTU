@@ -13,7 +13,8 @@
  * Соглашение о yaw: поворот вокруг +Y в радианах; при yaw=0 модель смотрит в +Z;
  * направление взгляда = (sin(yaw), 0, cos(yaw)). Для другого соглашения есть config.world.yawOffset.
  */
-import { createAtmosphere } from './atmosphere.js';
+import { createAtmosphere, ECLIPSE } from './atmosphere.js';
+import { createArenaFx } from './arenaFx.js';   // [W4-ARENA] огни, воздух и отражения арены
 import { createElfVillage, ELF_VILLAGE } from './elfVillage.js';
 import { createBrightForest, BRIGHT_FOREST, brightForestHeight, brightForestTint } from './brightForest.js'; // [FOREST] Сияющий лес
 
@@ -390,9 +391,14 @@ function paintFloorCracks(size, seed, innerFrac) {
   return c;
 }
 
-// [W3-КИНО] Пояс рун кольца вокруг печати: R — глифы со свечением, G — две направляющие и ромбы-разделители.
-// Полоса тайлится по U; верх канваса — внутренний край кольца (глифы стоят «лицом» к зрителю снаружи).
+// [W3-КИНО] Пояс рун кольца вокруг печати. [W4-ARENA] Рисунок изящнее: R — ядро глифов (каллиграфические штрихи
+// с утолщением и точками-ромбами), G — орнамент (двойные направляющие, волосяные линии, бусины, ромбы-разделители
+// с завитками), B — мягкий ореол всего рисунка (свечение без лишнего прохода). Полоса тайлится по U; верх канваса —
+// внутренний край кольца (глифы стоят «лицом» к зрителю снаружи). Канвас рисуется один раз на модуль (кэш).
+const RUNE_BELT_CACHE = new Map();
 function paintRuneBelt(w, h, seed, cells) {
+  const key = `${w}x${h}:${seed}:${cells}`;
+  if (RUNE_BELT_CACHE.has(key)) return RUNE_BELT_CACHE.get(key);
   const c = makeCanvas(w, h);
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#000';
@@ -401,34 +407,114 @@ function paintRuneBelt(w, h, seed, cells) {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const cw = w / cells;
-  ctx.strokeStyle = 'rgb(0,255,0)';
-  ctx.lineWidth = h * 0.026;
-  for (const y of [h * 0.1, h * 0.9]) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
-  ctx.lineWidth = h * 0.02;
-  for (let k = 0; k <= cells; k++) {
-    const x = k * cw, d = h * 0.055;
-    ctx.beginPath(); ctx.moveTo(x, h * 0.5 - d * 2); ctx.lineTo(x + d, h * 0.5); ctx.lineTo(x, h * 0.5 + d * 2); ctx.lineTo(x - d, h * 0.5); ctx.closePath(); ctx.stroke();
-  }
-  const rnd = mulberry32(seed);
-  ctx.strokeStyle = 'rgb(255,0,0)';
-  ctx.shadowColor = 'rgb(140,0,0)';
-  ctx.shadowBlur = h * 0.07;
-  for (let k = 0; k < cells; k++) {
-    const cx = (k + 0.5) * cw, cy = h * 0.5, s = h * 0.27;
-    ctx.lineWidth = h * 0.042;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - s); ctx.lineTo(cx, cy + s);
-    const strokes = 2 + ((rnd() * 3) | 0);
-    for (let q = 0; q < strokes; q++) {
-      const t = rnd();
-      const y0 = cy + lerp(-s, s * 0.5, rnd());
-      if (t < 0.35) { ctx.moveTo(cx, y0); ctx.lineTo(cx + (rnd() < 0.5 ? -1 : 1) * s * 0.7, y0 + s * 0.5); }
-      else if (t < 0.65) { ctx.moveTo(cx - s * 0.55, y0); ctx.lineTo(cx + s * 0.55, y0); }
-      else { ctx.moveTo(cx + s * 0.5, y0); ctx.arc(cx, y0, s * 0.5, 0, Math.PI, rnd() < 0.5); }
+  const R = 'rgb(255,0,0)', Gc = 'rgb(0,255,0)', B = 'rgb(0,0,255)';
+  // Штрих кистью: ломаная с шириной w(t) = lerp(w0, w1, t) + wm·sin(πt), края — гладкие, концы скруглены.
+  const brush = (pts, w0, w1, wm, col) => {
+    const n = pts.length;
+    if (n < 2) return;
+    const L = [], Rr = [];
+    for (let i = 0; i < n; i++) {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      let nx = -(b[1] - a[1]), ny = b[0] - a[0];
+      const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+      const t = i / (n - 1), ww = (lerp(w0, w1, t) + wm * Math.sin(Math.PI * t)) / 2;
+      L.push([pts[i][0] + nx * ww, pts[i][1] + ny * ww]); Rr.push([pts[i][0] - nx * ww, pts[i][1] - ny * ww]);
     }
-    ctx.stroke();
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(L[0][0], L[0][1]);
+    for (let i = 1; i < n; i++) ctx.lineTo(L[i][0], L[i][1]);
+    for (let i = n - 1; i >= 0; i--) ctx.lineTo(Rr[i][0], Rr[i][1]);
+    ctx.closePath(); ctx.fill();
+    for (const [p, ww] of [[pts[0], w0], [pts[n - 1], w1]]) if (ww > 0.6) { ctx.beginPath(); ctx.arc(p[0], p[1], ww / 2, 0, TAU); ctx.fill(); }
+  };
+  const bez = (p0, p1, p2, n = 18) => {
+    const out = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, u = 1 - t;
+      out.push([u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0], u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]]);
+    }
+    return out;
+  };
+  const arcPts = (cx, cy, r, a0, a1, n = 20) => { const o = []; for (let i = 0; i <= n; i++) { const a = lerp(a0, a1, i / n); o.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); } return o; };
+  const lozenge = (x, y, rw, rh, col, fill) => {
+    ctx.beginPath(); ctx.moveTo(x, y - rh); ctx.lineTo(x + rw, y); ctx.lineTo(x, y + rh); ctx.lineTo(x - rw, y); ctx.closePath();
+    if (fill) { ctx.fillStyle = col; ctx.fill(); } else { ctx.strokeStyle = col; ctx.stroke(); }
+  };
+  const dot = (x, y, r, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); };
+
+  // ---- орнамент (G): направляющие, волосяные линии, бусины, разделители
+  const ornament = (col, k) => {
+    ctx.strokeStyle = col;
+    ctx.lineWidth = h * 0.028 * k;
+    for (const y of [h * 0.1, h * 0.9]) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+    ctx.lineWidth = h * 0.012 * k;
+    for (const y of [h * 0.2, h * 0.8]) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+    const nb = cells * 12;
+    for (let i = 0; i < nb; i++) { const x = (i + 0.5) * (w / nb); if (i % 12 === 0 || i % 12 === 11) continue; dot(x, h * 0.15, h * 0.013 * k, col); dot(x, h * 0.85, h * 0.013 * k, col); }
+    ctx.lineWidth = h * 0.016 * k;
+    for (let i = 0; i <= cells; i++) {
+      const x = i * cw;
+      lozenge(x, h * 0.5, h * 0.05, h * 0.13, col, false);
+      dot(x, h * 0.5, h * 0.018 * k, col);
+      dot(x, h * 0.3, h * 0.012 * k, col); dot(x, h * 0.7, h * 0.012 * k, col);
+      // завитки у направляющих: две дужки навстречу друг другу
+      for (const [y, s] of [[h * 0.2, 1], [h * 0.8, -1]]) {
+        ctx.beginPath(); ctx.arc(x - h * 0.045, y + s * h * 0.035, h * 0.035, s > 0 ? -Math.PI / 2 : Math.PI / 2, 0, s < 0); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x + h * 0.045, y + s * h * 0.035, h * 0.035, s > 0 ? -Math.PI / 2 : Math.PI / 2, Math.PI, s > 0); ctx.stroke();
+      }
+    }
+  };
+  // ---- глифы (R): ствол-дуга, ветви с точками, полумесяцы, кольца; часть глифов зеркально симметрична
+  const glyphs = [];
+  const rnd = mulberry32(seed);
+  for (let k = 0; k < cells; k++) {
+    const g = [], sym = rnd() < 0.5, s = h * 0.27;
+    const lean = (rnd() - 0.5) * 0.3 * s;
+    g.push({ t: 'stem', p: bez([lean, -s], [-lean * 1.5 + (rnd() - 0.5) * 0.25 * s, 0], [lean * 0.4, s]), w: [0.052, 0.05, 0.075] });
+    const nOrn = 2 + ((rnd() * 2.2) | 0);
+    for (let q = 0; q < nOrn; q++) {
+      const kind = rnd(), y0 = lerp(-0.7, 0.55, rnd()) * s, side = rnd() < 0.5 ? -1 : 1;
+      const mk = (sd) => {
+        if (kind < 0.3) g.push({ t: 'br', p: bez([0, y0], [sd * 0.25 * s, y0 - 0.12 * s], [sd * 0.62 * s, y0 - 0.48 * s]), w: [0.048, 0.016, 0.02], tip: true });
+        else if (kind < 0.52) g.push({ t: 'cr', p: arcPts(sd * 0.1 * s, y0, 0.42 * s, sd > 0 ? -Math.PI * 0.55 : Math.PI * 1.55, sd > 0 ? Math.PI * 0.55 : Math.PI * 0.45), w: [0.014, 0.014, 0.05] });
+        else if (kind < 0.7) g.push({ t: 'ring', x: sd * 0.5 * s, y: y0, r: 0.15 * s });
+        else if (kind < 0.86) g.push({ t: 'hook', p: bez([0, y0], [sd * 0.55 * s, y0 + 0.05 * s], [sd * 0.42 * s, y0 + 0.42 * s]), w: [0.046, 0.014, 0.02], tip: true });
+        else g.push({ t: 'bar', p: bez([-0.48 * s, y0 + 0.08 * s], [0, y0 - 0.1 * s], [0.48 * s, y0 + 0.08 * s]), w: [0.016, 0.016, 0.05] });
+      };
+      mk(side); if (sym && kind < 0.86) mk(-side);
+    }
+    glyphs.push(g);
   }
+  const drawGlyph = (k, col, widen) => {
+    const cx = (k + 0.5) * cw, cy = h * 0.5;
+    const T = (pts) => pts.map(([x, y]) => [cx + x, cy + y]);
+    for (const e of glyphs[k]) {
+      if (e.p) {
+        brush(T(e.p), e.w[0] * h * widen, e.w[1] * h * widen, e.w[2] * h * widen, col);
+        if (e.tip) { const q = e.p[e.p.length - 1]; lozenge(cx + q[0], cy + q[1], h * 0.03 * widen, h * 0.044 * widen, col, true); }
+      } else if (e.t === 'ring') {
+        ctx.strokeStyle = col; ctx.lineWidth = h * 0.024 * widen;
+        ctx.beginPath(); ctx.arc(cx + e.x, cy + e.y, e.r, 0, TAU); ctx.stroke();
+        dot(cx + e.x, cy + e.y, h * 0.012 * widen, col);
+      }
+    }
+    // ромбы на концах ствола
+    lozenge(cx + glyphs[k][0].p[0][0], cy - h * 0.315, h * 0.02 * widen, h * 0.03 * widen, col, true);
+    lozenge(cx + glyphs[k][0].p[glyphs[k][0].p.length - 1][0], cy + h * 0.315, h * 0.02 * widen, h * 0.03 * widen, col, true);
+  };
+  // ореол (B): тот же рисунок шире и размыт
+  ctx.shadowColor = B;
+  ctx.shadowBlur = h * 0.08;
+  for (let k = 0; k < cells; k++) drawGlyph(k, 'rgba(0,0,255,0.85)', 2.4);
+  ornament('rgba(0,0,170,0.6)', 2.2);
   ctx.shadowBlur = 0;
+  ornament(Gc, 1);
+  ctx.shadowColor = 'rgb(150,0,0)';   // ядро глифа с собственным свечением: читается и издалека, на мелких мипмапах
+  ctx.shadowBlur = h * 0.05;
+  for (let k = 0; k < cells; k++) drawGlyph(k, R, 1);
+  ctx.shadowBlur = 0;
+  RUNE_BELT_CACHE.set(key, c);
   return c;
 }
 
@@ -449,12 +535,13 @@ uniform vec3 uRuneBase;
 uniform float uRuneT;
 varying vec2 vRuneUv;
 void main() {
-  vec2 m = texture2D( uRuneMap, vec2( vRuneUv.x * ${RUNE_REP}.0, vRuneUv.y ) ).rg;
+  vec3 m = texture2D( uRuneMap, vec2( vRuneUv.x * ${RUNE_REP}.0, vRuneUv.y ), -0.7 ).rgb;   // [W4-ARENA] резче на скользящем угле
   float cell = floor( vRuneUv.x * ${RUNE_N}.0 );
   float gu = ( cell + 0.5 ) / ${RUNE_N}.0;
   float h = fract( sin( cell * 12.9898 + 4.1 ) * 43758.5453 );
   vec3 glyph = uRuneBase * ( 0.7 + 0.3 * sin( uRuneT * ( 1.1 + h * 1.9 ) + h * 6.2831 ) );
   vec3 rail = uRuneBase * 0.55;
+  float hot = 0.0;   // [W4-ARENA] фронт волны раскаляет глиф добела
   for ( int i = 0; i < 4; i ++ ) {
     vec4 w = uRuneW[ i ];
     if ( w.z <= 0.0 ) continue;   // пустая волна — без работы (ветка по uniform, бесплатна)
@@ -466,8 +553,14 @@ void main() {
     float pg = max( tg, 0.0 ), pr = max( tr, 0.0 );
     glyph += c.rgb * ( w.z * step( 0.0, tg ) * exp( - pg * c.a ) * ( 1.0 + 1.6 * exp( - pg * 14.0 ) ) * exp( - dg * 1.4 ) );
     rail += c.rgb * ( w.z * 0.5 * step( 0.0, tr ) * exp( - pr * c.a * 1.6 ) * ( 1.0 + 2.5 * exp( - pr * 22.0 ) ) * exp( - dr * 1.4 ) );
+    hot += w.z * step( 0.0, tg ) * exp( - pg * 9.0 ) * exp( - dg * 2.0 );
   }
-  gl_FragColor = vec4( glyph * m.r + rail * m.g, 1.0 );
+  // [W4-ARENA] ярче и мягче: ядро + ореол (B), по направляющим медленно бегут три бусины света
+  float bead = pow( 0.5 + 0.5 * sin( ( vRuneUv.x * 3.0 - uRuneT * 0.03 ) * 6.2831853 ), 48.0 );
+  vec3 col = glyph * m.r * 1.45 + rail * m.g * 1.15 + ( glyph * 0.5 + rail * 0.28 ) * m.b;
+  col += uRuneBase * bead * ( m.g * 3.5 + m.b * 0.6 );
+  col += vec3( 1.0, 0.94, 0.84 ) * hot * m.r * 1.1;
+  gl_FragColor = vec4( col, 1.0 );
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -1397,13 +1490,18 @@ float ashPuddle( vec2 xz ) {
   sigil.receiveShadow = true;
   sigil.name = 'oath-sigil';
   env.add(sigil);
-  // Золотая инкрустация по границе арены (с разрывами)
-  for (let i = 0; i < 6; i++) {
-    const a0 = (i / 6) * TAU + 0.1, len = TAU / 6 - 0.16 - (i % 2) * 0.08;
-    const ring = new THREE.Mesh(G(new THREE.RingGeometry((wc.arenaRadius - 0.04) * 1, (wc.arenaRadius + 0.05) * 1, 48, 1, a0, len)), matGold);
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.052;
+  // Золотая инкрустация по границе арены (с разрывами). [W4-ARENA] шесть дуг — одна геометрия (было 6 вызовов)
+  {
+    const arcs = [];
+    for (let i = 0; i < 6; i++) {
+      const a0 = (i / 6) * TAU + 0.1, len = TAU / 6 - 0.16 - (i % 2) * 0.08;
+      const g = new THREE.RingGeometry((wc.arenaRadius - 0.04) * 1, (wc.arenaRadius + 0.05) * 1, 48, 1, a0, len);
+      g.rotateX(-Math.PI / 2); g.translate(0, 0.052, 0);
+      arcs.push(g);
+    }
+    const ring = new THREE.Mesh(G(mergeGeos(arcs)), matGold);
     ring.receiveShadow = true;
+    ring.name = 'arena-gold-inlay';
     env.add(ring);
   }
   // Светящиеся трещины от печати (аддитивная декаль)
@@ -1729,29 +1827,38 @@ float ashPuddle( vec2 xz ) {
     env.add(water);
   }
 
-  // Хребты-силуэты: два кольца, туман разводит их по глубине.
-  function ridge(radius, count, baseY, hMin, hMax, color, seed) {
-    const pos = [], idx = [];
+  // Хребты-силуэты. [W4-ARENA] Три слоя гор (воздушная перспектива: дальние выше, светлее и синее) и шпили мёртвого
+  // города — одна геометрия с цветом вершин и одним вызовом отрисовки (было 4). Гребни и острия подсвечивает корона
+  // затмения с той стороны, где оно стоит (шейдер следует за затмением); низ тонет в высотном тумане.
+  const farSil = { pos: [], col: [], rim: [], idx: [] };
+  const _fc = new THREE.Color();
+  function farPush(x, y, z, hex, rim) { _fc.set(hex); farSil.pos.push(x, y, z); farSil.col.push(_fc.r, _fc.g, _fc.b); farSil.rim.push(rim); }
+  function ridge(radius, count, baseY, hMin, hMax, color, seed, o = {}) {
     const nz = makeNoise(seed);
+    const b0 = farSil.pos.length / 3;
     for (let i = 0; i <= count; i++) {
       const u = i / count, a = u * TAU;
-      let h = hMin + (hMax - hMin) * nz.fbm(u * 9, 0.5, 9, 5);
+      // острые гребни: ridged-шум (1 − |2n − 1|)², бесшовно по кругу (период — число ячеек)
+      let rs = 0, amp = 0.5, fq = o.freq || 9, nrm = 0;
+      for (let k = 0; k < 4; k++) { const v = 1 - Math.abs(2 * nz.n2(u * fq, 0.5 + k * 3.1, fq) - 1); rs += amp * v * v; nrm += amp; amp *= 0.5; fq *= 2; }
+      let h = hMin + (hMax - hMin) * Math.pow(rs / nrm, o.sharp || 1);
       const spike = nz.n2(u * 40, 3.3, 40);
-      if (spike > 0.83) h += (spike - 0.83) * 60;
+      if (spike > 0.83) h += (spike - 0.83) * (o.spike || 60);
+      // долина под затмением: кадр «камера → Регент → затмение» обрамляют склоны, а не закрывает гребень
+      const de = wrapAngle(a - deg(ECLIPSE.azimuth));
+      h = lerp(h, baseY + (h - baseY) * 0.55, Math.exp(-(de * de) / 0.05) * (o.valley || 0));
       const r = radius * (1 + (nz.n2(u * 20, 7.1, 20) - 0.5) * 0.08);
-      pos.push(Math.sin(a) * r, baseY, Math.cos(a) * r, Math.sin(a) * r, h, Math.cos(a) * r);
-      if (i < count) { const b = i * 2; idx.push(b, b + 2, b + 1, b + 1, b + 2, b + 3); }
+      const x = Math.sin(a) * r, z = Math.cos(a) * r;
+      farPush(x, baseY, z, color, 0);
+      farPush(x, h, z, color, 1);
+      if (i < count) { const b = b0 + i * 2; farSil.idx.push(b, b + 2, b + 1, b + 1, b + 2, b + 3, b, b + 1, b + 2, b + 1, b + 3, b + 2); }   // гребень — с обеих сторон, шпили — лицом
     }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setIndex(idx);
-    g.computeBoundingSphere();
-    const m = new THREE.Mesh(G(g), M(new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, fog: true })));
-    m.frustumCulled = false;
-    env.add(m);
-    return m;
   }
-  ridge(skyR * 0.8, 260, -40, 22, 58, 0x1a202b, wc.seed + 112);
+  // горы — за шпилями мёртвого города (те до 0,74 радиуса неба); высоты — над краем рельефа большой карты
+  // (он закрывает горизонт до ~5°): вершины встают на 6–12°
+  ridge(skyR * 0.78, 260, -40, 14, 124, 0x141922, wc.seed + 113, { valley: 1, sharp: 2.4, freq: 7, spike: 70 });
+  ridge(skyR * 0.87, 280, -40, 26, 156, 0x192029, wc.seed + 114, { valley: 0.8, sharp: 2.1, freq: 9, spike: 90 });
+  ridge(skyR * 0.95, 300, -40, 40, 190, 0x1f2632, wc.seed + 112, { valley: 0.6, sharp: 1.8, freq: 6, spike: 110 });
 
   /* --------------------------- Руины: колонны --------------------------- */
   const shaftGeo = (() => {
@@ -1805,9 +1912,11 @@ float ashPuddle( vec2 xz ) {
   const shafts = [], tops = [], caps = [], plinths = [], blocks = [];
   const GROUND_Y = -1.0;
   const stoneTint = (rnd, k = 1) => { const v = (0.86 + rnd() * 0.22) * k; return new THREE.Color(v * 1.02, v, v * 0.97); };
+  const arenaRuins = [];   // [W4-ARENA] у руин кружат мотыльки света
   function column(aDeg, r, type, h, tier, rnd) {
     const base = polar(aDeg, r * K, GROUND_Y);
     const rad = 0.62 + rnd() * 0.1;
+    arenaRuins.push({ x: base.x, z: base.z, r: rad * 1.3 });   // [W4-ARENA]
     const yaw = rnd() * TAU;
     const lean = type === 'tall' ? 0 : (rnd() - 0.5) * 0.06;
     const tint = stoneTint(rnd);
@@ -2510,7 +2619,12 @@ float ashPuddle( vec2 xz ) {
       for (let i = 0; i < 4; i++) addSegment(c4[i].x, c4[i].z, c4[(i + 1) % 4].x, c4[(i + 1) % 4].z, 0.3);
     }
     env.add(portalGroup);
-    const add = (geo, x, y, z, mat = matFar) => { const m = new THREE.Mesh(G(geo), mat); m.position.set(x, y, z); portalGroup.add(m); return m; };
+    // [W4-ARENA] камень святилища (matFar) — одна геометрия в системе группы (было 8 вызовов); завеса и вихри — свои меши
+    const farParts = [];
+    const add = (geo, x, y, z, mat = matFar) => {
+      if (mat === matFar) { geo.translate(x, y, z); farParts.push(geo); return null; }
+      const m = new THREE.Mesh(G(geo), mat); m.position.set(x, y, z); portalGroup.add(m); return m;
+    };
     add(chiseled(34, 1.6, 12, { bevel: 0.3, jitter: 0.2, uvScale: 3 }), 0, 0.8, 0);
     add(chiseled(26, 1.6, 9, { bevel: 0.3, jitter: 0.2, uvScale: 3 }), 0, 2.4, -0.5);
     add(chiseled(19, 1.6, 7, { bevel: 0.3, jitter: 0.2, uvScale: 3 }), 0, 4.0, -1);
@@ -2542,23 +2656,25 @@ float ashPuddle( vec2 xz ) {
     const swirl2 = add(sw.clone(), 0, 4.8 + 7.2, -0.7, addMat(0x8fb2de, 0.22, texSpiral));
     G(swirl2.geometry);
     portalGroup.userData.swirls = [swirl, swirl2];
-    // далёкие руины-башни
+    { const m = new THREE.Mesh(G(mergeGeos(farParts.splice(0))), matFar); m.name = 'far-shrine-stone'; portalGroup.add(m); }
+    // далёкие руины-башни. [W4-ARENA] шесть башен с обломанными верхушками — одна геометрия (было 12 вызовов)
     const rnd = mulberry32(wc.seed + 131);
+    const towerParts = [];
     for (const [a, r, h0] of [[128, 44, 16], [218, 47, 13], [60, 50, 19], [300, 45, 15], [15, 52, 12], [258, 58, 22]]) {
       const pp = polar(a, r * K);
       const gy = Math.min(GROUND_Y, groundY(pp.x, pp.z).y);
       const h = h0 + (GROUND_Y - gy); // башня за обрывом вырастает из моря тумана
-      const tw = new THREE.Mesh(G(chiseled(3.4 + rnd() * 1.4, h, 3.4 + rnd(), { bevel: 0.3, jitter: 0.4, taperTop: 0.75, uvScale: 3, seed: a })), matFar);
-      tw.position.copy(polar(a, r * K, gy + h / 2 - 0.5));
-      addCircle(tw.position.x, tw.position.z, 2.3);
-      tw.rotation.y = rnd() * TAU;
-      tw.rotation.z = (rnd() - 0.5) * 0.08;
-      env.add(tw);
-      const top = new THREE.Mesh(brokenTopGeo, matFar);
-      top.position.copy(tw.position).setY(gy + h - 0.6);
-      top.scale.set(2, 2.5, 2);
-      env.add(top);
+      const twG = chiseled(3.4 + rnd() * 1.4, h, 3.4 + rnd(), { bevel: 0.3, jitter: 0.4, taperTop: 0.75, uvScale: 3, seed: a });
+      const tp = polar(a, r * K, gy + h / 2 - 0.5);
+      addCircle(tp.x, tp.z, 2.3);
+      _e.set(0, rnd() * TAU, (rnd() - 0.5) * 0.08);
+      towerParts.push(twG.applyMatrix4(_m4.compose(tp, _q.setFromEuler(_e), _s.set(1, 1, 1))));
+      _e.set(0, 0, 0);
+      towerParts.push(brokenTopGeo.clone().applyMatrix4(_m4.compose(_v.set(tp.x, gy + h - 0.6, tp.z), _q.setFromEuler(_e), _s.set(2, 2.5, 2))));
     }
+    const towers = new THREE.Mesh(G(mergeGeos(towerParts)), matFar);
+    towers.name = 'far-towers';
+    env.add(towers);
   }
 
   /* ------------- Колоссы без кистей, шпили мёртвого города (Библия, разд. 2–3) ------------- */
@@ -2592,12 +2708,15 @@ float ashPuddle( vec2 xz ) {
     parts.push(skirt);
     return G(mergeGeos(parts));
   }
-  for (const [a, lift, r] of [[160, 2.5, 372], [222, -1.5, 392]]) { // [ASHEN_V3] за краем большой карты
-    const c = new THREE.Mesh(colossusGeo(lift), matColossus);
-    const pos = polar(a, r);
-    c.position.set(pos.x, -48, pos.z);
-    c.scale.setScalar(1.35);
-    c.rotation.y = Math.atan2(-pos.x, -pos.z) + (a < 190 ? -0.25 : 0.25);
+  {
+    // [ASHEN_V3] за краем большой карты. [W4-ARENA] оба колосса — одна геометрия (было 2 вызова)
+    const parts = [];
+    for (const [a, lift, r] of [[160, 2.5, 372], [222, -1.5, 392]]) {
+      const pos = polar(a, r);
+      _e.set(0, Math.atan2(-pos.x, -pos.z) + (a < 190 ? -0.25 : 0.25), 0);
+      parts.push(colossusGeo(lift).applyMatrix4(_m4.compose(_v.set(pos.x, -48, pos.z), _q.setFromEuler(_e), _s.setScalar(1.35))));
+    }
+    const c = new THREE.Mesh(G(mergeGeos(parts)), matColossus);
     c.frustumCulled = false;
     c.name = 'colossus';
     env.add(c);
@@ -2633,14 +2752,49 @@ float ashPuddle( vec2 xz ) {
         windowPos.push(x + Math.sin(toC) * w * 0.6, base + h * lerp(0.72, 0.92, rr()), z + Math.cos(toC) * w * 0.6);
       }
     }
-    const mesh = new THREE.Mesh(G(mergeGeos(parts)), M(new THREE.MeshBasicMaterial({ color, fog: true })));
-    mesh.frustumCulled = false;
-    mesh.name = 'dead-city';
-    env.add(mesh);
+    // [W4-ARENA] в общий меш силуэтов: цвет слоя в вершинах, «кромка» — доля высоты (острия ловят корону)
+    for (const g of parts) {
+      const pa = g.attributes.position, ix = g.index, b0 = farSil.pos.length / 3;
+      for (let i = 0; i < pa.count; i++) farPush(pa.getX(i), pa.getY(i), pa.getZ(i), color, clamp((pa.getY(i) - base) / (hMax * 1.6), 0, 1));
+      if (ix) for (let i = 0; i < ix.count; i++) farSil.idx.push(ix.getX(i) + b0);
+      else for (let i = 0; i < pa.count; i++) farSil.idx.push(b0 + i);
+      g.dispose();
+    }
   }
   spireLayer(skyR * 0.46, 30, 34, 92, 170, wc.seed + 151, 0x161b24, true);
   spireLayer(skyR * 0.6, 38, 44, 122, 210, wc.seed + 152, 0x1b212c, true);
   spireLayer(skyR * 0.74, 44, 60, 150, 240, wc.seed + 153, 0x202732, false);
+  {
+    // [W4-ARENA] горы и шпили — один меш; подсветка гребней короной: pow(кромка) × близость взгляда к затмению
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(farSil.pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(farSil.col, 3));
+    g.setAttribute('aRim', new THREE.Float32BufferAttribute(farSil.rim, 1));
+    g.setIndex(farSil.idx);
+    g.computeBoundingSphere();
+    const mat = M(new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, fog: true }));
+    const sk = atmo.skyU;
+    mat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, { uASun: sk.uSun, uACorona: sk.uCorona, uACoronaI: sk.uCoronaI });
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aRim;\nvarying float vARim;\nvarying vec3 vAFarW;')
+        .replace('#include <project_vertex>', '#include <project_vertex>\n  vARim = aRim;\n  vAFarW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform vec3 uASun;\nuniform vec3 uACorona;\nuniform float uACoronaI;\nvarying float vARim;\nvarying vec3 vAFarW;')
+        .replace('#include <opaque_fragment>', `{
+    float aS = max( dot( normalize( vAFarW - cameraPosition ), uASun ), 0.0 );
+    float aE = pow( vARim, 9.0 );
+    outgoingLight += uACorona * uACoronaI * aE * ( pow( aS, 28.0 ) * 1.8 + pow( aS, 6.0 ) * 0.3 );
+    outgoingLight *= 1.0 - 0.35 * ( 1.0 - vARim );
+  }
+  #include <opaque_fragment>`);
+    };
+    mat.customProgramCacheKey = () => 'ashFarSil';
+    const mesh = new THREE.Mesh(G(g), mat);
+    mesh.frustumCulled = false;
+    mesh.name = 'far-silhouettes';
+    env.add(mesh);
+  }
   {
     // 5–8 тёплых окон: «далёкая жизнь». HDR-цвет пробивается сквозь максимум тумана 0.97.
     const wg = new THREE.BufferGeometry();
@@ -2660,60 +2814,52 @@ float ashPuddle( vec2 xz ) {
     const ribs = [[148, 18.0, 9.2, 0.78], [163, 17.6, 9.0, 0.5], [212, 18.2, 8.6, 0.84], [108, 18.6, 9.6, 0.62],
       [252, 18.4, 9.0, 0.7], [30, 18.8, 8.8, 0.74], [330, 18.6, 9.1, 0.58]];
     const apex = new THREE.Vector3(0, 25, 0);
-    const chunkGeo = G(rockGeo(1.1, 1, 171, 0.8));
+    const chunkGeo = rockGeo(1.1, 1, 171, 0.8);
+    const ribParts = [];   // [W4-ARENA] семь рёбер и обломки — одна геометрия (было 14 вызовов и столько же в тени)
     for (const [a, r, h, keep] of ribs) {
       const y0 = GROUND_Y + 0.7 + h + 0.75;
       const curve = new THREE.CubicBezierCurve3(polar(a, r * K * 0.99, y0), polar(a, r * K * 0.82, y0 + 6.5), polar(a, r * K * 0.38, apex.y), apex.clone());
       const pts = [];
       for (let i = 0; i <= 24; i++) pts.push(curve.getPoint((i / 24) * keep));
       const part = new THREE.CatmullRomCurve3(pts);
-      const tube = new THREE.Mesh(G(new THREE.TubeGeometry(part, 40, 0.62, 6, false)), matStone);
-      tube.castShadow = true; tube.receiveShadow = true;
-      tube.name = 'dome-rib';
-      env.add(tube);
+      ribParts.push(new THREE.TubeGeometry(part, 40, 0.62, 6, false));
       const end = pts[pts.length - 1];
-      const chunk = new THREE.Mesh(chunkGeo, matStone);
-      chunk.position.copy(end);
-      chunk.rotation.set(ribRnd() * 3, ribRnd() * 3, ribRnd() * 3);
-      chunk.scale.setScalar(0.7 + ribRnd() * 0.3);
-      chunk.castShadow = true;
-      env.add(chunk);
+      _e.set(ribRnd() * 3, ribRnd() * 3, ribRnd() * 3);
+      const sc = 0.7 + ribRnd() * 0.3;
+      ribParts.push(chunkGeo.clone().applyMatrix4(_m4.compose(end, _q.setFromEuler(_e), _s.setScalar(sc))));
     }
+    chunkGeo.dispose();
+    const ribMesh = new THREE.Mesh(G(mergeGeos(ribParts)), matStone);
+    ribMesh.castShadow = true; ribMesh.receiveShadow = true;
+    ribMesh.name = 'dome-ribs';
+    env.add(ribMesh);
   }
 
-  /* ------------------------------ Жаровни ------------------------------ */
-  const braziers = [];
-  {
-    const pedGeo = G((() => { const g = lathe([[0.36, 0], [0.34, 0.08], [0.24, 0.16], [0.21, 0.72], [0.28, 0.82], [0.3, 0.9], [0.0005, 0.9]], 14); boxProjectUV(g, 1.2); return g; })());
-    const bowlGeo = G(lathe([[0.0005, 0], [0.12, 0.0], [0.3, 0.08], [0.46, 0.26], [0.5, 0.36], [0.46, 0.37], [0.4, 0.28], [0.0005, 0.2]], 18));
-    const coalGeo = G(rockGeo(0.34, 1, 44, 0.45));
-    const decalGeo = G(new THREE.PlaneGeometry(1, 1));
-    const matPool = addMat(0xff8a3a, 0.28, texGlow);
-    const angles = [150, 210, 330, 30, 90, 270];
-    angles.forEach((a, i) => {
-      const grp = new THREE.Group();
-      const p = polar(a, 11.25 * K, -0.3);
-      grp.position.copy(p);
-      addCircle(p.x, p.z, 0.5);
-      env.add(grp);
-      const ped = new THREE.Mesh(pedGeo, matStone); ped.castShadow = true; ped.receiveShadow = true; grp.add(ped);
-      const bowl = new THREE.Mesh(bowlGeo, matIron); bowl.position.y = 0.88; bowl.castShadow = true; grp.add(bowl);
-      const coals = new THREE.Mesh(coalGeo, matCoals); coals.position.y = 1.15; grp.add(coals);
-      const outer = new THREE.Sprite(M(new THREE.SpriteMaterial({ map: texGlow, color: 0xff7a30, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })));
-      outer.material.color.multiplyScalar(1.6);
-      outer.position.y = 1.55; outer.scale.set(1.5, 2.0, 1); grp.add(outer);
-      const core = new THREE.Sprite(M(new THREE.SpriteMaterial({ map: texGlow, color: 0xffc27a, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })));
-      core.material.color.multiplyScalar(4.2);
-      core.position.y = 1.38; core.scale.set(0.55, 0.95, 1); grp.add(core);
-      const pool = new THREE.Mesh(decalGeo, matPool);
-      pool.rotation.x = -Math.PI / 2; pool.position.y = 0.02; pool.scale.set(4.2, 4.2, 1); pool.renderOrder = 2; grp.add(pool);
-      const light = new THREE.PointLight(0xff8a3d, 14 * LI.point, 8, 2);
-      light.position.y = 1.7;
-      light.visible = false;
-      grp.add(light);
-      braziers.push({ grp, outer, core, light, phase: i * 1.7 });
-    });
+  /* -------------- [W4-ARENA] Жаровни, столпы-светильники и воздух арены (modules/arenaFx.js) -------------- */
+  // Было: 6 жаровен по 6 вызовов отрисовки (подножие, чаша, угли, два спрайта, декаль) — 36. Стало: 6 жаровен и 6 столпов
+  // у целых колонн — 5 вызовов на всё (3 инстанса, живое пламя, воздух); лужицы тепла и блики — в шейдере пола.
+  // Свет — общий пул (low 0, medium 2, high 4 — как было у жаровен), едет к ближайшим к герою огням.
+  const ARENA_BRAZIER_AZ = [150, 210, 330, 30, 90, 270];
+  const ARENA_TORCH_AZ = [[148, 18.0], [163, 17.6], [212, 18.2], [252, 18.4], [330, 18.6], [30, 18.8]];   // перед целыми колоннами
+  const arenaFires = ARENA_BRAZIER_AZ.map((a) => {
+    const p = polar(a, 11.25 * K, -0.3);
+    addCircle(p.x, p.z, 0.55);
+    return { x: p.x, y: -0.3, z: p.z, kind: 'brazier' };
+  });
+  for (const [a, r] of ARENA_TORCH_AZ) {
+    const p = polar(a, (r - 1.75) * K);
+    addCircle(p.x, p.z, 0.34);
+    arenaFires.push({ x: p.x, y: terrainH(p.x, p.z) - 0.05, z: p.z, kind: 'torch' });
   }
+  const arenaFx = createArenaFx({
+    THREE, parent: env, G, M, renderer, fires: arenaFires, ruins: arenaRuins.filter((q) => Math.hypot(q.x, q.z) < 40 * K),
+    groundY: (x, z) => { const r = Math.hypot(x, z) / K; return r < 10.9 ? 0 : r < 13 ? -0.3 - 0.3 * Math.floor((r - 10.9) / 0.7) : terrainH(x, z); },
+    materials: { stone: matStone, iron: matIron, coals: matCoals }, LI, quality: initialQuality, reducedMotion: wc.reducedMotion,
+    seed: wc.seed, runeU, sky: atmo.skyU, runeR: 3.82 * K, embersR: [2.5 * K, 21 * K],
+  });
+  const arenaCtx = { focus: null, cam: null, fade: 1 };   // кадр без аллокаций
+  arenaFx.patchLit(matFloor, 'floor');
+  arenaFx.patchLit(matTerrain, 'terrain');
 
   /* ------------------------------ Пепел ------------------------------ */
   const ASH_MAX = Math.ceil(QUALITY_PRESETS.high.ash * 1.6);   // [W3-КИНО] запас под густой пепел второй фазы (буферы — один раз)
@@ -4848,14 +4994,12 @@ float ashPuddle( vec2 xz ) {
       else if (kino.ashEmbers && ashW < 0.15) setAshEmbers(false);
       ash.material.color.setRGB(1, 1 - 0.1 * ashW, 1 - 0.16 * ashW);
     }
-    for (let i = 0; i < braziers.length; i++) {
-      const bz = braziers[i];
-      const f = 0.82 + 0.1 * Math.sin(time * 11.3 + bz.phase) + 0.08 * Math.sin(time * 23.7 + bz.phase * 2.1) * rm;
-      const g = 0.9 + 0.1 * Math.sin(time * 7.1 + bz.phase * 1.3);
-      bz.outer.scale.set(1.5 * g, 2.0 * f, 1);
-      bz.core.scale.set(0.55 * f, 0.95 * g, 1);
-      bz.outer.material.opacity = 0.45 + 0.12 * f;
-      if (bz.light.visible) bz.light.intensity = 14 * LI.point * (0.85 + 0.3 * (f - 0.82));
+    // [W4-ARENA] огни, воздух, пул света; лужицы тепла и блики на полу — uniform-ы его шейдера
+    arenaCtx.focus = heroRoot.position; arenaCtx.cam = camera;
+    arenaFx.update(dt, arenaCtx);
+    if (camera && typeof atmo.setGroundHaze === 'function') {   // [W4-ARENA] лунная дымка у пола — только у арены
+      const cd = Math.hypot(camera.position.x, camera.position.z);
+      atmo.setGroundHaze((1 - smoothstep(24, 56, cd)) * (1 - (elfVillage ? elfVillage.weight : 0)) * (1 - (brightForest ? brightForest.weight : 0)));
     }
     if (ash.visible) {
       const n = ashGeo.drawRange.count;
@@ -4979,7 +5123,7 @@ float ashPuddle( vec2 xz ) {
     }
     for (const it of instTiers) it.mesh.count = it.counts[q.tier];
     ashGeo.setDrawRange(0, q.ash);
-    braziers.forEach((bz, i) => { bz.light.visible = i < q.brazierLights; });
+    arenaFx.setQuality(quality, q.brazierLights);   // [W4-ARENA] пул света огней, частицы, отражения
     // [W4-BOSS] Регент: рой осколков (low — нет), дым теней (low — один слой из двух)
     B.swarm.count = q.tier === 0 ? 0 : q.tier === 1 ? 8 : B.swarmP.length;
     B.swarm.visible = B.swarm.count > 0 && !kino.shattered;   // рассыпанное тело (W3) рой не «проявляет»
@@ -5012,6 +5156,7 @@ float ashPuddle( vec2 xz ) {
     if (root.parent) root.parent.remove(root);
     if (elfVillage) elfVillage.dispose();
     if (brightForest) brightForest.dispose();   // [FOREST]
+    arenaFx.dispose();   // [W4-ARENA]
     atmo.dispose();
     if (renderer && renderer.shadowMap && wc.manageShadowMap && prevShadowEnabled !== undefined) renderer.shadowMap.enabled = prevShadowEnabled;
     root.traverse((o) => {
@@ -5040,6 +5185,7 @@ float ashPuddle( vec2 xz ) {
     if ('reducedMotion' in patch) atmo.configure({ reducedMotion: !!patch.reducedMotion });
     if ('reducedMotion' in patch && elfVillage) elfVillage.configure({ reducedMotion: !!patch.reducedMotion });
     if ('reducedMotion' in patch && brightForest) brightForest.configure({ reducedMotion: !!patch.reducedMotion });   // [FOREST]
+    if ('reducedMotion' in patch) arenaFx.configure({ reducedMotion: !!patch.reducedMotion });   // [W4-ARENA]
     if ('ambientAsh' in patch) { wc.ambientAsh = !!patch.ambientAsh; ash.visible = wc.ambientAsh; }
     if ('quality' in patch) setQuality(patch.quality);
   }
