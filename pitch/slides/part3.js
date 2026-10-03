@@ -248,6 +248,8 @@
     '<g data-step="4">' + GAP[3] + node(5, X[4], 0, ICON.tri, 'Бой', ['three.js 0.185']) + '</g>' +
     '</svg>';
 
+  // «Поза через кадр» на 63f908a не работает (убрана в 7532fe0, поза считается на каждом кадре),
+  // поэтому про слабое железо — только то, что есть в коде: core/perfTuner.js и смена модели позы в main.js.
   Q.push({
     n: 10, sec: 40,
     html: `<section class="slide p3-slide p3-s10" data-slide="10" data-title="Как это работает">
@@ -260,7 +262,7 @@
     <ul class="p3-s10__facts">
       <li><svg class="p3-ico" viewBox="0 0 48 48" aria-hidden="true"><path d="M14 34h21a8 8 0 0 0 1-15.9A11 11 0 0 0 15 16a9 9 0 0 0-1 18z"/><path d="M8 42 40 8"/></svg><span><b>0 кадров в сеть,</b> микрофон не используется</span></li>
       <li><svg class="p3-ico" viewBox="0 0 48 48" aria-hidden="true"><path d="M6 16 24 7l18 9v18l-18 9-18-9z"/><path d="M6 16l18 9 18-9M24 25v18"/></svg><span><b>Офлайн:</b> всё в vendor/, service worker</span></li>
-      <li><svg class="p3-ico" viewBox="0 0 48 48" aria-hidden="true"><path d="M7 34a17 17 0 1 1 34 0"/><path d="M24 34 33 20"/><circle cx="24" cy="34" r="3"/></svg><span><b>Слабое железо:</b> поза через кадр, кисти каждый кадр, автонастройка качества</span></li>
+      <li><svg class="p3-ico" viewBox="0 0 48 48" aria-hidden="true"><path d="M7 34a17 17 0 1 1 34 0"/><path d="M24 34 33 20"/><circle cx="24" cy="34" r="3"/></svg><span><b>Слабое железо:</b> автонастройка разрешения и качества, быстрая модель позы, если точная не успевает</span></li>
     </ul>
   </div>
   <aside class="notes">Видео не покидает ноутбук: распознавание идёт в браузере, в отдельном потоке на видеокарте. Все библиотеки лежат в репозитории, поэтому игра работает без интернета — на сцене и в школе. На слабом ноутбуке игра сама снижает нагрузку.</aside>

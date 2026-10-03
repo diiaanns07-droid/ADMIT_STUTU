@@ -129,6 +129,8 @@
   background: color-mix(in srgb, var(--ink) 82%, transparent); border: 1px solid var(--line); white-space: nowrap;
 }
 [data-slide="8"] .p3-wipe__tag--before { left: 18px; color: var(--muted); }
+/* в меню метка уходит вниз, чтобы не закрывать название; в бою — закрывает плашку отладки сверху слева */
+[data-slide="8"] .p3-wipe__pair--menu .p3-wipe__tag--before { top: auto; bottom: 18px; }
 [data-slide="8"] .p3-wipe__tag--after { right: 18px; color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
 
 [data-slide="8"] .p3-s8__caps { position: absolute; left: 1136px; top: 0; width: 544px; display: flex; flex-direction: column; gap: 34px; }
@@ -221,6 +223,9 @@
 /* ---------------------------------------------------------------- печать: все шаги раскрыты, шторка — кадры рядом */
 @media print {
   .p3-slide [class*="p3-"], .p3-slide [class*="p3-"]::before, .p3-slide [class*="p3-"]::after { transition: none !important; animation: none !important; }
+  /* золотой градиент по тексту (background-clip: text) Chrome печатает в PDF с рамкой-волоском — в печати цифры сплошным золотом */
+  .p3-body .num, .p3-slide .p3-val, [data-slide="7"] .p3-tl__date { background: none; color: var(--gold-hi); -webkit-text-fill-color: var(--gold-hi); }
+  [data-slide="7"] .p3-tl__node--base .p3-tl__date { color: var(--muted); -webkit-text-fill-color: var(--muted); }
   [data-slide="7"] .p3-tl__fill { transform: none; }
   [data-slide="7"] .p3-tl__gem::after { opacity: 1; }
   [data-slide="7"] .p3-tl__node--base .p3-tl__gem::after { opacity: 0; }
@@ -234,6 +239,7 @@
   [data-slide="8"] .p3-wipe__edge { display: none; }
   [data-slide="8"] .p3-wipe__tag { top: 8px; font-size: 20px; line-height: 24px; padding: 3px 9px; }
   [data-slide="8"] .p3-wipe__tag--before { left: 8px; }
+  [data-slide="8"] .p3-wipe__pair--menu .p3-wipe__tag--before { top: auto; bottom: 8px; }
   [data-slide="8"] .p3-wipe__tag--after { right: 8px; }
   [data-slide="10"] .p3-d-run { display: none; }
   [data-slide="10"] .p3-s10__facts { opacity: 1; transform: none; }
