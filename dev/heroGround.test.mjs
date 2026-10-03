@@ -1,0 +1,229 @@
+// [W5-ПОЛ] node-тест: герои стоят на полу и не «плывут» по высоте. Без браузера, на настоящих моделях
+// (assets/heroes/*.glb) и клипах KayKit — тот же путь, что в игре: vrmKit.retargetClip → heroModel (посадка,
+// микшер, слой поз heroPoses, наклон обёртки, подошва не ниже пола).
+//   1. Перенос клипов: в кадрах, где стопа источника стоит, подошва цели на полу (±1 см) — у всех клипов
+//      библиотеки и всех трёх моделей; в полёте (бег, прыжок, подскок рывка) — не ниже пола.
+//   2. Каждый из пяти героев по кругу: витрина меню, покой, ходьба, бег, рывок, касты, щит, сфера, «Небесный суд»,
+//      удары по герою, победа, поражение, снова покой; смены героев между кругами. Подошва никогда не глубже
+//      2 см под полом; стоя — |подошва − пол| ≤ 2 см; таз и подошва в покое в конце — там же, где в начале.
+//   3. low / high: то же для покоя и победы; пол сцены выше корня (витрина) — подошва на нём.
+// three.js: ASHEN_THREE или vendor/ (как остальные тесты); 'three/addons/' и '@pixiv/three-vrm' — из vendor/.
+import assert from 'node:assert/strict';
+import { register } from 'node:module';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const VEND = join(HERE, '../vendor/npm');
+const THREE_PATH = [process.env.ASHEN_THREE, join(VEND, 'three@0.185.1/build/three.module.min.js')].find((p) => p && existsSync(p));
+assert.ok(THREE_PATH, 'three.js не найден (vendor/npm/three@0.185.1 или ASHEN_THREE)');
+// импорты как importmap index.html: одна копия three на тест, загрузчик GLTF и three-vrm
+const MAP = {
+  three: pathToFileURL(THREE_PATH).href,
+  addons: pathToFileURL(join(VEND, 'three@0.185.1/examples/jsm/')).href,
+  vrm: pathToFileURL(join(VEND, '@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js')).href,
+};
+register('data:text/javascript,' + encodeURIComponent(`const M = ${JSON.stringify(MAP)};
+export async function resolve(s, c, n) {
+  if (s === 'three') return { url: M.three, shortCircuit: true };
+  if (s.startsWith('three/addons/')) return { url: M.addons + s.slice(13), shortCircuit: true };
+  if (s === '@pixiv/three-vrm') return { url: M.vrm, shortCircuit: true };
+  return n(s, c);
+}`));
+// модели и клипы — с диска (fetch по file:), GLTFLoader берёт URL у self; картинки текстур в node не нужны
+const fetch0 = globalThis.fetch;
+globalThis.fetch = async (u, o) => {
+  const s = String(u);
+  if (!s.startsWith('file:')) return fetch0(u, o);
+  const b = readFileSync(fileURLToPath(s));
+  return { ok: true, status: 200, arrayBuffer: async () => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) };
+};
+globalThis.self = globalThis;
+const quiet = { error: console.error, warn: console.warn };
+const noise = [];
+console.error = (...a) => noise.push(a.join(' ')); console.warn = (...a) => noise.push(a.join(' '));
+
+const THREE = await import('three');
+const K = await import('../modules/vrmKit.js');
+const HM = await import('../modules/heroModel.js');
+const { clone } = await import('three/addons/utils/SkeletonUtils.js');
+const HEROES_URL = pathToFileURL(join(HERE, '../assets/heroes/')).href;
+const bytes = (f) => { const b = readFileSync(join(HERE, '../assets/heroes', f)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
+const TOL = 0.02;
+const cm = (x) => `${(x * 100).toFixed(1)} см`;
+const out = [];
+const log = (m) => out.push(m);
+
+// ---------------------------------------------------------------- 1. перенос клипов: опора на полу
+{
+  const loader = await K.createGltfLoader();
+  const lib = await loader.parseAsync(bytes('anims_kaykit.glb'), '');
+  const src = clone(lib.scene);
+  // опора источника — как в retargetClip: голеностоп и носок над своим покоем (нижняя из четырёх точек)
+  const byName = (n) => src.getObjectByName(n) || src.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(n));
+  src.updateMatrixWorld(true);
+  const sf = ['foot.l', 'toes.l', 'foot.r', 'toes.r'].map((n) => byName(n)).filter(Boolean);
+  assert.equal(sf.length, 4, 'у KayKit есть кости стоп и носков');
+  const sf0 = sf.map((o) => o.getWorldPosition(new THREE.Vector3()).y);
+  const hips0 = byName('hips').getWorldPosition(new THREE.Vector3()).y;
+  const v = new THREE.Vector3();
+  for (const f of ['knight.glb', 'ranger.glb', 'wizard.glb']) {
+    const vrm = await K.loadHumanoidGLB(THREE, HEROES_URL + f, undefined, bytes(f));
+    const m = K.soleMarkers(THREE, vrm);
+    assert.ok(m && m.L.length >= 3 && m.R.length >= 3, `${f}: точки подошвы обеих стоп`);
+    // подошва в покое — низ модели (пол модели), точки — на ней
+    vrm.scene.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(vrm.scene);
+    assert.ok(Math.abs(m.restY - box.min.y) < 0.01, `${f}: подошва в покое — низ модели (${cm(m.restY)} и ${cm(box.min.y)})`);
+    let worst = { c: 0, f: 0 };
+    for (const clip of lib.animations) {
+      const rc = K.retargetClip(THREE, clip, src, vrm, 30, 'kaykit');
+      const mixS = new THREE.AnimationMixer(src), aS = mixS.clipAction(clip);
+      aS.setLoop(THREE.LoopOnce, 1); aS.clampWhenFinished = true; aS.play();
+      const mixT = new THREE.AnimationMixer(vrm.scene), aT = mixT.clipAction(rc);
+      aT.play();
+      // ключевые кадры клипа (касание — на них) и середины между ними (там — только «не ниже пола»)
+      const keys = Array.from(rc.tracks[0].times), ts = [];
+      for (let i = 0; i < keys.length; i++) { ts.push([keys[i], true]); if (i + 1 < keys.length && i % 3 === 0) ts.push([(keys[i] + keys[i + 1]) / 2, false]); }
+      for (const [t, key] of ts) {
+        mixS.setTime(t); src.updateMatrixWorld(true);
+        mixT.setTime(t); vrm.humanoid.update(); vrm.scene.updateMatrixWorld(true);
+        const lift = Math.min(...sf.map((o, j) => o.getWorldPosition(v).y - sf0[j]));
+        const gap = K.soleHeightSkinned(m) - m.restY;
+        if (key && lift <= K.CONTACT * hips0) worst.c = Math.max(worst.c, Math.abs(gap));   // касание: подошва на полу
+        else worst.f = Math.min(worst.f, gap);                                             // полёт и между кадрами: не ниже пола
+        assert.ok(!key || lift > K.CONTACT * hips0 || Math.abs(gap) <= 0.01, `${f} «${clip.name}» t=${t.toFixed(2)}: стопа источника стоит, а подошва ${cm(gap)} от пола`);
+        // на ключевых кадрах подошва не ниже пола; между ними (линейная смесь двух поз при смене опорной ноги) — до 2 см
+        assert.ok(gap >= (key ? -0.006 : -TOL), `${f} «${clip.name}» t=${t.toFixed(2)}: подошва под полом на ${cm(-gap)}`);
+      }
+      aS.stop(); mixS.uncacheRoot(src); aT.stop(); mixT.uncacheRoot(vrm.scene);
+      vrm.humanoid.resetNormalizedPose(); vrm.humanoid.update();
+    }
+    log(`перенос ${f}: ${lib.animations.length} клипов, касание — до ${cm(worst.c)} от пола, полёт — не ниже ${cm(worst.f)}`);
+  }
+}
+
+// ---------------------------------------------------------------- 2. пять героев по кругу (medium)
+HM.configureHeroes({ quality: 'medium', shading: 'realistic' });
+const model = HM.createHeroModel({ THREE, hero: HM.HERO_ORDER[0], quality: 'medium', heroesUrl: HEROES_URL, baseUrl: pathToFileURL(join(HERE, '../assets/quaternius/')).href });
+async function ready(id) {
+  for (let i = 0; i < 4000 && !(model.ready && model.hero === id); i++) await new Promise((r) => setTimeout(r, 5));
+  assert.ok(model.ready && model.hero === id, `герой ${id} загрузился (${noise.slice(-3).join(' | ')})`);
+}
+const DT = 1 / 30;
+const P = { x: 0, z: 0, yaw: 0 };
+function snap({ vx = 0, vz = 0, action = 'idle', status = 'playing', ult = null, hold = {}, sprint = 0 } = {}) {
+  P.x += vx * DT; P.z += vz * DT;
+  return { status, ultimate: ult, player: { position: { x: P.x, y: 0, z: P.z }, yaw: P.yaw, velocity: { x: vx, y: 0, z: vz }, action, hp: 80, maxHp: 100, sprint, ...hold } };
+}
+// кадр: обновление модели и замер подошвы (пол — корень героя, y = 0, плюс подъём пола сцены)
+function step(s, ev = [], floor = 0) {
+  model.update(DT, s, ev);
+  const f = model.feet();
+  return { gap: f.sole - floor, hips: f.hips, sole: f.sole };
+}
+// сценарий одного героя: [название, кадров, снимок(i), события(i), стоя?]
+const ev = (type, data = {}) => [{ type, data }];
+const SCRIPT = [
+  ['меню', 120, () => null, (i) => (i === 30 ? 'flourish' : []), true],
+  ['покой', 120, () => snap(), () => [], true],
+  ['ходьба', 90, () => snap({ vz: 2, action: 'move' }), () => [], false],
+  ['бег', 90, () => snap({ vz: 5, action: 'move' }), () => [], false],
+  ['спринт', 60, () => snap({ vz: 8, action: 'move', sprint: 1 }), () => [], false],
+  ['стрейф', 60, () => snap({ vx: 4, action: 'move' }), () => [], false],
+  ['назад', 45, () => snap({ vz: -2, action: 'move' }), () => [], false],
+  ['рывок', 30, () => snap({ action: 'dash' }), (i) => (i === 0 ? ev('player_dash', { worldDirection: { x: 0, z: 1 } }) : []), false],
+  ['выброс', 45, () => snap({ action: 'cast' }), (i) => (i === 0 ? ev('burst') : []), true],
+  ['врата бури', 45, () => snap({ action: 'cast' }), (i) => (i === 0 ? ev('sigil_cast', { sigil: 'gate' }) : []), true],
+  ['столп небес', 45, () => snap({ action: 'cast' }), (i) => (i === 0 ? ev('sigil_cast', { sigil: 'pillar' }) : []), true],
+  ['залп', 30, () => snap({ action: 'cast' }), (i) => (i % 10 === 0 ? ev('player_cast', { ability: 'bolt' }) : []), true],
+  ['руна', 45, () => snap({ action: 'cast' }), (i) => (i === 0 ? ev('rune_cast') : []), true],
+  ['бросок сферы', 30, () => snap({ action: 'cast' }), (i) => (i === 0 ? ev('hand_spell_throw', { dir: { x: 0.3, y: 0 } }) : []), true],
+  ['щит', 45, () => snap({ action: 'shield', hold: { shielding: true } }), (i) => (i === 0 ? ev('shield_start') : []), true],
+  ['сфера', 45, (i) => snap({ action: 'conjure', hold: { conjure: { charge: i / 45 } } }), () => [], true],
+  ['небесный суд', 108, (i) => snap({ action: 'cast', ult: { active: true, t: i * DT, strikeAt: 2.3 } }), (i) => (i === 0 ? ev('ultimate_start') : []), true],
+  ['удары', 45, () => snap({ action: 'hit' }), (i) => (i % 15 === 0 ? ev('player_hit', { amount: 25, direction: { x: 1, z: 0 } }) : []), true],
+  ['победа', 120, () => snap({ status: 'victory' }), () => [], true],
+  ['покой после победы', 45, () => snap(), () => [], true],
+  ['поражение', 120, () => snap({ status: 'defeat', action: 'dead' }), () => [], true],
+  ['снова покой', 120, () => snap(), () => [], true],
+];
+// окна стойки: меню и покой — где вес «действия» отыгран (первые 0,5 с перехода не берём)
+const idleStat = (rows) => { const r = rows.slice(15); const mean = (k) => r.reduce((a, x) => a + x[k], 0) / r.length; return { gap: mean('gap'), hips: mean('hips') }; };
+const first = {};
+let worstSink = { v: 0 }, worstStand = { v: 0 };
+for (const [round, ids] of [[1, HM.HERO_ORDER], [2, [...HM.HERO_ORDER].reverse()]]) {
+  for (const id of ids) {
+    model.setHero(id);
+    await ready(id);
+    P.x = 0; P.z = 0;
+    const seen = {};
+    for (const [name, n, mk, evs, standing] of SCRIPT) {
+      const rows = [];
+      for (let i = 0; i < n; i++) {
+        const e = evs(i);
+        if (e === 'flourish') { model.flourish(); }
+        const r = step(mk(i), Array.isArray(e) ? e : []);
+        rows.push(r);
+        assert.ok(Number.isFinite(r.gap) && Number.isFinite(r.hips), `${id} «${name}»: замер`);
+        if (-r.gap > worstSink.v) worstSink = { v: -r.gap, id, name, i };
+        assert.ok(r.gap >= -TOL, `${id} «${name}» кадр ${i}: подошва в полу на ${cm(-r.gap)}`);
+        if (standing && i >= 8) {
+          if (Math.abs(r.gap) > worstStand.v) worstStand = { v: Math.abs(r.gap), id, name, i };
+          assert.ok(Math.abs(r.gap) <= TOL, `${id} «${name}» кадр ${i}: стоя, а подошва ${cm(r.gap)} от пола`);
+        }
+      }
+      seen[name] = rows;
+    }
+    // дрейф: покой в конце круга — там же, где в начале, и на втором круге (после смен героев) — там же, где на первом
+    const a = idleStat(seen['покой']), b = idleStat(seen['снова покой']);
+    // (таз в покое и так «дышит»: смена опорной ноги ±1–2 см, дыхание — окна сравниваем по среднему с допуском 1 см)
+    assert.ok(Math.abs(a.gap - b.gap) < 0.003 && Math.abs(a.hips - b.hips) < 0.01, `${id}: покой в конце круга сдвинулся — подошва ${cm(b.gap - a.gap)}, таз ${cm(b.hips - a.hips)}`);
+    if (round === 1) first[id] = a;
+    else assert.ok(Math.abs(first[id].gap - a.gap) < 0.003 && Math.abs(first[id].hips - a.hips) < 0.01, `${id}: после смен героев покой сдвинулся — подошва ${cm(a.gap - first[id].gap)}, таз ${cm(a.hips - first[id].hips)}`);
+    log(`круг ${round} ${id}: покой ${cm(a.gap)} → ${cm(b.gap)}, таз ${a.hips.toFixed(3)} → ${b.hips.toFixed(3)} м`);
+  }
+}
+log(`medium: глубже всего ${cm(worstSink.v)} (${worstSink.id || '—'} «${worstSink.name || ''}»), стоя — до ${cm(worstStand.v)} от пола (${worstStand.id} «${worstStand.name}»)`);
+
+// ---------------------------------------------------------------- долгий покой: таз не уплывает за 2 минуты
+{
+  const id = HM.HERO_ORDER[1];
+  model.setHero(id); await ready(id);
+  const hips = [];
+  for (let i = 0; i < 3600; i++) { const r = step(i % 1200 < 600 ? null : snap()); hips.push(r.hips); assert.ok(r.gap >= -TOL, `${id}: 2 мин покоя, кадр ${i}: подошва в полу на ${cm(-r.gap)}`); }
+  const m = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  const h0 = m(hips.slice(700, 1200)), h1 = m(hips.slice(3100, 3600));
+  assert.ok(Math.abs(h1 - h0) < 0.01, `${id}: таз за 2 мин сдвинулся на ${cm(h1 - h0)}`);
+  log(`2 мин ${id}: таз ${h0.toFixed(4)} → ${h1.toFixed(4)} м`);
+}
+
+// ---------------------------------------------------------------- 3. low / high и пол сцены
+for (const q of ['low', 'high']) {
+  model.setQuality(q);
+  for (const id of ['ashen', 'ranger']) {
+    model.setHero(id); await ready(id);
+    for (const [name, n, mk] of [['меню', 90, () => null], ['покой', 90, () => snap()], ['бег', 60, () => snap({ vz: 5, action: 'move' })], ['победа', 90, () => snap({ status: 'victory' })], ['поражение', 120, () => snap({ status: 'defeat', action: 'dead' })]]) {
+      for (let i = 0; i < n; i++) {
+        const r = step(mk(i));
+        assert.ok(r.gap >= -TOL, `${q} ${id} «${name}» кадр ${i}: подошва в полу на ${cm(-r.gap)}`);
+        if (name !== 'бег' && i >= 30) assert.ok(Math.abs(r.gap) <= TOL, `${q} ${id} «${name}» кадр ${i}: стоя, а подошва ${cm(r.gap)} от пола`);
+      }
+    }
+  }
+}
+model.setQuality('medium');
+{
+  // витрина: пол сцены на 1,2 см выше корня — подошва на нём, а не под ним
+  model.setFloorLift(0.012);
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < 90; i++) { const r = step(null, [], 0.012); if (i >= 2) { lo = Math.min(lo, r.gap); hi = Math.max(hi, r.gap); } }
+  assert.ok(lo >= -0.003 && hi <= TOL, `пол витрины +1,2 см: подошва ${cm(lo)}…${cm(hi)} от него`);
+  model.setFloorLift(0);
+  log(`пол витрины: подошва ${cm(lo)}…${cm(hi)} от него`);
+}
+model.dispose();
+console.error = quiet.error; console.warn = quiet.warn;
+for (const m of out) console.log('  ' + m);
+console.log('heroGround.test: ok');

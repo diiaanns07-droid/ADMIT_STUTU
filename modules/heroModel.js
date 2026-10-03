@@ -23,7 +23,7 @@
 // heroRoot не задан — экземпляр создаёт свой root (для удалённого игрока) и сам ставит его по snapLike.player.
 // snapLike: нужен только { player: { position, yaw, velocity, action, hp, … как в snapshot } }.
 
-import { loadVRM, loadHumanoidGLB, retargetClip, createGltfLoader, soleMarkers, soleHeight } from './vrmKit.js';   // [W5-ПОЛ] подошва
+import { loadVRM, loadHumanoidGLB, retargetClip, createGltfLoader, soleMarkers, soleHeight, soleHeightSkinned, skinnedVertexWorld, boneSubtree } from './vrmKit.js';   // [W5-ПОЛ] подошва
 import { createHeroPoses, rigFace, signaturePose, SIGNATURES } from './heroPoses.js'; // [W4-ПОЗЫ]
 
 // Карточки героев: имя, класс, стихия и три строки описания — для меню №8 и витрины (heroShowcase).
@@ -883,6 +883,7 @@ export function createHeroModel({
     a.clampWhenFinished = true;
     a.timeScale = speed;
     a.setEffectiveWeight(1).fadeIn(fade).play();
+    S.actFresh = Math.max(1e-3, fade);   // [W5-ПОЛ] вес этого кадра — из нарастания, см. updateLoco
     const dur = a.getClip().duration;
     if (freezeAt !== null) { a.time = dur * freezeAt; a.timeScale = 0; }
     act = a; actName = name; actUpper = upperOnly; holdName = holdKey;
@@ -923,7 +924,11 @@ export function createHeroModel({
     const kf = 1 - Math.exp(-10 * dt);
     // действие перекрывает передвижение (микшер нормирует сумму весов — иначе вышло бы 50/50):
     // на всё тело — передвижение гаснет; только корпус — ноги берут отдельные «нижние» клипы
-    const aw = act ? clamp(act.getEffectiveWeight(), 0, 1) : 0;
+    // [W5-ПОЛ] только что запущенное действие: getEffectiveWeight ещё 1 (нарастание fadeIn микшер посчитает в этом
+    // же кадре, начиная с 0) — передвижение гасло в 0 при весе действия ~0, сумма весов падала до 0,2, и микшер на
+    // 80% смешивал позу с исходной (Т-поза): таз подпрыгивал на 10 см, стопы уходили в пол. Берём вес первого кадра.
+    const aw = act ? (S.actFresh ? Math.min(1, dt / S.actFresh) : clamp(act.getEffectiveWeight(), 0, 1)) : 0;
+    S.actFresh = 0;
     const keepFull = 1 - aw, keepLower = actUpper ? aw : 0;
     for (const n of LOCO) {
       const a = F[n];
@@ -1390,17 +1395,16 @@ export function createHeroModel({
 
   // [W5-ПОЛ] Подошва не ниже пола. После всех слоёв кадра (клип, позы, лук, наклон обёртки на бегу и отдача от
   // удара — обёртка поворачивается вокруг точки пола между стопами, и стопа впереди или позади уходила вниз)
-  // нижняя точка подошвы (soleMarkers) ниже пола героя — вся модель поднимается на столько же. Только вверх:
+  // нижняя точка подошвы (soleMarkers, со скиннингом сетки) ниже пола героя — вся модель поднимается на столько же. Только вверх:
   // полёт бега и подскок рывка — из клипа, их не прижимаем. Пол — начало корня героя (высота земли под ним)
   // плюс подъём пола сцены (setFloorLift: пол витрины меню).
   const _gf = new THREE.Vector3();
   function groundFeet() {
     const m = cur.soles;
     if (!m) { S.lift = 0; return; }
-    const nodes = m.nodes || (m.nodes = [...new Set([...m.L, ...m.R].map((x) => x.node))]);
-    for (const n of nodes) n.updateWorldMatrix(true, false);
+    cur.vrm.humanoid.update();   // сырые кости — в позу кадра (vrm.update ниже повторит это и обновит пружины)
     const fl = S.floorLift || 0;
-    const pen = root.getWorldPosition(_gf).y + fl - soleHeight(m);
+    const pen = root.getWorldPosition(_gf).y + fl - soleHeightSkinned(m);
     S.lift = pen > 1e-4 ? pen : 0;
     if (S.lift) cur.model.position.y = fl + S.lift;
   }
@@ -1476,7 +1480,7 @@ export function createHeroModel({
     const by = (n) => { const b = H.getNormalizedBoneNode(n); return b ? +b.getWorldPosition(v).y.toFixed(4) : null; };
     if (!cur.footV) {
       cur.footV = [];
-      const sides = [['L', 'left'], ['R', 'right']].map(([k, s]) => [k, [H.getRawBoneNode ? H.getRawBoneNode(s + 'Foot') : null, H.getRawBoneNode ? H.getRawBoneNode(s + 'Toes') : null].filter(Boolean)]);
+      const sides = [['L', 'left'], ['R', 'right']].map(([k, s]) => [k, [...boneSubtree(H.getRawBoneNode ? H.getRawBoneNode(s + 'Foot') : null)]]);   // стопа, носок, кончик носка
       cur.vrm.scene.traverse((o) => {
         if (!o.isSkinnedMesh || !o.skeleton || !o.geometry.attributes.skinIndex) return;
         const g = o.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
@@ -1492,10 +1496,10 @@ export function createHeroModel({
     const low = { L: { y: Infinity, x: 0, z: 0 }, R: { y: Infinity, x: 0, z: 0 } };
     for (const { o, k, list } of cur.footV) {
       if (!o.visible) continue;
-      for (const i of list) { o.getVertexPosition(i, v); v.applyMatrix4(o.matrixWorld); if (v.y < low[k].y) low[k] = { y: v.y, x: v.x, z: v.z }; }
+      for (const i of list) { skinnedVertexWorld(o, i, v); if (v.y < low[k].y) low[k] = { y: v.y, x: v.x, z: v.z }; }
     }
     const mk = {};
-    if (cur.soles) soleHeight(cur.soles, mk);
+    if (cur.soles) soleHeightSkinned(cur.soles, mk);
     const r4 = (x) => (Number.isFinite(x) ? +x.toFixed(4) : null);
     root.getWorldPosition(v);
     return {

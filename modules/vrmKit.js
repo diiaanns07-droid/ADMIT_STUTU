@@ -163,12 +163,39 @@ const RIG_KAYKIT = [
 ];
 export const RIGS = Object.freeze({ mixamo: RIG, kaykit: RIG_KAYKIT });
 
-// [W5-ПОЛ] Подошва модели: точки сетки стоп, которые в покое стоят на полу (самая нижняя вершина стопы, пятка,
-// носок, внутренний и внешний край — среди вершин не выше 12 мм над нижней), в осях нормализованных костей
-// стопы и носка. Пол модели в покое — нижняя из них (restY, в осях vrm.scene). Один раз на модель (кэш).
+// [W5-ПОЛ] Подошва модели: точки сетки стоп, которые могут коснуться пола при любом наклоне стопы, — опорные точки
+// всей сетки стопы (кость стопы и все её дочерние: носок, кончик носка) по направлениям «вниз», «вниз-вперёд/назад»
+// до 75° и «вниз-вбок» до 45°: нижняя часть выпуклой оболочки (пятка, края подошвы, загнутый вверх носок сабатона —
+// в покое он выше подошвы, но при наклоне стопы носком вниз первым уходит в пол). Точки — в осях нормализованных
+// костей стопы и носка. Пол модели в покое — нижняя из них (restY, в осях vrm.scene). Один раз на модель (кэш).
 //   soleMarkers(THREE, vrm) → { L: [{ node, p }], R: [...], restY } | null (нет костей стоп или сетки на них)
 //   soleHeight(m, out?) → нижняя точка подошвы в мире (кости — с актуальными matrixWorld); out = { L, R, min }
 const SOLES = new WeakMap();
+// Вершина скин-сетки сразу в мире — как в шейдере: Σ w·(кость.matrixWorld · обратная привязки)·bindMatrix·v.
+// SkinnedMesh.getVertexPosition делит ещё на bindMatrixInverse, а её three обновляет только в updateMatrixWorld
+// сцены при отрисовке: до отрисовки кадра (и без неё) она отстаёт на сдвиг героя за кадр.
+const _skM = new Map();
+export function skinnedVertexWorld(mesh, i, out) {
+  let t = _skM.get(out.constructor);
+  if (!t) { t = { m: new mesh.matrixWorld.constructor(), b: new out.constructor(), v: new out.constructor() }; _skM.set(out.constructor, t); }
+  const g = mesh.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, sk = mesh.skeleton;
+  t.b.fromBufferAttribute(g.attributes.position, i).applyMatrix4(mesh.bindMatrix);
+  out.set(0, 0, 0);
+  for (let j = 0; j < 4; j++) {
+    const w = sw.getComponent(i, j);
+    if (w === 0) continue;
+    const k = si.getComponent(i, j);
+    t.m.multiplyMatrices(sk.bones[k].matrixWorld, sk.boneInverses[k]);
+    out.addScaledVector(t.v.copy(t.b).applyMatrix4(t.m), w);
+  }
+  return out;
+}
+// кость и все её дочерние кости (у моделей Quaternius: стопа → носок → кончик носка)
+export function boneSubtree(bone) {
+  const out = new Set();
+  if (bone) bone.traverse((o) => { if (o.isBone || o === bone) out.add(o); });
+  return out;
+}
 export function soleMarkers(THREE, vrm) {
   if (SOLES.has(vrm)) return SOLES.get(vrm);
   const H = vrm.humanoid;
@@ -179,44 +206,80 @@ export function soleMarkers(THREE, vrm) {
   vrm.scene.updateMatrixWorld(true);
   const toScene = new THREE.Matrix4().copy(vrm.scene.matrixWorld).invert();
   const v = new THREE.Vector3(), loc = new THREE.Vector3();
-  const sides = { L: { foot: raw('leftFoot'), toes: raw('leftToes'), nf: H.getNormalizedBoneNode('leftFoot'), nt: H.getNormalizedBoneNode('leftToes'), pts: [] },
-    R: { foot: raw('rightFoot'), toes: raw('rightToes'), nf: H.getNormalizedBoneNode('rightFoot'), nt: H.getNormalizedBoneNode('rightToes'), pts: [] } };
+  const side = (s) => {
+    const foot = raw(s + 'Foot'), toes = raw(s + 'Toes');
+    return { all: boneSubtree(foot), toes: boneSubtree(toes), nf: H.getNormalizedBoneNode(s + 'Foot'), nt: H.getNormalizedBoneNode(s + 'Toes'), pts: [] };
+  };
+  const sides = { L: side('left'), R: side('right') };
   vrm.scene.traverse((o) => {
     if (!o.isSkinnedMesh || !o.skeleton || !o.visible || !o.geometry || !o.geometry.attributes.skinIndex) return;
     const bones = o.skeleton.bones, si = o.geometry.attributes.skinIndex, sw = o.geometry.attributes.skinWeight, n = o.geometry.attributes.position.count;
     for (const S of Object.values(sides)) {
-      if (!S.foot || !S.nf) continue;
-      const iF = bones.indexOf(S.foot), iT = S.toes ? bones.indexOf(S.toes) : -1;
-      if (iF < 0 && iT < 0) continue;
+      if (!S.nf || !S.all.size) continue;
+      const inF = new Set(), inT = new Set();
+      bones.forEach((b, i) => { if (S.all.has(b)) inF.add(i); if (S.toes.has(b)) inT.add(i); });
+      if (!inF.size) continue;
       for (let i = 0; i < n; i++) {
         let wf = 0, wt = 0;
-        for (let j = 0; j < 4; j++) { const b = si.getComponent(i, j), w = sw.getComponent(i, j); if (b === iF) wf += w; else if (b === iT) wt += w; }
-        if (wf + wt < 0.5) continue;
-        o.getVertexPosition(i, v); v.applyMatrix4(o.matrixWorld);
+        for (let j = 0; j < 4; j++) { const b = si.getComponent(i, j), w = sw.getComponent(i, j); if (inF.has(b)) { wf += w; if (inT.has(b)) wt += w; } }
+        if (wf < 0.5) continue;
+        skinnedVertexWorld(o, i, v);
         loc.copy(v).applyMatrix4(toScene);
-        S.pts.push({ w: v.clone(), l: loc.clone(), toe: wt > wf });
+        S.pts.push({ w: v.clone(), l: loc.clone(), toe: wt > wf - wt, mesh: o, i });
       }
     }
   });
   let restY = Infinity;
   for (const S of Object.values(sides)) for (const p of S.pts) restY = Math.min(restY, p.l.y);
   if (!Number.isFinite(restY)) { SOLES.set(vrm, null); return null; }
-  const out = { L: [], R: [], restY, v: new THREE.Vector3() };
+  const out = { L: [], R: [], restY, v: new THREE.Vector3(), bones: [] };
+  const d = new THREE.Vector3();
   for (const [k, S] of Object.entries(sides)) {
     if (!S.pts.length) continue;
-    let lo = Infinity;
-    for (const p of S.pts) lo = Math.min(lo, p.l.y);
-    const low = S.pts.filter((p) => p.l.y < lo + 0.012);
-    const pick = new Set([low.reduce((a, b) => (b.l.y < a.l.y ? b : a))]);
-    for (const ax of ['x', 'z']) { pick.add(low.reduce((a, b) => (b.l[ax] < a.l[ax] ? b : a))); pick.add(low.reduce((a, b) => (b.l[ax] > a.l[ax] ? b : a))); }
+    const pick = new Set();
+    for (let a = -75; a <= 75; a += 15) {
+      for (const r of [-45, -20, 0, 20, 45]) {
+        const ar = (a * Math.PI) / 180, rr = (r * Math.PI) / 180;
+        d.set(Math.sin(rr), -Math.cos(rr) * Math.cos(ar), Math.cos(rr) * Math.sin(ar));
+        let best = null, bd = -Infinity;
+        for (const p of S.pts) { const q = p.l.dot(d); if (q > bd) { bd = q; best = p; } }
+        pick.add(best);
+      }
+    }
     for (const p of pick) {
       const node = p.toe && S.nt ? S.nt : S.nf;
-      out[k].push({ node, p: node.worldToLocal(p.w.clone()) });
+      out[k].push({ node, p: node.worldToLocal(p.w.clone()), mesh: p.mesh, i: p.i });
     }
   }
+  // для точного замера (soleHeightSkinned): сырые кости, на которых висят точки (голень, стопа, носок…)
+  const bs = new Set();
+  for (const q of [...out.L, ...out.R]) {
+    const si = q.mesh.geometry.attributes.skinIndex, sw = q.mesh.geometry.attributes.skinWeight;
+    for (let j = 0; j < 4; j++) if (sw.getComponent(q.i, j) > 0) bs.add(q.mesh.skeleton.bones[si.getComponent(q.i, j)]);
+  }
+  out.bones = [...bs].filter(Boolean);
   SOLES.set(vrm, out);
   return out;
 }
+// Точно: те же точки как вершины сетки со всеми их весами (у пятки — доля голени: при сильно согнутом колене она
+// уходит вниз, хотя кость стопы стоит ровно). Сырые кости должны быть уже в позе кадра (vrm.humanoid.update()).
+export function soleHeightSkinned(m, out = null) {
+  if (!m) return NaN;
+  for (const b of m.bones) b.updateWorldMatrix(true, false);
+  let min = Infinity;
+  for (const k of ['L', 'R']) {
+    let lo = Infinity;
+    for (const q of m[k]) {
+      const y = skinnedVertexWorld(q.mesh, q.i, m.v).y;
+      if (y < lo) lo = y;
+    }
+    if (out) out[k] = lo;
+    if (lo < min) min = lo;
+  }
+  if (out) out.min = min;
+  return min;
+}
+// Быстро и без сетки: точки жёстко на костях стопы и носка (нормализованный скелет) — для IK ног слоя поз
 export function soleHeight(m, out = null) {
   if (!m) return NaN;
   let min = Infinity;
@@ -234,25 +297,33 @@ export function soleHeight(m, out = null) {
 }
 
 const n0 = (clip, fps) => Math.max(2, Math.ceil(clip.duration * fps) + 1);   // кадров семплирования клипа
+// [W5-ПОЛ] касание: нижняя из точек стоп источника поднята над покоем не больше чем на 10% высоты его таза (у KayKit
+// ~4 см). Голеностоп и носок — кости, не подошва: на ударе пяткой голеностоп выше покоя на 2 см, хотя пятка на полу;
+// настоящий полёт (бег, прыжок, подскок удара) — 6–19 см
+export const CONTACT = 0.1;
 
-// [W5-ПОЛ] Высота таза по опоре. Кадры, где стопа источника стоит (поднята над покоем не выше eps), — касание:
+// [W5-ПОЛ] Высота таза по опоре. Кадры, где стопа источника стоит (поднята над покоем не выше eps = CONTACT), — касание:
 // таз цели сдвигается по вертикали так, чтобы нижняя точка её подошвы была ровно на полу покоя. Между касаниями
 // (полёт бега, прыжок, подскок рывка) поправка идёт линейно от соседних касаний — полёт клипа сохраняется,
 // но подошва и там не ниже пола.
 // Скелет цели ставится в позу кадра (прямая кинематика нормализованных костей) и в конце возвращается в покой.
 function groundHips(THREE, vrm, bones, hips, qv, hp, lift, eps, soles, hipsParentInv) {
   const n = lift.length, H = vrm.humanoid;
+  const sync = () => { if (H.update) H.update(); };   // нормализованный скелет → сырые кости (сетка)
+  sync();
   vrm.scene.updateMatrixWorld(true);
-  const rest = soleHeight(soles);
+  const rest = soleHeightSkinned(soles);
   const corr = new Float32Array(n).fill(NaN), floor = new Float32Array(n);
   for (let f = 0; f < n; f++) {
     for (const b of bones) b.node.quaternion.fromArray(qv.get(b), f * 4);
     hips.node.position.fromArray(hp, f * 3);
     hips.node.updateMatrixWorld(true);
-    floor[f] = rest - soleHeight(soles);   // поправка, ставящая подошву ровно на пол
+    sync();
+    floor[f] = rest - soleHeightSkinned(soles);   // поправка, ставящая подошву ровно на пол
     if (lift[f] <= eps) corr[f] = floor[f];
   }
   if (H.resetNormalizedPose) H.resetNormalizedPose();
+  sync();
   vrm.scene.updateMatrixWorld(true);
   // промежутки без касания — линейно между соседними касаниями (по краям — ближайшее); касаний нет — без поправки
   let prev = -1;
@@ -366,7 +437,7 @@ export function retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo
     if (lift) { let m = Infinity; for (const [o, y0] of srcFeet) m = Math.min(m, wp(o).y - y0); lift[f] = m; }
   }
   action.stop(); mixer.uncacheRoot(srcScene);
-  if (lift) groundHips(THREE, vrm, bones, hips, qv, hp, lift, 0.02 * Math.max(srcHipsH, 1e-3), soles, hipsParentInv);
+  if (lift) groundHips(THREE, vrm, bones, hips, qv, hp, lift, CONTACT * Math.max(srcHipsH, 1e-3), soles, hipsParentInv);
   const tracks = [];
   for (const b of bones) tracks.push(new THREE.QuaternionKeyframeTrack(`${b.node.name}.quaternion`, times, qv.get(b)));
   if (hips) tracks.push(new THREE.VectorKeyframeTrack(`${hips.node.name}.position`, times, hp));
