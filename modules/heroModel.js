@@ -1479,7 +1479,7 @@ export function createHeroModel({
 
   // [W5-ПОЛ] QA: высота костей стоп и носков, нижняя точка подошвы каждой стопы (по вершинам сетки, точно) и по
   // точкам soleMarkers (как считает перенос клипов) — в мире, вместе с x, z нижней точки (пол меряется под ней)
-  function feet() {
+  function feet({ legs = false } = {}) {
     if (!cur || !S.ready) return null;
     cur.model.updateWorldMatrix(true, true);
     const H = cur.vrm.humanoid, v = new THREE.Vector3();
@@ -1498,6 +1498,27 @@ export function createHeroModel({
           if (list.length) cur.footV.push({ o, k, list });
         }
       });
+    }
+    // legs: нижняя вершина ног выше стопы (бедро и голень) полным скиннингом — проверка колена, независимая от точек
+    let legLow = null;
+    if (legs) {
+      if (!cur.legV) {
+        cur.legV = [];
+        const foot = new Set(['left', 'right'].flatMap((s) => [...boneSubtree(H.getRawBoneNode ? H.getRawBoneNode(s + 'Foot') : null)]));
+        const leg = new Set(['left', 'right'].flatMap((s) => [...boneSubtree(H.getRawBoneNode ? H.getRawBoneNode(s + 'UpperLeg') : null)]).filter((b) => !foot.has(b)));
+        cur.vrm.scene.traverse((o) => {
+          if (!o.isSkinnedMesh || !o.skeleton || !o.geometry.attributes.skinIndex) return;
+          const g = o.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+          const ids = new Set(o.skeleton.bones.map((b, i) => (leg.has(b) ? i : -1)).filter((i) => i >= 0));
+          if (!ids.size) return;
+          const list = [];
+          for (let i = 0; i < g.attributes.position.count; i++) { let w = 0; for (let j = 0; j < 4; j++) if (ids.has(si.getComponent(i, j))) w += sw.getComponent(i, j); if (w > 0.05) list.push(i); }
+          if (list.length) cur.legV.push({ o, list });
+        });
+      }
+      let lo = Infinity;
+      for (const { o, list } of cur.legV) { if (!o.visible) continue; for (const i of list) { const y = skinnedVertexWorld(o, i, v).y; if (y < lo) lo = y; } }
+      legLow = Number.isFinite(lo) ? +lo.toFixed(4) : null;
     }
     const low = { L: { y: Infinity, x: 0, z: 0 }, R: { y: Infinity, x: 0, z: 0 } };
     for (const { o, k, list } of cur.footV) {
@@ -1522,7 +1543,7 @@ export function createHeroModel({
       soleL: r4(low.L.y), soleR: r4(low.R.y), sole: r4(Math.min(low.L.y, low.R.y)),
       atL: [r4(low.L.x), r4(low.L.z)], atR: [r4(low.R.x), r4(low.R.z)],
       markL: r4(mk.L), markR: r4(mk.R), kneeL: kn ? r4(kn[0]) : null, kneeR: kn ? r4(kn[1]) : null, knee: kn ? r4(kn[2]) : null,
-      toeYawL: toeYaw('left'), toeYawR: toeYaw('right'), act: actName, pose: poses.active || '', loco: (() => { let n = 'Idle', w = -1; for (const l of LOCO) if (S.wLoco[l] > w) { w = S.wLoco[l]; n = l; } return n; })(),
+      toeYawL: toeYaw('left'), toeYawR: toeYaw('right'), legLow, act: actName, pose: poses.active || '', loco: (() => { let n = 'Idle', w = -1; for (const l of LOCO) if (S.wLoco[l] > w) { w = S.wLoco[l]; n = l; } return n; })(),
     };
   }
 

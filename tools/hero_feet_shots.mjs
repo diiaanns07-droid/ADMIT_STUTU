@@ -51,11 +51,13 @@ try {
   {
     const g = await openGame(browser, server, { size: SIZE, settings: { quality: Q, hero: HEROES[0] }, log: (m) => log(`меню: ${m}`) });
     const { page } = g;
-    await g.hideUi(true);
     for (const h of HEROES) {
+      // карточку героя кликаем при видимом интерфейсе, снимаем — без него
+      await g.hideUi(false);
       await g.virtual(false);
       await page.locator('label.ao-herocard', { has: page.locator(`input[value="${h}"]`) }).click({ timeout: 240000 });
       await page.waitForFunction((id) => { const s = window.__ASHEN__.hero(); return s && s.hero === id && s.ready; }, h, { timeout: 240000, polling: 200 });
+      await g.hideUi(true);
       await g.virtual(true);
       await render(page, false);
       await g.step(150);   // 5 с: «наезд» витрины прошёл, герой в стойке-визитке
@@ -71,8 +73,8 @@ try {
   for (const h of HEROES) {
     const g = await openGame(browser, server, { size: SIZE, settings: { quality: Q, hero: h }, patch: { bossHp: 3, bossDamage: 0 }, log: (m) => log(`бой ${h}: ${m}`) });
     const { page } = g;
-    await g.hideUi(true);
     await g.toBattle();
+    await g.hideUi(true);
     await render(page, false);
     await g.walkToBoss();
     await g.step(45);   // остановился, покой

@@ -25,7 +25,7 @@
 // в длинах руки, в «боковых» осях: o — наружу (у левой +x, у правой −x), u — вверх, f — вперёд.
 
 import { HERO_SPELL_POSE } from '../core/handMagic.js';
-import { termsLow, termsLowSide } from './vrmKit.js';   // [W5-ПОЛ] нижняя точка подошвы, колена и голени (точки сетки ног)
+import { termsLow, termsLowSide, kneeMayTouch } from './vrmKit.js';   // [W5-ПОЛ] нижняя точка подошвы, колена и голени (точки сетки ног)
 
 export const POSES_VERSION = 'W4-poses-1';
 
@@ -711,7 +711,7 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
       // [W5-ПОЛ] колено и голень не ниже пола (поза на колене — поражение): нижняя точка оболочки сетки ног
       // (rig.soles.knee) под полом — таз выше на столько же, ноги заново в те же цели стоп с тем же поворотом стоп
       // (подошвы остаются на полу); колено поднимается чуть меньше таза — до трёх шагов
-      const kn = rig.soles && rig.soles.knee;
+      const kn = rig.soles && rig.soles.knee && kneeMayTouch(rig.soles.knee, floorY) ? rig.soles.knee : null;   // колени высоко — не считаем
       for (let it = 0; kn && it < 3; it++) {
         const kp = floorY - termsLow(kn, _kr)[2];
         if (kp <= 1e-4) break;
