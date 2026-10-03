@@ -137,16 +137,16 @@
   <div class="p2-body">
     <ul class="p2-who">
       <li data-step="1"><h3>Школа</h3><p>без установки, офлайн,&nbsp;LAN</p></li>
-      <li data-step="2"><h3>Дом</h3><p>техника приседаний и&nbsp;отжиманий</p></li>
-      <li data-step="3"><h3>Доступность</h3><p>можно сидя; «Новичок»&nbsp;— 5&nbsp;жестов и&nbsp;автоход</p></li>
+      <li data-step="2"><h3>Дом</h3><p>контроль техники приседаний и&nbsp;отжиманий</p></li>
+      <li data-step="3"><h3>Доступность</h3><p>можно сидя; «Новичок»&nbsp;— 5&nbsp;жестов и&nbsp;автоход; без&nbsp;мыши</p></li>
     </ul>
     <figure class="p2-shot p2-s12-shot">
       <div class="p2-crop"><img src="../docs/screenshots/challenge/9_poster_s.jpg" alt="Постер победы «Испытания · 60 с»: ранг S, 12 380 очков" decoding="async"></div>
       ${RING}
     </figure>
     <div class="p2-next" data-step="4">
-      <p class="p2-next-row"><span class="src p2-next-k">В работе · не в&nbsp;main</span><span class="chip chip--wip">Быстрый вход · PR&nbsp;№39</span><span class="chip chip--wip">Камера на&nbsp;слабых ноутбуках</span><span class="chip chip--wip">Уровни «Сложная», «Кошмар»</span></p>
-      <p class="p2-next-row"><span class="src p2-next-k">План</span><span class="chip">Казахский язык</span><span class="chip">Режим учителя</span><span class="chip">Школьный пилот</span></p>
+      <p class="p2-next-row"><span class="src p2-next-k">В работе · не в&nbsp;main</span><span class="chip chip--wip">Быстрый вход · PR&nbsp;№39</span><span class="chip chip--wip">Камера на&nbsp;слабых ноутбуках</span><span class="chip chip--wip">Сложности «Сложная» и&nbsp;«Кошмар»</span></p>
+      <p class="p2-next-row"><span class="src p2-next-k">План</span><span class="chip">Казахский язык</span><span class="chip">Режим учителя</span><span class="chip">Пилот в&nbsp;школе</span></p>
     </div>
     <p class="src p2-s12-cap">Не медицинское изделие.</p>
   </div>
