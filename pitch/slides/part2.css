@@ -23,26 +23,29 @@
 .p2-tick-t { display: block; font-size: 36px; line-height: 44px; color: var(--text); }
 
 /* ================= Слайд 3 — «Тело — это контроллер» ================= */
-/* снимок 1040×528: 10_present.jpg 1280×720 ×0,8125, срезаны верхние 70 px с плашкой «DEBUG / НЕ CV» */
-[data-slide="3"] .p2-s3-shot { left: 3px; top: 40px; width: 1058px; height: 546px; }
-[data-slide="3"] .p2-s3-shot img { left: 0; top: -57px; width: 1040px; height: 585px; }
-[data-slide="3"] .p2-s3-shot .p2-fig-note { top: 560px; }
-/* Подсветка зоны кадра под каждый шаг — цветом руки; появляется на месте, без сдвига */
-[data-slide="3"] .p2-hl {
-  position: absolute; z-index: 1; border: 2px solid var(--hl); border-radius: 6px;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 55%, transparent), 0 0 26px color-mix(in srgb, var(--hl) 55%, transparent), inset 0 0 18px color-mix(in srgb, var(--hl) 22%, transparent);
-  transition: opacity .3s var(--ease), transform .3s var(--ease);
+/* кадр 702×522: media/p2/spirit.jpg 474×354 (окно «Что видит камера») ×1,5, срезана красная кромка 3 px */
+[data-slide="3"] .p2-s3-shot { left: 3px; top: 40px; width: 720px; height: 540px; }
+[data-slide="3"] .p2-s3-shot img { left: -5px; top: -5px; width: 711px; height: 531px; }
+[data-slide="3"] .p2-s3-shot .p2-fig-note { top: 554px; }
+/* Кольца цвета руки поверх кадра: прочерчиваются по шагам (stroke-dashoffset), без сдвига */
+[data-slide="3"] .p2-marks { position: absolute; left: 9px; top: 9px; z-index: 1; width: 702px; height: 522px; overflow: visible; }
+[data-slide="3"] .p2-mk {
+  fill: none; stroke: var(--hl); stroke-width: 2; /* 3 px на экране: кадр ×1,5 */
+  stroke-dasharray: 1; stroke-dashoffset: 0; filter: drop-shadow(0 0 7px var(--hl));
+  transition: opacity .3s var(--ease), stroke-dashoffset .5s var(--ease);
 }
-[data-slide="3"] .p2-hl[data-step]:not(.is-on) { translate: none; transform: scale(1.06); }
-[data-slide="3"] .p2-hl--l { --hl: var(--hand-left); left: 447px; top: 56px; width: 202px; height: 150px; }
-[data-slide="3"] .p2-hl--r { --hl: var(--hand-right); left: 447px; top: 208px; width: 202px; height: 148px; }
-[data-slide="3"] .p2-hl--b { --hl: var(--gold); left: 115px; top: 75px; width: 190px; height: 130px; }
-[data-slide="3"] .p2-hands { position: absolute; left: 1120px; top: 49px; width: 560px; padding: 0; list-style: none; }
-[data-slide="3"] .p2-hands > li + li { margin-top: 46px; }
+[data-slide="3"] .p2-mk[data-step]:not(.is-on) { translate: none; stroke-dashoffset: 1; }
+[data-slide="3"] .p2-mk--l { --hl: var(--hand-left); }
+[data-slide="3"] .p2-mk--r { --hl: var(--hand-right); }
+[data-slide="3"] .p2-mk--b { --hl: var(--gold); stroke-width: 1.4; stroke-dasharray: .012 .008; stroke-dashoffset: 0; }
+[data-slide="3"] .p2-mk--b[data-step]:not(.is-on) { stroke-dashoffset: 0; }
+[data-slide="3"] .p2-hands { position: absolute; left: 800px; top: 104px; width: 880px; padding: 0; list-style: none; }
+[data-slide="3"] .p2-hands > li + li { margin-top: 52px; }
+[data-slide="3"] .p2-hands .p2-tick-t { font-size: 40px; line-height: 48px; }
 [data-slide="3"] .p2-tick--l { --tick: var(--hand-left); }
 [data-slide="3"] .p2-tick--r { --tick: var(--hand-right); }
 [data-slide="3"] .p2-tick--b { --tick: var(--gold); }
-[data-slide="3"] .p2-s3-cap { position: absolute; left: 1120px; top: 545px; }
+[data-slide="3"] .p2-s3-cap { position: absolute; left: 800px; top: 539px; }
 
 /* ================= Слайд 4 — «Один жест — удар, как в кино» ================= */
 /* снимок 1080×463: клип и постер 1120×480 (×0,964) уже обрезаны до кадра 7:3 — без чёрных полос и плашки отладки */
@@ -80,22 +83,17 @@
 [data-slide="4"] .p2-seq-hit.is-on .p2-hp > i { transform: scaleX(.72); }
 
 /* ================= Слайд 5 — «Глубина RPG, а не мини-игра» ================= */
-/* снимок 1656×366: hero_v7_lineup.jpg 1800×594 ×0,92, срезаны служебная строка сверху и подписи снизу */
+/* снимок 1656×366: media/p2/heroes.jpg — пять героев в ряд, по 331 px на героя */
 [data-slide="5"] .p2-s5-shot { left: 3px; top: 10px; width: 1674px; height: 384px; }
-[data-slide="5"] .p2-s5-shot img { left: 0; top: -35px; width: 1656px; height: 546px; }
+[data-slide="5"] .p2-s5-shot img { left: 0; top: 0; width: 1656px; height: 366px; }
 [data-slide="5"] .p2-names {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; display: grid; grid-template-columns: repeat(5, 1fr);
   padding: 70px 0 18px; list-style: none; background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ink) 78%, transparent) 62%, color-mix(in srgb, var(--ink) 90%, transparent));
 }
 [data-slide="5"] .p2-names > li { text-align: center; font-family: var(--f-caps); font-size: 26px; line-height: 30px; letter-spacing: .1em; text-transform: uppercase; color: var(--parch); }
-[data-slide="5"] .p2-s5-stats { position: absolute; left: 0; top: 432px; width: 820px; }
-[data-slide="5"] .p2-big { display: flex; align-items: baseline; gap: 22px; }
-[data-slide="5"] .p2-s5-line { margin-top: 18px; font-size: 30px; line-height: 40px; color: var(--muted); }
-[data-slide="5"] .p2-s5-line b { font-weight: 500; color: var(--text); }
-[data-slide="5"] .p2-modes { position: absolute; left: 900px; top: 432px; width: 780px; padding: 0; list-style: none; }
-[data-slide="5"] .p2-modes > li { position: relative; padding-left: 30px; margin-bottom: 12px; font-size: 30px; line-height: 40px; color: var(--muted); white-space: nowrap; }
-[data-slide="5"] .p2-modes > li::before { content: ''; position: absolute; left: 2px; top: 15px; width: 10px; height: 10px; transform: rotate(45deg); background: var(--gold-b); }
-[data-slide="5"] .p2-modes b { font-weight: 500; color: var(--text); }
+/* Три цифры по сетке героев: 24 жеста · 5 героев · 5 режимов (загорается только первая) */
+[data-slide="5"] .p2-stats { position: absolute; left: 0; top: 446px; width: 1680px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; padding: 0; list-style: none; }
+[data-slide="5"] .p2-stats > li { display: flex; align-items: baseline; gap: 22px; padding-top: 22px; border-top: 1px solid var(--line); }
 
 /* ================= Слайд 6 — «Не „не распознано“, а „что исправить“» ================= */
 /* бой 615×444: 09_battle_mistake.jpg ×0,7325, кадр с x=440, y=70 — без плашки отладки и обрывка подсказки слева */
@@ -139,7 +137,7 @@
 [data-slide="12"] .p2-next { position: absolute; left: 0; top: 410px; width: 1680px; }
 [data-slide="12"] .p2-next-row { display: flex; align-items: center; gap: 16px; }
 [data-slide="12"] .p2-next-row + .p2-next-row { margin-top: 22px; }
-[data-slide="12"] .p2-next-k { flex: none; width: 330px; font-family: var(--f-caps); font-size: 26px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+[data-slide="12"] .p2-next-k { flex: none; width: 260px; font-family: var(--f-caps); letter-spacing: .12em; text-transform: uppercase; }
 [data-slide="12"] .p2-s12-cap { position: absolute; left: 0; top: 640px; }
 
 /* ---------- Мгновенный показ: линии и полоса сразу в конечном виде ---------- */
@@ -148,7 +146,7 @@
 
 /* ---------- Печать: все шаги раскрыты, подсветка, линии и полоса — в конечном виде ---------- */
 @media print {
-  [data-slide="3"] .p2-hl[data-step] { transform: none; }
+  [data-slide="3"] .p2-mk { stroke-dashoffset: 0; }
   [data-slide="4"] .p2-seq > li + li::after { transform: none; }
   [data-slide="4"] .p2-hp > i { transform: scaleX(.72); }
 }

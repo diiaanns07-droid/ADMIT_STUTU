@@ -10,28 +10,32 @@
   var RING = '<i class="frame p2-ring" aria-hidden="true"></i>';
 
   /* ---------- 3. Тело — это контроллер ---------- */
+  // Кадр «Что видит камера» (spirit/10_present.jpg без подписей «КЛАВИАТУРА» и «DEBUG»): кольца цвета руки
+  // прочерчиваются по шагам вокруг левой кисти, правой и обеих сразу. Координаты — в пикселях кадра 468×348.
   Q.push({
     n: 3, sec: 40,
     html: `<section class="slide" data-slide="3" data-title="Тело — это контроллер">
-  <p class="kicker">Управление</p>
+  <p class="kicker">Кейс Motion · камера вместо джойстика</p>
   <h2 class="thesis">Тело — это контроллер</h2>
   <div class="p2-body">
     <figure class="p2-shot p2-s3-shot">
-      <div class="p2-crop"><img src="../docs/screenshots/spirit/10_present.jpg" alt="Режим показа: слева скелет и кисти игрока, справа бой с Регентом и список жестов по рукам" decoding="async"></div>
-      <span class="p2-hl p2-hl--l" data-step="1" aria-hidden="true"></span>
-      <span class="p2-hl p2-hl--r" data-step="2" aria-hidden="true"></span>
-      <span class="p2-hl p2-hl--b" data-step="3" aria-hidden="true"></span>
+      <div class="p2-crop"><img src="media/p2/spirit.jpg" alt="Окно «Что видит камера»: светящийся скелет игрока и обе кисти" decoding="async"></div>
+      <svg class="p2-marks" viewBox="0 0 468 348" aria-hidden="true" focusable="false">
+        <circle class="p2-mk p2-mk--l" data-step="1" cx="160" cy="158" r="50" pathLength="1"/>
+        <circle class="p2-mk p2-mk--r" data-step="2" cx="304" cy="146" r="48" pathLength="1"/>
+        <ellipse class="p2-mk p2-mk--b" data-step="3" cx="232" cy="152" rx="140" ry="82" pathLength="1"/>
+      </svg>
       ${RING}
-      <figcaption class="src p2-fig-note">Что видит камера и игра · кадр снят с&nbsp;клавиатуры</figcaption>
+      <figcaption class="src p2-fig-note">Окно «Что видит камера»: скелет и&nbsp;21&nbsp;точка каждой кисти</figcaption>
     </figure>
     <ol class="p2-hands">
-      <li class="p2-tick p2-tick--l" data-step="1"><span class="p2-tick-k">Левая рука</span><span class="p2-tick-t">ход, рывок, щит</span></li>
+      <li class="p2-tick p2-tick--l" data-step="1"><span class="p2-tick-k">Левая рука</span><span class="p2-tick-t">ход, бег, рывок, щит</span></li>
       <li class="p2-tick p2-tick--r" data-step="2"><span class="p2-tick-k">Правая</span><span class="p2-tick-t">снаряды, выброс, руны</span></li>
-      <li class="p2-tick p2-tick--b" data-step="3"><span class="p2-tick-k">Две руки</span><span class="p2-tick-t">сфера и&nbsp;печати</span></li>
+      <li class="p2-tick p2-tick--b" data-step="3"><span class="p2-tick-k">Две руки</span><span class="p2-tick-t">сфера, печати, «Врата бури»</span></li>
     </ol>
     <p class="cap p2-s3-cap">Без установки, датчиков и&nbsp;мыши.</p>
   </div>
-  <aside class="notes">Камера видит скелет и кисти. Левая рука — руль: ход, бег, рывок с неуязвимостью и щит толчком ладони. Правая колдует: снаряды жестом «OK», выброс кулаком, руны пальцем. Двумя руками собирают сферу и ставят печати. Цвет руки на экране — тот же, что в игре: синий — движение, оранжевый — магия.</aside>
+  <aside class="notes">Камера видит скелет и 21 точку каждой кисти. Левая рука — руль: ход, бег, рывок с неуязвимостью и щит — резкий толчок ладонью к камере. Правая колдует: снаряды жестом «OK», выброс — кулак резко раскрыть, руны указательным пальцем. Двумя руками собирают сферу, ставят печати и открывают «Врата бури». Цвет руки на экране — тот же, что в игре: синий — движение, оранжевый — магия.</aside>
 </section>`
   });
 
@@ -74,24 +78,18 @@
   <div class="p2-body">
     <figure class="p2-shot p2-s5-shot">
       <div class="p2-crop">
-        <img src="../dev/shots/hero_v7_lineup.jpg" alt="Пять героев игры: Пепельный страж, Эльфийка, Тёмная чародейка, Лучница, Архимаг" decoding="async">
+        <img src="media/p2/heroes.jpg" alt="Пять героев игры на витрине меню: Пепельный страж, Эльфийка, Тёмная чародейка, Лучница, Архимаг" decoding="async">
         <ul class="p2-names"><li>Пепельный страж</li><li>Эльфийка</li><li>Тёмная чародейка</li><li>Лучница</li><li>Архимаг</li></ul>
       </div>
       ${RING}
     </figure>
-    <div class="p2-s5-stats">
-      <p class="p2-big"><span class="num" data-ignite>24</span><span class="unit">жеста</span></p>
-      <p class="p2-s5-line"><b>10</b>&nbsp;рун · <b>4</b>&nbsp;печати · <b>2</b>&nbsp;магии ладонями · <b>5</b>&nbsp;героев · <b>2</b>&nbsp;фазы босса</p>
-    </div>
-    <ul class="p2-modes">
-      <li data-step="1"><b>Бой с&nbsp;Регентом</b></li>
-      <li data-step="2"><b>Испытание · 60&nbsp;с</b> — ранг S–D, Зал славы дня</li>
-      <li data-step="3"><b>Тренажёр техники</b></li>
-      <li data-step="4"><b>Клятва героя</b></li>
-      <li data-step="5"><b>Онлайн-дуэль</b> — WebRTC или LAN, до&nbsp;2&nbsp;побед из&nbsp;3</li>
+    <ul class="p2-stats">
+      <li><span class="num" data-ignite>24</span><span class="unit">жеста</span></li>
+      <li><span class="num">5</span><span class="unit">героев</span></li>
+      <li><span class="num">5</span><span class="unit">режимов</span></li>
     </ul>
   </div>
-  <aside class="notes">24 жеста, у каждого своё действие. Пять героев, босс с двумя фазами, режимы на минуту и на вечер. Дуэль работает и через интернет, и по локальной сети — для школьного Wi-Fi.</aside>
+  <aside class="notes">24 жеста, у каждого своё действие: 10 рун, 4 печати, 2 магии ладонями. Пять героев и босс с двумя фазами. Пять режимов — на минуту и на вечер: бой с Регентом; «Испытание · 60 с» с рангом S–D и Залом славы дня; тренажёр техники; «Клятва героя» — отжимания и приседания; онлайн-дуэль до 2 побед из 3 — через интернет (WebRTC) или по локальной сети, для школьного Wi-Fi.</aside>
 </section>`
   });
 
@@ -99,13 +97,13 @@
   Q.push({
     n: 6, sec: 45,
     html: `<section class="slide" data-slide="6" data-title="Не «не распознано», а «что исправить»">
-  <p class="kicker">Обратная связь</p>
+  <p class="kicker">Твист кейса · ОШИБКА</p>
   <h2 class="thesis">Не «не распознано», а&nbsp;«что исправить»</h2>
   <div class="p2-body">
     <figure class="p2-shot p2-s6-bat">
       <div class="p2-crop"><img src="../docs/screenshots/spirit/09_battle_mistake.jpg" alt="Бой: правая рука подсвечена красным, подсказка «Сомкни кончики большого и указательного в кольцо»" decoding="async"></div>
       ${RING}
-      <figcaption class="src p2-fig-note">Жест в бою · снято с&nbsp;клавиатуры</figcaption>
+      <figcaption class="cap p2-fig-note">Бой; снято с&nbsp;клавиатуры.</figcaption>
     </figure>
     <figure class="p2-shot p2-s6-sq">
       <div class="p2-crop">
@@ -113,7 +111,7 @@
         <img class="print-poster" src="media/p2/squat_poster.jpg" alt="">
       </div>
       ${RING}
-      <figcaption class="src p2-fig-note">Техника приседаний · стенд с&nbsp;записанной позой</figcaption>
+      <figcaption class="cap p2-fig-note">Стенд; с&nbsp;камерой — на&nbsp;живом показе.</figcaption>
     </figure>
     <div class="p2-s6-hint">
       <span class="num" data-ignite>63</span>
@@ -121,12 +119,12 @@
     </div>
     <ul class="p2-s6-steps">
       <li class="p2-tick" data-step="1"><span class="p2-tick-t">Голос тренера</span></li>
-      <li class="p2-tick" data-step="2"><span class="p2-tick-t">1&nbsp;повтор = 1&nbsp;очко клятвы<span class="p2-sep"> · </span>7&nbsp;улучшений героя</span></li>
+      <li class="p2-tick" data-step="2"><span class="p2-tick-t">Повтор — очко клятвы, чистый — два<span class="p2-sep"> · </span>7&nbsp;улучшений героя</span></li>
     </ul>
     <a class="p2-live" href="../index.html?demo&amp;present&amp;fury=100" target="_blank" rel="noopener">
       <svg viewBox="0 0 22 22" aria-hidden="true"><path d="M6 3.5 18 11 6 18.5z" fill="currentColor"/></svg>Живой показ</a>
   </div>
-  <aside class="notes">Когда жест не получился, игра не пишет «не распознано». Она говорит, что исправить, — 63 конкретные подсказки, голосом и пиктограммой. Приседания и отжимания засчитываются только при правильной технике и усиливают героя.</aside>
+  <aside class="notes">Когда жест не получился, игра не пишет «не распознано». Она говорит, что исправить, — 63 конкретные подсказки, голосом и пиктограммой. Приседания и отжимания тоже под присмотром: в «Новичке» повтор — очко клятвы, чистый — два, в «Мастере» засчитываются только чистые. Очки открывают 7 улучшений героя.</aside>
 </section>`
   });
 
@@ -138,21 +136,21 @@
   <h2 class="thesis">Кому это нужно и&nbsp;что дальше</h2>
   <div class="p2-body">
     <ul class="p2-who">
-      <li data-step="1"><h3>Школа</h3><p>без установки, офлайн, режим&nbsp;LAN</p></li>
-      <li data-step="2"><h3>Дом</h3><p>контроль техники приседаний и&nbsp;отжиманий</p></li>
-      <li data-step="3"><h3>Доступность</h3><p>можно сидя; «Новичок»&nbsp;— 5&nbsp;жестов и&nbsp;автоход; без&nbsp;мыши</p></li>
+      <li data-step="1"><h3>Школа</h3><p>без установки, офлайн,&nbsp;LAN</p></li>
+      <li data-step="2"><h3>Дом</h3><p>техника приседаний и&nbsp;отжиманий</p></li>
+      <li data-step="3"><h3>Доступность</h3><p>можно сидя; «Новичок»&nbsp;— 5&nbsp;жестов и&nbsp;автоход</p></li>
     </ul>
     <figure class="p2-shot p2-s12-shot">
       <div class="p2-crop"><img src="../docs/screenshots/challenge/9_poster_s.jpg" alt="Постер победы «Испытания · 60 с»: ранг S, 12 380 очков" decoding="async"></div>
       ${RING}
     </figure>
     <div class="p2-next" data-step="4">
-      <p class="p2-next-row"><span class="p2-next-k">В работе, не в&nbsp;main</span><span class="chip chip--wip">Быстрый вход · PR&nbsp;№39</span><span class="chip chip--wip">Камера на&nbsp;слабых ноутбуках</span><span class="chip chip--wip">Сложности «Сложная» и&nbsp;«Кошмар»</span></p>
-      <p class="p2-next-row"><span class="p2-next-k">План</span><span class="chip">Казахский язык</span><span class="chip">Режим учителя</span><span class="chip">Пилот в&nbsp;школе</span></p>
+      <p class="p2-next-row"><span class="src p2-next-k">В работе · не в&nbsp;main</span><span class="chip chip--wip">Быстрый вход · PR&nbsp;№39</span><span class="chip chip--wip">Камера на&nbsp;слабых ноутбуках</span><span class="chip chip--wip">Уровни «Сложная», «Кошмар»</span></p>
+      <p class="p2-next-row"><span class="src p2-next-k">План</span><span class="chip">Казахский язык</span><span class="chip">Режим учителя</span><span class="chip">Школьный пилот</span></p>
     </div>
-    <p class="cap p2-s12-cap">Не медицинское изделие.</p>
+    <p class="src p2-s12-cap">Не медицинское изделие.</p>
   </div>
-  <aside class="notes">Игра работает там, где есть ноутбук: в классе, дома, на стуле. Серые пункты — уже в работе в ветках, но не в main, поэтому мы не выдаём их за готовое. Дальше — казахский язык, режим учителя и пилот в школе.</aside>
+  <aside class="notes">Игра работает там, где есть ноутбук: в классе — без установки, офлайн и по локальной сети; дома — с контролем техники приседаний и отжиманий; сидя — режим «Новичок»: 5 жестов и автоход, меню без мыши. Серые пункты — уже в работе в ветках, но не в main, поэтому мы не выдаём их за готовое. Дальше — казахский язык, режим учителя и пилот в школе.</aside>
 </section>`
   });
 })();
