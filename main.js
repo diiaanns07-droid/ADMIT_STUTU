@@ -234,6 +234,7 @@ try {
   configureHeroes({ atmosphere: world && world.atmosphere, shading: settings.heroShading, quality: settings.quality, camera, renderer }); // [LOAD] renderer — шейдеры героя собираются до показа
   if (world && world.hero) heroModel = createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, markers: world.hero.markers, atmosphere: world.atmosphere, shading: settings.heroShading, quality: settings.quality, hero: settings.hero, baseUrl: new URL('./assets/quaternius/', import.meta.url).href }); // [HERO] markers/atmosphere/shading
 } catch (e) { console.warn('[ASHEN] heroModel', e); }
+if (settings.reducedMotion) import('./modules/heroGear.js').then((m) => m.configureGear({ reducedMotion: true })).catch(() => {}); // [W4-НАРЯДЫ] ткань нарядов спокойнее
 // [HERO] витрина героя в меню: кинематографичный свет и облёт (modules/heroShowcase.js); ошибка — прежняя камера меню
 let heroShowcase = null;
 // [LOAD] промис витрины: её свет должен быть в сцене до сборки шейдеров мира (bootCompile), иначе первый кадр меню
@@ -251,6 +252,7 @@ try {
   if (effects.setHeroGhosts) effects.setHeroGhosts(() => !!(heroModel && heroModel.afterimages)); // [HERO] V7.2 свои остаточные образы рывка
   // [VFX] PvP: заклинания соперника — от рук его модели (net/session.js → modules/remotePlayer.js getAnchors)
   if (effects.setRemoteAnchors) effects.setRemoteAnchors(() => (netSession && netSession.remote && typeof netSession.remote.getAnchors === 'function' ? netSession.remote.getAnchors() : null));
+  if (effects.v6 && effects.v6.fx && world && world.bossFx) effects.v6.fx.shared.bossFx = world.bossFx;   // [W4-УДАР] трещины брони у точки удара (fx/hitFx.js)
 } catch (e) { console.warn('[ASHEN] effects V6 hooks', e); }
 const debugInput = createDebugInput(window);
 // Постобработка (core/postfx.js) грузится динамически: до готовности и при любой ошибке — обычный render().
@@ -1015,6 +1017,7 @@ const callbacks = {
     applySettings();
     if (motionChanged && typeof world.configure === 'function') world.configure({ reducedMotion: settings.reducedMotion });
     if (motionChanged && postfx) { try { postfx.setReducedMotion(!!settings.reducedMotion); } catch (e) { /* ignore */ } }
+    if (motionChanged) import('./modules/heroGear.js').then((m) => m.configureGear({ reducedMotion: !!settings.reducedMotion })).catch(() => {}); // [W4-НАРЯДЫ]
     saveSettings(settings);
     renderUI();
     if (volumeMoved || (patch && patch.muted === false)) previewVolume();
@@ -2067,7 +2070,7 @@ function frame(now) {
   let fxEvents = events, fxSnap = lastSnapshot;
   if (netSession) { try { const r = netSession.frame(dtReal, now, lastSnapshot, input, events, app.screen); fxEvents = r.events; fxSnap = r.snapshot; } catch (e) { console.warn('[NET] frame', e); } }
   try { world.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] world.update', e); }
-  if (heroModel) { try { heroModel.update(dt, lastSnapshot, events); } catch (e) { console.error('[ASHEN] heroModel.update', e); } }
+  if (heroModel) { try { heroModel.update(dt, app.screen === 'menu' ? null : lastSnapshot, events); } catch (e) { console.error('[ASHEN] heroModel.update', e); } }   // [W4-ПОЗЫ] меню — ветка витрины (стойка, визитка), даже если снимок боя уже есть (место старта)
   if (effects.setInput) effects.setInput(input); // [VFX] след руны в воздухе, свечение ладоней
   if (heroBowPose) { try { heroBowPose.update(dt, { root: world.hero && world.hero.root, heroModel, snap: lastSnapshot }); } catch (e) { /* [HAND] */ } } // [HAND] поза лука/ладони
   try { effects.update(dt, fxSnap, fxEvents); } catch (e) { console.error('[ASHEN] effects.update', e); } // [NET] fxSnap/fxEvents
@@ -2205,7 +2208,7 @@ window.__ASHEN__ = Object.freeze({
   coachEnd: () => (coachEnd ? JSON.parse(JSON.stringify(coachEnd)) : null), // [ТВИСТ «ОШИБКА»] итог боя со сравнением
   activeHint: () => { const a = getActiveHint(); return a ? { ...a, pictogram: a.pictogram ? a.pictogram.length : 0 } : null; },
   hero: () => (heroModel ? heroModel.state() : null),
-  heroShowcase: () => (heroShowcase ? { weight: heroShowcase.weight, zoom: +heroShowcase.zoom.toFixed(2), lights: heroShowcase.group.children.filter((o) => o.isLight).map((l) => [l.name, +l.intensity.toFixed(1)]) } : null), // [HERO] QA
+  heroShowcase: () => (heroShowcase ? { weight: heroShowcase.weight, zoom: +heroShowcase.zoom.toFixed(2), lights: heroShowcase.group.children.filter((o) => o.isLight).map((l) => [l.name, +l.intensity.toFixed(1)]), stage: heroShowcase.stage || null } : null), // [HERO] QA; [W4-ВИТРИНА] stage — сцена витрины
   heroAnchors: () => { if (!heroModel || !heroModel.getAnchors) return null; const a = heroModel.getAnchors(), v = new THREE.Vector3(); return Object.fromEntries(Object.entries(a).map(([k, o]) => { o.getWorldPosition(v); return [k, { x: +v.x.toFixed(3), y: +v.y.toFixed(3), z: +v.z.toFixed(3), attached: !!o.parent }]; })); }, // [HERO] C5
   net: () => (netSession ? netSession.debug() : null),             // [NET]
   netSession: () => netSession,                                    // [NET] для тестов и №3

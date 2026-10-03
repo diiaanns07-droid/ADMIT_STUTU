@@ -232,3 +232,48 @@ export function clipMap(animations) {
   if (!out.Run && out.Running) out.Run = out.Running;
   return out;
 }
+
+// [W4-ЛИЦО] Лица героинь. Все три — одна модель Quaternius Ranger (assets/heroes/ranger.glb), поэтому
+// лицо задаётся описанием: брови (отдельная лента с волосками поверх кожи вместо толстых «плашек» модели),
+// глаза (масштаб области глаза и радужки, тени век по стихии, подводка), кожа (румянец, веснушки,
+// подповерхностный оттенок), губы и мягкая правка пропорций (челюсть, подбородок, нос — вершины в позе
+// привязки: морфов и костей лица у модели нет). Применяет heroShading.beautifyFace (из heroModel.setHero).
+// Координаты бровей — метры позы привязки модели: x — к левому виску героини, y — вверх (глаза на y ≈ 1.656,
+// внутренний угол глаза x ≈ 0.020, внешний ≈ 0.049). Брови симметричны (правая — зеркало по x).
+//   brow: { color, inner:[x,y], peak:[x,y], tail:[x,y], w:[головка, излом, хвост] (м), peakT — где излом
+//           по длине (0…1), soft — мягкость головки (градиент «омбре»), hair — заметность волосков, seed }
+//   eyes: { scale — область глаза (яблоко, веки, ресницы), iris — радужка внутри глаза, shadow/shadowA — тени
+//           век, shadow2 — второй тон к внешнему углу, liner/linerW — цвет и толщина подводки у внешнего угла (м),
+//           wing/wingUp — длина «стрелки» (м) и её подъём (рад), lower — дымка по нижнему веку }
+//   skin: { blush/blushA, freckles/frecklesA, glow — тёплый подповерхностный оттенок (0…1), contour — лёгкий
+//           контур скул, носа и челюсти (0…1), conceal — высветлить запечённые тени вокруг глаз (0…1) }
+//   lips: { color, a — насыщенность, gloss — влажный блеск (0…1), tint — тон к центру нижней губы }
+//   shape: { jaw — уже линия челюсти (0…1), chin — мягче и изящнее подбородок, nose — уже крылья и кончик носа,
+//            cheek — чуть выше и мягче скулы }
+export const FACE_LOOKS = Object.freeze({
+  // Эльфийка (Гроза): светлые тонкие брови высокой дугой, серебристо-голубые тени, нежные розовые губы
+  elf: {
+    brow: { color: 0x806e5a, inner: [0.0135, 1.6738], peak: [0.0425, 1.6828], tail: [0.0608, 1.6766], w: [0.0047, 0.0040, 0.0011], peakT: 0.64, soft: 0.75, hair: 0.6, seed: 3 },
+    eyes: { scale: 1.07, iris: 1.08, shadow: 0x65a4e0, shadowA: 0.5, shadow2: 0xc4e0f6, liner: 0x4a3a30, linerW: 0.0009, wing: 0.0016, wingUp: 0.32, lower: 0.07 },
+    skin: { blush: 0xf2959a, blushA: 0.3, glow: 0.95, contour: 0.55, conceal: 0.95 },
+    lips: { color: 0xd8828c, a: 0.62, gloss: 0.5, tint: 0xe8949e },
+    shape: { jaw: 0.85, chin: 0.7, nose: 0.75, cheek: 0.5 },
+  },
+  // Тёмная чародейка (Тьма и лёд): тёмные выразительные брови с чётким изломом, фиолетовые тени, стрелка
+  dark: {
+    brow: { color: 0x150e1a, inner: [0.0128, 1.6732], peak: [0.0442, 1.6845], tail: [0.0625, 1.6755], w: [0.0062, 0.0055, 0.0016], peakT: 0.7, soft: 0.35, hair: 0.35, seed: 7 },
+    eyes: { scale: 1.07, iris: 1.08, shadow: 0x6a3f9a, shadowA: 0.55, shadow2: 0x3a2050, liner: 0x0b0610, linerW: 0.0015, wing: 0.0085, wingUp: 0.32, lower: 0.1 },
+    skin: { blush: 0xc98aa6, blushA: 0.16, glow: 0.75, contour: 0.7, conceal: 0.7 },
+    lips: { color: 0x9a3c62, a: 0.62, gloss: 0.5, tint: 0x9e4468 },
+    shape: { jaw: 0.9, chin: 0.72, nose: 0.7, cheek: 0.6 },
+  },
+  // Лучница (Ветер): естественные мягкие брови, зелёно-золотые тени, свежий румянец, едва заметные веснушки
+  ranger: {
+    brow: { color: 0x4b3020, inner: [0.0132, 1.6727], peak: [0.0420, 1.6808], tail: [0.0597, 1.6762], w: [0.0060, 0.0052, 0.0016], peakT: 0.6, soft: 0.72, hair: 0.75, seed: 11 },
+    eyes: { scale: 1.06, iris: 1.07, shadow: 0x72894e, shadowA: 0.42, shadow2: 0xbf9048, liner: 0x2a1a12, linerW: 0.0009, wing: 0.0011, wingUp: 0.25, lower: 0.06 },
+    skin: { blush: 0xee9480, blushA: 0.3, freckles: 0xa5603f, frecklesA: 0.72, glow: 0.85, contour: 0.45, conceal: 0.95 },
+    lips: { color: 0xc8766c, a: 0.58, gloss: 0.4, tint: 0xcf8478 },
+    shape: { jaw: 0.75, chin: 0.7, nose: 0.68, cheek: 0.45 },
+  },
+});
+export function faceLookOf(id) { return FACE_LOOKS[id] || null; }

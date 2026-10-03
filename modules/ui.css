@@ -4388,3 +4388,935 @@ html.ao-present .ao-perfhud {
     display: none;
   }
 }
+
+/* ---- [W4-ВИТРИНА] табличка героя на витрине меню (modules/heroShowcase.js): класс, имя, стихия с иконкой.
+   Стоит справа от героя; прозрачность и въезд задаёт витрина по часам страницы (идут и под записью видео).
+   Размеры — от высоты окна и доли игровой области: в режиме презентации (игра — 60 % окна) не разъезжаются. */
+.ao-heroplate {
+  --ao-elem: #d8b36a;
+  position: absolute;
+  right: 4%;
+  top: 36%;
+  width: 31%;
+  text-align: right;
+  pointer-events: none;
+  color: var(--ao-parch);
+  opacity: 0;
+  will-change: opacity, transform;
+}
+.ao-heroplate__cls {
+  font-family: var(--bdo-font-italic);
+  font-style: italic;
+  font-size: clamp(15px, 2.5vh, 24px);
+  letter-spacing: 0.06em;
+  color: var(--ao-gold-hi);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+.ao-heroplate__name {
+  margin-top: 0.05em;
+  font-family: var(--bdo-font-display);
+  font-size: clamp(30px, 6.4vh, 70px);
+  line-height: 1.04;
+  letter-spacing: 0.03em;
+  background: linear-gradient(180deg, #fff8e8 0%, #f0dcae 46%, #c0924c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 16px color-mix(in srgb, var(--ao-elem) 42%, transparent));
+}
+.ao-heroplate__rule {
+  position: relative;
+  height: 1px;
+  margin: 0.55em 0 0.6em auto;
+  width: 78%;
+  background: linear-gradient(90deg, transparent, rgba(216, 179, 106, 0.75) 45%, color-mix(in srgb, var(--ao-elem) 80%, #fff 20%));
+}
+.ao-heroplate__rule i {
+  position: absolute;
+  right: -4px;
+  top: -4px;
+  width: 9px;
+  height: 9px;
+  transform: rotate(45deg);
+  border: 1px solid var(--bdo-gold-hi, #f3dca0);
+  background: color-mix(in srgb, var(--ao-elem) 60%, #000 40%);
+  box-shadow: 0 0 10px var(--ao-elem);
+}
+.ao-heroplate__elem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75em;
+  font-family: var(--bdo-font-display);
+  font-size: clamp(16px, 2.6vh, 26px);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ao-elem) 62%, #fff 38%);
+  text-shadow: 0 0 14px color-mix(in srgb, var(--ao-elem) 70%, transparent), 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+.ao-heroplate__icon {
+  display: grid;
+  place-items: center;
+  width: 2.2em;
+  height: 2.2em;
+  transform: rotate(45deg);
+  border: 1px solid rgba(216, 179, 106, 0.7);
+  outline: 1px solid rgba(216, 179, 106, 0.25);
+  outline-offset: 3px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--ao-elem) 38%, transparent) 0%, rgba(10, 10, 14, 0.72) 72%);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--ao-elem) 45%, transparent), inset 0 0 10px rgba(0, 0, 0, 0.6);
+}
+.ao-heroplate__icon svg {
+  width: 72%;
+  height: 72%;
+  transform: rotate(-45deg);
+  color: var(--ao-elem);
+  filter: drop-shadow(0 0 4px var(--ao-elem));
+}
+.ao-heroplate__desc {
+  margin-top: 0.8em;
+  font-family: var(--bdo-font-italic);
+  font-style: italic;
+  font-size: clamp(14px, 2.1vh, 20px);
+  color: rgba(234, 223, 197, 0.8);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+/* окно уже 3:2 (4:3, 5:4) — герой правее середины: табличка над ним, справа вверху */
+@media (max-aspect-ratio: 3/2) {
+  .ao-heroplate { top: 5%; width: 40%; }
+  .ao-heroplate__desc { display: none; }
+}
+/* [W4-СБОРКА] режим презентации (P): витрине — правые 60% окна, пропорция как у узкого экрана */
+html.ao-present .ao-heroplate { top: 5%; width: 40%; }
+html.ao-present .ao-heroplate__desc { display: none; }
+/* узкий экран: панель меню на всю ширину — табличке места нет */
+@media (max-width: 760px) {
+  .ao-heroplate { display: none; }
+}
+/* [W4-ВИТРИНА] «Призыв героя…» у рунного круга, пока грузится модель: кольцо вращает витрина */
+.ao-showcase-summon {
+  --ao-elem: #ffb070;
+  position: absolute;
+  left: 65%;
+  bottom: 6%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0;
+  color: color-mix(in srgb, var(--ao-elem) 55%, #fff 45%);
+}
+.ao-showcase-summon__ring {
+  width: clamp(40px, 7vh, 64px);
+  height: clamp(40px, 7vh, 64px);
+  color: var(--ao-elem);
+  filter: drop-shadow(0 0 6px var(--ao-elem));
+}
+.ao-showcase-summon__text {
+  font-family: var(--bdo-font-display);
+  font-size: clamp(15px, 2.3vh, 21px);
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--ao-elem) 80%, transparent), 0 1px 3px rgba(0, 0, 0, 0.95);
+}
+.ao-showcase-summon__dots {
+  display: inline-block;
+  width: 1.6em;
+  text-align: left;
+  letter-spacing: 0.1em;
+}
+
+/* =====================================================================================
+ * [W4-UI] Интерфейс уровня дорогой RPG: орнаментальные рамки панелей, полосы здоровья/энергии
+ * с «полосой потери» и бликом, широкая полоса Регента с крыльями и делением фаз, иконки умений
+ * со светящимся кольцом отката, свечение кнопок (мышь и курсор-кисть), переходы экранов,
+ * торжественные итоги и печать ранга «Испытания».
+ * Всё под html.ao-bdo (настройка bdoUi: false — прежний вид). Бюджет: анимации — только transform
+ * и opacity; бесконечные (блик, «дыхание», лучи, искры) выключены на низком качестве
+ * (html[data-ao-q='low'] — ставит core/battleHud.js по фактическому уровню) и при «Уменьшенном
+ * движении» (общее правило .ao-reduced-motion выше гасит все анимации и переходы).
+ * ===================================================================================== */
+:root {
+  /* рамка 9-срезов: внешняя бронзовая кромка, внутренний золотой кант, уголки с ромбом и завитком */
+  --w4-frame: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cdefs%3E%3Cg id='c'%3E%3Cpath d='M1.5 40V1.5H40' fill='none' stroke='%23d8b36a' stroke-width='1.4'/%3E%3Cpath d='M7.5 28V7.5H28' fill='none' stroke='%23d8b36a' stroke-opacity='.6'/%3E%3Cpath d='M15 7.5c0 4.2 2.4 7.5 7 7.5M7.5 15c4.2 0 7.5 2.4 7.5 7' fill='none' stroke='%23f3dca0' stroke-opacity='.75'/%3E%3Cpath d='M7.5 1 14 7.5 7.5 14 1 7.5z' fill='%23f3dca0' stroke='%230b0a09' stroke-width='.8'/%3E%3Ccircle cx='40' cy='1.5' r='1.7' fill='%23d8b36a'/%3E%3Ccircle cx='1.5' cy='40' r='1.7' fill='%23d8b36a'/%3E%3C/g%3E%3C/defs%3E%3Crect x='.5' y='.5' width='119' height='119' fill='none' stroke='%236f5532'/%3E%3Crect x='7.5' y='7.5' width='105' height='105' fill='none' stroke='%23d8b36a' stroke-opacity='.22'/%3E%3Cuse href='%23c'/%3E%3Cuse href='%23c' transform='matrix(-1 0 0 1 120 0)'/%3E%3Cuse href='%23c' transform='matrix(1 0 0 -1 0 120)'/%3E%3Cuse href='%23c' transform='matrix(-1 0 0 -1 120 120)'/%3E%3C/svg%3E");
+  /* ромб-заклёпка на концах полос */
+  --w4-cap: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M6 .8 11.2 6 6 11.2.8 6z' fill='%230b0a09' stroke='%23d8b36a'/%3E%3Cpath d='M6 3.6 8.4 6 6 8.4 3.6 6z' fill='%23f3dca0'/%3E%3C/svg%3E");
+  /* крыло полосы Регента (левое; правое — зеркально) */
+  --w4-wing: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 30'%3E%3Cg fill='none' stroke='%23d8b36a' stroke-width='1.3' stroke-linecap='round'%3E%3Cpath d='M80 15H26'/%3E%3Cpath d='M71 15c-6 0-9-8-17-8-6 0-9 4-7 7 1.6 2.4 5 1 4-1.4'/%3E%3Cpath d='M71 15c-6 0-9 8-17 8-6 0-9-4-7-7 1.6-2.4 5-1 4 1.4'/%3E%3C/g%3E%3Cpath d='M27 15 16 8.6 2 15l14 6.4z' fill='%23d8b36a'/%3E%3Cpath d='M23 15 16 11.6 9 15l7 3.4z' fill='%230b0a09'/%3E%3Ccircle cx='76' cy='15' r='2.1' fill='%23f3dca0'/%3E%3C/svg%3E");
+  /* завиток-разделитель у заголовков (левый; правый — зеркально) */
+  --w4-flourish: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 90 16'%3E%3Cdefs%3E%3ClinearGradient id='g'%3E%3Cstop offset='0' stop-color='%23d8b36a' stop-opacity='0'/%3E%3Cstop offset='1' stop-color='%23d8b36a'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M0 8h72' stroke='url(%23g)' stroke-width='2'/%3E%3Cpath d='M72 8 80 1.5 88 8 80 14.5z' fill='%23f3dca0' stroke='%230b0a09' stroke-width='.8'/%3E%3Cpath d='M76.5 8 80 5.2 83.5 8 80 10.8z' fill='%23a07a3c'/%3E%3Ccircle cx='64' cy='8' r='2.2' fill='%23d8b36a'/%3E%3C/svg%3E");
+  /* четырёхлучевая искра */
+  --w4-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 0c.8 6 3.2 8.4 10 10-6.8 1.6-9.2 4-10 10-.8-6-3.2-8.4-10-10 6.8-1.6 9.2-4 10-10z' fill='%23fff1c4'/%3E%3C/svg%3E");
+  --w4-gold: #d8b36a;
+  --w4-gold-hi: #f3dca0;
+  --w4-bronze: #6f5532;
+  --w4-ink: #0b0a09;
+  --w4-num: 'Cinzel', 'Forum', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  --w4-cap-font: 'Forum', 'Cinzel', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+}
+
+/* ---- [W4-UI] панели: тёплая лакированная подложка и орнаментальная рамка (border-image, без лишних узлов) */
+html.ao-bdo .ao-frame {
+  background-color: rgba(17, 15, 13, 0.97);
+  background-image:
+    radial-gradient(120% 70% at 50% 0%, rgba(216, 179, 106, 0.09), transparent 62%),
+    linear-gradient(180deg, rgba(28, 24, 19, 0.6), rgba(10, 9, 8, 0.2));
+  background-size: auto;
+  background-position: 0 0;
+  border: 1px solid var(--w4-bronze);
+  border-image: var(--w4-frame) 42 / 34px / 3px stretch;
+  outline: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 22px 60px rgba(0, 0, 0, 0.6), inset 0 0 70px rgba(0, 0, 0, 0.35);
+}
+/* [W4-СБОРКА] рамка border-image закрывает цвет верхней кромки паузы («камера потеряна / вернулась») — полоса тенью */
+html.ao-bdo .ao-panel--pause[data-variant='lost'] {
+  box-shadow: inset 0 3px 0 var(--ao-bad), 0 0 0 1px rgba(0, 0, 0, 0.55), 0 22px 60px rgba(0, 0, 0, 0.6), inset 0 0 70px rgba(0, 0, 0, 0.35);
+}
+html.ao-bdo .ao-panel--pause[data-variant='restored'] {
+  box-shadow: inset 0 3px 0 var(--ao-busy), 0 0 0 1px rgba(0, 0, 0, 0.55), 0 22px 60px rgba(0, 0, 0, 0.6), inset 0 0 70px rgba(0, 0, 0, 0.35);
+}
+html.ao-bdo .ao-hero,
+html.ao-bdo .ao-cvdock,
+html.ao-bdo .ao-cheat {
+  background-color: rgba(11, 10, 9, 0.8);
+  background-image: linear-gradient(180deg, rgba(216, 179, 106, 0.07), transparent 38%);
+  border: 1px solid var(--w4-bronze);
+  border-image: var(--w4-frame) 42 / 22px / 2px stretch;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 10px 26px rgba(0, 0, 0, 0.45);
+}
+
+/* ---- [W4-UI] полосы: рамка с заклёпками, глянец, деления, белая «полоса потери», блик */
+html.ao-bdo .ao-row {
+  position: relative;
+}
+html.ao-bdo .ao-row__k {
+  font-family: var(--w4-cap-font);
+  font-size: max(14px, 0.9rem);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #cbbd9c;
+}
+html.ao-bdo .ao-row__v {
+  font-family: var(--w4-num);
+  font-size: max(14px, 0.92rem);
+  letter-spacing: 0.04em;
+  color: var(--w4-gold-hi);
+  text-shadow: 0 1px 2px #000;
+}
+html.ao-bdo .ao-bar {
+  background: linear-gradient(180deg, #050405 0%, #141012 100%);
+  border: 1px solid #2a2016;
+  box-shadow: 0 0 0 1px var(--w4-bronze), 0 0 0 2px rgba(0, 0, 0, 0.7), inset 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+html.ao-bdo .ao-bar::after {
+  /* глянец сверху и деления по 10 % поверх заливки */
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.05) 45%, transparent 50%, rgba(0, 0, 0, 0.25) 100%),
+    repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(0, 0, 0, 0.5) calc(10% - 1px) 10%);
+}
+html.ao-bdo .ao-bar__trail {
+  /* «полоса потери»: белая хвостовая часть догоняет заливку с задержкой */
+  background: linear-gradient(180deg, #fffaf0 0%, #f1dcc0 100%);
+  opacity: 0.9;
+  transition: transform 0.65s cubic-bezier(0.5, 0, 0.2, 1) 0.32s;
+}
+html.ao-bdo .ao-bar__fill {
+  overflow: hidden;
+  transition: transform 0.14s ease-out;
+}
+html.ao-bdo .ao-bar__fill::after {
+  /* блик бежит по заполненной части (масштабируется вместе с ней) */
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 26%;
+  background: linear-gradient(100deg, transparent 0%, rgba(255, 248, 230, 0.55) 50%, transparent 100%);
+  transform: translateX(-120%);
+  animation: ao-w4-sheen 4.2s ease-in-out 1.2s infinite;
+}
+@keyframes ao-w4-sheen {
+  0% { transform: translateX(-120%); }
+  45%, 100% { transform: translateX(420%); }
+}
+html.ao-bdo .ao-bar--hp {
+  height: 14px;
+}
+html.ao-bdo .ao-bar--hp .ao-bar__fill {
+  background: linear-gradient(180deg, #ff8a6a 0%, #d43a2a 32%, #9e1c18 70%, #5e0f10 100%);
+}
+html.ao-bdo .ao-bar--energy {
+  height: 10px;
+}
+html.ao-bdo .ao-bar--energy .ao-bar__fill {
+  background: linear-gradient(180deg, #a8d4ff 0%, #4b8fe6 34%, #2457b0 72%, #12305e 100%);
+}
+html.ao-bdo .ao-bar--energy .ao-bar__trail {
+  background: linear-gradient(180deg, #f2f8ff, #c9dcf2);
+  opacity: 0.75;
+}
+html.ao-bdo .ao-bar--energy::after {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.05) 45%, transparent 50%, rgba(0, 0, 0, 0.25) 100%),
+    repeating-linear-gradient(90deg, transparent 0 calc(25% - 1px), rgba(0, 0, 0, 0.55) calc(25% - 1px) 25%);
+}
+/* заклёпки на концах полос героя (ромбы вне полосы: у самой полосы overflow:hidden) */
+html.ao-bdo .ao-hero .ao-row::before,
+html.ao-bdo .ao-hero .ao-row::after {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  bottom: calc(var(--w4-bh, 14px) / 2 - 6px);
+  width: 12px;
+  height: 12px;
+  background: var(--w4-cap) center / contain no-repeat;
+  pointer-events: none;
+}
+html.ao-bdo .ao-hero .ao-row::before { left: -6px; }
+html.ao-bdo .ao-hero .ao-row::after { right: -6px; }
+html.ao-bdo .ao-hero .ao-row:nth-child(2) { --w4-bh: 10px; }
+html.ao-bdo .ao-hero .ao-row + .ao-row { margin-top: 0.4rem; }
+/* удар: белая вспышка по рамке полосы (класс-переключатель a/b из ui.js перезапускает анимацию без reflow) */
+html.ao-bdo .ao-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 250, 235, 0.95), inset 0 0 10px rgba(255, 240, 210, 0.75);
+}
+html.ao-bdo .ao-bar.is-hit-a::before { animation: ao-w4-hit-a 0.38s ease-out; }
+html.ao-bdo .ao-bar.is-hit-b::before { animation: ao-w4-hit-b 0.38s ease-out; }
+@keyframes ao-w4-hit-a { 0% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes ao-w4-hit-b { 0% { opacity: 1; } 100% { opacity: 0; } }
+/* мало здоровья — красное «сердцебиение» полосы; мало энергии — холодная пульсация */
+html.ao-bdo .ao-hero.is-low .ao-bar--hp::before,
+html.ao-bdo .ao-hero.is-lowen .ao-bar--energy::before {
+  opacity: 0.35;
+  box-shadow: inset 0 0 0 1px rgba(255, 110, 80, 0.95), inset 0 0 12px rgba(255, 60, 30, 0.95);
+  animation: ao-w4-lowpulse 0.9s ease-in-out infinite alternate;
+}
+html.ao-bdo .ao-hero.is-lowen .ao-bar--energy::before {
+  box-shadow: inset 0 0 0 1px rgba(160, 205, 255, 0.95), inset 0 0 10px rgba(90, 160, 255, 0.9);
+  animation-duration: 1.2s;
+}
+@keyframes ao-w4-lowpulse { from { opacity: 0.2; } to { opacity: 1; } }
+html.ao-bdo .ao-hero.is-low .ao-bar--hp {
+  border-color: #6a1410;
+}
+html.ao-bdo .ao-hero.is-low .ao-row:first-child .ao-row__v {
+  color: #ff9a82;
+}
+
+/* ---- [W4-UI] полоса Регента: широкая, крылья по краям, имя капителью, деление фаз */
+html.ao-bdo .ao-boss {
+  width: min(640px, 47vw);
+  top: calc(var(--ao-pad) * 0.55);
+}
+html.ao-bdo .ao-boss__head {
+  position: relative;
+  justify-content: center;
+  margin-bottom: 0.15rem;
+}
+html.ao-bdo .ao-boss__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-family: var(--w4-cap-font);
+  font-size: clamp(1.15rem, 1vw + 0.55rem, 1.45rem);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #f1e4c4;
+  text-shadow: 0 0 12px rgba(216, 179, 106, 0.35), 0 2px 3px #000;
+}
+html.ao-bdo .ao-boss__name::before,
+html.ao-bdo .ao-boss__name::after {
+  content: '';
+  width: 3.4em;
+  height: 0.62em;
+  background: var(--w4-flourish) center / contain no-repeat;
+}
+html.ao-bdo .ao-boss__name::after {
+  transform: scaleX(-1);
+}
+html.ao-bdo .ao-boss__stage {
+  position: absolute;
+  right: 0;
+  bottom: 0.2rem;
+  padding: 0 0.55rem;
+  border: 1px solid rgba(255, 138, 60, 0.6);
+  background: rgba(60, 14, 6, 0.75);
+  color: #ffb27a;
+  font-family: var(--w4-cap-font);
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+}
+html.ao-bdo .ao-boss__frame {
+  position: relative;
+  padding: 0 3.9rem;
+}
+html.ao-bdo .ao-boss__frame::before,
+html.ao-bdo .ao-boss__frame::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 4.1rem;
+  height: 1.55rem;
+  margin-top: -0.775rem;
+  background: var(--w4-wing) center / contain no-repeat;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px #000);
+}
+/* узкие окна и режим презентации (игра — 60 % окна): полоса Регента по ширине игровой области */
+@media (max-width: 900px) {
+  html.ao-bdo .ao-boss { width: min(560px, 70vw); }
+}
+@media (max-width: 620px) {
+  html.ao-bdo .ao-boss__frame { padding: 0 2.5rem; }
+  html.ao-bdo .ao-boss__frame::before,
+  html.ao-bdo .ao-boss__frame::after { width: 2.7rem; }
+  html.ao-bdo .ao-boss__name::before,
+  html.ao-bdo .ao-boss__name::after { width: 1.8em; }
+}
+html.ao-bdo.ao-present .ao-boss {
+  width: min(600px, 29vw);
+}
+html.ao-bdo .ao-boss__frame::before { left: 0; }
+html.ao-bdo .ao-boss__frame::after { right: 0; transform: scaleX(-1); }
+html.ao-bdo .ao-bar--boss {
+  height: 15px;
+  background: linear-gradient(180deg, #050405 0%, #160d0d 100%);
+}
+html.ao-bdo .ao-bar--boss .ao-bar__fill {
+  background:
+    linear-gradient(180deg, #ff9a7a 0%, #e0442e 22%, #a21d16 60%, #4e0a0a 100%);
+}
+html.ao-bdo .ao-boss.is-stage2 .ao-bar--boss .ao-bar__fill {
+  background: linear-gradient(180deg, #ffd08a 0%, #ff7a2e 24%, #c2361a 62%, #5a1206 100%);
+}
+html.ao-bdo .ao-bar__mark {
+  /* деление фаз: золотая черта на 50 % — с неё начинается вторая стадия */
+  left: calc(50% - 1px);
+  width: 2px;
+  z-index: 3;
+  background: linear-gradient(180deg, #fff1c4, #d8b36a 60%, #6f5532);
+  box-shadow: 0 0 6px rgba(243, 220, 160, 0.8);
+}
+html.ao-bdo .ao-boss__frame > .ao-bar--boss::after {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.05) 42%, transparent 50%, rgba(0, 0, 0, 0.3) 100%),
+    repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(0, 0, 0, 0.42) calc(10% - 1px) 10%);
+}
+/* ромбы над и под делением фаз */
+html.ao-bdo .ao-boss__phase {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 11px;
+  height: 27px;
+  margin: -13.5px 0 0 -5.5px;
+  z-index: 4;
+  pointer-events: none;
+  background: var(--w4-cap) 50% 0 / 11px 11px no-repeat, var(--w4-cap) 50% 100% / 11px 11px no-repeat;
+}
+html.ao-bdo .ao-boss.is-stage2 .ao-boss__phase,
+html.ao-bdo .ao-boss.is-stage2 .ao-bar__mark {
+  opacity: 0.45;
+}
+html.ao-bdo .ao-tele {
+  background: linear-gradient(90deg, rgba(12, 10, 9, 0.88), rgba(12, 10, 9, 0.7));
+  border-left-width: 3px;
+  box-shadow: 0 0 0 1px rgba(111, 85, 50, 0.55);
+}
+
+/* ---- [W4-UI] иконки умений: лакированная плитка, кольцо со свечением, круговой откат с искрой */
+html.ao-bdo .ao-ab {
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(216, 179, 106, 0.12), transparent 62%),
+    linear-gradient(180deg, #1b1712 0%, #0c0b0a 100%);
+  border: 1px solid #4a3a24;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(243, 220, 160, 0.14);
+}
+html.ao-bdo .ao-ab::before {
+  border: 2px solid rgba(216, 179, 106, 0.6);
+  background: radial-gradient(circle at 50% 32%, #2c2519 0%, #0d0b09 72%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75), inset 0 0 6px rgba(0, 0, 0, 0.85);
+}
+html.ao-bdo .ao-ab::after {
+  /* ореол готовности: мягко «дышит»; при срабатывании и готовности — вспышка-кольцо */
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0.3rem;
+  width: var(--ao-ring);
+  height: var(--ao-ring);
+  margin-left: calc(var(--ao-ring) / -2);
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: 0 0 0 1px rgba(243, 220, 160, 0.85), 0 0 12px 3px rgba(216, 179, 106, 0.55), inset 0 0 10px rgba(243, 220, 160, 0.45);
+}
+html.ao-bdo .ao-ab[data-state='ready']::before {
+  border-color: var(--w4-gold);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75), 0 0 9px rgba(216, 179, 106, 0.5), inset 0 0 6px rgba(0, 0, 0, 0.85);
+}
+html.ao-bdo .ao-ab[data-state='ready']::after {
+  animation: ao-w4-breathe 2.6s ease-in-out infinite alternate;
+}
+@keyframes ao-w4-breathe { from { opacity: 0.15; } to { opacity: 0.7; } }
+html.ao-bdo .ao-ab[data-state='ready'] .ao-ab__icon {
+  color: var(--w4-gold-hi);
+  filter: drop-shadow(0 0 4px rgba(243, 220, 160, 0.55));
+}
+html.ao-bdo .ao-ab[data-state='active'] {
+  border-color: var(--w4-gold-hi);
+  background:
+    radial-gradient(120% 90% at 50% 10%, rgba(255, 214, 140, 0.3), transparent 65%),
+    linear-gradient(180deg, #2a2216 0%, #120f0b 100%);
+}
+html.ao-bdo .ao-ab[data-state='active']::after {
+  opacity: 1;
+}
+html.ao-bdo .ao-ab[data-state='active'] .ao-ab__icon {
+  color: #fff3d0;
+  filter: drop-shadow(0 0 6px rgba(255, 220, 150, 0.9));
+}
+html.ao-bdo .ao-ab__cd {
+  background:
+    radial-gradient(circle, rgba(6, 6, 8, 0.6) 0 53%, transparent 55%),
+    conic-gradient(rgba(4, 4, 6, 0.9) 0 calc(var(--ao-cd, 0) * 360deg),
+      #fff2c8 calc(var(--ao-cd, 0) * 360deg) calc(var(--ao-cd, 0) * 360deg + 7deg),
+      rgba(216, 179, 106, 0.95) calc(var(--ao-cd, 0) * 360deg + 7deg));
+}
+html.ao-bdo .ao-ab__time {
+  font-family: var(--ao-font-ui);
+  color: #fff6e2;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.95), 0 1px 2px #000;
+}
+html.ao-bdo .ao-ab__name {
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 2px #000;
+}
+html.ao-bdo .ao-ab[data-state='low'] {
+  border-style: solid;
+  border-color: #2f4f78;
+}
+html.ao-bdo .ao-ab[data-state='low']::before {
+  border-color: rgba(90, 160, 255, 0.55);
+  border-style: dashed;
+}
+html.ao-bdo .ao-ab[data-state='off'] {
+  filter: grayscale(0.8);
+}
+/* срабатывание: «щелчок» плитки и вспышка кольца; готовность: кольцо расходится и гаснет */
+html.ao-bdo .ao-ab.is-flash {
+  animation: ao-w4-ab-pop 0.42s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+html.ao-bdo .ao-ab.is-flash::after {
+  animation: ao-w4-ab-burst 0.45s ease-out;
+}
+html.ao-bdo .ao-ab.is-ready {
+  animation: none;
+}
+html.ao-bdo .ao-ab.is-ready::after {
+  animation: ao-w4-ab-burst 0.6s ease-out;
+}
+@keyframes ao-w4-ab-pop {
+  0% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+@keyframes ao-w4-ab-burst {
+  0% { opacity: 1; transform: scale(0.85); }
+  100% { opacity: 0; transform: scale(1.55); }
+}
+
+/* ---- [W4-UI] кнопки: лакированный металл; свечение при наведении мышью и курсором-кистью */
+html.ao-bdo .ao-btn {
+  background: linear-gradient(180deg, #24201a 0%, #15130f 100%);
+  border-color: #6f5532;
+  box-shadow: inset 0 1px 0 rgba(243, 220, 160, 0.12), inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6);
+}
+html.ao-bdo .ao-btn::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: 0 0 0 1px rgba(243, 220, 160, 0.85), 0 0 18px 2px rgba(216, 179, 106, 0.45), inset 0 0 14px rgba(243, 220, 160, 0.22);
+  transition: opacity 0.18s ease-out;
+}
+html.ao-bdo .ao-btn:hover,
+html.ao-bdo .ao-btn.ao-hc-hover {
+  background: linear-gradient(180deg, #2e281f 0%, #1a1712 100%);
+  border-color: var(--w4-gold);
+  color: #fff6e0;
+}
+html.ao-bdo .ao-btn:hover::after,
+html.ao-bdo .ao-btn.ao-hc-hover::after,
+html.ao-bdo .ao-btn:focus-visible::after {
+  opacity: 1;
+}
+html.ao-bdo .ao-btn--primary {
+  color: #1b130a;
+  text-shadow: 0 1px 0 rgba(255, 240, 200, 0.45);
+  background: linear-gradient(180deg, #f3dca0 0%, #d8b36a 40%, #b08a52 78%, #8a6a3e 100%);
+  border-color: #f3dca0;
+  box-shadow: inset 0 1px 0 rgba(255, 250, 230, 0.7), inset 0 -2px 4px rgba(90, 60, 20, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.65), 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+html.ao-bdo .ao-btn--primary:hover,
+html.ao-bdo .ao-btn--primary.ao-hc-hover {
+  color: #140e06;
+  background: linear-gradient(180deg, #fff0c4 0%, #e6c47e 40%, #c09a5c 78%, #96743f 100%);
+  border-color: #fff3d0;
+}
+html.ao-bdo .ao-btn--primary::after {
+  box-shadow: 0 0 0 1px rgba(255, 246, 220, 0.95), 0 0 24px 4px rgba(243, 200, 110, 0.6);
+}
+html.ao-bdo .ao-btn--quiet,
+html.ao-bdo .ao-btn--quiet:hover,
+html.ao-bdo .ao-btn--quiet.ao-hc-hover {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+html.ao-bdo .ao-btn--quiet:hover,
+html.ao-bdo .ao-btn--quiet.ao-hc-hover {
+  text-decoration: none;
+}
+html.ao-bdo .ao-btn--quiet::after {
+  box-shadow: none;
+  inset: auto 15% 0.25rem;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--w4-gold-hi), transparent);
+}
+html.ao-bdo .ao-btn[aria-disabled='true'],
+html.ao-bdo .ao-btn.is-disabled {
+  color: #9a917f;   /* [W4-СБОРКА] иначе у главной кнопки остаётся тёмный текст .ao-btn--primary — на тёмном фоне не читается */
+  background: #1d1c1e;
+  border-color: #3e3a33;
+  box-shadow: none;
+  text-shadow: none;
+}
+html.ao-bdo .ao-btn[aria-disabled='true']::after {
+  opacity: 0;
+}
+html.ao-bdo .ao-btn:active:not([aria-disabled='true']) {
+  transform: translateY(1px);
+}
+
+/* ---- [W4-UI] переходы экранов: мягкое появление из полумрака (старый экран тонет в вуали), панель
+   всплывает; HUD боя выезжает к краям. «Уменьшенное движение» — без анимаций (общее правило выше). */
+html.ao-bdo .ao-screen {
+  animation: ao-w4-screen-in 0.4s ease-out both;
+}
+html.ao-bdo .ao-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(ellipse 90% 80% at 50% 50%, rgba(8, 7, 6, 0.55), rgba(4, 4, 4, 0.92));
+  opacity: 0;
+  animation: ao-w4-veil 0.6s ease-out both;
+}
+html.ao-bdo .ao-screen > .ao-panel {
+  /* [W4-СБОРКА] backwards, не both: заполненная анимация transform делает панель контейнером для position: fixed —
+     плашка ключей отладки (.ao-debugkeys) уезжала из угла экрана на кнопки меню */
+  animation: ao-w4-panel-in 0.5s cubic-bezier(0.16, 0.84, 0.24, 1) backwards;
+}
+@keyframes ao-w4-screen-in { from { opacity: 0.35; } to { opacity: 1; } }
+@keyframes ao-w4-veil { from { opacity: 1; } to { opacity: 0; } }
+@keyframes ao-w4-panel-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+html.ao-bdo .ao-hud:not([hidden]) .ao-hero {
+  animation: ao-w4-from-left 0.55s cubic-bezier(0.16, 0.84, 0.24, 1) both;
+}
+html.ao-bdo .ao-hud:not([hidden]) .ao-boss {
+  /* [W4-СБОРКА] backwards, не both: конечный кадр не держит opacity 1 — полоса павшего Регента снова тускнеет (.is-dead) */
+  animation: ao-w4-from-top 0.6s cubic-bezier(0.16, 0.84, 0.24, 1) 0.08s backwards;
+}
+@keyframes ao-w4-from-left { from { opacity: 0; transform: translateX(-24px); } to { opacity: 1; transform: none; } }
+@keyframes ao-w4-from-top { from { opacity: 0; transform: translate(-50%, -18px); } to { opacity: 1; transform: translateX(-50%); } }
+html.ao-bdo .ao-banner {
+  font-family: var(--w4-cap-font);
+  letter-spacing: 0.12em;
+  color: var(--w4-gold-hi);
+  background: linear-gradient(90deg, transparent 0%, rgba(10, 8, 6, 0.82) 22%, rgba(10, 8, 6, 0.82) 78%, transparent 100%);
+  box-shadow: 0 -1px 0 0 rgba(216, 179, 106, 0.4), 0 1px 0 0 rgba(216, 179, 106, 0.4);
+  animation: ao-w4-banner 0.6s cubic-bezier(0.16, 0.84, 0.24, 1) both;
+}
+@keyframes ao-w4-banner { from { opacity: 0; transform: scaleX(0.6); } to { opacity: 1; transform: none; } }
+
+/* ---- [W4-UI] итоги боя: свет над заголовком, завитки, искры, цифры по очереди */
+html.ao-bdo .ao-panel--result {
+  isolation: isolate;
+}
+html.ao-bdo .ao-panel--result .ao-h1 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6em;
+}
+html.ao-bdo .ao-panel--result .ao-h1::before,
+html.ao-bdo .ao-panel--result .ao-h1::after {
+  content: '';
+  flex: 0 0 auto;
+  width: 2.6em;
+  height: 0.45em;
+  background: var(--w4-flourish) center / contain no-repeat;
+}
+html.ao-bdo .ao-panel--result .ao-h1::after {
+  transform: scaleX(-1);
+}
+html.ao-bdo .ao-panel--victory .ao-h1 {
+  color: #ffe7ac;
+  text-shadow: 0 0 22px rgba(255, 200, 100, 0.45), 0 2px 4px #000;
+}
+html.ao-bdo .ao-panel--defeat .ao-h1 {
+  color: #e8e0d2;
+}
+html.ao-bdo .ao-panel--result::before {
+  /* лучи света за заголовком победы (медленно вращаются) */
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  top: -150px;
+  width: 520px;
+  height: 520px;
+  margin-left: -260px;
+  pointer-events: none;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(255, 214, 140, 0.22) 0%, rgba(255, 214, 140, 0.06) 34%, transparent 62%),
+    repeating-conic-gradient(rgba(255, 214, 140, 0.1) 0deg 5deg, transparent 5deg 15deg);
+  -webkit-mask: radial-gradient(circle, #000 18%, transparent 64%);
+  mask: radial-gradient(circle, #000 18%, transparent 64%);
+  animation: ao-w4-rays-in 1.1s ease-out both, ao-w4-spin 60s linear 1.1s infinite;
+}
+html.ao-bdo .ao-panel--defeat::before {
+  background: radial-gradient(circle, rgba(150, 170, 200, 0.12) 0%, transparent 60%);
+  animation: ao-w4-rays-in 1.1s ease-out both;
+}
+@keyframes ao-w4-rays-in { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: none; } }
+@keyframes ao-w4-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+html.ao-bdo .ao-panel--victory::after {
+  /* искры вокруг заголовка */
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  top: 0.4rem;
+  width: min(34rem, 80%);
+  height: 4.6rem;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background:
+    var(--w4-star) 4% 62% / 14px 14px no-repeat,
+    var(--w4-star) 15% 12% / 9px 9px no-repeat,
+    var(--w4-star) 30% 88% / 7px 7px no-repeat,
+    var(--w4-star) 71% 10% / 10px 10px no-repeat,
+    var(--w4-star) 86% 78% / 13px 13px no-repeat,
+    var(--w4-star) 97% 26% / 8px 8px no-repeat;
+  animation: ao-w4-twinkle 2.2s ease-in-out 0.6s infinite alternate both;
+}
+@keyframes ao-w4-twinkle {
+  from { opacity: 0.25; transform: translateX(-50%) translateY(2px) scale(0.97); }
+  to { opacity: 1; transform: translateX(-50%) translateY(-2px) scale(1.02); }
+}
+html.ao-bdo .ao-panel--result .ao-stats {
+  border-color: rgba(111, 85, 50, 0.6);
+  background: linear-gradient(180deg, rgba(216, 179, 106, 0.06), transparent);
+}
+html.ao-bdo .ao-panel--result .ao-stat {
+  border-color: rgba(111, 85, 50, 0.6);
+  animation: ao-w4-rise 0.5s cubic-bezier(0.16, 0.84, 0.24, 1) both;
+}
+html.ao-bdo .ao-panel--result .ao-stat:nth-child(1) { animation-delay: 0.15s; }
+html.ao-bdo .ao-panel--result .ao-stat:nth-child(2) { animation-delay: 0.22s; }
+html.ao-bdo .ao-panel--result .ao-stat:nth-child(3) { animation-delay: 0.29s; }
+html.ao-bdo .ao-panel--result .ao-stat:nth-child(4) { animation-delay: 0.36s; }
+html.ao-bdo .ao-panel--result .ao-stat:nth-child(5) { animation-delay: 0.43s; }
+html.ao-bdo .ao-panel--result .ao-stat:nth-child(6) { animation-delay: 0.5s; }
+html.ao-bdo .ao-panel--result .ao-stat:nth-child(7) { animation-delay: 0.57s; }
+@keyframes ao-w4-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+html.ao-bdo .ao-panel--result .ao-stat__v {
+  font-family: var(--w4-num);
+  font-weight: 500;
+  color: #ffe7ac;
+  text-shadow: 0 0 10px rgba(255, 200, 100, 0.25);
+}
+html.ao-bdo .ao-panel--defeat .ao-stat__v {
+  color: #e6dccb;
+  text-shadow: none;
+}
+html.ao-bdo .ao-panel--result .ao-stat__k {
+  font-size: max(14px, 0.8rem);
+}
+
+/* ---- [W4-UI] «Испытание»: печать ранга — оттиск с ударной волной, лучи и искры за печатью */
+html.ao-bdo .ao-chal__hero {
+  position: relative;
+}
+html.ao-bdo .ao-screen--challenge .ao-chal__rank {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 50% 38%, #2e2619 0%, #120f0b 68%),
+    #120f0b;
+  box-shadow: inset 0 0 0 5px rgba(0, 0, 0, 0.5), inset 0 0 0 6px color-mix(in srgb, var(--rk) 60%, transparent), inset 0 0 0 9px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 10px rgba(216, 179, 106, 0.35), 0 0 34px color-mix(in srgb, var(--rk) 45%, transparent);
+}
+html.ao-bdo .ao-screen--challenge .ao-chal__rank::before {
+  /* лучи за печатью: видны только снаружи круга */
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -30%;
+  border-radius: 50%;
+  pointer-events: none;
+  background: repeating-conic-gradient(color-mix(in srgb, var(--rk) 34%, transparent) 0deg 4deg, transparent 4deg 15deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 45%, #000 47%, transparent 71%);
+  mask: radial-gradient(circle, transparent 0 45%, #000 47%, transparent 71%);
+  animation: ao-w4-rays-in 0.9s ease-out 0.45s both, ao-w4-spin 40s linear 1.3s infinite;
+}
+html.ao-bdo .ao-screen--challenge .ao-chal__rank::after {
+  /* ударная волна в момент оттиска */
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow: 0 0 0 3px var(--rk), 0 0 24px 6px color-mix(in srgb, var(--rk) 60%, transparent);
+  opacity: 0;
+  animation: ao-w4-shock 0.8s ease-out 0.55s both;
+}
+@keyframes ao-w4-shock {
+  0% { opacity: 0.95; transform: scale(0.9); }
+  100% { opacity: 0; transform: scale(1.7); }
+}
+html.ao-bdo .ao-screen--challenge .ao-chal__rankl {
+  font-family: var(--w4-num);
+  font-weight: 500;
+  background: linear-gradient(180deg, #fffaf0 0%, var(--rk) 55%, color-mix(in srgb, var(--rk) 55%, #000) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--rk) 70%, transparent)) drop-shadow(0 2px 2px #000);
+}
+html.ao-bdo .ao-screen--challenge .ao-chal__hero::before {
+  /* искры вокруг печати */
+  content: '';
+  position: absolute;
+  z-index: 1;
+  left: -0.8rem;
+  top: 50%;
+  width: calc(clamp(6.2rem, 15vh, 8.4rem) + 1.6rem);
+  height: calc(clamp(6.2rem, 15vh, 8.4rem) + 1.6rem);
+  margin-top: calc((clamp(6.2rem, 15vh, 8.4rem) + 1.6rem) / -2);
+  pointer-events: none;
+  background:
+    var(--w4-star) 8% 14% / 16px 16px no-repeat,
+    var(--w4-star) 94% 22% / 11px 11px no-repeat,
+    var(--w4-star) 86% 92% / 15px 15px no-repeat,
+    var(--w4-star) 2% 78% / 9px 9px no-repeat,
+    var(--w4-star) 52% 0% / 8px 8px no-repeat;
+  animation: ao-w4-rays-in 0.6s ease-out 0.7s both, ao-w4-star 1.8s ease-in-out 1.3s infinite alternate;
+}
+@keyframes ao-w4-star { from { opacity: 0.35; transform: scale(0.96) rotate(-2deg); } to { opacity: 1; transform: scale(1.04) rotate(2deg); } }
+html.ao-bdo .ao-screen--challenge .ao-chal__rank[data-rank='D']::before,
+html.ao-bdo .ao-screen--challenge .ao-chal__rank[data-rank='C']::before {
+  opacity: 0.5;
+}
+
+/* ---- [W4-UI] бюджет: на низком качестве — без бесконечных декоративных анимаций */
+html[data-ao-q='low'] .ao-bar__fill::after,
+html[data-ao-q='low'] .ao-panel--victory::after,
+html[data-ao-q='low'] .ao-chal__hero::before {
+  animation: none;
+  display: none;
+}
+html[data-ao-q='low'] .ao-ab[data-state='ready']::after {
+  animation: none;
+  opacity: 0.45;
+}
+html[data-ao-q='low'] .ao-panel--result::before,
+html[data-ao-q='low'] .ao-screen--challenge .ao-chal__rank::before {
+  animation: none;
+}
+html[data-ao-q='low'] .ao-hero.is-low .ao-bar--hp::before,
+html[data-ao-q='low'] .ao-hero.is-lowen .ao-bar--energy::before {
+  animation: none;
+  opacity: 0.8;
+}
+/* [W4-UI] «Уменьшенное движение»: финальное состояние сразу (лучи и искры — неподвижно, без вуали) */
+.ao-ui.ao-reduced-motion .ao-screen::before {
+  opacity: 0;
+}
+.ao-ui.ao-reduced-motion .ao-ab::after {
+  opacity: 0.45;
+}
+.ao-ui.ao-reduced-motion .ao-ab:not([data-state='ready']):not([data-state='active'])::after {
+  opacity: 0;
+}
+
+/* [W4-UI] невысокие окна (ноутбук 1280×720 и 1366×768 с панелями браузера): пауза, ошибка камеры и итоги
+   влезают без прокрутки — плотнее поля настроек, отступы рамки и строки кнопок; шрифт не мельче 14 px */
+@media (max-height: 740px) {
+  html.ao-bdo .ao-frame {
+    padding-top: 0.8rem;
+    padding-bottom: 0.8rem;
+  }
+  html.ao-bdo .ao-actions {
+    margin-top: 0.65rem;
+    padding-top: 0.6rem;
+  }
+  html.ao-bdo .ao-panel--pause .ao-settings {
+    gap: 0.45rem;
+  }
+  html.ao-bdo .ao-panel--pause .ao-field__legend {
+    margin-bottom: 0.2rem;
+  }
+  html.ao-bdo .ao-panel--pause .ao-range {
+    height: 1.15rem;
+  }
+  html.ao-bdo .ao-panel--pause .ao-col--media > .ao-slothost {
+    width: min(100%, calc(30vh * 4 / 3));
+  }
+  html.ao-bdo .ao-panel--pause .ao-debugkeys {
+    margin-top: 0.45rem;
+    line-height: 1.3;
+  }
+  html.ao-bdo .ao-errbox {
+    margin-top: 0.6rem;
+    padding: 0.5rem 0.9rem 0.55rem;
+  }
+  html.ao-bdo .ao-errbox__steps {
+    gap: 0.05rem;
+  }
+}
+@media (max-height: 800px) {
+  html.ao-bdo .ao-panel--pause .ao-settings {
+    gap: 0.55rem;
+  }
+}
+@media (max-height: 700px) {
+  html.ao-bdo .ao-frame {
+    border-image-width: 26px;
+  }
+}

@@ -16,8 +16,13 @@
 //   холодный свет на цели. Пока snap.boss.slowed (в PvP — snap.opponent.slowed, иначе по таймеру
 //   d.duration) — часы тикают, пылинки висят, оболочка мягко пульсирует; по окончании — часы гаснут,
 //   пылинки «отмирают» и осыпаются. Старое кольцо замедления ('slow') подавлено.
+// [W4-ЗАКЛИНАНИЯ] руна в воздухе (fx.shared.runeAir от handMagic): СТЕЛЛА — знак уходит в разлом, из него яркий
+//   сигнал-росчерк в небо, разлом вспыхивает и из него падают метеоры (крупнее на 30%, свет за первым); посадка — в
+//   пределах допуска rune_hit (сдвиг ≤ 0.12 с). КЛЕПСИДРА — из знака летит «капля времени»-комета (белое ядро,
+//   ореол с золотым «песком», лента, свет), циферблаты с золотым ободком — время не путается с грозой.
+//   Без руны в воздухе — прежний ритм от ладони. Знак и сбор искр у ладони убраны: их заменил предвестник castFx.
 
-import { caster, runeCircle, handGlyph, gather, muzzle, rampOf, clamp, TAU, isNum, hasVec } from './common.js';
+import { caster, runeCircle, muzzle, rampOf, clamp, TAU, isNum, hasVec, createComet } from './common.js';
 
 export function register(fx) {
   const V3 = fx.THREE.Vector3;
@@ -33,6 +38,13 @@ export function register(fx) {
   };
 
   fx.suppress('slow');
+
+  // [W4-ЗАКЛИНАНИЯ] руна в воздухе этого же каста (контракт handMagic → модули рун) или null — прежний ритм от ладони
+  function takeAir(rune, R) {
+    const a = fx.shared ? fx.shared.runeAir : null;
+    return a && a.rune === rune && a.t0 === kit.clock && a.remote === R && typeof a.plan === 'function' && hasVec(a.pos) ? a : null;
+  }
+  const launchIn = (air, max) => clamp(isNum(air.launchAt) ? air.launchAt - kit.clock : 0.22, 0, max);
 
   // ------------------------------------------------------------ камера
   const _cp = new V3(), _cf = new V3(), _cu = new V3(), _cr = new V3();
@@ -53,18 +65,42 @@ export function register(fx) {
   const LAND = [[-1.3, -0.9], [1.45, -0.55], [-0.25, -1.75], [1.95, 0.55], [-1.95, 0.35]];
   const landAt = (i) => 0.23 + i * 0.18;          // чуть раньше rune_hit (0.25 + i·0.18)
   const flightDur = (i) => 0.2 + i * 0.05;
+  // [W4-ЗАКЛИНАНИЯ] сигнал знак → разлом летит SIG_T; первый метеор после вспышки разлома летит не меньше FLY_MIN,
+  // посадки сдвигаются не больше чем на 0.12 с (rune_hit ждёт посадку до 0.15 с — удар не дублируется)
+  const SIG_T = 0.05, FLY_MIN = 0.1;
 
   // переиспользуемые опции выбросов (мутируются перед каждым вызовом)
   const eHead = { at: null, vel: null, count: 1, speed: 0, life: 0.3, size: [0.9, 0.9], sizeVar: 0, color: 0xffe0a0, ramp: 'whiteHold', intensity: 3, sprite: 'glow', spin: 0, fadeIn: 0.02, essential: true, rival: false };
   const SPIN_ROCK = [-10, 10];
   const eTail = { at: null, vel: null, count: 1, speed: 0, life: 0.3, size: [0.3, 0.3], sizeVar: 0, color: 0xffe0a0, intensity: 3, sprite: 'streak', stretch: 0.05, fadeIn: 0.05, essential: true, rival: false };
-  const ePuff = { at: null, shape: 'line', to: null, count: 1, speed: [0, 0.35], life: [0.28, 0.5], size: [0.55, 1.25], color: 0xffb070, intensity: 1.7, sprite: 'glow', fadeIn: 0.04, drag: 1.5, essential: true, rival: false };
-  const eShed = { at: null, count: 1, speed: [1, 4], life: [0.3, 0.6], size: [0.07, 0.015], ramp: 'star', intensity: 3, sprite: 'spark', stretch: 0.03, gravity: 6, drag: 1, rival: false };
-  const eSmoke = { at: null, count: 1, speed: [0.1, 0.5], life: [0.6, 1.05], size: [0.55, 1.6], ramp: 'smoke', intensity: 1, alpha: 0.55, sprite: 'smoke', blend: 'alpha', drag: 1, turb: 0.3, spin: [-0.8, 0.8], rival: false };
-  const eChunk = { at: null, count: 1, speed: [2, 5], life: [0.4, 0.8], size: [0.13, 0.08], color: 0xffb070, intensity: 2.6, sprite: 'debris', gravity: 9, drag: 0.6, spin: [-9, 9], rival: false };
-  const _mp = new V3(), _mprev = new V3(), _v = new V3(), _n = new V3(), _t1 = new V3(), _t2 = new V3(), _q = new V3(), _q2 = new V3();
+  const ePuff = { at: null, shape: 'line', to: null, count: 1, speed: [0, 0.35], life: [0.28, 0.5], size: [0.7, 1.6], color: 0xffb070, intensity: 1.7, sprite: 'glow', fadeIn: 0.04, drag: 1.5, essential: true, rival: false };
+  const eShed = { at: null, count: 1, speed: [1, 4], life: [0.3, 0.6], size: [0.09, 0.02], ramp: 'star', intensity: 3, sprite: 'spark', stretch: 0.03, gravity: 6, drag: 1, rival: false };
+  const eSmoke = { at: null, count: 1, speed: [0.1, 0.5], life: [0.6, 1.05], size: [0.7, 2.0], ramp: 'smoke', intensity: 1, alpha: 0.55, sprite: 'smoke', blend: 'alpha', drag: 1, turb: 0.3, spin: [-0.8, 0.8], rival: false };
+  const eChunk = { at: null, count: 1, speed: [2, 5], life: [0.4, 0.8], size: [0.17, 0.1], color: 0xffb070, intensity: 2.6, sprite: 'debris', gravity: 9, drag: 0.6, spin: [-9, 9], rival: false };
+  // [W4-ЗАКЛИНАНИЯ] голова сигнала (летит сама, скорость на GPU) и короткий свет за первым метеором (пул kit; на low — нет)
+  const eSig = { at: null, vel: null, count: 1, speed: 0, life: 0.07, size: [0.55, 0.55], sizeVar: 0, color: undefined, ramp: 'whiteHold', intensity: 3, sprite: 'glow', stretch: 0, fadeIn: 0.01, essential: true, rival: false };
+  const kMet = { color: 0xffe0a0, intensity: 0.8, range: 9, dur: 0.2, attack: 0.3, follow: null };
+  const _mp = new V3(), _v = new V3(), _n = new V3(), _q = new V3(), _q2 = new V3();
 
   const sess = { local: null, remote: null };
+  if (typeof fx.onClear === 'function') fx.onClear(() => { for (const k of ['local', 'remote']) { if (sess[k]) sess[k].dead = true; sess[k] = null; } });
+
+  /** [W4-ЗАКЛИНАНИЯ] сигнал: яркий росчерк от знака (без руны в воздухе — от ладони) в разлом за ts — видно, откуда открылось небо. */
+  function signal(from, to, P, R, ramp, ts, line) {
+    _v.subVectors(to, from).multiplyScalar(1 / ts);
+    const k = line ? 0.6 : 1;   // из ладони (у камеры) — тоньше
+    eSig.rival = R; eSig.at = from; eSig.vel = _v; eSig.life = ts;   // гаснет ровно у разлома, без перелёта
+    // белое ядро → тёплый ореол → росчерк по скорости
+    eSig.sprite = 'glow'; eSig.ramp = 'whiteHold'; eSig.color = undefined; eSig.size[0] = eSig.size[1] = 0.55 * k; eSig.stretch = 0; eSig.intensity = 3;
+    kit.emit(eSig);
+    eSig.ramp = ramp; eSig.color = P.hot; eSig.size[0] = eSig.size[1] = 1.3 * k; eSig.intensity = 2.2;
+    kit.emit(eSig);
+    eSig.sprite = 'streak'; eSig.color = undefined; eSig.size[0] = eSig.size[1] = 0.42 * k; eSig.stretch = 0.006; eSig.intensity = 3;
+    kit.emit(eSig);
+    eSig.at = null; eSig.vel = null;
+    // без руны в воздухе — искры по линии (у руны в воздухе её поток искр к цели рисует airRune)
+    if (line) kit.emit({ at: from, to, shape: 'line', count: 12, speed: [0, 0.4], life: [0.1, 0.22], size: [0.09, 0.02], ramp, intensity: 3, sprite: 'spark', delay: ts, essential: true, rival: R });
+  }
 
   /** Позиция разлома: выше и дальше цели вдоль взгляда камеры, в верхней трети кадра. */
   function riftPos(out, c) {
@@ -131,27 +167,30 @@ export function register(fx) {
     _n.copy(v).multiplyScalar(1 / sp);
     const life = dur / 0.7, sc = S.scale;
     // голова и хвосты: частицы летят сами (скорость на GPU), по кадрам — только шлейф
+    // [W4-ЗАКЛИНАНИЯ] метеор крупнее на 30%, яркость в пределах шейдера (≤ 3)
     eHead.rival = R; eHead.vel = v; eHead.life = life; eHead.at = st;
-    eHead.sprite = 'glow'; eHead.size[0] = eHead.size[1] = 1.05 * sc; eHead.color = P.hot; eHead.intensity = 3; eHead.spin = 0;
+    eHead.sprite = 'glow'; eHead.size[0] = eHead.size[1] = 1.37 * sc; eHead.color = P.hot; eHead.intensity = 2.6; eHead.spin = 0;
     kit.emit(eHead);
-    eHead.sprite = 'debris'; eHead.size[0] = eHead.size[1] = 0.46 * sc; eHead.color = P.mid; eHead.intensity = 3.4; eHead.spin = SPIN_ROCK;
+    eHead.sprite = 'debris'; eHead.size[0] = eHead.size[1] = 0.6 * sc; eHead.color = P.mid; eHead.intensity = 3; eHead.spin = SPIN_ROCK;
     kit.emit(eHead);
-    eHead.sprite = 'glow'; eHead.size[0] = eHead.size[1] = 0.36 * sc; eHead.color = undefined; eHead.ramp = 'whiteHold'; eHead.intensity = 5.5; eHead.spin = 0;
+    eHead.sprite = 'glow'; eHead.size[0] = eHead.size[1] = 0.47 * sc; eHead.color = undefined; eHead.ramp = 'whiteHold'; eHead.intensity = 3; eHead.spin = 0;
     kit.emit(eHead);
     eTail.rival = R; eTail.vel = v; eTail.life = life;
-    eTail.stretch = 0.05; eTail.size[0] = eTail.size[1] = 0.3 * sc; eTail.color = P.hot; eTail.intensity = 3.4;
+    eTail.stretch = 0.05; eTail.size[0] = eTail.size[1] = 0.4 * sc; eTail.color = P.hot; eTail.intensity = 3;
     eTail.at = _q.copy(st).addScaledVector(_n, -sp * eTail.stretch * 0.5);
     kit.emit(eTail);
-    eTail.stretch = 0.105; eTail.size[0] = eTail.size[1] = 0.85 * sc; eTail.color = P.deep; eTail.intensity = 1.9;
+    eTail.stretch = 0.105; eTail.size[0] = eTail.size[1] = 1.1 * sc; eTail.color = P.deep; eTail.intensity = 1.9;
     eTail.at = _q.copy(st).addScaledVector(_n, -sp * eTail.stretch * 0.5);
     kit.emit(eTail);
     // выход из разлома
-    kit.flash(st, { color: P.hot, size: [0.5, 2.4], dur: 0.2, intensity: 3.2, sprite: 'star', pull: 0, rival: R });
+    kit.flash(st, { color: P.hot, size: [0.65, 3.0], dur: 0.2, intensity: 3.2, sprite: 'star', pull: 0, rival: R });
     let tr = null;
     if (fx.trails) {
-      try { tr = fx.trails.create({ width: 0.42 * sc, life: 0.36, color: P.mid, hot: P.core, intensity: 1.8, style: 'fire', maxPoints: 26, minDist: 0.25, rival: R ? 1 : 0 }); } catch (e) { tr = null; }
+      try { tr = fx.trails.create({ width: 0.55 * sc, life: 0.36, color: P.mid, hot: P.core, intensity: 1.8, style: 'fire', maxPoints: 26, minDist: 0.25, head: 1, rival: R ? 1 : 0 }); } catch (e) { tr = null; }
       if (tr && tr.push) { try { tr.push(st); } catch (e) { tr = null; } }
     }
+    // [W4-ЗАКЛИНАНИЯ] короткий свет летит за первым метеором и гаснет к посадке (свет удара берёт слот)
+    if (i === 0) { S.lp.copy(st); kMet.color = P.hot; kMet.dur = dur + 0.02; kMet.follow = S.follow; kit.light(st, kMet); kMet.follow = null; }
     const prev = new V3().copy(st);
     let frame = 0;
     S.fly[i] = kit.actor({
@@ -159,6 +198,7 @@ export function register(fx) {
       update(t) {
         const k = Math.min(1, t / dur);
         _mp.lerpVectors(st, en, k);
+        if (i === 0) S.lp.copy(_mp);
         frame++;
         ePuff.rival = R; ePuff.color = P.mid; ePuff.at = prev; ePuff.to = _mp; ePuff.count = tr ? 1 : 2;
         kit.emit(ePuff);
@@ -182,20 +222,27 @@ export function register(fx) {
     const R = c.remote, rival = c.rival;
     const P = fx.pal('star', d);
     const ramp = rampOf('star', R);
-    // --- накопление у героя
-    runeCircle(fx, c, 'stella', 'star', { radius: 1.8, dur: 1.9, spin: 0.7, motes: 20 });
-    handGlyph(fx, c, 'stella', 'star', { radius: 0.42, dur: 0.5, spin: 3 });
-    gather(fx, c.hand, 'star', R, { time: 0.12, radius: 0.8, count: 24, glow: 0.7, essential: true });
-    kit.light(c.hand, { color: P.hot, intensity: 0.6, range: 5, dur: 0.3, attack: 0.5 });
-    // сигнал в небо: золотой росчерк вверх из ладони
-    kit.after(0.08, () => {
-      kit.flash(c.hand, { color: P.core, size: [0.2, 1.0], dur: 0.16, intensity: 3.5, sprite: 'star', pull: 0.6, rival: R });
-      kit.emit({ at: c.hand, dir: UP, cone: 0.04, count: 1, speed: [34, 40], life: [0.16, 0.2], size: [0.1, 0.05], ramp: ramp, intensity: 2.2, sprite: 'streak', stretch: 0.012, essential: true, rival: R }); // у камеры — тонкий росчерк, не столб
-      kit.emit({ at: c.hand, dir: UP, cone: 0.55, count: 12, speed: [3, 8], life: [0.2, 0.45], size: [0.06, 0.01], ramp, intensity: 3, sprite: 'spark', stretch: 0.03, drag: 3, essential: true, rival: R });
+    const rift = riftPos(new V3(), c);
+    // [W4-ЗАКЛИНАНИЯ] знак в воздухе уходит в разлом: в момент выпуска из него бьёт сигнал, разлом вспыхивает по приходу
+    // сигнала (tR), метеоры стартуют не раньше вспышки. Без руны в воздухе — прежний ритм: сигнал из ладони, разлом сразу.
+    const air = takeAir('stella', R);
+    const from = new V3().copy(c.hand);
+    let tSig = 0.08, tR = 0, sh = 0;
+    if (air) {
+      air.plan('through', rift);
+      from.copy(air.pos);
+      tSig = launchIn(air, 0.3);
+      tR = tSig + SIG_T;
+      sh = clamp(tR + FLY_MIN - landAt(0), 0, 0.12);
+    }
+    // --- круг под героем (знак и сбор искр у ладони заменил предвестник castFx)
+    runeCircle(fx, c, 'stella', 'star', { radius: 1.8, dur: 1.9 + sh, spin: 0.7, motes: 20 });
+    kit.after(tSig, () => {
+      if (!air) kit.flash(from, { color: P.core, size: [0.2, 1.0], dur: 0.16, intensity: 3.5, sprite: 'star', pull: 0.6, rival: R });
+      signal(from, rift, P, R, ramp, air ? SIG_T : 0.1, !air);
     });
 
     // --- разлом в небе
-    const rift = riftPos(new V3(), c);
     const n = new V3().subVectors(c.target, rift);
     if (n.lengthSq() < 1e-6) n.set(0, -1, 0);
     n.normalize();
@@ -204,25 +251,30 @@ export function register(fx) {
     t1.normalize();
     const t2 = new V3().crossVectors(t1, n).normalize();
     const RR = 2.7;
-    spawnGlyph({ pos: rift, normal: n, radius: RR, symbol: 'stella', symbolScale: 0.42, style: 'hex', color: P.deep, hot: P.hot, intensity: 2.3, dur: 1.5, unfold: 0.22, fade: 0.4, spin: 0.9, rings: 3, rival });
-    const g2 = spawnGlyph({ pos: rift, normal: n, radius: RR * 0.58, style: 'rune', color: P.mid, hot: P.core, intensity: 1.9, dur: 1.35, unfold: 0.18, fade: 0.35, spin: -2.4, rings: 2, ticks: 20, rival });
-    if (g2 && g2.flare) kit.after(0.05, () => g2.flare(1));
-    kit.flash(rift, { color: P.deep, size: [3, 9.5], dur: 0.7, intensity: 1.7, sprite: 'glow', pull: 0, rival: R });
-    kit.flash(rift, { color: P.hot, size: [1.0, 3.6], dur: 0.26, intensity: 3.0, sprite: 'star', pull: 0, rival: R });
-    kit.flash(rift, { color: P.deep, size: [6.2, 7.4], dur: 1.45, intensity: 1.0, sprite: 'glow', pull: 0, fadeIn: 0.12, rival: R });
-    kit.flash(rift, { color: P.hot, size: [2.0, 2.6], dur: 1.35, intensity: 2.0, sprite: 'glow', pull: 0, fadeIn: 0.1, rival: R });
-    // светящаяся «трещина» поперёк разлома
+    const g1 = spawnGlyph({ pos: rift, normal: n, radius: RR, symbol: 'stella', symbolScale: 0.42, style: 'hex', color: P.deep, hot: P.hot, intensity: 2.3, dur: 1.5 + sh, unfold: 0.22 + tR * 0.5, fade: 0.4, spin: 0.9, rings: 3, rival });
+    const g2 = spawnGlyph({ pos: rift, normal: n, radius: RR * 0.58, style: 'rune', color: P.mid, hot: P.core, intensity: 1.9, dur: 1.35 + sh, unfold: 0.18 + tR * 0.5, fade: 0.35, spin: -2.4, rings: 2, ticks: 20, rival });
+    const gen1 = g1 ? g1.gen : -1, gen2 = g2 ? g2.gen : -1;
+    // свечение разлома набирается сразу, вспышка — по приходу сигнала
+    kit.flash(rift, { color: P.deep, size: [6.2, 7.4], dur: 1.45 + sh, intensity: 1.0, sprite: 'glow', pull: 0, fadeIn: 0.12, rival: R });
+    kit.flash(rift, { color: P.hot, size: [2.0, 2.6], dur: 1.35 + sh, intensity: 2.0, sprite: 'glow', pull: 0, fadeIn: 0.1, rival: R });
     const ta = new V3().copy(rift).addScaledVector(t1, -RR * 0.78).addScaledVector(t2, 0.45);
     const tb = new V3().copy(rift).addScaledVector(t1, RR * 0.78).addScaledVector(t2, -0.45);
-    kit.emit({ at: ta, shape: 'line', to: tb, count: 20, speed: [0, 0.12], life: [1.05, 1.35], size: [0.32, 0.18], ramp: 'whiteHold', intensity: 2.0, sprite: 'glow', fadeIn: 0.12, essential: true, rival: R });
-    ta.lerp(rift, 0.5); tb.lerp(rift, 0.5);
-    kit.emit({ at: ta, shape: 'line', to: tb, count: 8, speed: [0, 0.1], life: [1.0, 1.3], size: [1.3, 0.9], color: P.deep, intensity: 2.2, sprite: 'glow', fadeIn: 0.15, essential: true, rival: R });
-    // водоворот искр, втягивающийся в разлом
-    kit.emit({ at: rift, shape: 'ring', normal: n, radius: RR * 1.05, count: 34, radial: -2.4, tangent: 3.2, speed: [0, 0.2], life: [0.7, 1.1], size: [0.12, 0.03], ramp, intensity: 2.8, sprite: 'spark', stretch: 0.05, delay: 0.95, rival: R });
-    kit.emit({ at: rift, shape: 'disk', normal: n, radius: RR * 0.85, count: 16, radial: -0.6, tangent: 1.6, speed: [0, 0.1], life: [0.8, 1.3], size: [0.28, 0.05], ramp: R ? 'rival' : 'void', intensity: 2, sprite: 'dot', delay: 0.9, rival: R });
+    kit.after(Math.max(0.05, tR), () => { if (glyphOk(g2, gen2) && g2.flare) g2.flare(1); if (air && glyphOk(g1, gen1) && g1.flare) g1.flare(0.8); });
+    kit.after(tR, () => {
+      kit.flash(rift, { color: P.deep, size: [3, 9.5], dur: 0.7, intensity: 1.7, sprite: 'glow', pull: 0, rival: R });
+      kit.flash(rift, { color: P.hot, size: [1.0, 3.6], dur: 0.26, intensity: 3.0, sprite: 'star', pull: 0, rival: R });
+      if (air) kit.flash(rift, { color: P.core, size: [0.6, 2.4], dur: 0.14, intensity: 4, sprite: 'star', pull: 0, rival: R }); // сигнал «вошёл» в разлом
+      // светящаяся «трещина» поперёк разлома
+      kit.emit({ at: ta, shape: 'line', to: tb, count: 20, speed: [0, 0.12], life: [1.05, 1.35], size: [0.32, 0.18], ramp: 'whiteHold', intensity: 2.0, sprite: 'glow', fadeIn: 0.12, essential: true, rival: R });
+      ta.lerp(rift, 0.5); tb.lerp(rift, 0.5);
+      kit.emit({ at: ta, shape: 'line', to: tb, count: 8, speed: [0, 0.1], life: [1.0, 1.3], size: [1.3, 0.9], color: P.deep, intensity: 2.2, sprite: 'glow', fadeIn: 0.15, essential: true, rival: R });
+      // водоворот искр, втягивающийся в разлом
+      kit.emit({ at: rift, shape: 'ring', normal: n, radius: RR * 1.05, count: 34, radial: -2.4, tangent: 3.2, speed: [0, 0.2], life: [0.7, 1.1], size: [0.12, 0.03], ramp, intensity: 2.8, sprite: 'spark', stretch: 0.05, delay: 0.95, rival: R });
+      kit.emit({ at: rift, shape: 'disk', normal: n, radius: RR * 0.85, count: 16, radial: -0.6, tangent: 1.6, speed: [0, 0.1], life: [0.8, 1.3], size: [0.28, 0.05], ramp: R ? 'rival' : 'void', intensity: 2, sprite: 'dot', delay: 0.9, rival: R });
+    });
     if (fx.bolts) {
       for (let k = 0; k < 2; k++) {
-        kit.after(0.05 + k * 0.45, () => {
+        kit.after(tR + 0.05 + k * 0.45, () => {
           const a = Math.random() * TAU, b = a + 2 + Math.random() * 1.6;
           _q.copy(rift).addScaledVector(t1, Math.cos(a) * RR * 0.8).addScaledVector(t2, Math.sin(a) * RR * 0.8);
           _q2.copy(rift).addScaledVector(t1, Math.cos(b) * RR * 0.8).addScaledVector(t2, Math.sin(b) * RR * 0.8);
@@ -231,7 +283,7 @@ export function register(fx) {
       }
     }
     // разлом схлопывается
-    kit.after(1.3, () => {
+    kit.after(1.3 + sh, () => {
       kit.emit({ at: rift, shape: 'shell', radius: RR * 0.9, count: 14, radial: -7, speed: [0, 0.2], life: [0.2, 0.32], size: [0.1, 0.03], ramp, intensity: 3, sprite: 'spark', stretch: 0.03, rival: R });
       kit.flash(rift, { color: P.core, size: [2.2, 0.4], dur: 0.25, intensity: 3, sprite: 'star', pull: 0, rival: R });
     });
@@ -240,7 +292,8 @@ export function register(fx) {
     const key = R ? 'remote' : 'local';
     if (sess[key]) sess[key].dead = true;
     const scale = isPlayerTarget(R) ? 0.72 : 1;
-    const S = { t0: kit.clock, dead: false, R, P, scale, done: [0, 0, 0, 0, 0], fly: [null, null, null, null, null], start: [], land: [], vel: [], fdur: [] };
+    const S = { t0: kit.clock, dead: false, R, P, scale, done: [0, 0, 0, 0, 0], fly: [null, null, null, null, null], start: [], land: [], vel: [], fdur: [], landT: [], lp: new V3(), follow: null };
+    S.follow = () => S.lp;
     sess[key] = S;
     for (let i = 0; i < N_MET; i++) {
       const a = -Math.PI / 2 + i * (TAU * 2 / 5);
@@ -250,9 +303,13 @@ export function register(fx) {
       const lz = c.targetGround.z + (c.right.z * off[0] + c.fwd.z * off[1]) * scale;
       S.land.push(new V3(lx, fx.groundY(lx, lz, c.targetGround.y), lz));
       S.vel.push(new V3());
-      const fd = flightDur(i);
+      // [W4-ЗАКЛИНАНИЯ] старт не раньше вспышки разлома, посадка сдвинута на sh (≤ 0.12 с)
+      const L = landAt(i) + sh;
+      const t0 = Math.max(tR, L - flightDur(i));
+      const fd = Math.max(0.06, L - t0);
       S.fdur.push(fd);
-      kit.after(Math.max(0, landAt(i) - fd), () => launchMeteor(S, i));
+      S.landT.push(kit.clock + t0 + fd);
+      kit.after(t0, () => launchMeteor(S, i));
     }
     audio('cast', c.hand);
     return true;
@@ -265,8 +322,9 @@ export function register(fx) {
     const S = sess[R ? 'remote' : 'local'];
     if (S && !S.dead && kit.clock - S.t0 < 3.5) {
       if (S.done[idx]) return true;
-      const a = S.fly[idx];
-      if (a && a.alive && a.dur - a.t < 0.15) return true;   // вот-вот приземлится — удар нарисует посадка
+      // вот-вот приземлится (летит или ждёт старта из разлома) — удар нарисует посадка
+      const a = S.fly[idx], left = S.landT[idx] - kit.clock;
+      if (a && a.alive ? left < 0.15 : (left > 0 && left < 0.15)) return true;
       S.done[idx] = 1;   // полёт (если ещё идёт) долетит без повторного удара
       impact(S.land[idx], S.P, R, S.scale, idx);
       return true;
@@ -279,17 +337,19 @@ export function register(fx) {
     g.set(c.targetGround.x + (c.right.x * off[0] + c.fwd.x * off[1]) * sc, 0, c.targetGround.z + (c.right.z * off[0] + c.fwd.z * off[1]) * sc);
     g.y = fx.groundY(g.x, g.z, c.targetGround.y);
     _q.set(g.x + 1.5, g.y + 6, g.z - 2);
-    kit.emit({ at: _q, vel: _v.set(-15, -60, 20), count: 1, speed: 0, life: 0.1, size: [0.4, 0.4], sizeVar: 0, color: P.hot, intensity: 3.4, sprite: 'streak', stretch: 0.05, essential: true, rival: R });
+    kit.emit({ at: _q, vel: _v.set(-15, -60, 20), count: 1, speed: 0, life: 0.1, size: [0.52, 0.52], sizeVar: 0, color: P.hot, intensity: 3, sprite: 'streak', stretch: 0.05, essential: true, rival: R });
     impact(g, P, R, sc, idx);
     return true;
   }, (d) => !!d && d.rune === 'stella');
 
   // ============================================================ ⧗ КЛЕПСИДРА
+  // [W4-ЗАКЛИНАНИЯ] золотой «песок» времени: ободок и стрелки циферблатов — время не путается с бело-голубой грозой
+  const ELEMENTS_GOLD = fx.pal('reset', null).mid;
   function makeBubble(remote) {
     return {
       remote, on: false, kind: 'boss', t: 0, dur: 5, seen: false, R: 2.4, center: new V3(), ground: new V3(),
       clock: null, clockGen: 0, gclock: null, gclockGen: 0, hands: 0, handV: 0, sandAcc: 0, moteAcc: 0,
-      pulseT: 0, lightT: 0, respawnT: 0, pendingUntil: -1, P: fx.pal('time', null), ramp: 'time', sandRamp: 'reset',
+      pulseT: 0, lightT: 0, respawnT: 0, pendingUntil: -1, P: fx.pal('time', null), ramp: 'time', sandRamp: 'reset', gold: ELEMENTS_GOLD,
       follow: null, followG: null,
     };
   }
@@ -320,14 +380,14 @@ export function register(fx) {
     const P = b.P, rival = b.remote ? 1 : 0, hero = b.kind === 'hero';
     if (!glyphOk(b.clock, b.clockGen)) {
       b.clock = spawnGlyph({
-        pos: b.center, normal: UP, billboard: true, radius: b.R, style: 'clock', color: P.mid, hot: P.core,
+        pos: b.center, normal: UP, billboard: true, radius: b.R, style: 'clock', color: P.mid, hot: b.gold,
         intensity: hero ? 1.4 : 2.3, dur: 9999, unfold, fade: 0.6, spin: -0.7, rings: 3, hands: b.hands, rival, follow: b.follow,
       });
       b.clockGen = b.clock ? b.clock.gen : 0;
     }
     if (!glyphOk(b.gclock, b.gclockGen) && fx.Q.glyphDetail > 0) {
       b.gclock = spawnGlyph({
-        pos: b.ground, normal: UP, radius: b.R * (hero ? 1.1 : 1.3), style: 'clock', color: P.deep, hot: P.hot,
+        pos: b.ground, normal: UP, radius: b.R * (hero ? 1.1 : 1.3), style: 'clock', color: P.deep, hot: b.gold,
         intensity: hero ? 1.1 : 1.5, dur: 9999, unfold: unfold * 1.3, fade: 0.8, spin: 0.35, rings: 2, hands: -b.hands * 0.5, rival, follow: b.followG,
       });
       b.gclockGen = b.gclock ? b.gclock.gen : 0;
@@ -338,6 +398,7 @@ export function register(fx) {
     if (b.on && b.kind !== kind) stopBubble(b, false);
     b.kind = kind; b.on = true; b.t = 0; b.dur = clamp(isNum(dur) ? dur : 5, 0.5, 30); b.seen = false;
     b.P = fx.pal('time', { remote: b.remote }); b.ramp = rampOf('time', b.remote); b.sandRamp = b.remote ? 'rival' : 'reset';
+    b.gold = fx.pal('reset', { remote: b.remote }).mid;
     b.R = kind === 'boss' ? 2.4 : (kind === 'opp' ? 1.5 : 1.2);
     b.handV = burst ? (fx.reduced() ? 6 : 16) : 4;
     b.pulseT = 0.5; b.lightT = burst ? 1.4 : 0; b.respawnT = 0;
@@ -387,48 +448,52 @@ export function register(fx) {
     audio('nova', cc);
   }
 
-  // «капля времени»: из ладони в цель
-  const eDrop = { at: null, vel: null, count: 1, speed: 0, life: 0.3, size: [0.3, 0.3], sizeVar: 0, color: undefined, ramp: 'whiteHold', intensity: 4, sprite: 'glow', essential: true, rival: false };
-  const eDropTrail = { at: null, shape: 'line', to: null, count: 2, speed: [0.05, 0.3], life: [0.35, 0.6], size: [0.09, 0.03], ramp: 'time', intensity: 2.4, sprite: 'dot', drag: 2, gravity: 0.6, essential: true, rival: false };
+  // «капля времени»: из знака в воздухе (без руны в воздухе — из ладони) в цель
+  // [W4-ЗАКЛИНАНИЯ] капля — комета: белое ядро, ореол с золотым «песком», лента-след, свет из пула; летит ровно до цели
+  // (без перелёта: голова рисуется по кадрам), за ней сыплется золотой песок
+  const dropComet = createComet(fx);
+  const kDrop = { size: 0.38, remote: false, dur: 0.2, ramp: 'reset', trailWidth: 0.4, trailLife: 0.24, lightK: 1.2 };
+  const eGrain = { at: null, count: 1, radius: 0.1, speed: [0.1, 0.5], dir: DOWN, cone: 0.6, gravity: 2.2, drag: 0.6, life: [0.45, 0.8], size: [0.065, 0.03], ramp: 'reset', intensity: 2.4, sprite: 'dot', essential: false, rival: false };
   const _dp = new V3();
+  if (typeof fx.onClear === 'function') fx.onClear(() => dropComet.clear());
   fx.on('rune_cast', (ev, d) => {
     const c = caster(fx, ev, d);
     const R = c.remote;
-    const P = fx.pal('time', d);
-    const ramp = rampOf('time', R);
     const b = R ? bubR : bubL;
     const kind = R ? 'hero' : (isPlayerTarget(false) ? 'opp' : 'boss');
     const dur = isNum(d.duration) ? d.duration : 5;
     runeCircle(fx, c, 'clepsydra', 'time', { radius: 1.8, dur: 2.0, spin: -0.6, motes: 20 });
-    handGlyph(fx, c, 'clepsydra', 'time', { radius: 0.42, dur: 0.55, spin: -2.6, style: 'clock' });
-    gather(fx, c.hand, 'time', R, { time: 0.14, radius: 0.8, count: 26, glow: 0.65, essential: true });
-    kit.light(c.hand, { color: P.hot, intensity: 0.6, range: 5, dur: 0.35, attack: 0.5 });
-    b.pendingUntil = kit.clock + 0.5;
     const tgt = new V3().copy(c.target);
+    const air = takeAir('clepsydra', R);
+    const from = new V3().copy(c.hand);
+    let tL = 0.14;
+    if (air) { air.plan('through', tgt); from.copy(air.pos); tL = launchIn(air, 0.26); }
+    const fd = Math.min(0.26, 0.1 + from.distanceTo(tgt) / 40);
+    const dir = new V3().subVectors(tgt, from);
+    if (dir.lengthSq() < 1e-6) dir.copy(c.dir); else dir.normalize();
+    b.pendingUntil = kit.clock + tL + fd + 0.15;
     if (!b.on) { b.center.copy(tgt); b.ground.copy(c.targetGround); }
-    kit.after(0.14, () => {
-      muzzle(fx, c.hand, c.dir, 'time', R, { size: 0.8, count: 14 });
-      const fd = Math.min(0.26, 0.1 + c.dist / 40);
-      const v = new V3().subVectors(tgt, c.hand).multiplyScalar(1 / fd);
-      const from = new V3().copy(c.hand), prev = new V3().copy(c.hand);
-      eDrop.at = from; eDrop.vel = v; eDrop.life = fd / 0.7; eDrop.rival = R;
-      eDrop.size[0] = eDrop.size[1] = 0.3; eDrop.color = undefined; eDrop.intensity = 4.2;
-      kit.emit(eDrop);
-      eDrop.size[0] = eDrop.size[1] = 0.75; eDrop.color = P.mid; eDrop.intensity = 2.2;
-      kit.emit(eDrop);
-      kit.actor({
+    kit.after(tL, () => {
+      if (!air) muzzle(fx, from, c.dir, 'time', R, { size: 0.8, count: 14 });
+      kDrop.remote = R; kDrop.ramp = R ? undefined : 'reset'; kDrop.dur = fd;
+      const cm = dropComet.start(from, 'time', kDrop);
+      let acc = 0;
+      const act = kit.actor({
         dur: fd,
-        update(t) {
+        update(t, k, dt) {
           _dp.lerpVectors(from, tgt, Math.min(1, t / fd));
-          eDropTrail.at = prev; eDropTrail.to = _dp; eDropTrail.ramp = ramp; eDropTrail.rival = R;
-          kit.emit(eDropTrail);
-          prev.copy(_dp);
+          if (cm) cm.step(_dp, dir, dt);
+          acc += dt * 26;
+          if (acc >= 1) { acc -= 1; eGrain.at = _dp; eGrain.ramp = R ? 'rival' : 'reset'; eGrain.rival = R; kit.emit(eGrain); }
         },
         end() {
+          if (cm) cm.end(tgt);
           b.pendingUntil = -1;
-          startBubble(b, kind, Math.max(0.5, dur - 0.14 - fd), true);
+          startBubble(b, kind, Math.max(0.5, dur - tL - fd), true);
         },
       });
+      // пул акторов полон: комету закрываем, пузырь всё равно раскрываем
+      if (!act) { if (cm) cm.end(tgt); b.pendingUntil = -1; startBubble(b, kind, Math.max(0.5, dur - tL - fd), true); }
     });
     audio('cast', c.hand);
     return true;
@@ -439,8 +504,10 @@ export function register(fx) {
   const eMote = { at: null, shape: 'sphere', radius: 1, count: 1, radial: 0.8, speed: [0.1, 0.6], drag: 7, life: [1.6, 2.6], size: [0.07, 0.05], ramp: 'time', intensity: 2.3, sprite: 'dot', fadeIn: 0.2, essential: true, rival: false };
   const eTwinkle = { at: null, shape: 'sphere', radius: 1, count: 1, speed: [0, 0.1], drag: 5, life: [0.7, 1.1], size: [0.16, 0.05], ramp: 'time', intensity: 2.8, sprite: 'star', fadeIn: 0.3, spin: [-0.3, 0.3], essential: true, rival: false };
   const _set = { hands: 0 }, _setG = { hands: 0 };
+  const fPulse = { color: 0, size: [1, 1], dur: 1.25, intensity: 1, sprite: 'ring', pull: 0, fadeIn: 0.4, curve: 1, rival: false };
+  const kBub = { color: 0, intensity: 0.85, range: 8, dur: 1.8, attack: 0.45, follow: null };
   const _top = new V3();
-  function tickBubble(b, dt, snap) {
+  function tickBubble(b, dt, snap, share) {
     if (!b.on) return;
     b.t += dt;
     let flag = false;
@@ -464,31 +531,35 @@ export function register(fx) {
     if (glyphOk(b.gclock, b.gclockGen)) { _setG.hands = -b.hands * 0.5; b.gclock.set(_setG); }
     const R = b.remote, rr = b.R, hero = b.kind === 'hero';
     // песок (~8/с) и замершие пылинки (~5/с), изредка — звёздочка-блик
-    b.sandAcc += dt * (hero ? 5 : 8);
+    // [W4-ЗАКЛИНАНИЯ] при толчее эффектов (3+ сцены) фон пузыря редеет: share = kit.scopeShare(null)
+    b.sandAcc += dt * (hero ? 5 : 8) * share;
     if (b.sandAcc >= 1) {
       const n = Math.min(3, Math.floor(b.sandAcc)); b.sandAcc -= n;
       _top.set(b.center.x, b.center.y + rr * 0.72, b.center.z);
       eSand.at = _top; eSand.radius = rr * 0.7; eSand.count = n; eSand.ramp = b.sandRamp; eSand.rival = R;
       kit.emit(eSand);
     }
-    b.moteAcc += dt * (hero ? 3 : 5);
+    b.moteAcc += dt * (hero ? 3 : 5) * share;
     if (b.moteAcc >= 1) {
       const n = Math.min(3, Math.floor(b.moteAcc)); b.moteAcc -= n;
       eMote.at = b.center; eMote.radius = rr * 0.92; eMote.count = n; eMote.ramp = b.ramp; eMote.rival = R;
       kit.emit(eMote);
-      if (Math.random() < 0.35) { eTwinkle.at = b.center; eTwinkle.radius = rr * 0.95; eTwinkle.ramp = b.ramp; eTwinkle.rival = R; kit.emit(eTwinkle); }
+      if (Math.random() < 0.35 * share) { eTwinkle.at = b.center; eTwinkle.radius = rr * 0.95; eTwinkle.ramp = b.ramp; eTwinkle.rival = R; kit.emit(eTwinkle); }
     }
     // оболочка пузыря мягко «дышит» (у нашего героя — без большого кольца у камеры)
     b.pulseT -= dt;
     if (b.pulseT <= 0 && !hero) {
       b.pulseT = 1.3;
-      kit.flash(b.center, { color: b.P.mid, size: [rr * 2.5, rr * 2.62], dur: 1.25, intensity: fx.reduced() ? 0.7 : 1.0, sprite: 'ring', pull: 0, fadeIn: 0.4, curve: 1, rival: R });
+      fPulse.color = b.P.mid; fPulse.size[0] = rr * 2.5; fPulse.size[1] = rr * 2.62; fPulse.intensity = fx.reduced() ? 0.7 : 1.0; fPulse.rival = R;
+      kit.flash(b.center, fPulse);
     }
     // холодный свет на цели
     b.lightT -= dt;
     if (b.lightT <= 0) {
       b.lightT = 1.7;
-      kit.light(b.center, { color: b.P.hot, intensity: hero ? 0.5 : 0.85, range: 8, dur: 1.8, attack: 0.45, follow: b.follow });
+      kBub.color = b.P.hot; kBub.intensity = hero ? 0.5 : 0.85; kBub.follow = b.follow;
+      kit.light(b.center, kBub);
+      kBub.follow = null;
     }
   }
   fx.every((dt, snap) => {
@@ -499,7 +570,9 @@ export function register(fx) {
       else if (snap.mode === 'pvp' && snap.opponent && snap.opponent.slowed) startBubble(bubL, 'opp', 5, false);
       if (bubL.on) bubL.seen = true;
     }
-    tickBubble(bubL, dt, snap);
-    tickBubble(bubR, dt, snap);
+    if (!bubL.on && !bubR.on) return;
+    const share = kit.scopeShare(null);
+    tickBubble(bubL, dt, snap, share);
+    tickBubble(bubR, dt, snap, share);
   });
 }

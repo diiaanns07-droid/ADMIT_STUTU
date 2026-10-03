@@ -236,7 +236,7 @@ export function createBolts(deps) {
       if (hasVec(o.from)) { s.fx = o.from.x; s.fy = o.from.y; s.fz = o.from.z; }
       if (hasVec(o.to)) { s.tx = o.to.x; s.ty = o.to.y; s.tz = o.to.z; }
       if (hasVec(o.center)) { s.fx = o.center.x; s.fy = o.center.y; s.fz = o.center.z; }
-      if (isNum(o.intensity)) s.intensity = clamp(o.intensity, 0, 50);
+      if (isNum(o.intensity)) s.intensity = Math.min(3, clamp(o.intensity, 0, 50) * 0.75); // [W4-ЗАКЛИНАНИЯ] та же калибровка, что при спавне
       if (isNum(o.rival)) s.rival = clamp(o.rival, 0, 1);
       if (isNum(o.color)) hexLin(o.color, s.col);
       if (isNum(o.core)) hexLin(o.core, s.core);

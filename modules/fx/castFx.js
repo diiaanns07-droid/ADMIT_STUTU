@@ -1,88 +1,122 @@
-// ASHEN OATH — modules/fx/castFx.js. Владелец: №7 [VFX]. [W3-МАГИЯ]
-// Ядро, ореол, искры и свет у снарядов и выбросов: выброс, сфера, снаряды «OK», руны.
-// Всё — «добавки» поверх существующих слоёв (нова sigils, тело сферы/призмы и болт старого effects.js,
-// иглы runesWild, отпечаток handMagic, сами руны): обработчики НИКОГДА не возвращают true —
+// ASHEN OATH — modules/fx/castFx.js. Владелец: №7 [VFX]. [W3-МАГИЯ] [W4-ЗАКЛИНАНИЯ]
+// Ядро, ореол, искры и свет у снарядов и выбросов, предвестники жестов: выброс, сфера, снаряды «OK», печати, руны.
+// Всё — «добавки» поверх существующих слоёв (нова sigils, тело сферы/призмы старого effects.js, иглы runesWild,
+// отпечаток handMagic, сами руны и печати): обработчики НИКОГДА не возвращают true —
 // модуль стоит в CHOREO раньше остальных, true съел бы старые эффекты (и onThrow — передачу тела снаряду).
-//  - выброс (burst): белое ядро-вспышка у груди (+ у кулака/обеих ладоней), ореол, веер искр по power, свет;
+// [W4-ЗАКЛИНАНИЯ] читаемость: что вылетело, откуда и куда.
+//  - цвет: общие заклинания окрашены стихией героя (fx.heroEl / heroPal); призма — 'reset', соперник — 'rival';
+//  - предвестник (common.herald, 0,15 с у руки — жест связан с эффектом): первый «OK» потока (дальше — только белая
+//    звёздочка у ствола), выброс (у обеих ладоней / у кулака), начало сотворения, бросок (крупнее), «Искра»,
+//    рассечение, печати (у обеих ладоней), руны (в стихии руны, с её знаком). castFx стоит в CHOREO раньше
+//    sigilGate / sigilPillar (те рисуют событие целиком и возвращают true), поэтому предвестник есть и у них;
+//  - выброс (burst): белое ядро-вспышка у груди, ореол, веер искр к цели по power, свет;
 //  - сотворение (snap.player.conjure): пока тело между ладонями — ореол и искры, стягивающиеся к ядру
-//    (по аккумулятору, без аллокаций), «готово» (charge → 1) — короткая звезда; бросок — ядро, ореол, конус искр;
-//  - полёт своих сфер/призм (snap.projectiles kind 'sphere'|'prism'): ореол и шлейф искр по id (пул записей),
-//    мягкий свет, следующий за снарядом (только у сфер/призм);
-//  - снаряды «OK» (kind 'bolt') и «Искра» ('spark', кроме игл caret:*): яркое ядро и искры-ореол вдоль полёта
-//    по аккумулятору; без света и без лент (у болта свой хвост, у искры — свой в sigils);
-//  - руны (rune_cast): короткое ядро и искры у руки в цвете стихии руны; свет — только stella/fulgur/ignis.
+//    (по аккумулятору, без аллокаций), «готово» (charge → 1) — короткая звезда; бросок — ореол и конус искр;
+//  - «OK» (kind 'bolt'): старый болт (меш, ореол, лента) подавлен — рисует комета (common.createComet): белое ядро,
+//    ореол героя, искры-хвост, слой стихии, лента; свет — один на поток (не чаще ~0,6 с, на low нет);
+//    болт исчез без попадания (истёк, улетел) — короткое угасание (вспышка и искры);
+//  - полёт своих сфер/призм: комета по радиусу снаряда (тело — старый слой), один свет за головой;
+//  - «Искра» ('spark', кроме игл caret:*): яркое ядро и искры вдоль полёта по аккумулятору (без света и лент);
+//  - сцены «без каши» (kit.scope): комета болта — в сцене 'bolt', сфера/призма — в сцене своего броска, искра — 'spark'.
 // Попадание своего снаряда: в fx.shared.castHit пишется направление полёта (последняя скорость записи) —
 // его читает hitFx.js (в реальном бою у projectile_impact/boss_hit нет direction).
 // Снаряды соперника (owner 'opponent' / remote) рисует combatFx.js — здесь пропускаются.
 
-import { clamp, isNum, hasVec } from './common.js';
+import { clamp, isNum, hasVec, rampOf, herald, createComet } from './common.js';
 
-// руна → строка градиента стихии (именованные ramp kit)
-const RUNE_RAMP = {
-  ignis: 'fire', fulgur: 'storm', orbis: 'heal', stella: 'star', spira: 'wind',
-  lemnis: 'eternal', caret: 'frost', vee: 'void', clepsydra: 'time', alpha: 'reset',
-};
+// руна → стихия (палитра fx.E и градиент kit)
 const RUNE_EL = {
   ignis: 'fire', fulgur: 'storm', orbis: 'heal', stella: 'star', spira: 'wind',
   lemnis: 'eternal', caret: 'frost', vee: 'void', clepsydra: 'time', alpha: 'reset',
 };
-const BIG_RUNE = { stella: 1, fulgur: 1, ignis: 1 };
 const POOL_N = 24;
+const BOLT_STREAM = 0.6;   // пауза между «OK», после которой выстрел — начало нового потока (предвестник)
+const BOLT_LIGHT = 0.6;    // свет болтов — не чаще (единственный слот medium не занимаем потоком)
+const BOLT_RATE = 0.45;    // доля частиц кометы болта (в воздухе 2–5 болтов): голова и слои реже (createComet rate)
+const THROW_WIN = 0.4;     // запись сферы без своего броска берёт сцену броска не старше
+const REM = Object.freeze({ remote: true });
 
 export function register(fx) {
   const V3 = fx.THREE.Vector3;
   const kit = fx.kit;
-  const E = fx.E;
   const num = (v, d) => (isNum(v) ? v : d);
   const decor = () => (kit.Q && isNum(kit.Q.decor) ? kit.Q.decor : 0.8);
   const soft = () => { try { return fx.reduced() ? 0.6 : 1; } catch (e) { return 1; } };
   const EMPTY = [];
+  // [W4-ЗАКЛИНАНИЯ] стихия героя (соперник — 'rival')
+  const elOf = (R) => fx.heroEl(R ? REM : null);
 
   // общее с hitFx: последнее попадание своего снаряда (kit.clock кадра, id, вид, направление полёта, точка)
   const castHit = { t: -1, id: '', kind: '', has: false, dir: new V3(0, 0, -1), pos: new V3(), speed: 0 };
   fx.shared.castHit = castHit;
 
   // временные векторы обработчиков (только синхронно внутри одного вызова)
-  const _p = new V3(), _q = new V3(), _d = new V3(), _l = new V3(), _r = new V3(), _t = new V3();
+  const _p = new V3(), _q = new V3(), _d = new V3(), _t = new V3();
+  const _h = new V3(), _hl = new V3(), _hd = new V3(), _hq = new V3();
 
   // ------------------------------------------------------------ предвыделенные опции (мутируются перед вызовом)
   const fCore = { ramp: 'whiteHold', size: [0.2, 1.0], dur: 0.14, intensity: 4, sprite: 'star', pull: 0.45, rival: false, delay: 0, fadeIn: 0.04, curve: 0.45 };
   const fHalo = { ramp: 'gold', size: [0.4, 1.4], dur: 0.3, intensity: 2.0, sprite: 'glow', pull: 0.45, rival: false, delay: 0, fadeIn: 0.04, curve: 0.45 };
   const eFan = { at: null, dir: null, cone: 0.6, count: 20, speed: [3, 8], life: [0.18, 0.4], size: [0.06, 0.01], ramp: 'gold', intensity: 3.2, sprite: 'spark', stretch: 0.03, drag: 3, gravity: 1.5, rival: false, essential: false };
   const eShell = { at: null, shape: 'shell', radius: 0.5, count: 12, radial: -2, speed: [0, 0.15], life: [0.18, 0.26], size: [0.035, 0.07], ramp: 'gold', intensity: 2.8, sprite: 'spark', stretch: 0.03, fadeIn: 0.3, rival: false, essential: true };
+  const kBurst = { color: 0xfff4e0, intensity: 0.6, range: 9, dur: 0.3, attack: 0.04 };
+
+  // ============================================================ [W4-ЗАКЛИНАНИЯ] ПРЕДВЕСТНИК
+  const hO = { symbol: undefined, scale: 1, dir: null, glyph: true };
+  function hrd(at, el, R, scale, dir, symbol, glyph) {
+    hO.symbol = symbol; hO.scale = scale; hO.dir = dir; hO.glyph = glyph !== false;
+    herald(fx, at, el, R, hO);
+    hO.dir = null; hO.symbol = undefined;
+  }
+  /** Единичное направление from → цель заклинателя (в out). */
+  function aimFrom(from, R, out) {
+    fx.target(_hq, R);
+    out.subVectors(_hq, from);
+    if (out.lengthSq() < 1e-6) out.set(0, 0, -1);
+    return out.normalize();
+  }
+  /** У правой руки (both — у обеих; сомкнутые ладони — один крупнее между ними). Знак glyph — один (пул знаков). */
+  function heraldHands(el, R, both) {
+    fx.anchor('handR', _h, R);
+    if (both) {
+      fx.anchor('handL', _hl, R);
+      if (_hl.distanceToSquared(_h) < 0.16) { _h.lerp(_hl, 0.5); hrd(_h, el, R, 1.2, aimFrom(_h, R, _hd), undefined, true); return; }
+      hrd(_hl, el, R, 1, aimFrom(_hl, R, _hd), undefined, false);
+    }
+    hrd(_h, el, R, 1, aimFrom(_h, R, _hd), undefined, true);
+  }
 
   // ============================================================ ВЫБРОС (burst)
-  // Нову целиком рисует sigils.js (звезда, сфера, кольца, свет); здесь — белое ядро «изнутри» и веер искр.
+  // Нову целиком рисует sigils.js (звезда, сфера, кольца, свет); здесь — предвестник у ладоней, белое ядро «изнутри»
+  // и веер искр.
   fx.on('burst', (ev, d) => {
     const R = fx.isRemote(d);
     const pw = clamp(num(d.power, 0.6), 0, 1);
     const both = !!d.both;
     const sf = soft();
+    const el = elOf(R), ramp = rampOf(el, R);
     const p = fx.evPos(ev, _p);
     fx.anchor('feet', _t, R);
     if (!p || p.y < _t.y + 0.3) fx.anchor('chest', _p, R);
-    const ramp = R ? 'rival' : 'gold';
+    // предвестник у кулака / обеих ладоней (вместо прежних маленьких белых ядер)
+    heraldHands(el, R, both);
     // белое ядро-вспышка и ореол у груди
     fCore.ramp = 'whiteHold'; fCore.size[0] = 0.25; fCore.size[1] = (1.0 + 0.8 * pw) * sf; fCore.dur = 0.16; fCore.intensity = 4.2; fCore.sprite = 'star'; fCore.pull = 0.7; fCore.rival = R; fCore.delay = 0;
     kit.flash(_p, fCore);
     fHalo.ramp = ramp; fHalo.size[0] = 0.5; fHalo.size[1] = (1.6 + 1.0 * pw) * sf; fHalo.dur = 0.34 + 0.12 * pw; fHalo.intensity = 2.0; fHalo.sprite = 'glow'; fHalo.pull = 0.7; fHalo.rival = R; fHalo.delay = 0;
     kit.flash(_p, fHalo);
-    // у кулака (или у обеих ладоней) — маленькие белые ядра
-    fx.anchor('handR', _r, R);
-    fCore.size[0] = 0.12; fCore.size[1] = 0.55 * sf; fCore.dur = 0.12; fCore.intensity = 3.6; fCore.pull = 0.4;
-    kit.flash(_r, fCore);
-    if (both) { fx.anchor('handL', _l, R); kit.flash(_l, fCore); }
-    // веер искр к цели (по power), и белые искры во все стороны
+    // веер искр к цели (по power), и белые искры во все стороны (меньше прежнего — искры дал предвестник)
     fx.target(_q, R);
     _d.subVectors(_q, _p); if (_d.lengthSq() < 1e-6) _d.set(0, 0, -1); _d.normalize();
-    eFan.at = _p; eFan.dir = _d; eFan.cone = 0.55; eFan.count = (18 + 30 * pw) * (both ? 1.25 : 1); eFan.speed[0] = 5; eFan.speed[1] = 10 + 8 * pw;
+    eFan.at = _p; eFan.dir = _d; eFan.cone = 0.55; eFan.count = 18 + 30 * pw; eFan.speed[0] = 5; eFan.speed[1] = 10 + 8 * pw;
     eFan.life[0] = 0.16; eFan.life[1] = 0.38; eFan.size[0] = 0.07; eFan.ramp = ramp; eFan.intensity = 3.4; eFan.gravity = 1.5; eFan.drag = 3; eFan.rival = R; eFan.essential = false;
     kit.emit(eFan);
-    eFan.dir = null; eFan.cone = Math.PI; eFan.count = 10 + 14 * pw; eFan.speed[0] = 2; eFan.speed[1] = 5; eFan.ramp = R ? 'rival' : 'white'; eFan.size[0] = 0.05;
+    eFan.dir = null; eFan.cone = Math.PI; eFan.count = both ? 4 + 6 * pw : 6 + 8 * pw; eFan.speed[0] = 2; eFan.speed[1] = 5; eFan.ramp = R ? 'rival' : 'white'; eFan.size[0] = 0.05;
     kit.emit(eFan);
-    eFan.dir = null;
-    // свет ядра (на low kit.light → null); sigils даёт свой золотой — этот белый, короче
-    kit.light(_p, { color: R ? E.rival.core : 0xfff4e0, intensity: 0.6 + 0.6 * pw, range: 9, dur: 0.3, attack: 0.04 });
+    eFan.dir = null; eFan.at = null;
+    // свет ядра (на low kit.light → null); sigils даёт свой — этот светлее и короче
+    kBurst.color = fx.heroPal(d).core; kBurst.intensity = 0.6 + 0.6 * pw;
+    kit.light(_p, kBurst);
   });
 
   // ============================================================ СОТВОРЕНИЕ сферы / призмы (по снимку)
@@ -92,8 +126,8 @@ export function register(fx) {
   const fReady = { ramp: 'whiteHold', size: [0.15, 1.1], dur: 0.2, intensity: 4, sprite: 'star', pull: 0.4, rival: false };
   function conjCenter(pl, out) {
     if (hasVec(pl.conjurePoint)) return out.set(pl.conjurePoint.x, pl.conjurePoint.y, pl.conjurePoint.z);
-    fx.anchor('handL', _l, false); fx.anchor('handR', _r, false);
-    return out.set((_l.x + _r.x) * 0.5, (_l.y + _r.y) * 0.5, (_l.z + _r.z) * 0.5);
+    fx.anchor('handL', _hl, false); fx.anchor('handR', _h, false);
+    return out.set((_hl.x + _h.x) * 0.5, (_hl.y + _h.y) * 0.5, (_hl.z + _h.z) * 0.5);
   }
   function conjTick(dt, snap) {
     const pl = snap && snap.player;
@@ -101,9 +135,17 @@ export function register(fx) {
     if (!c || pl.action === 'dead') { conj.on = false; conj.ready = false; conj.accHalo = 0; conj.accSpark = 0; return; }
     const prism = c.kind === 'prism';
     const ch = clamp(num(c.charge, 0), 0, 1), sz = clamp(num(c.size, 0), 0, 1);
-    const ramp = prism ? 'reset' : 'gold';
-    if (!conj.on || conj.kind !== c.kind) { conj.on = true; conj.kind = prism ? 'prism' : 'orb'; conj.ready = false; }
+    const el = prism ? 'reset' : elOf(false);
+    const ramp = rampOf(el, false);
     conjCenter(pl, eHalo.at);
+    if (!conj.on) {
+      // [W4-ЗАКЛИНАНИЯ] начало сотворения — предвестник в центре (своя сцена: по снимку сцены нет)
+      const prev = kit.currentScope;
+      kit.scope('');
+      hrd(eHalo.at, el, false, 1, null, undefined, true);
+      kit.enterScope(prev);
+    }
+    if (!conj.on || conj.kind !== (prism ? 'prism' : 'orb')) { conj.on = true; conj.kind = prism ? 'prism' : 'orb'; conj.ready = false; }
     if (!conj.ready && ch >= 0.995) {
       conj.ready = true;
       fReady.size[1] = (0.8 + 0.6 * sz) * soft();
@@ -133,114 +175,208 @@ export function register(fx) {
   }
 
   // ------------------------------------------------------------ бросок сферы / призмы (onThrow старого слоя обязателен)
+  // сцена броска: запись снаряда появится в снимке (обычно в этом же кадре) — её комета живёт в сцене броска
+  const thr = [];
+  for (let i = 0; i < 4; i++) thr.push({ id: '', scope: null, t: -1e9 });
+  let thrI = 0;
+  function rememberThrow(id, s) {
+    const e = thr[thrI]; thrI = (thrI + 1) % thr.length;
+    e.id = id == null ? '' : String(id); e.scope = s; e.t = kit.clock;
+  }
+  function takeThrowScope(key) {
+    let best = null;
+    for (let i = 0; i < thr.length; i++) {
+      const e = thr[i];
+      if (!e.scope) continue;
+      const age = kit.clock - e.t;
+      if (e.id && e.id === key && age <= THROW_WIN + 0.25) { best = e; break; }
+      if (age <= THROW_WIN && (!best || e.t > best.t)) best = e;
+    }
+    if (!best) return null;
+    const s = best.scope; best.scope = null; best.id = '';
+    return s;
+  }
   fx.on('player_cast', (ev, d) => {
     const R = fx.isRemote(d);
     const prism = d.kind === 'prism';
     const pw = clamp(num(d.power, 0.6), 0, 1), sz = clamp(num(d.size, 0.5), 0, 1);
     const sf = soft();
     const p = fx.evPos(ev, _p) || (fx.snap && fx.snap.player && hasVec(fx.snap.player.conjurePoint) ? _p.copy(fx.snap.player.conjurePoint) : fx.anchor('chest', _p, R));
-    const ramp = R ? 'rival' : (prism ? 'reset' : 'gold');
+    const el = R ? 'rival' : (prism ? 'reset' : elOf(false));
+    const ramp = rampOf(el, R);
     if (hasVec(d.velocity)) _d.set(d.velocity.x, d.velocity.y, d.velocity.z); else { fx.target(_q, R); _d.subVectors(_q, p); }
     if (_d.lengthSq() < 1e-6) _d.set(0, 0, -1);
     _d.normalize();
-    fCore.ramp = 'whiteHold'; fCore.size[0] = 0.2; fCore.size[1] = (0.9 + 0.6 * sz) * sf; fCore.dur = 0.13; fCore.intensity = 4; fCore.sprite = 'star'; fCore.pull = 0.45; fCore.rival = R; fCore.delay = 0;
-    kit.flash(p, fCore);
+    // [W4-ЗАКЛИНАНИЯ] предвестник броска (крупнее; его белая звезда — ядро броска), ореол, конус искр по полёту
+    hrd(p, el, R, 1.2, _d, undefined, true);
     fHalo.ramp = ramp; fHalo.size[0] = 0.35; fHalo.size[1] = (1.2 + 0.8 * sz) * sf; fHalo.dur = 0.26; fHalo.intensity = 1.9; fHalo.sprite = 'glow'; fHalo.pull = 0.45; fHalo.rival = R; fHalo.delay = 0;
     kit.flash(p, fHalo);
-    eFan.at = p; eFan.dir = _d; eFan.cone = 0.42; eFan.count = 14 + 20 * pw; eFan.speed[0] = 4; eFan.speed[1] = 9 + 6 * pw; eFan.life[0] = 0.14; eFan.life[1] = 0.32;
+    eFan.at = p; eFan.dir = _d; eFan.cone = 0.42; eFan.count = 8 + 12 * pw; eFan.speed[0] = 4; eFan.speed[1] = 9 + 6 * pw; eFan.life[0] = 0.14; eFan.life[1] = 0.32;
     eFan.size[0] = 0.06; eFan.ramp = ramp; eFan.intensity = 3.2; eFan.gravity = 1; eFan.drag = 3.5; eFan.rival = R; eFan.essential = false;
     kit.emit(eFan);
-    eFan.dir = null;
-    // свет броска даёт свет полёта (запись снаряда) — здесь не берём второй слот
+    eFan.dir = null; eFan.at = null;
+    if (!R) rememberThrow(d.projectileId, kit.currentScope);
+    // свет броска даёт свет полёта (комета снаряда) — здесь не берём второй слот
   }, (d) => d.ability === 'throw');
 
-  // ------------------------------------------------------------ каст «OK»: маленькая белая звезда у руки (поверх янтаря)
+  // ------------------------------------------------------------ каст «OK»: предвестник в начале потока, дальше — звёздочка
+  const boltT = [-1e9, -1e9];   // последний «OK» своего героя / соперника
   fx.on('player_cast', (ev, d) => {
-    const R = fx.isRemote(d);
+    const R = fx.isRemote(d), i = R ? 1 : 0;
+    const first = kit.clock - boltT[i] > BOLT_STREAM;
+    boltT[i] = kit.clock;
+    if (first) {
+      fx.anchor('handR', _h, R);
+      hrd(_h, elOf(R), R, 1, aimFrom(_h, R, _hd), undefined, true);
+      return;
+    }
+    // белая звёздочка у ствола (поверх янтаря старого слоя)
     const p = fx.evPos(ev, _p) || fx.anchor('handR', _p, R);
     fCore.ramp = 'whiteHold'; fCore.size[0] = 0.08; fCore.size[1] = 0.42 * soft(); fCore.dur = 0.08; fCore.intensity = 3.6; fCore.sprite = 'star'; fCore.pull = 0.35; fCore.rival = R; fCore.delay = 0;
     kit.flash(p, fCore);
   }, (d) => d.ability === 'bolt');
 
+  // ------------------------------------------------------------ [W4-ЗАКЛИНАНИЯ] «Искра», рассечение — предвестник у руки
+  fx.on('player_cast', (ev, d) => {
+    const R = fx.isRemote(d);
+    fx.anchor('handR', _h, R);
+    if (hasVec(d.velocity)) { _hd.set(d.velocity.x, d.velocity.y, d.velocity.z); if (_hd.lengthSq() > 1e-6) _hd.normalize(); else aimFrom(_h, R, _hd); }
+    else aimFrom(_h, R, _hd);
+    hrd(_h, elOf(R), R, 1, _hd, undefined, true);
+  }, (d) => d.ability === 'spark');
+  fx.on('player_slash', (ev, d) => {
+    const R = fx.isRemote(d);
+    fx.anchor('handR', _h, R);
+    hrd(_h, elOf(R), R, 1, aimFrom(_h, R, _hd), undefined, true);
+  });
+
+  // ------------------------------------------------------------ [W4-ЗАКЛИНАНИЯ] печати — предвестник у обеих ладоней
+  const sigT = [-1e9, -1e9];   // кадр последнего предвестника печати (свой / соперник): без двойного за кадр
+  function sigilHerald(R) {
+    const i = R ? 1 : 0;
+    if (sigT[i] === kit.clock) return;
+    sigT[i] = kit.clock;
+    heraldHands(elOf(R), R, true);
+  }
+  fx.on('sigil_cast', (ev, d) => { sigilHerald(fx.isRemote(d)); });
+  // «Врата» и «Столп» тоже приходят сюда: castFx стоит в CHOREO раньше sigilGate / sigilPillar (те возвращают true).
+
   // ============================================================ ПОЛЁТ своих снарядов: записи по id (пул)
-  // r.cls: 1 — сфера/призма (ореол, шлейф искр, свет), 2 — «OK»-болт, 3 — «Искра».
+  // r.cls: 1 — сфера/призма (комета, свет), 2 — «OK»-болт (комета вместо старого болта), 3 — «Искра».
+  fx.suppress('proj:bolt');   // [W4-ЗАКЛИНАНИЯ] старый болт effects.js (ядро-меш, ореол-спрайт, лента) не рисуется
+  const comets = createComet(fx);
   const recs = new Map();
   const pool = [];
   function makeRec() {
-    const r = { id: '', cls: 0, prism: false, pos: new V3(), prev: new V3(), vel: new V3(), lp: new V3(), rad: 0.3, pw: 0.6, age: 0, tag: 0, accA: 0, accB: 0, follow: null };
-    r.follow = () => r.lp;          // замыкание создаётся один раз на запись пула
-    return r;
+    return { id: '', cls: 0, prism: false, pos: new V3(), prev: new V3(), vel: new V3(), rad: 0.3, pw: 0.6, age: 0, tag: 0, accA: 0, accB: 0, comet: null, scope: null, el: '' };
   }
   for (let i = 0; i < POOL_N; i++) pool.push(makeRec());
-  let tag = 0;
-  const kLight = { color: 0xffe2a8, intensity: 0.5, range: 7, dur: 0.9, attack: 0.12, follow: null };
+  let tag = 0, playing = false, boltLightT = -1e9;
+  // опции комет (мутируются перед start)
+  const cBolt = { size: 0.45, remote: false, light: false, lightK: 0.8, dur: 0.35, trail: true, trailWidth: 0.5, trailLife: 0.15, scope: null, rate: BOLT_RATE };
+  const cOrb = { size: 0.4, remote: false, light: true, lightK: 1, dur: 0.8, trail: true, trailWidth: undefined, trailLife: 0.3, scope: null };
+  function sceneScope(key) {
+    // сцена без смены текущей (запись рождается в fx.every — вне событий)
+    const prev = kit.currentScope;
+    const s = kit.scope(key, undefined, false);
+    kit.enterScope(prev);
+    return s;
+  }
   function recGet(key, pr, cls) {
     const r = pool.pop() || makeRec();
-    r.id = key; r.cls = cls; r.prism = pr.kind === 'prism'; r.age = 0; r.accA = 0; r.accB = 0;
-    r.pos.set(pr.position.x, pr.position.y, pr.position.z); r.prev.copy(r.pos); r.lp.copy(r.pos);
+    r.id = key; r.cls = cls; r.prism = pr.kind === 'prism'; r.age = 0; r.accA = 0; r.accB = 0; r.comet = null; r.scope = null;
+    r.pos.set(pr.position.x, pr.position.y, pr.position.z); r.prev.copy(r.pos);
     if (hasVec(pr.velocity)) r.vel.set(pr.velocity.x, pr.velocity.y, pr.velocity.z); else r.vel.set(0, 0, 0);
     r.rad = clamp(num(pr.radius, 0.3), 0.1, 1);
     r.pw = clamp(num(pr.power, 0.6), 0, 1);
     if (cls === 1) {
-      // мягкий свет, идущий за сферой/призмой (на low → null; на medium слот отдаётся более сильным вспышкам)
-      kLight.color = r.prism ? 0xdfe8ff : 0xffe2a8; kLight.intensity = 0.45 + 0.35 * r.pw; kLight.follow = r.follow;
-      kit.light(r.pos, kLight);
-      kLight.follow = null;
-    }
+      // сфера/призма: комета по радиусу, один мягкий свет за головой (на low → нет; на medium слот уступает вспышкам)
+      r.scope = takeThrowScope(key) || sceneScope('');
+      cOrb.size = Math.min(0.8, r.rad * 1.3); cOrb.lightK = (0.45 + 0.35 * r.pw) / 0.55; cOrb.scope = r.scope;
+      const sEl = typeof pr.spell === 'string' ? RUNE_EL[pr.spell] : undefined;   // PvP: ignis/clepsydra — стихия руны
+      r.el = r.prism ? 'reset' : (sEl || elOf(false));
+      r.comet = comets.start(r.pos, r.el, cOrb);
+      cOrb.scope = null;
+    } else if (cls === 2) {
+      // «OK»: сцена потока 'bolt'; свет — первому болту потока, дальше не чаще BOLT_LIGHT.
+      // PvP: руна-выстрел (pr.spell — fulgur, vee, frame…) — в стихии руны и в своей сцене, не в потоке «OK»
+      const runeEl = typeof pr.spell === 'string' ? RUNE_EL[pr.spell] : undefined;
+      r.scope = sceneScope(runeEl ? '' : 'bolt');
+      cBolt.light = !!runeEl || kit.clock - boltLightT >= BOLT_LIGHT;
+      if (cBolt.light && !runeEl) boltLightT = kit.clock;
+      cBolt.scope = r.scope;
+      r.el = runeEl || elOf(false);
+      r.comet = comets.start(r.pos, r.el, cBolt);
+      cBolt.scope = null;
+    } else r.scope = sceneScope('spark');
     return r;
   }
-  function recEnd(r) { r.cls = 0; if (pool.length < POOL_N * 2) pool.push(r); }
-  function sweep(r, key) { if (r.tag !== tag) { recs.delete(key); recEnd(r); } }
+  function recEnd(r) {
+    if (r.comet) { r.comet.end(); r.comet = null; }
+    r.cls = 0; r.scope = null;
+    if (pool.length < POOL_N * 2) pool.push(r);
+  }
 
-  // опции полёта
-  const eOrbHalo = { at: null, count: 1, speed: [0, 0.1], life: [0.1, 0.16], size: [0.8, 0.5], sizeVar: 0.15, ramp: 'gold', intensity: 1.6, sprite: 'glow', fadeIn: 0.2, essential: true, rival: false };
-  const eOrbTrail = { at: null, radius: 0.2, count: 1, dir: null, cone: 0.9, speed: [0.3, 1.4], life: [0.25, 0.5], size: [0.06, 0.01], ramp: 'gold', intensity: 2.8, sprite: 'spark', stretch: 0.02, drag: 2.2, gravity: 1.2, essential: true, rival: false };
-  const eBoltCore = { at: null, count: 1, speed: [0, 0.05], life: [0.05, 0.07], size: [0.34, 0.22], sizeVar: 0.1, ramp: 'whiteHold', intensity: 3, sprite: 'glow', fadeIn: 0.05, essential: true, rival: false };
+  // угасание болта, исчезнувшего без попадания (старый слой больше не рисует своё)
+  const fFizz = { ramp: 'gold', size: [0.45, 0.8], dur: 0.18, intensity: 1.6, sprite: 'glow', pull: 0.3, rival: false, delay: 0, fadeIn: 0.04, curve: 0.45 };
+  const eFizz = { at: null, count: 6, speed: [0.3, 1.2], life: [0.22, 0.35], size: [0.05, 0.01], ramp: 'gold', intensity: 2.6, sprite: 'spark', drag: 3, gravity: 0.6, rival: false, essential: true };
+  // попадания этого кадра (без projectileId запись не найти — угасание рядом с попаданием не рисуем)
+  const imp = [new V3(), new V3(), new V3(), new V3()];
+  let impN = 0, impT = -1;
+  function nearImpact(p) {
+    if (impT !== kit.clock) return false;
+    for (let i = 0; i < impN; i++) if (imp[i].distanceToSquared(p) < 4) return true;
+    return false;
+  }
+  function fizzle(r) {
+    const prev = kit.enterScope(r.scope);
+    const ramp = rampOf(r.el || elOf(false), false);
+    fFizz.ramp = ramp; kit.flash(r.pos, fFizz);
+    eFizz.at = r.pos; eFizz.ramp = ramp; kit.emit(eFizz); eFizz.at = null;
+    kit.enterScope(prev);
+  }
+  function sweep(r, key) {
+    if (r.tag === tag) return;
+    recs.delete(key);
+    if (r.cls === 2 && playing && !nearImpact(r.pos)) fizzle(r);
+    recEnd(r);
+  }
+
+  // «Искра»: ядро и искры-ореол по аккумулятору
+  const eBoltCore = { at: null, count: 1, speed: [0, 0.05], life: [0.05, 0.07], size: [0.26, 0.16], sizeVar: 0.1, ramp: 'whiteHold', intensity: 3, sprite: 'glow', fadeIn: 0.05, essential: true, rival: false };
   const eBoltSpark = { at: null, radius: 0.08, count: 1, dir: null, cone: 1.2, speed: [0.4, 1.6], life: [0.12, 0.26], size: [0.045, 0.008], ramp: 'gold', intensity: 3, sprite: 'spark', stretch: 0.02, drag: 2.5, gravity: 1.5, essential: true, rival: false };
   const _back = new V3();
 
   function flyTick(r, dt) {
-    const dec = decor();
-    // назад по полёту — искры осыпаются за снарядом
-    _back.copy(r.vel); if (_back.lengthSq() > 1e-6) _back.normalize().multiplyScalar(-1); else _back.set(0, 1, 0);
-    if (r.cls === 1) {
-      const ramp = r.prism ? 'reset' : 'gold';
-      r.accA += dt * 30;                                  // ореол ~30/с (держит «тело» ярче старого меша)
-      let n = Math.floor(r.accA);
-      if (n > 0) {
-        r.accA -= n; if (n > 3) n = 3;
-        eOrbHalo.at = r.pos; eOrbHalo.count = n; eOrbHalo.ramp = ramp; eOrbHalo.size[0] = 0.9 + 1.4 * r.rad; eOrbHalo.size[1] = eOrbHalo.size[0] * 0.6;
-        eOrbHalo.intensity = 1.3 + 0.8 * r.pw;
-        kit.emit(eOrbHalo);
-      }
-      r.accB += dt * (40 + 50 * r.pw) * dec;               // шлейф искр
-      n = Math.floor(r.accB);
-      if (n > 0) {
-        r.accB -= n; if (n > 6) n = 6;
-        eOrbTrail.at = r.pos; eOrbTrail.dir = _back; eOrbTrail.count = n; eOrbTrail.ramp = n & 1 ? ramp : 'white'; eOrbTrail.radius = r.rad * 0.7;
-        kit.emit(eOrbTrail);
-      }
-    } else {
-      const spark = r.cls === 3;
-      r.accA += dt * (spark ? 40 : 34);                    // яркое ядро
-      let n = Math.floor(r.accA);
-      if (n > 0) {
-        r.accA -= n; if (n > 2) n = 2;
-        eBoltCore.at = r.pos; eBoltCore.count = n; eBoltCore.size[0] = spark ? 0.26 : 0.36; eBoltCore.size[1] = eBoltCore.size[0] * 0.6;
-        kit.emit(eBoltCore);
-      }
-      r.accB += dt * (spark ? 22 : 30) * dec;              // искры-ореол
-      n = Math.floor(r.accB);
-      if (n > 0) {
-        r.accB -= n; if (n > 3) n = 3;
-        eBoltSpark.at = r.pos; eBoltSpark.dir = _back; eBoltSpark.count = n; eBoltSpark.ramp = spark ? 'storm' : 'gold';
-        kit.emit(eBoltSpark);
-      }
+    if (r.comet) {
+      r.comet.step(r.pos, r.vel, dt);
+      return;
     }
+    if (r.cls !== 3) return;
+    const prev = kit.enterScope(r.scope);
+    if (r.scope) kit.touchScope(r.scope, 0.2);
+    _back.copy(r.vel); if (_back.lengthSq() > 1e-6) _back.normalize().multiplyScalar(-1); else _back.set(0, 1, 0);
+    r.accA += dt * 40;                                   // яркое ядро
+    let n = Math.floor(r.accA);
+    if (n > 0) {
+      r.accA -= n; if (n > 2) n = 2;
+      eBoltCore.at = r.pos; eBoltCore.count = n;
+      kit.emit(eBoltCore);
+    }
+    r.accB += dt * 22 * decor();                         // искры-ореол в цвете героя
+    n = Math.floor(r.accB);
+    if (n > 0) {
+      r.accB -= n; if (n > 3) n = 3;
+      eBoltSpark.at = r.pos; eBoltSpark.dir = _back; eBoltSpark.count = n; eBoltSpark.ramp = rampOf(elOf(false), false);
+      kit.emit(eBoltSpark);
+    }
+    eBoltCore.at = null; eBoltSpark.at = null; eBoltSpark.dir = null;
+    kit.enterScope(prev);
   }
 
   function projTick(dt, snap) {
     tag++;
+    playing = !!(snap && snap.status === 'playing');
     const list = snap && Array.isArray(snap.projectiles) ? snap.projectiles : EMPTY;
     for (let i = 0; i < list.length; i++) {
       const pr = list[i];
@@ -249,13 +385,12 @@ export function register(fx) {
       const cls = kind === 'sphere' || kind === 'prism' ? 1 : kind === 'bolt' ? 2 : kind === 'spark' ? 3 : 0;
       if (!cls) continue;
       const key = typeof pr.id === 'string' ? pr.id : String(pr.id);
-      if (cls === 3 && key.startsWith('caret:')) continue;   // иглы «Акус» — runesWild.js
+      if (key.startsWith('caret:')) continue;   // иглы «Акус» (и в PvP, где они kind 'bolt') — runesWild.js
       let r = recs.get(key);
       if (!r) { r = recGet(key, pr, cls); recs.set(key, r); }
       r.tag = tag;
       r.prev.copy(r.pos);
       r.pos.set(pr.position.x, pr.position.y, pr.position.z);
-      r.lp.copy(r.pos);
       if (hasVec(pr.velocity)) r.vel.set(pr.velocity.x, pr.velocity.y, pr.velocity.z);
       else if (dt > 0) r.vel.subVectors(r.pos, r.prev).multiplyScalar(1 / dt);
       if (!(dt > 0)) continue;
@@ -281,30 +416,33 @@ export function register(fx) {
       castHit.dir.subVectors(castHit.pos, _q); if (castHit.dir.lengthSq() < 1e-6) castHit.dir.set(0, 0, -1); castHit.dir.normalize();
       castHit.speed = 0;
     }
-    if (r) { recs.delete(key); recEnd(r); }
+    // точка попадания этого кадра — для угасания болтов без projectileId
+    if (impT !== kit.clock) { impT = kit.clock; impN = 0; }
+    if ((p || r) && impN < imp.length) imp[impN++].copy(castHit.pos);
+    if (r) {
+      if (r.comet) { r.comet.end(castHit.pos); r.comet = null; }   // лента дотягивается до точки удара
+      recs.delete(key); recEnd(r);
+    }
   }, (d) => d.owner === 'player' && !fx.isRemote(d));
 
-  // ============================================================ РУНЫ (rune_cast): ядро и искры в цвете стихии
+  // ============================================================ РУНЫ (rune_cast): предвестник у руки в стихии руны
+  // [W4-ЗАКЛИНАНИЯ] вместо прежних ядра/ореола/веера: вспышка, кольцо и знак руны у руки (0,15 с), искры — к цели
+  // (руна на себя — во все стороны). Свет рун — у самих рун; руну в воздухе рисует handMagic.
   fx.on('rune_cast', (ev, d) => {
     const rune = typeof d.rune === 'string' ? d.rune : '';
     const R = fx.isRemote(d);
-    const ramp = R ? 'rival' : (RUNE_RAMP[rune] || 'gold');
-    const big = BIG_RUNE[rune] === 1;
-    const sf = soft();
-    // точка каста — рука, которой писали руну (немного к груди)
-    fx.anchor('handR', _r, R); fx.anchor('chest', _q, R);
-    _p.lerpVectors(_q, _r, 0.7);
-    fCore.ramp = 'whiteHold'; fCore.size[0] = 0.14; fCore.size[1] = (big ? 1.1 : 0.7) * sf; fCore.dur = big ? 0.16 : 0.12; fCore.intensity = 4; fCore.sprite = 'star'; fCore.pull = 0.45; fCore.rival = R; fCore.delay = 0;
-    kit.flash(_p, fCore);
-    fHalo.ramp = ramp; fHalo.size[0] = 0.3; fHalo.size[1] = (big ? 1.5 : 1.0) * sf; fHalo.dur = big ? 0.32 : 0.24; fHalo.intensity = 2; fHalo.sprite = 'glow'; fHalo.pull = 0.45; fHalo.rival = R; fHalo.delay = 0;
-    kit.flash(_p, fHalo);
-    eFan.at = _p; eFan.dir = null; eFan.cone = Math.PI; eFan.count = big ? 26 : 14; eFan.speed[0] = 1.5; eFan.speed[1] = big ? 6 : 4; eFan.life[0] = 0.18; eFan.life[1] = 0.42;
-    eFan.size[0] = 0.055; eFan.ramp = ramp; eFan.intensity = 3; eFan.gravity = 0.8; eFan.drag = 3; eFan.rival = R; eFan.essential = false;
-    kit.emit(eFan);
-    if (big) {
-      const P = R ? E.rival : (E[RUNE_EL[rune]] || E.gold);
-      kit.light(_p, { color: P.hot, intensity: 0.7, range: 7, dur: 0.28, attack: 0.08 });
-    }
+    const el = R ? 'rival' : (RUNE_EL[rune] || elOf(false));
+    fx.anchor('handR', _h, R);
+    fx.anchor('chest', _q, R);
+    const to = hasVec(d.to) ? d.to : null;
+    let dir = _hd;
+    if (to && Math.hypot(to.x - _q.x, to.z - _q.z) > 0.8) {
+      _hd.set(to.x - _h.x, to.y - _h.y, to.z - _h.z);
+      if (_hd.lengthSq() > 1e-6) _hd.normalize(); else dir = null;
+    } else if (to) dir = null;                            // руна на себя (лечение, ветер, оберег)
+    else aimFrom(_h, R, _hd);
+    // знак у руки не нужен: у руны есть крупный знак в воздухе (handMagic) — пул знаков бережём
+    hrd(_h, el, R, 1, dir, rune || undefined, false);
   });
 
   // ============================================================ по снимку
@@ -315,8 +453,15 @@ export function register(fx) {
 
   fx.onClear(() => {
     recs.forEach(recEnd); recs.clear();
+    comets.clear();
     conj.on = false; conj.ready = false; conj.accHalo = 0; conj.accSpark = 0;
     castHit.t = -1; castHit.id = ''; castHit.has = false;
+    for (let i = 0; i < thr.length; i++) { thr[i].scope = null; thr[i].id = ''; thr[i].t = -1e9; }
+    boltT[0] = boltT[1] = -1e9; sigT[0] = sigT[1] = -1e9; boltLightT = -1e9; impN = 0; impT = -1;
   });
-  fx.onDispose(() => { recs.clear(); pool.length = 0; });
+  fx.onDispose(() => {
+    recs.forEach(recEnd); recs.clear(); pool.length = 0;
+    comets.clear();
+    for (let i = 0; i < thr.length; i++) thr[i].scope = null;
+  });
 }

@@ -8,6 +8,12 @@
 //  - hit(): кольцо ряби по сетке от точки удара + ТРЕЩИНЫ (ломаные радиальные разломы и рваное кольцо),
 //    держатся ~0.4 с, к ~0.9 с «зарастают» от кончиков. До 4 ударов одновременно (uniform vec4 uHits[4]:
 //    xy — точка удара в карте (рад), z — сила, w — возраст с).
+//  - [W4-УДАР] «звон»: после удара рёбра всей сетки дрожат затухающей частотой (щит звенит, как стекло);
+//    setState({ damage }) — накопленный урон 0..1: часть ячеек «надтреснута» (ломаная трещина поперёк ячейки,
+//    раскалённые рёбра мерцают) и не зарастает, пока щит под нагрузкой; shatter({ point, strength }) — пролом:
+//    ячейки вспыхивают и осыпаются от точки пролома наружу (~0,3 с), а шестигранные пластины-осколки
+//    разлетаются, вращаясь, и гаснут (общий пул SHARD_MAX, физика — в вершинном шейдере, 1 draw call
+//    на все осколки; на low пластин нет — осколки рисует combatFx частицами).
 // Каждый щит — свой Mesh (1 draw call на видимый щит), материалы делят одну программу. Пул 4 щита.
 // Координаты — в пространстве root (в игре root без трансформации = мир), метры, Y вверх.
 import { FX_OUT, FX_RIVAL, FX_NOISE, premulBlend, hexLin, ELEMENTS } from './glsl.js';
@@ -21,10 +27,12 @@ const KIND = Object.freeze({
   dome: Object.freeze({ cap: 90 * D2R, cell: 0.32, back: 0.45, rim: 0.7 }),
 });
 const QL = Object.freeze({
-  low: Object.freeze({ sa: 32, sp: 10, sq: 0 }),
-  medium: Object.freeze({ sa: 48, sp: 16, sq: 1 }),
-  high: Object.freeze({ sa: 64, sp: 22, sq: 2 }),
+  low: Object.freeze({ sa: 32, sp: 10, sq: 0, shards: 0 }),
+  medium: Object.freeze({ sa: 48, sp: 16, sq: 1, shards: 16 }),
+  high: Object.freeze({ sa: 64, sp: 22, sq: 2, shards: 28 }),
 });
+const SHARD_MAX = 48;      // [W4-УДАР] пул пластин-осколков (на все щиты)
+const BREAK_DUR = 0.32;    // [W4-УДАР] сек: ячейки осыпаются от точки пролома
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const num = (v, d) => (isNum(v) ? v : d);
@@ -66,6 +74,8 @@ uniform float uSeed;
 uniform float uBack;
 uniform float uRim;
 uniform vec4 uHits[${HITS}];
+uniform float uDmg;     // [W4-УДАР] накопленный урон 0..1
+uniform vec4 uBreak;    // [W4-УДАР] xy — точка пролома в карте (рад), z — прогресс 0..1, w — 1: пролом идёт
 varying vec3 vL;
 varying vec3 vW;
 varying vec3 vN;
@@ -157,7 +167,7 @@ void main() {
   float ndv = dot(normalize(vN), V);
   float fres = pow(1.0 - abs(ndv), 3.0);
   // удары
-  float rip = 0.0, cellHit = 0.0, flash = 0.0, cr = 0.0, cg = 0.0;
+  float rip = 0.0, cellHit = 0.0, flash = 0.0, cr = 0.0, cg = 0.0, ring = 0.0;
   for (int i = 0; i < ${HITS}; i++) {
     vec4 H = uHits[i];
     if (H.w > ${HIT_LIFE.toFixed(2)}) continue;
@@ -168,6 +178,8 @@ void main() {
     rip += exp(-pow((dist - rr) / 0.045, 2.0)) * fo * H.z;
     cellHit += (1.0 - smoothstep(0.25, 1.1, abs(length(cc - H.xy) - rr) / uCell)) * fo * H.z;
     flash += exp(-dist / 0.07) * exp(-H.w * 6.0) * H.z;
+    // [W4-УДАР] звон: вся сетка дрожит затухающей частотой (дальше от удара — с запаздыванием)
+    ring += exp(-H.w * 4.5) * (0.5 + 0.5 * cos(H.w * 62.0 - dist * 9.0)) * H.z;
 #if SQ > 0
     float gl;
     cr += crackAt(dq, H.w, H.z, float(i) * 0.37 + H.x * 3.7 + H.y * 1.3, gl);
@@ -176,15 +188,102 @@ void main() {
   }
   vec3 col = uCol, hot = uHot;
   float E = edge * (0.3 + 0.9 * fl + 0.6 * pulse) + corner * 0.6; // [VFX] тоньше и прозрачнее: щит не закрывает героя
+  E *= 1.0 + min(ring, 1.2) * 0.55;                                 // [W4-УДАР] звон
   vec3 Lc = col * (fill + eg * 0.16) + mix(col, hot, 0.4) * E + hot * pop * (0.2 + edge * 1.4);
   Lc += hot * (cellHit * (0.12 + edge * 1.5) + rip * (0.3 + edge * 1.1));
-  Lc *= cv * capK;
+#if SQ > 0
+  // [W4-УДАР] накопленный урон: надтреснутые ячейки — ломаная трещина поперёк ячейки и мерцающие рёбра
+  if (uDmg > 0.01) {
+    float hk = fxH2(hc.zw * 1.37 + uSeed + 4.1);
+    float st = 1.0 - smoothstep(uDmg * 0.5 - 0.04, uDmg * 0.5, hk);
+    if (st > 0.0) {
+      float a = hk * 40.0;
+      vec2 ca = vec2(cos(a), sin(a));
+      float zz = (fxH1(floor(dot(hc.xy, vec2(-ca.y, ca.x)) * 9.0) + hk * 17.0) - 0.5) * 0.05;
+      float cl = ln(abs(dot(hc.xy, ca) + zz) * uCell, 0.0035) * (1.0 - smoothstep(0.35, 0.5, length(hc.xy)));
+      float fk = 0.6 + 0.4 * sin(t * (9.0 + 7.0 * hk) + hk * 30.0);
+      Lc += hot * st * (cl * 1.6 + edge * 0.45 * fk) + col * st * 0.03;
+    }
+  }
+#endif
+  // [W4-УДАР] пролом: ячейки вспыхивают и осыпаются от точки пролома наружу
+  float gone = 0.0;
+  if (uBreak.w > 0.5) {
+    float bt = length(cc - uBreak.xy) / max(uCap + length(uBreak.xy), 0.1) * 0.75 + h1 * 0.25;   // до дальнего края
+    float bk = uBreak.z * 1.25;
+    gone = step(bt, bk);
+    float pre = smoothstep(bt - 0.18, bt, bk) * (1.0 - gone);
+    Lc += hot * pre * (0.4 + edge * 2.2);
+  }
+  Lc *= cv * capK * (1.0 - gone);
   float rimL = ln(abs(capD - 0.014), 0.005) + ln(abs(capD - 0.042), 0.0022) * 0.6;
-  Lc += (col * fres * 0.55 * cv + hot * rimL * 1.5 * uRim + col * exp(-max(capD, 0.0) / 0.06) * 0.25 * uRim) * uOpen;
-  Lc += hot * (cr * 2.6 + flash * 1.3) + mix(col, hot, 0.5) * cg * 0.55;
+  Lc += (col * fres * 0.55 * cv + hot * rimL * 1.5 * uRim + col * exp(-max(capD, 0.0) / 0.06) * 0.25 * uRim) * uOpen
+    * (1.0 - step(0.5, uBreak.w) * smoothstep(0.3, 0.9, uBreak.z));   // [W4-УДАР] пролом гасит и кромку
+  Lc += (hot * (cr * 2.6 + flash * 1.3) + mix(col, hot, 0.5) * cg * 0.55) * (1.0 - gone);   // [W4-УДАР] осыпавшиеся — без трещин
   Lc *= uI * uFade * (ndv < 0.0 ? uBack : 1.0);
-  float dA = SQ > 1 ? (1.0 - glass) * 0.06 * cv * uFade : 0.0;
+  float dA = SQ > 1 ? (1.0 - glass) * 0.06 * cv * uFade * (1.0 - gone) : 0.0;
   gl_FragColor = vec4(fxRival(Lc, uRival), dA);
+${FX_OUT}
+}
+`;
+
+// ---------------------------------------------------------------- [W4-УДАР] пластины-осколки пролома
+// Экземпляр — шестиугольник (центр + 6 вершин). iA: старт xyz, t0 | iB: скорость xyz, жизнь | iC: ось вращения xyz,
+// угловая скорость | iD: нормаль пластины xyz, размер | iE: цвет (лин.) rgb, земля | iF: hot (лин.) rgb, rival.
+const SHARD_VS = /* glsl */`
+attribute vec4 iA;
+attribute vec4 iB;
+attribute vec4 iC;
+attribute vec4 iD;
+attribute vec4 iE;
+attribute vec4 iF;
+uniform float uTime;
+varying vec2 vQ;
+varying vec4 vK;     // x — жизнь 0..1, y — rival, z — френель-грань, w — мерцание
+varying vec3 vCol;
+varying vec3 vHot;
+vec3 rotA(vec3 v, vec3 ax, float a) { float c = cos(a), s = sin(a); return v * c + cross(ax, v) * s + ax * dot(ax, v) * (1.0 - c); }
+void main() {
+  float age = uTime - iA.w;
+  float k = age / max(iB.w, 1e-3);
+  if (age < 0.0 || k >= 1.0) { gl_Position = vec4(0.0, 0.0, -10.0, 1.0); vK = vec4(1.0); vQ = vec2(0.0); vCol = vec3(0.0); vHot = vec3(0.0); return; }
+  vec3 n = normalize(iD.xyz);
+  vec3 t = normalize(abs(n.y) < 0.9 ? cross(n, vec3(0.0, 1.0, 0.0)) : cross(n, vec3(1.0, 0.0, 0.0)));
+  vec3 b = cross(n, t);
+  vec2 q = position.xy;
+  float sz = iD.w * (1.0 - 0.35 * k * k);
+  vec3 ax = normalize(iC.xyz);
+  float ang = iC.w * age;
+  vec3 off = rotA((t * q.x + b * q.y) * sz, ax, ang);
+  vec3 nn = rotA(n, ax, ang);
+  float drag = 1.6;
+  vec3 p = iA.xyz + iB.xyz * ((1.0 - exp(-drag * age)) / drag);
+  p.y -= 0.5 * 7.5 * age * age;
+  p.y = max(p.y, iE.w + 0.02);
+  vec3 w = p + off;
+  vQ = q;
+  vec3 V = normalize(cameraPosition - p);
+  vK = vec4(k, iF.w, 1.0 - abs(dot(nn, V)), 0.7 + 0.3 * sin(age * 31.0 + iA.x * 13.0 + iA.z * 7.0));
+  vCol = iE.rgb; vHot = iF.rgb;
+  gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+}
+`;
+const SHARD_FS = /* glsl */`
+uniform float uI;
+varying vec2 vQ;
+varying vec4 vK;
+varying vec3 vCol;
+varying vec3 vHot;
+${FX_RIVAL}
+void main() {
+  if (vK.x >= 1.0) discard;
+  vec2 a = abs(vQ);
+  float hx = max(a.x, a.x * 0.5 + a.y * 0.8660254) * 1.1547005;   // шестиугольник с вершинами на ±y: рёбра — 1
+  float edge = smoothstep(0.62, 0.96, hx);
+  float fade = pow(1.0 - vK.x, 1.4) * smoothstep(0.0, 0.05, vK.x + 0.02);
+  vec3 L = vHot * (edge * 1.9 + vK.z * 0.9) * vK.w + vCol * 0.28 + vHot * exp(-vK.x * 9.0) * 1.2;
+  L *= uI * fade;
+  gl_FragColor = vec4(fxRival(L, vK.y), (0.05 + edge * 0.05) * fade);
 ${FX_OUT}
 }
 `;
@@ -233,6 +332,7 @@ export function createHexShield(deps) {
       uCap: { value: KIND.front.cap }, uCell: { value: KIND.front.cell }, uRival: { value: 0 },
       uSeed: { value: i * 3.17 + 0.5 }, uBack: { value: 1 }, uRim: { value: 1 },
       uHits: { value: hits },
+      uDmg: { value: 0 }, uBreak: { value: new THREE.Vector4(0, 0, 0, 0) },   // [W4-УДАР]
     };
     const mat = new THREE.ShaderMaterial({
       uniforms, vertexShader: VS, fragmentShader: FS, defines: { SQ: Q.sq },
@@ -248,6 +348,7 @@ export function createHexShield(deps) {
       px: 0, py: 0, pz: 0, radius: 1, open: 0, yaw: 0, intensity: 1.4, rival: 0, cell: KIND.front.cell,
       xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1,
       col: [1, 1, 1], hot: [1, 1, 1],
+      dmg: 0, brk: -1, bx: 0, by: 0,   // [W4-УДАР] накопленный урон, прогресс пролома (<0 — нет), точка пролома в карте
     };
     return s;
   }
@@ -277,19 +378,27 @@ export function createHexShield(deps) {
     if (isNum(o.color)) hexLin(o.color & 0xffffff, s.col);
     if (isNum(o.hot)) hexLin(o.hot & 0xffffff, s.hot);
     if (isNum(o.yaw) && o.yaw !== s.yaw) { s.yaw = o.yaw % (Math.PI * 2); basis(s); }
+    if (isNum(o.damage)) s.dmg = clamp01(o.damage);   // [W4-УДАР]
   }
 
-  function addHit(s, o) {
-    if (!o || typeof o !== 'object' || !hasVec(o.point)) return;
-    const dx = o.point.x - s.px, dy = o.point.y - s.py, dz = o.point.z - s.pz;
+  // точка мира → карта сферы щита (рад): _m[0], _m[1]
+  const _m = [0, 0];
+  function toMap(s, pt) {
+    const dx = pt.x - s.px, dy = pt.y - s.py, dz = pt.z - s.pz;
     const lx = dx * s.xx + dy * s.xy + dz * s.xz, ly = dx * s.yx + dy * s.yy + dz * s.yz, lz = dx * s.zx + dy * s.zy + dz * s.zz;
     const l = len3(lx, ly, lz);
-    let mx = 0, my = 0;
+    _m[0] = 0; _m[1] = 0;
     if (l > 1e-6) {
       const th = Math.min(Math.acos(clamp(lz / l, -1, 1)), s.K.cap * 0.93);
       const rxy = Math.sqrt(lx * lx + ly * ly);
-      if (rxy > 1e-6) { mx = (lx / rxy) * th; my = (ly / rxy) * th; }
+      if (rxy > 1e-6) { _m[0] = (lx / rxy) * th; _m[1] = (ly / rxy) * th; }
     }
+    return _m;
+  }
+  function addHit(s, o) {
+    if (!o || typeof o !== 'object' || !hasVec(o.point)) return;
+    toMap(s, o.point);
+    const mx = _m[0], my = _m[1];
     // слот: свободный или самый старый
     let k = -1, oldest = -1, oa = -1;
     for (let j = 0; j < HITS; j++) {
@@ -304,6 +413,85 @@ export function createHexShield(deps) {
   function release(s) {
     s.alive = false; s.gen++; s.mesh.visible = false;
     for (let j = 0; j < HITS; j++) s.hits[j].w = 99;
+    s.dmg = 0; s.brk = -1;
+  }
+
+  // ---------------------------------------------------------------- [W4-УДАР] осколки пролома
+  const shardGeo = new THREE.InstancedBufferGeometry();
+  {
+    const hp = [0, 0, 0];
+    for (let k = 0; k < 6; k++) { const a = Math.PI / 2 + k * Math.PI / 3; hp.push(Math.cos(a), Math.sin(a), 0); }
+    const hi = [];
+    for (let k = 0; k < 6; k++) hi.push(0, 1 + k, 1 + ((k + 1) % 6));
+    shardGeo.setAttribute('position', new THREE.Float32BufferAttribute(hp, 3));
+    shardGeo.setIndex(hi);
+  }
+  const SH_ATTR = {};
+  for (const k of ['iA', 'iB', 'iC', 'iD', 'iE', 'iF']) {
+    const a = new THREE.InstancedBufferAttribute(new Float32Array(SHARD_MAX * 4), 4);
+    a.setUsage(THREE.DynamicDrawUsage); shardGeo.setAttribute(k, a); SH_ATTR[k] = a;
+  }
+  shardGeo.instanceCount = 0;
+  shardGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e4);
+  const shardMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uI: { value: 1.6 } },
+    vertexShader: SHARD_VS, fragmentShader: SHARD_FS,
+    side: THREE.DoubleSide, depthTest: true, fog: false, ...premulBlend(THREE),
+  });
+  shardMat.depthWrite = false;
+  const shardMesh = new THREE.Mesh(shardGeo, shardMat);
+  shardMesh.name = 'fx-hexshield-shards'; shardMesh.frustumCulled = false; shardMesh.castShadow = false; shardMesh.receiveShadow = false;
+  shardMesh.matrixAutoUpdate = false; shardMesh.renderOrder = 5; shardMesh.visible = false;
+  if (root && typeof root.add === 'function') root.add(shardMesh);
+  const shardDeath = new Float32Array(SHARD_MAX);
+  let shardCursor = 0, shardHigh = 0, shardLo = Infinity, shardHi = -1, shardTotal = 0;
+  function shardPut(i, px, py, pz, vx, vy, vz, life, ax, ay, az, w, nx, ny, nz, size, gy, s) {
+    const o = i * 4;
+    let a = SH_ATTR.iA.array; a[o] = px; a[o + 1] = py; a[o + 2] = pz; a[o + 3] = time;
+    a = SH_ATTR.iB.array; a[o] = vx; a[o + 1] = vy; a[o + 2] = vz; a[o + 3] = life;
+    a = SH_ATTR.iC.array; a[o] = ax; a[o + 1] = ay; a[o + 2] = az; a[o + 3] = w;
+    a = SH_ATTR.iD.array; a[o] = nx; a[o + 1] = ny; a[o + 2] = nz; a[o + 3] = size;
+    a = SH_ATTR.iE.array; a[o] = s.col[0]; a[o + 1] = s.col[1]; a[o + 2] = s.col[2]; a[o + 3] = gy;
+    a = SH_ATTR.iF.array; a[o] = s.hot[0]; a[o + 1] = s.hot[1]; a[o + 2] = s.hot[2]; a[o + 3] = s.rival;
+    shardDeath[i] = time + life;
+    if (i + 1 > shardHigh) { shardHigh = i + 1; shardGeo.instanceCount = shardHigh; }
+    if (i < shardLo) shardLo = i;
+    if (i > shardHi) shardHi = i;
+    shardTotal++;
+  }
+  // пролом: n пластин из ячеек вокруг точки (карта mx, my), разлёт наружу по нормали и от точки, вращение
+  function spawnShards(s, mx, my, strength, n, gy) {
+    const S = s.radius * (0.8 + 0.2 * easeOutBack(s.open));
+    const cell = s.cell / Math.max(s.radius, 0.05);
+    for (let j = 0; j < n; j++) {
+      const ra = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * (0.12 + 0.55 * strength) * s.K.cap;
+      let ux = mx + Math.cos(ra) * rr, uy = my + Math.sin(ra) * rr;
+      const th0 = Math.sqrt(ux * ux + uy * uy);
+      if (th0 > s.K.cap * 0.95) { ux *= s.K.cap * 0.95 / th0; uy *= s.K.cap * 0.95 / th0; }
+      const th = Math.sqrt(ux * ux + uy * uy), st = th > 1e-6 ? Math.sin(th) / th : 1;
+      const lx = ux * st, ly = uy * st, lz = Math.cos(th);
+      // локаль → мир (оси xx.., yx.., zx..)
+      const nx = s.xx * lx + s.yx * ly + s.zx * lz, ny = s.xy * lx + s.yy * ly + s.zy * lz, nz = s.xz * lx + s.yz * ly + s.zz * lz;
+      const px = s.px + nx * S, py = s.py + ny * S, pz = s.pz + nz * S;
+      // от точки пролома по сфере (касательная) + наружу + вверх
+      const dx = ux - mx, dy = uy - my, dl = Math.sqrt(dx * dx + dy * dy) || 1;
+      const tx = (s.xx * dx + s.yx * dy) / dl, ty = (s.xy * dx + s.yy * dy) / dl, tz = (s.xz * dx + s.yz * dy) / dl;
+      const sp = 1.2 + Math.random() * (1.6 + 2.4 * strength), tg = 0.6 + Math.random() * 1.6 * strength;
+      const vx = nx * sp + tx * tg, vy = ny * sp + ty * tg + 0.8 + Math.random() * 1.6, vz = nz * sp + tz * tg;
+      let ax = Math.random() - 0.5, ay = Math.random() - 0.5, az = Math.random() - 0.5;
+      const al = len3(ax, ay, az) || 1; ax /= al; ay /= al; az /= al;
+      const size = S * cell * (0.32 + Math.random() * 0.3);
+      shardPut(shardCursor, px, py, pz, vx, vy, vz, 0.75 + Math.random() * 0.6, ax, ay, az, (Math.random() < 0.5 ? -1 : 1) * (5 + Math.random() * 11), nx, ny, nz, size, gy, s);
+      shardCursor = (shardCursor + 1) % SHARD_MAX;
+    }
+  }
+  function shatter(s, o) {
+    const strength = clamp(num(o && o.strength, 1), 0.1, 1);
+    if (o && hasVec(o.point)) toMap(s, o.point); else { _m[0] = 0; _m[1] = 0; }
+    s.bx = _m[0]; s.by = _m[1]; s.brk = 0;
+    s.uniforms.uBreak.value.set(s.bx, s.by, 0, 1);
+    const n = Math.round(Q.shards * (0.45 + 0.55 * strength));
+    if (n > 0) spawnShards(s, s.bx, s.by, strength, n, num(o && o.ground, s.py - 1.4));
   }
 
   function take() {
@@ -329,6 +517,7 @@ export function createHexShield(deps) {
       s.px = 0; s.py = 0; s.pz = 0; s.radius = s.kind === 'dome' ? 1.6 : 1; s.open = 0; s.yaw = 0; s.intensity = 1.4;
       s.cell = clamp(num(o.cell, s.K.cell), 0.03, 0.6);
       s.rival = clamp01(num(o.rival, 0));
+      s.dmg = 0; s.brk = -1; s.uniforms.uBreak.value.set(0, 0, 0, 0);   // [W4-УДАР]
       hexLin((isNum(o.color) ? o.color : ELEMENTS.gold.mid) & 0xffffff, s.col);
       hexLin((isNum(o.hot) ? o.hot : ELEMENTS.gold.core) & 0xffffff, s.hot);
       for (let j = 0; j < HITS; j++) s.hits[j].set(0, 0, 0, 99);
@@ -341,6 +530,9 @@ export function createHexShield(deps) {
         get kind() { return s.kind; },
         setState(st) { try { if (live()) applyState(s, st); } catch (e) { /* no-op */ } return h; },
         hit(hopts) { try { if (live()) addHit(s, hopts); } catch (e) { /* no-op */ } return h; },
+        // [W4-УДАР] пролом: { point, strength 0..1, ground } — ячейки осыпаются, пластины разлетаются
+        shatter(hopts) { try { if (live() && s.brk < 0) shatter(s, hopts); } catch (e) { /* no-op */ } return h; },
+        get broken() { return live() && s.brk >= 0; },
         dispose() { if (live()) release(s); },
       };
       return h;
@@ -356,6 +548,9 @@ export function createHexShield(deps) {
         if (!s.alive) continue;
         for (let j = 0; j < HITS; j++) { const v = s.hits[j]; if (v.w <= HIT_LIFE) v.w += h; }
         const u = s.uniforms;
+        // [W4-УДАР] пролом идёт BREAK_DUR, потом ячеек нет — щит невидим, пока его не закроют
+        if (s.brk >= 0) { s.brk = Math.min(1, s.brk + h / BREAK_DUR); u.uBreak.value.z = s.brk; if (s.brk >= 1) { s.mesh.visible = false; continue; } }
+        u.uDmg.value = s.dmg;
         if (s.open <= 0.001) { s.mesh.visible = false; continue; }
         const S = s.radius * (0.8 + 0.2 * easeOutBack(s.open));
         s.mesh.matrix.set(
@@ -371,6 +566,23 @@ export function createHexShield(deps) {
         u.uTime.value = time % 1000; u.uCap.value = s.K.cap; u.uCell.value = s.cell / s.radius;
         u.uRival.value = s.rival; u.uBack.value = s.K.back; u.uRim.value = s.K.rim;
       }
+      // [W4-УДАР] осколки: выгрузка только записанных ячеек, меш виден, пока жив хоть один
+      shardMat.uniforms.uTime.value = time;
+      if (shardHi >= 0) {
+        // диапазоны копятся до рендера (three сам очищает их после выгрузки) — как в kit.js
+        for (const k in SH_ATTR) {
+          const at = SH_ATTR[k];
+          if (at.addUpdateRange) {
+            if (at.updateRanges && at.updateRanges.length > 12) { at.clearUpdateRanges(); at.addUpdateRange(0, SHARD_MAX * 4); }
+            else at.addUpdateRange(shardLo * 4, (shardHi - shardLo + 1) * 4);
+          }
+          at.needsUpdate = true;
+        }
+        shardLo = Infinity; shardHi = -1;
+      }
+      let anyShard = false;
+      for (let i = 0; i < shardHigh; i++) if (shardDeath[i] > time) { anyShard = true; break; }
+      shardMesh.visible = anyShard;
     } catch (e) { /* эффекты не роняют кадр */ }
   }
 
@@ -382,7 +594,10 @@ export function createHexShield(deps) {
     for (let i = 0; i < POOL; i++) { const s = slots[i]; s.mesh.geometry = g; s.mat.defines.SQ = Q.sq; s.mat.needsUpdate = true; }
   }
 
-  function clear() { for (let i = 0; i < POOL; i++) if (slots[i].alive) release(slots[i]); }
+  function clear() {
+    for (let i = 0; i < POOL; i++) if (slots[i].alive) release(slots[i]);
+    shardDeath.fill(0); shardMesh.visible = false;   // [W4-УДАР]
+  }
 
   let disposed = false;
   function dispose() {
@@ -391,12 +606,15 @@ export function createHexShield(deps) {
     clear();
     for (let i = 0; i < POOL; i++) { const s = slots[i]; if (s.mesh.parent) s.mesh.parent.remove(s.mesh); s.mat.dispose(); }
     for (const k in geos) geos[k].dispose();
+    if (shardMesh.parent) shardMesh.parent.remove(shardMesh);   // [W4-УДАР]
+    shardGeo.dispose(); shardMat.dispose();
   }
 
   function stats() {
-    let a = 0, v = 0;
+    let a = 0, v = 0, sh = 0;
     for (let i = 0; i < POOL; i++) { if (slots[i].alive) a++; if (slots[i].mesh.visible) v++; }
-    return { active: a, drawCalls: v, quality };
+    for (let i = 0; i < shardHigh; i++) if (shardDeath[i] > time) sh++;
+    return { active: a, drawCalls: v + (shardMesh.visible ? 1 : 0), quality, shards: sh, shardsSpawned: shardTotal };
   }
 
   return { create, update, setQuality, clear, dispose, stats };

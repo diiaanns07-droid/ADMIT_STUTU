@@ -33,28 +33,43 @@ const PRESETS = {
     // сюрко: багровое полотнище с гербом-пламенем поверх набедренных пластин
     tabard: { y: 0.1, panels: [{ az: 0, w: 0.28, len: 0.6, emblem: true, pleats: 1 }] },
   },
-  // Эльфийка на теле Quaternius: короткий белый плащ, лук и колчан, грозовые руны
+  // Эльфийка на теле Quaternius: короткий белый плащ, лук и колчан, грозовые руны.
+  // [W4-НАРЯДЫ] гроза — слоновая кость, бирюза и золото: полы-«лепестки» в два слоя (внешний — шёлк цвета
+  // слоновой кости с золотой каймой, внутренний на medium+ — бирюзовый), наплечник-лист, браслеты, заколка;
+  // грубые наручи и наплечник костюма сняты — руки тонкие, плечо открыто
   sylvan: {
-    metal: 0xd8c08a, metal2: 0xe8d6a0, leather: 0x8a6a4a, cloth: 0xe8e4d8, glow: 0x7fe8ff,
-    pauldrons: null, bracers: false, belt: 'pouches', pouches: 1, dagger: 'left', rings: false, sigil: false,
-    cape: { w: 0.5, len: 0.98, color: 0xd6cdb8, trim: 0xc9a45c, emblem: 'leaf', lining: 0x5f7d6a }, bow: { wood: 0xb9a888, rough: 0.62 }, quiver: 'hip',
-    tabard: { panels: [{ az: 0.42, w: 0.11, len: 0.66, pleats: 0.8 }, { az: -0.42, w: 0.11, len: 0.66, pleats: 0.8 }] },
+    metal: 0xc9a65c, metal2: 0xe6c27a, leather: 0x8a6a4a, cloth: 0xe8e4d8, glow: 0x7fe8ff,
+    pauldrons: null, bracers: false, belt: 'pouches', pouches: 0, dagger: null, rings: false, sigil: false,
+    cape: { w: 0.5, len: 0.98, color: 0xebe4d2, trim: 0xd9b46a, emblem: 'leaf', lining: 0x8cc6c2, over: 0.03 }, bow: { wood: 0xb9a888, rough: 0.62 }, quiver: 'hip',
+    tabard: {
+      petals: { outer: { base: 0xece5d6, edge: 0xd9b46a }, inner: { base: 0x94ccd0, edge: 0xe6c27a, vein: 0xe9fbff } },
+      panels: [{ az: 1.25, w: 0.3, len: 0.48, petals: 3 }, { az: -0.86, w: 0.24, len: 0.43, petals: 3 }, { az: 1.1, w: 0.33, len: 0.68, petals: 3, layer: 1 }, { az: -0.95, w: 0.27, len: 0.62, petals: 3, layer: 1 }],
+    },
     necklace: { drop: 0.12 },
+    attire: { hide: ['Female_Ranger_Acc_Pauldrons', 'Female_Ranger_Arms_Bracer'], leafPauldron: 'left', wrists: { rings: [[0, 0.0032], [0.013, 0.002]] }, pin: { side: 'right', kind: 'leaf' } },
   },
-  // Тёмная чародейка на теле Quaternius: воронёные наплечники, длинный плащ, посох с кристаллом ночи
+  // Тёмная чародейка на теле Quaternius: длинный плащ, посох с кристаллом ночи.
+  // [W4-НАРЯДЫ] тьма — баклажановый бархат, воронёная сталь и серебро: высокий воротник со звёздной вышивкой
+  // изнутри, асимметричные полы остриём (длинная слева спереди, короткая справа), звёздное небо на плаще,
+  // серебряные манжеты и тика на лбу; наплечники сняты — силуэт вытянутый, мантия до пола
   witchQ: {
-    metal: 0x34303e, metal2: 0x9a8fc4, leather: 0x1e1826, cloth: 0x160f22, glow: 0xa77bff,
-    pauldrons: 'plate', bracers: false, belt: 'pouches', pouches: 2, dagger: 'right', rings: false, sigil: true,
-    cape: { w: 0.6, len: 1.3, color: 0x1a1128, trim: 0xb8aee0, emblem: 'moon', lining: 0x40235f }, staff: { crystal: 0x9fe0ff, glow: 0xa77bff, style: 'crescent', wood: 0x1b1522 },
-    tabard: { panels: [{ az: 0, w: 0.26, len: 0.8, emblem: true }, { az: 1.12, w: 0.17, len: 0.7 }, { az: -1.12, w: 0.17, len: 0.7 }] },
+    metal: 0x2b3047, metal2: 0xc6c9e4, leather: 0x1e1826, cloth: 0x160f22, glow: 0xa77bff,
+    pauldrons: null, bracers: false, belt: 'pouches', pouches: 0, dagger: null, rings: false, sigil: true,
+    cape: { w: 0.6, len: 1.32, color: 0x1a1128, trim: 0xc6c9e4, emblem: 'moon', lining: 0x3d1f62, stars: true }, staff: { crystal: 0x9fe0ff, glow: 0xa77bff, style: 'crescent', wood: 0x1b1522 },
+    tabard: { stars: { base: 0x1d102c, thread: 0xc6c9e4, hem: 'point' }, cling: 4, panels: [{ az: 0.3, w: 0.19, len: 1.0, pleats: 0.9 }, { az: -0.4, w: 0.15, len: 0.64, pleats: 0.9 }, { az: 1.22, w: 0.14, len: 0.9, pleats: 1.4 }, { az: -1.28, w: 0.13, len: 0.74, pleats: 1.4 }] },
     necklace: { drop: 0.14 },
+    attire: { hide: ['Female_Ranger_Arms_Bracer'], collar: { h: 0.2, open: 1.05, flare: 0.045 }, wrists: { rings: [[0, 0.0034], [0.011, 0.0017], [0.02, 0.0017]] }, tikka: true },
   },
-  // Лучница (Quaternius Ranger): лук и колчан, кинжал
+  // Лучница (Quaternius Ranger): лук и колчан, кинжал.
+  // [W4-НАРЯДЫ] ветер — хвоя, коньячная кожа и латунь: пелерина-накидка по плечам с зубчатым подолом,
+  // корсет со шнуровкой поверх рубахи (вместо ремней) и наручи по рукавам, заколка у виска
   scout: {
-    metal: 0xb0b4bc, metal2: 0xc9a45c, leather: 0x4a3322, cloth: 0x234a2a, glow: 0x9dffb0,
+    metal: 0xaab0ba, metal2: 0xc39a55, leather: 0x5a3520, cloth: 0x234a2a, glow: 0x9dffb0,
     pauldrons: null, bracers: false, belt: 'pouches', pouches: 2, dagger: 'right', rings: false,
     bow: { wood: 0x5a3a22 }, quiver: 'back',
+    cape: { kind: 'mantle', len: 0.36, open: 0.75, color: 0x24402c, trim: 0xc9a05a, lining: 0xb39a6c, sheen: 0x8fc79a },
     necklace: { drop: 0.11 },
+    attire: { hide: ['Female_Ranger_Body_Belt_1', 'Female_Ranger_Body_Belt_2', 'Female_Ranger_Arms_Bracer', 'Female_Ranger_Acc_Pauldrons'], corset: { leather: 0x7a4626, thread: 0xd9b26a, metal: 0xc39a55, sheen: 0xd8a878 }, bracers: true, pin: { side: 'left', kind: 'leaf' } },
   },
   // Архимаг (Quaternius Wizard): посох-громоотвод, плащ с рунами, наручи, перстни
   magus: {
@@ -70,6 +85,12 @@ import { patchHeroLight } from './heroShading.js';
 import { buildStaff, buildBow, buildArrow, buildQuiver, buildBrooch, capeTextures, panelTextures, runeRingTexture, glintTexture, tube, gem, gem as gemGeo } from './heroForge.js';
 import { createCloth, createStrands, fitCapsules } from './heroCloth.js';
 import { createTrail } from './heroTrail.js';
+import { buildHair, hairHood } from './heroHair.js';   // [W4-ВОЛОСЫ]
+import { dressAttire, fabricMaterial, hideBase, ATTIRE_CFG } from './heroAttire.js';   // [W4-НАРЯДЫ]
+import { petalTextures, starTextures, mantleTextures, sharedTextures } from './heroForge.js';
+
+// [W4-НАРЯДЫ] общие настройки снаряжения (main.js): «Уменьшенное движение» — ткань спокойнее
+export function configureGear(p = {}) { if ('reducedMotion' in p) ATTIRE_CFG.reducedMotion = !!p.reducedMotion; }
 
 // ---------------------------------------------------------------- общие процедурные текстуры
 const texCache = {};
@@ -88,6 +109,7 @@ function canvasTex(THREE, key, N, draw, color = false) {
 }
 let seed = 11;
 const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+const sstep01 = (x) => { const t = Math.min(1, Math.max(0, x)); return t * t * (3 - 2 * t); };
 // шероховатость металла: царапины, потёртости по краям (R = G = B), металличность в той же карте не нужна
 function roughTex(THREE) {
   return canvasTex(THREE, 'rough', 256, (g, N) => {
@@ -147,18 +169,24 @@ function hairStrandTex(THREE) {
 // ресницы: белые изогнутые волоски на прозрачном (цвет — в материале), корень внизу холста, кончик вверху;
 // dense — верхние (пучками, гуще к внешнему углу), иначе — редкие нижние
 function lashTex(THREE, dense) {
-  return canvasTex(THREE, dense ? 'lashU2' : 'lashL2', 256, (g, N) => {
+  // [W4-ЛИЦО] ресницы тоньше и чаще (было 46 клиньев по 7–11 px — «паучьи лапки» вблизи); «3» — новый холст
+  const t = canvasTex(THREE, dense ? 'lashU3' : 'lashL3', 256, (g, N) => {
+    // свой генератор: общий rnd() модуля продвигаем на столько же, сколько брал прежний холст, —
+    // узоры остальных процедурных текстур (волосы, кайма, колчан) не сдвигаются
+    for (let i = 0; i < (dense ? 184 : 88); i++) rnd();
+    let ls = dense ? 101 : 211;
+    const lr = () => { ls = (ls * 16807) % 2147483647; return ls / 2147483647; };
     g.clearRect(0, 0, N, N);
     g.fillStyle = '#fff';
     // сплошная линия роста у корня (читается как подводка, не рассыпается при альфа-тесте)
-    g.fillRect(0, N * (dense ? 0.86 : 0.9), N, N);
+    g.fillRect(0, N * (dense ? 0.88 : 0.955), N, N);
     // пучки: клин от корня к кончику, загиб наружу (к внешнему углу — сильнее)
-    const n = dense ? 46 : 22;
+    const n = dense ? 64 : 13;
     for (let i = 0; i < n; i++) {
-      const u = (i + 0.3 + rnd() * 0.4) / n;
-      const x0 = u * N, lean = (u - 0.3) * 0.55 + (rnd() - 0.5) * 0.25;
-      const h = N * (dense ? 0.78 + 0.22 * rnd() : 0.55 + 0.45 * rnd());
-      const w0 = dense ? 7 + rnd() * 4 : 4 + rnd() * 2;
+      const u = (i + 0.3 + lr() * 0.4) / n;
+      const x0 = u * N, lean = (u - 0.3) * 0.55 + (lr() - 0.5) * 0.25;
+      const h = N * (dense ? 0.72 + 0.28 * lr() : 0.5 + 0.4 * lr());
+      const w0 = dense ? 4.5 + lr() * 2.5 : 3 + lr() * 1.5;
       const x1 = x0 + lean * h, xm = x0 + lean * h * 0.3;
       g.beginPath();
       g.moveTo(x0 - w0 / 2, N);
@@ -167,6 +195,10 @@ function lashTex(THREE, dense) {
       g.closePath(); g.fill();
     }
   }, true);
+  // [W4-ЛИЦО] без повтора по v: иначе фильтрация у кончиков подмешивала сплошную линию корня —
+  // вдоль кончиков ресниц шла тонкая пунктирная «нитка» (над верхним веком и под нижним)
+  if (t) t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
 }
 
 // кончики прядей (альфа по uv1: u — обход сечения, v — доля длины): до 70% длины сплошь, дальше —
@@ -250,6 +282,8 @@ export function dressHero(THREE, vrm, opts = {}) {
   };
   const physical = quality !== 'low';
   const Std = physical ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
+  // [W4-НАРЯДЫ] детали костюма, которые заменяет наряд (наручи, ремни, наплечник) — до замеров тела
+  const restoreBase = hideBase(vrm.scene, P.attire && P.attire.hide);
   const rough = roughTex(THREE), leath = leatherTex(THREE), rune = runeTex(THREE);
   const mats = {
     metal: Mt(new Std({ name: 'gear-metal', color: P.metal, metalness: 1, roughness: 0.42, roughnessMap: rough, ...(physical ? { clearcoat: 0.25, clearcoatRoughness: 0.35 } : {}) })),
@@ -684,244 +718,11 @@ export function dressHero(THREE, vrm, opts = {}) {
     }
   }
 
-  // ---------------- волосы героинь: объёмные локоны на физике прядей (heroCloth.createStrands).
-  // Чёлка (прямая до бровей или набок), пряди у лица — ложатся на ключицы и грудь, копна из-под капюшона
-  // по спине. Локон — трубка с эллиптическим сечением (плоской стороной к телу), сужается к кончику;
-  // корни темнее, кончики светлее; пряди не проходят сквозь голову, плечи и корпус (капсулы).
-  let hair = null, hairSheet = null;
-  if (opts.hair && bp.head) {
-    const HO = opts.hair;
-    const hairC = new THREE.Color(HO.color || 0x3a2418);
-    // череп: вершины кожи головы (капюшон и шлем не в счёт) → эллипсоид в осях героя
-    const headBone = raw('head');
-    const sk = { minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9, minZ: 1e9, maxZ: -1e9, n: 0 };
-    const hv = new THREE.Vector3(), rel = new THREE.Vector3();
-    vrm.scene.traverse((o) => {
-      if (!o.isSkinnedMesh || /hood|hat|helm|armet|hair/i.test(o.name) || !o.geometry.attributes.skinIndex) return;
-      const bi = o.skeleton.bones.indexOf(headBone);
-      if (bi < 0) return;
-      const SI = o.geometry.attributes.skinIndex, SW = o.geometry.attributes.skinWeight;
-      for (let i = 0; i < SI.count; i += 2) {
-        let w = 0;
-        for (let k = 0; k < 4; k++) if (SI.getComponent(i, k) === bi) w += SW.getComponent(i, k);
-        if (w < 0.6) continue;
-        o.getVertexPosition(i, hv); hv.applyMatrix4(o.matrixWorld);
-        rel.copy(hv).sub(bp.head);
-        const x = rel.dot(LEFT), y = rel.dot(UP), z = rel.dot(FWD);
-        sk.minX = Math.min(sk.minX, x); sk.maxX = Math.max(sk.maxX, x); sk.minY = Math.min(sk.minY, y); sk.maxY = Math.max(sk.maxY, y);
-        sk.minZ = Math.min(sk.minZ, z); sk.maxZ = Math.max(sk.maxZ, z); sk.n++;
-      }
-    });
-    if (sk.n < 50) Object.assign(sk, { minX: -0.075, maxX: 0.075, minY: -0.02, maxY: 0.21, minZ: -0.1, maxZ: 0.1 });
-    const hH = sk.maxY - sk.minY;
-    const cy = sk.minY + hH * 0.62, ry = (sk.maxY - cy) * 1.05;
-    const cz = (sk.minZ + sk.maxZ) * 0.5 - 0.004, rz = (sk.maxZ - sk.minZ) * 0.5 * 1.04;
-    const cx = (sk.minX + sk.maxX) * 0.5, rx = (sk.maxX - sk.minX) * 0.5 * 1.06;
-    const toW = (x, y, z) => bp.head.clone().addScaledVector(LEFT, x).addScaledVector(UP, y).addScaledVector(FWD, z);
-    // точка на эллипсоиде: az 0 — затылок, +π/2 — левый висок, π — лоб; polar 0 — макушка
-    const sk3 = (az, polar, k = 1) => toW(cx + Math.sin(az) * Math.sin(polar) * rx * k, cy + Math.cos(polar) * ry * k, cz - Math.cos(az) * Math.sin(polar) * rz * k);
-    const browY = sk.minY + hH * 0.58;
-    const polarBrow = Math.acos(Math.max(-0.95, Math.min(0.95, (browY + 0.012 - cy) / ry)));
-    const DOWN = UP.clone().negate();
-    let sd = 7;
-    const rr = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
-    const locks = [];
-    const len = HO.len || 0.9;
-    // 1) чёлка (неподвижна относительно головы)
-    if (HO.fringe === 'straight') {
-      const n = 11;
-      for (let i = 0; i < n; i++) {
-        const u = i / (n - 1), a = Math.PI + (u - 0.5) * 1.5, side = Math.abs(u - 0.5) * 2;
-        const p0 = 0.52 + 0.3 * side * side;                   // корни — под краем капюшона (по бокам ниже)
-        const pts = [];
-        for (let j = 0; j <= 5; j++) { const t = j / 5; pts.push(sk3(a + (a - Math.PI) * 0.12 * t, p0 + (polarBrow - 0.06 - p0) * t - side * 0.04 * t, 1.02 + 0.045 * Math.sin(Math.PI * t * 0.8) + 0.02 * t)); }
-        locks.push({ pts, pin: pts.length, static: true, r0: 0.017, r1: 0.014, flat: 0.32, taper: 0.4, seed: rr(), tone: 0.95 + rr() * 0.1, vScale: 0.4, blunt: true });
-      }
-    } else {
-      // набок: густая чёлка из-под капюшона, кончики сметены к правому виску (левая бровь открыта)
-      const n = 13;
-      for (let i = 0; i < n; i++) {
-        const u = i / (n - 1);
-        const side = Math.abs(u - 0.5) * 2;
-        const a0 = Math.PI + (u - 0.5) * 1.45, p0 = 0.52 + 0.3 * side * side;   // корни — под краем капюшона
-        const sweep = 0.35 + 0.25 * u;
-        const p1 = polarBrow - 0.3 + 0.34 * u;                 // слева короче, справа ниже — к брови
-        const pts = [];
-        for (let j = 0; j <= 6; j++) {
-          const t = j / 6, e = t * t * (3 - 2 * t);
-          pts.push(sk3(a0 + sweep * e, p0 + (p1 - p0) * t + 0.05 * Math.sin(Math.PI * t), 1.02 + 0.05 * Math.sin(Math.PI * t * 0.85) + 0.012 * u));
-        }
-        locks.push({ pts, pin: pts.length, static: true, r0: 0.019, r1: 0.012, flat: 0.32, taper: 0.85, seed: rr(), tone: 0.92 + rr() * 0.16, vScale: 0.45 });
-      }
-    }
-    // 2) пряди у лица: от висков вниз вдоль щёк, на ключицы и грудь
-    const chestP = bp[chestB];
-    for (const s of [1, -1]) {
-      for (let j = 0; j < 3; j++) {
-        const az = s * (Math.PI / 2 + 0.42 + 0.13 * j), pol = 1.3 + 0.08 * j;
-        const L = len * (0.52 - 0.06 * j) * (HO.front || 1);
-        const n = 9, pts = [];
-        const p0 = sk3(az, pol, 1.02), p1 = sk3(az, pol + 0.32, 1.12);
-        pts.push(p0, p1);
-        const outV = LEFT.clone().multiplyScalar(s);
-        for (let i = 2; i < n; i++) {
-          const t = (i - 1) / (n - 2);
-          const p = p1.clone().addScaledVector(DOWN, t * (L - p0.distanceTo(p1)));
-          // держим снаружи груди и чуть сбоку — симуляция уложит на тело
-          p.addScaledVector(outV, 0.015 + 0.02 * j - 0.03 * t);
-          const zFront = chestP.clone().sub(p).dot(FWD);
-          p.addScaledVector(FWD, Math.max(0, zFront + torsoR + 0.05) * Math.min(1, t * 2));
-          pts.push(p);
-        }
-        locks.push({ pts, pin: 2, r0: 0.021 - 0.003 * j, r1: 0.013, flat: 0.5, seed: rr(), tone: 0.95 + rr() * 0.1, stiff: 0.25 });
-      }
-    }
-    // 3) копна по спине: веер прядей из-под капюшона, два слоя
-    for (let layer = 0; layer < 2; layer++) {
-      const n = layer ? 6 : 9;
-      for (let i = 0; i < n; i++) {
-        const a = (i / (n - 1) - 0.5) * (layer ? 1.6 : 2.3);
-        const root = sk3(a, 2.0 + 0.12 * Math.abs(a), 0.97);
-        const L = len * (layer ? 0.8 : 1) * (0.92 + 0.12 * rr());
-        const m = 10, pts = [root, root.clone().addScaledVector(DOWN, 0.05).addScaledVector(FWD, -0.03)];
-        for (let k = 2; k < m; k++) {
-          const t = (k - 1) / (m - 2);
-          const p = root.clone().addScaledVector(DOWN, 0.05 + t * (L - 0.05)).addScaledVector(LEFT, Math.sin(a) * (0.03 + 0.07 * t));
-          const zBack = p.clone().sub(chestP).dot(FWD);
-          p.addScaledVector(FWD, -Math.max(0, zBack + torsoR + 0.03 + 0.012 * (1 - layer)));
-          pts.push(p);
-        }
-        locks.push({ pts, pin: 2, r0: layer ? 0.024 : 0.028, r1: 0.017, flat: 0.42, seed: rr(), tone: (layer ? 0.9 : 1.0) + rr() * 0.12, stiff: 0.5, back: true });
-      }
-    }
-    // материал: пряди-«пучки» с блеском вдоль волоса (анизотропия), лёгкий sheen, цвет по вершинам
-    const strandTex = hairStrandTex(THREE);
-    const hm = new Std({
-      name: 'gear-hair', color: hairC, map: strandTex, bumpMap: strandTex, bumpScale: 2.2, vertexColors: true,
-      alphaMap: hairTipTex(THREE), alphaTest: 0.5, side: THREE.DoubleSide,
-      roughness: 0.4, metalness: 0, envMapIntensity: 0.5,
-      ...(physical ? { sheen: 0.4, sheenRoughness: 0.35, sheenColor: hairC.clone().multiplyScalar(1.5).lerp(new THREE.Color(1, 1, 1), 0.15), anisotropy: 0.65, anisotropyRotation: Math.PI / 2, specularIntensity: 0.5 } : {}),
-    });
-    Mt(hm);
-    // «кольцо блеска» (Каджия-Кей): два блика вдоль пряди от ключевого света витрины — узкий светлый и
-    // широкий в цвет волос, сдвинутые по шуму пучков; нужна касательная (USE_TANGENT — анизотропия на medium+)
-    {
-      const prevH = hm.onBeforeCompile;
-      hm.onBeforeCompile = (sh, r) => {
-        if (prevH) prevH.call(hm, sh, r);
-        sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-  #if defined( USE_TANGENT ) && defined( USE_MAP )
-  {
-    vec3 kkT = vBitangent;
-    float kkL = length( kkT );
-    if ( kkL > 1e-4 ) {
-      kkT /= kkL;
-      vec3 kkV = normalize( vViewPosition );
-      vec3 kkH = normalize( heroKeyDir + kkV );
-      float kkS = ( texture2D( map, vMapUv ).g - 0.55 ) * 0.5;
-      vec3 t1 = normalize( kkT + normal * ( -0.1 + kkS ) ), t2 = normalize( kkT + normal * ( 0.14 + kkS ) );
-      float d1 = dot( t1, kkH ), d2 = dot( t2, kkH );
-      float s1 = pow( sqrt( max( 0.0, 1.0 - d1 * d1 ) ), 320.0 ), s2 = pow( sqrt( max( 0.0, 1.0 - d2 * d2 ) ), 90.0 );
-      float kkNL = saturate( dot( normal, heroKeyDir ) ) * 0.85 + 0.15;
-      float kkM = 0.4 + 0.6 * texture2D( map, vMapUv ).g;   // пучки: блик рвётся по прядям
-      totalEmissiveRadiance += heroKeyColor * kkNL * kkM * ( s1 * 0.14 + s2 * 0.16 * diffuseColor.rgb );
-    }
-  }
-  #endif`);
-      };
-      const pkH = hm.customProgramCacheKey;
-      hm.customProgramCacheKey = () => 'hairKK:' + (pkH ? pkH.call(hm) : '');
-    }
-    // коллайдеры: голова (шар в центре черепа), шея и корпус, плечи
-    const skullC = new THREE.Object3D(); skullC.name = 'hair-skull';
-    headBone.add(skullC); skullC.position.copy(headBone.worldToLocal(toW(cx, cy, cz)));
-    const colliders = [{ a: skullC, b: skullC, r: Math.max(rx, rz) * 1.0 }];
-    for (const c of bodyCaps) if (!/Leg/.test(c.name)) colliders.push({ a: c.a, b: c.b, r: c.r - 0.005 });
-    // обруч-диадема поверх чёлки (эльфийка): золотая дуга от виска к виску и капля-камень на лбу
-    if (opts.circlet) {
-      const cp = [];
-      for (let i = 0; i <= 24; i++) { const a = Math.PI + (i / 24 - 0.5) * 2.5; cp.push(sk3(a, polarBrow - 0.27 + 0.1 * Math.abs(i / 24 - 0.5), 1.09)); }
-      const grp = new THREE.Group(); grp.name = 'circlet';
-      grp.add(new THREE.Mesh(G(tube(THREE, new THREE.CatmullRomCurve3(cp), 60, 6, (v) => 0.0026 + 0.0012 * Math.sin(Math.PI * v), { flat: 0.6 })), mats.trim));
-      const mid = sk3(Math.PI, polarBrow - 0.27, 1.095);
-      const setting = new THREE.Mesh(G(new THREE.TorusGeometry(0.009, 0.0022, 6, 16)), mats.trim);
-      const gemM = Mt(new Std({ name: 'gear-circlet-gem', color: opts.circlet.gem || 0x7fe8ff, emissive: opts.circlet.gem || 0x7fe8ff, emissiveIntensity: 0.8, roughness: 0.05, flatShading: true }));
-      const drop = new THREE.Mesh(G(gem(THREE, { r: 0.007, h: 0.024, n: 6 })), gemM);
-      const q = qFromTo(new THREE.Vector3(0, 0, 1), FWD);
-      setting.position.copy(mid).addScaledVector(UP, -0.012); setting.quaternion.copy(q);
-      drop.position.copy(mid).addScaledVector(UP, -0.013).addScaledVector(FWD, 0.004);
-      grp.add(setting, drop);
-      const c0 = mid.clone();
-      for (const m of grp.children) { m.position.sub(c0); m.updateMatrix(); }
-      stick(grp, 'head', c0, new THREE.Quaternion());
-    }
-    const _hq = new THREE.Quaternion(), holderH = model || vrm.scene;
-    hair = createStrands(THREE, { locks, anchor: headBone, parent: headBone, colliders, material: hm, spine: [raw('neck') || raw(chestB), raw('hips')], fwd: (out) => out.set(0, 0, 1).applyQuaternion(holderH.getWorldQuaternion(_hq)) });
-    parts.push({ obj: hair.mesh, bone: headBone }, { obj: skullC, bone: headBone });
-    names.push('hair');
-    // слой волос под прядями по спине: полотно ткани с текстурой прядей — без просветов между локонами;
-    // чуть ближе к телу, чем локоны (коллайдеры тоньше), кончики рассыпаются (альфа по uv1)
-    if (HO.sheet !== false) {
-      const cols = 7, rows = 12, rest = new Float32Array(cols * rows * 3), Ls = len * 0.82;
-      for (let j = 0; j < rows; j++) {
-        const t = j / (rows - 1);
-        for (let i = 0; i < cols; i++) {
-          const a = (i / (cols - 1) - 0.5) * 1.9;   // азимут по затылку: 0 — центр, + — к левому уху
-          const root = sk3(a, 2.0 + 0.1 * Math.abs(a), 0.95);
-          const p = root.clone();
-          if (j) {
-            p.addScaledVector(DOWN, t * Ls).addScaledVector(LEFT, Math.sin(a) * 0.05 * t);
-            const zBack = p.clone().sub(chestP).dot(FWD);
-            p.addScaledVector(FWD, -Math.max(0, zBack + torsoR + 0.008));
-          }
-          p.toArray(rest, (j * cols + i) * 3);
-        }
-      }
-      const sm = Mt(new Std({
-        name: 'gear-hair-sheet', color: hairC.clone().multiplyScalar(0.82), map: strandTex, bumpMap: strandTex, bumpScale: 2.2,
-        alphaMap: hairTipTex(THREE), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.45, metalness: 0, envMapIntensity: 0.5,
-        ...(physical ? { sheen: 0.35, sheenRoughness: 0.4, sheenColor: hairC.clone().multiplyScalar(1.4), specularIntensity: 0.45 } : {}),
-      }));
-      const _hq2 = new THREE.Quaternion();
-      hairSheet = createCloth(THREE, {
-        cols, rows, rest, anchor: headBone, parent: holderH, material: sm, name: 'hair-sheet',
-        colliders: bodyCaps.filter((c) => !/Leg/.test(c.name)).map((c) => ({ ...c, r: c.r - 0.012 })),
-        pleats: 5, pleatDepth: 0.006, plane: 'back', carry: 0.75,
-        hips: raw('hips'), back: { lim: 0.02, h: Math.max(0.2, chestP.y - bp.hips.y) },
-        fwd: (out) => out.set(0, 0, 1).applyQuaternion(holderH.getWorldQuaternion(_hq2)),
-        floor: () => holderH.getWorldPosition(new THREE.Vector3()).y,
-      });
-      // uv1: поперёк — 3 повтора пучков, вдоль — доля длины от корня (для альфы кончиков)
-      const ug = hairSheet.mesh.geometry, uva = ug.attributes.uv, u1 = new Float32Array(uva.count * 2);
-      for (let k = 0; k < uva.count; k++) { u1[k * 2] = uva.getX(k) * 3; u1[k * 2 + 1] = 1 - uva.getY(k); }
-      ug.setAttribute('uv1', new THREE.BufferAttribute(u1, 2));
-      names.push('hair-sheet');
-      // «шапочка» волос на передней части черепа (под чёлкой и капюшоном): закрывает просветы у пробора и между
-      // прядями чёлки; пряди от макушки к линии роста, у линии роста кончики рассыпаются (альфа по uv1)
-      {
-        const polarHair = Math.acos(Math.max(-0.95, Math.min(0.95, (browY + 0.055 - cy) / ry)));
-        const NA = 18, NP = 8, a0 = Math.PI - 1.55, a1 = Math.PI + 1.55, pos = [], uv = [], uv1 = [], idx = [];
-        const c0 = bp.head.clone();
-        for (let i = 0; i <= NA; i++) {
-          const az = a0 + (a1 - a0) * (i / NA);
-          for (let j = 0; j <= NP; j++) {
-            const f = j / NP, pol = 0.06 + (polarHair - 0.06) * f * (1 - 0.18 * Math.pow(Math.abs(az - Math.PI) / 1.55, 2));
-            const p = sk3(az, pol, 1.012).sub(c0);
-            pos.push(p.x, p.y, p.z); uv.push(i / NA * 2.5, f * 0.8); uv1.push(i / NA * 4, 0.3 + 0.7 * f);
-          }
-        }
-        for (let i = 0; i < NA; i++) for (let j = 0; j < NP; j++) { const q = i * (NP + 1) + j, w = q + NP + 1; idx.push(q, q + 1, w, w, q + 1, w + 1); }
-        const cg = new THREE.BufferGeometry();
-        cg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); cg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); cg.setAttribute('uv1', new THREE.Float32BufferAttribute(uv1, 2));
-        cg.setIndex(idx); cg.computeVertexNormals();
-        const capG = new THREE.Group(); capG.name = 'hair-cap';
-        const cm = new THREE.Mesh(G(cg), sm); cm.name = 'hair-cap-mesh';
-        capG.add(cm);
-        stick(capG, 'head', c0, new THREE.Quaternion());
-        cm.castShadow = false; cm.userData.noShadow = true;
-      }
-    }
-  }
+  // ---------------- [W4-ВОЛОСЫ] волосы героинь — modules/heroHair.js: карты прядей, блеск Каджия-Кей, движение
+  // в вершинном шейдере. Причёска собирается после лука и колчана (пряди их обтекают); капюшон снимается
+  // здесь — до каймы капюшона ниже (кайма берётся только у видимого капюшона).
+  let hair = null;
+  let hoodBack = opts.hair ? hairHood(vrm, opts.hair) : null;
 
   // ---------------- ресницы и моргание (лица Quaternius Regular: глаза — сферы, век-морфов нет)
   // Замер лиц: у женского кромка верхнего века почти по экватору глаза (+0.1…0.17 r), нижнего — на −0.47 r;
@@ -1054,7 +855,8 @@ export function dressHero(THREE, vrm, opts = {}) {
         up.name = 'lash-up';
         piv.add(lid, up);
         const low = new THREE.Group(); low.name = 'lash-low';
-        low.add(new THREE.Mesh(lashStrip(e, -0.7, 1.15, yL, F.dL, (t) => F.lenL * 0.2 * (0.3 + 0.7 * Math.sin(Math.PI * t)) * (0.6 + 0.6 * t), -1), mLow));
+        // [W4-ЛИЦО] нижние ресницы — от середины к внешнему углу и короче (у внутреннего угла читались чёрными «колючками»)
+        low.add(new THREE.Mesh(lashStrip(e, -0.25, 1.1, yL, F.dL, (t) => F.lenL * 0.12 * (0.3 + 0.7 * Math.sin(Math.PI * t)) * (0.5 + 0.7 * t), -1), mLow));
         const tear = new THREE.Mesh(tearStrip(e), mTear); tear.name = 'tearline'; tear.renderOrder = 3; low.add(tear);
         stick(piv, 'head', e.c, new THREE.Quaternion());
         stick(low, 'head', e.c, new THREE.Quaternion());
@@ -1347,7 +1149,7 @@ export function dressHero(THREE, vrm, opts = {}) {
   }
 
   // ---------------- лук за спиной (в бою — в кулаке левой) и колчан
-  let bow = null, bowRig = null, arrow = null;
+  let bow = null, bowRig = null, arrow = null, quiverObj = null;
   const gearCaps = []; // снаряжение, которое плащ обтекает (колчан на бедре)
   const rT0 = torsoR - 0.018;
   if ((P.bow || P.quiver) && bp[chestB]) {
@@ -1389,7 +1191,8 @@ export function dressHero(THREE, vrm, opts = {}) {
       const q = qFromTo(new THREE.Vector3(0, 1, 0), diag);
       const zNow = new THREE.Vector3(0, 0, 1).applyQuaternion(q), want = FWD.clone().negate();
       q.premultiply(new THREE.Quaternion().setFromAxisAngle(diag, Math.atan2(zNow.clone().cross(want).dot(diag), zNow.dot(want))));
-      stick(grp, chestB, bp[chestB].clone().addScaledVector(FWD, -(rT0 + (P.cape ? 0.09 : 0.035))).addScaledVector(UP, -0.04), q);
+      // [W4-НАРЯДЫ] поверх пелерины — дальше от спины
+      stick(grp, chestB, bp[chestB].clone().addScaledVector(FWD, -(rT0 + (P.cape ? (P.cape.kind === 'mantle' ? 0.125 : 0.09) : 0.035))).addScaledVector(UP, -0.04), q);
       bow = grp;
     }
     if (P.quiver) {
@@ -1405,14 +1208,43 @@ export function dressHero(THREE, vrm, opts = {}) {
       } else {
         // за спиной: оперение над правым плечом
         const dir = UP.clone().multiplyScalar(0.95).addScaledVector(LEFT, -0.32).normalize();
-        stick(qv, chestB, bp[chestB].clone().addScaledVector(FWD, -(rT0 + 0.06)).addScaledVector(LEFT, 0.05).addScaledVector(UP, -0.3), qFromTo(new THREE.Vector3(0, 1, 0), dir));
+        const mantle = P.cape && P.cape.kind === 'mantle';
+        stick(qv, chestB, bp[chestB].clone().addScaledVector(FWD, -(rT0 + (mantle ? 0.095 : 0.06))).addScaledVector(LEFT, 0.05).addScaledVector(UP, -0.3), qFromTo(new THREE.Vector3(0, 1, 0), dir));
+        // [W4-НАРЯДЫ] пелерина ложится на колчан, а не проходит сквозь
+        if (mantle) { const q0 = new THREE.Object3D(), q1 = new THREE.Object3D(); q0.position.set(0, 0.12, 0); q1.position.set(0, 0.5, 0); qv.add(q0, q1); gearCaps.push({ a: q0, b: q1, r: 0.06, name: 'quiver' }); }
       }
+      quiverObj = qv;   // [W4-ВОЛОСЫ] пряди обтекают колчан
     }
   }
+
+  // [W4-ВОЛОСЫ] причёска героини: исходная форма плаща (волосы лежат поверх него) и колчан — препятствия
+  if (opts.hair && bp.head) {
+    try {
+      let capeInfo = null, quiverInfo = null;
+      if (P.cape && bp[chestB] && bp.leftUpperArm && bp.rightUpperArm) {
+        const neck = bp.neck || bp[chestB].clone().addScaledVector(UP, 0.14);
+        const yTop = Math.max(Math.max(bp.leftUpperArm.y, bp.rightUpperArm.y) + 0.035, neck.y - 0.035), halfTop = shoulderW * 0.5 + 0.025, base = neck.clone().setY(yTop);
+        const collar = [-1, -0.5, 0, 0.5, 1].map((u) => base.clone().addScaledVector(LEFT, u * halfTop).addScaledVector(FWD, -torsoR * 0.72 * (1 - 0.6 * u * u) + 0.015 * u * u).addScaledVector(UP, 0.02 * (1 - u * u)));
+        // [W4-СБОРКА] у пелерины (mantle) нет ширины w — берём её обхват по плечам (Rx ниже), иначе в волосах NaN
+        capeInfo = { w: P.cape.kind === 'mantle' ? shoulderW + 0.1 : P.cape.w, len: P.cape.len, yTop, halfTop, collar };
+      }
+      if (quiverObj) {
+        quiverObj.updateWorldMatrix(true, true);
+        const la = new THREE.Vector3(0, 0.06, 0), lb = new THREE.Vector3(0, 0.56, 0);
+        quiverInfo = { obj: quiverObj, la, lb, r: 0.06, a: quiverObj.localToWorld(la.clone()), b: quiverObj.localToWorld(lb.clone()) };
+      }
+      hair = buildHair(THREE, { vrm, raw, bp, chestB, torsoR, bodyCaps, LEFT, UP, FWD, holder: model || vrm.scene, quality, atmosphere, hair: opts.hair, circlet: opts.circlet, cape: capeInfo, quiver: quiverInfo, stick, G, Mt, Std, mats, tube, gem });
+    } catch (e) { hair = null; if (typeof console !== 'undefined') console.warn('[hair]', e); }
+    if (hair) for (const n of hair.names) names.push(n);
+  }
+  // причёска не собралась — капюшон обратно (иначе героиня без волос и без капюшона)
+  if (!hair && hoodBack) { hoodBack(); hoodBack = null; }
 
   // ---------------- плащ: ткань (modules/heroCloth.js) — прибит к плечам, падает, развевается на бегу,
   // не проходит сквозь ноги и корпус (капсулы по коже модели); вышитая кайма и герб (heroForge.capeTextures)
   let cloth = null, capeMat = null, panelMat = null;
+  const attireRel = [], attireFabrics = [];   // [W4-НАРЯДЫ] общие текстуры нарядов (release) и ткани с пульсом вышивки
+  const _floorV = new THREE.Vector3();          // пол для ткани — без новой точки на каждый кадр
   // материал вышитой ткани (плащ, полы мантии): карта/рельеф/свечение вышивки, sheen, подкладка на изнанке
   const clothMat = (tx, name) => {
     const { color, trim, lining } = P.cape;
@@ -1442,11 +1274,86 @@ export function dressHero(THREE, vrm, opts = {}) {
     }
     return m;
   };
-  if (P.cape && bp[chestB] && bp.hips && bp.leftUpperArm) {
+  // [W4-НАРЯДЫ] пелерина-накидка (лучница): кольцо у основания шеи поверх капюшона, по плечам и верху спины,
+  // спереди открыта (пряди у лица лежат на груди свободно); бархат с зубчатым подолом (альфа), латунные
+  // розетки с цепочкой у ворота
+  if (P.cape && P.cape.kind === 'mantle' && bp[chestB] && bp.hips && bp.leftUpperArm && bp.rightUpperArm) {
+    const M = P.cape, cols = 17, rows = 9, len = M.len || 0.36, aF = M.open ?? 0.75, span = Math.PI * 2 - 2 * aF;
+    const neck = bp.neck || bp[chestB].clone().addScaledVector(UP, 0.14);
+    const shY = Math.max(bp.leftUpperArm.y, bp.rightUpperArm.y);
+    const yTop = Math.max(shY + 0.03, neck.y - 0.045);
+    // обхват у основания шеи по азимуту: капюшон, кожа, волосы (с запасом)
+    const SEC = 32, rS = new Float32Array(SEC), v = new THREE.Vector3();
+    vrm.scene.updateMatrixWorld(true);
+    const scan = (o) => {
+      const pa = o.geometry && o.geometry.attributes.position;
+      if (!pa) return;
+      for (let i = 0; i < pa.count; i += 2) {
+        if (o.isSkinnedMesh) o.getVertexPosition(i, v); else v.fromBufferAttribute(pa, i);
+        v.applyMatrix4(o.matrixWorld);
+        if (Math.abs(v.y - yTop - 0.005) > 0.025) continue;
+        v.sub(neck);
+        const f = v.dot(FWD), l = v.dot(LEFT), r = Math.hypot(f, l);
+        if (r > 0.16) continue;
+        const k = Math.floor(((Math.atan2(l, f) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2) * SEC) % SEC;   // азимут 0 — перед, как в rN(az)
+        rS[k] = Math.max(rS[k], r);
+      }
+    };
+    vrm.scene.traverse((o) => { if (o.isMesh && o.visible && !/Eye|Brow|Arms|Bracer/i.test(o.name) && (o.isSkinnedMesh || /hair/i.test(o.name))) scan(o); });
+    // [W4-СБОРКА] волосы heroHair висят на модели, а не в vrm.scene (как в highCollar у нарядов)
+    { const hold = model || vrm.scene; if (hold !== vrm.scene) { hold.updateMatrixWorld(true); hold.traverse((o) => { if (o.isMesh && o.visible && /hair/i.test(o.name)) scan(o); }); } }
+    const rN = (az) => { const x = (((az % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2) * SEC, k = Math.floor(x); return Math.max(0.07, rS[k % SEC], rS[(k + 1) % SEC] * 0.9, rS[(k + SEC - 1) % SEC] * 0.9) + 0.014; };
+    const Rx = shoulderW * 0.5 + 0.05, Rz = torsoR + 0.045;
+    const rSh = (az) => 1 / Math.sqrt((Math.cos(az) / Rz) ** 2 + (Math.sin(az) / Rx) ** 2);
+    const rest = new Float32Array(cols * rows * 3), tS = 0.3;
+    for (let j = 0; j < rows; j++) {
+      const t = j / (rows - 1);
+      for (let i = 0; i < cols; i++) {
+        // обход — справа спереди через спину налево (как у плаща: лицевая сторона треугольников — к телу)
+        const az = -aF - span * (i / (cols - 1));
+        let R, y;
+        if (t <= tS) { const e = sstep01(t / tS); R = rN(az) + (rSh(az) - rN(az)) * e; y = yTop - 0.05 * (t / tS); }
+        else { const e = (t - tS) / (1 - tS); R = rSh(az) + 0.035 * e; y = yTop - 0.05 - e * (len - 0.05); }
+        new THREE.Vector3(neck.x, y, neck.z).addScaledVector(FWD, Math.cos(az) * R).addScaledVector(LEFT, Math.sin(az) * R).toArray(rest, (j * cols + i) * 3);
+      }
+    }
+    const sz = quality === 'low' ? 512 : 1024;
+    const tx = sharedTextures(`mantle:${M.color}:${M.trim}:${P.glow}:${sz}`, () => mantleTextures(THREE, { base: M.color, trim: M.trim, glow: P.glow, size: sz }));
+    attireRel.push(tx.release);
+    capeMat = fabricMaterial(THREE, { Mt, physical, name: 'gear-mantle', tex: tx.tex, kind: 'velvet', sheen: M.sheen || 0xffffff, lining: M.lining, alpha: true, emissiveK: 1 });
+    attireFabrics.push(capeMat);
+    const holder = model || vrm.scene, _mq = new THREE.Quaternion();
+    cloth = createCloth(THREE, {
+      cols, rows, rest, anchor: raw(chestB), parent: holder, colliders: bodyCaps.map((c) => ({ ...c, r: c.r + (/UpperArm|hest/.test(c.name) ? 0.012 : 0) })).concat(gearCaps), material: capeMat,
+      pleats: 7, pleatDepth: 0.006, plane: 'none', name: 'cape', carry: 0.7, react: true,
+      hips: raw('hips'), back: { lim: 0.04, h: 0.5 },
+      fwd: (out) => out.set(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(_mq)),
+      floor: () => holder.getWorldPosition(_floorV).y,
+    });
+    names.push('cape-root');
+    // розетки на концах ворота и цепочка между ними
+    const grp = new THREE.Group(); grp.name = 'cape-collar';
+    const ends = [0, cols - 1].map((i) => new THREE.Vector3().fromArray(rest, i * 3).addScaledVector(FWD, 0.01).addScaledVector(UP, -0.012));
+    const rosG = G(new THREE.TorusGeometry(0.011, 0.0035, 6, 16)), gemG = G(gem(THREE, { r: 0.0065, h: 0.016, n: 6 }));
+    for (const e of ends) {
+      const out = e.clone().sub(neck).setY(0).normalize();
+      const ros = new THREE.Mesh(rosG, mats.trim); ros.position.copy(e); ros.quaternion.copy(qFromTo(new THREE.Vector3(0, 0, 1), out)); grp.add(ros);
+      const st = new THREE.Mesh(gemG, mats.crystal); st.position.copy(e).addScaledVector(out, 0.003); st.quaternion.copy(qFromTo(new THREE.Vector3(0, 1, 0), out)); grp.add(st);
+    }
+    const mid = ends[0].clone().lerp(ends[1], 0.5).addScaledVector(UP, -0.05).addScaledVector(FWD, 0.03);
+    grp.add(new THREE.Mesh(G(tube(THREE, new THREE.QuadraticBezierCurve3(ends[0], mid, ends[1]), 40, 5, () => 0.0026)), mats.trim));
+    const c0 = bp[chestB].clone();
+    for (const m of grp.children) { m.position.sub(c0); m.updateMatrix(); }
+    stick(grp, chestB, c0, new THREE.Quaternion());
+  }
+  if (P.cape && P.cape.kind !== 'mantle' && bp[chestB] && bp.hips && bp.leftUpperArm) {
     const { w, len, color, trim, emblem } = P.cape;
     // поверх копны волос по спине — корпус для ткани толще
-    const colliders = bodyCaps.map((c) => ({ ...c, r: c.r + (hair && /hips|Chest|chest/.test(c.name) ? 0.03 : 0) })).concat(gearCaps);
-    const rT = torsoR + (hair ? 0.03 : 0);
+    // [W4-ВОЛОСЫ] волосы под плащом — корпус для ткани толще (capeGap); поверх плаща — 0
+    // [W4-НАРЯДЫ] поверх лепестков полы — таз и бёдра толще
+    const capeGap = hair ? hair.capeGap || 0 : 0;
+    const colliders = bodyCaps.map((c) => ({ ...c, r: c.r + (capeGap && /hips|Chest|chest/.test(c.name) ? capeGap : 0) + (P.cape.over && /hips|UpperLeg/.test(c.name) ? P.cape.over : 0) })).concat(gearCaps);
+    const rT = torsoR + capeGap;
     // исходная форма: верх — дуга по плечам и загривку, ниже — полотно за спиной, книзу шире
     const cols = 13, rows = 18;
     const neck = bp.neck || bp[chestB].clone().addScaledVector(UP, 0.14);
@@ -1469,16 +1376,16 @@ export function dressHero(THREE, vrm, opts = {}) {
         p.toArray(rest, (j * cols + i) * 3);
       }
     }
-    const tx = capeTextures(THREE, { base: color, trim, glow: P.glow, emblem, key: preset });
+    const tx = capeTextures(THREE, { base: color, trim, glow: P.glow, emblem, key: preset, stars: !!P.cape.stars });
     capeMat = clothMat(tx, 'gear-cape');
     const holder = model || vrm.scene;
     const _mq = new THREE.Quaternion();
     cloth = createCloth(THREE, {
       cols, rows, rest, anchor: raw(chestB), parent: holder, colliders, material: capeMat,
-      pleats: 3.5, pleatDepth: w > 0.55 ? 0.016 : 0.012, hem: { r: 0.0055, material: mats.trim },
+      pleats: 3.5, pleatDepth: w > 0.55 ? 0.016 : 0.012, hem: { r: 0.0055, material: mats.trim }, react: true,
       hips: raw('hips'), back: { lim: 0.035, h: Math.max(0.2, bp[chestB].y - bp.hips.y) },
       fwd: (out) => out.set(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(_mq)),
-      floor: () => holder.getWorldPosition(new THREE.Vector3()).y,
+      floor: () => holder.getWorldPosition(_floorV).y,
     });
     names.push('cape-root');
     // воротник-валик по верху плаща (прячет край, где ткань прибита) и застёжки с цепью на груди
@@ -1528,7 +1435,8 @@ export function dressHero(THREE, vrm, opts = {}) {
     // обхват тела на этой высоте по секторам азимута (без ремней, капюшона, волос): ткань прилегает
     const SEC = 24, secR = new Float32Array(SEC);
     vrm.scene.traverse((o) => {
-      if (!o.isSkinnedMesh || !o.visible || /Belt|Hood|Hair|Eye|Face|Brow/i.test(o.name) || /Hair|Eye/.test([].concat(o.material).map((m) => m && m.name).join())) return;
+      // [W4-НАРЯДЫ] руки не в счёт: в стойке «руки на бёдрах» кисти раздували обхват — полы стояли полкой
+      if (!o.isSkinnedMesh || !o.visible || /Belt|Hood|Hair|Eye|Face|Brow|Arms/i.test(o.name) || /Hair|Eye/.test([].concat(o.material).map((m) => m && m.name).join())) return;
       const pa = o.geometry.attributes.position;
       for (let i = 0; i < pa.count; i++) {
         o.getVertexPosition(i, v); v.applyMatrix4(o.matrixWorld);
@@ -1572,13 +1480,44 @@ export function dressHero(THREE, vrm, opts = {}) {
     const holder = model || vrm.scene;
     const _mq2 = new THREE.Quaternion();
     const legCaps = bodyCaps.filter((c) => (stole ? /Leg|hips|hest/ : /Leg/).test(c.name)).map((c) => ({ ...c, r: c.r - 0.008 }));   // запас капсул (+0.018) велик для прилегающей ткани
+    const PT = P.tabard.petals, ST = P.tabard.stars;
     // полотнища без герба — своя вышивка в масштабе полосы (heroForge.panelTextures)
-    if (P.tabard.panels.some((pn) => !pn.emblem)) {
+    if (!PT && !ST && P.tabard.panels.some((pn) => !pn.emblem)) {
       const ptx = panelTextures(THREE, { base: P.cape.color, trim: P.cape.trim, glow: P.glow });
       if (ptx.map) panelMat = clothMat(ptx, 'gear-panel');
     }
+    // [W4-НАРЯДЫ] звёздная вышивка полотнищ (чародейка): бархат, подол остриём (альфа), подкладка; ей же
+    // расшит изнутри высокий воротник (heroAttire)
+    if (ST) {
+      const sz = quality === 'low' ? 512 : 1024;
+      const tx = sharedTextures(`stars:${ST.base}:${ST.thread}:${P.glow}:${ST.hem}:${sz}`, () => starTextures(THREE, { base: ST.base, thread: ST.thread, glow: P.glow, hem: ST.hem, size: sz }));
+      attireRel.push(tx.release);
+      panelMat = fabricMaterial(THREE, { Mt, physical, name: 'gear-panel', tex: tx.tex, kind: 'velvet', sheen: new THREE.Color(ST.base).lerp(new THREE.Color(P.glow), 0.6).getHex(), lining: P.cape.lining, alpha: true, emissiveK: 1.2 });
+      attireFabrics.push(panelMat);
+    }
+    // [W4-НАРЯДЫ] лепестки (эльфийка): 3 лепестка по 3 промежутка сетки, разрезы — в промежутках между ними;
+    // развёртка лепестков на холсте — те же промежутки (u холста идёт справа налево по столбцам)
+    const petalMats = [];
+    const petalLayout = (n) => {
+      const cols = 4 * n, gaps = [], segs = [];
+      for (let k = 0; k < n; k++) { if (k < n - 1) gaps.push(4 * k + 3); segs.push([1 - (4 * k + 3) / (cols - 1), 1 - (4 * k) / (cols - 1)]); }
+      return { cols, gaps, segs: segs.reverse() };
+    };
+    if (PT) {
+      for (const [layer, spec] of [[0, PT.outer], [1, PT.inner]]) {
+        if (!spec) continue;
+        const L = petalLayout(3), sz = quality === 'low' ? 256 : 512;
+        const tips = layer ? [0.9, 0.97, 0.9] : [0.86, 0.97, 0.86];
+        const tx = sharedTextures(`petal:${layer}:${spec.base}:${spec.edge}:${P.glow}:${sz}`, () => petalTextures(THREE, { base: spec.base, edge: spec.edge, vein: spec.vein ?? null, glow: P.glow, segs: L.segs, from: 0.24, tips, size: sz }));
+        attireRel.push(tx.release);
+        const m = fabricMaterial(THREE, { Mt, physical, name: layer ? 'gear-petal-inner' : 'gear-petal', tex: tx.tex, kind: 'silk', sheen: new THREE.Color(spec.base).lerp(new THREE.Color(0xffffff), 0.4).getHex(), lining: new THREE.Color(spec.base).multiplyScalar(0.86).getHex(), alpha: true, emissiveK: 1.0 });
+        petalMats[layer] = m; attireFabrics.push(m);
+      }
+    }
     for (const pn of P.tabard.panels) {
-      const cols = 7, rows = 12;
+      const pet = !!(PT && pn.petals && petalMats[pn.layer ? 1 : 0]);
+      const PL = pet ? petalLayout(pn.petals) : null;
+      const cols = pet ? PL.cols : 7, rows = pet ? 10 : 12;
       const R0 = Rat(pn.az) + 0.008;
       const ah = pn.w / 2 / R0;
       const rest = new Float32Array(cols * rows * 3);
@@ -1587,25 +1526,43 @@ export function dressHero(THREE, vrm, opts = {}) {
         for (let i = 0; i < cols; i++) {
           // столбцы — по убыванию азимута (обход как у плаща: лицевая сторона треугольников — к телу)
           const ph = pn.az + ah - (2 * ah * i) / (cols - 1);
-          // расширение книзу небольшое: изгибные связи держат исходную форму (иначе полотнище стоит «доской»)
-          const r = Rat(ph) + 0.008 + (0.012 + 0.02 * t2) * (j ? 1 : 0);
+          // расширение книзу небольшое: изгибные связи держат исходную форму (иначе полотнище стоит «доской»);
+          // лепестки — внешний слой дальше от тела и колоколом, внутренний ближе
+          const r = Rat(ph) + 0.008 + (pet ? (pn.layer ? 0.003 + 0.018 * t2 : 0.01 + 0.026 * t2) : 0.012 + 0.02 * t2) * (j ? 1 : 0);
           const p = new THREE.Vector3(ctr.x, yBelt - t2 * pn.len, ctr.z).addScaledVector(FWD, Math.cos(ph) * r).addScaledVector(LEFT, Math.sin(ph) * r);
           p.toArray(rest, (j * cols + i) * 3);
         }
       }
       const cl = createCloth(THREE, {
-        cols, rows, rest, anchor: raw(stole ? chestB : 'hips'), parent: holder, colliders: legCaps, material: pn.emblem || !panelMat ? capeMat : panelMat,
-        pleats: pn.pleats ?? 1.5, pleatDepth: 0.008, name: 'tabard', plane: Math.abs(pn.az) < 0.5 ? 'front' : 'none', hem: { r: 0.0045, material: mats.trim },
-        cling: P.tabard.cling ?? 3,
-        uv: pn.emblem || panelMat ? { u0: 0, u1: 1, v0: 0, v1: 1 } : { u0: 0, u1: 1, v0: 0, v1: 0.62 },
+        cols, rows, rest, anchor: raw(stole ? chestB : 'hips'), parent: holder, material: pet ? petalMats[pn.layer ? 1 : 0] : pn.emblem || !panelMat ? capeMat : panelMat,
+        // внешний слой лепестков — на капсулах толще (ложится поверх внутреннего); колчан на бедре — не препятствие:
+        // правая пола до него не достаёт, а запутавшись за ним на кувырке, не вернулась бы
+        colliders: pet && !pn.layer ? legCaps.map((c) => ({ ...c, r: c.r + 0.014 })) : legCaps,
+        pleats: pet ? 0 : pn.pleats ?? 1.5, pleatDepth: pet ? 0 : 0.008, name: 'tabard', plane: Math.abs(pn.az) < 0.5 ? 'front' : 'none',
+        hem: pet || ST ? null : { r: 0.0045, material: mats.trim },
+        cling: pet ? (pn.layer ? 4 : 3) : P.tabard.cling ?? 3,
+        slits: pet ? { gaps: PL.gaps, from: 2 } : null, cup: pet ? 0.011 : 0, react: true, home: pet || ST ? 3 : 0,
+        uv: pn.emblem || panelMat || pet ? { u0: 0, u1: 1, v0: 0, v1: 1 } : { u0: 0, u1: 1, v0: 0, v1: 0.62 },
         hips: raw('hips'), back: { lim: 0.03, h: 0.3 },
         fwd: (out) => out.set(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(_mq2)),
-        floor: () => holder.getWorldPosition(new THREE.Vector3()).y,
+        floor: () => holder.getWorldPosition(_floorV).y,
       });
+      cl.layer = pn.layer || 0;
       tabards.push(cl);
     }
     names.push('tabard');
   }
+
+  // ---------------- [W4-НАРЯДЫ] наряд героини (modules/heroAttire.js): наплечник-лист, воротник, корсет и
+  // наручи, украшения с искрами; ткани нарядов пульсируют вышивкой вместе со свечением героя (setGlow)
+  let attire = null;
+  if (P.attire) {
+    try {
+      attire = dressAttire({ THREE, vrm, P, mats, Mt, G, stick, raw, bp, bodyCaps, FWD, LEFT, UP, modelQ, holder: model || vrm.scene, physical, quality, chestB, torsoR, shoulderW, parts, panelMat, glowHex });
+      names.push(...attire.names);
+    } catch (e) { console.warn('[W4-НАРЯДЫ] наряд не собран:', e && e.message); attire = null; }
+  }
+  let calmNow = 1;
 
   // ---------------- кадр: ткань, свечение, LOD
   let t = 0, lodL = 0;
@@ -1637,14 +1594,16 @@ export function dressHero(THREE, vrm, opts = {}) {
   }
   function update(dt) {
     t += dt;
+    // [W4-НАРЯДЫ] «Уменьшенное движение» — ткань спокойнее; внутренний слой лепестков — только medium+
+    { const ck = ATTIRE_CFG.reducedMotion ? 0.4 : 1; if (ck !== calmNow) { calmNow = ck; if (cloth) cloth.setMotion(ck); for (const tb of tabards) tb.setMotion(ck); } }
+    if (attire) { try { attire.update(dt, t, lodL, glowNow); } catch (e) { /* наряд не критичен */ } }
     if (elfEars) for (const m of elfEars.meshes) if (m.material !== elfEars.face.material) m.material = elfEars.face.material;
     const now = typeof performance !== 'undefined' ? () => performance.now() : () => Date.now();
     let t0 = now();
     if (cloth) { try { cloth.update(dt, lodL); } catch (e) { /* ткань не критична */ } }
-    for (const tb of tabards) { try { tb.update(dt, lodL); } catch (e) { /* полы не критичны */ } }
+    for (const tb of tabards) { if (!tb.mesh.visible) continue; try { tb.update(dt, lodL); } catch (e) { /* полы не критичны */ } }
     let t1 = now(); perf.cloth += (t1 - t0 - perf.cloth) * 0.1; t0 = t1;
-    if (hair) { try { hair.update(dt, lodL); } catch (e) { /* пряди не критичны */ } }
-    if (hairSheet) { try { hairSheet.update(dt, lodL); } catch (e) { /* слой волос не критичен */ } }
+    if (hair) { try { hair.update(dt); } catch (e) { /* волосы не критичны */ } }   // [W4-ВОЛОСЫ]
     if (plume) { try { plume.update(dt, lodL); } catch (e) { /* плюмаж не критичен */ } }
     if (ribbons) {
       try {
@@ -1684,8 +1643,10 @@ export function dressHero(THREE, vrm, opts = {}) {
     mats.runeMetal.emissiveIntensity = (2.0 + Math.sin(t * 2.1) * 0.6) * glowNow;
     mats.glow.color.copy(glowBase).multiplyScalar(0.6 + 0.4 * glowNow);
     mats.inlay.color.copy(inlayBase).multiplyScalar((0.7 + 0.3 * Math.sin(t * 1.7)) * (0.6 + 0.4 * glowNow));
-    if (capeMat) capeMat.emissiveIntensity = (0.8 + 0.25 * Math.sin(t * 1.3)) * Math.min(2, glowNow);
-    if (panelMat) panelMat.emissiveIntensity = (0.5 + 0.15 * Math.sin(t * 1.3 + 1.1)) * Math.min(2, glowNow);
+    if (capeMat && !attireFabrics.includes(capeMat)) capeMat.emissiveIntensity = (0.8 + 0.25 * Math.sin(t * 1.3)) * Math.min(2, glowNow);
+    if (panelMat && !attireFabrics.includes(panelMat)) panelMat.emissiveIntensity = (0.5 + 0.15 * Math.sin(t * 1.3 + 1.1)) * Math.min(2, glowNow);
+    // [W4-НАРЯДЫ] вышивка нарядов: ровный пульс и вспышка с заклинанием (glowNow до ~2,6)
+    for (let i = 0; i < attireFabrics.length; i++) { const m = attireFabrics[i]; m.emissiveIntensity = m.userData.fabric.base * (0.82 + 0.18 * Math.sin(t * 1.4 + i * 0.7)) * Math.min(2.4, glowNow); }
     if (visorMat) visorMat.opacity = Math.min(1, 0.55 + 0.25 * Math.sin(t * 3.3) + 0.3 * (glowNow - 1));
   }
   function setLod(l) {
@@ -1695,10 +1656,10 @@ export function dressHero(THREE, vrm, opts = {}) {
     if (lids && lids.lashes) for (const o of lids.lashes) o.visible = l === 0;
     if (cloth) { cloth.mesh.castShadow = l === 0; cloth.setWind(l >= 2 ? 0 : 1); }
     for (const tb of tabards) { tb.mesh.castShadow = l === 0; tb.setWind(l >= 2 ? 0 : 1); }
-    if (hair) hair.setWind(l >= 2 ? 0 : 1);
-    if (hairSheet) { hairSheet.setWind(l >= 2 ? 0 : 1); hairSheet.mesh.castShadow = l === 0; }
+    if (hair) hair.setLod(l);   // [W4-ВОЛОСЫ]
     if (plume) plume.setWind(l >= 2 ? 0 : 1);
     if (ribbons) { ribbons.setWind(l >= 2 ? 0 : 1); ribbons.mesh.castShadow = l === 0; }
+    if (attire) attire.setLod(l);   // [W4-НАРЯДЫ]
   }
 
   // лук в кулаке левой (поза лука C5): узел хвата heroModel (центр кулака, y — вдоль большого пальца,
@@ -1798,6 +1759,11 @@ export function dressHero(THREE, vrm, opts = {}) {
     }
   }
   function dispose() {
+    // [W4-НАРЯДЫ] наряд: оболочки, искры, общие текстуры (счётчик ссылок); детали костюма — снова видимы
+    if (attire) { try { attire.dispose(); } catch (e) { /* ignore */ } attire = null; }
+    for (const r of attireRel) r();
+    attireRel.length = 0;
+    restoreBase();
     // все геометрии снаряжения (включая не склеенные и оставшиеся в группах оружия) — один раз
     const geos = new Set(owned.geo);
     const collect = (root) => { if (root) root.traverse((o) => { if ((o.isMesh || o.isLine) && o.geometry) geos.add(o.geometry); }); };
@@ -1805,8 +1771,8 @@ export function dressHero(THREE, vrm, opts = {}) {
     collect(bowRig && bowRig.group); collect(staffRig && staffRig.group); collect(arrow);
     if (cloth) cloth.dispose();
     for (const tb of tabards) tb.dispose();
-    if (hair) hair.dispose();
-    if (hairSheet) hairSheet.dispose();
+    if (hair) hair.dispose();   // [W4-ВОЛОСЫ]
+    if (hoodBack) hoodBack();
     if (plume) plume.dispose();
     if (ribbons) { ribbons.dispose(); for (const g of ribbons.pendants || []) if (g.parent) g.parent.remove(g); }
     if (trail) trail.dispose();
@@ -1823,10 +1789,14 @@ export function dressHero(THREE, vrm, opts = {}) {
   let qTier = null;
   function setQuality(q) {
     const tq = q === 'low' || q === 'high' ? q : 'medium';
+    if (hair) { try { hair.setQuality(tq); } catch (e) { /* волосы остаются на прежнем уровне */ } }   // [W4-ВОЛОСЫ]
     if (tq === qTier) return;
     qTier = tq;
     // на 'medium' — sheen у всех и анизотропный блик у волос (главное в образе героинь)
     for (const { m, v } of physSaved) for (const k of Object.keys(v)) m[k] = tq === 'high' || (tq === 'medium' && (k === 'sheen' || (k === 'anisotropy' && m.name === 'gear-hair'))) ? v[k] : 0;
+    // [W4-НАРЯДЫ] второй слой лепестков и мелкие украшения — medium+
+    for (const tb of tabards) if (tb.layer) { const on = tq !== 'low', was = tb.mesh.visible; tb.mesh.visible = on; if (on && !was) tb.reset(); }
+    if (attire) attire.setQuality(tq);
   }
   setQuality(quality);
   const glowBase = mats.glow.color.clone(), inlayBase = mats.inlay.color.clone();

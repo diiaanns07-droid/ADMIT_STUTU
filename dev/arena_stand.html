@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHEN OATH — стенд арены Регента</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0d1016; color: #cfd6e2; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; overflow: hidden; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 8px; top: 8px; padding: 8px 10px; background: rgba(8, 10, 14, 0.72); border: 1px solid #2c3444; border-radius: 6px; white-space: pre-wrap; pointer-events: none; }
+  #bar { position: fixed; right: 8px; top: 8px; display: flex; gap: 4px; flex-wrap: wrap; max-width: 520px; justify-content: flex-end; }
+  #bar button { background: #1b2130; color: #d8c49a; border: 1px solid #3a4458; border-radius: 4px; padding: 3px 7px; font: inherit; cursor: pointer; }
+  #err { position: fixed; left: 8px; bottom: 8px; color: #ff8a7a; white-space: pre-wrap; }
+  body.clean #hud, body.clean #bar { display: none; }
+</style>
+</head>
+<body>
+<div id="hud">загрузка…</div>
+<div id="bar"></div>
+<div id="err"></div>
+<script type="importmap">
+{ "imports": { "three": "../vendor/npm/three@0.185.1/build/three.module.min.js", "three/addons/": "../vendor/npm/three@0.185.1/examples/jsm/" } }
+</script>
+<script type="module">
+// [W4-ARENA] Стенд арены: настоящий world.js + postfx (как в игре), Регент в центре, камера — фиксированные ракурсы.
+// Время идёт только по __ARENA__.step(n, dt) (или по rAF без ?manual=1) — кадры и замеры повторяемы.
+// URL: q=low|medium|high  post=0 (без постобработки)  manual=1 (без rAF)  hero=1 (показать героя)  stage=2 (вторая фаза)
+// Ракурсы (__ARENA__.view(name)): hero — «вход в бой», top — обзор сверху, wet — низко над мокрым полом, far — дальний план.
+import * as THREE from 'three';
+import { createWorld } from '../modules/world.js';
+import { config } from '../config.js';
+const P = new URLSearchParams(location.search);
+const errEl = document.getElementById('err'), hud = document.getElementById('hud');
+window.addEventListener('error', (e) => { errEl.textContent += '\n' + e.message; });
+window.addEventListener('unhandledrejection', (e) => { errEl.textContent += '\n' + (e.reason && e.reason.stack || e.reason); });
+if (P.get('clean') === '1') document.body.classList.add('clean');
+
+const q = P.get('q') || 'medium';
+const W = +P.get('w') || innerWidth, H = +P.get('h') || innerHeight;
+config.settings = { ...config.defaultSettings, quality: q };
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.setSize(W, H);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(config.camera.fov, W / H, 0.1, 1200);
+scene.add(camera);
+const t0 = performance.now();
+const world = createWorld({ THREE, scene, renderer, camera, config });
+const buildMs = performance.now() - t0;
+let postfx = null;
+if (P.get('post') !== '0') {
+  try { const m = await import('../core/postfx.js'); postfx = m.createPostFX({ THREE, renderer, scene, camera, quality: q }); postfx.setSize(W, H, 1); } catch (e) { console.warn(e); }
+}
+const showHero = P.get('hero') === '1';
+const stage = +P.get('stage') === 2 ? 2 : 1;
+const L = world.layout;
+const hero = { x: 0, z: 7.5, yaw: Math.PI };
+let evId = 1, pending = [];
+const snap = () => ({
+  status: 'playing', time: 0, mode: 'boss',
+  player: { position: { x: hero.x, y: L.groundY(hero.x, hero.z), z: hero.z }, yaw: hero.yaw, velocity: { x: 0, z: 0 }, hp: 100, maxHp: 100, energy: 100, maxEnergy: 100, action: 'idle', invulnerable: false, shielding: false, encounter: 'engaged' },
+  boss: { position: { x: 0, y: 0, z: 0 }, yaw: 0, hp: stage === 2 ? 400 : 1000, maxHp: 1000, stage, action: 'idle' },
+  cooldowns: {}, projectiles: [], telegraphs: [], stats: {},
+});
+// Ракурсы: [камера x, y, z, точка взгляда x, y, z]
+const VIEWS = {
+  hero: [1.6, 2.9, 13.2, 0, 3.7, 0],
+  top: [12.5, 11.5, 13.5, 0, -0.5, -1.5],
+  wet: [-7.2, 1.15, 6.8, 5.2, 1.0, -8.0],
+  far: [2.5, 3.2, 14.5, -2.0, 10.5, -60],
+};
+let cam = VIEWS.hero.slice();
+function view(v) { cam = Array.isArray(v) ? v.slice() : (VIEWS[v] || VIEWS.hero).slice(); placeCam(); return cam; }
+function placeCam() { camera.position.set(cam[0], cam[1], cam[2]); camera.lookAt(cam[3], cam[4], cam[5]); camera.updateMatrixWorld(); }
+let simT = 0;
+function emit(type, data = {}, position) { pending.push({ id: 'stand-' + evId++, type, position: position || { x: hero.x, y: 1, z: hero.z }, data }); }
+function frame1(dt) {
+  simT += dt;
+  placeCam();
+  const ev = pending; pending = [];
+  world.update(dt, snap(), ev);
+  if (!showHero && world.hero && world.hero.root) { world.hero.root.visible = false; for (const o of world.hero.extras || []) o.visible = false; }   // плащ — отдельный объект
+  if (postfx) {
+    const atmo = world.atmosphere;
+    if (typeof postfx.setLook === 'function') postfx.setLook(atmo && atmo.look ? atmo.look : null);
+    if (atmo && atmo.sunDir && typeof postfx.setSun === 'function') {
+      const v = new THREE.Vector3().copy(atmo.sunDir).multiplyScalar(400).add(camera.position).project(camera);
+      const edge = Math.max(Math.abs(v.x), Math.abs(v.y));
+      postfx.setSun(v.x * 0.5 + 0.5, v.y * 0.5 + 0.5, v.z < 1 ? 1 - Math.min(1, Math.max(0, (edge - 1) / 0.6)) : 0);
+    }
+  }
+  if (postfx && postfx.enabled) postfx.render(dt); else renderer.render(scene, camera);
+}
+function info() {
+  const i = renderer.info;
+  return { calls: i.render.calls, triangles: i.render.triangles, points: i.render.points, geometries: i.memory.geometries, textures: i.memory.textures, programs: i.programs ? i.programs.length : null };
+}
+const _px = new Uint8Array(4);
+// после серии кадров ждём GPU (readPixels): иначе программный рендер копит очередь и скриншот не дождётся кадра
+function step(n = 1, dt = 1 / 30) {
+  const gl = renderer.getContext();
+  for (let k = 0; k < n; k++) { frame1(dt); if (k % 8 === 7) gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, _px); }
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, _px);
+  return info();
+}
+// Счёт объектов мира по видимости (без рендера): сколько мешей, точек, источников света
+function census() {
+  let meshes = 0, inst = 0, points = 0, sprites = 0, lights = 0, lightsOn = 0;
+  world.root.traverseVisible((o) => {
+    if (o.isInstancedMesh) inst++; else if (o.isMesh) meshes++;
+    if (o.isPoints) points++; if (o.isSprite) sprites++;
+    if (o.isLight && !o.isAmbientLight) { lights++; if (o.intensity > 0) lightsOn++; }
+  });
+  return { meshes, inst, points, sprites, lights, lightsOn };
+}
+window.__ARENA__ = {
+  world, renderer, camera, scene, postfx, buildMs, VIEWS, view, step, info, census, emit,
+  ready: () => { const a = world.assets; return !a || a.pending === 0; },
+  setQuality: (lv) => { world.setQuality(lv); if (postfx && postfx.setQuality) postfx.setQuality(lv); },
+  hero: (x, z, yawDeg) => { hero.x = x; hero.z = z; hero.yaw = (yawDeg * Math.PI) / 180; },
+  get time() { return simT; },
+};
+view(P.get('view') || 'hero');
+const bar = document.getElementById('bar');
+for (const k of Object.keys(VIEWS)) { const b = document.createElement('button'); b.textContent = k; b.onclick = () => view(k); bar.appendChild(b); }
+for (const [name, fn] of [['руна', () => emit('rune_cast', { rune: 'ignis' })], ['выброс', () => emit('burst', { power: 1 })], ['врата', () => emit('sigil_cast', { sigil: 'gate', power: 1 })]]) {
+  const b = document.createElement('button'); b.textContent = name; b.onclick = fn; bar.appendChild(b);
+}
+if (P.get('manual') !== '1') {
+  let last = performance.now();
+  const loop = (now) => {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    frame1(dt);
+    const r = info();
+    hud.textContent = `арена · q=${q} · постройка ${buildMs.toFixed(0)} мс\nвызовов ${r.calls} · треугольников ${(r.triangles / 1000).toFixed(0)}k · текстур ${r.textures} · программ ${r.programs}`;
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+} else hud.textContent = 'ручной шаг: __ARENA__.step(n, dt)';
+</script>
+</body>
+</html>

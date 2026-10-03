@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHEN OATH — стенд Регента</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0d1016; color: #cfd6e2; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; overflow: hidden; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 8px; top: 8px; padding: 8px 10px; background: rgba(8, 10, 14, 0.72); border: 1px solid #2c3444; border-radius: 6px; max-width: 520px; white-space: pre-wrap; pointer-events: none; }
+  #bar { position: fixed; right: 8px; top: 8px; display: flex; gap: 4px; flex-wrap: wrap; max-width: 520px; justify-content: flex-end; }
+  #bar button { background: #1b2130; color: #d8c49a; border: 1px solid #3a4458; border-radius: 4px; padding: 3px 7px; font: inherit; cursor: pointer; }
+  #bar button.on { background: #3a3222; }
+  #err { position: fixed; left: 8px; bottom: 8px; color: #ff8a7a; white-space: pre-wrap; }
+  body.shot #hud, body.shot #bar { display: none; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "../vendor/npm/three@0.185.1/build/three.module.min.js",
+               "three/addons/": "../vendor/npm/three@0.185.1/examples/jsm/",
+               "@pixiv/three-vrm": "../vendor/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js" } }
+</script>
+</head>
+<body>
+<div id="hud">загрузка…</div>
+<div id="bar"></div>
+<div id="err"></div>
+<script type="module">
+// Стенд Регента: настоящая арена (modules/world.js), герой игры (modules/heroModel.js), телеграфы и искры
+// (modules/effects.js), постобработка игры (core/postfx.js). Бой — короткая фейковая симуляция по контракту
+// снимка (не combat.js): замах с телеграфом, удар, попадание по Регенту, вторая фаза.
+// Время — только своё (шаг 1/60 с), поэтому кадры повторяемы: одинаковые ракурсы до и после правок.
+// URL: q=low|medium|high  cam=game|front|close|side|low|wide  scene=idle|slam|orb|nova|hit|stage2|stage2slam
+//      t=<сек сцены>  post=0 (без постобработки)  hero=0 (без модели героя)  shot=1 (без панели; кадр по __boss.run)
+// Протокол (Playwright): window.__boss = { ready, play(scene, sec), run(sec), cam(name), render(), info(), bossInfo() }.
+import * as THREE from 'three';
+import { config } from '../config.js';
+import { createWorld } from '../modules/world.js';
+import { createEffects } from '../modules/effects.js';
+
+const P = new URLSearchParams(location.search);
+const errEl = document.getElementById('err');
+window.addEventListener('error', (e) => { errEl.textContent += '\n' + e.message; });
+window.addEventListener('unhandledrejection', (e) => { errEl.textContent += '\n' + (e.reason && e.reason.stack || e.reason); });
+const SHOT = P.get('shot') === '1';
+if (SHOT) document.body.classList.add('shot');
+const Q = ['low', 'medium', 'high'].includes(P.get('q')) ? P.get('q') : 'high';
+const settings = { ...config.defaultSettings, quality: Q, volume: 0, reducedMotion: false };
+config.settings = settings;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: SHOT });
+renderer.setPixelRatio(1);
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+document.body.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(config.camera.fov, innerWidth / innerHeight, 0.1, 1200);
+scene.add(camera);
+
+const tW0 = performance.now();
+const world = createWorld({ THREE, scene, renderer, camera, config: { world: { ...config.world, quality: Q }, settings } });
+const worldMs = performance.now() - tW0;   // createWorld: процедурные текстуры и геометрия (без компиляции шейдеров)
+world.setQuality(Q);
+let heroModel = null;
+if (P.get('hero') !== '0' && world.hero) {
+  try {
+    const m = await import('../modules/heroModel.js');
+    if (m.configureHeroes) m.configureHeroes({ atmosphere: world.atmosphere, shading: settings.heroShading, quality: Q, camera });
+    heroModel = m.createHeroModel({ THREE, heroRoot: world.hero.root, heroBody: world.hero.body, extras: world.hero.extras, markers: world.hero.markers, atmosphere: world.atmosphere, shading: settings.heroShading, quality: Q, hero: settings.hero, baseUrl: new URL('../assets/quaternius/', import.meta.url).href });
+    const t0 = performance.now();
+    while (!heroModel.ready && performance.now() - t0 < 30000) { heroModel.update(1 / 60, null, []); await new Promise((r) => setTimeout(r, 100)); }
+  } catch (e) { console.warn('heroModel', e); heroModel = null; }
+}
+const fx = createEffects({ THREE, scene, camera, renderer, config });
+fx.setQuality(Q); fx.setVolume(0);
+fx.setAnchors(() => (heroModel && heroModel.getAnchors ? heroModel.getAnchors() : world.getAnchors()));
+if (world.layout && typeof world.layout.groundY === 'function') fx.setGround(world.layout.groundY);
+let post = null;
+if (P.get('post') !== '0') {
+  try {
+    const m = await import('../core/postfx.js');
+    post = m.createPostFX({ THREE, renderer, scene, camera, quality: Q, reducedMotion: false });
+    post.setSize(innerWidth, innerHeight, 1);
+    if (post.whenReady) await post.whenReady;
+    if (Q === 'high') { const t0 = performance.now(); while (!post.info().highReady && performance.now() - t0 < 60000) await new Promise((r) => setTimeout(r, 50)); }
+    if (typeof post.setMode === 'function') post.setMode('playing', settings);
+  } catch (e) { console.warn('postfx', e); post = null; }
+}
+const { createCameraRig } = await import('../core/cameraRig.js');
+const rig = createCameraRig(config.camera);
+
+/* ------------------------------ фейковый бой ------------------------------ */
+const WINDUP = { slam: 1.7, orb: 1.25, nova: 2.1 };   // как фаза 1 в modules/boss.js
+let sim, evId = 1, pending = [], T;
+function resetSim() {
+  sim = {
+    status: 'playing', time: 0, mode: 'boss',
+    player: { position: { x: 0, y: 0, z: 6.4 }, yaw: Math.PI, hp: 100, maxHp: 100, energy: 100, maxEnergy: 100, action: 'idle', invulnerable: false, shielding: false, encounter: 'engaged', orbitRadius: 6.4 },
+    boss: { position: { x: 0, y: 0, z: 0 }, yaw: 0, hp: 1000, maxHp: 1000, stage: 1, action: 'idle' },
+    cooldowns: { dashRemaining: 0, dashTotal: 1, burstRemaining: 0, burstTotal: 1 }, projectiles: [], telegraphs: [], stats: {},
+    lockTarget: { position: { x: 0, y: 0, z: 0 }, kind: 'boss' },
+  };
+  T = { boss: 0, phase: null, kind: 'slam' };
+  pending = [];
+}
+const emit = (type, data = {}, position) => pending.push({ id: 'st' + evId++, type, position: position || { ...sim.player.position }, data });
+const A = {
+  windup(kind) {
+    if (sim.boss.action === 'windup') return;
+    const dur = WINDUP[kind] * (sim.boss.stage === 2 ? 0.88 : 1);
+    T.kind = kind; T.phase = 'windup'; T.boss = dur; sim.boss.action = 'windup';
+    const pp = sim.player.position;
+    const center = kind === 'nova' ? { x: 0, y: 0, z: 0 } : kind === 'slam' ? { x: pp.x, y: 0, z: pp.z } : { x: 0, y: 3.2, z: 0.8 };
+    const tel = { id: 'tg' + evId, kind, origin: { x: 0, y: 3.2, z: 0.8 }, target: { ...pp }, center, radius: kind === 'slam' ? 2.6 : kind === 'nova' ? 6 : 0.6, remaining: dur, duration: dur, blockable: kind === 'orb', damage: 20 };
+    if (kind === 'orb') tel.pathEnd = { x: pp.x * 1.8, y: 1.2, z: pp.z * 1.8 };
+    sim.telegraphs = [tel];
+    emit('boss_windup', { attackId: tel.id, attackKind: kind, windup: dur, radius: tel.radius, origin: tel.origin, target: tel.target, center: tel.center }, center);
+  },
+  hit(amount = 32) {
+    sim.boss.hp = Math.max(1, sim.boss.hp - amount);
+    if (sim.boss.action === 'idle') { sim.boss.action = 'hit'; T.phase = 'hit'; T.boss = 0.25; }
+    emit('boss_hit', { amount, source: 'bolt' }, { x: 0.2, y: 3.4, z: 0.7 });
+  },
+  phase2() { if (sim.boss.stage === 2) return; sim.boss.stage = 2; sim.boss.hp = Math.min(sim.boss.hp, 490); emit('boss_phase', { stage: 2 }, { x: 0, y: 3, z: 0 }); },
+  victory() { sim.status = 'victory'; sim.boss.hp = 0; sim.boss.action = 'dead'; sim.telegraphs = []; T.phase = null; emit('victory', {}); },
+};
+function stepSim(dt) {
+  sim.time += dt;
+  const b = sim.boss;
+  if (!T.phase) return;
+  T.boss -= dt;
+  for (const t of sim.telegraphs) t.remaining = Math.max(0, t.remaining - dt);
+  if (T.boss > 0) return;
+  if (T.phase === 'windup') {
+    const tel = sim.telegraphs[0];
+    T.phase = 'attack'; T.boss = 0.35; b.action = 'attack'; sim.telegraphs = [];
+    emit('boss_impact', { attackId: tel && tel.id, attackKind: T.kind, radius: tel ? tel.radius : 2.6 }, tel ? tel.center : { x: 0, y: 0, z: 2 });
+  } else if (T.phase === 'attack') { T.phase = 'recover'; T.boss = 1.0; b.action = 'recover'; }
+  else { T.phase = null; b.action = 'idle'; }
+}
+
+/* ------------------------------ сцены ------------------------------ */
+// at: [время, действие, аргумент]; t — длительность сцены (кадр — в конце). Для замахов кадр — на ~85 % замаха.
+const SCN = {
+  idle: { t: 2.4, at: [] },
+  slam: { t: 0.4 + WINDUP.slam * 0.85, at: [[0.4, 'windup', 'slam']] },
+  orb: { t: 0.4 + WINDUP.orb * 0.85, at: [[0.4, 'windup', 'orb']] },
+  nova: { t: 0.4 + WINDUP.nova * 0.85, at: [[0.4, 'windup', 'nova']] },
+  slamhit: { t: 0.4 + WINDUP.slam + 0.08, at: [[0.4, 'windup', 'slam']] },
+  hit: { t: 2.06, at: [[2.0, 'hit', 40]] },
+  stage2: { t: 4.5, at: [[0.3, 'phase2']] },
+  stage2slam: { t: 4.4 + WINDUP.slam * 0.88 * 0.85, at: [[0.3, 'phase2'], [4.4, 'windup', 'slam']] },
+  dead: { t: 4.5, at: [[0.3, 'phase2'], [2.0, 'victory']] },
+};
+
+/* ------------------------------ камеры ------------------------------ */
+// game — камера боя (core/cameraRig.js); остальные — неподвижные ракурсы на Регента (он в начале координат).
+const CAMS = {
+  front: { p: [2.0, 3.7, 9.0], t: [0, 3.75, 0] },
+  close: { p: [0.9, 4.75, 3.6], t: [0, 4.75, 0] },
+  side: { p: [7.2, 3.3, 1.6], t: [0, 3.7, 0] },
+  low: { p: [-3.6, 0.9, 5.4], t: [0, 4.1, 0] },
+  wide: { p: [9.5, 6.5, 12], t: [0, 3.2, 0] },
+};
+let camName = P.get('cam') || 'game';
+function placeCamera(dt) {
+  const c = rig.update(dt, sim.player.position, sim.boss.position, { x: 0, y: 0, z: 0 });
+  const k = CAMS[camName];
+  if (k) { camera.position.set(...k.p); camera.lookAt(...k.t); }
+  else { camera.position.set(c.position.x, c.position.y, c.position.z); camera.lookAt(c.target.x, c.target.y, c.target.z); }
+  camera.updateMatrixWorld();
+}
+
+const DT = 1 / 60;
+function step(dt = DT) {
+  stepSim(dt);
+  const evs = pending; pending = [];
+  world.update(dt, sim, evs);
+  if (heroModel) heroModel.update(dt, sim, evs);
+  fx.update(dt, sim, evs);
+  placeCamera(dt);
+}
+function render(dt = DT) {
+  if (post) {
+    if (typeof post.setLook === 'function' && world.atmosphere) post.setLook(world.atmosphere.look || null);
+    post.render(dt);
+  } else renderer.render(scene, camera);
+}
+let running = !SHOT;
+function play(name, sec) {
+  const S = SCN[name] || SCN.idle;
+  resetSim(); world.reset(); fx.reset && fx.reset();
+  rig.reset(sim.player.position, sim.boss.position);
+  const tEnd = Number.isFinite(sec) ? sec : S.t;
+  const at = (S.at || []).map((a) => ({ time: a[0], fn: a[1], arg: a[2], done: false }));
+  for (let t = 0; t < tEnd - 1e-6; t += DT) {
+    for (const a of at) if (!a.done && t >= a.time - 1e-6) { a.done = true; A[a.fn](a.arg); }
+    step(DT);
+  }
+  render(DT);
+  return info();
+}
+// Регент: сколько видимых мешей и спрайтов (≈ вызовов отрисовки без теней) и источников света
+function bossInfo() {
+  const b = world.root.getObjectByName('boss');
+  let draws = 0, casters = 0, lights = 0, tris = 0;
+  b.traverseVisible((o) => {
+    if (o.isLight) { lights++; return; }
+    if (o.isMesh || o.isSprite || o.isPoints || o.isLine) {
+      draws++;
+      if (o.castShadow) casters++;
+      const g = o.geometry;
+      if (g && !o.isSprite) {
+        const n = g.index ? g.index.count / 3 : g.attributes.position.count / 3;
+        const inst = o.isInstancedMesh ? o.count : 1;
+        const dr = g.drawRange && Number.isFinite(g.drawRange.count) ? Math.min(g.drawRange.count / 3, n) : n;
+        tris += dr * inst;
+      }
+    }
+  });
+  return { draws, casters, lights, tris: Math.round(tris) };
+}
+function info() {
+  const ri = renderer.info;
+  return { quality: Q, cam: camName, worldMs: Math.round(worldMs), calls: ri.render.calls, triangles: ri.render.triangles, textures: ri.memory.textures, geometries: ri.memory.geometries, programs: ri.programs ? ri.programs.length : -1, boss: bossInfo() };
+}
+window.__boss = {
+  ready: true, THREE, world, renderer, scene, camera, sim: () => sim, A, play, step, render, info, bossInfo,
+  run(sec) { const n = Math.round(sec / DT); for (let i = 0; i < n; i++) step(DT); render(DT); return info(); },
+  cam(name) { camName = name; placeCamera(0); return camName; },
+};
+
+/* ------------------------------ панель ------------------------------ */
+const hud = document.getElementById('hud'), bar = document.getElementById('bar');
+function btn(label, fn) { const b = document.createElement('button'); b.textContent = label; b.onclick = () => { fn(); b.blur(); }; bar.appendChild(b); return b; }
+for (const c of ['game', ...Object.keys(CAMS)]) btn('cam:' + c, () => { camName = c; });
+for (const s of Object.keys(SCN)) btn(s, () => play(s));
+btn('1 slam', () => A.windup('slam')); btn('2 orb', () => A.windup('orb')); btn('3 nova', () => A.windup('nova'));
+btn('B удар', () => A.hit(40)); btn('P фаза 2', () => A.phase2()); btn('R сброс', () => { resetSim(); world.reset(); });
+addEventListener('keydown', (e) => {
+  const k = { Digit1: () => A.windup('slam'), Digit2: () => A.windup('orb'), Digit3: () => A.windup('nova'), KeyB: () => A.hit(40), KeyP: () => A.phase2(), KeyR: () => { resetSim(); world.reset(); } }[e.code];
+  if (k && !e.repeat) k();
+});
+addEventListener('resize', () => { if (SHOT) return; renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); if (post) post.setSize(innerWidth, innerHeight, 1); });
+
+resetSim();
+rig.reset(sim.player.position, sim.boss.position);
+if (P.get('scene')) play(P.get('scene'), P.get('t') ? +P.get('t') : undefined);
+if (SHOT) document.title = 'READY';
+else {
+  let last = performance.now(), acc = 0, n = 0;
+  const loop = () => {
+    requestAnimationFrame(loop);
+    if (!running) return;
+    const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now;
+    step(dt); render(dt);
+    acc += dt; n++;
+    if (acc > 0.5) {
+      const i = info();
+      hud.textContent = `Регент · three r${THREE.REVISION} · ${Q}\nfps ${(n / acc).toFixed(0)} · calls ${i.calls} · tris ${i.triangles} · tex ${i.textures} · prog ${i.programs}\n` +
+        `Регент: мешей ${i.boss.draws} (тени ${i.boss.casters}) · свет ${i.boss.lights} · tris ${i.boss.tris}\nboss ${sim.boss.action} st${sim.boss.stage}\n1/2/3 замах · B удар · P фаза 2 · R сброс`;
+      acc = 0; n = 0;
+    }
+  };
+  loop();
+}
+</script>
+</body>
+</html>

@@ -10,6 +10,8 @@
 //    вспышка раскрытия, искры бегут вверх по сфере, медленное золотое кольцо у земли (всё по fx.every, без аллокаций).
 // Соперник (data.remote): палитра rival, цель — грудь нашего героя, удар/рассеяние по своим таймерам.
 // fx.shared.gateCastAt — момент своего каста: domeTick в sigils.js откладывает раскрытие купола на +0.4 с.
+// [W4-ЗАКЛИНАНИЯ] цвет — стихия героя (fx.heroEl, таблица LOOKS): волна — пламя стихии, молнии — белое ядро + тон молний;
+// огонь — огненная волна и бело-золотые молнии, тьма — фиолетовая волна с чёрной кромкой; купол — тоже в цвете героя.
 
 import { caster, clamp, TAU, isNum } from './common.js';
 
@@ -55,6 +57,23 @@ export function register(fx) {
   const decO = { pos: new V3(), radius: 1.4, kind: 'scorch', life: 6, rot: 0, color: E.fire.mid, hot: E.fire.core, intensity: 1.2, rival: 0 };
   const _a = new V3(), _b = new V3();
 
+  // [W4-ЗАКЛИНАНИЯ] вид врат по стихии героя: P — волна (декали, кольца, свет), Z — молнии (дуги, искры, трещины);
+  // строки градиентов волны/языков/углей/молний/дыма/кромки и тон экранной вспышки (разрыв, удар).
+  // Огонь: огненная волна + бело-золотые молнии; гроза/ветер/буря — своя стихия в обоих слоях; тьма — кромка
+  // darkcore (blend alpha) поверх фиолетового пламени — чёрное ядро волны. Соперник — палитра rival, как раньше.
+  const ZAP_FIRE = Object.freeze({ core: 0xffffff, hot: 0xfff3d6, mid: 0xffd28a, deep: 0xe8a14a, smoke: 0x2a2018 });
+  const look = (P, Z, wave, flame, ember, zap, smoke, base, scrRip, scrHit) =>
+    Object.freeze({ P, Z, wave, flame, ember, zap, smoke, base, baseBlend: base === 'darkcore' ? 'alpha' : 'add', scrRip, scrHit });
+  const LOOKS = {
+    fire:    look(E.fire, ZAP_FIRE, 'fire', 'flame', 'ember', 'gold', 'firesmoke', 'whiteHold', 0xfff0d8, 0xff8a3a),
+    storm:   look(E.storm, E.storm, 'storm', 'storm', 'storm', 'storm', 'frostsmoke', 'whiteHold', 0xcfe8ff, 0x8ec8ff),
+    void:    look(E.void, E.void, 'void', 'void', 'void', 'void', 'voidsmoke', 'darkcore', 0xd8c0ff, 0x9a5cff),
+    wind:    look(E.wind, E.wind, 'wind', 'wind', 'wind', 'wind', 'dust', 'whiteHold', 0xd0ffe8, 0x3ee0a0),
+    tempest: look(E.tempest, E.tempest, 'tempest', 'tempest', 'tempest', 'tempest', 'smoke', 'whiteHold', 0xc8dcff, 0x4a8cff),
+    rival:   look(E.rival, E.rival, 'rival', 'rival', 'rival', 'rival', 'voidsmoke', 'rival', 0x9a6bff, 0x9a6bff),
+  };
+  const lookOf = (d) => LOOKS[fx.heroEl(d)] || LOOKS.fire;
+
   // ---------------------------------------------------------------- ⛩ ВРАТА: разрыв, стена, удар
   fx.on('sigil_cast', (ev, d) => {
     const c = caster(fx, ev, d);
@@ -62,9 +81,10 @@ export function register(fx) {
     const power = clamp(num(d.power, 0.6), 0, 1);
     const s = 0.45 + 0.55 * power;          // множитель силы для количеств и размеров
     const sf = soft(), q = qName(), low = q === 'low';
-    const PF = fx.pal('fire', d), PS = fx.pal('storm', d);
-    const rFire = R ? 'rival' : 'fire', rFlame = R ? 'rival' : 'flame', rEmber = R ? 'rival' : 'ember';
-    const rStorm = R ? 'rival' : 'storm', rSmoke = R ? 'voidsmoke' : 'firesmoke';
+    const LK = lookOf(d);                                   // [W4-ЗАКЛИНАНИЯ] стихия героя (соперник — rival)
+    const PF = LK.P, PS = LK.Z;
+    const rFire = LK.wave, rFlame = LK.flame, rEmber = LK.ember;
+    const rStorm = LK.zap, rSmoke = LK.smoke;
     if (!R) fx.shared.gateCastAt = kit.clock;
 
     // цель: свой — d.to/Регент (caster), соперник — грудь нашего героя
@@ -89,9 +109,9 @@ export function register(fx) {
     const ra = new V3().copy(rp).addScaledVector(c.right, -half), rb = new V3().copy(rp).addScaledVector(c.right, half);
     if (fx.bolts) {
       fx.bolts.strike({ from: ra, to: rb, color: PS.mid, core: PS.core, width: 0.12 + 0.1 * s, jitter: 0.03, branches: 0, segments: 12,
-        flicker: false, star: false, origin: false, dur: 0.32, intensity: 3.4 * sf, lift: 0.3, rival: r01, seed: (Math.random() * 1e6) | 0 });
+        flicker: false, star: false, origin: false, dur: 0.32, intensity: 4 * sf, lift: 0.3, rival: r01, seed: (Math.random() * 1e6) | 0 });
       if (!low) fx.bolts.strike({ from: rb, to: ra, color: PS.mid, core: PS.core, width: 0.04, jitter: 0.2, branches: 3, segments: 14,
-        dur: 0.28, intensity: 2.6 * sf, lift: 0.32, origin: false, rival: r01, seed: (Math.random() * 1e6) | 0 });
+        dur: 0.28, intensity: 3 * sf, lift: 0.32, origin: false, rival: r01, seed: (Math.random() * 1e6) | 0 });
     }
     // щель — вытянутая вспышка, повёрнутая по проекции «вправо» на экран
     let rot = 0;
@@ -100,9 +120,12 @@ export function register(fx) {
       const e = cam.matrixWorld.elements;
       rot = Math.atan2(c.right.x * e[4] + c.right.y * e[5] + c.right.z * e[6], c.right.x * e[0] + c.right.y * e[1] + c.right.z * e[2]);
     }
-    kit.flash(rp, { ramp: 'whiteHold', size: [half * 1.6, half * 2.6], curve: 0.4, dur: 0.24, intensity: 4 * sf, sprite: 'streak', rot, pull: 0.4, rival: R });
-    kit.flash(rp, { ramp: rStorm, size: [0.6, 2.2 + 1.2 * s], dur: 0.22, intensity: 3 * sf, sprite: 'star', pull: 0.45, rival: R });
-    kit.flash(rp, { ramp: rFire, size: [1.0, 2.6 * s], dur: 0.35, intensity: 1.6 * sf, sprite: 'glow', pull: 0.3, rival: R });
+    // [W4-ЗАКЛИНАНИЯ] ярче для проектора: белое ядро щели, звезда молний, ореол волны
+    // [W4-ЗАКЛИНАНИЯ] разрыв — у героя, в нескольких метрах от камеры: сдержанно (засветка bloom съедала весь кадр);
+    // яркость — у цели, где волна бьёт
+    kit.flash(rp, { ramp: 'whiteHold', size: [half * 1.4, half * 2.2], curve: 0.4, dur: 0.22, intensity: 3.2 * sf, sprite: 'streak', rot, pull: 0.4, rival: R });
+    kit.flash(rp, { ramp: rStorm, size: [0.5, 1.6 + 0.8 * s], dur: 0.2, intensity: 2.4 * sf, sprite: 'star', pull: 0.45, rival: R });
+    kit.flash(rp, { ramp: rFire, size: [0.9, 2.0 * s], dur: 0.3, intensity: 1.1 * sf, sprite: 'glow', pull: 0.3, rival: R });
     // рваные края: искры бури и белые штрихи разлетаются от щели, створки «разъезжаются» вверх и вниз
     kit.emit({ at: ra, shape: 'line', to: rb, radius: 0.04, count: Math.round(70 * s), speed: [1.5, 5], life: [0.12, 0.3], size: [0.06, 0.012],
       ramp: rStorm, intensity: 3, sprite: 'spark', stretch: 0.04, drag: 3, rival: R });
@@ -118,7 +141,7 @@ export function register(fx) {
       fx.shock.ring({ pos: rp, normal: c.fwd, r0: 0.2, r1: 1.6 + 1.2 * s, dur: 0.35, wall: 0, dustAmount: 0, thickness: 0.25, distort: 0.6,
         color: PS.mid, hot: PS.core, intensity: 1.8, rival: r01 });
     }
-    kit.screenFlash(R ? 0x9a6bff : 0xcfe8ff, 0.12 * (0.6 + 0.4 * power) * sf, 0.1);
+    kit.screenFlash(LK.scrRip, 0.07 * (0.6 + 0.4 * power) * sf, 0.1);   // [W4-ЗАКЛИНАНИЯ] тон молний героя; слабее — кинорамка уже даёт засветку
     if (lights() > 0) kit.light(rp, { color: PS.hot, intensity: 1.2, range: 10, dur: 0.45, attack: 0.08 });
     kit.shake(R ? 0.05 : 0.06 + 0.14 * power);
     if (!R) kit.kick(c.fwd, 0.015);
@@ -146,7 +169,7 @@ export function register(fx) {
       start, fwd: c.fwd.clone(), right: c.right.clone(), tgtG, front: new V3().copy(start),
       stepD: Math.max(1.2, L / nDecMax), nextD: 0.6, nDec: 0, nDecMax,
       accFire: 0, accFlame: 0, accBase: 0, accEmber: 0, accSmoke: 0, accStorm: 0, arcT: kit.clock + 0.03,
-      rFire, rFlame, rEmber, rStorm, rSmoke, PF, PS,
+      rFire, rFlame, rEmber, rStorm, rSmoke, PF, PS, LK,
     };
     W.nextD = Math.min(W.stepD * 0.5, 1.2);
     kit.actor({ dur: Math.min(3, T + tail), update: (t, k, dt) => stepWall(W, t, dt) });
@@ -172,6 +195,9 @@ export function register(fx) {
     if (t > W.T) { if (W.reach) return true; g = Math.max(0, 1 - (t - W.T) / 0.35); }
     if (g <= 0) return true;
     const dec = decor(), m = W.s * g;
+    // [W4-ЗАКЛИНАНИЯ] яркость по пройденному пути: стена стартует у героя (в нескольких метрах от камеры) — там
+    // 40%, полная — через ~2,4 м: иначе первые 0,15 с bloom засвечивал весь кадр и не было видно, откуда пошла волна
+    const nearK = Math.min(1, 0.4 + dd / 4);
     const hx = W.right.x * W.half, hz = W.right.z * W.half;
     const fy = W.front.y + 0.05;
     const fw = W.vf * 0.55;                            // огонь «несётся» вперёд вместе с фронтом
@@ -182,7 +208,7 @@ export function register(fx) {
       W.accFire -= n;
       emFire.at.set(x - hx, fy, z - hz); emFire.to.set(x + hx, fy, z + hz);
       emFire.vel.set(W.fwd.x * fw, 0, W.fwd.z * fw);
-      emFire.count = n; emFire.ramp = W.rFire; emFire.rival = W.R; emFire.intensity = 2.4 * W.sf;
+      emFire.count = n; emFire.ramp = W.rFire; emFire.rival = W.R; emFire.intensity = 2.4 * W.sf * nearK;
       emFire.speed[0] = 2.2 + 1.2 * W.s; emFire.speed[1] = 4.2 + 2.2 * W.s;
       kit.emit(emFire);
     }
@@ -193,7 +219,7 @@ export function register(fx) {
       W.accFlame -= n;
       emFlame.at.set(x - hx * 0.7, fy, z - hz * 0.7); emFlame.to.set(x + hx * 0.7, fy, z + hz * 0.7);
       emFlame.vel.set(W.fwd.x * fw, 0, W.fwd.z * fw);
-      emFlame.count = n; emFlame.ramp = W.rFlame; emFlame.rival = W.R; emFlame.intensity = 2.8 * W.sf;
+      emFlame.count = n; emFlame.ramp = W.rFlame; emFlame.rival = W.R; emFlame.intensity = 2.8 * W.sf * nearK;
       kit.emit(emFlame);
     }
     // раскалённая кромка у земли
@@ -202,7 +228,8 @@ export function register(fx) {
     if (n > 0) {
       W.accBase -= n;
       emBase.at.set(x - hx, fy + 0.1, z - hz); emBase.to.set(x + hx, fy + 0.1, z + hz);
-      emBase.count = n; emBase.ramp = W.R ? 'rival' : 'whiteHold'; emBase.rival = W.R; emBase.intensity = 2.2 * W.sf;
+      // [W4-ЗАКЛИНАНИЯ] кромка: белая (ярче), у тьмы — чёрная darkcore (blend alpha), у соперника — rival
+      emBase.count = n; emBase.ramp = W.LK.base; emBase.blend = W.LK.baseBlend; emBase.rival = W.R; emBase.intensity = 2.6 * W.sf * nearK;
       kit.emit(emBase);
     }
     // угли вверх
@@ -247,7 +274,7 @@ export function register(fx) {
         arcO.to.set(arcO.from.x + W.right.x * span, W.front.y + clamp(h0 + (Math.random() - 0.5) * 1.2, 0.1, 2.6), arcO.from.z + W.right.z * span);
       }
       arcO.color = W.PS.mid; arcO.core = W.PS.core; arcO.rival = W.r01;
-      arcO.width = 0.025 + 0.025 * W.s; arcO.intensity = (2.2 + 0.8 * W.s) * W.sf;
+      arcO.width = 0.025 + 0.025 * W.s; arcO.intensity = (2.6 + 0.9 * W.s) * W.sf * nearK;   // [W4-ЗАКЛИНАНИЯ] ярче, у камеры — тусклее
       fx.bolts.arc(arcO);
     }
     return true;
@@ -287,7 +314,7 @@ export function register(fx) {
       if (!W.low && !R) fx.shock.sphere({ pos: tgt, r0: 0.3, r1: 1.6 + 1.2 * s, dur: 0.35, color: PF.hot, hot: PF.core, intensity: 1.1, distort: 0.6, rival: r01 });
     }
     kit.flash(tgt, { ramp: R ? 'rival' : 'whiteHold', size: [1.0, 3.6 + 2 * s], dur: 0.28, intensity: 4.5 * sf, sprite: 'star', pull: 0.8, rival: R });
-    kit.flash(tgt, { ramp: W.rFire, size: [1.4, 4 * s], dur: 0.45, intensity: 2.2 * sf, sprite: 'glow', pull: 0.6, rival: R });
+    kit.flash(tgt, { ramp: W.rFire, size: [1.4, 4 * s], dur: 0.45, intensity: 2.6 * sf, sprite: 'glow', pull: 0.6, rival: R });   // [W4-ЗАКЛИНАНИЯ] ореол ярче
     // огненный всплеск: столб пламени, кольцо языков по земле, искры и угли
     kit.emit({ at: gp, shape: 'disk', radius: 1.1, normal: UP, count: Math.round(50 * s), dir: UP, cone: 0.35, speed: [4, 9], life: [0.3, 0.6],
       size: [1.1, 0.35], ramp: W.rFire, intensity: 2.6, sprite: 'flame', rot: 0, drag: 2.2, gravity: -1, turb: 0.5, rival: R, essential: true });
@@ -301,14 +328,14 @@ export function register(fx) {
       size: [1.2, 2.8], sprite: 'smoke', blend: 'alpha', ramp: W.rSmoke, intensity: 1, alpha: 0.5, drag: 1.2, gravity: -0.6, turb: 0.5,
       spin: [-0.6, 0.6], delay: 0.15, rival: R });
     if (fx.bolts) {
-      fx.bolts.groundArcs({ center: g, radius: 2.4 + 2 * s, count: W.low ? 4 : 8, dur: 0.6, color: PS.mid, core: PS.core, intensity: 2.4 * sf, rival: r01 });
+      fx.bolts.groundArcs({ center: g, radius: 2.4 + 2 * s, count: W.low ? 4 : 8, dur: 0.6, color: PS.mid, core: PS.core, intensity: 2.8 * sf, rival: r01 });   // [W4-ЗАКЛИНАНИЯ] ярче
       const na = W.low ? 1 : 3;
       for (let i = 0; i < na; i++) {
         const a = Math.random() * TAU, b = a + 2 + Math.random() * 2;
         const rr = R ? 0.7 : 1.3;
         fx.bolts.arc({ from: { x: tgt.x + Math.cos(a) * rr, y: tgt.y + (Math.random() - 0.3) * 1.6, z: tgt.z + Math.sin(a) * rr },
           to: { x: tgt.x + Math.cos(b) * rr, y: tgt.y + (Math.random() - 0.5) * 1.6, z: tgt.z + Math.sin(b) * rr },
-          color: PS.mid, core: PS.core, width: 0.035, dur: 0.3, rate: 28, intensity: 2.6 * sf, rival: r01 });
+          color: PS.mid, core: PS.core, width: 0.035, dur: 0.3, rate: 28, intensity: 3 * sf, rival: r01 });
       }
     }
     if (fx.decals) {
@@ -316,7 +343,7 @@ export function register(fx) {
       if (!W.low) fx.decals.spawn({ pos: g, radius: 1.3 * s, kind: 'crater', life: 6, rot: Math.random() * TAU, color: PF.mid, hot: PF.hot, intensity: 1, rival: r01 });
     }
     if (lights() > 0) kit.light(tgt, { color: PF.hot, intensity: 1.3, range: 12, dur: 0.6, attack: 0.06 });
-    kit.screenFlash(R ? 0x9a6bff : 0xff8a3a, (R ? 0.08 : 0.06) * (0.6 + 0.4 * power) * sf, 0.12);
+    kit.screenFlash(W.LK.scrHit, (R ? 0.08 : 0.06) * (0.6 + 0.4 * power) * sf, 0.12);   // [W4-ЗАКЛИНАНИЯ] тон волны героя
     kit.shake(R ? 0.22 : 0.1 + 0.18 * power);
     if (kit.distort && !W.low) kit.distort(tgt, 0.5);
   }
@@ -337,9 +364,10 @@ export function register(fx) {
   }
 
   // ---------------------------------------------------------------- купол бастиона: слои вокруг hex-купола sigils.js
+  // [W4-ЗАКЛИНАНИЯ] ramp/P — цвет слоёв купола (свой — стихия героя, берётся при раскрытии; соперник — rival)
   const domes = [
-    { on: false, flashed: false, startAt: 0, open: 0, acc: 0, ringT: 0, c: new V3(), remote: false },
-    { on: false, flashed: false, startAt: 0, open: 0, acc: 0, ringT: 0, c: new V3(), remote: true },
+    { on: false, flashed: false, startAt: 0, open: 0, acc: 0, ringT: 0, c: new V3(), remote: false, ramp: 'fire', P: E.fire },
+    { on: false, flashed: false, startAt: 0, open: 0, acc: 0, ringT: 0, c: new V3(), remote: true, ramp: 'rival', P: E.rival },
   ];
   // искры бегут вверх по сфере: кольцо на широте θ, скорость по касательной к меридиану (радиально внутрь + вверх)
   const emRise = { at: new V3(), shape: 'ring', radius: DOME_R, normal: UP, count: 1, speed: 0, radial: 0, vel: new V3(), center: new V3(),
@@ -353,7 +381,7 @@ export function register(fx) {
     ramp: 'gold', intensity: 3, sprite: 'spark', stretch: 0.03, drag: 2.5, essential: true, rival: false };
   const emClose = { at: new V3(), shape: 'shell', radius: DOME_R, count: 24, radial: 1.2, speed: [0, 0.2], life: [0.35, 0.6], size: [0.05, 0.01],
     ramp: 'gold', intensity: 2.4, sprite: 'spark', stretch: 0.02, drag: 2, gravity: 1.5, rival: false };
-  const flStar = { ramp: 'gold', size: [0.5, 2.4], dur: 0.24, intensity: 3.6, sprite: 'star', pull: 0.4, rival: false };
+  const flStar = { ramp: 'gold', size: [0.5, 2.4], dur: 0.24, intensity: 4.2, sprite: 'star', pull: 0.4, rival: false };
   const flGlow = { ramp: 'gold', size: [1.2, 3.4], dur: 0.45, intensity: 1.6, sprite: 'glow', pull: 0.3, rival: false };
   const ringO = { pos: new V3(), r0: 0.3, r1: 2.6, dur: 0.55, color: E.gold.mid, hot: E.gold.core, intensity: 2, thickness: 0.25, rival: 0 };
   const lightO = { color: E.gold.hot, intensity: 1.1, range: 9, dur: 0.6, attack: 0.1 };
@@ -364,33 +392,35 @@ export function register(fx) {
       D.on = true; D.flashed = false; D.open = 0; D.acc = 0; D.ringT = 0;
       const gc = fx.shared.gateCastAt, ago = kit.clock - (isNum(gc) ? gc : -1e9);
       D.startAt = !D.remote && ago >= 0 && ago < 0.5 ? gc + 0.4 : kit.clock;   // как domeTick в sigils.js
+      if (!D.remote) { const LK = lookOf(null); D.ramp = LK.wave; D.P = LK.P; }   // [W4-ЗАКЛИНАНИЯ] цвет героя
     }
     if (!want) {
       if (D.on && D.flashed) {
         // купол закрылся: искры осыпаются с оболочки
-        emClose.at.copy(D.c); emClose.at.y += 0.3; emClose.ramp = D.remote ? 'rival' : 'gold'; emClose.rival = D.remote;
+        emClose.at.copy(D.c); emClose.at.y += 0.3; emClose.ramp = D.ramp; emClose.rival = D.remote;
         kit.emit(emClose);
       }
       D.on = false; D.open = 0; return;
     }
     if (kit.clock < D.startAt) return;
     fx.anchor('feet', D.c, D.remote);
-    const ramp = D.remote ? 'rival' : 'gold';
+    const ramp = D.ramp;                                  // [W4-ЗАКЛИНАНИЯ] стихия героя / rival
     if (!D.flashed) {
       D.flashed = true;
       const sf = soft();
       _fp.copy(D.c); _fp.y += 1.0;
-      flStar.ramp = D.remote ? 'rival' : 'whiteHold'; flStar.rival = D.remote; flStar.intensity = 3.6 * sf;
-      flGlow.ramp = ramp; flGlow.rival = D.remote; flGlow.intensity = 1.6 * sf;
+      // [W4-ЗАКЛИНАНИЯ] ядро раскрытия белее, ореол ярче
+      flStar.ramp = D.remote ? 'rival' : 'whiteHold'; flStar.rival = D.remote; flStar.intensity = 3 * sf;   // [W4-ЗАКЛИНАНИЯ] купол у камеры — сдержанно
+      flGlow.ramp = ramp; flGlow.rival = D.remote; flGlow.intensity = 1.1 * sf;
       kit.flash(_fp, flStar); kit.flash(_fp, flGlow);
       emOpen.at.copy(_fp); emOpen.ramp = ramp; emOpen.rival = D.remote; emOpen.count = qName() === 'low' ? 20 : 40;
       kit.emit(emOpen);
       if (fx.shock) {
-        const P = D.remote ? E.rival : E.gold;
+        const P = D.P;
         ringO.pos.set(D.c.x, D.c.y + 0.05, D.c.z); ringO.color = P.mid; ringO.hot = P.core; ringO.rival = D.remote ? 1 : 0;
         fx.shock.ring(ringO);
       }
-      if (lights() > 0 && !D.remote) { lightO.color = E.gold.hot; kit.light(_fp, lightO); }
+      if (lights() > 0 && !D.remote) { lightO.color = D.P.hot; kit.light(_fp, lightO); }
     }
     if (!(dt > 0)) return;
     D.open += (1 - D.open) * (1 - Math.exp(-dt * 9));

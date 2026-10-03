@@ -13,7 +13,14 @@
 //   'none'; name — имя меша; uv — окно текстуры { u0, u1, v0, v1 } (полы без герба — нижняя часть холста);
 //   cling — прилегание, м/с²: тяга по горизонтали к оси таза (полы ложатся на бёдра, а не висят «вывеской»);
 //   hem — { r, material }: кант-валик по свободным краям (бока и подол) — у ткани видна толщина.
-//   → { mesh, update(dt, lod), reset(), setWind(k), dispose() }
+//   [W4-НАРЯДЫ] slits — { gaps: [q…], from } — разрезы-«лепестки»: ниже ряда from связи через промежутки q
+//   (между столбцами частиц q и q+1) сняты, лепестки висят и качаются сами; сплайн отрисовки не тянет
+//   край лепестка к соседу. cup — выпуклость каждого лепестка (м), без кромки-складки на разрезе.
+//   Движение: на бегу ткань сильнее отдувается назад и трепещет, рывок (резко > 11 м/с) — короткий всплеск;
+//   react: true — включает этот отклик; setMotion(k) — 1 обычно, < 1 спокойнее («Уменьшенное движение»:
+//   меньше трепета, без всплеска). home — «память формы», 1/с: частицы мягко тянутся к своему месту в осях
+//   кости крепления — полы, перелетевшие через ноги на кувырке, распутываются, а не застревают сзади.
+//   → { mesh, update(dt, lod), reset(), setWind(k), setMotion(k), dispose() }
 
 const H = 1 / 60;                 // шаг симуляции
 const G = -9.8;
@@ -33,9 +40,19 @@ export function createCloth(THREE, o) {
     const j = Math.floor(k / cols);
     W[k] = j === 0 ? 0 : 1;
   }
+  // [W4-НАРЯДЫ] разрезы: gapAt[q] = 1 — промежуток между столбцами q и q+1 разрезан ниже ряда slitFrom
+  const gapAt = new Uint8Array(cols);
+  const slitFrom = o.slits ? Math.max(0, Math.min(rows - 1, o.slits.from | 0)) : rows;
+  if (o.slits) for (const q of o.slits.gaps || []) if (q >= 0 && q < cols - 1) gapAt[q] = 1;
+  const cut = (i, j) => {
+    const ca = i % cols, cb = j % cols, ra = Math.floor(i / cols), rb = Math.floor(j / cols);
+    if (Math.max(ra, rb) <= slitFrom || ca === cb) return false;
+    for (let q = Math.min(ca, cb); q < Math.max(ca, cb); q++) if (gapAt[q]) return true;
+    return false;
+  };
   // связи: [i, j] + длина покоя + жёсткость
   const ci = [], cl = [], cs = [];
-  const add = (i, j, s) => { ci.push(i, j); cl.push(Math.hypot(rest[i * 3] - rest[j * 3], rest[i * 3 + 1] - rest[j * 3 + 1], rest[i * 3 + 2] - rest[j * 3 + 2])); cs.push(s); };
+  const add = (i, j, s) => { if (cut(i, j)) return; ci.push(i, j); cl.push(Math.hypot(rest[i * 3] - rest[j * 3], rest[i * 3 + 1] - rest[j * 3 + 1], rest[i * 3 + 2] - rest[j * 3 + 2])); cs.push(s); };
   for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
     const k = j * cols + i;
     if (i + 1 < cols) add(k, k + 1, 1);
@@ -68,6 +85,23 @@ export function createCloth(THREE, o) {
   mesh.castShadow = true; mesh.receiveShadow = true;
   parent.add(mesh);
 
+  // [W4-НАРЯДЫ] выпуклость лепестков по столбцам отрисовки: sin по ширине своего лепестка, 0 в разрезе;
+  // складкам на разрезе — ноль (cupW), чтобы край лепестка не «гофрировался»
+  const cupD = o.cup || 0, cupW = new Float32Array(rc).fill(1), cupS = new Float32Array(rc);
+  {
+    const bounds = [0];
+    for (let q = 0; q < cols - 1; q++) if (gapAt[q]) bounds.push(q, q + 1);
+    bounds.push(cols - 1);
+    for (let i = 0; i < rc; i++) {
+      const x = i / SU;
+      let found = false;
+      for (let s2 = 0; s2 < bounds.length && !found; s2 += 2) {
+        const a0 = bounds[s2], b0 = bounds[s2 + 1];
+        if (x >= a0 && x <= b0) { found = true; const f = b0 > a0 ? (x - a0) / (b0 - a0) : 0; cupS[i] = Math.sin(Math.PI * f); cupW[i] = o.slits ? Math.min(1, Math.sin(Math.PI * f) * 3) : 1; }
+      }
+      if (!found) cupW[i] = 0;
+    }
+  }
   // кант: путь по сетке отрисовки — левый край сверху вниз, подол, правый край снизу вверх
   let hem = null;
   if (o.hem && o.hem.material) {
@@ -164,15 +198,35 @@ export function createCloth(THREE, o) {
     P[k * 3] = x; P[k * 3 + 1] = y; P[k * 3 + 2] = z;
   }
   let floorY = -1e9, backLim = 0.02, backH = 0.5;
-  const DRAG = 2.2, DAMP = 0.992, ITER = 4, VCAP = 3.2, VMAX = 3.5, CARRY = o.carry ?? 0.6, cling = o.cling ?? 0;
+  const DRAG = 2.2, DAMP = 0.992, ITER = 4, VCAP = 3.2, VMAX = 3.5, CARRY = o.carry ?? 0.6, cling = o.cling ?? 0, HOME = o.home || 0;
   // перенос движения тела на ткань (без рывка): доля CARRY сдвига кости груди за кадр прикладывается к
   // частицам и их прошлым положениям; встречный воздух видит эту долю как скорость (vA)
   const Mprev = new THREE.Matrix4(), Md = new THREE.Matrix4();
   let haveM = false, vAx = 0, vAy = 0, vAz = 0;
+  // [W4-НАРЯДЫ] движение тела: сглаженная скорость кости по горизонтали (м/с) → доля «бега» runK,
+  // рывок — всплеск burst, гаснет за ~0,35 с; calm — спокойный режим (setMotion)
+  let spdS = 0, runK = 0, burst = 0, calm = 1, fph = 0, wX = 0, wZ = 0, wT = 0;
+  const REACT = !!o.react;   // отклик на бег и рывок — по запросу (плащ, полы); слой волос — как раньше
+  function motion(dt, dx, dz) {
+    if (!REACT) return;
+    burst *= Math.exp(-dt / 0.35);
+    // скорость — по окну ≥ 1/30 с: положение героя идёт шагами симуляции (1/120 с), за один кадр на 165 Гц
+    // в него попадает то 2, то 3 шага — мгновенная скорость «скачет» и спринт казался бы рывком
+    wX += dx; wZ += dz; wT += dt;
+    if (wT < 1 / 30) return;
+    const sp = Math.sqrt(wX * wX + wZ * wZ) / wT, prevS = spdS;
+    spdS += (Math.min(sp, 14) - spdS) * (1 - Math.exp(-wT * 6));
+    wX = wZ = wT = 0;
+    const x = Math.min(1, Math.max(0, (spdS - 1.5) / 4.5));
+    runK = x * x * (3 - 2 * x);
+    // рывок: 3,6 м за 0,22 с (~16 м/с) — резкий скачок над сглаженной скоростью; спринт (8,2 м/с) — не рывок
+    if (sp > 11 && sp > prevS + 3 && calm > 0.6) burst = 1;
+  }
   function carry(dt) {
     const e0 = anchor.matrixWorld.elements;
     if (haveM) {
       Md.copy(Mprev).invert().premultiply(anchor.matrixWorld);
+      motion(dt, e0[12] - Mprev.elements[12], e0[14] - Mprev.elements[14]);
       const e = Md.elements, c = CARRY;
       for (const A of [P, Q]) {
         for (let k = cols; k < N; k++) {
@@ -207,29 +261,45 @@ export function createCloth(THREE, o) {
   }
   function step(h, iters) {
     time += h;
+    // [W4-НАРЯДЫ] бег и рывок: сильнее отдувает назад, чаще и крупнее трепет, на рывке ткань взлетает;
+    // спокойный режим — слабее ветер и трепет, без всплеска
+    const boost = calm * (0.8 * runK + 1.6 * burst);
+    fph += h * (3.1 + 3.4 * runK * calm);
+    const flutA = 0.6 * wind * (0.35 + 0.65 * calm) * (1 + 1.2 * boost), vcap = VCAP * (0.75 + 0.25 * calm) * (1 + 0.45 * boost), lift = 2.2 * burst * calm * wind;
+    const damp = DAMP - 0.014 * (1 - calm);   // спокойный режим: ткань гасит колебания быстрее
     // ветер: слабое дыхание и порывы (м/с), вдоль «назад» героя и чуть вбок
-    const gust = (0.35 + 0.35 * Math.sin(time * 0.7) + 0.25 * Math.sin(time * 1.9 + 1.3)) * wind;
+    const gust = (0.35 + 0.35 * Math.sin(time * 0.7) + 0.25 * Math.sin(time * 1.9 + 1.3)) * wind * (0.45 + 0.55 * calm) + 0.9 * boost * wind;
     const wx = -fw.x * gust * 0.8 + fw.z * gust * 0.3 * Math.sin(time * 0.5), wz = -fw.z * gust * 0.8 - fw.x * gust * 0.3 * Math.sin(time * 0.5);
     const h2 = h * h;
     for (let k = cols; k < N; k++) {
       const i3 = k * 3;
-      let vx = (P[i3] - Q[i3]) * DAMP, vy = (P[i3 + 1] - Q[i3 + 1]) * DAMP, vz = (P[i3 + 2] - Q[i3 + 2]) * DAMP;
+      let vx = (P[i3] - Q[i3]) * damp, vy = (P[i3 + 1] - Q[i3 + 1]) * damp, vz = (P[i3 + 2] - Q[i3 + 2]) * damp;
       // скорость частицы относительно тела ≤ VMAX (резкие остановки после рывка не подбрасывают плащ)
       const v2 = vx * vx + vy * vy + vz * vz, vm = VMAX * h;
       if (v2 > vm * vm) { const k2 = vm / Math.sqrt(v2); vx *= k2; vy *= k2; vz *= k2; }
       Q[i3] = P[i3]; Q[i3 + 1] = P[i3 + 1]; Q[i3 + 2] = P[i3 + 2];
-      const ph = (k % cols) * 0.7 + time * 3.1;
-      const flut = Math.sin(ph + Math.floor(k / cols) * 0.45) * 0.6 * wind;
+      const ph = (k % cols) * 0.7 + fph;
+      const flut = Math.sin(ph + Math.floor(k / cols) * 0.45) * flutA;
       // встречный воздух (ветер − скорость частицы); сила ограничена — тяжёлая ткань не взлетает горизонтально
-      let ax = wx + flut * fw.z * 0.4 - vx / h - vAx, ay = -vy / h - vAy, az = wz - flut * fw.x * 0.4 - vz / h - vAz;
+      let ax = wx + flut * fw.z * 0.4 - vx / h - vAx, ay = -vy / h - vAy + lift * (Math.floor(k / cols) / (rows - 1)), az = wz - flut * fw.x * 0.4 - vz / h - vAz;
       const va = Math.sqrt(ax * ax + ay * ay + az * az);
-      if (va > VCAP) { const k2 = VCAP / va; ax *= k2; ay *= k2; az *= k2; }
+      if (va > vcap) { const k2 = vcap / va; ax *= k2; ay *= k2; az *= k2; }
       P[i3] = P[i3] + vx + DRAG * ax * h2;
       P[i3 + 1] = P[i3 + 1] + vy + (G + DRAG * ay) * h2;
       P[i3 + 2] = P[i3 + 2] + vz + DRAG * az * h2;
       if (cling > 0) {
         const cx = P[i3] - hipP.x, cz = P[i3 + 2] - hipP.z, cl2 = Math.sqrt(cx * cx + cz * cz);
         if (cl2 > 1e-4) { P[i3] -= (cx / cl2) * cling * h2; P[i3 + 2] -= (cz / cl2) * cling * h2; }
+      }
+    }
+    // память формы: к положению покоя в осях кости крепления (сильнее к подолу — верх держат связи)
+    if (HOME > 0) {
+      const e = anchor.matrixWorld.elements, kh = Math.min(1, HOME * h);
+      for (let k = cols; k < N; k++) {
+        const x = L[k * 3], y = L[k * 3 + 1], z = L[k * 3 + 2], i3 = k * 3, kk = kh * (0.4 + 0.6 * Math.floor(k / cols) / (rows - 1));
+        P[i3] += (e[0] * x + e[4] * y + e[8] * z + e[12] - P[i3]) * kk;
+        P[i3 + 1] += (e[1] * x + e[5] * y + e[9] * z + e[13] - P[i3 + 1]) * kk;
+        P[i3 + 2] += (e[2] * x + e[6] * y + e[10] * z + e[14] - P[i3 + 2]) * kk;
       }
     }
     for (let it = 0; it < iters; it++) {
@@ -262,9 +332,13 @@ export function createCloth(THREE, o) {
     for (let j = 0; j < rows; j++) {
       for (let i = 0; i < rc; i++) {
         const u = i / SU, i1 = Math.min(cols - 1, Math.floor(u)), t = u - i1;
-        const i0 = Math.max(0, i1 - 1), i2 = Math.min(cols - 1, i1 + 1), i3 = Math.min(cols - 1, i1 + 2);
+        let i0 = Math.max(0, i1 - 1), i3 = Math.min(cols - 1, i1 + 2), lin = false;
+        const i2 = Math.min(cols - 1, i1 + 1);
+        // [W4-НАРЯДЫ] ниже начала разреза сплайн не переходит через разрез: край лепестка свой
+        if (j > slitFrom) { lin = gapAt[i1] === 1; if (i1 > 0 && gapAt[i1 - 1]) i0 = i1; if (gapAt[i2]) i3 = i2; }
         for (let c = 0; c < 3; c++) {
-          tmpRow[(j * rc + i) * 3 + c] = t === 0 ? P[(j * cols + i1) * 3 + c] : cr(P[(j * cols + i0) * 3 + c], P[(j * cols + i1) * 3 + c], P[(j * cols + i2) * 3 + c], P[(j * cols + i3) * 3 + c], t);
+          const p1 = P[(j * cols + i1) * 3 + c], p2 = P[(j * cols + i2) * 3 + c];
+          tmpRow[(j * rc + i) * 3 + c] = t === 0 ? p1 : lin ? p1 + (p2 - p1) * t : cr(P[(j * cols + i0) * 3 + c], p1, p2, P[(j * cols + i3) * 3 + c], t);
         }
       }
     }
@@ -289,16 +363,18 @@ export function createCloth(THREE, o) {
       rpos[k * 3 + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
     }
     gridNormals();
-    // складки-плиссе: смещение вдоль нормали, глубже к подолу; затем нормали заново (свет ловит складки)
-    if (pleatDepth > 0) {
+    // складки-плиссе: смещение вдоль нормали, глубже к подолу; затем нормали заново (свет ловит складки);
+    // [W4-НАРЯДЫ] лепестки — выпуклость наружу (против нормали: лицевая сторона ткани — к телу)
+    if (pleatDepth > 0 || cupD > 0) {
       const nr = geo.attributes.normal.array;
       const sc = 1 / (parent.getWorldScale(v).x || 1);
+      const t0 = Math.min(0.95, slitFrom / Math.max(1, rows - 1));
       for (let j = 1; j < rr; j++) {
-        const t = j / (rr - 1), amp = pleatDepth * sc * (0.25 + 0.75 * t);
+        const t = j / (rr - 1), amp = pleatDepth * sc * (0.25 + 0.75 * t), cupT = cupD * sc * Math.min(1, Math.max(0, (t - t0 * 0.6) / 0.3));
         for (let i = 0; i < rc; i++) {
           const u = i / (rc - 1), k = j * rc + i;
-          const edge = Math.min(1, Math.min(u, 1 - u) * 8);
-          const d = Math.sin(u * Math.PI * 2 * pleats + t * 1.3) * amp * edge;
+          const edge = Math.min(1, Math.min(u, 1 - u) * 8) * cupW[i];
+          const d = Math.sin(u * Math.PI * 2 * pleats + t * 1.3) * amp * edge - cupT * cupS[i];
           rpos[k * 3] += nr[k * 3] * d; rpos[k * 3 + 1] += nr[k * 3 + 1] * d; rpos[k * 3 + 2] += nr[k * 3 + 2] * d;
         }
       }
@@ -370,6 +446,8 @@ export function createCloth(THREE, o) {
   return {
     mesh, update, reset,
     setWind(k) { wind = k; },
+    setMotion(k) { calm = Math.max(0, Math.min(1, +k || 0)); },   // [W4-НАРЯДЫ] 1 — обычно, 0,4 — «Уменьшенное движение»
+    get motion() { return { speed: spdS, run: runK, burst }; },
     get particles() { return P; },
     get hem() { return hem ? hem.mesh : null; },
     dispose() { if (mesh.parent) mesh.parent.remove(mesh); geo.dispose(); if (hem) { if (hem.mesh.parent) hem.mesh.parent.remove(hem.mesh); hem.geo.dispose(); } },

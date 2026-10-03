@@ -13,7 +13,8 @@
  * Соглашение о yaw: поворот вокруг +Y в радианах; при yaw=0 модель смотрит в +Z;
  * направление взгляда = (sin(yaw), 0, cos(yaw)). Для другого соглашения есть config.world.yawOffset.
  */
-import { createAtmosphere } from './atmosphere.js';
+import { createAtmosphere, ECLIPSE } from './atmosphere.js';
+import { createArenaFx } from './arenaFx.js';   // [W4-ARENA] огни, воздух и отражения арены
 import { createElfVillage, ELF_VILLAGE } from './elfVillage.js';
 import { createBrightForest, BRIGHT_FOREST, brightForestHeight, brightForestTint } from './brightForest.js'; // [FOREST] Сияющий лес
 
@@ -390,9 +391,14 @@ function paintFloorCracks(size, seed, innerFrac) {
   return c;
 }
 
-// [W3-КИНО] Пояс рун кольца вокруг печати: R — глифы со свечением, G — две направляющие и ромбы-разделители.
-// Полоса тайлится по U; верх канваса — внутренний край кольца (глифы стоят «лицом» к зрителю снаружи).
+// [W3-КИНО] Пояс рун кольца вокруг печати. [W4-ARENA] Рисунок изящнее: R — ядро глифов (каллиграфические штрихи
+// с утолщением и точками-ромбами), G — орнамент (двойные направляющие, волосяные линии, бусины, ромбы-разделители
+// с завитками), B — мягкий ореол всего рисунка (свечение без лишнего прохода). Полоса тайлится по U; верх канваса —
+// внутренний край кольца (глифы стоят «лицом» к зрителю снаружи). Канвас рисуется один раз на модуль (кэш).
+const RUNE_BELT_CACHE = new Map();
 function paintRuneBelt(w, h, seed, cells) {
+  const key = `${w}x${h}:${seed}:${cells}`;
+  if (RUNE_BELT_CACHE.has(key)) return RUNE_BELT_CACHE.get(key);
   const c = makeCanvas(w, h);
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#000';
@@ -401,34 +407,114 @@ function paintRuneBelt(w, h, seed, cells) {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const cw = w / cells;
-  ctx.strokeStyle = 'rgb(0,255,0)';
-  ctx.lineWidth = h * 0.026;
-  for (const y of [h * 0.1, h * 0.9]) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
-  ctx.lineWidth = h * 0.02;
-  for (let k = 0; k <= cells; k++) {
-    const x = k * cw, d = h * 0.055;
-    ctx.beginPath(); ctx.moveTo(x, h * 0.5 - d * 2); ctx.lineTo(x + d, h * 0.5); ctx.lineTo(x, h * 0.5 + d * 2); ctx.lineTo(x - d, h * 0.5); ctx.closePath(); ctx.stroke();
-  }
-  const rnd = mulberry32(seed);
-  ctx.strokeStyle = 'rgb(255,0,0)';
-  ctx.shadowColor = 'rgb(140,0,0)';
-  ctx.shadowBlur = h * 0.07;
-  for (let k = 0; k < cells; k++) {
-    const cx = (k + 0.5) * cw, cy = h * 0.5, s = h * 0.27;
-    ctx.lineWidth = h * 0.042;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - s); ctx.lineTo(cx, cy + s);
-    const strokes = 2 + ((rnd() * 3) | 0);
-    for (let q = 0; q < strokes; q++) {
-      const t = rnd();
-      const y0 = cy + lerp(-s, s * 0.5, rnd());
-      if (t < 0.35) { ctx.moveTo(cx, y0); ctx.lineTo(cx + (rnd() < 0.5 ? -1 : 1) * s * 0.7, y0 + s * 0.5); }
-      else if (t < 0.65) { ctx.moveTo(cx - s * 0.55, y0); ctx.lineTo(cx + s * 0.55, y0); }
-      else { ctx.moveTo(cx + s * 0.5, y0); ctx.arc(cx, y0, s * 0.5, 0, Math.PI, rnd() < 0.5); }
+  const R = 'rgb(255,0,0)', Gc = 'rgb(0,255,0)', B = 'rgb(0,0,255)';
+  // Штрих кистью: ломаная с шириной w(t) = lerp(w0, w1, t) + wm·sin(πt), края — гладкие, концы скруглены.
+  const brush = (pts, w0, w1, wm, col) => {
+    const n = pts.length;
+    if (n < 2) return;
+    const L = [], Rr = [];
+    for (let i = 0; i < n; i++) {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      let nx = -(b[1] - a[1]), ny = b[0] - a[0];
+      const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+      const t = i / (n - 1), ww = (lerp(w0, w1, t) + wm * Math.sin(Math.PI * t)) / 2;
+      L.push([pts[i][0] + nx * ww, pts[i][1] + ny * ww]); Rr.push([pts[i][0] - nx * ww, pts[i][1] - ny * ww]);
     }
-    ctx.stroke();
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(L[0][0], L[0][1]);
+    for (let i = 1; i < n; i++) ctx.lineTo(L[i][0], L[i][1]);
+    for (let i = n - 1; i >= 0; i--) ctx.lineTo(Rr[i][0], Rr[i][1]);
+    ctx.closePath(); ctx.fill();
+    for (const [p, ww] of [[pts[0], w0], [pts[n - 1], w1]]) if (ww > 0.6) { ctx.beginPath(); ctx.arc(p[0], p[1], ww / 2, 0, TAU); ctx.fill(); }
+  };
+  const bez = (p0, p1, p2, n = 18) => {
+    const out = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, u = 1 - t;
+      out.push([u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0], u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]]);
+    }
+    return out;
+  };
+  const arcPts = (cx, cy, r, a0, a1, n = 20) => { const o = []; for (let i = 0; i <= n; i++) { const a = lerp(a0, a1, i / n); o.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); } return o; };
+  const lozenge = (x, y, rw, rh, col, fill) => {
+    ctx.beginPath(); ctx.moveTo(x, y - rh); ctx.lineTo(x + rw, y); ctx.lineTo(x, y + rh); ctx.lineTo(x - rw, y); ctx.closePath();
+    if (fill) { ctx.fillStyle = col; ctx.fill(); } else { ctx.strokeStyle = col; ctx.stroke(); }
+  };
+  const dot = (x, y, r, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); };
+
+  // ---- орнамент (G): направляющие, волосяные линии, бусины, разделители
+  const ornament = (col, k) => {
+    ctx.strokeStyle = col;
+    ctx.lineWidth = h * 0.028 * k;
+    for (const y of [h * 0.1, h * 0.9]) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+    ctx.lineWidth = h * 0.012 * k;
+    for (const y of [h * 0.2, h * 0.8]) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+    const nb = cells * 12;
+    for (let i = 0; i < nb; i++) { const x = (i + 0.5) * (w / nb); if (i % 12 === 0 || i % 12 === 11) continue; dot(x, h * 0.15, h * 0.013 * k, col); dot(x, h * 0.85, h * 0.013 * k, col); }
+    ctx.lineWidth = h * 0.016 * k;
+    for (let i = 0; i <= cells; i++) {
+      const x = i * cw;
+      lozenge(x, h * 0.5, h * 0.05, h * 0.13, col, false);
+      dot(x, h * 0.5, h * 0.018 * k, col);
+      dot(x, h * 0.3, h * 0.012 * k, col); dot(x, h * 0.7, h * 0.012 * k, col);
+      // завитки у направляющих: две дужки навстречу друг другу
+      for (const [y, s] of [[h * 0.2, 1], [h * 0.8, -1]]) {
+        ctx.beginPath(); ctx.arc(x - h * 0.045, y + s * h * 0.035, h * 0.035, s > 0 ? -Math.PI / 2 : Math.PI / 2, 0, s < 0); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x + h * 0.045, y + s * h * 0.035, h * 0.035, s > 0 ? -Math.PI / 2 : Math.PI / 2, Math.PI, s > 0); ctx.stroke();
+      }
+    }
+  };
+  // ---- глифы (R): ствол-дуга, ветви с точками, полумесяцы, кольца; часть глифов зеркально симметрична
+  const glyphs = [];
+  const rnd = mulberry32(seed);
+  for (let k = 0; k < cells; k++) {
+    const g = [], sym = rnd() < 0.5, s = h * 0.27;
+    const lean = (rnd() - 0.5) * 0.3 * s;
+    g.push({ t: 'stem', p: bez([lean, -s], [-lean * 1.5 + (rnd() - 0.5) * 0.25 * s, 0], [lean * 0.4, s]), w: [0.052, 0.05, 0.075] });
+    const nOrn = 2 + ((rnd() * 2.2) | 0);
+    for (let q = 0; q < nOrn; q++) {
+      const kind = rnd(), y0 = lerp(-0.7, 0.55, rnd()) * s, side = rnd() < 0.5 ? -1 : 1;
+      const mk = (sd) => {
+        if (kind < 0.3) g.push({ t: 'br', p: bez([0, y0], [sd * 0.25 * s, y0 - 0.12 * s], [sd * 0.62 * s, y0 - 0.48 * s]), w: [0.048, 0.016, 0.02], tip: true });
+        else if (kind < 0.52) g.push({ t: 'cr', p: arcPts(sd * 0.1 * s, y0, 0.42 * s, sd > 0 ? -Math.PI * 0.55 : Math.PI * 1.55, sd > 0 ? Math.PI * 0.55 : Math.PI * 0.45), w: [0.014, 0.014, 0.05] });
+        else if (kind < 0.7) g.push({ t: 'ring', x: sd * 0.5 * s, y: y0, r: 0.15 * s });
+        else if (kind < 0.86) g.push({ t: 'hook', p: bez([0, y0], [sd * 0.55 * s, y0 + 0.05 * s], [sd * 0.42 * s, y0 + 0.42 * s]), w: [0.046, 0.014, 0.02], tip: true });
+        else g.push({ t: 'bar', p: bez([-0.48 * s, y0 + 0.08 * s], [0, y0 - 0.1 * s], [0.48 * s, y0 + 0.08 * s]), w: [0.016, 0.016, 0.05] });
+      };
+      mk(side); if (sym && kind < 0.86) mk(-side);
+    }
+    glyphs.push(g);
   }
+  const drawGlyph = (k, col, widen) => {
+    const cx = (k + 0.5) * cw, cy = h * 0.5;
+    const T = (pts) => pts.map(([x, y]) => [cx + x, cy + y]);
+    for (const e of glyphs[k]) {
+      if (e.p) {
+        brush(T(e.p), e.w[0] * h * widen, e.w[1] * h * widen, e.w[2] * h * widen, col);
+        if (e.tip) { const q = e.p[e.p.length - 1]; lozenge(cx + q[0], cy + q[1], h * 0.03 * widen, h * 0.044 * widen, col, true); }
+      } else if (e.t === 'ring') {
+        ctx.strokeStyle = col; ctx.lineWidth = h * 0.024 * widen;
+        ctx.beginPath(); ctx.arc(cx + e.x, cy + e.y, e.r, 0, TAU); ctx.stroke();
+        dot(cx + e.x, cy + e.y, h * 0.012 * widen, col);
+      }
+    }
+    // ромбы на концах ствола
+    lozenge(cx + glyphs[k][0].p[0][0], cy - h * 0.315, h * 0.02 * widen, h * 0.03 * widen, col, true);
+    lozenge(cx + glyphs[k][0].p[glyphs[k][0].p.length - 1][0], cy + h * 0.315, h * 0.02 * widen, h * 0.03 * widen, col, true);
+  };
+  // ореол (B): тот же рисунок шире и размыт
+  ctx.shadowColor = B;
+  ctx.shadowBlur = h * 0.08;
+  for (let k = 0; k < cells; k++) drawGlyph(k, 'rgba(0,0,255,0.85)', 2.4);
+  ornament('rgba(0,0,170,0.6)', 2.2);
   ctx.shadowBlur = 0;
+  ornament(Gc, 1);
+  ctx.shadowColor = 'rgb(150,0,0)';   // ядро глифа с собственным свечением: читается и издалека, на мелких мипмапах
+  ctx.shadowBlur = h * 0.05;
+  for (let k = 0; k < cells; k++) drawGlyph(k, R, 1);
+  ctx.shadowBlur = 0;
+  RUNE_BELT_CACHE.set(key, c);
   return c;
 }
 
@@ -449,12 +535,13 @@ uniform vec3 uRuneBase;
 uniform float uRuneT;
 varying vec2 vRuneUv;
 void main() {
-  vec2 m = texture2D( uRuneMap, vec2( vRuneUv.x * ${RUNE_REP}.0, vRuneUv.y ) ).rg;
+  vec3 m = texture2D( uRuneMap, vec2( vRuneUv.x * ${RUNE_REP}.0, vRuneUv.y ), -0.7 ).rgb;   // [W4-ARENA] резче на скользящем угле
   float cell = floor( vRuneUv.x * ${RUNE_N}.0 );
   float gu = ( cell + 0.5 ) / ${RUNE_N}.0;
   float h = fract( sin( cell * 12.9898 + 4.1 ) * 43758.5453 );
   vec3 glyph = uRuneBase * ( 0.7 + 0.3 * sin( uRuneT * ( 1.1 + h * 1.9 ) + h * 6.2831 ) );
   vec3 rail = uRuneBase * 0.55;
+  float hot = 0.0;   // [W4-ARENA] фронт волны раскаляет глиф добела
   for ( int i = 0; i < 4; i ++ ) {
     vec4 w = uRuneW[ i ];
     if ( w.z <= 0.0 ) continue;   // пустая волна — без работы (ветка по uniform, бесплатна)
@@ -466,8 +553,14 @@ void main() {
     float pg = max( tg, 0.0 ), pr = max( tr, 0.0 );
     glyph += c.rgb * ( w.z * step( 0.0, tg ) * exp( - pg * c.a ) * ( 1.0 + 1.6 * exp( - pg * 14.0 ) ) * exp( - dg * 1.4 ) );
     rail += c.rgb * ( w.z * 0.5 * step( 0.0, tr ) * exp( - pr * c.a * 1.6 ) * ( 1.0 + 2.5 * exp( - pr * 22.0 ) ) * exp( - dr * 1.4 ) );
+    hot += w.z * step( 0.0, tg ) * exp( - pg * 9.0 ) * exp( - dg * 2.0 );
   }
-  gl_FragColor = vec4( glyph * m.r + rail * m.g, 1.0 );
+  // [W4-ARENA] ярче и мягче: ядро + ореол (B), по направляющим медленно бегут три бусины света
+  float bead = pow( 0.5 + 0.5 * sin( ( vRuneUv.x * 3.0 - uRuneT * 0.03 ) * 6.2831853 ), 48.0 );
+  vec3 col = glyph * m.r * 1.45 + rail * m.g * 1.15 + ( glyph * 0.5 + rail * 0.28 ) * m.b;
+  col += uRuneBase * bead * ( m.g * 3.5 + m.b * 0.6 );
+  col += vec3( 1.0, 0.94, 0.84 ) * hot * m.r * 1.1;
+  gl_FragColor = vec4( col, 1.0 );
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -498,7 +591,217 @@ const LAVA_FRAG = /* glsl */`
     float kinoL = kinoCore * kinoA + kinoHalo * min( kinoA, 1.0 );
     totalEmissiveRadiance += kinoCol * ( kinoL * kinoIn * kinoFlow * 4.0 ) + vec3( 1.0, 0.86, 0.62 ) * ( ( kinoCore + kinoHalo ) * kinoEdge * 7.0 );
   }
+  // [W4-УДАР] трещины брони вспыхивают в точке удара (и в фазе 1): kinoHit[i].xyz — точка (мир), .w — накал;
+  // kinoHitC[i].rgb — цвет (линейный), .a — радиус пятна, м. Нет ударов — kinoHitK = 0, цикл не считается.
+  if ( kinoHitK > 0.0 ) {
+    float kinoM = smoothstep( 0.2, 0.8, emissiveColor.r ) + sqrt( emissiveColor.r ) * 0.45;
+    vec3 kinoAcc = vec3( 0.0 );
+    for ( int i = 0; i < 3; i ++ ) {
+      vec4 kh = kinoHit[ i ];
+      if ( kh.w > 0.001 ) {
+        float kd = distance( vKinoLavaPos, kh.xyz ) / max( kinoHitC[ i ].a, 0.05 );
+        float kg = kh.w * exp( - kd * kd * 2.2 );
+        // сильный накал — сердцевина трещин добела
+        kinoAcc += mix( kinoHitC[ i ].rgb, vec3( 1.0, 0.94, 0.82 ), clamp( kg - 0.8, 0.0, 1.0 ) * 0.6 ) * kg;
+      }
+    }
+    totalEmissiveRadiance += kinoAcc * kinoM * 8.0;
+  }
 #endif`;
+
+// [W4-BOSS] Затмение в нимбе Регента. Плоскость 2·EH; диск ~0,5 м, лимб — тонкое огненное кольцо, корона гаснет
+// наружу, стримеры — шум по углу, медленно текут. Предумноженная альфа: rgb — свечение поверх неба, a — только диск
+// (он закрывает то, что за нимбом). uE: x — время, y — накал, z — фаза 2 (кровавое), w — угасание.
+const ECLIPSE_VERT = /* glsl */`
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+}`;
+const ECLIPSE_FRAG = /* glsl */`
+uniform sampler2D uNoise;
+uniform vec4 uE;
+varying vec2 vUv;
+void main() {
+  vec2 p = ( vUv - 0.5 ) * 2.0;
+  float r = length( p );
+  float a = atan( p.y, p.x ) * 0.15915494;
+  const float RD = 0.31;
+  float disc = 1.0 - smoothstep( RD - 0.008, RD + 0.004, r );
+  float limb = exp( - abs( r - RD ) * 70.0 );
+  float fall = exp( - max( r - RD, 0.0 ) * 5.5 );
+  float s1 = texture2D( uNoise, vec2( a * 3.0, r * 0.45 - uE.x * 0.025 ) ).r;
+  float s2 = texture2D( uNoise, vec2( a * 8.0 + 0.37, r * 0.9 - uE.x * 0.06 ) ).r;
+  float streak = pow( s1 * 0.62 + s2 * 0.38, 3.0 ) * 3.2;
+  float cor = fall * ( 0.22 + streak ) * ( 1.0 - disc ) * ( 1.0 - smoothstep( 0.78, 1.0, r ) );
+  vec3 col = mix( vec3( 1.0, 0.76, 0.42 ), vec3( 1.0, 0.13, 0.05 ), uE.z );
+  vec3 rgb = col * ( cor * 0.5 + limb * 2.2 ) * uE.y;
+  gl_FragColor = vec4( rgb * uE.w, disc * uE.w );
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+
+// [W4-BOSS] Дым теней вокруг Регента (MeshBasicMaterial + патч alphamap_fragment): два слоя шума текут вверх,
+// у земли и к плечам гаснет, по краям силуэта (скользящий взгляд) — тоже, чтобы не было «стенки цилиндра».
+// w4S: x — время, y — плотность, z — непрозрачность, w — угли фазы 2; цвет — diffuse (тёмно-лиловый, в фазе 2 — багровый).
+const SHROUD_FRAG = /* glsl */`
+#ifdef USE_ALPHAMAP
+  {
+    vec2 sUv = vAlphaMapUv;
+    float sw = sin( sUv.y * 7.0 + w4S.x * 0.6 ) * 0.035;   // языки слегка закручиваются
+    float n1 = texture2D( alphaMap, vec2( sUv.x * 4.0 + sw + w4S.x * 0.012, sUv.y * 0.55 - w4S.x * 0.06 ) ).r;
+    float n2 = texture2D( alphaMap, vec2( sUv.x * 9.0 - sw - w4S.x * 0.02, sUv.y * 1.5 - w4S.x * 0.15 ) ).r;
+    float d = n1 * 0.6 + n2 * 0.4;
+    float pool = 1.0 - smoothstep( 0.0, 0.4, sUv.y );   // у земли дым плотнее
+    float body = smoothstep( 0.0, 0.05, sUv.y ) * ( 1.0 - smoothstep( 0.45, 1.0, sUv.y ) );
+    float front = 1.0 - smoothstep( 0.45, 0.9, vW4Fr ) * smoothstep( 0.18, 0.36, sUv.y );   // спереди выше подола — чисто: ядро видно
+    float lo = 0.6 - w4S.y * 0.3;
+    float core = smoothstep( lo, lo + 0.2, d + pool * 0.26 );
+    float a = core * body * front * smoothstep( 0.04, 0.38, vW4F );
+    diffuseColor.a *= a * w4S.z;
+    // тело клуба тёмное, кромка светлее (подсветка затмения) — тени читаются и на тёмном полу
+    diffuseColor.rgb = diffuseColor.rgb * ( 0.45 + 0.9 * n1 ) + vec3( 0.1, 0.085, 0.15 ) * ( core * ( 1.0 - core ) * 4.0 );
+    float ember = smoothstep( 0.8, 0.93, n2 ) * w4S.w * body;
+    diffuseColor.rgb += vec3( 2.6, 0.5, 0.12 ) * ember;
+  }
+#endif`;
+
+// [W4-BOSS] Обсидиан Регента (альбедо): почти чёрное вулканическое стекло — дымчатые волны сколов и редкие
+// светлые пряди. Блеск и отражения неба дают roughness ~0.3 и IBL; золото кинцуги — по маске свечения (ниже).
+function paintObsidian(size, noise) {
+  const c = makeCanvas(size, size);
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(size, size);
+  const d = img.data;
+  const S = 4;
+  for (let y = 0; y < size; y++) {
+    const v = y / size;
+    for (let x = 0; x < size; x++) {
+      const u = x / size;
+      const n = noise.fbm(u * S, v * S, S, 3);
+      const w = noise.fbm(u * S * 2 + 7.3, v * S * 2 + 3.1, S * 2, 2);
+      const band = 0.5 + 0.5 * Math.sin((u * 3 + v * 2 + n * 2.4) * TAU);   // целые частоты — тайлится
+      const streak = Math.pow(band, 6) * w;
+      const k = 0.72 + 0.56 * n;
+      const i = (y * size + x) * 4;
+      d[i] = clamp((19 + streak * 34) * k, 0, 255);
+      d[i + 1] = clamp((18 + streak * 30) * k, 0, 255);
+      d[i + 2] = clamp((25 + streak * 46) * k, 0, 255);
+      d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+// [W4-BOSS] Маска свечения обсидиана (линейная, тайлится): R — золотые прожилки кинцуги (сердцевина 255, ореол
+// слабее: по сердцевине течёт лава фазы 2), G — руны-каналы (два пояса глифов с ромбами-разделителями и один
+// вертикальный), B — сетка тонких трещин, которая вспыхивает от попаданий. Каналы независимы: рисуем сложением.
+function paintBossGlow(size, seed) {
+  const c = makeCanvas(size, size);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, size, size);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const s = size / 512;
+  const veins = crackPaths(mulberry32(seed), size, 8, 300 * s, 1.3 * s, 2.7 * s);
+  ctx.shadowColor = 'rgb(120,0,0)'; ctx.shadowBlur = 6 * s;
+  ctx.strokeStyle = 'rgb(70,0,0)';
+  strokePaths(ctx, veins, 1.7, size);
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgb(255,0,0)';
+  strokePaths(ctx, veins, 0.6, size);
+  const cracks = crackPaths(mulberry32(seed + 7), size, 22, 120 * s, 0.6 * s, 1.2 * s);
+  ctx.strokeStyle = 'rgb(0,0,80)';
+  strokePaths(ctx, cracks, 2.4, size);
+  ctx.strokeStyle = 'rgb(0,0,255)';
+  strokePaths(ctx, cracks, 0.8, size);
+  // руны: глифы в стиле кольца арены (ствол + 2–4 штриха), шаг 64 px делит тайл — пояса тайлятся по U
+  const rnd = mulberry32(seed + 13);
+  const runes = new Path2D();
+  const step = 64 * s, gh = 19 * s;
+  const glyph = (cx, cy, vert) => {
+    const P = (a, b) => (vert ? [cy + b, cx + a] : [cx + a, cy + b]);   // вертикальный пояс — та же раскладка, повёрнутая
+    const mv = (a, b) => { const p = P(a, b); runes.moveTo(p[0], p[1]); };
+    const ln = (a, b) => { const p = P(a, b); runes.lineTo(p[0], p[1]); };
+    mv(0, -gh); ln(0, gh);
+    const n = 2 + ((rnd() * 3) | 0);
+    for (let q = 0; q < n; q++) {
+      const t = rnd(), y0 = lerp(-gh, gh * 0.5, rnd()), sd = rnd() < 0.5 ? -1 : 1;
+      if (t < 0.35) { mv(0, y0); ln(sd * gh * 0.7, y0 + gh * 0.5); }
+      else if (t < 0.6) { mv(-gh * 0.55, y0); ln(gh * 0.55, y0); }
+      else if (t < 0.8) { mv(-gh * 0.5, y0); ln(0, y0 - gh * 0.45); ln(gh * 0.5, y0); }
+      else { const r = gh * 0.22; const p = P(sd * gh * 0.45, y0); runes.moveTo(p[0] + r, p[1]); runes.arc(p[0], p[1], r, 0, TAU); }
+    }
+  };
+  const diamond = (x, y) => { const d = gh * 0.28; runes.moveTo(x, y - d * 1.6); runes.lineTo(x + d, y); runes.lineTo(x, y + d * 1.6); runes.lineTo(x - d, y); runes.closePath(); };
+  const bandsY = [0.3, 0.78].map((f) => Math.round(f * size));
+  for (const by of bandsY) {
+    for (let k = 0; k < size / step; k++) glyph((k + 0.5) * step, by, false);
+    for (let k = 0; k <= size / step; k++) diamond(k * step, by);   // и на правом краю — ромб тайлится целиком
+  }
+  const bx = Math.round(0.56 * size);   // один вертикальный пояс: тайлится по V (шаг тот же)
+  for (let k = 0; k < size / step; k++) { if (Math.abs((k + 0.5) * step - bandsY[0]) > gh * 2 && Math.abs((k + 0.5) * step - bandsY[1]) > gh * 2) glyph((k + 0.5) * step, bx, true); }
+  ctx.shadowColor = 'rgb(0,120,0)'; ctx.shadowBlur = 5 * s;
+  ctx.strokeStyle = 'rgb(0,70,0)'; ctx.lineWidth = 4.4 * s;
+  ctx.stroke(runes);
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgb(0,255,0)'; ctx.lineWidth = 1.9 * s;
+  ctx.stroke(runes);
+  ctx.globalCompositeOperation = 'source-over';
+  return c;
+}
+
+// [W4-BOSS] Процедурные канвасы Регента рисуются один раз на страницу (пересоздание мира — без повторной рисовки);
+// GPU-текстуры из них — свои у каждого мира и освобождаются в dispose().
+const bossCanvasCache = new Map();
+function bossCanvas(key, paint) {
+  let c = bossCanvasCache.get(key);
+  if (!c) { c = paint(); bossCanvasCache.set(key, c); }
+  return c;
+}
+
+// [W4-BOSS] Шум для дыма теней и короны затмения (R, тайлится).
+function bossNoise(seed) {
+  const size = 128, c = makeCanvas(size, size), ctx = c.getContext('2d');
+  const img = ctx.createImageData(size, size), d = img.data, nz = makeNoise(seed);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const v = nz.fbm((x / size) * 6, (y / size) * 6, 6, 4);
+    const i = (y * size + x) * 4;
+    d[i] = d[i + 1] = d[i + 2] = clamp((v - 0.15) * 1.45 * 255, 0, 255);
+    d[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+// [W4-BOSS] Глаза-угли: два миндалевидных уголька на чёрном (для щели маски и аддитивного ореола перед ней).
+function paintEmberEyes(w, h) {
+  const c = makeCanvas(w, h);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, h);
+  ctx.globalCompositeOperation = 'lighter';
+  for (const fx of [0.3, 0.7]) {
+    ctx.save();
+    ctx.translate(fx * w, h * 0.5);
+    ctx.scale(1, 0.42);
+    const r = w * 0.21;
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+    g.addColorStop(0, 'rgb(255,248,220)');
+    g.addColorStop(0.16, 'rgb(255,206,120)');
+    g.addColorStop(0.42, 'rgb(255,112,34)');
+    g.addColorStop(0.72, 'rgb(130,24,8)');
+    g.addColorStop(1, 'rgb(0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  return c;
+}
 
 // Спиральная дымка портала.
 function paintSpiral(size, seed) {
@@ -678,6 +981,22 @@ export function createWorld({ THREE, scene, renderer, camera, config = {} } = {}
     return g;
   }
 
+  // [W4-BOSS] Осколок обсидиана: вытянутый кристалл (октаэдр, растянутый по Y) со сколами; вершины на стыках
+  // граней сдвигаются одинаково (hash3 по позиции) — без щелей.
+  function shardGeo(r, stretch, seed) {
+    const g = new THREE.OctahedronGeometry(r, 0);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const k = 0.8 + hash3(x, y, z, seed) * 0.4;
+      const tw = (hash3(z, x, y, seed + 3) - 0.5) * r * 0.5;
+      p.setXYZ(i, x * k + tw, y * stretch * (0.85 + hash3(y, z, x, seed + 5) * 0.3), z * k);
+    }
+    g.computeVertexNormals();
+    boxProjectUV(g, 0.9, hash3(r, seed, 1, 2), hash3(seed, r, 3, 4));
+    return g;
+  }
+
   function lathe(profile, seg) {
     const pts = profile.map(([r, y]) => new THREE.Vector2(Math.max(r, 0.0005), y));
     return new THREE.LatheGeometry(pts, seg);
@@ -717,25 +1036,10 @@ export function createWorld({ THREE, scene, renderer, camera, config = {} } = {}
     ctx.strokeStyle = 'rgba(210,205,195,0.10)';
     strokePaths(ctx, crackPaths(mulberry32(wc.seed + 6), 512, 12, 90, 0.8, 1.6), 1, 512);
   }
-  // Камень босса и карта трещин — общие пути, чтобы тёмная щель и свечение совпадали.
-  const bossStoneCanvas = paintStone(512, makeNoise(wc.seed + 21), { base: [0.66, 0.63, 0.58], scale: 3, contrast: 0.5, grain: 0.25, strata: 0.02, pits: 1.2, hueShift: 0.08 });
-  const bossCrackCanvas = makeCanvas(512, 512);
-  {
-    const paths = crackPaths(mulberry32(wc.seed + 31), 512, 9, 260, 1.2, 2.8);
-    const a = bossStoneCanvas.getContext('2d');
-    a.lineCap = 'round'; a.lineJoin = 'round';
-    a.strokeStyle = 'rgba(14,10,8,0.95)';
-    strokePaths(a, paths, 1.35, 512);
-    const e = bossCrackCanvas.getContext('2d');
-    e.fillStyle = '#000'; e.fillRect(0, 0, 512, 512);
-    e.lineCap = 'round'; e.lineJoin = 'round';
-    e.strokeStyle = 'rgb(70,70,70)';
-    e.shadowColor = 'rgb(110,110,110)'; e.shadowBlur = 6;
-    strokePaths(e, paths, 1.5, 512);
-    e.shadowBlur = 0;
-    e.strokeStyle = 'rgb(255,255,255)';
-    strokePaths(e, paths, 0.6, 512);
-  }
+  // [W4-BOSS] Обсидиан Регента: альбедо 256² (почти однотонное стекло — больше не нужно) и маска свечения 512²
+  // (прожилки, руны, трещины — нужны чёткие линии; на low тоже 512² — в бюджете).
+  const bossStoneCanvas = bossCanvas('obsidian:' + wc.seed, () => paintObsidian(256, makeNoise(wc.seed + 21)));
+  const bossCrackCanvas = bossCanvas('glow:' + wc.seed, () => paintBossGlow(512, wc.seed + 31));
   const clothCanvas = paintCloth(256, makeNoise(wc.seed + 41));
   const sigilC = paintSigil(1024, stoneCanvas, wc.seed + 51);
   const floorCrackCanvas = paintFloorCracks(1024, wc.seed + 61, 3.3 / 9.4);
@@ -743,7 +1047,8 @@ export function createWorld({ THREE, scene, renderer, camera, config = {} } = {}
   const texStone = tex(stoneCanvas);
   const texFloor = tex(floorCanvas, { aniso: 8 });
   const texBossStone = tex(bossStoneCanvas);
-  const texBossCrack = tex(bossCrackCanvas);
+  const texBossCrack = tex(bossCrackCanvas, { srgb: false });   // [W4-BOSS] маска — линейная
+  const texBossNoise = tex(bossCanvas('noise:' + wc.seed, () => bossNoise(wc.seed + 91)), { srgb: false, aniso: 1 });   // [W4-BOSS] дым теней, корона затмения
   const texCloth = tex(clothCanvas);
   const texSigil = tex(sigilC.albedo, { repeat: false, aniso: 8 });
   const texSigilGlow = tex(sigilC.glow, { repeat: false, aniso: 8 });
@@ -784,16 +1089,22 @@ export function createWorld({ THREE, scene, renderer, camera, config = {} } = {}
   const matAmulet = std({ color: 0x3a2a14, emissive: 0xffc27a, emissiveIntensity: 0.4, roughness: 0.4, metalness: 0.5 });
   const matLantern = std({ color: 0x3a2412, emissive: 0xffa04a, emissiveIntensity: 1.3, roughness: 0.5, transparent: false });
 
-  const matBoss = std({
-    color: 0xa8a49e, map: texBossStone, bumpMap: texBossStone, bumpScale: bumpS * 1.4,
-    emissive: 0xff7a2e, emissiveMap: texBossCrack, emissiveIntensity: 0.45, roughness: 0.9, metalness: 0, flatShading: true,
+  // [W4-BOSS] Обсидиан с золотом кинцуги: стекло отражает небо (IBL), прожилки — золото (металл и цвет — из
+  // маски, patchObsidian), свечение прожилок и рун — свои униформы (updateBoss), emissive тут — заглушка.
+  // Кисти — свой материал на каждую (накал замаха: удар — обе, сфера — правая), тело — общий.
+  const obsP = (rough) => ({
+    color: 0xffffff, map: texBossStone, bumpMap: texBossCrack, bumpScale: bumpS * 0.5,
+    emissive: 0xffffff, emissiveMap: texBossCrack, emissiveIntensity: 1, roughness: rough, metalness: 0.05, flatShading: true,
   });
-  const matBossDark = std({ color: 0x6a655e, map: texBossStone, emissive: 0xff7a2e, emissiveMap: texBossCrack, emissiveIntensity: 0.5, roughness: 0.92, flatShading: true });
-  // Фарфоровая маска: глазурь (roughness ~0.3), в трещинах тлеет.
-  const matBossMask = std({ color: 0xd9d2c4, roughness: 0.32, metalness: 0, emissive: 0xff5a3c, emissiveMap: texBossCrack, emissiveIntensity: 0.25 });
-  const matHaloBronze = std({ color: 0x3b2f24, roughness: 0.42, metalness: 0.85 });
+  const matBoss = std(obsP(0.26));       // левая кисть
+  const matBossR = std(obsP(0.26));      // [W4-BOSS] правая кисть
+  const matBossDark = std(obsP(0.32));   // позвонки, замки нимба, осколки
+  // Фарфоровая маска: глазурь (roughness ~0.3), трещины склеены золотом (кинцуги) и тлеют.
+  const matBossMask = std({ color: 0xe6ded0, roughness: 0.3, metalness: 0, emissive: 0xffffff, emissiveMap: texBossCrack, emissiveIntensity: 1 });
+  const matHaloBronze = std({ color: 0xb3874a, roughness: 0.3, metalness: 0.95 });   // [W4-BOSS] позолота вместо тёмной бронзы
   const matHaloEdge = M(new THREE.MeshBasicMaterial({ color: 0xffb870, fog: false }));
   matHaloEdge.color.multiplyScalar(3.4); // HDR: горящий край нимба (порог bloom 1.0), не заливает диск затмения
+  const HALO_EDGE = matHaloEdge.color.clone();   // [W4-BOSS] накал кромки гаснет, пока свет «стекает» в кулак
   const matMaskCrack = M(new THREE.MeshBasicMaterial({ color: 0xffe6b8, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }));
   matMaskCrack.color.multiplyScalar(6);
   const matSunGlow = M(new THREE.SpriteMaterial({ map: texGlow, color: 0xffe2a8, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
@@ -801,10 +1112,17 @@ export function createWorld({ THREE, scene, renderer, camera, config = {} } = {}
   const matSeal = M(new THREE.MeshBasicMaterial({ map: texSigilGlow, color: 0x9ff8ff, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
   matSeal.color.multiplyScalar(2.2); // слабые точки: холодный бело-бирюзовый, пульс 1.2 Гц
   const matBossCore = std({ color: 0x2a2010, emissive: 0xffe2a8, emissiveIntensity: 2.4, roughness: 0.35, flatShading: true }); // «украденное солнце»
-  const matBossEyes = std({ color: 0x000000, emissive: 0xffd08a, emissiveIntensity: 2.6 });
+  // [W4-BOSS] глаза-угли: раскалённая сердцевина (HDR) → оранжевый → тёмно-багровый край, мерцание — в updateBoss
+  const texEmberEyes = tex(bossCanvas('eyes', () => paintEmberEyes(128, 32)), { repeat: false });
+  const matBossEyes = M(new THREE.MeshBasicMaterial({ color: 0xffffff, map: texEmberEyes, fog: false }));
+  const matEyeGlow = M(new THREE.SpriteMaterial({ map: texEmberEyes, color: 0xff8a3a, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
   const matBossRunes = std({ color: 0x3b3128, emissive: 0xffb060, emissiveIntensity: 0.9, roughness: 0.8, flatShading: true });
   // [W3-КИНО] лава в трещинах брони: общие униформы для matBoss, matBossDark, matBossMask (патч — у patchLit ниже)
   const lavaU = { kinoLavaO: { value: new THREE.Vector3(0, 3.4, 0) }, kinoLavaP: { value: new THREE.Vector4(0, 6, 0, 0) } };
+  // [W4-УДАР] вспышки трещин в точках ударов (bossFx.crackAt): 3 ячейки, накал гаснет в updateBoss
+  lavaU.kinoHit = { value: [new THREE.Vector4(0, -99, 0, 0), new THREE.Vector4(0, -99, 0, 0), new THREE.Vector4(0, -99, 0, 0)] };
+  lavaU.kinoHitC = { value: [new THREE.Vector4(1, 0.5, 0.2, 1), new THREE.Vector4(1, 0.5, 0.2, 1), new THREE.Vector4(1, 0.5, 0.2, 1)] };
+  lavaU.kinoHitK = { value: 0 };
   function patchLava(mat) {
     const prev = mat.onBeforeCompile;
     mat.onBeforeCompile = (shader, r) => {
@@ -815,12 +1133,74 @@ export function createWorld({ THREE, scene, renderer, camera, config = {} } = {}
         .replace('#include <project_vertex>', '#include <project_vertex>' + LAVA_VERT);
       // токены <common>/<emissivemap_fragment> остаются на месте — их же ищет atmo.patchLit
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform vec3 kinoLavaO;\nuniform vec4 kinoLavaP;\nvarying vec3 vKinoLavaPos;')
+        .replace('#include <common>', '#include <common>\nuniform vec3 kinoLavaO;\nuniform vec4 kinoLavaP;\nvarying vec3 vKinoLavaPos;\nuniform vec4 kinoHit[3];\nuniform vec4 kinoHitC[3];\nuniform float kinoHitK;')   // [W4-УДАР] kinoHit*
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>' + LAVA_FRAG);
     };
     const prevKey = mat.customProgramCacheKey;
     mat.customProgramCacheKey = () => 'kinoLava:' + (prevKey ? prevKey.call(mat) : '');
     mat.needsUpdate = true;
+  }
+  // [W4-BOSS] Обсидиан и фарфор Регента. Золото кинцуги — по R маски (цвет, металл, гладкость); свечение — заново:
+  // прожилки (R) ровно тлеют (w4A.y), руны (G) «дышат» волной снизу вверх (w4A.x — фаза, w4A.z — сила, цвет
+  // w4Rune), накал замаха — по всем каналам (w4A.w, цвет w4Hot), вспышка попадания — сетка трещин B (w4B.x).
+  // Патч ставится последним: его код встаёт сразу за emissivemap_fragment — до кромки atmo.patchLit и лавы W3,
+  // которые прибавляют своё к уже посчитанному свечению (лава читает ту же маску R).
+  const OBS_FRAG_RM = /* glsl */`
+#ifdef USE_EMISSIVEMAP
+  {
+    vec4 w4M = texture2D( emissiveMap, vEmissiveMapUv );
+    float w4V = smoothstep( 0.18, 0.7, w4M.r ) * w4Gild;
+    diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.95, 0.66, 0.28 ), w4V );
+    metalnessFactor = mix( metalnessFactor, 1.0, w4V );
+    roughnessFactor = mix( roughnessFactor, 0.24, w4V );
+    roughnessFactor = mix( roughnessFactor, 0.8, w4M.g * 0.6 * w4Gild );
+  }
+#endif`;
+  const OBS_FRAG_EM = /* glsl */`
+#ifdef USE_EMISSIVEMAP
+  float w4Br = 0.5 + 0.5 * sin( w4A.x - vW4Pos.y * 1.15 );
+  vec3 w4Glow = vec3( 1.0, 0.58, 0.2 ) * ( emissiveColor.r * w4A.y )
+    + w4Rune * ( emissiveColor.g * w4A.z * ( 0.25 + 0.75 * w4Br ) )
+    + w4Hot * ( ( emissiveColor.r + emissiveColor.g * 1.3 + 0.06 ) * w4A.w )
+    + vec3( 1.0, 0.82, 0.55 ) * ( ( emissiveColor.b + emissiveColor.r * 0.6 ) * w4B.x );
+  totalEmissiveRadiance = w4Glow;
+#endif`;
+  // свечение пробивает высотный туман: на дистанции боя (10–14 м) туман иначе гасит накал замаха
+  const OBS_FOG = /* glsl */`
+#if defined( USE_FOG ) && defined( USE_EMISSIVEMAP )
+  gl_FragColor.rgb += w4Glow * ( fogFactor * 0.8 );
+#endif`;
+  const OBS_VERT = /* glsl */`
+  {
+    vec4 w4WP = vec4( transformed, 1.0 );
+    #ifdef USE_INSTANCING
+      w4WP = instanceMatrix * w4WP;
+    #endif
+    vW4Pos = ( modelMatrix * w4WP ).xyz;
+  }`;
+  function patchObsidian(mat, gild = 1) {
+    const U = {
+      w4A: { value: new THREE.Vector4(0, 0.4, 0.8, 0) }, w4B: { value: new THREE.Vector4(0, 0, 0, 0) },
+      w4Rune: { value: new THREE.Color(1.0, 0.5, 0.16) }, w4Hot: { value: new THREE.Color(1.0, 0.45, 0.16) }, w4Gild: { value: gild },
+    };
+    mat.userData.w4 = U;
+    const prev = mat.onBeforeCompile;
+    mat.onBeforeCompile = (shader, r) => {
+      if (prev) prev.call(mat, shader, r);
+      Object.assign(shader.uniforms, U);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vW4Pos;')
+        .replace('#include <project_vertex>', '#include <project_vertex>' + OBS_VERT);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform vec4 w4A;\nuniform vec4 w4B;\nuniform vec3 w4Rune;\nuniform vec3 w4Hot;\nuniform float w4Gild;\nvarying vec3 vW4Pos;')
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>' + OBS_FRAG_RM)
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>' + OBS_FRAG_EM)
+        .replace('#include <fog_fragment>', '#include <fog_fragment>' + OBS_FOG);
+    };
+    const prevKey = mat.customProgramCacheKey;
+    mat.customProgramCacheKey = () => 'w4obs:' + (prevKey ? prevKey.call(mat) : '');
+    mat.needsUpdate = true;
+    return U;
   }
 
   const addMat = (color, opacity, map, fog = false) => M(new THREE.MeshBasicMaterial({
@@ -1130,13 +1510,18 @@ float ashPuddle( vec2 xz ) {
   sigil.receiveShadow = true;
   sigil.name = 'oath-sigil';
   env.add(sigil);
-  // Золотая инкрустация по границе арены (с разрывами)
-  for (let i = 0; i < 6; i++) {
-    const a0 = (i / 6) * TAU + 0.1, len = TAU / 6 - 0.16 - (i % 2) * 0.08;
-    const ring = new THREE.Mesh(G(new THREE.RingGeometry((wc.arenaRadius - 0.04) * 1, (wc.arenaRadius + 0.05) * 1, 48, 1, a0, len)), matGold);
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.052;
+  // Золотая инкрустация по границе арены (с разрывами). [W4-ARENA] шесть дуг — одна геометрия (было 6 вызовов)
+  {
+    const arcs = [];
+    for (let i = 0; i < 6; i++) {
+      const a0 = (i / 6) * TAU + 0.1, len = TAU / 6 - 0.16 - (i % 2) * 0.08;
+      const g = new THREE.RingGeometry((wc.arenaRadius - 0.04) * 1, (wc.arenaRadius + 0.05) * 1, 48, 1, a0, len);
+      g.rotateX(-Math.PI / 2); g.translate(0, 0.052, 0);
+      arcs.push(g);
+    }
+    const ring = new THREE.Mesh(G(mergeGeos(arcs)), matGold);
     ring.receiveShadow = true;
+    ring.name = 'arena-gold-inlay';
     env.add(ring);
   }
   // Светящиеся трещины от печати (аддитивная декаль)
@@ -1462,29 +1847,38 @@ float ashPuddle( vec2 xz ) {
     env.add(water);
   }
 
-  // Хребты-силуэты: два кольца, туман разводит их по глубине.
-  function ridge(radius, count, baseY, hMin, hMax, color, seed) {
-    const pos = [], idx = [];
+  // Хребты-силуэты. [W4-ARENA] Три слоя гор (воздушная перспектива: дальние выше, светлее и синее) и шпили мёртвого
+  // города — одна геометрия с цветом вершин и одним вызовом отрисовки (было 4). Гребни и острия подсвечивает корона
+  // затмения с той стороны, где оно стоит (шейдер следует за затмением); низ тонет в высотном тумане.
+  const farSil = { pos: [], col: [], rim: [], idx: [] };
+  const _fc = new THREE.Color();
+  function farPush(x, y, z, hex, rim) { _fc.set(hex); farSil.pos.push(x, y, z); farSil.col.push(_fc.r, _fc.g, _fc.b); farSil.rim.push(rim); }
+  function ridge(radius, count, baseY, hMin, hMax, color, seed, o = {}) {
     const nz = makeNoise(seed);
+    const b0 = farSil.pos.length / 3;
     for (let i = 0; i <= count; i++) {
       const u = i / count, a = u * TAU;
-      let h = hMin + (hMax - hMin) * nz.fbm(u * 9, 0.5, 9, 5);
+      // острые гребни: ridged-шум (1 − |2n − 1|)², бесшовно по кругу (период — число ячеек)
+      let rs = 0, amp = 0.5, fq = o.freq || 9, nrm = 0;
+      for (let k = 0; k < 4; k++) { const v = 1 - Math.abs(2 * nz.n2(u * fq, 0.5 + k * 3.1, fq) - 1); rs += amp * v * v; nrm += amp; amp *= 0.5; fq *= 2; }
+      let h = hMin + (hMax - hMin) * Math.pow(rs / nrm, o.sharp || 1);
       const spike = nz.n2(u * 40, 3.3, 40);
-      if (spike > 0.83) h += (spike - 0.83) * 60;
+      if (spike > 0.83) h += (spike - 0.83) * (o.spike || 60);
+      // долина под затмением: кадр «камера → Регент → затмение» обрамляют склоны, а не закрывает гребень
+      const de = wrapAngle(a - deg(ECLIPSE.azimuth));
+      h = lerp(h, baseY + (h - baseY) * 0.55, Math.exp(-(de * de) / 0.05) * (o.valley || 0));
       const r = radius * (1 + (nz.n2(u * 20, 7.1, 20) - 0.5) * 0.08);
-      pos.push(Math.sin(a) * r, baseY, Math.cos(a) * r, Math.sin(a) * r, h, Math.cos(a) * r);
-      if (i < count) { const b = i * 2; idx.push(b, b + 2, b + 1, b + 1, b + 2, b + 3); }
+      const x = Math.sin(a) * r, z = Math.cos(a) * r;
+      farPush(x, baseY, z, color, 0);
+      farPush(x, h, z, color, 1);
+      if (i < count) { const b = b0 + i * 2; farSil.idx.push(b, b + 2, b + 1, b + 1, b + 2, b + 3, b, b + 1, b + 2, b + 1, b + 3, b + 2); }   // гребень — с обеих сторон, шпили — лицом
     }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setIndex(idx);
-    g.computeBoundingSphere();
-    const m = new THREE.Mesh(G(g), M(new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, fog: true })));
-    m.frustumCulled = false;
-    env.add(m);
-    return m;
   }
-  ridge(skyR * 0.8, 260, -40, 22, 58, 0x1a202b, wc.seed + 112);
+  // горы — за шпилями мёртвого города (те до 0,74 радиуса неба); высоты — над краем рельефа большой карты
+  // (он закрывает горизонт до ~5°): вершины встают на 6–12°
+  ridge(skyR * 0.78, 260, -40, 14, 124, 0x141922, wc.seed + 113, { valley: 1, sharp: 2.4, freq: 7, spike: 70 });
+  ridge(skyR * 0.87, 280, -40, 26, 156, 0x192029, wc.seed + 114, { valley: 0.8, sharp: 2.1, freq: 9, spike: 90 });
+  ridge(skyR * 0.95, 300, -40, 40, 190, 0x1f2632, wc.seed + 112, { valley: 0.6, sharp: 1.8, freq: 6, spike: 110 });
 
   /* --------------------------- Руины: колонны --------------------------- */
   const shaftGeo = (() => {
@@ -1538,9 +1932,11 @@ float ashPuddle( vec2 xz ) {
   const shafts = [], tops = [], caps = [], plinths = [], blocks = [];
   const GROUND_Y = -1.0;
   const stoneTint = (rnd, k = 1) => { const v = (0.86 + rnd() * 0.22) * k; return new THREE.Color(v * 1.02, v, v * 0.97); };
+  const arenaRuins = [];   // [W4-ARENA] у руин кружат мотыльки света
   function column(aDeg, r, type, h, tier, rnd) {
     const base = polar(aDeg, r * K, GROUND_Y);
     const rad = 0.62 + rnd() * 0.1;
+    arenaRuins.push({ x: base.x, z: base.z, r: rad * 1.3 });   // [W4-ARENA]
     const yaw = rnd() * TAU;
     const lean = type === 'tall' ? 0 : (rnd() - 0.5) * 0.06;
     const tint = stoneTint(rnd);
@@ -2243,7 +2639,12 @@ float ashPuddle( vec2 xz ) {
       for (let i = 0; i < 4; i++) addSegment(c4[i].x, c4[i].z, c4[(i + 1) % 4].x, c4[(i + 1) % 4].z, 0.3);
     }
     env.add(portalGroup);
-    const add = (geo, x, y, z, mat = matFar) => { const m = new THREE.Mesh(G(geo), mat); m.position.set(x, y, z); portalGroup.add(m); return m; };
+    // [W4-ARENA] камень святилища (matFar) — одна геометрия в системе группы (было 8 вызовов); завеса и вихри — свои меши
+    const farParts = [];
+    const add = (geo, x, y, z, mat = matFar) => {
+      if (mat === matFar) { geo.translate(x, y, z); farParts.push(geo); return null; }
+      const m = new THREE.Mesh(G(geo), mat); m.position.set(x, y, z); portalGroup.add(m); return m;
+    };
     add(chiseled(34, 1.6, 12, { bevel: 0.3, jitter: 0.2, uvScale: 3 }), 0, 0.8, 0);
     add(chiseled(26, 1.6, 9, { bevel: 0.3, jitter: 0.2, uvScale: 3 }), 0, 2.4, -0.5);
     add(chiseled(19, 1.6, 7, { bevel: 0.3, jitter: 0.2, uvScale: 3 }), 0, 4.0, -1);
@@ -2275,23 +2676,25 @@ float ashPuddle( vec2 xz ) {
     const swirl2 = add(sw.clone(), 0, 4.8 + 7.2, -0.7, addMat(0x8fb2de, 0.22, texSpiral));
     G(swirl2.geometry);
     portalGroup.userData.swirls = [swirl, swirl2];
-    // далёкие руины-башни
+    { const m = new THREE.Mesh(G(mergeGeos(farParts.splice(0))), matFar); m.name = 'far-shrine-stone'; portalGroup.add(m); }
+    // далёкие руины-башни. [W4-ARENA] шесть башен с обломанными верхушками — одна геометрия (было 12 вызовов)
     const rnd = mulberry32(wc.seed + 131);
+    const towerParts = [];
     for (const [a, r, h0] of [[128, 44, 16], [218, 47, 13], [60, 50, 19], [300, 45, 15], [15, 52, 12], [258, 58, 22]]) {
       const pp = polar(a, r * K);
       const gy = Math.min(GROUND_Y, groundY(pp.x, pp.z).y);
       const h = h0 + (GROUND_Y - gy); // башня за обрывом вырастает из моря тумана
-      const tw = new THREE.Mesh(G(chiseled(3.4 + rnd() * 1.4, h, 3.4 + rnd(), { bevel: 0.3, jitter: 0.4, taperTop: 0.75, uvScale: 3, seed: a })), matFar);
-      tw.position.copy(polar(a, r * K, gy + h / 2 - 0.5));
-      addCircle(tw.position.x, tw.position.z, 2.3);
-      tw.rotation.y = rnd() * TAU;
-      tw.rotation.z = (rnd() - 0.5) * 0.08;
-      env.add(tw);
-      const top = new THREE.Mesh(brokenTopGeo, matFar);
-      top.position.copy(tw.position).setY(gy + h - 0.6);
-      top.scale.set(2, 2.5, 2);
-      env.add(top);
+      const twG = chiseled(3.4 + rnd() * 1.4, h, 3.4 + rnd(), { bevel: 0.3, jitter: 0.4, taperTop: 0.75, uvScale: 3, seed: a });
+      const tp = polar(a, r * K, gy + h / 2 - 0.5);
+      addCircle(tp.x, tp.z, 2.3);
+      _e.set(0, rnd() * TAU, (rnd() - 0.5) * 0.08);
+      towerParts.push(twG.applyMatrix4(_m4.compose(tp, _q.setFromEuler(_e), _s.set(1, 1, 1))));
+      _e.set(0, 0, 0);
+      towerParts.push(brokenTopGeo.clone().applyMatrix4(_m4.compose(_v.set(tp.x, gy + h - 0.6, tp.z), _q.setFromEuler(_e), _s.set(2, 2.5, 2))));
     }
+    const towers = new THREE.Mesh(G(mergeGeos(towerParts)), matFar);
+    towers.name = 'far-towers';
+    env.add(towers);
   }
 
   /* ------------- Колоссы без кистей, шпили мёртвого города (Библия, разд. 2–3) ------------- */
@@ -2325,12 +2728,15 @@ float ashPuddle( vec2 xz ) {
     parts.push(skirt);
     return G(mergeGeos(parts));
   }
-  for (const [a, lift, r] of [[160, 2.5, 372], [222, -1.5, 392]]) { // [ASHEN_V3] за краем большой карты
-    const c = new THREE.Mesh(colossusGeo(lift), matColossus);
-    const pos = polar(a, r);
-    c.position.set(pos.x, -48, pos.z);
-    c.scale.setScalar(1.35);
-    c.rotation.y = Math.atan2(-pos.x, -pos.z) + (a < 190 ? -0.25 : 0.25);
+  {
+    // [ASHEN_V3] за краем большой карты. [W4-ARENA] оба колосса — одна геометрия (было 2 вызова)
+    const parts = [];
+    for (const [a, lift, r] of [[160, 2.5, 372], [222, -1.5, 392]]) {
+      const pos = polar(a, r);
+      _e.set(0, Math.atan2(-pos.x, -pos.z) + (a < 190 ? -0.25 : 0.25), 0);
+      parts.push(colossusGeo(lift).applyMatrix4(_m4.compose(_v.set(pos.x, -48, pos.z), _q.setFromEuler(_e), _s.setScalar(1.35))));
+    }
+    const c = new THREE.Mesh(G(mergeGeos(parts)), matColossus);
     c.frustumCulled = false;
     c.name = 'colossus';
     env.add(c);
@@ -2366,14 +2772,49 @@ float ashPuddle( vec2 xz ) {
         windowPos.push(x + Math.sin(toC) * w * 0.6, base + h * lerp(0.72, 0.92, rr()), z + Math.cos(toC) * w * 0.6);
       }
     }
-    const mesh = new THREE.Mesh(G(mergeGeos(parts)), M(new THREE.MeshBasicMaterial({ color, fog: true })));
-    mesh.frustumCulled = false;
-    mesh.name = 'dead-city';
-    env.add(mesh);
+    // [W4-ARENA] в общий меш силуэтов: цвет слоя в вершинах, «кромка» — доля высоты (острия ловят корону)
+    for (const g of parts) {
+      const pa = g.attributes.position, ix = g.index, b0 = farSil.pos.length / 3;
+      for (let i = 0; i < pa.count; i++) farPush(pa.getX(i), pa.getY(i), pa.getZ(i), color, clamp((pa.getY(i) - base) / (hMax * 1.6), 0, 1));
+      if (ix) for (let i = 0; i < ix.count; i++) farSil.idx.push(ix.getX(i) + b0);
+      else for (let i = 0; i < pa.count; i++) farSil.idx.push(b0 + i);
+      g.dispose();
+    }
   }
   spireLayer(skyR * 0.46, 30, 34, 92, 170, wc.seed + 151, 0x161b24, true);
   spireLayer(skyR * 0.6, 38, 44, 122, 210, wc.seed + 152, 0x1b212c, true);
   spireLayer(skyR * 0.74, 44, 60, 150, 240, wc.seed + 153, 0x202732, false);
+  {
+    // [W4-ARENA] горы и шпили — один меш; подсветка гребней короной: pow(кромка) × близость взгляда к затмению
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(farSil.pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(farSil.col, 3));
+    g.setAttribute('aRim', new THREE.Float32BufferAttribute(farSil.rim, 1));
+    g.setIndex(farSil.idx);
+    g.computeBoundingSphere();
+    const mat = M(new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, fog: true }));
+    const sk = atmo.skyU;
+    mat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, { uASun: sk.uSun, uACorona: sk.uCorona, uACoronaI: sk.uCoronaI });
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aRim;\nvarying float vARim;\nvarying vec3 vAFarW;')
+        .replace('#include <project_vertex>', '#include <project_vertex>\n  vARim = aRim;\n  vAFarW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform vec3 uASun;\nuniform vec3 uACorona;\nuniform float uACoronaI;\nvarying float vARim;\nvarying vec3 vAFarW;')
+        .replace('#include <opaque_fragment>', `{
+    float aS = max( dot( normalize( vAFarW - cameraPosition ), uASun ), 0.0 );
+    float aE = pow( vARim, 9.0 );
+    outgoingLight += uACorona * uACoronaI * aE * ( pow( aS, 28.0 ) * 1.8 + pow( aS, 6.0 ) * 0.3 );
+    outgoingLight *= 1.0 - 0.35 * ( 1.0 - vARim );
+  }
+  #include <opaque_fragment>`);
+    };
+    mat.customProgramCacheKey = () => 'ashFarSil';
+    const mesh = new THREE.Mesh(G(g), mat);
+    mesh.frustumCulled = false;
+    mesh.name = 'far-silhouettes';
+    env.add(mesh);
+  }
   {
     // 5–8 тёплых окон: «далёкая жизнь». HDR-цвет пробивается сквозь максимум тумана 0.97.
     const wg = new THREE.BufferGeometry();
@@ -2393,60 +2834,52 @@ float ashPuddle( vec2 xz ) {
     const ribs = [[148, 18.0, 9.2, 0.78], [163, 17.6, 9.0, 0.5], [212, 18.2, 8.6, 0.84], [108, 18.6, 9.6, 0.62],
       [252, 18.4, 9.0, 0.7], [30, 18.8, 8.8, 0.74], [330, 18.6, 9.1, 0.58]];
     const apex = new THREE.Vector3(0, 25, 0);
-    const chunkGeo = G(rockGeo(1.1, 1, 171, 0.8));
+    const chunkGeo = rockGeo(1.1, 1, 171, 0.8);
+    const ribParts = [];   // [W4-ARENA] семь рёбер и обломки — одна геометрия (было 14 вызовов и столько же в тени)
     for (const [a, r, h, keep] of ribs) {
       const y0 = GROUND_Y + 0.7 + h + 0.75;
       const curve = new THREE.CubicBezierCurve3(polar(a, r * K * 0.99, y0), polar(a, r * K * 0.82, y0 + 6.5), polar(a, r * K * 0.38, apex.y), apex.clone());
       const pts = [];
       for (let i = 0; i <= 24; i++) pts.push(curve.getPoint((i / 24) * keep));
       const part = new THREE.CatmullRomCurve3(pts);
-      const tube = new THREE.Mesh(G(new THREE.TubeGeometry(part, 40, 0.62, 6, false)), matStone);
-      tube.castShadow = true; tube.receiveShadow = true;
-      tube.name = 'dome-rib';
-      env.add(tube);
+      ribParts.push(new THREE.TubeGeometry(part, 40, 0.62, 6, false));
       const end = pts[pts.length - 1];
-      const chunk = new THREE.Mesh(chunkGeo, matStone);
-      chunk.position.copy(end);
-      chunk.rotation.set(ribRnd() * 3, ribRnd() * 3, ribRnd() * 3);
-      chunk.scale.setScalar(0.7 + ribRnd() * 0.3);
-      chunk.castShadow = true;
-      env.add(chunk);
+      _e.set(ribRnd() * 3, ribRnd() * 3, ribRnd() * 3);
+      const sc = 0.7 + ribRnd() * 0.3;
+      ribParts.push(chunkGeo.clone().applyMatrix4(_m4.compose(end, _q.setFromEuler(_e), _s.setScalar(sc))));
     }
+    chunkGeo.dispose();
+    const ribMesh = new THREE.Mesh(G(mergeGeos(ribParts)), matStone);
+    ribMesh.castShadow = true; ribMesh.receiveShadow = true;
+    ribMesh.name = 'dome-ribs';
+    env.add(ribMesh);
   }
 
-  /* ------------------------------ Жаровни ------------------------------ */
-  const braziers = [];
-  {
-    const pedGeo = G((() => { const g = lathe([[0.36, 0], [0.34, 0.08], [0.24, 0.16], [0.21, 0.72], [0.28, 0.82], [0.3, 0.9], [0.0005, 0.9]], 14); boxProjectUV(g, 1.2); return g; })());
-    const bowlGeo = G(lathe([[0.0005, 0], [0.12, 0.0], [0.3, 0.08], [0.46, 0.26], [0.5, 0.36], [0.46, 0.37], [0.4, 0.28], [0.0005, 0.2]], 18));
-    const coalGeo = G(rockGeo(0.34, 1, 44, 0.45));
-    const decalGeo = G(new THREE.PlaneGeometry(1, 1));
-    const matPool = addMat(0xff8a3a, 0.28, texGlow);
-    const angles = [150, 210, 330, 30, 90, 270];
-    angles.forEach((a, i) => {
-      const grp = new THREE.Group();
-      const p = polar(a, 11.25 * K, -0.3);
-      grp.position.copy(p);
-      addCircle(p.x, p.z, 0.5);
-      env.add(grp);
-      const ped = new THREE.Mesh(pedGeo, matStone); ped.castShadow = true; ped.receiveShadow = true; grp.add(ped);
-      const bowl = new THREE.Mesh(bowlGeo, matIron); bowl.position.y = 0.88; bowl.castShadow = true; grp.add(bowl);
-      const coals = new THREE.Mesh(coalGeo, matCoals); coals.position.y = 1.15; grp.add(coals);
-      const outer = new THREE.Sprite(M(new THREE.SpriteMaterial({ map: texGlow, color: 0xff7a30, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })));
-      outer.material.color.multiplyScalar(1.6);
-      outer.position.y = 1.55; outer.scale.set(1.5, 2.0, 1); grp.add(outer);
-      const core = new THREE.Sprite(M(new THREE.SpriteMaterial({ map: texGlow, color: 0xffc27a, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })));
-      core.material.color.multiplyScalar(4.2);
-      core.position.y = 1.38; core.scale.set(0.55, 0.95, 1); grp.add(core);
-      const pool = new THREE.Mesh(decalGeo, matPool);
-      pool.rotation.x = -Math.PI / 2; pool.position.y = 0.02; pool.scale.set(4.2, 4.2, 1); pool.renderOrder = 2; grp.add(pool);
-      const light = new THREE.PointLight(0xff8a3d, 14 * LI.point, 8, 2);
-      light.position.y = 1.7;
-      light.visible = false;
-      grp.add(light);
-      braziers.push({ grp, outer, core, light, phase: i * 1.7 });
-    });
+  /* -------------- [W4-ARENA] Жаровни, столпы-светильники и воздух арены (modules/arenaFx.js) -------------- */
+  // Было: 6 жаровен по 6 вызовов отрисовки (подножие, чаша, угли, два спрайта, декаль) — 36. Стало: 6 жаровен и 6 столпов
+  // у целых колонн — 5 вызовов на всё (3 инстанса, живое пламя, воздух); лужицы тепла и блики — в шейдере пола.
+  // Свет — общий пул (low 0, medium 2, high 4 — как было у жаровен), едет к ближайшим к герою огням.
+  const ARENA_BRAZIER_AZ = [150, 210, 330, 30, 90, 270];
+  const ARENA_TORCH_AZ = [[148, 18.0], [163, 17.6], [212, 18.2], [252, 18.4], [330, 18.6], [30, 18.8]];   // перед целыми колоннами
+  const arenaFires = ARENA_BRAZIER_AZ.map((a) => {
+    const p = polar(a, 11.25 * K, -0.3);
+    addCircle(p.x, p.z, 0.55);
+    return { x: p.x, y: -0.3, z: p.z, kind: 'brazier' };
+  });
+  for (const [a, r] of ARENA_TORCH_AZ) {
+    const p = polar(a, (r - 1.75) * K);
+    addCircle(p.x, p.z, 0.34);
+    arenaFires.push({ x: p.x, y: terrainH(p.x, p.z) - 0.05, z: p.z, kind: 'torch' });
   }
+  const arenaFx = createArenaFx({
+    THREE, parent: env, G, M, renderer, fires: arenaFires, ruins: arenaRuins.filter((q) => Math.hypot(q.x, q.z) < 40 * K),
+    groundY: (x, z) => { const r = Math.hypot(x, z) / K; return r < 10.9 ? 0 : r < 13 ? -0.3 - 0.3 * Math.floor((r - 10.9) / 0.7) : terrainH(x, z); },
+    materials: { stone: matStone, iron: matIron, coals: matCoals }, LI, quality: initialQuality, reducedMotion: wc.reducedMotion,
+    seed: wc.seed, runeU, sky: atmo.skyU, runeR: 3.82 * K, embersR: [2.5 * K, 21 * K],
+  });
+  const arenaCtx = { focus: null, cam: null, fade: 1 };   // кадр без аллокаций
+  arenaFx.patchLit(matFloor, 'floor');
+  arenaFx.patchLit(matTerrain, 'terrain');
 
   /* ------------------------------ Пепел ------------------------------ */
   const ASH_MAX = Math.ceil(QUALITY_PRESETS.high.ash * 1.6);   // [W3-КИНО] запас под густой пепел второй фазы (буферы — один раз)
@@ -3122,6 +3555,18 @@ float ashPuddle( vec2 xz ) {
   const boss = makeRig(bossRoot, bossBody);
   const B = { fistGlow: {}, frags: [] };
   const matFistGlow = M(new THREE.SpriteMaterial({ map: texGlow, color: 0xff9a4a, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+  // [W4-BOSS] Детали одного материала, которые не двигаются друг относительно друга, сливаются в один меш
+  // (трансформ — как у part(), запекается в вершины): нимб, позвонок, клетка ядра, манжета с ладонью.
+  // Минус ~20 вызовов отрисовки (и столько же в тени) — бюджет под затмение, корону и дым теней.
+  const _bm = new THREE.Matrix4(), _bq = new THREE.Quaternion(), _bv = new THREE.Vector3(), _bsc = new THREE.Vector3();
+  function bakeGeo(geo, x = 0, y = 0, z = 0, o = {}) {
+    const g = geo.clone();
+    _e.set(o.rx || 0, o.ry || 0, o.rz || 0, o.order || 'XYZ');
+    if (o.s === undefined) _bsc.set(1, 1, 1); else if (typeof o.s === 'number') _bsc.setScalar(o.s); else _bsc.set(o.s[0], o.s[1], o.s[2]);
+    g.applyMatrix4(_bm.compose(_bv.set(x, y, z), _bq.setFromEuler(_e), _bsc));
+    return g;
+  }
+  const merged = (list) => G(mergeGeos(list));
 
   {
     const cs = (w, h, d, o = {}) => chiseled(w, h, d, Object.assign({ uvScale: 1.3, seg: 3 }, o));
@@ -3151,8 +3596,7 @@ float ashPuddle( vec2 xz ) {
         g.position.set(0, y, -0.05);
         par.add(g);
         const k = 1 - Math.abs(i - 2.5) * 0.07;
-        part(g, vg, matBossDark, 0, 0, 0, { s: [k, 1, k] });
-        part(g, pg, matBossDark, 0, 0.02, -0.26, { s: k });
+        part(g, merged([bakeGeo(vg, 0, 0, 0, { s: [k, 1, k] }), bakeGeo(pg, 0, 0.02, -0.26, { s: k })]), matBossDark);   // [W4-BOSS] позвонок с остистым отростком — один меш
         if (i % 2 === 0) part(g, ringG, matGold, 0, 0, 0, { s: k * 1.12, cast: false });
         B.verts.push({ g, y, phase: i * 0.9 });
       });
@@ -3166,9 +3610,7 @@ float ashPuddle( vec2 xz ) {
       med.add(cage);
       B.cage = cage;
       const rg = G(new THREE.TorusGeometry(0.36, 0.028, 6, 30));
-      part(cage, rg, matGold, 0, 0, 0, { cast: false });
-      part(cage, rg, matGold, 0, 0, 0, { ry: Math.PI / 2, cast: false });
-      part(cage, rg, matGold, 0, 0, 0, { rx: Math.PI / 2, s: 0.86, cast: false });
+      part(cage, merged([bakeGeo(rg), bakeGeo(rg, 0, 0, 0, { ry: Math.PI / 2 }), bakeGeo(rg, 0, 0, 0, { rx: Math.PI / 2, s: 0.86 })]), matGold, 0, 0, 0, { cast: false });   // [W4-BOSS] три кольца — один меш
       B.core = part(med, G(new THREE.IcosahedronGeometry(0.19, 1)), matBossCore, 0, 0, 0, { cast: false });
       const sig = part(med, G(new THREE.PlaneGeometry(1.2, 1.2)), matChestSigil, 0, 0, 0.3, { cast: false, receive: false });
       sig.visible = false;
@@ -3184,12 +3626,16 @@ float ashPuddle( vec2 xz ) {
     }
     // Мантия на невидимых плечах: открыта спереди (видна пустота с позвонками), рваный тлеющий подол.
     {
-      const COLS = 30, ROWS = 18, A0 = deg(38), A1 = deg(322), TOP = 0.98, BOT = -2.45;
+      const COLS = 30, ROWS = 22, A0 = deg(38), A1 = deg(322), TOP = 0.98, BOT = -2.45;
       const pos = [], uv = [], idx = [];
       for (let r = 0; r <= ROWS; r++) {
         const v = r / ROWS;
-        const y = lerp(TOP, BOT, v);
-        const rad = lerp(0.6, 1.5, Math.pow(v, 0.8)) + Math.sin(v * 9) * 0.02;
+        // [W4-BOSS] силуэт: от ворота почти плоская пелерина до линии плеч (там, где невидимые плечевые суставы),
+        // перехват и расклёшенный подол — вместо прямого конуса
+        const y = v < 0.12 ? lerp(TOP, TOP - 0.3, Math.sin((v / 0.12) * Math.PI / 2)) : lerp(TOP - 0.3, BOT, (v - 0.12) / 0.88);
+        const rad = (v < 0.12 ? lerp(0.5, 1.1, smooth01(v / 0.12))
+          : v < 0.4 ? lerp(1.1, 0.9, smooth01((v - 0.12) / 0.28))
+            : lerp(0.9, 1.78, Math.pow((v - 0.4) / 0.6, 1.35))) + Math.sin(v * 9) * 0.02;
         for (let c = 0; c <= COLS; c++) {
           const u = c / COLS;
           const a = lerp(A0, A1, u);
@@ -3210,7 +3656,8 @@ float ashPuddle( vec2 xz ) {
       for (let y = 0; y < S2; y++) for (let x = 0; x < S2; x++) {
         const u = x / S2, v = 1 - y / S2; // v: 0 — ворот, 1 — подол
         const n = nz.fbm(u * 9, v * 5, 9, 4), strip = 0.5 + 0.5 * Math.sin(u * TAU * 11 + n * 3);
-        const cut = Math.pow(Math.max(0, v - 0.5) / 0.5, 1.6) * (0.55 + 0.35 * strip) + (nz.n2(u * 26, v * 18, 26) > 0.86 ? 0.35 : 0) * v;
+        // [W4-BOSS] рвань — только в нижней четверти (длинные лоскуты), выше — редкие прожжённые дыры
+        const cut = Math.pow(Math.max(0, v - 0.55) / 0.45, 1.8) * (0.5 + 0.45 * strip) + (nz.n2(u * 26, v * 18, 26) > 0.86 ? 0.35 : 0) * v;
         const keep = n * 0.5 + 0.5 - cut;
         const i = (y * S2 + x) * 4;
         const on = keep > 0.36;
@@ -3220,43 +3667,63 @@ float ashPuddle( vec2 xz ) {
       }
       cx.putImageData(im, 0, 0);
       const tMask = tex(cc, { srgb: false, repeat: false });
-      const matMantle = std({
-        color: 0x3a322d, map: texCloth, alphaMap: tMask, alphaTest: 0.5, side: THREE.DoubleSide,
+      tMask.flipY = false;   // [W4-BOSS] строка 0 канваса — подол (v = 1): без этого рваный край оказывался у ворота
+      const matMantle = std({   // [W4-BOSS] темнее — плащ из теней (было 0x3a322d)
+        color: 0x231e24, map: texCloth, alphaMap: tMask, alphaTest: 0.5, side: THREE.DoubleSide,
         emissive: 0xff6a2a, emissiveMap: tMask, emissiveIntensity: 2.2, roughness: 0.95, metalness: 0,
       });
       // alphaMap читает G, а маска ткани лежит в R; угли — в G эмиссии. Меняем каналы и добавляем ветер.
-      const windU = { value: 0 }, burnU = { value: 0 };
+      const windU = { value: 0 }, burnU = { value: 0 }, trimU = { value: 0.3 };
       matMantle.userData.wind = windU;
       matMantle.userData.burn = burnU;
+      matMantle.userData.trim = trimU;   // [W4-BOSS] свечение золотой каймы (дышит)
       matMantle.onBeforeCompile = (sh) => {
         sh.uniforms.ashWind = windU;
         sh.uniforms.ashBurn = burnU;
+        sh.uniforms.ashTrimGlow = trimU;
         sh.vertexShader = sh.vertexShader
           .replace('#include <common>', '#include <common>\nuniform float ashWind;')
           .replace('#include <begin_vertex>', `#include <begin_vertex>
   {
     float w = smoothstep( ${TOP.toFixed(2)}, ${BOT.toFixed(2)}, position.y );
     float ph = atan( position.x, position.z );
-    transformed.x += sin( ashWind * 1.3 + ph * 3.0 + position.y * 1.7 ) * 0.09 * w * w;
-    transformed.z += cos( ashWind * 1.1 + ph * 2.0 + position.y * 2.3 ) * 0.07 * w * w;
+    transformed.x += sin( ashWind * 1.3 + ph * 3.0 + position.y * 1.7 ) * 0.12 * w * w;
+    transformed.z += cos( ashWind * 1.1 + ph * 2.0 + position.y * 2.3 ) * 0.1 * w * w;
     transformed.y += sin( ashWind * 2.1 + ph * 5.0 ) * 0.03 * w;
   }`);
         sh.fragmentShader = sh.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform float ashBurn;')
+          .replace('#include <common>', '#include <common>\nuniform float ashBurn;\nuniform float ashTrimGlow;')
           .replace('#include <alphamap_fragment>', `#ifdef USE_ALPHAMAP
   float ashBurnLine = ashBurn * 0.55 + ( sin( vAlphaMapUv.x * 41.0 ) + sin( vAlphaMapUv.x * 17.0 + 1.3 ) ) * 0.02 * step( 0.001, ashBurn );
   float ashBurnt = step( vAlphaMapUv.y, ashBurnLine );
   float ashEmber = ( 1.0 - smoothstep( 0.0, 0.05, vAlphaMapUv.y - ashBurnLine ) ) * step( 0.001, ashBurn );
   diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).r * ( 1.0 - ashBurnt );
+  float ashTrimE = min( vAlphaMapUv.x, 1.0 - vAlphaMapUv.x );   // [W4-BOSS] золотая кайма: края разреза и ворот
+  float ashTrim = max( 1.0 - smoothstep( 0.007, 0.012, ashTrimE ), smoothstep( 0.962, 0.972, vAlphaMapUv.y ) );
+  diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.62, 0.42, 0.17 ), ashTrim );
 #endif`)
           .replace('#include <emissivemap_fragment>', `#ifdef USE_EMISSIVEMAP
   totalEmissiveRadiance *= vec3( max( texture2D( emissiveMap, vEmissiveMapUv ).g, ashEmber * 1.4 ) );
+  totalEmissiveRadiance += vec3( 1.0, 0.6, 0.24 ) * ( ashTrim * ashTrimGlow );
 #endif`);
       };
       matMantle.customProgramCacheKey = () => 'ashMantle';
       B.mantleMat = matMantle;
       const mantle = part(chest, G(g), matMantle, 0, 0, 0);
       mantle.name = 'regent-mantle';
+      // [W4-BOSS] наплечники — гроздья обсидиановых кристаллов (вверх и наружу): властный, колючий силуэт; один меш
+      {
+        const list = [];
+        for (const sd of [1, -1]) {
+          for (const [r, st, x, y, z, rz, rx] of [[0.12, 3.8, 0.94, 0.62, -0.06, -0.42, -0.18], [0.09, 3.0, 1.1, 0.5, 0.06, -0.95, 0.1], [0.08, 2.8, 0.76, 0.7, -0.24, -0.15, -0.5], [0.065, 2.4, 1.02, 0.6, -0.3, -0.7, -0.4]]) {
+            const g0 = shardGeo(r, st, 331 + list.length);
+            g0.translate(0, r * st * 0.8, 0);   // основание чуть утоплено в плечо
+            list.push(bakeGeo(g0, sd * x, y, z, { rz: sd * rz, rx }));
+            g0.dispose();
+          }
+        }
+        part(chest, merged(list), matBossDark).name = 'regent-pauldrons';
+      }
       B.mantle = mantle;
     }
     // шея, капюшон и фарфоровая маска со щелью
@@ -3268,7 +3735,7 @@ float ashPuddle( vec2 xz ) {
       for (let i = 0; i < hp.count; i++) { if (hp.getZ(i) > 0.12) hp.setZ(i, 0.12 + (hp.getZ(i) - 0.12) * 0.25); }
       hood.computeVertexNormals();
       // капюшон — своя ткань: у LatheGeometry другие UV, рваный подол мантии на нём давал дыры
-      B.hoodMat = std({ color: 0x3a322d, map: texCloth, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
+      B.hoodMat = std({ color: 0x231e24, map: texCloth, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });   // [W4-BOSS] в тон плаща теней
       part(head, G(hood), B.hoodMat, 0, -0.1, -0.2, { s: [0.82, 0.84, 0.78] });
 
       const ms = new THREE.Shape();
@@ -3289,6 +3756,12 @@ float ashPuddle( vec2 xz ) {
       boxProjectUV(mg, 1.1);
       part(head, G(mg), matBossMask, 0, 0.36, 0.3, { rx: -0.08, s: 0.76 });
       part(head, G(new THREE.PlaneGeometry(0.38, 0.045)), matBossEyes, 0, 0.45, 0.36, { cast: false, rx: -0.08 });
+      // [W4-BOSS] ореол глаз-углей перед щелью маски: читается и без bloom (low)
+      B.eyeGlow = new THREE.Sprite(matEyeGlow);
+      B.eyeGlow.position.set(0, 0.45, 0.47);
+      B.eyeGlow.scale.set(0.95, 0.24, 1);
+      B.eyeGlow.renderOrder = 3;
+      head.add(B.eyeGlow);
       // вторая фаза: маска раскалывается по вертикали, за ней светит «украденное солнце»
       const crackShape = new THREE.Shape();
       crackShape.moveTo(0, 0.5); crackShape.lineTo(0.035, 0.24); crackShape.lineTo(-0.02, 0.02); crackShape.lineTo(0.03, -0.22);
@@ -3303,7 +3776,8 @@ float ashPuddle( vec2 xz ) {
       head.add(B.sunGlow);
       marker(boss, 'headTop', head, 0, 0.95, 0.1);
     }
-    // треснувший бронзовый нимб: 12 сегментов, 3 камня-замка, горящая внутренняя кромка
+    // треснувший позолоченный нимб: 12 сегментов, 3 камня-замка, горящая внутренняя кромка;
+    // [W4-BOSS] внутри — затмение (чёрный диск с короной), снаружи — корона лучей-клинков
     {
       const halo = new THREE.Group();
       halo.name = 'boss-halo';
@@ -3317,26 +3791,85 @@ float ashPuddle( vec2 xz ) {
       B.haloHalves = [halfA, halfB];
       const R0 = 1.1, N = 12;
       const segRnd = mulberry32(wc.seed + 281);
+      // [W4-BOSS] детали половины — по материалу в один меш: бронза, кромка, замки, печати (было 20 мешей, стало 8)
+      const H = [{ bronze: [], edge: [], key: [], seal: [] }, { bronze: [], edge: [], key: [], seal: [] }];
       for (let i = 0; i < N; i++) {
         if (i === 7) continue; // выпавший сегмент — трещина нимба
         const a0 = (i / N) * TAU + 0.035, a1 = ((i + 1) / N) * TAU - 0.035;
         const sg = new THREE.TorusGeometry(R0, 0.095, 5, 8, a1 - a0);
         sg.scale(1, 1, 1.6);
-        const m = part(i < 6 ? halfA : halfB, G(sg), matHaloBronze, 0, 0, 0, { rz: a0, receive: false });
-        if (i === 6 || i === 8) { m.position.set(Math.cos(a0) * 0.05, Math.sin(a0) * 0.05, (segRnd() - 0.5) * 0.12); m.rotation.x = (segRnd() - 0.5) * 0.12; }
+        let x = 0, y = 0, z = 0, rx = 0;
+        if (i === 6 || i === 8) { x = Math.cos(a0) * 0.05; y = Math.sin(a0) * 0.05; z = (segRnd() - 0.5) * 0.12; rx = (segRnd() - 0.5) * 0.12; }
+        H[i < 6 ? 0 : 1].bronze.push(bakeGeo(sg, x, y, z, { rx, rz: a0 }));
+        sg.dispose();
       }
-      const edgeArc = (grp, from, to) => part(grp, G(new THREE.TorusGeometry(R0 - 0.11, 0.02, 4, Math.max(8, Math.round(96 * (to - from))), TAU * (to - from))), matHaloEdge, 0, 0, 0.02, { rz: from * TAU, cast: false, receive: false });
-      edgeArc(halfA, 0, 6 / 12);
-      edgeArc(halfB, 6 / 12, 7 / 12);
-      edgeArc(halfB, 8 / 12, 1);
+      const edgeArc = (h, from, to) => {
+        const g = new THREE.TorusGeometry(R0 - 0.11, 0.02, 4, Math.max(8, Math.round(96 * (to - from))), TAU * (to - from));
+        H[h].edge.push(bakeGeo(g, 0, 0, 0.02, { rz: from * TAU }));
+        g.dispose();
+      };
+      edgeArc(0, 0, 6 / 12);
+      edgeArc(1, 6 / 12, 7 / 12);
+      edgeArc(1, 8 / 12, 1);
       const keyG = G(cs(0.3, 0.38, 0.26, { bevel: 0.05, jitter: 0.02, seed: 291 }));
       const sealG = G(new THREE.CircleGeometry(0.11, 20));
       for (let k = 0; k < 3; k++) {
         const a = (k / 3) * TAU + Math.PI / 2;
-        const grp = k === 0 ? halfA : halfB;
-        part(grp, keyG, matBossDark, Math.cos(a) * R0, Math.sin(a) * R0, 0, { rz: a - Math.PI / 2 });
-        const seal = part(grp, sealG, matSeal, Math.cos(a) * R0, Math.sin(a) * R0, 0.14, { cast: false, receive: false });
-        seal.renderOrder = 3;
+        const h = k === 0 ? 0 : 1;
+        H[h].key.push(bakeGeo(keyG, Math.cos(a) * R0, Math.sin(a) * R0, 0, { rz: a - Math.PI / 2 }));
+        H[h].seal.push(bakeGeo(sealG, Math.cos(a) * R0, Math.sin(a) * R0, 0.14));
+      }
+      [halfA, halfB].forEach((grp, h) => {
+        part(grp, merged(H[h].bronze), matHaloBronze, 0, 0, 0, { receive: false });
+        part(grp, merged(H[h].edge), matHaloEdge, 0, 0, 0, { cast: false, receive: false });
+        part(grp, merged(H[h].key), matBossDark);
+        part(grp, merged(H[h].seal), matSeal, 0, 0, 0, { cast: false, receive: false }).renderOrder = 3;
+      });
+      // [W4-BOSS] затмение: чёрный диск, тонкий огненный лимб и корона с медленно текущими стримерами (шейдер,
+      // без текстур кроме общего шума); в фазе 2 — кровавое. Плоскость за кольцом, не вращается с ним.
+      {
+        const EH = 1.65;   // половина стороны плоскости, м
+        B.eclipseU = {
+          uNoise: { value: texBossNoise },
+          uE: { value: new THREE.Vector4(0, 1, 0, 1) },   // x — время, y — накал, z — фаза 2, w — угасание
+        };
+        const mat = M(new THREE.ShaderMaterial({
+          uniforms: B.eclipseU, vertexShader: ECLIPSE_VERT, fragmentShader: ECLIPSE_FRAG,
+          transparent: true, premultipliedAlpha: true, depthWrite: false, side: THREE.DoubleSide,
+        }));
+        const e = part(halo, G(new THREE.PlaneGeometry(EH * 2, EH * 2)), mat, 0, 0, -0.1, { cast: false, receive: false });
+        e.name = 'boss-eclipse';
+        e.renderOrder = 1;
+        B.eclipse = e;
+      }
+      // [W4-BOSS] корона: клинки света по кругу (длинные через короткий), у выпавшего сегмента — разрыв; один меш
+      // на вращающемся кольце (разрыв короны идёт вместе с трещиной нимба), цвет в вершинах — от тёмного золота
+      // у основания до яркого острия (ловит bloom)
+      {
+        const pos = [], col = [];
+        const base = [0.42, 0.26, 0.09], mid = [1.1, 0.68, 0.28], tip = [2.2, 1.5, 0.7];
+        const rnd = mulberry32(wc.seed + 283);
+        const push = (p, c) => { pos.push(p[0], p[1], p[2]); col.push(c[0], c[1], c[2]); };
+        const NB = 18;
+        for (let i = 0; i < NB; i++) {
+          const a = (i / NB) * TAU + (rnd() - 0.5) * 0.06 + 0.17;
+          const seg = (((a / TAU) % 1) + 1) % 1 * N;
+          if (seg > 6.85 && seg < 8.15) continue;   // разрыв нимба
+          const L = (i % 2 ? 0.42 : 0.95) * (0.85 + rnd() * 0.3), w = i % 2 ? 0.05 : 0.075, t = 0.035;
+          const r0 = R0 + 0.1, c = Math.cos(a), s = Math.sin(a), px = -s, py = c;
+          const at = (r, side, z) => [c * r + px * side, s * r + py * side, z];
+          const Bp = at(r0, 0, 0), T = at(r0 + L, 0, 0), Lp = at(r0 + L * 0.22, w, 0), Rp = at(r0 + L * 0.22, -w, 0);
+          const F = at(r0 + L * 0.22, 0, t), K = at(r0 + L * 0.22, 0, -t);
+          for (const [p0, p1, p2] of [[Bp, Lp, F], [Bp, F, Rp], [Bp, Rp, K], [Bp, K, Lp]]) { push(p0, base); push(p1, mid); push(p2, mid); }
+          for (const [p0, p1, p2] of [[T, F, Lp], [T, Rp, F], [T, K, Rp], [T, Lp, K]]) { push(p0, tip); push(p1, mid); push(p2, mid); }
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        g.computeVertexNormals();
+        B.crownMat = M(new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }));
+        const cr = part(ring, G(g), B.crownMat, 0, 0, -0.04, { cast: false, receive: false });
+        cr.name = 'boss-crown';
       }
       B.halo = halo;
       B.haloRing = ring;
@@ -3355,8 +3888,8 @@ float ashPuddle( vec2 xz ) {
       const hand = new THREE.Group();
       hand.scale.setScalar(0.78);
       wr.add(hand);
-      part(hand, cuffG, matBossDark, 0, -0.1, 0);
-      part(hand, palmG, matBoss, 0, -0.72, 0);
+      const hm = side === 'L' ? matBoss : matBossR;   // [W4-BOSS] своя кисть — свой накал замаха
+      part(hand, merged([bakeGeo(cuffG, 0, -0.1, 0), bakeGeo(palmG, 0, -0.72, 0)]), hm);   // [W4-BOSS] манжета с ладонью — один меш
       for (let f = 0; f < 4; f++) {
         const fx = (f - 1.5) * 0.225 * s;
         const len = f === 1 || f === 2 ? 1 : 0.86;
@@ -3364,20 +3897,20 @@ float ashPuddle( vec2 xz ) {
         base.position.set(fx, -1.2, 0);
         base.scale.setScalar(len);
         hand.add(base);
-        part(base, ph1G, matBoss);
+        part(base, ph1G, hm);
         const mid = new THREE.Group();
         mid.position.set(0, -0.52, 0);
         base.add(mid);
-        part(mid, ph2G, matBoss);
+        part(mid, ph2G, hm);
         B.fingers[side].push({ base, mid, k: 0.8 + f * 0.1 });
       }
       const th = new THREE.Group();
       th.position.set(s * 0.5, -0.55, -0.05);
       th.rotation.set(0, 0, s * 0.7);
       hand.add(th);
-      part(th, ph1G, matBoss, 0, 0, 0, { s: 1.1 });
+      part(th, ph1G, hm, 0, 0, 0, { s: 1.1 });
       const thm = new THREE.Group(); thm.position.set(0, -0.56, 0); th.add(thm);
-      part(thm, ph2G, matBoss);
+      part(thm, ph2G, hm);
       B.fingers[side].push({ base: th, mid: thm, k: 0.6, thumb: true });
       // печать в ладони (ладонь смотрит в -Z кисти): видна, когда ладонь раскрыта к игроку
       const seal = part(hand, sealPalmG, matSeal, 0, -0.72, -0.2, { ry: Math.PI, cast: false, receive: false });
@@ -3389,7 +3922,7 @@ float ashPuddle( vec2 xz ) {
       B.fistGlow[side] = fg;
       marker(boss, 'fist' + side, wr, 0, -0.6, 0);
     }
-    // парящие обломки
+    // парящие обломки — [W4-BOSS] осколки обсидиана (вытянутые кристаллы с золотыми прожилками)
     const orbit = new THREE.Group();
     orbit.name = 'boss-fragments';
     orbit.position.set(0, 4.35, -0.1);
@@ -3397,10 +3930,79 @@ float ashPuddle( vec2 xz ) {
     bossBody.add(orbit);
     B.orbit = orbit;
     for (let i = 0; i < 4; i++) {
-      const f = part(orbit, G(rockGeo(0.13 + (i % 3) * 0.04, 0, 251 + i, 1)), matBossDark);
+      const f = part(orbit, G(shardGeo(0.15 + (i % 3) * 0.045, 2.6, 251 + i)), matBossDark);
       f.userData.phase = (i / 4) * TAU;
       f.userData.r = 2.3 + (i % 2) * 0.3;
       B.frags.push(f);
+    }
+    // [W4-BOSS] рой мелких осколков: один InstancedMesh (medium — 8, high — 16, low — нет), два наклонных кольца
+    // на разной высоте; матрицы — каждый кадр в updateBoss (≤16 штук), при гибели осыпаются на пол.
+    {
+      const SW = 16, rnd = mulberry32(wc.seed + 297);
+      const sw = new THREE.InstancedMesh(G(shardGeo(0.07, 2.4, 297)), matBossDark, SW);
+      sw.name = 'boss-swarm';
+      sw.castShadow = false; sw.receiveShadow = false;
+      sw.frustumCulled = false;   // матрицы двигаются каждый кадр, границы не пересчитываем
+      sw.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      bossBody.add(sw);
+      B.swarm = sw;
+      B.swarmP = [];
+      for (let i = 0; i < SW; i++) {
+        const ring = i % 2;
+        B.swarmP.push({
+          ph: rnd() * TAU, r: lerp(1.7, 2.9, rnd()) + ring * 0.3, y: ring ? lerp(4.3, 5.6, rnd()) : lerp(1.3, 2.9, rnd()),
+          sp: (0.22 + rnd() * 0.25) * (ring ? -1 : 1), tilt: ring ? 0.22 : -0.16, s: 0.6 + rnd() * 0.9,
+          spin: (rnd() - 0.5) * 3, bob: rnd() * TAU, fy: 0, vy: 0, fx: 0, fz: 0,
+        });
+      }
+    }
+    // [W4-BOSS] плащ теней: дым под мантией и вокруг подола (два слоя — внутренний и внешний, один меш;
+    // на low — только внутренний). Висит на bossBody — парит вместе с телом, позы груди его не наклоняют.
+    {
+      const SEG = 28, ROWS = 6, pos = [], uv = [], nor = [], idx = [];
+      const layer = (k, u0) => {
+        const v0 = pos.length / 3;
+        for (let r = 0; r <= ROWS; r++) {
+          const v = r / ROWS;
+          const y = lerp(-0.1, 4.2, v);
+          const rad = (lerp(2.15, 0.95, Math.pow(v, 0.6)) + Math.sin(v * 5.0) * 0.05) * k;
+          for (let c = 0; c <= SEG; c++) {
+            const a = (c / SEG) * TAU;
+            pos.push(Math.sin(a) * rad, y, Math.cos(a) * rad - 0.1);
+            nor.push(Math.sin(a), 0.25, Math.cos(a));
+            uv.push(u0 + c / SEG, v);
+            if (r < ROWS && c < SEG) { const b = v0 + r * (SEG + 1) + c; idx.push(b, b + SEG + 1, b + 1, b + 1, b + SEG + 1, b + SEG + 2); }
+          }
+        }
+      };
+      layer(0.86, 0);
+      const innerCount = idx.length;
+      layer(1.12, 0.43);
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setIndex(idx);
+      g.computeBoundingSphere();
+      g.userData.w4Counts = [innerCount, idx.length];
+      const S = { w4S: { value: new THREE.Vector4(0, 0.3, 0.8, 0) } };
+      const mat = M(new THREE.MeshBasicMaterial({ color: 0x241d2c, alphaMap: texBossNoise, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+      mat.onBeforeCompile = (sh) => {
+        Object.assign(sh.uniforms, S);
+        sh.vertexShader = sh.vertexShader
+          .replace('#include <common>', '#include <common>\nvarying float vW4F;\nvarying float vW4Fr;')
+          .replace('#include <project_vertex>', '#include <project_vertex>\n  vW4F = abs( dot( normalize( normalMatrix * normal ), normalize( - mvPosition.xyz ) ) );\n  vW4Fr = position.z / max( length( position.xz ), 1e-3 );');
+        sh.fragmentShader = sh.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform vec4 w4S;\nvarying float vW4F;\nvarying float vW4Fr;')
+          .replace('#include <alphamap_fragment>', SHROUD_FRAG);
+      };
+      mat.customProgramCacheKey = () => 'w4shroud';
+      B.shroudU = S;
+      B.shroudColor = mat.color;
+      const sm = part(bossBody, G(g), mat, 0, 0, 0, { cast: false, receive: false });
+      sm.name = 'boss-shroud';
+      sm.renderOrder = 1;
+      B.shroud = sm;
     }
   }
   const bossBlob = new THREE.Mesh(blobGeo, matBlob);
@@ -3446,7 +4048,8 @@ float ashPuddle( vec2 xz ) {
       'sh*': [-0.28, 0, 0.42], 'el*': [-0.95, 0, 0], 'wr*': [0.25, 0, 0], 'th*': [-0.38, 0, 0.2], 'kn*': [0.68, 0, 0], 'an*': [-0.3, 0, -0.2] }),
     slamA: mkPose({ hips: [0, 0, 0], spine: [-0.12, 0, 0], chest: [-0.14, 0, 0], neck: [0.05, 0, 0], head: [0.15, 0, 0], 'sh*': [-2.3, 0, 0.32], 'el*': [-0.85, 0, 0], 'wr*': [-0.3, 0, 0],
       'th*': [-0.08, 0, 0.12], 'kn*': [0.18, 0, 0], 'an*': [-0.1, 0, -0.12] }),
-    slamB: mkPose({ spine: [-0.28, 0, 0], chest: [-0.2, 0, 0], head: [0.2, 0, 0], 'sh*': [-2.85, 0, 0.18], 'el*': [-1.15, 0, 0], 'wr*': [-0.45, 0, 0],
+    // [W4-BOSS] пик замаха: кулаки вверху и в стороны, перед плоскостью нимба (было -2.85/-1.15 — уходили за нимб и не читались)
+    slamB: mkPose({ spine: [-0.28, 0, 0], chest: [-0.2, 0, 0], head: [0.2, 0, 0], 'sh*': [-2.6, 0, 0.42], 'el*': [-0.5, 0, 0], 'wr*': [-0.45, 0, 0],
       'th*': [-0.04, 0, 0.14], 'kn*': [0.1, 0, 0], 'an*': [-0.04, 0, -0.14], off: [0, 0, -0.1] }),
     slamHit: mkPose({ hips: [0.25, 0, 0], spine: [0.55, 0, 0], chest: [0.35, 0, 0], neck: [-0.15, 0, 0], head: [-0.3, 0, 0], 'sh*': [-1.05, 0, 0.14], 'el*': [-0.12, 0, 0], 'wr*': [0.1, 0, 0],
       'th*': [-0.75, 0, 0.26], 'kn*': [1.15, 0, 0], 'an*': [-0.42, 0, -0.26], off: [0, 0, 0.25] }),
@@ -3492,12 +4095,48 @@ float ashPuddle( vec2 xz ) {
     bs = {
       yaw: 0, stageW: 0, kind: 'slam', windT: 9, windDur: 1.2, prog: 0, strikeT: 9, recoverT: 9, roarT: 9, hitT: 9, hitFlash: 0,
       deadT: -1, fell: false, prevAct: 'idle', charge: 0, windupEvtFrame: false, aim: 0, curl: 0.38,
+      w4Tele: 0, w4HitT: 9, w4HitK: 0, w4Ph: 0,   // [W4-BOSS] накал замаха телом, вздрагивание от попадания, фаза дыхания
     };
     es = { sigilFlash: 0, frame: 0 };
   }
   initState();
   // [W3-КИНО] кинохуки Регента (modules/fx/bossFinale.js): ручной фронт лавы, рассыпанное тело, угли в пепле
   const kino = { lavaFront: null, lavaBoost: 0, shattered: false, hidden: [], ashEmbers: false, p2T: 0 };
+  // [W4-УДАР] трещины брони вспыхивают в точке удара: ячейки lavaU.kinoHit (накал w гаснет за ~0,6 с)
+  const crackHit = { next: 0 };
+  function crackAt(p, heat, color, radius) {
+    if (disposed || kino.shattered || !p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) return false;
+    const H = lavaU.kinoHit.value, C = lavaU.kinoHitC.value;
+    const n = quality === 'low' ? 1 : 3;
+    // слабейшая ячейка (на low — одна)
+    let k = 0;
+    for (let i = 1; i < n; i++) if (H[i].w < H[k].w) k = i;
+    if (n > 1 && H[k].w > 0.05) { k = crackHit.next % n; crackHit.next++; }
+    // точку удара — к броне: по горизонтали не дальше 0,8 м от оси (позвонки и ближняя кисть), по высоте — тело
+    const sc = bossRoot.scale.y;
+    let dx = p.x - bossRoot.position.x, dz = p.z - bossRoot.position.z;
+    const hr = Math.hypot(dx, dz), lim = 0.8 * sc;
+    if (hr > lim) { dx *= lim / hr; dz *= lim / hr; }
+    H[k].set(bossRoot.position.x + dx, clamp(p.y, 1.4 * sc + bossRoot.position.y, 4.9 * sc + bossRoot.position.y), bossRoot.position.z + dz,
+      clamp(num(heat, 1), 0, 3));
+    const c = num(color, 0xffb060);
+    C[k].set(srgbLin(((c >> 16) & 255) / 255), srgbLin(((c >> 8) & 255) / 255), srgbLin((c & 255) / 255), clamp(num(radius, 0.9), 0.2, 3) * sc);
+    lavaU.kinoHitK.value = 1;
+    return true;
+  }
+  const srgbLin = (v) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  function crackTick(dt) {
+    const H = lavaU.kinoHit.value;
+    let sum = 0;
+    for (let i = 0; i < 3; i++) {
+      if (H[i].w <= 0) continue;
+      H[i].w *= Math.exp(-dt * 4.2);
+      if (H[i].w < 0.01) H[i].w = 0;
+      sum += H[i].w;
+    }
+    lavaU.kinoHitK.value = sum;
+  }
+  function crackClear() { const H = lavaU.kinoHit.value; for (let i = 0; i < 3; i++) H[i].w = 0; lavaU.kinoHitK.value = 0; }
   const recentIds = new Set(), recentQ = [];
   let time = 0, quality = initialQuality, clothEvery = 1, disposed = false;
 
@@ -3545,7 +4184,13 @@ float ashPuddle( vec2 xz ) {
       case 'block': hs.blockKick = 1; hs.glowL = 1.6; break;
       case 'player_hit': hs.hitT = 0; break;
       case 'burst': hs.burstT = 0; hs.amulet = 1.5; es.sigilFlash = 1; break;
-      case 'boss_hit': bs.hitT = 0; bs.hitFlash = 1; break;
+      case 'boss_hit':
+        bs.hitT = 0; bs.hitFlash = 1;
+        if (!d.dot && d.source !== 'burn') {   // [W4-BOSS] тело: сила вздрагивания (серия попаданий не гасит предыдущее); тики горения — без рывка ([W4-СБОРКА], как в fx/hitFx)
+          const k = clamp(num(d.amount, num(d.damage, 20)) / 35, 0.4, 1.4);
+          bs.w4HitK = bs.w4HitT < 0.12 ? Math.max(bs.w4HitK, k) : k; bs.w4HitT = 0;
+        }
+        break;
       case 'boss_windup': {
         const k = normKind(d.attackKind || d.kind || d.attack || d.type);
         if (k) bs.kind = k;
@@ -4034,6 +4679,50 @@ float ashPuddle( vec2 xz ) {
 
   /* ================================ БОСС ================================ */
   const _hp = new THREE.Vector3();
+  const _w4Hot = new THREE.Color(), _w4Rune = new THREE.Color();   // [W4-BOSS]
+  // [W4-BOSS] униформы обсидиана одной части тела (кисть, тело, маска): фаза дыхания, прожилки, руны, накал, трещины
+  function setObs(U, ph, vein, rune, hot, crack) {
+    U.w4A.value.set(ph, vein, rune, hot); U.w4B.value.x = crack;
+    U.w4Hot.value.copy(_w4Hot); U.w4Rune.value.copy(_w4Rune);
+  }
+  // [W4-BOSS] ореол кулака: центр — перед кулаком со стороны камеры (кисть его не перекрывает)
+  function fistGlow(sp, mark, f, fade) {
+    sp.material.opacity = clamp(f, 0, 1) * fade;
+    sp.material.color.copy(_w4Hot).multiplyScalar(1.6);
+    sp.scale.setScalar(1.0 + clamp(f, 0, 1.3) * 1.6);
+    if (camera && f > 0.01) {
+      _hp.setFromMatrixPosition(mark.matrixWorld);
+      _v.copy(camera.position).sub(_hp).normalize().multiplyScalar(0.75).add(_hp);
+      sp.position.copy(sp.parent.worldToLocal(_v));
+    }
+  }
+  // [W4-BOSS] рой осколков: два наклонных кольца вокруг тела; попадание расталкивает, при гибели — осыпаются на пол
+  function updateSwarm(dt, isDead, hitJ, rmK) {
+    const sw = B.swarm;
+    if (!sw.visible) return;
+    const n = sw.count;
+    const spd = (0.35 + bs.stageW * 0.5) * rmK;
+    const floorY = 0.06 - bossBody.position.y;
+    for (let i = 0; i < n; i++) {
+      const q = B.swarmP[i];
+      const a = q.ph + time * q.sp * spd;
+      if (isDead) {
+        q.vy -= 9.8 * dt; q.fy += q.vy * dt;
+        if (q.fy < floorY) { q.fy = floorY; q.vy = 0; }
+      } else {
+        const r = q.r + hitJ * 0.45;
+        q.fx = Math.cos(a) * r; q.fz = Math.sin(a) * r;
+        q.fy = q.y + Math.sin(a) * r * q.tilt + Math.sin(time * 0.8 + q.bob) * 0.12;
+        q.vy = 0;
+      }
+      _e.set(time * q.spin * rmK + q.bob, a, q.bob * 0.5);
+      _q.setFromEuler(_e);
+      _s.setScalar(q.s);
+      _v.set(q.fx, q.fy, q.fz);
+      sw.setMatrixAt(i, _m4.compose(_v, _q, _s));
+    }
+    sw.instanceMatrix.needsUpdate = true;   // [W4-СБОРКА] целиком (≤ 24 матриц): addUpdateRange создавал объект каждый кадр
+  }
   function updateBoss(dt, snap) {
     const b = snap && snap.boss ? snap.boss : null;
     const p = snap && snap.player ? snap.player : null;
@@ -4064,6 +4753,8 @@ float ashPuddle( vec2 xz ) {
     bs.prevAct = act; bs.windupEvtFrame = false;
     bs.windT += dt; bs.strikeT += dt; bs.recoverT += dt; bs.roarT += dt; bs.hitT += dt;
     bs.hitFlash *= Math.exp(-dt * 7);
+    bs.w4HitT += dt;   // [W4-BOSS]
+    if (lavaU.kinoHitK.value > 0) crackTick(dt);   // [W4-УДАР]
     if (isDead) bs.deadT += dt;
 
     // прогресс замаха: из телеграфа, иначе по таймеру
@@ -4085,6 +4776,16 @@ float ashPuddle( vec2 xz ) {
     bs.prog = winding ? prog : Math.max(0, bs.prog - dt * 3);
     const striking = !isDead && (act === 'attack' || bs.strikeT < 0.45);
     const recovering = !isDead && !striking && act === 'recover';
+    // [W4-BOSS] телеграф телом: атакующая часть накаляется за ramp с до удара (0,6–1 с; время до удара — из снимка
+    // телеграфа, иначе по таймеру замаха), в последние 0,14 с — вспышка «сейчас»; после удара гаснет за ~0,4 с
+    {
+      const tti = winding ? (best && num(best.duration, 0) > 0 ? num(best.remaining, 0) : Math.max(0, bs.windDur - bs.windT)) : 9;
+      const ramp = clamp(bs.windDur * 0.55, 0.6, 1.0);
+      let tele = winding ? smooth01(clamp(1 - tti / ramp, 0, 1)) : 0;
+      if (winding && tti < 0.14) tele += 0.6 * (1 - tti / 0.14);
+      bs.w4Tele += (tele - bs.w4Tele) * dampK(winding ? 24 : 5, dt);
+      bs.w4Ph += dt * (1.1 + bs.stageW * 0.7) * (wc.reducedMotion ? 0.5 : 1);   // фаза дыхания (копится — без скачков)
+    }
 
     // целевая поза
     bTgt.fill(0);
@@ -4131,7 +4832,15 @@ float ashPuddle( vec2 xz ) {
 
     // Регент парит: подъём над полом, позвонки со сдвигом фаз, ветер в мантии, пальцы по типу атаки.
     const rmK = wc.reducedMotion ? 0.4 : 1;
-    bossBody.position.y += (0.12 + Math.sin(time * 0.9) * 0.07 * rmK) * (isDead ? Math.max(0, 1 - bs.deadT * 0.7) : 1);
+    // [W4-BOSS] парит выше и с медленным креном; попадание — отскок назад и дрожь с затуханием (~0,4 с)
+    const hov = isDead ? Math.max(0, 1 - bs.deadT * 0.7) : 1;
+    bossBody.position.y += (0.18 + Math.sin(time * 0.9) * 0.09 * rmK) * hov;
+    const hitJ = bs.w4HitK * Math.exp(-bs.w4HitT * 7) * live;
+    const jolt = hitJ * Math.cos(bs.w4HitT * 26) * (wc.reducedMotion ? 0.4 : 1);
+    bossBody.position.z -= jolt * 0.16;
+    bossBody.rotation.z += (Math.sin(time * 0.6) * 0.012 * rmK + jolt * 0.022) * hov;
+    B.mantle.scale.set(1 + Math.sin(bs.w4Ph) * 0.012 * live, 1, 1 + Math.sin(bs.w4Ph) * 0.012 * live);   // мантия дышит вместе с грудью
+    B.mantleMat.userData.trim.value = (0.22 + 0.3 * (0.5 + 0.5 * Math.sin(bs.w4Ph))) * (isDead ? Math.max(0, 1 - bs.deadT * 0.5) : 1);
     for (const v of B.verts) v.g.position.y = v.y + Math.sin(time * 1.3 + v.phase) * 0.045 * live * rmK;
     B.mantleMat.userData.wind.value = time * rmK;
     B.cage.rotation.set(time * 0.23 * rmK, time * 0.5 * rmK, 0);
@@ -4159,10 +4868,15 @@ float ashPuddle( vec2 xz ) {
     for (const f of B.frags) {
       if (f.parent !== B.orbit) continue;
       const a = f.userData.phase + time * sp;
-      f.position.set(Math.cos(a) * f.userData.r, Math.sin(time * 0.9 + f.userData.phase * 2) * 0.22, Math.sin(a) * f.userData.r);
+      const fr = f.userData.r + hitJ * 0.35;   // [W4-BOSS] попадание расталкивает осколки
+      f.position.set(Math.cos(a) * fr, Math.sin(time * 0.9 + f.userData.phase * 2) * 0.22, Math.sin(a) * fr);
       f.rotation.set(time * 0.4 + f.userData.phase, time * 0.3, 0);
     }
-    if (B.halo.parent !== root) B.haloRing.rotation.z = time * (0.12 + bs.stageW * 0.2) * (wc.reducedMotion ? 0.5 : 1);
+    if (B.halo.parent !== root) {
+      B.haloRing.rotation.z = time * (0.12 + bs.stageW * 0.2) * (wc.reducedMotion ? 0.5 : 1);
+      B.halo.rotation.z = jolt * 0.04;   // [W4-BOSS] нимб вздрагивает с телом
+    }
+    updateSwarm(dt, isDead, hitJ, rmK);   // [W4-BOSS]
     if (isDead && bs.deadT > 1.1 && !bs.fell) startFall();
     updateFall(dt);
 
@@ -4173,21 +4887,55 @@ float ashPuddle( vec2 xz ) {
     const roarG = bs.roarT < 1.4 ? Math.sin(Math.PI * clamp(bs.roarT / 1.4, 0, 1)) : 0;
     const fade = isDead ? Math.max(0.04, 1 - smoothstep(0.2, 3.5, bs.deadT)) : 1;
     const pulse = Math.sin(time * (2.4 + bs.stageW * 2.8));
-    const crack = (lerp(0.3, 1.0, bs.stageW) + (1 - hpFrac) * 0.3 + bs.hitFlash * 1.6 + bs.charge * 0.9 + roarG * 1.2 + pulse * 0.06) * fade;
-    matBoss.emissiveIntensity = crack;
-    matBossDark.emissiveIntensity = crack * 0.72;
-    matBossCore.emissiveIntensity = (lerp(2.2, 3.4, bs.stageW) + pulse * 0.35 + bs.charge * 2.2 + bs.hitFlash + roarG * 2) * fade;
-    matBossEyes.emissiveIntensity = (6 + bs.stageW * 2 + bs.charge * 3 + roarG * 2) * fade; // щель маски ~8 (Библия)
+    // [W4-BOSS] свечение тела: прожилки ровно тлеют, руны дышат волной снизу вверх в такт груди (фаза 2 — багровые);
+    // накал замаха — на атакующей части: удар — обе кисти, сфера — правая и холодная (как её телеграф «щит»),
+    // нова — позвонки и ядро; попадание — вспышка сетки трещин (и золотых швов маски).
+    const breath = 0.5 + 0.5 * Math.sin(bs.w4Ph);
+    const tele = bs.w4Tele * fade, kind = bs.kind, cold = kind === 'orb';
+    const hitG = bs.w4HitK * Math.exp(-bs.w4HitT * 9) * fade;
+    const vein = (lerp(0.28, 0.75, bs.stageW) + (1 - hpFrac) * 0.25 + roarG * 1.2 + breath * 0.12 + pulse * 0.04) * fade;
+    const runeK = (lerp(0.6, 1.7, bs.stageW) + roarG * 1.5) * fade;
+    {
+      const t2 = Math.pow(clamp(tele, 0, 1), 4);   // до последнего мига — раскалённо-оранжевый, к удару — добела
+      if (cold) _w4Hot.setRGB(lerp(0.45, 0.85, t2), lerp(0.72, 0.95, t2), 1.0);
+      else _w4Hot.setRGB(1.0, lerp(kind === 'nova' ? 0.24 : 0.4, 0.86, t2), lerp(kind === 'nova' ? 0.07 : 0.13, 0.68, t2));
+      _w4Rune.setRGB(1.0, lerp(0.5, 0.08, bs.stageW), lerp(0.16, 0.035, bs.stageW));
+      const ph = bs.w4Ph * 1.45;
+      setObs(obsU.L, ph, vein, runeK, tele * (kind === 'slam' ? 2.4 : kind === 'nova' ? 1.1 : 0.3), hitG * 1.7);
+      setObs(obsU.R, ph, vein, runeK, tele * (kind === 'orb' ? 2.6 : kind === 'slam' ? 2.4 : 1.1), hitG * 1.7);
+      setObs(obsU.body, ph, vein * 0.8, runeK * 0.85, tele * (kind === 'nova' ? 2.2 : 0.35), hitG * 1.9);
+      setObs(obsU.mask, ph, vein * 0.7, 0, 0, hitG * 1.3);
+    }
+    matBossCore.emissiveIntensity = (lerp(2.2, 3.4, bs.stageW) + pulse * 0.35 + bs.charge * 2.2 + bs.hitFlash + roarG * 2 + (kind === 'nova' ? tele * 3 : 0)) * fade;
+    {   // [W4-BOSS] глаза-угли: мерцают, вспыхивают от замаха, попадания и рёва; в фазе 2 — багровее
+      const flick = 0.86 + 0.14 * Math.sin(time * 13.7) * Math.sin(time * 7.9 + 1.3);
+      const eyeK = (3.2 + bs.stageW * 1.6 + tele * 1.6 + hitG * 2.5 + roarG * 2.5) * flick * fade;
+      matBossEyes.color.setRGB(eyeK, eyeK * lerp(1, 0.72, bs.stageW), eyeK * lerp(1, 0.55, bs.stageW));
+      matEyeGlow.opacity = clamp((0.55 + 0.25 * bs.stageW + tele * 0.3 + hitG * 0.45 + roarG * 0.45) * flick * fade, 0, 1);
+      matEyeGlow.color.setRGB(1.0, lerp(0.55, 0.22, bs.stageW), lerp(0.22, 0.07, bs.stageW));
+    }
     matSeal.opacity = (0.55 + 0.35 * (0.5 + 0.5 * Math.sin(time * TAU * 1.2))) * fade;
     matBossRunes.emissiveIntensity = (lerp(0.9, 1.7, bs.stageW) + roarG) * fade;
     B.coreLight.intensity = (lerp(4, 8, bs.stageW) + bs.charge * 10 + roarG * 8 + pulse * 0.6) * LI.point * fade * (kino.shattered ? 0 : 1);   // [W3-КИНО] свет не выключаем (перекомпиляция) — гасим
-    matCoreGlow.opacity = clamp((0.34 + 0.12 * bs.stageW + bs.charge * 0.35 + roarG * 0.3 + pulse * 0.04) * fade, 0, 1);
-    B.coreGlow.scale.setScalar(1.25 + bs.charge * (bs.kind === 'nova' ? 1.4 : 0.4) + roarG);
+    matCoreGlow.opacity = clamp((0.34 + 0.12 * bs.stageW + bs.charge * 0.35 + roarG * 0.3 + pulse * 0.04 + (kind === 'nova' ? tele * 0.4 : 0)) * fade, 0, 1);
+    B.coreGlow.scale.setScalar(1.25 + bs.charge * (kind === 'nova' ? 1.4 : 0.4) + roarG + (kind === 'nova' ? tele * 0.8 : 0));
     matChestSigil.opacity = clamp((0.35 + 0.3 * bs.stageW + bs.charge * 0.3 + roarG * 0.3) * fade, 0, 1);
-    const fistK = winding || striking ? bs.charge : 0;
-    B.fistGlow.R.material.opacity = clamp(fistK * (bs.kind === 'orb' ? 1 : bs.kind === 'slam' ? 0.7 : 0.25), 0, 1) * fade;
-    B.fistGlow.L.material.opacity = clamp(fistK * (bs.kind === 'slam' ? 0.7 : bs.kind === 'nova' ? 0.25 : 0.1), 0, 1) * fade;
-    B.fistGlow.R.scale.setScalar(1.0 + fistK * 0.8);
+    // [W4-BOSS] ореол у кулаков — по тому же накалу (а не по всему замаху): загорается за ~0,6–1 с до удара
+    fistGlow(B.fistGlow.R, boss.markers.fistR, tele * (kind === 'orb' ? 1.15 : kind === 'slam' ? 0.95 : 0.35), fade);
+    fistGlow(B.fistGlow.L, boss.markers.fistL, tele * (kind === 'slam' ? 0.95 : kind === 'nova' ? 0.35 : 0.1), fade);
+    {   // [W4-BOSS] затмение, корона, плащ теней (фаза 2 — гуще, с углями; нова — дым раздувается)
+      // свет нимба «стекает» в атакующую руку: при ударе и сфере нимб тускнеет — кулак на его фоне читается;
+      // перед новой затмение, наоборот, разгорается вместе с ядром
+      const novaT = kind === 'nova' ? tele : 0, drain = kind === 'nova' ? 0 : clamp(tele, 0, 1) * 0.6;
+      B.eclipseU.uE.value.set(time * rmK, (1.0 + 0.12 * breath + roarG * 0.9 + novaT * 0.8 + hitG * 0.3) * (1 - drain * 0.7), bs.stageW, isDead ? fade * fade : 1);
+      const ck = (0.85 + 0.15 * breath + roarG * 0.5 + novaT * 0.3) * (1 - drain) * fade;
+      B.crownMat.color.setRGB(ck, ck * lerp(1, 0.5, bs.stageW), ck * lerp(1, 0.4, bs.stageW));
+      matHaloEdge.color.copy(HALO_EDGE).multiplyScalar(1 - drain * 0.75);
+      B.shroudU.w4S.value.set(time * rmK, 0.36 + 0.5 * bs.stageW + novaT * 0.35 + breath * 0.05, clamp((0.82 + 0.18 * bs.stageW) * fade, 0, 1), bs.stageW * fade);
+      const sw = 1 + 0.025 * breath + novaT * 0.14 + hitJ * 0.05;
+      B.shroud.scale.set(sw, 1, sw);
+      B.shroudColor.setRGB(lerp(0.018, 0.03, bs.stageW), lerp(0.012, 0.006, bs.stageW), lerp(0.026, 0.01, bs.stageW));   // тёмно-лиловый → багрово-чёрный
+    }
     // [W3-КИНО] лава в трещинах: база второй фазы (фронт от ядра за ~1,4 с, накал × угасание смерти)
     // или ручное управление bossFinale (bossFx.setLava) — тогда угасание смерти не применяется.
     {
@@ -4254,7 +5002,9 @@ float ashPuddle( vec2 xz ) {
     kino.shattered = false;
     kino.lavaFront = null; kino.lavaBoost = 0;
     lavaU.kinoLavaP.value.z = 0;
+    crackClear();   // [W4-УДАР]
     bossBlob.visible = true;
+    B.swarm.visible = B.swarm.count > 0;   // [W4-СБОРКА] качество могли поднять, пока тело рассыпано (рой тогда не записан в hidden)
   }
   // [W3-КИНО] тело рассыпалось (осколки рисует bossFinale): нимб и обломки срываются и падают, остальное
   // скрываем по мешам — сам bossBody видимым оставляем, чтобы не выключать свет ядра (иначе перекомпиляция).
@@ -4300,14 +5050,12 @@ float ashPuddle( vec2 xz ) {
       else if (kino.ashEmbers && ashW < 0.15) setAshEmbers(false);
       ash.material.color.setRGB(1, 1 - 0.1 * ashW, 1 - 0.16 * ashW);
     }
-    for (let i = 0; i < braziers.length; i++) {
-      const bz = braziers[i];
-      const f = 0.82 + 0.1 * Math.sin(time * 11.3 + bz.phase) + 0.08 * Math.sin(time * 23.7 + bz.phase * 2.1) * rm;
-      const g = 0.9 + 0.1 * Math.sin(time * 7.1 + bz.phase * 1.3);
-      bz.outer.scale.set(1.5 * g, 2.0 * f, 1);
-      bz.core.scale.set(0.55 * f, 0.95 * g, 1);
-      bz.outer.material.opacity = 0.45 + 0.12 * f;
-      if (bz.light.visible) bz.light.intensity = 14 * LI.point * (0.85 + 0.3 * (f - 0.82));
+    // [W4-ARENA] огни, воздух, пул света; лужицы тепла и блики на полу — uniform-ы его шейдера
+    arenaCtx.focus = heroRoot.position; arenaCtx.cam = camera;
+    arenaFx.update(dt, arenaCtx);
+    if (camera && typeof atmo.setGroundHaze === 'function') {   // [W4-ARENA] лунная дымка у пола — только у арены
+      const cd = Math.hypot(camera.position.x, camera.position.z);
+      atmo.setGroundHaze((1 - smoothstep(24, 56, cd)) * (1 - (elfVillage ? elfVillage.weight : 0)) * (1 - (brightForest ? brightForest.weight : 0)));
     }
     if (ash.visible) {
       const n = ashGeo.drawRange.count;
@@ -4431,7 +5179,11 @@ float ashPuddle( vec2 xz ) {
     }
     for (const it of instTiers) it.mesh.count = it.counts[q.tier];
     ashGeo.setDrawRange(0, q.ash);
-    braziers.forEach((bz, i) => { bz.light.visible = i < q.brazierLights; });
+    arenaFx.setQuality(quality, q.brazierLights);   // [W4-ARENA] пул света огней, частицы, отражения
+    // [W4-BOSS] Регент: рой осколков (low — нет), дым теней (low — один слой из двух)
+    B.swarm.count = q.tier === 0 ? 0 : q.tier === 1 ? 8 : B.swarmP.length;
+    B.swarm.visible = B.swarm.count > 0 && !kino.shattered;   // рассыпанное тело (W3) рой не «проявляет»
+    { const c = B.shroud.geometry.userData.w4Counts; B.shroud.geometry.setDrawRange(0, q.tier === 0 ? c[0] : c[1]); }
     clothEvery = q.clothNormals;
     matBlob.opacity = moonLight.castShadow ? 0.42 : 0.62;
     atmo.setQuality(quality);
@@ -4460,6 +5212,7 @@ float ashPuddle( vec2 xz ) {
     if (root.parent) root.parent.remove(root);
     if (elfVillage) elfVillage.dispose();
     if (brightForest) brightForest.dispose();   // [FOREST]
+    arenaFx.dispose();   // [W4-ARENA]
     atmo.dispose();
     if (renderer && renderer.shadowMap && wc.manageShadowMap && prevShadowEnabled !== undefined) renderer.shadowMap.enabled = prevShadowEnabled;
     root.traverse((o) => {
@@ -4488,6 +5241,7 @@ float ashPuddle( vec2 xz ) {
     if ('reducedMotion' in patch) atmo.configure({ reducedMotion: !!patch.reducedMotion });
     if ('reducedMotion' in patch && elfVillage) elfVillage.configure({ reducedMotion: !!patch.reducedMotion });
     if ('reducedMotion' in patch && brightForest) brightForest.configure({ reducedMotion: !!patch.reducedMotion });   // [FOREST]
+    if ('reducedMotion' in patch) arenaFx.configure({ reducedMotion: !!patch.reducedMotion });   // [W4-ARENA]
     if ('ambientAsh' in patch) { wc.ambientAsh = !!patch.ambientAsh; ash.visible = wc.ambientAsh; }
     if ('quality' in patch) setQuality(patch.quality);
   }
@@ -4500,6 +5254,13 @@ float ashPuddle( vec2 xz ) {
   for (const m of [matBoss, matBossDark, matBossMask]) patchLava(m);   // [W3-КИНО] до patchLit: он оборачивает onBeforeCompile и ключ
   for (const m of [matBoss, matBossDark, matBossMask, matBossRunes, B.mantleMat, B.hoodMat]) atmo.patchLit(m, 'boss');
   atmo.useEnv(matHaloBronze, 0.9);
+  // [W4-BOSS] правая кисть — как левая (лава W3, кромка); обсидиан и фарфор — последним патчем (см. patchObsidian);
+  // отражения неба — у обсидиана и позолоты
+  patchLava(matBossR); atmo.patchLit(matBossR, 'boss');
+  const obsU = { L: patchObsidian(matBoss), R: patchObsidian(matBossR), body: patchObsidian(matBossDark), mask: patchObsidian(matBossMask) };
+  obsU.mask.w4A.value.z = 0;   // на фарфоре рун нет — только золотые швы
+  for (const m of [matBoss, matBossR, matBossDark]) atmo.useEnv(m, 1.15);
+  atmo.useEnv(matBossMask, 0.6);
 
   setQuality(initialQuality);
   reset();
@@ -4542,6 +5303,8 @@ float ashPuddle( vec2 xz ) {
       shatter: kinoShatter,
       get shattered() { return kino.shattered; },
       get body() { return bossBody; },   // по его мешам bossFinale выбирает точки осколков
+      // [W4-УДАР] трещины брони вспыхивают у точки удара: p — мир, heat 0..3, color 0xRRGGBB, radius — м (~0,6…2)
+      crackAt,
       origin(out) {   // мировая точка ядра (boss.markers.core) → out (Vector3)
         const o = out || new THREE.Vector3();
         return o.setFromMatrixPosition(boss.markers.core.matrixWorld);

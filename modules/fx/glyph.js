@@ -21,7 +21,7 @@ const EXT = 1.12;                                  // квад шире круг
 const CELL = 64, GX = 8, GY = 4, AW = CELL * GX, AH = CELL * GY;
 const MARGIN = 0.12;                               // поле ячейки атласа (доля)
 const DMAX = 0.13;                                 // макс. кодируемое расстояние (доли ячейки; ореол символа ≤ 0.114)
-const STYLE = { rune: 0, clock: 1, hex: 2, sigil: 3 };
+const STYLE = { rune: 0, clock: 1, hex: 2, sigil: 3, bare: 4 }; // [W4-ЗАКЛИНАНИЯ] bare — только символ, без колец
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const clamp01 = (v) => clamp(v, 0, 1);
@@ -235,7 +235,7 @@ void main() {
 `;
 
 // vP — координаты в радиусах круга; углы — по часовой от «верха» (оси V).
-// vCol: rgb линий, w rival | vHot: rgb ядра, w flare | vA: x развёртка 0..1, y появление, z угол вращения, w стрелки
+// vCol: rgb линий, w rival (+10 — [W4-ЗАКЛИНАНИЯ] «тьма»: чёрное ядро линий) | vHot: rgb ядра, w flare | vA: x развёртка 0..1, y появление, z угол вращения, w стрелки
 // vB: x стиль, y колец, z рун, w seed | vC: x ячейка символа (-1 нет), y symbolScale, z «письмо» 0..1, w symbolGlow
 // vD: x яркость, y возраст (с), z «на земле», w затухание 1..0
 const FS = /* glsl */`
@@ -448,11 +448,11 @@ void styleSigil(float r, float ac, float a01, float rv0, float rv1, float rv2, i
   if (rings > 2.5) L += (ring(r, 0.70, 0.002) * 0.6 + ln(polyD(r, ac, 3.0, R, PI / 3.0), 0.002) * inside * 0.45) * rv2;
 }
 
-void symbolLayer(vec2 p, float r, inout float L, inout float H, inout float G) {
+void symbolLayer(vec2 p, float r, float bare, inout float L, inout float H, inout float G) {
   float side = max(vC.y, 0.05) * 1.3;
   vec2 q = vec2(p.x / side + 0.5, 0.5 - p.y / side);
   vec2 cuv = MARGIN + q * (1.0 - 2.0 * MARGIN);
-  G += 0.035 * (1.0 - smoothstep(0.0, side * 0.75, r)) * vC.w;  // тёплое «дыхание» под знаком
+  G += 0.035 * (1.0 - smoothstep(0.0, side * 0.75, r)) * vC.w * (1.0 - bare);  // тёплое «дыхание» под знаком (у знака в воздухе — нет: форма чище)
   if (cuv.x <= 0.0 || cuv.x >= 1.0 || cuv.y <= 0.0 || cuv.y >= 1.0) return;
   vec2 cell = vec2(mod(vC.x, GXF), floor(vC.x / GXF + 0.001));
   vec4 t = texture2D(uAtlas, (cell + clamp(cuv, HTX, 1.0 - HTX)) / vec2(GXF, GYF));
@@ -484,25 +484,26 @@ void main() {
   if (st < 0.5) styleRune(r, ac, a01, rv0, rv1, rv2, L, H, G);
   else if (st < 1.5) styleClock(p, r, ac, a01, rv0, rv1, rv2, L, H, G);
   else if (st < 2.5) styleHex(r, ac, a01, rv0, rv1, rv2, L, H, G);
-  else styleSigil(r, ac, a01, rv0, rv1, rv2, L, H, G);
-  if (vC.x > -0.5) symbolLayer(p, r, L, H, G);
+  else if (st < 3.5) styleSigil(r, ac, a01, rv0, rv1, rv2, L, H, G);
+  float bare = step(3.5, st);   // [W4-ЗАКЛИНАНИЯ] знак в воздухе: без колец, импульсов и дымки
+  if (vC.x > -0.5) symbolLayer(p, r, bare, L, H, G);
   float age = vD.y;
   // бегущие по внешнему кольцу импульсы
-  float o = ring(r, 0.985, 0.006);
+  float o = ring(r, 0.985, 0.006) * (1.0 - bare);
   H += o * pow(0.5 + 0.5 * sin(ac * 3.0 - age * 3.5), 10.0) * 1.1 * rv0;
   // фронт развёртки — «комета» по внешнему кольцу
-  if (pr0 > 0.0 && pr0 < 1.0) {
+  if (pr0 > 0.0 && pr0 < 1.0 && bare < 0.5) {
     float fa = pr0 * TAU;
     H += halo(length(p - vec2(sin(fa), cos(fa)) * 0.985), 0.02) * 1.6;
     H += (a01 < pr0 ? 1.0 - clamp((pr0 - a01) / 0.2, 0.0, 1.0) : 0.0) * o * 1.6;
   }
   // дымка диска (на земле — сильнее: «свет» на полу) и мягкий ореол за кромкой
-  float haze = (0.008 + 0.012 * vD.z) * (1.0 - smoothstep(0.35, 1.0, r)) * pr0;
+  float haze = (0.008 + 0.012 * vD.z) * (1.0 - smoothstep(0.35, 1.0, r)) * pr0 * (1.0 - bare);
 #if GQ > 1
   haze *= 0.5 + 0.9 * fxNoise2(p * 4.0 + vec2(age * 0.35, -age * 0.25) + vB.w);
   L *= 0.86 + 0.14 * sin(ac * 5.0 - age * 2.3) * sin(ac * 2.0 + age * 1.1);
 #endif
-  G += haze + halo(max(r - 0.985, 0.0), 0.04) * 0.035 * step(0.985, r) * pr0;
+  G += haze + halo(max(r - 0.985, 0.0), 0.04) * 0.035 * step(0.985, r) * pr0 * (1.0 - bare);
   float fk = vD.w, m = fk, edge = 0.0;
 #if GQ > 0
   if (fk < 0.999) {  // линии распадаются на тлеющие дуги; дымка просто гаснет
@@ -514,10 +515,13 @@ void main() {
   }
 #endif
   vec3 deep = vCol.rgb * vCol.rgb + vCol.rgb * 0.1;          // ореол — насыщеннее и глубже линии
-  vec3 col = (vCol.rgb * L + vHot.rgb * H) * m + deep * G * fk + vHot.rgb * (L + H) * edge * 1.6;
+  // [W4-ЗАКЛИНАНИЯ] «тьма»: горячее ядро линий — чёрное (затеняет фон), фиолетовые края и ореол — свет
+  float dk = step(5.0, vCol.w), rvl = vCol.w - dk * 10.0;
+  float hk = clamp(H, 0.0, 1.0) * dk;
+  vec3 col = (vCol.rgb * L * (1.0 - hk) + vHot.rgb * H * (1.0 - dk)) * m + deep * G * fk + vHot.rgb * (L + H) * edge * 1.6;
   col *= vD.x * (1.0 + vHot.w * 1.8) * vA.y;
-  col = fxRival(col, vCol.w);
-  gl_FragColor = vec4(col, 0.0);
+  col = fxRival(col, rvl);
+  gl_FragColor = vec4(col, hk * 0.92 * m * vA.y);
 ${FX_OUT}
 }
 `;
@@ -589,6 +593,8 @@ export function createGlyphs(deps) {
       radius: 1.2, symScale: 0.55, sym: -1, style: 0, rings: 2, ticks: 24, col: [1, 1, 1], hot: [1, 1, 1],
       intensity: 1.6, dur: 1.6, unfold: 0.35, fade: 0.35, spin: 0.6, rival: 0, follow: null, billboard: false, lift: 0,
       age: 0, ang: 0, fl: 0, fadeStart: 0, fadeLen: 0, fadeFrom: 1, hands: 0, handsSet: false, symGlow: 1, seed: 0, order: 0, writeT0: 0, up: null,
+      // [W4-ЗАКЛИНАНИЯ] письмо (с; <0 — по unfold), «выпрыг» масштаба, чёрное ядро, полёт-превращение к to
+      write: -1, pop: 0, dark: 0, toX: 0, toY: 0, toZ: 0, hasTo: false, travelOn: false, travelAt: 0, travelDur: 0.15, shrink: 0.25, fromX: 0, fromY: 0, fromZ: 0,
     };
     s.set = (o) => {
       if (!s.alive || !o || typeof o !== 'object') return s;
@@ -604,6 +610,14 @@ export function createGlyphs(deps) {
         if (isNum(o.spin)) s.spin = clamp(o.spin, -40, 40);
         if (hasVec(o.normal)) setBasis(s, o.normal, hasVec(o.up) ? o.up : s.up);
         if (o.symbol !== undefined) { const si = symIndex(o.symbol); if (si !== s.sym) { s.sym = si; s.writeT0 = s.age; } }
+        // [W4-ЗАКЛИНАНИЯ] полёт-превращение, назначенный позже (руна в воздухе «становится» заклинанием)
+        if (hasVec(o.to)) {
+          s.hasTo = true; s.travelOn = false; s.toX = o.to.x; s.toY = o.to.y; s.toZ = o.to.z;
+          s.travelAt = isNum(o.travelAt) ? clamp(o.travelAt, 0, 60) : s.age;
+          if (isNum(o.travelDur)) s.travelDur = clamp(o.travelDur, 0.02, 10);
+          if (isNum(o.shrink)) s.shrink = clamp(o.shrink, 0.02, 1);
+          if (s.dur !== Infinity) s.dur = Math.max(s.dur, s.travelAt + s.travelDur + 0.04);
+        }
       } catch (e) { /* no-op */ }
       return s;
     };
@@ -627,7 +641,7 @@ export function createGlyphs(deps) {
   }
   function release(s) { s.alive = false; s.follow = null; s.gen++; }
   function activeCount() { let n = 0; for (let i = 0; i < POOL_MAX; i++) if (slots[i].alive) n++; return n; }
-  function takeSlot() {
+  function takeSlot(noSteal) {
     let free = null, oldest = null, n = 0;
     for (let i = 0; i < POOL_MAX; i++) {
       const s = slots[i];
@@ -637,6 +651,7 @@ export function createGlyphs(deps) {
       if (finite && (!oldest || s.order < oldest.order)) oldest = s;
     }
     if (free && n < cap) return free;
+    if (noSteal) return null;   // [W4-ЗАКЛИНАНИЯ] короткие знаки (предвестник) не вытесняют чужие
     if (oldest) { release(oldest); return oldest; }
     return null;
   }
@@ -645,7 +660,7 @@ export function createGlyphs(deps) {
     try {
       const o = opts || {};
       if (!hasVec(o.pos)) return null;
-      const s = takeSlot();
+      const s = takeSlot(o.steal === false);
       if (!s) return null;
       s.alive = true; s.order = ++orderSeq; s.gen++;
       s.px = o.pos.x; s.py = o.pos.y; s.pz = o.pos.z;
@@ -671,6 +686,18 @@ export function createGlyphs(deps) {
       s.age = 0; s.ang = 0; s.fl = 0; s.fadeStart = 0; s.fadeLen = 0; s.fadeFrom = 1; s.writeT0 = 0;
       s.hands = num(o.hands, 0); s.handsSet = isNum(o.hands); s.symGlow = clamp(num(o.symbolGlow, 1), 0, 10);
       s.seed = ((++spawnSeq * 7.31) % 61) + 0.37;
+      // [W4-ЗАКЛИНАНИЯ] write — длительность «письма» знака (0 — сразу целиком), flare — вспышка с первого кадра,
+      // pop — знак появляется крупнее (×(1+pop)) и оседает, dark — чёрное ядро линий («тьма»),
+      // to — через travelAt с знак летит к точке to за travelDur с и сжимается до shrink (знак «становится» заклинанием)
+      s.write = isNum(o.write) ? clamp(o.write, 0, 10) : -1;
+      s.fl = clamp01(num(o.flare, 0));
+      s.pop = clamp(num(o.pop, 0), 0, 3);
+      s.dark = o.dark ? 1 : 0;
+      s.hasTo = hasVec(o.to); s.travelOn = false;
+      if (s.hasTo) {
+        s.toX = o.to.x; s.toY = o.to.y; s.toZ = o.to.z; s.fromX = s.px; s.fromY = s.py; s.fromZ = s.pz;
+        s.travelAt = clamp(num(o.travelAt, s.dur * 0.6), 0, 60); s.travelDur = clamp(num(o.travelDur, 0.15), 0.02, 10); s.shrink = clamp(num(o.shrink, 0.25), 0.02, 1);
+      }
       return s;
     } catch (e) { return null; }
   }
@@ -678,13 +705,22 @@ export function createGlyphs(deps) {
   function writeSlot(s, j) {
     const u = s.unfold > 0 ? clamp01(s.age / s.unfold) : 1;
     const fk = clamp01(fadeK(s));
-    const sc = (0.6 + 0.4 * easeOutCubic(u)) * (1 + 0.08 * (1 - fk)) * (1 + 0.05 * s.fl) * s.radius;
-    const wr = s.sym >= 0 ? clamp01((s.age - s.writeT0 - s.unfold * 0.3) / Math.max(0.2, s.unfold * 1.15)) : 0;
+    // [W4-ЗАКЛИНАНИЯ] pop: знак «выпрыгивает» крупнее и оседает; полёт к to — сжатие до shrink
+    const grow = s.pop > 0 ? 1 + s.pop * (1 - easeOutCubic(u)) : 0.6 + 0.4 * easeOutCubic(u);
+    let tk = 0;
+    if (s.hasTo && s.age > s.travelAt) {
+      if (!s.travelOn) { s.travelOn = true; s.fromX = s.px; s.fromY = s.py; s.fromZ = s.pz; }
+      tk = clamp01((s.age - s.travelAt) / s.travelDur); tk = tk * tk;
+      s.px = s.fromX + (s.toX - s.fromX) * tk; s.py = s.fromY + (s.toY - s.fromY) * tk; s.pz = s.fromZ + (s.toZ - s.fromZ) * tk;
+    }
+    const sc = grow * (1 + 0.08 * (1 - fk)) * (1 + 0.05 * s.fl) * (1 - tk * (1 - s.shrink)) * s.radius;
+    const wr = s.sym < 0 ? 0 : s.write === 0 ? 1 : s.write > 0 ? clamp01((s.age - s.writeT0) / s.write)
+      : clamp01((s.age - s.writeT0 - s.unfold * 0.3) / Math.max(0.2, s.unfold * 1.15));
     const j3 = j * 3, j4 = j * 4;
     let a = aPos.array; a[j3] = s.px + s.nx * s.lift; a[j3 + 1] = s.py + s.ny * s.lift; a[j3 + 2] = s.pz + s.nz * s.lift;
     a = aU.array; a[j3] = s.ux * sc; a[j3 + 1] = s.uy * sc; a[j3 + 2] = s.uz * sc;
     a = aV.array; a[j3] = s.vx * sc; a[j3 + 1] = s.vy * sc; a[j3 + 2] = s.vz * sc;
-    a = aCol.array; a[j4] = s.col[0]; a[j4 + 1] = s.col[1]; a[j4 + 2] = s.col[2]; a[j4 + 3] = s.rival;
+    a = aCol.array; a[j4] = s.col[0]; a[j4 + 1] = s.col[1]; a[j4 + 2] = s.col[2]; a[j4 + 3] = s.rival + s.dark * 10;
     a = aHot.array; a[j4] = s.hot[0]; a[j4 + 1] = s.hot[1]; a[j4 + 2] = s.hot[2]; a[j4 + 3] = s.fl;
     a = aA.array; a[j4] = u; a[j4 + 1] = Math.min(1, s.age / 0.05); a[j4 + 2] = s.ang; a[j4 + 3] = s.handsSet ? s.hands : s.age * 1.2;
     a = aB.array; a[j4] = s.style; a[j4 + 1] = quality === 'low' ? Math.min(2, s.rings) : s.rings; a[j4 + 2] = s.ticks; a[j4 + 3] = s.seed;
@@ -701,7 +737,7 @@ export function createGlyphs(deps) {
         if (!s.alive) continue;
         s.age += h;
         if (fadeK(s) <= 0) { release(s); continue; }
-        if (s.follow) {
+        if (s.follow && !(s.hasTo && s.age > s.travelAt)) {
           try { const p = s.follow(); if (hasVec(p)) { s.px = p.x; s.py = p.y; s.pz = p.z; } } catch (e) { /* no-op */ }
         }
         if (s.billboard && camera && camera.matrixWorld) {

@@ -1155,7 +1155,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       fill,
     );
     if (kind === 'boss') node.append(el('span', { class: 'ao-bar__mark', 'aria-hidden': 'true' }));
-    return { node, trail, fill };
+    return { node, trail, fill, kind };
   }
   function paintBar(b, frac) {
     const q = Math.round(clamp(num(frac), 0, 1) * 1000) / 1000;
@@ -1163,6 +1163,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     setStyle(b.fill, 'transform', v);
     setStyle(b.trail, 'transform', v);
     setAttr(b.node, 'aria-valuenow', String(Math.round(q * 100)));
+    // [W4-UI] вспышка рамки при потере: классы a/b по очереди перезапускают CSS-анимацию без reflow
+    // [W4-СБОРКА] энергия тает и непрерывно (щит — 25 в секунду): вспышка — только на заметный расход, иначе рамка горит всё удержание
+    if (isNum(b.q) && q < b.q - (b.kind === 'energy' ? 0.015 : 0.001)) { b.hit = !b.hit; setClass(b.node, 'is-hit-a', b.hit); setClass(b.node, 'is-hit-b', !b.hit); }
+    b.q = q;
   }
   function screenSection(name, panel, headingId) {
     return el('section', { class: `ao-screen ao-screen--${name}`, 'data-screen': name, 'aria-labelledby': headingId, hidden: true }, panel);
@@ -3388,7 +3392,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const teleText = el('span', { class: 'ao-tele__text' });
     const teleFill = el('span', { class: 'ao-tele__fill' });
     const tele = el('div', { class: 'ao-tele', hidden: true, role: 'status' }, teleText, el('span', { class: 'ao-tele__time', 'aria-hidden': 'true' }, teleFill));
-    const boss = el('div', { class: 'ao-boss' }, el('div', { class: 'ao-boss__head' }, el('span', { class: 'ao-boss__name', text: BOSS_NAME }), stage), bossBar.node, tele);
+    const boss = el('div', { class: 'ao-boss' }, el('div', { class: 'ao-boss__head' }, el('span', { class: 'ao-boss__name', text: BOSS_NAME }), stage),
+      el('div', { class: 'ao-boss__frame' }, bossBar.node, el('span', { class: 'ao-boss__phase', 'aria-hidden': 'true' })), tele); // [W4-UI] рамка с крыльями и делением фаз
 
     const hp = bar('hp', 'Здоровье героя');
     const hpText = el('span', { class: 'ao-row__v' });
@@ -3488,12 +3493,14 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           paintBar(en, energy / maxEn);
           setText(enText, `${Math.floor(energy)} / ${Math.round(maxEn)}`);
           setClass(hero, 'is-low', hpv / maxHp < 0.25);
+          setClass(hero, 'is-lowen', energy / maxEn < 0.2); // [W4-UI] пульс полосы энергии
         } else {
           paintBar(hp, 0);
           paintBar(en, 0);
           setText(hpText, '—');
           setText(enText, '—');
           setClass(hero, 'is-low', false);
+          setClass(hero, 'is-lowen', false); // [W4-UI]
         }
 
         const alive = !!p && p.action !== 'dead' && (!s.status || s.status === 'playing');
