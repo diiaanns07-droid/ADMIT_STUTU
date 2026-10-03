@@ -664,6 +664,23 @@ test('L21 файлы уже скачаны: воркер на CPU молчит �
   });
 });
 
+test('L22 GPU раз в 1 с, основной поток видит 5 кадров/с (видеокарта занята), счётчик плеера — 30 к/с → воркер CPU', () => withShell({}, async (env, v) => {
+  SlowWorker.hooks.frameDelayMs = (d) => (d === 'GPU' ? 1000 : 25);
+  env.video.getVideoPlaybackQuality = () => ({ totalVideoFrames: Math.floor(clock.t / (1000 / 30)) });
+  await v.start();
+  const present = env.video.present.bind(env.video);
+  let k = 0;
+  env.video.present = (t) => { if (k++ % 6 === 0) present(t); };   // до обработчиков доходит каждый шестой кадр
+  await pump(env, 3000);
+  const cam = v.getStatus().debug.camera;
+  ok(cam.videoFps > 25 && !(cam.fps >= 10), `камера по счётчику ${cam.videoFps}, по обработчикам ${cam.fps}`);
+  await pump(env, 10000, { until: () => v.getStatus().debug.engineStep === 'worker-cpu' });
+  await waitFor(() => v.getStatus().debug.engineStep === 'worker-cpu', 3000, env);
+  const s = v.getStatus();
+  eq(s.debug.engineStep, 'worker-cpu', 'медленный GPU → CPU');
+  ok(/реже 3 раз\/с/.test(s.debug.ladderHistory[0].reason), s.debug.ladderHistory[0].reason);
+}));
+
 // ───────────────────────────── запуск ─────────────────────────────
 const only = process.argv[2] ? new RegExp(process.argv[2]) : null;
 let passed = 0;

@@ -1280,7 +1280,7 @@ export async function createVision(options = {}) {
     mode: null, rvfcId: null, pollId: null, watchdogId: null, frameIntervalMs: 33.3,
     lastKey: undefined, busy: false, busySince: 0, dirty: false, dirtyKey: undefined,
     seq: 0, inflightSeq: null, lastRvfcT: 0, pollFrames: -1, pollFramesT: 0, rvfcStarved: false,
-    vfN: -1, vfT: -Infinity, // [W5-КАМЕРА] счётчик кадров плеера и когда он последний раз вырос
+    vfN: -1, vfT: -Infinity, vfHist: [], // [W5-КАМЕРА] счётчик кадров плеера, когда он последний раз вырос, отсчёты [t, n]
     postedAt: null, wdT: 0,  // [W5-КАМЕРА] когда кадр ушёл воркеру; прошлый тик сторожа (стоял ли главный поток)
   };
   const perf = {
@@ -1358,7 +1358,7 @@ export async function createVision(options = {}) {
         warmupMs: engine ? r1(engine.warmupMs) : null,
         firstResultMs: r1(ladder.firstResultMs),
         engineNote: engine ? engine.note : null,
-        camera: { fps: r1(cameraFps()), fresh: cameraFresh(nowMs()) },
+        camera: { fps: r1(cameraFps()), videoFps: r1(videoFps(nowMs())), fresh: cameraFresh(nowMs()) },
       },
     };
   }
@@ -1374,6 +1374,18 @@ export async function createVision(options = {}) {
     let n = NaN;
     try { if (typeof video.getVideoPlaybackQuality === 'function') n = video.getVideoPlaybackQuality().totalVideoFrames; } catch { /* нет счётчика */ }
     if (finite(n) && n > 0 && n !== loop.vfN) { if (loop.vfN >= 0) loop.vfT = now; loop.vfN = n; }
+    if (finite(n) && n > 0) {
+      loop.vfHist.push([now, n]);
+      while (loop.vfHist.length > 2 && now - loop.vfHist[0][0] > 3000) loop.vfHist.shift();
+    }
+  }
+  // частота камеры по счётчику кадров плеера (за ~3 с): не зависит от того, успевает ли основной поток их обработать —
+  // видеокарту занял GPU-воркер, основной поток видит 5 кадров/с, а камера даёт 30
+  function videoFps(now) {
+    const h = loop.vfHist;
+    if (h.length < 2 || now - h[h.length - 1][0] > 1000) return null;
+    const span = h[h.length - 1][0] - h[0][0];
+    return span >= 1000 ? ((h[h.length - 1][1] - h[0][1]) * 1000) / span : null;
   }
 
   function noteLoadStage(stage, progress, text = null) {
@@ -1658,8 +1670,10 @@ export async function createVision(options = {}) {
     const e = engine;
     const hidden = typeof document !== 'undefined' && document.hidden;
     const cam = cameraFps();
-    // камера сама даёт ≥ 10 к/с; частоту не измерить (основной поток занят распознаванием), но кадры идут — тоже
-    const camOk = cam >= 10 || (cam === null && cameraFresh(now));
+    const vf = videoFps(now);
+    // камера сама даёт ≥ 10 к/с (по кадрам, дошедшим до распознавания, или по счётчику плеера — основной поток
+    // тормозит вместе с видеокартой и видит меньше кадров); частоту не измерить, но кадры идут — тоже
+    const camOk = cam >= 10 || vf >= 10 || (cam === null && vf === null && cameraFresh(now));
     if (!e || e.delegate !== 'GPU' || switching || hidden || ladder.results < 3 || !camOk || !(cfg.slowGpuHz > 0)) { ladder.slowSince = null; return; }
     const win = 3000;
     const recent = perf.arrivals.filter((t) => now - t <= win).length;
@@ -1913,7 +1927,7 @@ export async function createVision(options = {}) {
     stopLoop();
     loop.lastKey = undefined; loop.busy = false; loop.dirty = false; loop.inflightSeq = null;
     loop.rvfcStarved = false; loop.pollFrames = -1;
-    loop.vfN = -1; loop.vfT = -Infinity; loop.postedAt = null; loop.wdT = Date.now(); // [W5-КАМЕРА]
+    loop.vfN = -1; loop.vfT = -Infinity; loop.vfHist = []; loop.postedAt = null; loop.wdT = Date.now(); // [W5-КАМЕРА]
     let fr = 30;
     try {
       const vt = stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
