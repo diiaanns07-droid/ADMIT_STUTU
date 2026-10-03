@@ -1,0 +1,79 @@
+{
+ "tag": "before",
+ "quality": "medium",
+ "root": "/tmp/claude-0/wt-before",
+ "menu": {
+  "ashen": {
+   "gap": -0.0862,
+   "sole": -0.0442,
+   "floorL": 0.042,
+   "floorR": 0.042,
+   "hero": "ashen"
+  },
+  "elf": {
+   "gap": -0.0759,
+   "sole": -0.0339,
+   "floorL": 0.042,
+   "floorR": 0.042,
+   "hero": "elf"
+  },
+  "dark": {
+   "gap": -0.0813,
+   "sole": -0.0393,
+   "floorL": 0.042,
+   "floorR": 0.042,
+   "hero": "dark"
+  },
+  "ranger": {
+   "gap": -0.0824,
+   "sole": -0.0404,
+   "floorL": 0.042,
+   "floorR": 0.042,
+   "hero": "ranger"
+  },
+  "archmage": {
+   "gap": -0.0507,
+   "sole": -0.0087,
+   "floorL": 0.042,
+   "floorR": 0.042,
+   "hero": "archmage"
+  }
+ },
+ "battle": {
+  "ashen": {
+   "gap": -0.0675,
+   "sole": -0.0367,
+   "floorL": 0.0318,
+   "floorR": -0.0018,
+   "hero": "ashen"
+  },
+  "elf": {
+   "gap": -0.0683,
+   "sole": -0.0365,
+   "floorL": 0.0318,
+   "floorR": 0.0002,
+   "hero": "elf"
+  },
+  "dark": {
+   "gap": -0.054,
+   "sole": -0.0233,
+   "floorL": 0.0317,
+   "floorR": 0.0009,
+   "hero": "dark"
+  },
+  "ranger": {
+   "gap": -0.0535,
+   "sole": -0.0228,
+   "floorL": 0.0317,
+   "floorR": 0.001,
+   "hero": "ranger"
+  },
+  "archmage": {
+   "gap": -0.0401,
+   "sole": -0.0084,
+   "floorL": 0.0317,
+   "floorR": -0.0001,
+   "hero": "archmage"
+  }
+ }
+}

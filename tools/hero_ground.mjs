@@ -9,6 +9,7 @@
 //   node tools/hero_ground.mjs --quality medium --out /tmp/hg-medium.json [--heroes ashen,elf] [--root DIR] [--quick]
 //        [--reduced] (настройка «уменьшенное движение») [--no-menu] [--no-battle] [--no-defeat]
 //   node tools/hero_ground.mjs --report docs/hero-ground --after a.json,b.json [--before c.json,d.json] [--mid e.json]
+//        [--before-label …] [--mid-label …] [--after-label …] [--extra comment.md]
 //        — без прогона: таблица .md и графики .svg (|зазор| по времени у каждого героя, до, [промежуточный] и после)
 //   node tools/hero_ground.mjs --cost [--quality low,medium] [--out FILE.json] — цена подошвы за кадр в браузере
 //        (window.__ASHEN__.heroFeetCost: как сейчас и прежним точным скиннингом), каждый герой в меню и в бою
@@ -278,6 +279,9 @@ function report() {
     }
     md += files.map((f) => `![${f}](${f})`).join('\n') + '\n\n';
   }
+  // --extra FILE.md — комментарий к цифрам (как читать единичные выбросы) сразу после вступления
+  const extra = A.of('--extra', '');
+  if (extra) md = md.replace('\n\n## ', '\n\n' + readFileSync(resolve(extra), 'utf8').trim() + '\n\n## ');
   const notes = [...after, ...before, ...mid].flatMap((r) => (r.notes || []).map((n) => `${r.quality}: ${n}`));
   if (notes.length) md += '## Заметки прогона\n\n' + notes.map((n) => `- ${n}`).join('\n') + '\n';
   writeFileSync(join(DIR, 'README.md'), md);
