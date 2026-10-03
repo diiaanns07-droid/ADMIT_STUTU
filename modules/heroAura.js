@@ -16,6 +16,12 @@
 //   • состояние: оберег/бастион/щит — золотой ободок, мало HP — красный пульс сердцебиения;
 //   • medium/high: тонкие волны вокруг тела при накоплении ярости, светящиеся следы шагов на бегу,
 //     пыль и искры рывка (modules/heroTrail.js); остаточным образам — свой уровень качества.
+// [W5-СВЕТ] «Героинь не видно из-за неона»: свечение на самом герое — цветной акцент, а не белая заливка.
+//   Кромка, свет рук и отсвет руны берут цвет стихии, приведённый к одной яркости и насыщенный (glowTint):
+//   светлые пары эльфийки, лучницы и архимага (L 0,6–0,9 — почти белый) горят так же сдержанно, как пламя
+//   стража. Кромка уже (hzF⁴), прибавки ярости и вспышки меньше, свет рук — в ладони (не на щеке при натяжении
+//   лука), волны — только по краю силуэта (середина прозрачна). Пиковая яркость кромки ≈ 0,5 (порог bloom 1,0):
+//   герой целиком в bloom не попадает; ярко — только искры и руна (их цвета прежние).
 //   Бюджет: low — rim в шейдере + руна (упрощённый узор), ≤ 2 вызова вместе с частицами;
 //   medium/high — + волны (1, только при ярости/заряде), + следы (1, пока живы), + пыль (1, пока жива).
 //
@@ -273,7 +279,8 @@ void main() {
   float run = fract( y * 1.3 - uTime * ( 0.7 + 0.5 * hsh ) + hsh );
   float wisp = lane * smoothstep( 0.0, 0.25, run ) * ( 1.0 - smoothstep( 0.3, 0.42, run ) );
   float env = smoothstep( 0.0, 0.1, y ) * ( 1.0 - smoothstep( 0.45, 1.0, y ) );
-  float I = ( ring * ( 0.3 + 0.7 * side ) * 0.85 + wisp * side * 0.45 ) * env * uK;
+  // [W5-СВЕТ] кольца — только у края силуэта (было 0,3 и в середине: полосы поперёк лица и наряда)
+  float I = ( ring * side * 0.85 + wisp * side * 0.45 ) * env * uK;
   if ( I < 0.003 ) discard;
   vec3 col = mix( uC1, uC2, ring * 0.6 ) * ( 1.0 + ring );
   gl_FragColor = vec4( col, clamp( I, 0.0, 1.0 ) );
@@ -306,14 +313,15 @@ const RIM_FRAG = `
     // [W4-АУРА] контровой свет стихии: кромка силуэта, сзади-сверху в осях камеры — ярче плечи, голова, руки
     float hzF = 1.0 - saturate( dot( normal, normalize( vViewPosition ) ) );
     float hzB = saturate( dot( normal, vec3( 0.0, 0.55, -0.83 ) ) * 0.5 + 0.62 );
-    totalEmissiveRadiance += heroAuraRimC * ( heroAuraRimK * hzF * hzF * hzF * hzB );
+    totalEmissiveRadiance += heroAuraRimC * ( heroAuraRimK * hzF * hzF * hzF * hzF * hzB );   // [W5-СВЕТ] hzF⁴: только край силуэта
     // состояние: золотой ободок оберега/щита, красный пульс ранения — тоньше и резче
     if ( heroAuraStateK > 0.001 ) { float hzS = hzF * hzF; totalEmissiveRadiance += heroAuraStateC * ( heroAuraStateK * hzS * hzS * hzF ); }
     // заряд в руках: кисти светятся изнутри (мировое расстояние до ладони)
     if ( heroAuraHandK.x + heroAuraHandK.y > 0.001 ) {
       vec3 hzL = vHeroAuraW - heroAuraHandL, hzR = vHeroAuraW - heroAuraHandR;
-      float hzH = heroAuraHandK.x * exp( - dot( hzL, hzL ) * 70.0 ) + heroAuraHandK.y * exp( - dot( hzR, hzR ) * 70.0 );
-      totalEmissiveRadiance += heroAuraHandC * ( hzH * ( 0.6 + 1.2 * hzF ) );
+      // [W5-СВЕТ] спад ×150 (половина — в 7 см, было 10): светится кисть, а не щека у натянутой тетивы
+      float hzH = heroAuraHandK.x * exp( - dot( hzL, hzL ) * 150.0 ) + heroAuraHandK.y * exp( - dot( hzR, hzR ) * 150.0 );
+      totalEmissiveRadiance += heroAuraHandC * ( hzH * ( 0.55 + 0.9 * hzF ) );
     }
     // отсвет руны снизу: сапоги и подол ловят свет круга
     if ( heroAuraUnderK > 0.001 ) {
@@ -341,6 +349,17 @@ const approach = (cur, tg, up, dn, dt) => cur + (tg - cur) * (1 - Math.exp(-(tg 
 const heartbeat = (t) => { const ph = (t * 1.15) % 1; return Math.exp(-((ph - 0.08) ** 2) / 0.0016) + 0.6 * Math.exp(-((ph - 0.3) ** 2) / 0.0025); };
 const NO_EV = Object.freeze([]);
 const GOLD = 0xffc35a, RED = 0xff2a18;
+// [W5-СВЕТ] цвет свечения на герое: яркость (Rec. 709, линейная) приводится к L, насыщенность ×sat —
+// оттенок стихии остаётся, белизна уходит (эльфийка 0x9ff4ff: L 0,79 → 0,38, бирюза вместо белого)
+const lum709 = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+export function glowTint(c, L, sat = 1.5) {
+  c.multiplyScalar(L / Math.max(1e-4, lum709(c)));
+  const m = lum709(c);
+  c.setRGB(Math.max(0, m + (c.r - m) * sat), Math.max(0, m + (c.g - m) * sat), Math.max(0, m + (c.b - m) * sat));
+  return c.multiplyScalar(L / Math.max(1e-4, lum709(c)));
+}
+// [W5-СВЕТ] яркость цветов свечения на герое: кромка, свет рук, волны у силуэта
+const GLOW_L = { rim: 0.38, hand: 0.32, wave: 0.5, wave2: 0.6 };
 let pulseP = null;   // core/postfx.js (лениво, только в браузере): импульс экрана при заполнении ярости
 
 export function createHeroAura(THREE, parent, fx, { quality = 'medium', height = 1.8 } = {}) {
@@ -375,11 +394,13 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
   parent.add(pts);
 
   // ---------------------------------------------------------------- rim: юниформы этого героя
+  // [W5-СВЕТ] цвета свечения на самом герое — приведённые к одной яркости (glowTint)
+  const g1 = glowTint(c1.clone(), GLOW_L.rim), g2 = glowTint(c2.clone(), GLOW_L.rim);
   const RU = {
-    heroAuraRimC: { value: c1.clone() }, heroAuraRimK: { value: 0.75 },
+    heroAuraRimC: { value: g1.clone() }, heroAuraRimK: { value: 0.75 },
     heroAuraStateC: { value: goldC.clone() }, heroAuraStateK: { value: 0 },
     heroAuraHandL: { value: new THREE.Vector3(0, -100, 0) }, heroAuraHandR: { value: new THREE.Vector3(0, -100, 0) },
-    heroAuraHandK: { value: new THREE.Vector2() }, heroAuraHandC: { value: c1.clone().lerp(c2, 0.45).multiplyScalar(1.2) },
+    heroAuraHandK: { value: new THREE.Vector2() }, heroAuraHandC: { value: glowTint(c1.clone().lerp(c2, 0.45), GLOW_L.hand) },   // [W5-СВЕТ] было ×1,2 (у эльфийки L 1,0 — белый)
     heroAuraGround: { value: 0 }, heroAuraUnderK: { value: 0 },
   };
   const patched = new WeakSet();
@@ -436,7 +457,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
 
   // волны вокруг тела — только medium/high
   let waves = null;
-  const WU = { uTime: { value: 0 }, uK: { value: 0 }, uC1: { value: c1.clone() }, uC2: { value: c2.clone() } };
+  const WU = { uTime: { value: 0 }, uK: { value: 0 }, uC1: { value: glowTint(c1.clone(), GLOW_L.wave) }, uC2: { value: glowTint(c2.clone(), GLOW_L.wave2) } };   // [W5-СВЕТ]
   function makeWaves() {
     const wg = new THREE.CylinderGeometry(0.62, 0.36, 1, 32, 1, true); wg.translate(0, 0.5, 0);
     const wm = new THREE.ShaderMaterial({ name: 'hero-aura-waves', uniforms: WU, vertexShader: WAVE_VERT, fragmentShader: WAVE_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, forceSinglePass: true, fog: false });   // аддитив: порядок граней не важен — один проход вместо двух
@@ -612,9 +633,11 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     U.uHandW.value.set(haveHands ? st.sL : 0, haveHands ? st.sR : 0);
 
     // контровой rim: стихия; ярость и вспышка — ярче и горячее; смерть — гаснет
+    // [W5-СВЕТ] прибавки ярости, готовности, вспышки и заряда меньше (было 0,65 / 0,4 / 2,2 / 0,35): в пике ярости
+    // кромка ≈ 0,5 по яркости, вспышка «Ярость полна» — короткий всплеск ≈ 1; цвет — между g1 и g2 (оба насыщены)
     const rimBase = !ticked || st.menu ? 0.5 : 0.7;
-    RU.heroAuraRimK.value = (rimBase + 0.65 * st.fz + 0.4 * st.rdy * (0.5 + 0.5 * Math.sin(t * 5)) + 2.2 * fl + 0.35 * ch) * alive;
-    RU.heroAuraRimC.value.copy(c1).lerp(c2, Math.min(0.6, 0.2 * st.fz + 0.4 * st.flash));
+    RU.heroAuraRimK.value = (rimBase + 0.45 * st.fz + 0.3 * st.rdy * (0.5 + 0.5 * Math.sin(t * 5)) + 1.4 * fl + 0.25 * ch) * alive;
+    RU.heroAuraRimC.value.copy(g1).lerp(g2, Math.min(0.6, 0.2 * st.fz + 0.4 * st.flash));
     // состояние: оберег/щит — золото (с «хлопком» при включении), мало HP — красное сердцебиение
     // золото и красное смешиваются по силе (гаснущий оберег не прячет сердцебиение)
     const gk = st.gd * (1.15 + 0.9 * st.pop), rk2 = hb * 1.7;
@@ -623,7 +646,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     holder.getWorldPosition(_r);
     rootYaw = holder.rotation ? holder.rotation.y : 0;
     RU.heroAuraGround.value = _r.y;
-    RU.heroAuraUnderK.value = st.vis * (0.22 + 0.55 * st.fz + 0.9 * fl + 0.4 * ch) * alive;
+    RU.heroAuraUnderK.value = st.vis * (0.15 + 0.35 * st.fz + 0.6 * fl + 0.25 * ch) * alive;   // [W5-СВЕТ] было 0,22 / 0,55 / 0,9 / 0,4
 
     // частицы ауры
     U.uTF.value += dt * (1 + 0.65 * st.fz);
@@ -644,7 +667,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     }
     // волны вокруг тела: при накоплении ярости, заряде и вспышке
     if (waves) {
-      const wk = st.vis * (smooth(0.15, 1, st.fz) * 0.85 + 0.45 * ch + 1.3 * fl + 0.3 * st.rdy) * alive;
+      const wk = st.vis * (smooth(0.15, 1, st.fz) * 0.7 + 0.35 * ch + 0.9 * fl + 0.25 * st.rdy) * alive;   // [W5-СВЕТ] было 0,85 / 0,45 / 1,3 / 0,3
       waves.visible = lod < 1 && wk > 0.01;
       WU.uK.value = wk;
     }
@@ -712,7 +735,9 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     object: pts,
     rune,
     update, tick, setQuality,
-    setIntensity(v) { kExt = Math.max(0, v); U.uK.value = kExt; pts.visible = kExt > 0.01 && lod < 2; },
+    // [W5-СВЕТ] не больше 2,2: яркость искр растёт как uK² (альфа в квадрате при аддитиве) — вспышка появления
+    // в меню (×3,5) и всплеск заклинаний в бою (×3) давали облако в 9–12 раз ярче (белую пелену вокруг героини)
+    setIntensity(v) { kExt = Math.min(2.2, Math.max(0, v)); U.uK.value = kExt; pts.visible = kExt > 0.01 && lod < 2; },
     setLod(l) { lod = l; pts.visible = l < 2 && kExt > 0.01; if (l >= 2) { rune.visible = false; if (waves) waves.visible = false; } },
     // [W5-СМЕНА] герой спрятан (кэш смены героя): следы шагов и пыль рывка — из сцены (вернутся сами на первом тике)
     park() { if (prints && prints.mesh.parent) prints.mesh.parent.remove(prints.mesh); if (burst && burst.points.parent) burst.points.parent.remove(burst.points); },
