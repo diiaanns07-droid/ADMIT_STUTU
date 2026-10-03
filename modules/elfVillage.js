@@ -388,7 +388,10 @@ export function createElfVillage({
   // [W5-ПОЛ] луг лежит на MEADOW_LIFT выше рельефа и тает к краю; floorLift(x, z) — его высота для земли героя
   // (world.layoutGroundY), иначе стопы уходили в луг на 3,5 см
   const MEADOW_LIFT = 0.035, MEADOW_R = V.r + 1;
-  const floorLift = (x, z) => { const d = Math.hypot(x - CX, z - CZ); return d >= MEADOW_R ? 0 : MEADOW_LIFT * (1 - smoothstep(MEADOW_R - 8, MEADOW_R - 0.5, d)); };
+  const floorLift = (x, z) => {
+    const dx = x - CX, dz = z - CZ, d2 = dx * dx + dz * dz;   // без Math.hypot: он аллоцирует, а зовут каждый кадр
+    return d2 >= MEADOW_R * MEADOW_R ? 0 : MEADOW_LIFT * (1 - smoothstep(MEADOW_R - 8, MEADOW_R - 0.5, Math.sqrt(d2)));
+  };
   const rnd = mulberry32(seed);
   const gy = (x, z) => { const y = groundY(x, z); return Number.isFinite(y) ? y : V.level; };
   const W = (dx, dz) => ({ x: CX + dx, z: CZ + dz });
@@ -630,7 +633,8 @@ export function createElfVillage({
     if (v > bridge.w) return null;
     return bridgeDeckY(u);
   }
-  const floorAt = (x, z) => { const b = groundAt(x, z); return b !== null ? Math.max(b, gy(x, z)) : gy(x, z); };
+  // [W5-ПОЛ] жители — на лугу (как герой: world.layoutGroundY), на мостике — на настиле
+  const floorAt = (x, z) => { const b = groundAt(x, z); return b !== null ? Math.max(b, gy(x, z)) : gy(x, z) + floorLift(x, z); };
 
   // Тропы: главная от врат, круг вокруг Древа, лучи к дверям, к мостику и дому за ручьём.
   const houseDoor = (h) => {
@@ -1208,7 +1212,8 @@ export function createElfVillage({
             if (groundAt(x, z) !== null || distToPolyline(x, z, streamPts) < 1.35 || Math.hypot(x - pondW.x, z - pondW.z) < POND.r + 0.5) continue;
             if (Math.hypot(x - CX, z - CZ) < TRUNK_R + 0.3) continue;
             const s = 0.36 + rnd() * 0.14, v = 0.86 + rnd() * 0.14;
-            items.push({ x, y: gy(x, z) + 0.035, z, ry: rnd() * TAU, sx: s, sy: 0.1, sz: s * (0.8 + rnd() * 0.35), c: [v, v * 0.985, v * 0.95] });
+            // [W5-ПОЛ] плита (толщина 10 см) — на 1 см над лугом, а не на 5 см: стопа героя на тропе не уходит в камень
+            items.push({ x, y: gy(x, z) - 0.005, z, ry: rnd() * TAU, sx: s, sy: 0.1, sz: s * (0.8 + rnd() * 0.35), c: [v, v * 0.985, v * 0.95] });
           }
         }
       }

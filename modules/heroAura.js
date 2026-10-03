@@ -26,6 +26,7 @@
 //   tick — раз в кадр из heroModel.update (снимок боя и события), update(t) — после позы (vrmTick).
 
 import { createFootprints, createDashBurst } from './heroTrail.js';
+import { termsLow } from './vrmKit.js';   // [W5-ПОЛ] высота подошвы для отпечатка
 
 const VERT = /* glsl */`
 uniform float uTime;
@@ -481,7 +482,8 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
   };
   let lastSnapT = null;   // время боя прошлого снимка: пошло назад — новый бой (рестарт с паузы минует меню)
   let kExt = 1, lod = 0, lastT = null, ticked = false, disposed = false, ghostQ = null, remoteHero = false;
-  let anchorsRef = null, feet = null, rootYaw = 0;
+  let anchorsRef = null, feet = null, rootYaw = 0, soleSet = null;
+  const _sole = new Float64Array(3);   // [W5-ПОЛ] нижняя точка подошвы левой, правой и обеих стоп
   const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _r = new THREE.Vector3(), _hL = new THREE.Vector3(), _hR = new THREE.Vector3();
   const _cl = new THREE.Color(), _cs = new THREE.Color();
 
@@ -527,7 +529,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
     if (disposed) return;
     ticked = true; remoteHero = !!remote;
     if (anchors) anchorsRef = anchors;
-    if (cur && !feet) feet = findFeet(cur);
+    if (cur && !feet) { feet = findFeet(cur); soleSet = cur.soles && cur.soles.fast ? cur.soles.fast : null; }
     if (cur && cur.ghost && cur.ghost.setQuality && ghostQ !== tier) { ghostQ = tier; try { cur.ghost.setQuality(tier); } catch (e) { /* ignore */ } }
     const P = snap && snap.player;
     st.menu = !P;
@@ -691,9 +693,14 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
         const dx = F.tx - F.ax, dz = F.tz - F.az;
         const yaw = dx * dx + dz * dz > 0.0009 ? Math.atan2(dx, dz) : rootYaw;
         const cx = (F.ax + F.tx) * 0.5, cz = (F.az + F.tz) * 0.5;
-        const gy = Math.max(_r.y - 0.4, Math.min(_r.y + 0.4, F.y - (F.t ? 0.012 : 0.07)));   // земля под подошвой
-        prints.stamp(cx, gy + 0.012, cz, yaw, F.side, 0.6 + 0.4 * smooth(3, 7, st.speed) + 0.4 * st.fz, t);
-        if (burst && tier === 'high') burst.emit('step', cx, gy, cz, Math.sin(yaw), Math.cos(yaw), t, 1);
+        // [W5-ПОЛ] земля под подошвой — сама подошва (точки сетки стопы, vrmKit.termsLow): кость носка выше неё на
+        // 1,6–2,4 см, и прежняя поправка «носок − 1,2 см» ставила отпечаток над полом; стопа ещё в воздухе — без отпечатка
+        const sole = soleSet ? termsLow(soleSet, _sole)[F.side < 0 ? 0 : 1] : F.y - (F.t ? 0.012 : 0.07);
+        const gy = Math.max(_r.y - 0.4, Math.min(_r.y + 0.4, sole));
+        if (!soleSet || sole - _r.y < 0.06) {
+          prints.stamp(cx, gy + 0.012, cz, yaw, F.side, 0.6 + 0.4 * smooth(3, 7, st.speed) + 0.4 * st.fz, t);
+          if (burst && tier === 'high') burst.emit('step', cx, gy, cz, Math.sin(yaw), Math.cos(yaw), t, 1);
+        }
       }
       F.planted = planted;
     }
@@ -732,7 +739,7 @@ export function createHeroAura(THREE, parent, fx, { quality = 'medium', height =
       dropTrails();
       // материалы героя освобождает heroShading/heroGear; кромку гасим на случай, если какие-то переживут героя
       RU.heroAuraRimK.value = 0; RU.heroAuraStateK.value = 0; RU.heroAuraHandK.value.set(0, 0); RU.heroAuraUnderK.value = 0;
-      meshes.length = 0; seen.length = 0; anchorsRef = null; feet = null;
+      meshes.length = 0; seen.length = 0; anchorsRef = null; feet = null; soleSet = null;
     },
   };
 }

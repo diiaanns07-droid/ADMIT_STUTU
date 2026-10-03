@@ -240,7 +240,10 @@ export function soleMarkers(THREE, vrm) {
       }
     });
     if (!any) return;
-    const si = SI.array, sw = SW.array, ws = SI.itemSize, ww = SW.itemSize;
+    // сырые массивы весов; перемежённый буфер (byteStride) — шаг и смещение его данных
+    const si = SI.isInterleavedBufferAttribute ? SI.data.array : SI.array, sw = SW.isInterleavedBufferAttribute ? SW.data.array : SW.array;
+    const ws = SI.isInterleavedBufferAttribute ? SI.data.stride : SI.itemSize, ww = SW.isInterleavedBufferAttribute ? SW.data.stride : SW.itemSize;
+    const so = SI.isInterleavedBufferAttribute ? SI.offset : 0, wo = SW.isInterleavedBufferAttribute ? SW.offset : 0;
     const wk = SW.normalized ? 1 / (sw instanceof Uint8Array ? 255 : sw instanceof Uint16Array ? 65535 : 1) : 1;
     // кость · обратная привязки → в осях vrm.scene: один раз на кость (по требованию)
     const BM = new Array(bones.length).fill(null), bind = o.bindMatrix, pos = o.geometry.attributes.position;
@@ -248,9 +251,9 @@ export function soleMarkers(THREE, vrm) {
     for (let i = 0; i < n; i++) {
       let fL = 0, tL = 0, fR = 0, tR = 0, hL = 0, hR = 0, kL = 0, kR = 0;
       for (let j = 0; j < 4; j++) {
-        const t = tag[si[i * ws + j]];
+        const t = tag[si[i * ws + so + j]];
         if (!t) continue;
-        const w = sw[i * ww + j] * wk;
+        const w = sw[i * ww + wo + j] * wk;
         if (t === 5) hL += w; else if (t === 6) hR += w; else if (t === 7) kL += w; else if (t === 8) kR += w;
         else if (t === 1 || t === 3) fL += w; else fR += w;
         if (t === 3) tL += w; else if (t === 4) tR += w;
@@ -263,9 +266,9 @@ export function soleMarkers(THREE, vrm) {
       v.fromBufferAttribute(pos, i).applyMatrix4(bind);
       let x = 0, y = 0, z = 0;
       for (let j = 0; j < 4; j++) {
-        const w = sw[i * ww + j] * wk;
+        const w = sw[i * ww + wo + j] * wk;
         if (!w) continue;
-        loc.copy(v).applyMatrix4(bm(si[i * ws + j]));
+        loc.copy(v).applyMatrix4(bm(si[i * ws + so + j]));
         x += loc.x * w; y += loc.y * w; z += loc.z * w;
       }
       if (s2 >= 0) SIDE[s2].pts.push({ x, y, z, toe: wt > wf - wt, mesh: o, i });

@@ -10,7 +10,8 @@
 //      Подошва никогда не глубже 2 см под полом; стоя — |подошва − пол| ≤ 2 см; колено и голень — не ниже пола,
 //      в поражении обе стопы на полу; носок не разворачивается рывком; таз и подошва в покое в конце — там же.
 //   3. low / high: то же для покоя и победы; пол сцены выше корня (витрина) — подошва на нём.
-//   4. Корень героя по земле (world.followRootY): склон — без отставания, ступень арены — плавно.
+//   4. Корень героя по земле (modules/rootFollow.js, и у соперника в дуэли): склон — без отставания, и в рывке;
+//      ступень арены — плавно.
 // three.js: ASHEN_THREE или vendor/ (как остальные тесты); 'three/addons/' и '@pixiv/three-vrm' — из vendor/.
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
@@ -293,7 +294,7 @@ model.setQuality('medium');
 }
 model.dispose();
 
-// ---------------------------------------------------------------- 4. корень героя по земле (world.followRootY)
+// ---------------------------------------------------------------- 4. корень героя по земле (modules/rootFollow.js)
 {
   const { followRootY } = await import('../modules/world.js');
   // склон: подъём 1,6 м/с (спринт в гору 20%) — корень на земле в каждом кадре, без отставания
@@ -306,7 +307,22 @@ model.dispose();
   assert.ok(st.rootY < y + 0.3 - 0.1, 'ступень: корень не прыгает на 0,3 м за кадр');
   for (let i = 0; i < 18; i++) followRootY(st, y + 0.3, 1 / 60);
   assert.ok(Math.abs(st.rootY - (y + 0.3)) < 0.02, `ступень: догнал за 0,3 с (${cm(y + 0.3 - st.rootY)})`);
-  log(`корень: склон без отставания, ступень 0,3 м — плавно`);
+  // рывок вверх по склону 15%: 3,6 м за 0,22 с (easeOutQuad, как combat) — корень на земле (порог — от пройденного)
+  const R = await import('../modules/rootFollow.js');
+  assert.equal(R.followRootY, followRootY, 'world.followRootY — та же функция, что у соперника (modules/rootFollow.js)');
+  const sd = { rootY: NaN, groundY: NaN };
+  let dlag = 0, px = 0;
+  for (let i = 0; i <= 14; i++) {
+    const u = Math.min(1, (i / 60) / 0.22), x = 3.6 * (1 - (1 - u) * (1 - u));
+    followRootY(sd, 0.15 * x, 1 / 60, x - px); px = x;
+    dlag = Math.max(dlag, 0.15 * x - sd.rootY);
+  }
+  assert.ok(dlag < 0.01, `рывок по склону: корень отстаёт на ${cm(dlag)}`);
+  // ступень 0,3 м шагом (0,08 м за кадр) — по-прежнему плавно
+  const sw = { rootY: 0, groundY: 0 };
+  followRootY(sw, 0.3, 1 / 60, 0.08);
+  assert.ok(sw.rootY < 0.2, 'ступень при ходьбе: корень не прыгает');
+  log(`корень: склон без отставания (и в рывке: ${cm(dlag)}), ступень 0,3 м — плавно`);
 }
 console.error = quiet.error; console.warn = quiet.warn;
 for (const m of out) console.log('  ' + m);
