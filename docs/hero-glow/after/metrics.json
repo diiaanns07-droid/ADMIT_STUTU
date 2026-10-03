@@ -1,0 +1,995 @@
+{
+ "label": "after",
+ "size": "1366x768",
+ "seed": 20261002,
+ "commit": "bdc1387",
+ "branch": "HEAD",
+ "generatedAt": "2026-10-03T18:08:20Z",
+ "results": {
+  "medium": {
+   "ashen": {
+    "menu": {
+     "over": 0.001,
+     "heroMean": 0.293,
+     "face": 0.31,
+     "faceSd": 0.153,
+     "faceOver": 0,
+     "facePx": 1023,
+     "bg": 0.208,
+     "contrast": 1.49,
+     "rect": {
+      "x0": 773,
+      "y0": 133,
+      "x1": 1031,
+      "y1": 729
+     },
+     "faceRect": {
+      "x0": 886,
+      "y0": 260,
+      "x1": 917,
+      "y1": 293,
+      "facing": 0.94
+     },
+     "file": "medium_ashen_menu.jpg"
+    },
+    "battle": {
+     "over": 0.001,
+     "heroMean": 0.23,
+     "face": null,
+     "faceSd": null,
+     "faceOver": null,
+     "facePx": 0,
+     "bg": 0.295,
+     "contrast": null,
+     "rect": {
+      "x0": 452,
+      "y0": 425,
+      "x1": 609,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 532,
+      "y0": 500,
+      "x1": 550,
+      "y1": 519,
+      "facing": -0.96
+     },
+     "file": "medium_ashen_battle.jpg"
+    },
+    "battleFront": {
+     "over": 0.001,
+     "heroMean": 0.124,
+     "face": 0.217,
+     "faceSd": 0.15,
+     "faceOver": 0,
+     "facePx": 3472,
+     "bg": 0.125,
+     "contrast": 1.74,
+     "rect": {
+      "x0": 435,
+      "y0": 0,
+      "x1": 889,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 655,
+      "y0": 130,
+      "x1": 711,
+      "y1": 192,
+      "facing": 1
+     },
+     "file": "medium_ashen_battle_front.jpg"
+    },
+    "battleCharge": {
+     "over": 0,
+     "heroMean": 0.124,
+     "face": 0.174,
+     "faceSd": 0.14,
+     "faceOver": 0,
+     "facePx": 3591,
+     "bg": 0.135,
+     "contrast": 1.289,
+     "rect": {
+      "x0": 376,
+      "y0": 0,
+      "x1": 942,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 654,
+      "y0": 134,
+      "x1": 711,
+      "y1": 197,
+      "facing": 1
+     },
+     "file": "medium_ashen_battle_charge.jpg"
+    }
+   },
+   "elf": {
+    "menu": {
+     "over": 0.004,
+     "heroMean": 0.42,
+     "face": 0.777,
+     "faceSd": 0.106,
+     "faceOver": 0,
+     "facePx": 1088,
+     "bg": 0.263,
+     "contrast": 2.955,
+     "rect": {
+      "x0": 744,
+      "y0": 195,
+      "x1": 1010,
+      "y1": 740
+     },
+     "faceRect": {
+      "x0": 844,
+      "y0": 287,
+      "x1": 876,
+      "y1": 321,
+      "facing": 0.92
+     },
+     "file": "medium_elf_menu.jpg"
+    },
+    "battle": {
+     "over": 0,
+     "heroMean": 0.317,
+     "face": null,
+     "faceSd": null,
+     "faceOver": null,
+     "facePx": 0,
+     "bg": 0.292,
+     "contrast": null,
+     "rect": {
+      "x0": 467,
+      "y0": 495,
+      "x1": 598,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 531,
+      "y0": 514,
+      "x1": 548,
+      "y1": 532,
+      "facing": -0.96
+     },
+     "file": "medium_elf_battle.jpg"
+    },
+    "battleFront": {
+     "over": 0,
+     "heroMean": 0.277,
+     "face": 0.622,
+     "faceSd": 0.148,
+     "faceOver": 0,
+     "facePx": 3472,
+     "bg": 0.113,
+     "contrast": 5.503,
+     "rect": {
+      "x0": 496,
+      "y0": 39,
+      "x1": 869,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 655,
+      "y0": 119,
+      "x1": 711,
+      "y1": 181,
+      "facing": 1
+     },
+     "file": "medium_elf_battle_front.jpg"
+    },
+    "battleCharge": {
+     "over": 0,
+     "heroMean": 0.285,
+     "face": 0.634,
+     "faceSd": 0.132,
+     "faceOver": 0,
+     "facePx": 3654,
+     "bg": 0.116,
+     "contrast": 5.486,
+     "rect": {
+      "x0": 496,
+      "y0": 43,
+      "x1": 859,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 653,
+      "y0": 137,
+      "x1": 711,
+      "y1": 200,
+      "facing": 1
+     },
+     "file": "medium_elf_battle_charge.jpg"
+    }
+   },
+   "dark": {
+    "menu": {
+     "over": 0.003,
+     "heroMean": 0.327,
+     "face": 0.511,
+     "faceSd": 0.259,
+     "faceOver": 0.035,
+     "facePx": 1056,
+     "bg": 0.244,
+     "contrast": 2.088,
+     "rect": {
+      "x0": 737,
+      "y0": 174,
+      "x1": 1023,
+      "y1": 751
+     },
+     "faceRect": {
+      "x0": 833,
+      "y0": 298,
+      "x1": 865,
+      "y1": 331,
+      "facing": 0.93
+     },
+     "file": "medium_dark_menu.jpg"
+    },
+    "battle": {
+     "over": 0.003,
+     "heroMean": 0.284,
+     "face": null,
+     "faceSd": null,
+     "faceOver": null,
+     "facePx": 0,
+     "bg": 0.303,
+     "contrast": null,
+     "rect": {
+      "x0": 455,
+      "y0": 432,
+      "x1": 610,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 531,
+      "y0": 516,
+      "x1": 549,
+      "y1": 534,
+      "facing": -0.96
+     },
+     "file": "medium_dark_battle.jpg"
+    },
+    "battleFront": {
+     "over": 0.002,
+     "heroMean": 0.144,
+     "face": 0.403,
+     "faceSd": 0.266,
+     "faceOver": 0,
+     "facePx": 3528,
+     "bg": 0.139,
+     "contrast": 2.894,
+     "rect": {
+      "x0": 423,
+      "y0": 0,
+      "x1": 881,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 655,
+      "y0": 123,
+      "x1": 711,
+      "y1": 186,
+      "facing": 1
+     },
+     "file": "medium_dark_battle_front.jpg"
+    },
+    "battleCharge": {
+     "over": 0,
+     "heroMean": 0.133,
+     "face": 0.366,
+     "faceSd": 0.285,
+     "faceOver": 0,
+     "facePx": 3654,
+     "bg": 0.132,
+     "contrast": 2.769,
+     "rect": {
+      "x0": 365,
+      "y0": 0,
+      "x1": 881,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 653,
+      "y0": 138,
+      "x1": 711,
+      "y1": 201,
+      "facing": 1
+     },
+     "file": "medium_dark_battle_charge.jpg"
+    }
+   },
+   "ranger": {
+    "menu": {
+     "over": 0.002,
+     "heroMean": 0.281,
+     "face": 0.728,
+     "faceSd": 0.147,
+     "faceOver": 0,
+     "facePx": 1023,
+     "bg": 0.284,
+     "contrast": 2.561,
+     "rect": {
+      "x0": 670,
+      "y0": 188,
+      "x1": 972,
+      "y1": 750
+     },
+     "faceRect": {
+      "x0": 838,
+      "y0": 306,
+      "x1": 869,
+      "y1": 339,
+      "facing": 0.92
+     },
+     "file": "medium_ranger_menu.jpg"
+    },
+    "battle": {
+     "over": 0,
+     "heroMean": 0.238,
+     "face": null,
+     "faceSd": null,
+     "faceOver": null,
+     "facePx": 0,
+     "bg": 0.302,
+     "contrast": null,
+     "rect": {
+      "x0": 470,
+      "y0": 500,
+      "x1": 593,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 532,
+      "y0": 515,
+      "x1": 550,
+      "y1": 533,
+      "facing": -0.96
+     },
+     "file": "medium_ranger_battle.jpg"
+    },
+    "battleFront": {
+     "over": 0.001,
+     "heroMean": 0.163,
+     "face": 0.517,
+     "faceSd": 0.147,
+     "faceOver": 0,
+     "facePx": 3528,
+     "bg": 0.109,
+     "contrast": 4.734,
+     "rect": {
+      "x0": 509,
+      "y0": 50,
+      "x1": 865,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 655,
+      "y0": 130,
+      "x1": 711,
+      "y1": 193,
+      "facing": 1
+     },
+     "file": "medium_ranger_battle_front.jpg"
+    },
+    "battleCharge": {
+     "over": 0,
+     "heroMean": 0.161,
+     "face": 0.508,
+     "faceSd": 0.144,
+     "faceOver": 0,
+     "facePx": 3591,
+     "bg": 0.122,
+     "contrast": 4.172,
+     "rect": {
+      "x0": 532,
+      "y0": 47,
+      "x1": 864,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 657,
+      "y0": 133,
+      "x1": 714,
+      "y1": 196,
+      "facing": 1
+     },
+     "file": "medium_ranger_battle_charge.jpg"
+    }
+   },
+   "archmage": {
+    "menu": {
+     "over": 0.003,
+     "heroMean": 0.388,
+     "face": 0.691,
+     "faceSd": 0.132,
+     "faceOver": 0,
+     "facePx": 960,
+     "bg": 0.222,
+     "contrast": 3.109,
+     "rect": {
+      "x0": 748,
+      "y0": 133,
+      "x1": 1028,
+      "y1": 703
+     },
+     "faceRect": {
+      "x0": 878,
+      "y0": 259,
+      "x1": 908,
+      "y1": 291,
+      "facing": 0.94
+     },
+     "file": "medium_archmage_menu.jpg"
+    },
+    "battle": {
+     "over": 0,
+     "heroMean": 0.247,
+     "face": null,
+     "faceSd": null,
+     "faceOver": null,
+     "facePx": 0,
+     "bg": 0.298,
+     "contrast": null,
+     "rect": {
+      "x0": 452,
+      "y0": 424,
+      "x1": 612,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 532,
+      "y0": 511,
+      "x1": 550,
+      "y1": 529,
+      "facing": -0.96
+     },
+     "file": "medium_archmage_battle.jpg"
+    },
+    "battleFront": {
+     "over": 0.002,
+     "heroMean": 0.155,
+     "face": 0.454,
+     "faceSd": 0.109,
+     "faceOver": 0,
+     "facePx": 3472,
+     "bg": 0.124,
+     "contrast": 3.662,
+     "rect": {
+      "x0": 417,
+      "y0": 0,
+      "x1": 872,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 655,
+      "y0": 130,
+      "x1": 711,
+      "y1": 192,
+      "facing": 1
+     },
+     "file": "medium_archmage_battle_front.jpg"
+    },
+    "battleCharge": {
+     "over": 0,
+     "heroMean": 0.144,
+     "face": 0.43,
+     "faceSd": 0.104,
+     "faceOver": 0,
+     "facePx": 3648,
+     "bg": 0.141,
+     "contrast": 3.058,
+     "rect": {
+      "x0": 327,
+      "y0": 0,
+      "x1": 922,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 654,
+      "y0": 91,
+      "x1": 711,
+      "y1": 155,
+      "facing": 1
+     },
+     "file": "medium_archmage_battle_charge.jpg"
+    }
+   }
+  },
+  "high": {
+   "ashen": {
+    "menu": {
+     "over": 0.001,
+     "heroMean": 0.268,
+     "face": 0.269,
+     "faceSd": 0.174,
+     "faceOver": 0,
+     "facePx": 992,
+     "bg": 0.191,
+     "contrast": 1.412,
+     "rect": {
+      "x0": 772,
+      "y0": 138,
+      "x1": 1047,
+      "y1": 730
+     },
+     "faceRect": {
+      "x0": 883,
+      "y0": 266,
+      "x1": 914,
+      "y1": 298,
+      "facing": 0.94
+     },
+     "file": "high_ashen_menu.jpg"
+    },
+    "battle": {
+     "over": 0,
+     "heroMean": 0.21,
+     "face": null,
+     "faceSd": null,
+     "faceOver": null,
+     "facePx": 0,
+     "bg": 0.261,
+     "contrast": null,
+     "rect": {
+      "x0": 441,
+      "y0": 433,
+      "x1": 609,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 533,
+      "y0": 508,
+      "x1": 550,
+      "y1": 527,
+      "facing": -0.96
+     },
+     "file": "high_ashen_battle.jpg"
+    },
+    "battleFront": {
+     "over": 0,
+     "heroMean": 0.115,
+     "face": 0.176,
+     "faceSd": 0.151,
+     "faceOver": 0,
+     "facePx": 3472,
+     "bg": 0.117,
+     "contrast": 1.511,
+     "rect": {
+      "x0": 435,
+      "y0": 0,
+      "x1": 903,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 655,
+      "y0": 118,
+      "x1": 711,
+      "y1": 180,
+      "facing": 1
+     },
+     "file": "high_ashen_battle_front.jpg"
+    },
+    "battleCharge": {
+     "over": 0,
+     "heroMean": 0.115,
+     "face": 0.153,
+     "faceSd": 0.128,
+     "faceOver": 0,
+     "facePx": 3648,
+     "bg": 0.123,
+     "contrast": 1.242,
+     "rect": {
+      "x0": 374,
+      "y0": 0,
+      "x1": 948,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 656,
+      "y0": 99,
+      "x1": 713,
+      "y1": 163,
+      "facing": 1
+     },
+     "file": "high_ashen_battle_charge.jpg"
+    }
+   },
+   "elf": {
+    "menu": {
+     "over": 0.002,
+     "heroMean": 0.387,
+     "face": 0.772,
+     "faceSd": 0.117,
+     "faceOver": 0,
+     "facePx": 1056,
+     "bg": 0.264,
+     "contrast": 2.927,
+     "rect": {
+      "x0": 744,
+      "y0": 195,
+      "x1": 1008,
+      "y1": 741
+     },
+     "faceRect": {
+      "x0": 845,
+      "y0": 288,
+      "x1": 877,
+      "y1": 321,
+      "facing": 0.93
+     },
+     "file": "high_elf_menu.jpg"
+    },
+    "battle": {
+     "over": 0,
+     "heroMean": 0.287,
+     "face": null,
+     "faceSd": null,
+     "faceOver": null,
+     "facePx": 0,
+     "bg": 0.273,
+     "contrast": null,
+     "rect": {
+      "x0": 467,
+      "y0": 495,
+      "x1": 598,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 533,
+      "y0": 517,
+      "x1": 550,
+      "y1": 535,
+      "facing": -0.96
+     },
+     "file": "high_elf_battle.jpg"
+    },
+    "battleFront": {
+     "over": 0.002,
+     "heroMean": 0.277,
+     "face": 0.61,
+     "faceSd": 0.149,
+     "faceOver": 0,
+     "facePx": 3534,
+     "bg": 0.116,
+     "contrast": 5.253,
+     "rect": {
+      "x0": 500,
+      "y0": 31,
+      "x1": 867,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 654,
+      "y0": 115,
+      "x1": 711,
+      "y1": 177,
+      "facing": 1
+     },
+     "file": "high_elf_battle_front.jpg"
+    },
+    "battleCharge": {
+     "over": 0.001,
+     "heroMean": 0.272,
+     "face": 0.609,
+     "faceSd": 0.153,
+     "faceOver": 0,
+     "facePx": 3654,
+     "bg": 0.117,
+     "contrast": 5.218,
+     "rect": {
+      "x0": 500,
+      "y0": 36,
+      "x1": 868,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 655,
+      "y0": 121,
+      "x1": 713,
+      "y1": 184,
+      "facing": 1
+     },
+     "file": "high_elf_battle_charge.jpg"
+    }
+   },
+   "dark": {
+    "menu": {
+     "over": 0.002,
+     "heroMean": 0.301,
+     "face": 0.443,
+     "faceSd": 0.285,
+     "faceOver": 0.019,
+     "facePx": 1088,
+     "bg": 0.241,
+     "contrast": 1.841,
+     "rect": {
+      "x0": 738,
+      "y0": 174,
+      "x1": 1022,
+      "y1": 752
+     },
+     "faceRect": {
+      "x0": 834,
+      "y0": 298,
+      "x1": 866,
+      "y1": 332,
+      "facing": 0.93
+     },
+     "file": "high_dark_menu.jpg"
+    },
+    "battle": {
+     "over": 0,
+     "heroMean": 0.239,
+     "face": null,
+     "faceSd": null,
+     "faceOver": null,
+     "facePx": 0,
+     "bg": 0.267,
+     "contrast": null,
+     "rect": {
+      "x0": 455,
+      "y0": 432,
+      "x1": 610,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 533,
+      "y0": 515,
+      "x1": 550,
+      "y1": 534,
+      "facing": -0.96
+     },
+     "file": "high_dark_battle.jpg"
+    },
+    "battleFront": {
+     "over": 0.002,
+     "heroMean": 0.137,
+     "face": 0.39,
+     "faceSd": 0.273,
+     "faceOver": 0,
+     "facePx": 3528,
+     "bg": 0.125,
+     "contrast": 3.121,
+     "rect": {
+      "x0": 431,
+      "y0": 0,
+      "x1": 882,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 654,
+      "y0": 133,
+      "x1": 710,
+      "y1": 196,
+      "facing": 1
+     },
+     "file": "high_dark_battle_front.jpg"
+    },
+    "battleCharge": {
+     "over": 0.001,
+     "heroMean": 0.134,
+     "face": 0.367,
+     "faceSd": 0.274,
+     "faceOver": 0,
+     "facePx": 3591,
+     "bg": 0.135,
+     "contrast": 2.72,
+     "rect": {
+      "x0": 373,
+      "y0": 0,
+      "x1": 882,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 654,
+      "y0": 125,
+      "x1": 711,
+      "y1": 188,
+      "facing": 1
+     },
+     "file": "high_dark_battle_charge.jpg"
+    }
+   },
+   "ranger": {
+    "menu": {
+     "over": 0.002,
+     "heroMean": 0.259,
+     "face": 0.704,
+     "faceSd": 0.171,
+     "faceOver": 0,
+     "facePx": 1023,
+     "bg": 0.257,
+     "contrast": 2.738,
+     "rect": {
+      "x0": 664,
+      "y0": 188,
+      "x1": 973,
+      "y1": 747
+     },
+     "faceRect": {
+      "x0": 836,
+      "y0": 305,
+      "x1": 867,
+      "y1": 338,
+      "facing": 0.9
+     },
+     "file": "high_ranger_menu.jpg"
+    },
+    "battle": {
+     "over": 0,
+     "heroMean": 0.227,
+     "face": null,
+     "faceSd": null,
+     "faceOver": null,
+     "facePx": 0,
+     "bg": 0.286,
+     "contrast": null,
+     "rect": {
+      "x0": 470,
+      "y0": 498,
+      "x1": 593,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 532,
+      "y0": 515,
+      "x1": 549,
+      "y1": 533,
+      "facing": -0.96
+     },
+     "file": "high_ranger_battle.jpg"
+    },
+    "battleFront": {
+     "over": 0.002,
+     "heroMean": 0.162,
+     "face": 0.499,
+     "faceSd": 0.157,
+     "faceOver": 0,
+     "facePx": 3591,
+     "bg": 0.103,
+     "contrast": 4.859,
+     "rect": {
+      "x0": 508,
+      "y0": 43,
+      "x1": 863,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 654,
+      "y0": 127,
+      "x1": 711,
+      "y1": 190,
+      "facing": 1
+     },
+     "file": "high_ranger_battle_front.jpg"
+    },
+    "battleCharge": {
+     "over": 0,
+     "heroMean": 0.148,
+     "face": 0.504,
+     "faceSd": 0.142,
+     "faceOver": 0,
+     "facePx": 3534,
+     "bg": 0.102,
+     "contrast": 4.968,
+     "rect": {
+      "x0": 531,
+      "y0": 49,
+      "x1": 862,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 657,
+      "y0": 136,
+      "x1": 714,
+      "y1": 198,
+      "facing": 1
+     },
+     "file": "high_ranger_battle_charge.jpg"
+    }
+   },
+   "archmage": {
+    "menu": {
+     "over": 0.003,
+     "heroMean": 0.345,
+     "face": 0.677,
+     "faceSd": 0.151,
+     "faceOver": 0,
+     "facePx": 1023,
+     "bg": 0.214,
+     "contrast": 3.16,
+     "rect": {
+      "x0": 747,
+      "y0": 129,
+      "x1": 1019,
+      "y1": 702
+     },
+     "faceRect": {
+      "x0": 877,
+      "y0": 253,
+      "x1": 908,
+      "y1": 286,
+      "facing": 0.93
+     },
+     "file": "high_archmage_menu.jpg"
+    },
+    "battle": {
+     "over": 0,
+     "heroMean": 0.236,
+     "face": null,
+     "faceSd": null,
+     "faceOver": null,
+     "facePx": 0,
+     "bg": 0.283,
+     "contrast": null,
+     "rect": {
+      "x0": 460,
+      "y0": 422,
+      "x1": 613,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 532,
+      "y0": 510,
+      "x1": 549,
+      "y1": 528,
+      "facing": -0.96
+     },
+     "file": "high_archmage_battle.jpg"
+    },
+    "battleFront": {
+     "over": 0.001,
+     "heroMean": 0.14,
+     "face": 0.451,
+     "faceSd": 0.112,
+     "faceOver": 0,
+     "facePx": 3472,
+     "bg": 0.099,
+     "contrast": 4.574,
+     "rect": {
+      "x0": 414,
+      "y0": 0,
+      "x1": 852,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 655,
+      "y0": 133,
+      "x1": 711,
+      "y1": 195,
+      "facing": 1
+     },
+     "file": "high_archmage_battle_front.jpg"
+    },
+    "battleCharge": {
+     "over": 0,
+     "heroMean": 0.128,
+     "face": 0.422,
+     "faceSd": 0.111,
+     "faceOver": 0,
+     "facePx": 3648,
+     "bg": 0.129,
+     "contrast": 3.275,
+     "rect": {
+      "x0": 323,
+      "y0": 0,
+      "x1": 916,
+      "y1": 768
+     },
+     "faceRect": {
+      "x0": 653,
+      "y0": 95,
+      "x1": 710,
+      "y1": 159,
+      "facing": 1
+     },
+     "file": "high_archmage_battle_charge.jpg"
+    }
+   }
+  }
+ },
+ "errors": []
+}
