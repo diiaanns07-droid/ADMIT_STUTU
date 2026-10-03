@@ -1112,6 +1112,7 @@ const callbacks = {
 let netSession = null;
 let netSessionP = null;
 function openNet() {
+  late.fire();   // [W5-СТАРТ] лобби — сразу и дуэль (modules/pvp.js), и магия: соперник может быть готов раньше, чем игрок уйдёт из меню
   if (!netSessionP) {
     netSessionP = import('./net/session.js').then((m) => {
       netSession = m.createNetSession({
