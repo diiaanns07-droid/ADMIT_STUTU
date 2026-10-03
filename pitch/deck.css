@@ -1,0 +1,335 @@
+/* ASHEN OATH — движок презентации: токены, сцена 1920×1080, типографика, общие компоненты, навигация, печать.
+ * Общий контракт всех частей (slides/part1–3.css): цвета — только через var(), размеры текста — классы ниже.
+ * Типографика: .title 80 px, .lead 40/52, текст 34/46; ничего мельче 28 px (.kicker, .cap, .src — 28 px). */
+
+:root {
+  --ink: #0b0a09;
+  --coal: #15161a;
+  --coal-deep: #0e0f12;
+  --bronze: #6f5532;
+  --line: #574a33;
+  --gold: #c4a265;
+  --gold-b: #d8b36a;
+  --gold-hi: #f3dca0;
+  --gold-deep: #9c7d45;
+  --parch: #eadfc5;
+  --text: #ece6d9;
+  --muted: #cfc6b4;        /* вторичный текст: контраст 11:1 на --ink */
+  --blood: #b0262a;
+  --ember: #ff8a3c;
+  --mana: #5aa0ff;
+  --hand-left: #5aaeff;
+  --hand-right: #ff9a3c;
+  --error: #e07458;
+  --ok: #8fb784;
+  --grad-hp: linear-gradient(180deg, #ff8a6a 0%, #d43a2a 32%, #9e1c18 70%, #5e0f10 100%);
+  --grad-fury: linear-gradient(180deg, #ffd08a 0%, #ff7a2e 24%, #c2361a 62%, #5a1206 100%);
+  --grad-num: linear-gradient(180deg, #fff8e8 0%, #f0dcae 46%, #c0924c 100%);
+  --grad-panel: radial-gradient(120% 70% at 50% 0%, rgba(216, 179, 106, .09), transparent 62%), linear-gradient(180deg, rgba(28, 24, 19, .6), rgba(10, 9, 8, .2));
+  --shadow-panel: 0 0 0 1px rgba(0, 0, 0, .55), 0 22px 60px rgba(0, 0, 0, .6), inset 0 0 70px rgba(0, 0, 0, .35);
+  --ease: cubic-bezier(.2, .7, .2, 1);
+
+  /* Орнамент интерфейса игры — копия из modules/ui.css ([W4-UI] и --bdo-corner). */
+  --w4-frame: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cdefs%3E%3Cg id='c'%3E%3Cpath d='M1.5 40V1.5H40' fill='none' stroke='%23d8b36a' stroke-width='1.4'/%3E%3Cpath d='M7.5 28V7.5H28' fill='none' stroke='%23d8b36a' stroke-opacity='.6'/%3E%3Cpath d='M15 7.5c0 4.2 2.4 7.5 7 7.5M7.5 15c4.2 0 7.5 2.4 7.5 7' fill='none' stroke='%23f3dca0' stroke-opacity='.75'/%3E%3Cpath d='M7.5 1 14 7.5 7.5 14 1 7.5z' fill='%23f3dca0' stroke='%230b0a09' stroke-width='.8'/%3E%3Ccircle cx='40' cy='1.5' r='1.7' fill='%23d8b36a'/%3E%3Ccircle cx='1.5' cy='40' r='1.7' fill='%23d8b36a'/%3E%3C/g%3E%3C/defs%3E%3Crect x='.5' y='.5' width='119' height='119' fill='none' stroke='%236f5532'/%3E%3Crect x='7.5' y='7.5' width='105' height='105' fill='none' stroke='%23d8b36a' stroke-opacity='.22'/%3E%3Cuse href='%23c'/%3E%3Cuse href='%23c' transform='matrix(-1 0 0 1 120 0)'/%3E%3Cuse href='%23c' transform='matrix(1 0 0 -1 0 120)'/%3E%3Cuse href='%23c' transform='matrix(-1 0 0 -1 120 120)'/%3E%3C/svg%3E");
+  --w4-wing: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 30'%3E%3Cg fill='none' stroke='%23d8b36a' stroke-width='1.3' stroke-linecap='round'%3E%3Cpath d='M80 15H26'/%3E%3Cpath d='M71 15c-6 0-9-8-17-8-6 0-9 4-7 7 1.6 2.4 5 1 4-1.4'/%3E%3Cpath d='M71 15c-6 0-9 8-17 8-6 0-9-4-7-7 1.6-2.4 5-1 4 1.4'/%3E%3C/g%3E%3Cpath d='M27 15 16 8.6 2 15l14 6.4z' fill='%23d8b36a'/%3E%3Cpath d='M23 15 16 11.6 9 15l7 3.4z' fill='%230b0a09'/%3E%3Ccircle cx='76' cy='15' r='2.1' fill='%23f3dca0'/%3E%3C/svg%3E");
+  --w4-flourish: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 90 16'%3E%3Cdefs%3E%3ClinearGradient id='g'%3E%3Cstop offset='0' stop-color='%23d8b36a' stop-opacity='0'/%3E%3Cstop offset='1' stop-color='%23d8b36a'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M0 8h72' stroke='url(%23g)' stroke-width='2'/%3E%3Cpath d='M72 8 80 1.5 88 8 80 14.5z' fill='%23f3dca0' stroke='%230b0a09' stroke-width='.8'/%3E%3Cpath d='M76.5 8 80 5.2 83.5 8 80 10.8z' fill='%23a07a3c'/%3E%3Ccircle cx='64' cy='8' r='2.2' fill='%23d8b36a'/%3E%3C/svg%3E");
+  --w4-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 0c.8 6 3.2 8.4 10 10-6.8 1.6-9.2 4-10 10-.8-6-3.2-8.4-10-10 6.8-1.6 9.2-4 10-10z' fill='%23fff1c4'/%3E%3C/svg%3E");
+  --bdo-corner: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M1 16V1h15' fill='none' stroke='%23d8b36a' stroke-width='1'/%3E%3Cpath d='M4.5 10V4.5H10' fill='none' stroke='%23d8b36a' stroke-opacity='.7' stroke-width='1'/%3E%3Cpath d='M4.5 2.3 6.7 4.5 4.5 6.7 2.3 4.5z' fill='%23f3dca0'/%3E%3C/svg%3E");
+
+  /* Стрелка для .arr: в шрифтах pitch/fonts нет «→», поэтому рисуем её маской (цвет — currentColor). */
+  --arr-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 11'%3E%3Cpath d='M1 5.5h14.5M11.5 1.2l4.6 4.3-4.6 4.3' fill='none' stroke='%23000' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+
+  /* Шрифты игры. В Cinzel нет кириллицы — русский текст рядом с цифрами набираем .unit. */
+  --f-display: 'Cormorant Garamond', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+  --f-caps: 'Forum', 'Cormorant Garamond', 'Palatino Linotype', Georgia, serif;
+  --f-num: 'Cinzel', 'Forum', 'Palatino Linotype', Georgia, serif;
+  --f-body: 'Alegreya Sans', 'Segoe UI', system-ui, 'Noto Sans', Arial, sans-serif;
+
+  --s: 1;
+}
+
+* { box-sizing: border-box; }
+/* Горизонтальные жесты — презентации (свайп листает), а не браузеру: иначе свайп вправо уводит «назад» по истории. */
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--ink); touch-action: pan-y pinch-zoom; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+body {
+  color: var(--text); font-family: var(--f-body); font-size: 34px; line-height: 46px;
+  font-variant-numeric: lining-nums; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
+p, h1, h2, h3, h4, ul, ol, figure, blockquote { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+img, video, svg { display: block; }
+a { color: inherit; }
+.noscript { position: fixed; inset: auto 0 40px; text-align: center; color: var(--muted); }
+
+/* ---------- Сцена 1920×1080, масштаб --s = min(ширина/1920, высота/1080): слайд вписан целиком, без обрезки.
+ * fixed — сцена не раздувает документ (на телефоне иначе браузер расширяет страницу). */
+.deck {
+  position: fixed; left: 50%; top: 50%; width: 1920px; height: 1080px;
+  transform: translate(-50%, -50%) scale(var(--s)); transform-origin: 50% 50%;
+  background: var(--ink); overflow: hidden;
+}
+.slide {
+  position: absolute; inset: 0; z-index: 1; padding: 120px; overflow: hidden;
+  background: var(--ink); visibility: hidden;
+}
+.slide.is-active { z-index: 3; visibility: visible; }
+.notes { display: none; }
+
+/* ---------- Переход «чернила света»: новый слайд проявляется за светлой чертой (450 мс), старый гаснет под ним */
+.slide.is-leaving { z-index: 2; visibility: visible; }
+.slide.is-dim { animation: ink-dim .45s var(--ease) both; }
+.slide.is-wipe { animation: ink-wipe .45s var(--ease) both; }
+.slide.is-wipe-back { animation: ink-wipe-back .45s var(--ease) both; }
+@keyframes ink-wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes ink-wipe-back { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0 0 0 0); } }
+@keyframes ink-dim { from { opacity: 1; } to { opacity: .15; } }
+.ink {
+  position: absolute; left: 0; top: 0; z-index: 4; width: 3px; height: 1080px; opacity: 0; pointer-events: none;
+  background: var(--gold-hi); box-shadow: 0 0 18px 4px rgba(243, 220, 160, .55), 0 0 60px 12px rgba(216, 179, 106, .22);
+}
+
+/* ---------- Шаги (data-step), лесенка внутри шага, .reveal при входе вперёд */
+[data-step] { transition: opacity .3s var(--ease) var(--sd, 0ms), translate .3s var(--ease) var(--sd, 0ms); }
+[data-step]:not(.is-on) { opacity: 0; translate: 0 10px; }
+.reveal { opacity: 0; translate: 0 14px; transition: opacity .45s var(--ease) var(--rd, 0ms), translate .45s var(--ease) var(--rd, 0ms); }
+.reveal.is-shown { opacity: 1; translate: none; }
+/* data-particles: пока частицы летят, сам элемент скрыт */
+[data-particles] { transition: opacity .3s var(--ease); }
+[data-particles].is-forming { opacity: 0; transition: none; }
+
+/* ---------- Типографика */
+.kicker {
+  position: relative; display: inline-block;
+  font-family: var(--f-caps); font-size: 28px; line-height: 32px; font-weight: 400;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--gold-hi);
+}
+.slide > .kicker { position: absolute; left: 120px; top: 56px; }
+/* «Чернила света»: под меткой прочерчивается золотая линия (600 мс), яркий кончик ведёт её */
+.kicker::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -10px; height: 2px;
+  background: linear-gradient(90deg, rgba(196, 162, 101, .2), var(--gold) 55%, var(--gold-hi));
+  transform: scaleX(0); transform-origin: 0 50%;
+}
+.slide.is-active .kicker::after { transform: scaleX(1); transition: transform .6s var(--ease) .12s; }
+.slide.is-leaving .kicker::after { transform: scaleX(1); }
+.title, .thesis {
+  font-family: var(--f-display); font-weight: 600; font-size: 80px; line-height: 1.05;
+  letter-spacing: .003em; color: var(--parch); max-width: 1680px; text-wrap: balance;
+}
+.lead { font-family: var(--f-body); font-size: 40px; line-height: 52px; color: var(--text); max-width: 1400px; }
+.text { font-family: var(--f-body); font-size: 34px; line-height: 46px; color: var(--text); }
+.cap { font-family: var(--f-body); font-size: 28px; line-height: 38px; color: var(--muted); }
+.src { font-family: var(--f-body); font-size: 28px; line-height: 38px; color: var(--muted); }
+.accent { color: var(--gold-hi); }
+
+/* Цифры: Cinzel (только латиница и цифры), русский текст рядом — .unit */
+.num {
+  position: relative; display: inline-block;
+  font-family: var(--f-num); font-weight: 600; font-size: 140px; line-height: 1; letter-spacing: .01em;
+  background: var(--grad-num); -webkit-background-clip: text; background-clip: text; color: transparent;
+  -webkit-text-fill-color: transparent; white-space: nowrap;
+}
+.unit {
+  font-family: var(--f-body); font-weight: 500; font-size: 40px; line-height: 1.15; color: var(--parch);
+  -webkit-text-fill-color: currentColor;
+}
+/* Цифра «загорается руной»: маска слева направо (500 мс), светлая кромка, одна вспышка */
+.num[data-ignite]:not(.is-lit) { clip-path: inset(0 100% 0 0); }
+.num[data-ignite].is-lit { animation: ignite-mask .5s var(--ease) both; }
+.num[data-ignite]::before {
+  content: ''; position: absolute; top: 4%; bottom: 4%; left: 0; width: 3px; border-radius: 2px;
+  background: var(--gold-hi); box-shadow: 0 0 14px 3px rgba(243, 220, 160, .7); opacity: 0; pointer-events: none;
+}
+.num[data-ignite].is-lit::before { animation: ignite-edge .5s var(--ease) both; }
+@keyframes ignite-mask { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes ignite-edge { 0% { opacity: 0; transform: translateX(0); } 15%, 85% { opacity: 1; } 100% { opacity: 0; transform: translateX(var(--ignite-w, 0px)); } }
+/* data-roll: цифры прокручиваются барабаном до своего значения */
+.roll__col { display: inline-block; height: 1em; overflow: hidden; vertical-align: top; background: inherit; -webkit-background-clip: text; background-clip: text; }
+.roll__strip { display: block; background: inherit; -webkit-background-clip: text; background-clip: text;
+  transition: transform .9s cubic-bezier(.2, .8, .2, 1) var(--rd, 0ms); transform: translateY(calc(var(--d, 0) * -1em)); }
+.roll__strip > span { display: block; height: 1em; line-height: 1; background: inherit; -webkit-background-clip: text; background-clip: text; }
+
+/* ---------- Компоненты */
+.grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 24px; }
+.frame {
+  position: relative; background: var(--grad-panel); border: 1px solid var(--bronze);
+  border-image: var(--w4-frame) 42 / 34px / 3px stretch; box-shadow: var(--shadow-panel);
+}
+.corner { position: relative; }
+.corner::before, .corner::after { content: ''; position: absolute; width: 22px; height: 22px; pointer-events: none; background: var(--bdo-corner) no-repeat; }
+.corner::before { left: -1px; top: -1px; }
+.corner::after { right: -1px; bottom: -1px; transform: scale(-1, -1); }
+.chip {
+  display: inline-flex; align-items: center; gap: 12px;
+  font-family: var(--f-body); font-size: 28px; line-height: 1.2; color: var(--text);
+  padding: 10px 22px 11px; border: 1px solid var(--line); background: var(--coal-deep); white-space: nowrap;
+}
+.chip::before { content: ''; width: 10px; height: 10px; flex: none; transform: rotate(45deg); background: var(--gold-b); }
+.chip--wip { color: var(--muted); border-style: dashed; background: transparent; }
+.chip--wip::before { background: transparent; box-shadow: inset 0 0 0 2px var(--muted); }
+/* Видео или кадр в рамке игры */
+.media { position: relative; overflow: hidden; background: var(--coal-deep); border: 1px solid var(--bronze); box-shadow: var(--shadow-panel); }
+.media > video, .media > img { width: 100%; height: 100%; object-fit: cover; }
+/* Кнопки в стиле панелей игры */
+.btn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 14px; flex: none;
+  padding: 18px 30px; text-decoration: none; cursor: pointer;
+  font-family: var(--f-caps); font-size: 28px; line-height: 1; letter-spacing: .14em; text-transform: uppercase; color: var(--parch);
+  background: var(--grad-panel), var(--coal); border: 1px solid var(--bronze);
+  border-image: var(--w4-frame) 42 / 18px / 2px stretch; box-shadow: var(--shadow-panel);
+}
+.btn--primary { color: var(--ink); background: linear-gradient(180deg, var(--gold-hi), var(--gold-b)); border-image: none; border-color: var(--gold-hi); }
+.btn svg { width: 26px; height: 26px; fill: currentColor; flex: none; }
+.btn kbd { font-size: 28px; line-height: 1; padding: 2px 9px 3px; }
+.btn[aria-pressed="true"] { outline: 2px solid var(--gold-hi); outline-offset: 4px; }
+.btn:focus-visible { outline: 3px solid var(--gold-hi); outline-offset: 6px; }
+@media (hover: hover) { .btn { transition: transform .2s var(--ease); } .btn:hover { transform: translateY(-2px); } }
+/* Стрелка «→» (в шрифтах её нет): <i class="arr"></i>, назад — <i class="arr arr--back"></i> */
+.arr {
+  display: inline-block; width: .9em; height: .55em; vertical-align: .1em; flex: none;
+  background: currentColor; -webkit-mask: var(--arr-mask) center / contain no-repeat; mask: var(--arr-mask) center / contain no-repeat;
+}
+.arr--back { transform: scaleX(-1); }
+kbd {
+  display: inline-block; min-width: 1.6em; padding: 1px 8px 2px; text-align: center;
+  font-family: var(--f-body); font-size: .9em; color: var(--text);
+  background: var(--coal-deep); border: 1px solid var(--line); border-bottom-width: 3px; border-radius: 4px;
+}
+/* Постер вместо видео — только для печати */
+.print-poster { display: none; }
+/* Фон слайда из data-bg (z-index −1: под содержимым, раскладку частей не трогаем) */
+.slide__bg { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.slide__bg img, .slide__bg video { width: 100%; height: 100%; object-fit: cover; }
+.slide__bg::after { content: ''; position: absolute; inset: 0; }
+.slide__bg--left::after { background: linear-gradient(90deg, var(--ink) 0%, rgba(11, 10, 9, .86) 36%, rgba(11, 10, 9, .3) 74%, rgba(11, 10, 9, .5) 100%); }
+.slide__bg--bottom::after { background: linear-gradient(0deg, var(--ink) 0%, rgba(11, 10, 9, .75) 40%, rgba(11, 10, 9, .25) 100%); }
+.slide__bg--full::after { background: var(--ink); opacity: .75; }
+/* data-demo: кнопка демонстрации внутри слайда (хук demo(el, action)) */
+[data-demo] { cursor: pointer; }
+[data-demo].is-playing { outline: 2px solid var(--gold-hi); outline-offset: 4px; }
+
+/* ---------- Слои сцены: «волшебный переход», частицы, вспышка */
+.morph-layer { position: absolute; inset: 0; z-index: 16; pointer-events: none; }
+.morph-ghost { position: absolute; margin: 0; transform-origin: 0 0; box-sizing: border-box; }
+.is-morphing { visibility: hidden; }
+.fx { position: absolute; inset: 0; z-index: 12; width: 1920px; height: 1080px; pointer-events: none; }
+.flash {
+  position: absolute; inset: 0; z-index: 18; opacity: 0; pointer-events: none; mix-blend-mode: screen;
+  background: radial-gradient(70% 60% at 50% 40%, rgba(243, 220, 160, .55), rgba(216, 179, 106, .12) 60%, transparent 80%);
+}
+
+/* ---------- Плашка навигации (в нижнем поле слайда), полоса прогресса */
+.navbar {
+  position: absolute; left: 50%; bottom: 22px; z-index: 30; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px; padding: 6px; height: 68px;
+  background: rgba(14, 15, 18, .92); border: 1px solid var(--line); border-radius: 999px; box-shadow: var(--shadow-panel);
+  font-family: var(--f-body); font-size: 28px; line-height: 1; color: var(--text);
+  opacity: .5; transition: opacity .3s var(--ease);
+}
+.navbar.is-awake, .navbar:hover, .navbar:focus-within { opacity: 1; }
+.navbar button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 56px; min-width: 56px; padding: 0 20px;
+  font: inherit; color: inherit; background: transparent; border: 0; border-radius: 999px; cursor: pointer;
+}
+.navbar button:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: -2px; }
+@media (hover: hover) { .navbar button:hover { background: var(--coal); } }
+.navbar button[aria-pressed="true"] { color: var(--ink); background: var(--gold-hi); }
+.navbar svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.navbar .navbar__count { min-width: 120px; font-family: var(--f-num); font-size: 28px; letter-spacing: .04em; color: var(--gold-hi); }
+.navbar__sep { width: 1px; height: 36px; background: var(--line); }
+.progress { position: absolute; left: 0; right: 0; bottom: 0; z-index: 31; height: 5px; background: rgba(87, 74, 51, .45); pointer-events: none; }
+.progress i { position: absolute; inset: 0; transform-origin: 0 50%; transform: scaleX(var(--p, 0)); background: linear-gradient(90deg, var(--gold-deep), var(--gold-hi)); transition: transform .45s var(--ease); }
+
+/* ---------- «Содержание» с миниатюрами */
+.overview {
+  position: absolute; inset: 0; z-index: 40; padding: 80px 120px 120px;
+  background: rgba(11, 10, 9, .96); visibility: hidden; opacity: 0;
+  transition: opacity .3s var(--ease), visibility 0s linear .3s;
+}
+.overview.is-on { visibility: visible; opacity: 1; transition: opacity .3s var(--ease), visibility 0s; }
+.overview__head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 36px; }
+.overview__head h2 { font-family: var(--f-display); font-weight: 600; font-size: 64px; color: var(--parch); }
+.overview__grid { display: grid; grid-template-columns: repeat(4, 384px); gap: 32px 48px; justify-content: space-between; align-items: start; }
+.thumb { display: block; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.thumb__box { display: block; position: relative; width: 384px; height: 216px; overflow: hidden; background: var(--ink); border: 1px solid var(--line); }
+.thumb.is-current .thumb__box { border-color: var(--gold-hi); box-shadow: 0 0 0 2px var(--gold-hi); }
+.thumb:focus-visible .thumb__box { box-shadow: 0 0 0 3px var(--gold-hi); }
+.thumb__box .slide { visibility: visible; position: absolute; inset: auto; left: 0; top: 0; width: 1920px; height: 1080px; transform: scale(.2); transform-origin: 0 0; pointer-events: none; }
+.thumb__box [data-step], .thumb__box .reveal { opacity: 1 !important; translate: none !important; }
+.thumb__box [data-particles], .thumb__box .num[data-ignite] { opacity: 1 !important; clip-path: none !important; }
+.thumb__cap { display: flex; gap: 14px; margin-top: 12px; font-size: 28px; line-height: 34px; color: var(--text); }
+.thumb__cap b { font-family: var(--f-num); font-weight: 600; color: var(--gold-hi); }
+.thumb__cap span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+/* ---------- Заглушка слайда, которого ещё нет в сборке */
+.slide--stub { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 28px; }
+.stub__n {
+  font-family: var(--f-num); font-weight: 600; font-size: 140px; line-height: 1;
+  background: var(--grad-num); -webkit-background-clip: text; background-clip: text; color: transparent; opacity: .5;
+}
+.slide--stub .title { color: var(--muted); }
+
+/* ---------- Служебное окна: чёрный экран, помощь, подсказка, «поверните телефон» */
+.blackout { position: fixed; inset: 0; z-index: 100; background: var(--ink); opacity: 0; visibility: hidden; transition: opacity .3s var(--ease), visibility 0s linear .3s; }
+.blackout.is-on { opacity: 1; visibility: visible; transition: opacity .3s var(--ease), visibility 0s; }
+.help { position: fixed; inset: 0; z-index: 110; display: grid; place-items: center; background: rgba(11, 10, 9, .85); opacity: 0; visibility: hidden; transition: opacity .2s var(--ease), visibility 0s linear .2s; }
+.help.is-on { opacity: 1; visibility: visible; transition: opacity .2s var(--ease), visibility 0s; }
+.help__box {
+  width: min(820px, 94vw); max-height: 92vh; overflow: auto; padding: 32px 40px 28px;
+  font-size: clamp(16px, 1.3vw, 20px); line-height: 1.45; color: var(--text);
+  background: var(--grad-panel), var(--coal); border: 1px solid var(--bronze); border-image: var(--w4-frame) 42 / 22px / 2px stretch; box-shadow: var(--shadow-panel);
+}
+.help__box h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.6em; color: var(--parch); margin-bottom: 14px; }
+.help__box dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 22px; margin: 0; }
+.help__box dt { white-space: nowrap; text-align: right; }
+.help__box dd { margin: 0; color: var(--muted); }
+.help__box p { margin-top: 16px; color: var(--muted); }
+.toast {
+  position: fixed; left: 50%; bottom: 28px; z-index: 120; transform: translate(-50%, 10px); padding: 10px 20px;
+  font-size: 18px; color: var(--text); background: var(--coal); border: 1px solid var(--line); box-shadow: var(--shadow-panel);
+  opacity: 0; transition: opacity .3s var(--ease), transform .3s var(--ease); pointer-events: none;
+}
+.toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+.rotate { display: none; }
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate { position: fixed; inset: 0; z-index: 130; display: grid; place-items: center; padding: 24px; background: var(--grad-panel), var(--ink); text-align: center; }
+  .rotate__box { display: grid; justify-items: center; gap: 12px; color: var(--parch); }
+  .rotate__box svg { width: 96px; height: 96px; fill: none; stroke: var(--gold-b); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .rotate__box p { font-family: var(--f-display); font-weight: 600; font-size: 28px; }
+  .rotate__box .rotate__cap { font-family: var(--f-body); font-weight: 400; font-size: 18px; color: var(--muted); }
+}
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---------- Мгновенный показ: вход назад, переход по hash, печать — сразу конечное состояние */
+.slide.is-instant [data-step], .slide.is-instant .reveal, .slide.is-instant [data-particles], .slide.is-instant .roll__strip,
+.slide.is-instant .kicker::after, .slide.is-instant .num[data-ignite], .slide.is-instant .num[data-ignite]::before { transition: none !important; animation: none !important; }
+.slide.is-instant .num[data-ignite]::before { opacity: 0; }
+
+/* ---------- Уменьшенное движение: сразу конечное состояние */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0s !important; transition-delay: 0s !important;
+    animation-duration: 1ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;
+  }
+  .num[data-ignite]::before { animation: none !important; opacity: 0 !important; }
+}
+
+/* ---------- Печать: один слайд — одна страница 16:9, шаги раскрыты, видео заменено постером */
+@page { size: 1920px 1080px; margin: 0; }
+@media print {
+  html, body { width: 1920px; height: auto; overflow: visible; background: var(--ink); }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .deck { position: static; left: auto; top: auto; width: 1920px; height: auto; transform: none; overflow: visible; background: none; }
+  .slide { position: relative; inset: auto; width: 1920px; height: 1080px; visibility: visible !important; opacity: 1 !important; clip-path: none !important; break-after: page; page-break-after: always; break-inside: avoid; }
+  .slide:last-of-type { break-after: auto; page-break-after: auto; }
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+  [data-step], .reveal { opacity: 1 !important; translate: none !important; }
+  [data-particles] { opacity: 1 !important; }
+  .roll__strip { transform: translateY(calc(var(--d, 0) * -1em)) !important; }
+  .kicker::after { transform: none !important; }
+  .num[data-ignite] { clip-path: none !important; }
+  .num[data-ignite]::before { display: none !important; }
+  video { display: none !important; }
+  .print-poster { display: block !important; }
+  .notes, .navbar, .progress, .overview, .ink, .morph-layer, .fx, .flash, .blackout, .help, .toast, .rotate { display: none !important; }
+}

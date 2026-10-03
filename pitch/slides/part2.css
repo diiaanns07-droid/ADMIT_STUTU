@@ -1,0 +1,256 @@
+/* ASHEN OATH — презентация финала, слайды 4–7 (управление и режим «ОШИБКА») и 12.
+ * Стили только внутри своих слайдов ([data-slide="4|5|6|7|12"]) или с префиксом .p2-.
+ * Общие классы (.kicker, .thesis, .num, .frame, .chip…) и токены — из deck.css, здесь только раскладка и движение.
+ * Цвета — только токены deck.css (полупрозрачные — через color-mix).
+ * Движение осмысленное, 250–600 мс: transform, opacity, clip-path, stroke-dashoffset.
+ * Мгновенный показ (.is-instant: вход назад, переход по hash), «уменьшенное движение» и печать — сразу конечный вид. */
+
+/* ---------- Общий каркас: метку раздела и тезис ставит deck.css, содержимое — в полосе 260–960 ---------- */
+.p2-body { position: absolute; left: 120px; top: 260px; width: 1680px; height: 700px; }
+.p2-mark { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+/* Кадр игры. Коробка .p2-shot — это рамка: орнамент .frame выступает на 3 px наружу (до поля 120 px),
+ * снимок внутри с отступом 9 px. Обрезку делает обёртка .p2-crop, координаты снимка — в её системе. */
+.p2-shot { position: absolute; margin: 0; }
+.p2-crop { position: absolute; inset: 9px; overflow: hidden; background: var(--coal-deep); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 60%, transparent), 0 18px 50px color-mix(in srgb, var(--ink) 55%, transparent); }
+.p2-crop > img, .p2-crop > video { position: absolute; max-width: none; }
+.p2-crop > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.p2-screen { background: radial-gradient(70% 90% at 30% 50%, color-mix(in srgb, var(--gold-b) 7%, transparent), transparent), var(--coal-deep); }
+.p2-shot > .frame.p2-ring { position: absolute; inset: 0; z-index: 3; background: none; box-shadow: none; pointer-events: none; }
+.p2-fig-note { position: absolute; left: 9px; white-space: nowrap; }
+
+/* Шаг-строка с цветной кромкой слева — как список жестов в бою (синяя — левая рука, оранжевая — правая) */
+.p2-tick { position: relative; padding-left: 30px; }
+.p2-tick::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 4px; border-radius: 2px; background: var(--tick, var(--gold)); }
+.p2-tick-k { display: block; margin-bottom: 6px; font-family: var(--f-caps); font-size: 26px; line-height: 30px; letter-spacing: .12em; text-transform: uppercase; color: var(--tick, var(--gold)); }
+.p2-tick-t { display: block; font-size: 36px; line-height: 44px; color: var(--text); }
+
+/* Кисть по 21 точке: кости и суставы */
+.p2-hand-bones line { stroke: var(--gold-b); stroke-width: 4; stroke-linecap: round; }
+.p2-pt { fill: var(--gold-hi); stroke: var(--ink); stroke-width: 2; transform-box: fill-box; transform-origin: center; }
+
+/* Кнопки интерактивных схем (движок не листает слайд по щелчку внутри [data-interactive]) */
+.p2-ctl { position: absolute; display: flex; gap: 12px; }
+.p2-btn {
+  height: 54px; padding: 0 24px; font-family: var(--f-caps); font-size: 26px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--parch); background: color-mix(in srgb, var(--coal) 85%, transparent); border: 1px solid var(--line); cursor: pointer;
+  transition: border-color .2s var(--ease), color .2s var(--ease);
+}
+.p2-btn--main { color: var(--gold-hi); border-color: var(--gold-deep); background: linear-gradient(180deg, color-mix(in srgb, var(--gold-b) 16%, transparent), color-mix(in srgb, var(--gold-b) 4%, transparent)); }
+.p2-btn:hover, .p2-btn:focus-visible { border-color: var(--gold-hi); color: var(--gold-hi); outline: none; }
+
+/* ================= Слайд 4 — «Как рука становится командой» ================= */
+/* Конвейер: пять узлов, золотая линия дорастает до текущего этапа */
+[data-slide="4"] .p2-pipe { position: absolute; left: 0; top: 0; width: 1680px; height: 104px; padding: 0; list-style: none; }
+[data-slide="4"] .p2-pipe-n { position: absolute; top: 0; width: 320px; margin-left: -160px; text-align: center; z-index: 1; }
+[data-slide="4"] .p2-pn1 { left: 168px; } [data-slide="4"] .p2-pn2 { left: 504px; } [data-slide="4"] .p2-pn3 { left: 840px; }
+[data-slide="4"] .p2-pn4 { left: 1176px; } [data-slide="4"] .p2-pn5 { left: 1512px; }
+[data-slide="4"] .p2-pipe-n b {
+  display: block; width: 46px; height: 46px; margin: 0 auto 10px; border-radius: 50%; font: 600 26px/44px var(--f-num); color: var(--muted);
+  background: var(--coal-deep); border: 1px solid var(--line); transition: background-color .3s var(--ease), color .3s var(--ease), border-color .3s var(--ease);
+}
+[data-slide="4"] .p2-pipe-n span { font-size: 28px; line-height: 34px; color: var(--muted); transition: color .3s var(--ease); }
+[data-slide="4"].p2-st1 .p2-pn1 b, [data-slide="4"].p2-st2 .p2-pn2 b, [data-slide="4"].p2-st3 .p2-pn3 b,
+[data-slide="4"].p2-st4 .p2-pn4 b, [data-slide="4"].p2-st5 .p2-pn5 b { color: var(--ink); background: var(--gold-b); border-color: var(--gold-hi); }
+[data-slide="4"].p2-st1 .p2-pn1 span, [data-slide="4"].p2-st2 .p2-pn2 span, [data-slide="4"].p2-st3 .p2-pn3 span,
+[data-slide="4"].p2-st4 .p2-pn4 span, [data-slide="4"].p2-st5 .p2-pn5 span { color: var(--text); }
+[data-slide="4"] .p2-pipe-line { position: absolute; left: 168px; top: 22px; width: 1344px; height: 2px; background: var(--line); }
+[data-slide="4"] .p2-pipe-line i { position: absolute; inset: 0; background: linear-gradient(90deg, var(--gold-deep), var(--gold-hi)); transform-origin: 0 50%; transform: scaleX(0); transition: transform .5s var(--ease); }
+[data-slide="4"].p2-st2 .p2-pipe-line i { transform: scaleX(.25); }
+[data-slide="4"].p2-st3 .p2-pipe-line i { transform: scaleX(.5); }
+[data-slide="4"].p2-st4 .p2-pipe-line i { transform: scaleX(.75); }
+[data-slide="4"].p2-st5 .p2-pipe-line i { transform: none; }
+/* «Экран» схемы 1656×452 */
+[data-slide="4"] .p2-s4-screen { left: 3px; top: 124px; width: 1674px; height: 470px; }
+[data-slide="4"] .p2-s4-svg text { font-family: var(--f-body); font-size: 28px; fill: var(--text); }
+/* этап 1 — кадр камеры: рамка видоискателя и размытый силуэт кисти */
+[data-slide="4"] .p2-cam { opacity: 0; transition: opacity .4s var(--ease); }
+[data-slide="4"] .p2-cam rect { fill: color-mix(in srgb, var(--ink) 60%, transparent); stroke: var(--line); }
+[data-slide="4"] .p2-cam path { fill: none; stroke: var(--gold-b); stroke-width: 3; }
+[data-slide="4"] .p2-cam-blur line { stroke: var(--parch); stroke-width: 30; stroke-linecap: round; opacity: .2; filter: blur(7px); transition: opacity .5s var(--ease); }
+[data-slide="4"].p2-st1 .p2-cam { opacity: 1; }
+[data-slide="4"].p2-st2 .p2-cam-blur line { opacity: .07; }
+/* этап 2 — MediaPipe ставит 21 точку одну за другой, затем кости */
+[data-slide="4"] .p2-s4-hand .p2-pt { opacity: 0; transform: scale(.3); transition: opacity .25s var(--ease), transform .25s var(--ease); transition-delay: calc(var(--i) * 45ms); }
+[data-slide="4"] .p2-s4-hand .p2-hand-bones { opacity: 0; transition: opacity .4s var(--ease) 1s; }
+[data-slide="4"].p2-st2 .p2-s4-hand .p2-pt { opacity: 1; transform: none; }
+[data-slide="4"].p2-st2 .p2-s4-hand .p2-hand-bones { opacity: .75; }
+/* этап 3 — геометрия: сгибы, нормаль ладони, скорость */
+[data-slide="4"] .p2-geo { opacity: 0; transition: opacity .4s var(--ease); }
+[data-slide="4"].p2-st3 .p2-geo { opacity: 1; }
+[data-slide="4"] .p2-geo-arc { fill: none; stroke: var(--gold-hi); stroke-width: 3; stroke-dasharray: 40 70; }
+[data-slide="4"] .p2-geo-n0 { fill: none; stroke: var(--mana); stroke-width: 3; }
+[data-slide="4"] .p2-geo-n1 { fill: var(--mana); }
+[data-slide="4"] .p2-geo-v { fill: none; stroke: var(--hand-right); stroke-width: 3; stroke-linecap: round; }
+[data-slide="4"] .p2-geo-va { fill: var(--hand-right); }
+[data-slide="4"] .p2-geo-lead { fill: none; stroke: var(--line); stroke-width: 2; stroke-dasharray: 4 6; }
+/* этап 4 — автомат состояний: «кулак» → «раскрыть резко» = «Выброс», по стрелкам бежит сигнал */
+[data-slide="4"] .p2-fsm { opacity: 0; transition: opacity .4s var(--ease); }
+[data-slide="4"].p2-st4 .p2-fsm { opacity: 1; }
+[data-slide="4"].p2-st5 .p2-fsm { opacity: 0; }
+[data-slide="4"] .p2-fsm-n rect { fill: var(--coal); stroke: var(--gold-deep); stroke-width: 2; }
+[data-slide="4"] .p2-fsm text { text-anchor: middle; }
+[data-slide="4"] .p2-fsm-a { stroke: var(--gold-b); stroke-width: 3; }
+[data-slide="4"] .p2-fsm-h { fill: var(--gold-b); }
+[data-slide="4"] .p2-fsm-out rect { fill: color-mix(in srgb, var(--hand-right) 18%, var(--coal)); stroke: var(--hand-right); stroke-width: 2; }
+[data-slide="4"] .p2-fsm-out text { fill: var(--hand-right); font-weight: 700; }
+[data-slide="4"] .p2-fsm-dot { fill: var(--gold-hi); transition: transform .6s var(--ease) .35s; }
+[data-slide="4"].p2-st4 .p2-fsm-dot { transform: translateX(370px); }
+/* этап 5 — действие в бою: кадр выброса */
+[data-slide="4"] .p2-act { opacity: 0; transform: translateX(24px); transition: opacity .45s var(--ease), transform .45s var(--ease); }
+[data-slide="4"].p2-st5 .p2-act { opacity: 1; transform: none; }
+[data-slide="4"] .p2-act-ring { fill: none; stroke: var(--hand-right); stroke-width: 2; }
+[data-slide="4"] .p2-ctl { left: 0; top: 618px; }
+[data-slide="4"] .p2-s4-cap { position: absolute; right: 0; top: 628px; }
+
+/* ================= Слайд 5 — «Левая — движение, правая — магия» ================= */
+/* клип 1040×529: media/p2/spirit_cut.mp4 1040×585, срезаны верхние 60 px с плашкой «DEBUG / НЕ CV» */
+[data-slide="5"] .p2-s5-shot { left: 3px; top: 40px; width: 1058px; height: 547px; }
+[data-slide="5"] .p2-s5-shot video, [data-slide="5"] .p2-s5-shot img { left: 0; top: -60px; width: 1040px; height: 585px; }
+[data-slide="5"] .p2-s5-shot .p2-fig-note { top: 561px; }
+[data-slide="5"] .p2-crop > .print-poster { display: block; }
+[data-slide="5"] .p2-crop > video { z-index: 1; }
+/* Выноски: от строк «ЛЕВАЯ / ПРАВАЯ» в кадре к подписям; линия прочерчивается за 400 мс, подпись появляется следом */
+[data-slide="5"] .p2-leads { position: absolute; left: 0; top: 0; z-index: 4; width: 1680px; height: 700px; overflow: visible; pointer-events: none; }
+[data-slide="5"] .p2-lead[data-step]:not(.is-on) { translate: none; }
+[data-slide="5"] .p2-lead path {
+  fill: none; stroke: var(--gold-b); stroke-width: 2; stroke-linecap: round;
+  stroke-dasharray: 1; stroke-dashoffset: 0; filter: drop-shadow(0 0 5px color-mix(in srgb, var(--gold-hi) 60%, transparent));
+  transition: stroke-dashoffset .4s var(--ease);
+}
+[data-slide="5"] .p2-lead:not(.is-on) path { stroke-dashoffset: 1; }
+[data-slide="5"] .p2-lead circle { stroke: var(--ink); stroke-width: 2; }
+[data-slide="5"] .p2-lead--l circle { fill: var(--hand-left); }
+[data-slide="5"] .p2-lead--r circle { fill: var(--hand-right); }
+[data-slide="5"] .p2-hands { position: absolute; left: 1120px; top: 70px; width: 560px; padding: 0; list-style: none; }
+[data-slide="5"] .p2-hands > li + li { margin-top: 60px; }
+[data-slide="5"] .p2-hands > li.is-on { transition-delay: .32s; }
+[data-slide="5"] .p2-hands .p2-tick-t { font-size: 40px; line-height: 48px; }
+[data-slide="5"] .p2-tick--l { --tick: var(--hand-left); }
+[data-slide="5"] .p2-tick--r { --tick: var(--hand-right); }
+[data-slide="5"] .p2-tick--b { --tick: var(--gold); }
+[data-slide="5"] .p2-s5-num { position: absolute; left: 1120px; top: 470px; display: flex; align-items: baseline; gap: 22px; }
+
+/* ================= Слайд 6 — «Не „не распознано“, а „что исправить“» ================= */
+[data-slide="6"] .p2-s6-hand { left: 3px; top: 0; width: 600px; height: 470px; }
+[data-slide="6"] .p2-s6-hand .p2-fig-note { top: 482px; }
+[data-slide="6"] .p2-near, [data-slide="6"] .p2-ok { transition: opacity .35s var(--ease); }
+[data-slide="6"] .p2-ok { opacity: 0; }
+[data-slide="6"].p2-st2 .p2-near { opacity: 0; }
+[data-slide="6"].p2-st2 .p2-ok { opacity: 1; }
+/* этап 1 — красным то, чего не хватает: разомкнутые кончики 4 и 8 */
+[data-slide="6"] .p2-near .p2-pt--4, [data-slide="6"] .p2-near .p2-pt--8 { transition: fill .3s var(--ease); }
+[data-slide="6"].p2-st1 .p2-near .p2-pt--4, [data-slide="6"].p2-st1 .p2-near .p2-pt--8 { fill: var(--error); }
+[data-slide="6"] .p2-gap { fill: none; stroke: var(--error); stroke-width: 3; stroke-dasharray: .05 .03; stroke-dashoffset: 0; opacity: 0; transition: opacity .3s var(--ease); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--error) 70%, transparent)); }
+[data-slide="6"].p2-st1 .p2-gap { opacity: 1; }
+[data-slide="6"].p2-st2 .p2-gap { opacity: 0; }
+/* этап 2 — кольцо сомкнулось: зелёная обводка прочерчивается */
+[data-slide="6"] .p2-ring-ok { fill: none; stroke: var(--ok); stroke-width: 3; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .45s var(--ease) .2s; }
+[data-slide="6"].p2-st2 .p2-ring-ok { stroke-dashoffset: 0; }
+/* карточки вердикта — как окно «ОШИБКА» в игре */
+[data-slide="6"] .p2-verdict { position: absolute; left: 640px; top: 20px; width: 500px; height: 230px; }
+[data-slide="6"] .p2-verdict > p {
+  position: absolute; inset: 0 0 auto 0; padding: 22px 26px 24px; border: 1px solid var(--c); border-left-width: 4px;
+  background: color-mix(in srgb, var(--c) 12%, var(--coal)); opacity: 0; transform: translateY(8px);
+  transition: opacity .3s var(--ease), transform .3s var(--ease);
+}
+[data-slide="6"] .p2-card-err { --c: var(--error); }
+[data-slide="6"] .p2-card-ok { --c: var(--ok); }
+[data-slide="6"].p2-st1 .p2-card-err { opacity: 1; transform: none; }
+[data-slide="6"].p2-st2 .p2-card-err { opacity: 0; }
+[data-slide="6"].p2-st2 .p2-card-ok { opacity: 1; transform: none; }
+[data-slide="6"] .p2-card-k { display: block; margin-bottom: 8px; font-family: var(--f-caps); font-size: 26px; letter-spacing: .12em; text-transform: uppercase; color: var(--c); }
+[data-slide="6"] .p2-card-t { display: block; font-size: 34px; line-height: 42px; color: var(--text); }
+[data-slide="6"] .p2-ctl { left: 640px; top: 276px; }
+/* доказательство из игры — тот же текст в окне «ОШИБКА»; кадр с x=440, y=70 — без плашки отладки */
+[data-slide="6"] .p2-s6-proof { left: 1180px; top: 0; width: 497px; height: 365px; }
+[data-slide="6"] .p2-s6-proof img { left: -251px; top: -40px; width: 731px; height: 411px; }
+[data-slide="6"] .p2-s6-proof .p2-fig-note { top: 377px; white-space: normal; width: 480px; }
+[data-slide="6"] .p2-s6-hint { position: absolute; left: 640px; top: 520px; display: flex; align-items: flex-end; gap: 24px; }
+[data-slide="6"] .p2-s6-hint .num { background: none; color: var(--error); -webkit-text-fill-color: var(--error); }
+[data-slide="6"] .p2-s6-what { display: flex; flex-direction: column; gap: 6px; padding-bottom: 14px; }
+
+/* ================= Слайд 7 — «Тренер, который видит технику» ================= */
+/* стенд 600×540: кадры media/p2/squat_in.jpg и squat_out.jpg 400×360 ×1,5, один ракурс — смена бесшовная */
+[data-slide="7"] .p2-s7-sq { left: 3px; top: 0; width: 618px; height: 558px; }
+[data-slide="7"] .p2-s7-sq img { left: 0; top: 0; width: 600px; height: 540px; }
+[data-slide="7"] .p2-s7-sq .p2-fig-note { top: 572px; }
+/* шаг 1: красный круг у коленей прочерчивается (400 мс), следом печатается подсказка голоса */
+[data-slide="7"] .p2-knees { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; overflow: visible; transition: opacity .3s var(--ease); }
+[data-slide="7"] .p2-knees ellipse {
+  fill: none; stroke: var(--error); stroke-width: 3; stroke-dasharray: 1; stroke-dashoffset: 0;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--error) 70%, transparent)); transition: stroke-dashoffset .4s var(--ease);
+}
+[data-slide="7"] .p2-knees ellipse[data-step]:not(.is-on) { translate: none; stroke-dashoffset: 1; }
+[data-slide="7"] .p2-sq-out { z-index: 1; transition: opacity .4s var(--ease); }
+[data-slide="7"] .p2-sq-out[data-step]:not(.is-on) { translate: none; }
+[data-slide="7"] .p2-sq-out.is-on ~ .p2-knees { opacity: 0; }
+[data-slide="7"] .p2-sq-glow {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none; transition: opacity .4s var(--ease) .15s;
+  box-shadow: inset 0 0 0 2px var(--gold-b), inset 0 0 70px color-mix(in srgb, var(--gold-hi) 35%, transparent);
+}
+[data-slide="7"] .p2-sq-glow[data-step]:not(.is-on) { translate: none; }
+[data-slide="7"] .p2-s7-story { position: absolute; left: 700px; top: 40px; width: 980px; padding: 0; list-style: none; }
+[data-slide="7"] .p2-s7-story > li + li { margin-top: 56px; }
+[data-slide="7"] .p2-tick--err { --tick: var(--error); }
+[data-slide="7"] .p2-tick--gold { --tick: var(--gold-b); }
+[data-slide="7"] .p2-say-t {
+  display: inline-block; font-family: var(--f-display); font-weight: 600; font-size: 64px; line-height: 1.1; color: var(--error);
+  clip-path: inset(0 0 0 0); transition: clip-path .5s steps(17, end) .4s;
+}
+[data-slide="7"] li:not(.is-on) .p2-say-t { clip-path: inset(0 100% 0 0); }
+[data-slide="7"] .p2-plus { display: flex; align-items: baseline; gap: 22px; }
+[data-slide="7"] .p2-plus .num { filter: drop-shadow(0 0 22px color-mix(in srgb, var(--gold-hi) 55%, transparent)); transition: transform .3s var(--ease) .3s; }
+[data-slide="7"] li:not(.is-on) .p2-plus .num { transform: scale(.9); }
+[data-slide="7"] .p2-s7-line { position: absolute; left: 700px; top: 510px; width: 980px; color: var(--muted); }
+
+/* ================= Слайд 12 — «Кому это нужно и что дальше» ================= */
+/* Карточки переворачиваются по шагам: рубашка с орнаментом игры → лицо с текстом (rotateY, 450 мс) */
+[data-slide="12"] .p2-who { position: absolute; left: 0; top: 21px; width: 1020px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; padding: 0; list-style: none; perspective: 1600px; }
+[data-slide="12"] .p2-card { position: relative; height: 323px; transform-style: preserve-3d; transition: transform .45s var(--ease); }
+[data-slide="12"] .p2-card[data-step]:not(.is-on) { opacity: 1; translate: none; transform: rotateY(180deg); }
+[data-slide="12"] .p2-face {
+  position: absolute; inset: 0; padding: 30px 28px; -webkit-backface-visibility: hidden; backface-visibility: hidden;
+  background: var(--grad-panel), var(--coal); border: 1px solid var(--bronze); border-image: var(--w4-frame) 42 / 22px / 2px stretch;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 50%, transparent), 0 12px 30px color-mix(in srgb, var(--ink) 45%, transparent);
+}
+[data-slide="12"] .p2-face--back { display: grid; place-items: center; transform: rotateY(180deg); background: radial-gradient(60% 50% at 50% 50%, color-mix(in srgb, var(--gold-b) 14%, transparent), transparent), var(--coal-deep); }
+[data-slide="12"] .p2-sigil { display: block; width: 84px; height: 84px; background: var(--w4-star) center / contain no-repeat; opacity: .85; filter: drop-shadow(0 0 12px color-mix(in srgb, var(--gold-hi) 50%, transparent)); }
+[data-slide="12"] .p2-face h3 { margin-bottom: 14px; font-family: var(--f-display); font-weight: 600; font-size: 48px; line-height: 1; color: var(--parch); }
+[data-slide="12"] .p2-face p { font-size: 30px; line-height: 40px; color: var(--muted); }
+/* постер 580×305: 9_poster_s.jpg 1200×630 ×0,483 */
+[data-slide="12"] .p2-s12-shot { left: 1079px; top: 21px; width: 598px; height: 323px; }
+[data-slide="12"] .p2-s12-shot img { left: 0; top: 0; width: 580px; height: 305px; }
+[data-slide="12"] .p2-next { position: absolute; left: 0; top: 410px; width: 1680px; }
+[data-slide="12"] .p2-next-row { display: flex; align-items: center; gap: 16px; }
+[data-slide="12"] .p2-next-row + .p2-next-row { margin-top: 22px; }
+[data-slide="12"] .p2-next-k { flex: none; width: 260px; font-family: var(--f-caps); letter-spacing: .12em; text-transform: uppercase; }
+[data-slide="12"] .p2-s12-cap { position: absolute; left: 0; top: 640px; }
+
+/* ---------- Мгновенный показ (вход назад, по hash): всё сразу в конечном виде ---------- */
+.slide.is-instant[data-slide="4"] *, .slide.is-instant[data-slide="6"] *,
+[data-slide="5"].is-instant .p2-lead path, [data-slide="5"].is-instant .p2-hands > li,
+[data-slide="7"].is-instant .p2-knees, [data-slide="7"].is-instant .p2-knees ellipse, [data-slide="7"].is-instant .p2-say-t,
+[data-slide="7"].is-instant .p2-plus .num { transition: none; }
+
+/* ---------- Печать: конечный этап схем, линии прочерчены, карточки лицом ---------- */
+@media print {
+  /* золотой градиент по тексту (background-clip: text) Chrome печатает в PDF с рамкой-волоском — в печати цифры сплошным золотом */
+  .p2-body .num:not(.p2-s6-hint .num) { background: none; color: var(--gold-hi); -webkit-text-fill-color: var(--gold-hi); }
+  .p2-ctl { display: none; }
+  [data-slide="4"] .p2-cam, [data-slide="4"] .p2-geo, [data-slide="4"] .p2-act, [data-slide="4"] .p2-s4-hand .p2-pt { opacity: 1; transform: none; }
+  [data-slide="4"] .p2-s4-hand .p2-hand-bones { opacity: .75; }
+  [data-slide="4"] .p2-cam-blur line, [data-slide="4"] .p2-fsm { opacity: 0; }
+  [data-slide="4"] .p2-pipe-line i { transform: none; }
+  [data-slide="4"] .p2-pipe-n b { color: var(--ink); background: var(--gold-b); }
+  [data-slide="5"] .p2-lead path { stroke-dashoffset: 0; }
+  [data-slide="6"] .p2-near, [data-slide="6"] .p2-gap, [data-slide="6"] .p2-card-err { opacity: 0; }
+  [data-slide="6"] .p2-ok, [data-slide="6"] .p2-card-ok { opacity: 1; transform: none; }
+  [data-slide="6"] .p2-ring-ok { stroke-dashoffset: 0; }
+  [data-slide="7"] .p2-knees { opacity: 0; }
+  [data-slide="7"] .p2-say-t { clip-path: none; }
+  [data-slide="7"] .p2-plus .num { transform: none; }
+  /* при печати Chrome не учитывает backface-visibility — рубашку карточек прячем явно */
+  [data-slide="12"] .p2-face--back { display: none; }
+  [data-slide="12"] .p2-card { transform: none !important; }
+}

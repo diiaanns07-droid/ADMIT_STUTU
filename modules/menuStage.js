@@ -427,6 +427,21 @@ void main(){
   ${OUT}
 }`;
 
+// [W5-СВЕТ] яркость цвета стихии не выше Lmax (Rec. 709, линейная): оттенок тот же, насыщенность ×sat.
+// Светлые пары эльфийки, лучницы и архимага (L 0,8–0,9 — почти белый) иначе делают портал за головой героя
+// и свет на нём ярче порога bloom (сердцевина вихря 1,7 против 0,7–1,0 у стража и чародейки), и светлые волосы
+// и лицо тонут в засветке. Тёмные стихии (страж, чародейка) не меняются. Тот же предел — у света витрины.
+export function glowCap(c, Lmax, sat = 1.3) {
+  const lum = (x) => 0.2126 * x.r + 0.7152 * x.g + 0.0722 * x.b;
+  const l = lum(c);
+  if (l <= Lmax) return c;
+  c.multiplyScalar(Lmax / l);
+  c.setRGB(Math.max(0, Lmax + (c.r - Lmax) * sat), Math.max(0, Lmax + (c.g - Lmax) * sat), Math.max(0, Lmax + (c.b - Lmax) * sat));
+  return c.multiplyScalar(Lmax / Math.max(1e-4, lum(c)));
+}
+// [W5-СВЕТ] пределы яркости цветов стихии на сцене витрины (основной и второй)
+export const STAGE_COL_L = [0.42, 0.7];
+
 export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotion = false, prebuild = false } = {}) {
   const root = new THREE.Group();
   root.name = 'menu-stage';
@@ -840,7 +855,7 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
 
   function setElement(fx, element) {
     const key = element || (fx && fx.style) || '';
-    if (fx) { S.colT.set(fx.color); S.col2T.set(fx.color2 || fx.color); }
+    if (fx) { glowCap(S.colT.set(fx.color), STAGE_COL_L[0]); glowCap(S.col2T.set(fx.color2 || fx.color), STAGE_COL_L[1]); }   // [W5-СВЕТ]
     if (key === S.elem && S.pend === null) return;
     if (key === S.pend) return;
     if (key === S.elem) { S.pend = null; S.swap = 0; return; }   // вернулись к прежней стихии до конца смены

@@ -119,13 +119,13 @@ export function patchHeroLight(THREE, mat) {
     float hWrap = saturate( ( hNL + 0.5 ) / 1.5 );
     totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * ( hDiff + max( hWrap - hDiff, 0.0 ) * vec3( 0.5, 0.31, 0.25 ) ) * hMet;
     float hTr = pow( saturate( dot( hV, - heroRimDir ) ), 3.0 ) * pow( 1.0 - saturate( dot( hN, hV ) ), 1.5 );
-    totalEmissiveRadiance += heroRimColor * diffuseColor.rgb * vec3( 1.0, 0.36, 0.24 ) * hTr * 1.4;` : `float hDiff = mix( saturate( hNL ), saturate( ( hNL + 0.35 ) / 1.35 ), 0.35 );
+    totalEmissiveRadiance += heroRimColor * diffuseColor.rgb * vec3( 1.0, 0.36, 0.24 ) * hTr * 0.8;   // [W5-СВЕТ] просвет ушей и щёк: было 1,4` : `float hDiff = mix( saturate( hNL ), saturate( ( hNL + 0.35 ) / 1.35 ), 0.35 );
     totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * hDiff * hMet;`}
     vec3 hH = normalize( heroKeyDir + hV );
     float hSpec = pow( saturate( dot( hN, hH ) ), mix( 90.0, 12.0, roughnessFactor ) ) * ( 1.0 - roughnessFactor );
     totalEmissiveRadiance += heroKeyColor * hSpec * mix( vec3( 0.1 ), diffuseColor.rgb * 1.8 + 0.06, metalnessFactor ) * ( 1.0 + 0.6 * metalnessFactor );
     float hF = pow( 1.0 - saturate( dot( hN, hV ) ), 4.0 );   // узкая кромка: силуэт, а не заливка тёмных тканей
-    totalEmissiveRadiance += heroRimColor * hF * saturate( dot( hN, heroRimDir ) * 0.6 + 0.45 );
+    totalEmissiveRadiance += heroRimColor * hF * saturate( dot( hN, heroRimDir ) * 0.75 + 0.2 );   // [W5-СВЕТ] кромка со стороны контрового (было · 0,6 + 0,45 — по всему силуэту)
     totalEmissiveRadiance += diffuseColor.rgb * heroFillColor * ( 0.4 + 0.6 * saturate( dot( hN, hV ) ) ) * hMet;
   }`);
   };
@@ -220,7 +220,7 @@ void RE_Direct_Hair( const in IncidentLight directLight, const in vec3 geometryP
     totalEmissiveRadiance += heroKeyColor * hairKKSpec( hN, hV, heroKeyDir );
     // кромка света витрины — узкая, только со стороны контрового и в цвет волос (не белый ободок)
     float hF = pow( 1.0 - saturate( dot( normal, hV ) ), 4.0 );
-    totalEmissiveRadiance += heroRimColor * hF * saturate( dot( hN, heroRimDir ) ) * 0.3 * mix( vec3( 1.0 ), diffuseColor.rgb * 2.5, 0.6 );
+    totalEmissiveRadiance += heroRimColor * hF * saturate( dot( hN, heroRimDir ) ) * 0.22 * mix( vec3( 1.0 ), diffuseColor.rgb * 1.6, 0.6 );   // [W5-СВЕТ] было 0,3 и альбедо ×2,5 (светлые волосы — белый ободок)
     totalEmissiveRadiance += heroRimColor * hairTrans( hN, hV, heroRimDir, diffuseColor.rgb );
     totalEmissiveRadiance += diffuseColor.rgb * heroFillColor * ( 0.4 + 0.6 * saturate( dot( normal, hV ) ) );
   }`);
@@ -1108,7 +1108,13 @@ export function facePainter(look) {
 // Правила применяются мягко: у порогов тона/насыщенности/яркости — полосы перехода, а веса правил
 // сглаживаются 3×3 (иначе на атласе 512² металл с шумной слабой насыщенностью покрывается «камуфляжем»).
 // rule.metal === false — не трогать металл, 'only' — только металл (маска — канал B карты ORM: orm = изображение).
-export function recolorTexture(THREE, tex, rules, paint = null, orm = null, scale = 1) {
+// [W5-СМЕНА] cacheKey — готовый результат по ключу (герой | материал | масштаб: правила и макияж заданы карточкой героя):
+// второй материал с тем же атласом (клон GLTFLoader с цветами вершин) и повторная сборка героя (кэш смены) берут
+// готовую текстуру — перекраска 1024² (сотни мс на слабом ЦП) не повторяется. Видеопамять у спрятанного героя
+// отдаётся (heroCache.hideTextures), холст остаётся здесь.
+const recolorCache = new Map();
+export function recolorTexture(THREE, tex, rules, paint = null, orm = null, scale = 1, cacheKey = null) {
+  if (cacheKey && recolorCache.has(cacheKey)) return recolorCache.get(cacheKey);
   const img = tex && tex.image;
   if (!img || typeof document === 'undefined' || !rules || !rules.length) return tex;
   // scale 2 — холст вдвое крупнее (лицо с макияжем: подводка и веснушки чётче вблизи)
@@ -1188,8 +1194,17 @@ export function recolorTexture(THREE, tex, rules, paint = null, orm = null, scal
   const hsv2rgb = (hue, sat, val, out) => {
     const C = val * sat, X = C * (1 - Math.abs(((hue / 60) % 2) - 1)), m = val - C;
     const k = Math.floor(hue / 60) % 6;
-    const t = [[C, X, 0], [X, C, 0], [0, C, X], [0, X, C], [X, 0, C], [C, 0, X]][k];
-    out[0] = t[0] + m; out[1] = t[1] + m; out[2] = t[2] + m;
+    // [W5-СМЕНА] без массивов на каждый пиксель (было 7 выделений на пиксель и правило — сборщик мусора на 1024²)
+    let r, g, b;
+    switch (k) {
+      case 0: r = C; g = X; b = 0; break;
+      case 1: r = X; g = C; b = 0; break;
+      case 2: r = 0; g = C; b = X; break;
+      case 3: r = 0; g = X; b = C; break;
+      case 4: r = X; g = 0; b = C; break;
+      default: r = C; g = 0; b = X;
+    }
+    out[0] = r + m; out[1] = g + m; out[2] = b + m;
   };
   const o = [0, 0, 0];
   for (let i = 0, p = 0; i < N; i++, p += 4) {
@@ -1212,6 +1227,7 @@ export function recolorTexture(THREE, tex, rules, paint = null, orm = null, scal
   t.flipY = tex.flipY; t.colorSpace = tex.colorSpace; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT;
   t.channel = tex.channel; t.anisotropy = tex.anisotropy || 4;
   if (paint) t.userData.faceAtlas = true;   // [W4-ЛИЦО] атлас лица с макияжем: shadeHero.setQuality подгоняет размер под уровень
+  if (cacheKey) recolorCache.set(cacheKey, t);   // [W5-СМЕНА]
   return t;
 }
 

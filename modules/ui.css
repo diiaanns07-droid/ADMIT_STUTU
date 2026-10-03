@@ -3909,6 +3909,7 @@
 .ao-row__head,
 .ao-ab__name,
 .ao-boss__stage,
+.ao-boss__diff,
 .ao-tele,
 .ao-pausebtn {
   font-size: max(14px, 0.875rem);
@@ -5319,4 +5320,233 @@ html[data-ao-q='low'] .ao-hero.is-lowen .ao-bar--energy::before {
   html.ao-bdo .ao-frame {
     border-image-width: 26px;
   }
+}
+
+/* ============================================================================== * [W5-СЛОЖНОСТЬ] сложность боя: ряд «Лёгкая | Обычная | Сложная | Кошмар» в меню (подпись слева — меню не растёт),
+ * цвет выбранного уровня, значок у полосы Регента, совет следующей сложности и зал славы боёв на экране итогов.
+ * ===================================================================================== */
+.ao-fieldset--diff {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.75rem;
+}
+.ao-fieldset--diff > .ao-field__legend {
+  float: left;
+  margin: 0;
+  padding: 0;
+}
+.ao-menu__cta > .ao-fieldset--diff { margin-top: 0.45rem; }
+.ao-seg--diff .ao-seg__opt[data-level="hard"] .ao-seg__input:checked + .ao-seg__label {
+  background: #d9793a;
+  color: #1b0c05;
+}
+.ao-seg--diff .ao-seg__opt[data-level="nightmare"] .ao-seg__input:checked + .ao-seg__label {
+  background: #b23128;
+  color: #fff1e8;
+}
+.ao-seg--diff .ao-seg__opt[data-level="nightmare"] .ao-seg__label { letter-spacing: 0.02em; }
+html.ao-bdo .ao-seg--diff { border-color: rgba(216, 179, 106, 0.45); }
+html.ao-bdo .ao-seg--diff .ao-seg__input:checked + .ao-seg__label { box-shadow: inset 0 0 0 1px rgba(243, 220, 160, 0.55); }
+/* ряд сложности не удлиняет меню (проверено: 1366×768, 1280×800, 1536×864, 1600×900, 1920×1080 — без прокрутки, как в main):
+ * ряд компактный, подсказка «Жестов» в меню — одной строкой (полная — во всплывающей подсказке); при 821–1000 px высоты
+ * (крупный заголовок) и в окнах ниже 740 px — только во всплывающей. 1280×720, 1366×650: прокрутка как в main, не больше. */
+@media (max-height: 1199px) {
+  .ao-menu__cta { margin-top: 0.75rem; }
+  .ao-menu__cta .ao-note { margin-top: 0.4rem; }
+  .ao-menu__cta > .ao-fieldset--diff { margin-top: 0.12rem; }
+  .ao-fieldset--diff .ao-seg__label { padding-top: 0.28rem; padding-bottom: 0.28rem; }
+}
+@media (max-height: 820px) {
+  .ao-menu__cta .ao-field__hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+@media (min-height: 821px) and (max-height: 1000px), (max-height: 740px) {
+  .ao-menu__cta .ao-field__hint { display: none; }
+}
+
+/* значок сложности у полосы Регента */
+.ao-boss__diff {
+  font-size: max(13px, 0.8rem);
+  color: var(--ao-muted);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.ao-boss__diff[data-level="hard"] { color: #ffb27a; }
+.ao-boss__diff[data-level="nightmare"] { color: #ff8c7a; }
+html.ao-bdo .ao-boss__diff {
+  position: absolute;
+  left: 0;
+  bottom: 0.2rem;
+  padding: 0 0.55rem;
+  border: 1px solid rgba(216, 179, 106, 0.5);
+  background: rgba(20, 16, 10, 0.75);
+  color: var(--w4-gold-hi);
+  font-family: var(--w4-cap-font);
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+}
+html.ao-bdo .ao-boss__diff[data-level="hard"] { border-color: rgba(255, 138, 60, 0.6); background: rgba(60, 24, 6, 0.75); color: #ffb27a; }
+html.ao-bdo .ao-boss__diff[data-level="nightmare"] { border-color: rgba(255, 70, 50, 0.7); background: rgba(70, 8, 8, 0.8); color: #ff9a88; }
+
+/* экран итогов: сложность и очки, совет следующей сложности, кнопка «Попробовать …», зал славы дня — победы над Регентом */
+.ao-result__levelline {
+  margin: -0.2rem 0 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--w4-gold-hi, #f3dca0);
+}
+.ao-result__level .ao-btn__label { white-space: nowrap; }
+.ao-actions.ao-actions--six { gap: 0.4rem; }
+.ao-actions--six .ao-btn { padding-left: 0.6rem; padding-right: 0.6rem; font-size: 0.9rem; }
+.ao-actions--six .ao-btn--lg { padding-left: 1rem; padding-right: 1rem; }
+.ao-fhall {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.6rem;
+  margin: 0 0 0.45rem;
+  font-size: 0.86rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ao-fhall__head {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ao-muted);
+}
+.ao-fhall__list {
+  display: flex;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ao-fhall__row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.1rem 0.55rem;
+  border: 1px solid rgba(216, 179, 106, 0.18);
+  background: rgba(255, 255, 255, 0.03);
+  font-variant-numeric: tabular-nums;
+  color: var(--ao-text);
+}
+.ao-fhall__row.is-me {
+  border-color: rgba(216, 179, 106, 0.7);
+  background: rgba(216, 179, 106, 0.16);
+}
+.ao-fhall__place { color: var(--ao-muted); }
+.ao-fhall__mode { color: var(--ao-muted); font-size: 0.8em; }
+.ao-fhall__lv { font-weight: 600; }
+.ao-fhall__lv[data-level="hard"] { color: #ffb27a; }
+.ao-fhall__lv[data-level="nightmare"] { color: #ff8c7a; }
+.ao-fhall__score { font-weight: 700; }
+=======
+/* ------------------------------------------------------------------ [W5-КАМЕРА] экран камеры: статус, «что делать», диагностика */
+.ao-camstat {
+  align-self: stretch;
+  margin: 0 0 0.6rem;
+  text-align: left;
+}
+.ao-camstat__line {
+  justify-content: center;
+}
+.ao-camstat__line .ao-dot {
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-top: 0.45em;
+}
+.ao-camstat__line .ao-status__label {
+  font-size: 1.22rem;
+  line-height: 1.3;
+}
+.ao-camstat__line .ao-status__detail {
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+}
+.ao-camstat__todo {
+  margin-top: 0.45rem;
+  padding: 0.45rem 0.8rem 0.5rem;
+  border-left: 3px solid var(--ao-warn);
+  background: rgba(10, 10, 12, 0.45);
+  font-size: 0.92rem;
+}
+.ao-camstat__todo[data-tone='bad'] {
+  border-left-color: var(--ao-bad);
+}
+.ao-camstat__title {
+  display: block;
+  margin-bottom: 0.15rem;
+}
+.ao-camstat__title::before {
+  content: 'Что делать: ';
+  color: var(--ao-muted);
+  font-weight: 400;
+}
+.ao-camstat__steps {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--ao-text);
+}
+.ao-camdiag {
+  font-size: 0.84rem;
+  color: var(--ao-text);
+  text-align: left;
+}
+.ao-camdiag > summary {
+  cursor: pointer;
+  color: var(--ao-muted);
+  padding: 0.3rem 0.2rem;
+}
+.ao-camdiag[open] {
+  flex-basis: 100%;
+  order: 3;
+}
+.ao-train__statusrow > .ao-camdiag[open] {
+  order: 2;
+}
+.ao-camdiag[open] > summary {
+  margin-bottom: 0.3rem;
+}
+.ao-camdiag__list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.12rem 0.8rem;
+  max-height: 26vh;
+  overflow: auto;
+  margin: 0 0 0.35rem;
+}
+.ao-camdiag__list dt {
+  color: var(--ao-muted);
+}
+.ao-camdiag__list dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.ao-camdiag__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.8rem;
+}
+.ao-camdiag .ao-btn {
+  min-height: 0;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.84rem;
+}
+.ao-camdiag__note {
+  color: var(--ao-good);
+}
+.ao-camdiag__report {
+  width: 100%;
+  margin-top: 0.4rem;
+  font: 0.78rem/1.35 ui-monospace, Consolas, monospace;
+  color: var(--ao-text);
+  background: rgba(8, 9, 11, 0.7);
+  border: 1px solid rgba(196, 162, 101, 0.4);
+  resize: vertical;
 }

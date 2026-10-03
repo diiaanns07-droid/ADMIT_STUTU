@@ -41,9 +41,15 @@ import { createCoachOverlay } from './core/coachOverlay.js'; // [ТВИСТ «О
 import { createTechniqueTrainer } from './modules/techniqueTrainer.js'; // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
 import { createUltimateGesture, ultTimeScale, ultCameraKeys } from './core/ultimate.js'; // [W3-ULT] «Небесный суд»
 import { createVoiceCoach, createVoiceDirector, createVoiceRecords } from './modules/voiceCoach.js'; // [W3-VOICE] подсказки и диктор — вслух
+import { DIFFICULTY_ORDER, DIFFICULTY_NAMES } from './core/voicePhrases.js'; // [W5-СЛОЖНОСТЬ] названия уровней сложности
 import { createHandCursor } from './core/handCursor.js'; // [W3-CURSOR] курсор-кисть вместо мыши
+import { menuDrawables, menuFrustum, compileSet, createLateStart, createTrickleCompile } from './core/bootPlan.js'; // [W5-СТАРТ] что до меню, что после
+import { camWarmWanted, createFightGuard, CAM_WARM } from './core/camWarm.js'; // [W5-КАМЕРА] рендер уступает видеокарту распознаванию
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
+// [W5-СТАРТ] вехи загрузки (Performance → Timings; tools/load_budget.mjs): код загружен → мир → меню → первый кадр → герой
+const bootMark = (name, opts) => { try { performance.mark('ao:' + name, opts); } catch (e) { /* старый браузер */ } };
+bootMark('main');
 // [W3-CURSOR] MediaPipe в главном потоке (запасной путь, если worker не прошёл самопроверку) пишет служебные строки glog
 // уровней I/W («W1002 … gl_context.cc:1118] OpenGL error checking is disabled») — не сбои игры; в консоль их не пускаем.
 // Тот же фильтр — в modules/vision-worker.js. Ошибки (E/F) и все остальные сообщения проходят как раньше.
@@ -84,7 +90,7 @@ function sanitizeSettings(patch, base) {
   if (Number.isFinite(+patch.volume) && patch.volume !== null && patch.volume !== '') out.volume = Math.max(0, Math.min(1, +patch.volume));
   if (Number.isFinite(+patch.sensitivity) && patch.sensitivity !== null && patch.sensitivity !== '') out.sensitivity = Math.max(0.5, Math.min(2, +patch.sensitivity));
   if ('reducedMotion' in patch) out.reducedMotion = !!patch.reducedMotion;
-  if (patch.difficulty === 'easy' || patch.difficulty === 'normal') out.difficulty = patch.difficulty; // [FEEL] сложность боя с Регентом
+  if (DIFFICULTY_ORDER.includes(patch.difficulty)) out.difficulty = patch.difficulty; // [FEEL][W5-СЛОЖНОСТЬ] сложность боя с Регентом
   if ('muted' in patch) out.muted = patch.muted === true; // [SFX] «Без звука» (кнопка в меню и паузе, клавиша M)
   if ('voice' in patch) out.voice = patch.voice !== false; // [W3-VOICE] «Голос тренера» (кнопка рядом с «Без звука», клавиша V)
   if (patch.moveMode === 'steer' || patch.moveMode === 'stick') out.moveMode = patch.moveMode; // [V5] «Руль» / «Джойстик»
@@ -208,6 +214,8 @@ const app = {
   autoResume: null,          // { at, badSince } — performance.now() продолжения боя
   gate: { ok: true, reason: '', since: 0, flashUntil: 0 }, // причина недоступности «В бой»/«Продолжить» для кнопок UI
   outroAt: 0,                // [FEEL] performance.now() исхода боя: экран итогов — после замедленного финала
+  // [W5-КАМЕРА] «дешёвый кадр», пока камера запускается (core/camWarm.js); fightCap — предел 30 к/с от стража трекинга в бою
+  camWarm: false, camWarmDraw: -1e9, fightCap: false,
 };
 // [W3-CHALLENGE] «Испытание · 60 с»: фазы попытки, подсчёт очков (в каждом бою — для постера), зал славы дня,
 // кадр боя и линии скелета в момент последнего удара. Логика — modules/challenge.js, функции — блок ниже.
@@ -222,11 +230,15 @@ const chal = {
   shot: { canvas: null, want: false, at: 0, has: false },
   skeleton: null,
   hudAt: 0, live: { score: 0, rank: 'D' },
+  // [W5-СЛОЖНОСТЬ] обычный бой: итог (очки с множителем сложности) и свой зал славы дня — победы над Регентом
+  fight: null,
+  fightHall: (() => { try { return createHall(window.localStorage, { key: 'ashen-oath.hall-fight.v1' }); } catch (e) { return createHall(null, { key: 'ashen-oath.hall-fight.v1' }); } })(),
 };
 
 // [ASHEN_V2] мир создаётся первым: его раскладка (коллайдеры, земля, арена, старт) нужна бою и камере.
 const world = make('world.js', () => createWorld({ THREE, scene, renderer, camera, config }));
 const worldLayout = world && world.layout ? world.layout : null;
+bootMark('world');   // [W5-СТАРТ]
 // [ASHEN_V3] выбор героя: процедурный Пепельный страж или VRoid-героини (CC0, VRM) с анимациями Quaternius
 let heroModel = null;
 try {
@@ -265,11 +277,30 @@ import('./core/postfx.js').then((m) => {
   } catch (e) { console.warn('[ASHEN] postfx недоступен, обычный рендер:', e); postfx = null; }
 }).catch((e) => console.warn('[ASHEN] core/postfx.js не загружен, обычный рендер:', e && e.message));
 const rig = createCameraRig(config.camera);
+// [W5-СТАРТ] Отложенный старт. Модули, нужные только в бою, на экране камеры и в дуэли (финал Регента, «Небесный суд»,
+// лук и магия рукой, оверлей рук, дух игрока, дуэль), грузятся и создаются после меню: когда первый кадр меню показан и
+// герой на витрине готов (не позже LATE_MAX_MS после показа меню), в простое главного потока. До этого их сеть, разбор,
+// холсты и шейдеры не отнимают время у меню и героя. Уход из меню раньше (?demo, ?challenge, «Играть», дуэль) — сразу.
+// Все эти модули и раньше были необязательными: игра проверяет их на null и без них работает как без эффекта.
+const LATE_MAX_MS = 15000;
+const late = createLateStart({ maxMs: LATE_MAX_MS, idle: (fn) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 0)) });
+const afterMenu = (load) => late.add(load);
+const boot5 = { menuFrameAt: 0, heroMarked: false };
+late.onDone(() => { bootMark('late'); backgroundCompile(); });   // всё отложенное в сцене — шейдеры того, что меню не рисует
+function lateWatch(t0) {
+  if (heroModel && heroModel.ready && !boot5.heroMarked) {
+    boot5.heroMarked = true;
+    const tm = heroModel.state().timing;   // момент готовности героя — по его хронометражу, а не по опросу
+    bootMark('hero-ready', tm && Number.isFinite(tm.t0) && Number.isFinite(tm.ready) ? { startTime: tm.t0 + tm.ready } : undefined);
+  }
+  if (!late.fired) late.tick({ now: performance.now(), screen: app.screen, menuFrameAt: boot5.menuFrameAt, heroBusy: !!(heroModel && !heroModel.ready && heroModel.state().loading) });
+  if (!late.fired || (!boot5.heroMarked && performance.now() - t0 < 120000)) setTimeout(() => lateWatch(t0), 200);
+}
 // [W3-КИНО] сцены Регента: переход в фазу 2 и гибель (modules/fx/bossFinale.js); нет модуля — бой как был
 let bossFinale = null;
-import('./modules/fx/bossFinale.js').then((m) => {
+afterMenu(() => import('./modules/fx/bossFinale.js').then((m) => {   // [W5-СТАРТ] после меню
   try { bossFinale = m.createBossFinale({ THREE, scene, world, cue, shake: (k) => rig.shake(k), reducedMotion: () => !!settings.reducedMotion, quality: () => settings.quality }); } catch (e) { console.warn('[W3-КИНО] финал Регента', e); }
-}).catch((e) => console.warn('[W3-КИНО] bossFinale.js не загружен:', e && e.message));
+}).catch((e) => console.warn('[W3-КИНО] bossFinale.js не загружен:', e && e.message)));
 // [W3-КИНО] события боя → импульсы экрана (core/cinemaFeed.js); гроза второй фазы → гром и отсвет молнии
 let cinema = null;
 import('./core/cinemaFeed.js').then((m) => {
@@ -569,6 +600,7 @@ function resetFight() {
   applyStartZone();            // [FOREST] место старта
   if (typeof combat.setDifficulty === 'function') { try { combat.setDifficulty(chal.session.active ? CHALLENGE.difficulty : settings.difficulty); } catch (e) { console.warn('[FEEL] сложность', e); } } // [FEEL] HP и урон Регента
   combat.reset();              // сбрасывает и bossBrain
+  chal.fight = null;           // [W5-СЛОЖНОСТЬ] итог прошлого боя
   world.reset();
   effects.reset();
   if (bossFinale) bossFinale.reset();   // [W3-КИНО] осколки и кинокамера прошлого боя
@@ -832,6 +864,7 @@ function voiceFrame(now, input, events) {
       screen: scr, hint, events, pvp, countdown, training, recognized: voiceTut.ok,
       boss: b && !app.outroAt ? { hp: b.hp, maxHp: b.maxHp } : null,
       fight: won && lastSnapshot ? { time: lastSnapshot.time, accuracy: coachStats.summary().accuracy } : null, // рекорд победы
+      difficulty: won && !chal.session.active && diffInfo().selectable ? diffInfo().level : null, // [W5-СЛОЖНОСТЬ] рекорд по уровню и совет «попробуй …»
     });
   } catch (e) { console.warn('[VOICE] кадр', e); }
 }
@@ -1088,6 +1121,7 @@ const callbacks = {
 let netSession = null;
 let netSessionP = null;
 function openNet() {
+  late.fire();   // [W5-СТАРТ] лобби — сразу и дуэль (modules/pvp.js), и магия: соперник может быть готов раньше, чем игрок уйдёт из меню
   if (!netSessionP) {
     netSessionP = import('./net/session.js').then((m) => {
       netSession = m.createNetSession({
@@ -1221,11 +1255,11 @@ function handAnchors() {
   return typeof world.getAnchors === 'function' ? world.getAnchors() : null;
 }
 try { handZone = createHandZone({ target: window }); heroBowPose = createHeroBowPose(); } catch (e) { console.warn('[HAND] handZone', e); handZone = null; }
-import('./core/handFxOverlay.js').then((m) => { try { handFx = m.createHandFxOverlay({ canvas: overlay }); } catch (e) { console.warn('[HAND] handFxOverlay', e); } }).catch((e) => console.warn('[HAND] core/handFxOverlay.js', e && e.message));
-import('./modules/handVisuals.js').then((m) => { try { handVisuals = m.createHandVisuals({ THREE, scene, config }); handVisuals.setQuality(settings.quality); } catch (e) { console.warn('[HAND] handVisuals', e); handVisuals = null; } }).catch((e) => console.warn('[HAND] modules/handVisuals.js', e && e.message));
+afterMenu(() => import('./core/handFxOverlay.js').then((m) => { try { handFx = m.createHandFxOverlay({ canvas: overlay }); } catch (e) { console.warn('[HAND] handFxOverlay', e); } }).catch((e) => console.warn('[HAND] core/handFxOverlay.js', e && e.message)));   // [W5-СТАРТ] после меню
+afterMenu(() => import('./modules/handVisuals.js').then((m) => { try { handVisuals = m.createHandVisuals({ THREE, scene, config }); handVisuals.setQuality(settings.quality); } catch (e) { console.warn('[HAND] handVisuals', e); handVisuals = null; } }).catch((e) => console.warn('[HAND] modules/handVisuals.js', e && e.message)));   // [W5-СТАРТ]
 // [W3-SPIRIT] дух игрока: светящийся силуэт повторяет руки и пальцы игрока — в превью камеры и над ареной (modules/spiritAvatar.js)
 let spirit = null;
-import('./modules/spiritAvatar.js').then((m) => { try { spirit = m.createSpiritAvatar({ THREE, scene, camera, renderer, slot, overlay, heroes: HEROES, settings }); } catch (e) { console.warn('[W3-SPIRIT]', e); } }).catch((e) => console.warn('[W3-SPIRIT] modules/spiritAvatar.js', e && e.message));
+afterMenu(() => import('./modules/spiritAvatar.js').then((m) => { try { spirit = m.createSpiritAvatar({ THREE, scene, camera, renderer, slot, overlay, heroes: HEROES, settings }); } catch (e) { console.warn('[W3-SPIRIT]', e); } }).catch((e) => console.warn('[W3-SPIRIT] modules/spiritAvatar.js', e && e.message)));   // [W5-СТАРТ] после меню
 const battleHud = createBattleHud({ canvas: hudCanvas });
 // [ТВИСТ «ОШИБКА»] удачные жесты и подсказки за бой → точность и частая ошибка на экране итогов
 const coachStats = createCoachStats();
@@ -1244,7 +1278,7 @@ function resetCoach() { coachStats.reset(); coachEnd = null; coachEdge.attack = 
 // [PVP] дуэль игрок против игрока (modules/pvp.js, №3): грузится динамически; при ошибке — обычный бой.
 // ?pvp=local — две вкладки одного браузера (DEBUG, клавиатура). Лобби №2: window.__ashenPvp.start(net, {name, hero}).
 let pvpCtl = null;
-import('./modules/pvp.js').then((m) => {
+const loadPvp = () => import('./modules/pvp.js').then((m) => {
   try {
     pvpCtl = m.createPvpController({
       THREE, scene, camera, combat, config, settings, arena: worldLayout && worldLayout.arena,
@@ -1268,6 +1302,7 @@ import('./modules/pvp.js').then((m) => {
     pvpCtl.autoStart(location.search);
   } catch (e) { console.warn('[ASHEN] pvp недоступен:', e); pvpCtl = null; }
 }).catch((e) => console.warn('[ASHEN] modules/pvp.js не загружен:', e && e.message));
+if (PERF_Q.has('pvp')) loadPvp(); else afterMenu(loadPvp);   // [W5-СТАРТ] ?pvp=… — сразу, иначе после меню (лобби уводит из меню — тоже сразу)
 
 // ---------------------------------------------------------------- [W3-CHALLENGE] «Испытание · 60 с»
 // Одна и та же минута для каждого члена жюри: фиксированный seed Регента (порядок атак), «Лёгкая» сложность,
@@ -1278,7 +1313,7 @@ try { chal.hud = createChallengeHud({ root: uiRoot }); } catch (e) { console.war
 function refreshHall() { const all = chal.hall.all(); chal.hallView = { list: all, best: all[0] || null }; }   // экран сам выбирает топ-10 и своё место
 refreshHall();
 if (PERF_Q.has('reset-hall')) {
-  chal.hall.clear(); refreshHall();
+  chal.hall.clear(); chal.fightHall.clear(); refreshHall();   // [W5-СЛОЖНОСТЬ] и зал побед над Регентом
   try { const u = new URL(location.href); u.searchParams.delete('reset-hall'); history.replaceState(null, '', u.href); } catch (e) { /* адрес останется прежним */ }
   setTimeout(() => flashRecNote('Зал славы дня очищен — можно начинать финал'), 400);
 }
@@ -1289,6 +1324,7 @@ function challengePrepare() {
   try { bossBrain.useChallenge(on); } catch (e) { console.warn('[W3-CHALLENGE] seed', e); }
   applyUpgrades();
   chal.result = null; chal.skeleton = null; chal.shot.has = false; chal.shot.want = false; chal.shot.at = 0;
+  chal.fight = null;   // [W5-СЛОЖНОСТЬ]
   setPosterUrl('');
 }
 // бой сброшен: подсчёт с нуля; в испытании — сразу на арену и отсчёт 3-2-1 (true — облёт не нужен)
@@ -1312,7 +1348,37 @@ function challengeResult(kind) {
   return buildResult({
     tally: chal.tally, snap: lastSnapshot, coach: coachEnd || coachStats.summary(), session: kind === 'challenge' ? chal.session : null, kind,
     mode: app.debug ? 'debug' : settings.gestureMode, hero: settings.hero, heroName: hero.name || '',
+    difficulty: diffInfo(),   // [W5-СЛОЖНОСТЬ] очки обычного боя — с множителем сложности
   });
+}
+// [W5-СЛОЖНОСТЬ] уровень, с которым идёт бой (combat.setDifficulty в resetFight): { level, name, scoreMul, selectable }
+function diffInfo() {
+  let d = null;
+  try { d = typeof combat.getDifficulty === 'function' ? combat.getDifficulty() : null; } catch (e) { d = null; }
+  const level = (d && d.level) || settings.difficulty;
+  return { level, name: DIFFICULTY_NAMES[level] ? DIFFICULTY_NAMES[level].name : '', scoreMul: d && Number.isFinite(d.scoreMul) ? d.scoreMul : 1, selectable: !!(d && d.selectable) };
+}
+// [W5-СЛОЖНОСТЬ] конец обычного боя: итог с очками; победа — в зал славы дня (у «Испытания» свой зал)
+function finishFight(win) {
+  if (chal.fight || chal.session.active || (pvpCtl && pvpCtl.active)) return;
+  const r = challengeResult('fight');
+  let extra = {}, hall = [];
+  if (win && DIFFICULTY_NAMES[r.difficulty]) {
+    const h = chal.fightHall.add({ ...r, name: '' });
+    extra = { place: h.place, total: h.total, isRecord: h.isRecord && h.total > 1, entryId: h.entry.id };
+    // строки зала для экрана итогов — один раз (не читать хранилище каждый кадр): топ-5 и своё место
+    const all = chal.fightHall.all();
+    const me = all.findIndex((e) => e.id === h.entry.id);
+    hall = all.map((e, i) => i).filter((i) => i < 5 || i === me)
+      .map((i) => { const e = all[i]; return { id: e.id, place: i + 1, score: e.score, diff: e.diff, time: e.sec, heroName: (HEROES[e.hero] || {}).name || '', name: e.name, mode: e.mode }; });
+  }
+  chal.fight = { ...r, ...extra, hall };
+}
+// [W5-СЛОЖНОСТЬ] итоги обычного боя для экрана: уровень, множитель, итог и зал славы (топ-5 и своё место)
+function fightView() {
+  const d = diffInfo();
+  const end = app.screen === 'victory' || app.screen === 'defeat';
+  return { level: d.level, scoreMul: d.scoreMul, result: end ? chal.fight : null, hall: app.screen === 'victory' && chal.fight ? chal.fight.hall : [] };
 }
 // конец попытки: итог → зал славы дня (имя впишут на экране итогов) → постер
 function finishChallenge() {
@@ -1375,7 +1441,7 @@ function grabShot() {
   } catch (e) { chal.shot.has = false; }
 }
 function posterData() {
-  const r = chal.result || challengeResult('fight');
+  const r = chal.result || chal.fight || challengeResult('fight');   // [W5-СЛОЖНОСТЬ] итог обычного боя — с сохранённым местом в зале
   const hero = HEROES[settings.hero] || {};
   return {
     ...r, heroName: hero.name || '', heroCls: [hero.cls, hero.element].filter(Boolean).join(' · '),
@@ -1442,7 +1508,8 @@ function targetPixelRatio() {
   const q = config.qualityPresets[settings.quality] || config.qualityPresets.medium;
   const base = Math.min(window.devicePixelRatio || 1, q.pixelRatioCap);
   const k = perfTuner && settings.qualityAuto !== false ? perfTuner.scale : 1;
-  return Math.max(0.5, Math.round(base * k * 100) / 100);
+  const warm = app.camWarm ? CAM_WARM.prK : 1;   // [W5-КАМЕРА] пока камера запускается — меньше пикселей
+  return Math.max(0.5, Math.round(base * k * warm * 100) / 100);
 }
 function applyPixelRatio() {
   const pr = targetPixelRatio();
@@ -1453,8 +1520,10 @@ function applySettings() {
     perfTuner.setAuto(settings.qualityAuto !== false);
     if (settings.qualityAuto !== false) settings.quality = perfTuner.tier;
   }
-  renderer.setPixelRatio(targetPixelRatio());
-  resize();
+  // [W5-СМЕНА] размер холста — только если изменился: setSize переприсваивает canvas.width (буфер холста сбрасывается),
+  // а applySettings зовётся на каждый выбор в меню (герой, громкость…) — пропуск кадра perfTuner показал бы пустой холст
+  { const pr = targetPixelRatio(), sz = renderer.getSize(new THREE.Vector2());
+    if (Math.abs(renderer.getPixelRatio() - pr) > 1e-3 || sz.x !== viewW() || sz.y !== viewH() || !app.sized) { app.sized = true; renderer.setPixelRatio(pr); resize(); } }
   if (app.appliedQuality !== settings.quality) {
     const first = app.appliedQuality === null;
     app.appliedQuality = settings.quality;
@@ -1560,12 +1629,35 @@ function renderUI() {
     voice: voiceView(), // [W3-VOICE] «Голос тренера»: включён ли и найден ли русский голос
     coach: app.screen === 'victory' || app.screen === 'defeat' ? (coachEnd || coachStats.summary()) : null, // [ТВИСТ «ОШИБКА»] итог, сравнение с прошлым боем
     challenge: { result: app.screen === 'challenge' ? chal.result : null, hall: chal.hallView.list, best: chal.hallView.best, posterUrl: chal.posterUrl }, // [W3-CHALLENGE]
+    fight: fightView(),   // [W5-СЛОЖНОСТЬ] итог обычного боя: сложность, очки, зал славы
     // [ONBOARD] причина на кнопках «В бой»/«Продолжить бой»; отсчёт автопродолжения; калибровка из сохранения
     gate: { ok: app.gate.ok, reason: app.gate.reason },
     autoResumeMs: app.autoResume ? Math.max(0, app.autoResume.at - performance.now()) : null,
     onboard: { quick: QUICK, restored: app.onb.restored, demo: DEMO,
       starting: app.screen === 'camera' && app.onb.autoEnabled && !app.error && (!vision || visionStatus().status === 'idle') }, // камера уже запрошена
+    camDiag: app.screen === 'camera' || app.screen === 'calibration' ? camDiagView() : null, // [W5-КАМЕРА] «Диагностика» экрана камеры
   });
+}
+// [W5-КАМЕРА] для «Диагностики» и «Скопировать отчёт» на экране камеры: кадры игры, видеокарта, дешёвый кадр, офлайн;
+// собирается не чаще 4 раз в секунду
+const camDiagCache = { t: -1e9, v: null };
+function camDiagView() {
+  const now = performance.now();
+  if (now - camDiagCache.t < 250 && camDiagCache.v) return camDiagCache.v;
+  let p = null;
+  try { p = perfTuner ? perfTuner.state() : null; } catch (e) { p = null; }
+  let off = null;
+  try { const o = window.__aoOffline && window.__aoOffline.state(); off = o ? { sw: o.sw, preload: o.preload && o.preload.status } : null; } catch (e) { off = null; }
+  let embedded = false;
+  try { embedded = window.self !== window.top; } catch (e) { embedded = true; }
+  camDiagCache.t = now;
+  camDiagCache.v = {
+    fps: Math.round(perf.fps), quality: settings.quality, qualityAuto: settings.qualityAuto !== false,
+    perf: p && { tier: p.tier, scale: p.scale, capFps: p.capFps, fps: p.fps, gpu: p.gpu, gpuClass: p.gpuClass, gpuMs: p.gpuMs, cores: p.cores, memory: p.memory, refreshHz: p.refreshHz, auto: p.auto },
+    warm: app.camWarm, fightCap: app.fightCap, warmLog: camLoad.warmLog.slice(-4), guard: camLoad.guard.state(),
+    secure: window.isSecureContext !== false, embedded, url: location.origin + location.pathname, ua: navigator.userAgent, offline: off,
+  };
+  return camDiagCache.v;
 }
 // [W3-SQUAT] модель позы и частота распознавания — для подготовки и диагностики
 function squatPoseInfo() {
@@ -1706,12 +1798,12 @@ Object.defineProperty(OUTRO, 'victoryMs', { get: () => (bossFinale ? 2600 : 1700
 // времени, мир и эффекты замедлены), облёт камеры (core/cameraRig.js cinematic), меч из света
 // (modules/fx/ultimate.js), вспышка (postfx.pulse, если есть; иначе рывок экрана и вспышка HUD), звук, HUD.
 const ULT = { gesture: createUltimateGesture(), g: null, fx: null, q: null, cine: null, flashByPost: false };
-import('./modules/fx/ultimate.js').then((m) => {
+afterMenu(() => import('./modules/fx/ultimate.js').then((m) => {   // [W5-СТАРТ] после меню
   try {
     ULT.fx = m.createUltimateFx({ THREE, scene, camera, getKit: () => (effects && effects.v6 && effects.v6.enabled ? effects.v6.kit : null),
       groundY: worldLayout && typeof worldLayout.groundY === 'function' ? worldLayout.groundY : null, reducedMotion: () => !!settings.reducedMotion });
   } catch (e) { console.warn('[W3-ULT] эффект', e); ULT.fx = null; }
-}).catch((e) => console.warn('[W3-ULT] modules/fx/ultimate.js', e && e.message));
+}).catch((e) => console.warn('[W3-ULT] modules/fx/ultimate.js', e && e.message)));
 // ?fury=100 — бой начинается с полной шкалой (показ «Небесного суда» на сцене сразу, QA)
 const ULT_FURY0 = PERF_Q.has('fury') ? Math.max(0, Math.min(100, Number(PERF_Q.get('fury')) || 100)) : 0;
 function ultReset() {
@@ -1879,12 +1971,15 @@ const perf = { fps: 0, frames: 0, t0: performance.now() };
 
 // [PERF] предкомпиляция шейдеров: все объекты сцены, в том числе скрытые (пулы эффектов, герои),
 // компилируются параллельно (KHR_parallel_shader_compile) — без рывков по 0,3–1,7 с при первом появлении.
-const precomp = { pending: false, heroKey: null, fight: false, boot: false };
+// [W5-СТАРТ] boot: true — сборки «старт» на первом кадре больше нет: до показа меню собирается то, что меню рисует
+// (bootCompile), остальное — в фоне после меню (backgroundCompile), не отнимая потоки драйвера у героя на витрине.
+const precomp = { pending: false, again: null, heroKey: null, fight: false, boot: true };
 // Без KHR_parallel_shader_compile (программный рендер, старые драйверы) compile() компилирует всё
 // синхронно и вешает страницу на секунды — там шейдеры по-старому собираются при первом показе.
 const PARALLEL_COMPILE = (() => { try { return !!(renderer.extensions && renderer.extensions.has('KHR_parallel_shader_compile')); } catch (e) { return false; } })();
 function schedulePrecompile(why) {
-  if (!PARALLEL_COMPILE || precomp.pending || typeof renderer.compileAsync !== 'function') return;
+  if (!PARALLEL_COMPILE || typeof renderer.compileAsync !== 'function') return;
+  if (precomp.pending) { precomp.again = why; return; }   // [W5-СТАРТ] новое в сцене за время сборки — ещё один проход после неё
   precomp.pending = true;
   const t0 = performance.now();
   if (perfTuner) perfTuner.noteStall(t0);
@@ -1892,15 +1987,95 @@ function schedulePrecompile(why) {
     .then(() => renderer.compileAsync(scene, camera))
     .then(() => console.info(`[perf] шейдеры (${why}) готовы за ${Math.round(performance.now() - t0)} мс, программ ${renderer.info.programs ? renderer.info.programs.length : '?'}`))
     .catch((e) => console.warn('[PERF] предкомпиляция шейдеров:', e && e.message))
-    .finally(() => { precomp.pending = false; if (perfTuner) perfTuner.noteStall(performance.now()); });
+    .finally(() => {
+      precomp.pending = false; if (perfTuner) perfTuner.noteStall(performance.now());
+      if (precomp.again) { const w = precomp.again; precomp.again = null; schedulePrecompile(w); }   // [W5-СТАРТ]
+    });
+}
+// [W5-СТАРТ] Фоновая сборка того, что меню не рисует (скрытые пулы эффектов, магия рук, сцены Регента, отложенные модули).
+// С KHR_parallel_shader_compile — compileAsync всей сцены: драйвер собирает в своих потоках, главный поток свободен.
+// Без него (программный рендер, старые драйверы) — по 2 новые программы за шаг в простое, пока игрок в меню
+// (core/bootPlan.js): к первому кадру боя они собраны, а не собираются синхронно по 0,2–3 с при первом показе. Ушли из
+// меню — остановка: на экране камеры GPU-процесс нужен MediaPipe, остальное соберётся при первом показе, как раньше.
+let trickle = null;
+function backgroundCompile() {
+  if (PARALLEL_COMPILE) { schedulePrecompile('фон'); return; }
+  if (trickle) return;
+  const t0 = performance.now();
+  trickle = createTrickleCompile({
+    renderer, scene, camera, perStep: 2, gapMs: 250,
+    schedule: (fn, ms) => setTimeout(() => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 2000 }) : fn()), ms),
+    stopped: () => app.screen !== 'menu',
+  });
+  trickle.start(menuDrawables(scene, { visibleOnly: false }));
+  const report = () => {
+    if (!trickle.done) { setTimeout(report, 500); return; }
+    bootMark('bg-compiled');
+    console.info(`[perf] шейдеры (фон) поставлены в сборку за ${Math.round(performance.now() - t0)} мс: новых программ ${trickle.added}${trickle.stopped ? ' (остановлено: ушли из меню)' : ''}${trickle.error ? ' (ошибка: ' + trickle.error.message + ')' : ''}`);
+  };
+  report();
 }
 function precompileTick() {
-  if (!precomp.boot) { precomp.boot = true; schedulePrecompile('старт'); return; }
+  if (app.camWarm) return;   // [W5-КАМЕРА] шейдеры героя и боя — после запуска камеры: прогрев MediaPipe не делит с ними GPU
   const hk = heroModel ? `${heroModel.hero}|${heroModel.ready}` : null;
-  if (hk !== precomp.heroKey) { precomp.heroKey = hk; if (heroModel && heroModel.ready) schedulePrecompile('герой'); }
+  // [W5-СМЕНА] герой собирает свои программы сам (heroModel: до показа, в варианте кадра) — без пересборки всей сцены
+  if (hk !== precomp.heroKey) { precomp.heroKey = hk; if (heroModel && heroModel.ready && !heroModel.warmsPrograms) schedulePrecompile('герой'); }
   if (!precomp.fight && app.screen === 'playing') { precomp.fight = true; schedulePrecompile('бой'); }
 }
 const CALM_SCREENS = new Set(['menu', 'paused', 'camera', 'calibration', 'tutorial', 'oath', 'training', 'technique', 'victory', 'defeat', 'challenge']); // [W3-CHALLENGE] + challenge
+// ---------------------------------------------------------------- [W5-КАМЕРА] рендер уступает видеокарту распознаванию
+// Пока камера запускается (статус permission / loading / calibrating, на экранах камеры и калибровки — и до калибровки):
+// плотность пикселей ×0.6, без частиц, портала, дымки и пола-зеркала витрины, без пепла мира, карта теней не обновляется,
+// кадр не чаще ~30 к/с, автоподстройка (perfTuner) на это время не принимает решений. После «ready» — всё как было.
+// В бою: распознаваний < 12/с дольше 3 с — уровень качества ниже через perfTuner, затем предел 30 к/с (core/camWarm.js).
+const CAM_WARM_HIDE = ['menu-stage-portal', 'menu-stage-particles', 'menu-stage-mist', 'menu-stage-floor'];
+const camLoad = { hidden: [], guard: createFightGuard(), guardT: 0, guardLast: null, warmSince: 0, warmLog: [] };
+function camWarmNow() {
+  const s = lastVisionStatus;   // каждый кадр — без полного getStatus(): статус и калибровку освежают onStatus и visionStatus()
+  return camWarmWanted({ screen: app.screen, status: vision && s ? s.status : 'idle', calibrated: s && s.calibrated, debug: app.debug, off: UNCAPPED || BENCH_CAM });
+}
+function setCamWarm(on) {
+  if (app.camWarm === on) return;
+  app.camWarm = on;
+  const now = performance.now();
+  renderer.shadowMap.autoUpdate = !on;
+  if (!on) renderer.shadowMap.needsUpdate = true;
+  try { world.configure({ ambientAsh: on ? false : !(config.world && config.world.ambientAsh === false) }); } catch (e) { /* нет пепла */ }
+  if (!on) camWarmStage(false);
+  applyPixelRatio();
+  if (perfTuner) perfTuner.noteStall(now);
+  camLoad.warmLog.push({ t: Math.round(now), on, screen: app.screen, status: visionStatus().status, ms: on ? 0 : Math.round(now - camLoad.warmSince) });
+  if (camLoad.warmLog.length > 8) camLoad.warmLog.shift();
+  if (on) camLoad.warmSince = now;
+  console.info(`[perf] запуск камеры: ${on ? 'дешёвый кадр (меньше пикселей, без частиц и портала, ≈30 к/с)' : `обычный кадр (дешёвый держался ${Math.round((now - camLoad.warmSince) / 100) / 10} с)`}`);
+}
+// частицы, портал, дымка и пол-зеркало витрины (второй проход сцены) — прячутся; витрина сама их не трогает
+function camWarmStage(hide) {
+  if (hide) {
+    const root = scene.getObjectByName('menu-stage');
+    if (!root || !root.visible) return;
+    for (const n of CAM_WARM_HIDE) { const o = root.getObjectByName(n); if (o && o.visible) { o.visible = false; camLoad.hidden.push(o); } }
+  } else {
+    for (const o of camLoad.hidden) o.visible = true;
+    camLoad.hidden.length = 0;
+  }
+}
+// уровень качества от стража: тот же путь, что смена уровня самим perfTuner (без записи в выученное)
+function guardApply(a) {
+  if (!a) return;
+  camLoad.guardLast = { ...a, t: Math.round(performance.now()) };
+  if (a.tier && perfTuner && settings.qualityAuto !== false) { perfTuner.setTier(a.tier); settings.quality = perfTuner.tier; applySettings(); }
+  app.fightCap = !!a.cap;
+  console.info(`[perf] трекинг в бою: ${a.why} → ступень ${a.level}${a.tier ? `, качество ${a.tier}` : ''}${a.cap ? ', 30 к/с' : ''}`);
+}
+function fightGuardTick(now) {
+  if (now - camLoad.guardT < 250) return;
+  camLoad.guardT = now;
+  const fighting = !app.debug && !!vision && (app.screen === 'playing' || app.screen === 'intro');
+  if (!fighting && app.screen !== 'paused') { guardApply(camLoad.guard.reset(now)); return; }   // бой окончен — всё как было
+  const d = visionStatus().debug || {};
+  guardApply(camLoad.guard.update(now, { active: fighting && !app.outroAt, hz: d.inferenceHz, cameraFps: d.cameraFps, tier: settings.quality, auto: settings.qualityAuto !== false && !!perfTuner }));
+}
 let perfHud = null;
 try { perfHud = createPerfHud({ root: document.body }); } catch (e) { console.warn('[PERF] панель', e); }
 if (perfTuner) perfTuner.onChange((why, st) => {
@@ -1912,6 +2087,14 @@ function frame(now) {
   requestAnimationFrame(frame);
   // [PERF] предел кадров кратно частоте экрана: лишние вызовы rAF пропускаются (время и dt — от прошлого кадра)
   if (perfTuner && !perfTuner.beginFrame(now, UNCAPPED)) return;
+  // [W5-КАМЕРА] дешёвый кадр на время запуска камеры и предел стража в бою: ≈30 к/с. Пропуск — после beginFrame
+  // и без endFrame: автоподстройка видит обычный интервал кадра, а не «просадку до 30».
+  setCamWarm(camWarmNow());
+  if (app.camWarm && perfTuner) perfTuner.noteStall(now);
+  if ((app.camWarm || app.fightCap) && !UNCAPPED) {
+    if (now - app.camWarmDraw < CAM_WARM.gapMs) return;
+    app.camWarmDraw = now;
+  }
   const tFrame0 = performance.now();
   const raw = Math.max(0, (now - last) / 1000);
   last = now;
@@ -1986,7 +2169,7 @@ function frame(now) {
     events = checkEmbers(lastSnapshot, events);
     events = forestZoneEvents(events, lastSnapshot);   // [FOREST]
     challengeFrame(now, events);                       // [W3-CHALLENGE] очки, таймер, момент удара
-    if (lastSnapshot.status === 'victory' || lastSnapshot.status === 'defeat') finishCoach();   // [ТВИСТ «ОШИБКА»] итог — в историю (один раз; жесты финала уже не считаются)
+    if (lastSnapshot.status === 'victory' || lastSnapshot.status === 'defeat') { finishCoach(); finishFight(lastSnapshot.status === 'victory'); }   // [ТВИСТ «ОШИБКА»] итог — в историю (один раз; жесты финала уже не считаются); [W5-СЛОЖНОСТЬ] итог боя
     if (lastSnapshot.status === 'victory' || lastSnapshot.status === 'defeat') {
       // [FEEL] экран итогов — после замедленного финала (в дуэли и при «Уменьшенном движении» — короче)
       const win = lastSnapshot.status === 'victory';
@@ -2115,6 +2298,7 @@ function frame(now) {
 
   if (spirit) spirit.frame(dtReal, now, { screen: app.screen, debug: app.debug, vision, status: vision ? visionStatus() : null, input, events, snapshot: lastSnapshot, hero: heroModel ? heroModel.hero : settings.hero }); // [W3-SPIRIT]
   if (heroShowcase) { try { heroShowcase.update(dtReal, app.screen === 'menu', camera); } catch (e) { console.warn('[HERO] витрина', e); heroShowcase = null; if (heroModel && heroModel.setFloorLift) heroModel.setFloorLift(0); } } // [HERO] свет и облёт витрины; [W5-ПОЛ] без витрины — пол героя снова корень
+  if (app.camWarm) camWarmStage(true);   // [W5-КАМЕРА] без частиц и портала витрины, пока камера запускается
   if (pvpCtl) { try { pvpCtl.frame(lastSnapshot, app.screen); } catch (e) { console.error('[PVP] frame', e); } } // [PVP] фазы хоста, готовность, панель
   if (postfx && typeof postfx.setMode === 'function') { try { postfx.setMode(app.screen, settings); } catch (e) { /* ignore */ } } // [BDO] DOF меню и грейд по экрану
   if (postfx) feedPostFx(events);   // [W3-КИНО] и на low: цвет фаз, ранение, засветка
@@ -2145,8 +2329,9 @@ function frame(now) {
   // [PERF] статистика кадра → автоподстройка; распознавание → ей же; шейдеры заранее; панель F3
   if (perfTuner) {
     try {
-      perfTuner.setCalm(CALM_SCREENS.has(app.screen));
+      perfTuner.setCalm(CALM_SCREENS.has(app.screen) && !app.camWarm);   // [W5-КАМЕРА] уровень вверх — не во время запуска камеры
       perfVisionTick(now);
+      fightGuardTick(now);   // [W5-КАМЕРА]
       perfTuner.endFrame(performance.now(), performance.now() - tFrame0);
     } catch (e) { console.warn('[PERF] подстройка', e); }
   }
@@ -2172,14 +2357,31 @@ renderUI();
 // программы в своих потоках, главный поток свободен — модель героя разбирается и одевается параллельно, а первый
 // кадр не стоит несколько секунд. Экран загрузки («Сборка мира и героев…») остаётся до готовности, не дольше BOOT_COMPILE_MAX_MS.
 const BOOT_COMPILE_MAX_MS = 12000;
+// [W5-СТАРТ] Только то, что рисует меню: видимое и в кадре витрины (с запасом на облёт) плюс сцена витрины. Скрытое (пулы
+// эффектов, магия рук, сцены Регента) и то, что за кадром (лес, деревня), собирается в фоне после меню (backgroundCompile).
+// Раньше до снятия заставки ждали все программы сцены, в том числе нужные только в бою.
+function menuCompileSet() {
+  let frustum = null;
+  if (app.screen === 'menu' && heroShowcase) {
+    // поза камеры первого кадра меню: шаг витрины длиной 0 с (первый кадр сделает то же самое)
+    try { scene.updateMatrixWorld(); if (heroShowcase.update(0, true, camera)) frustum = menuFrustum(THREE, camera); } catch (e) { frustum = null; }
+  }
+  const list = menuDrawables(scene, { frustum });
+  console.info(`[perf] до меню — шейдеры ${list.length} объектов${frustum ? ' в кадре витрины' : ''}`);
+  return compileSet(list);
+}
 const bootCompile = PARALLEL_COMPILE && typeof renderer.compileAsync === 'function'
-  ? Promise.race([heroShowcaseP.then(() => renderer.compileAsync(scene, camera)).catch(() => null), new Promise((r) => setTimeout(r, BOOT_COMPILE_MAX_MS))])
+  ? Promise.race([heroShowcaseP.then(() => renderer.compileAsync(menuCompileSet(), camera, scene)).catch(() => null), new Promise((r) => setTimeout(r, BOOT_COMPILE_MAX_MS))])
   : Promise.resolve();
 const tBoot0 = performance.now();
 bootCompile.then(() => {
   console.info(`[perf] шейдеры мира до первого кадра: ${Math.round(performance.now() - tBoot0)} мс, программ ${renderer.info.programs ? renderer.info.programs.length : '?'}`);
   requestAnimationFrame(frame);
+  // [W5-СТАРТ] после первого кадра меню (rAF-колбэки идут по порядку: сначала frame) — веха и отложенный старт
+  requestAnimationFrame(() => { boot5.menuFrameAt = performance.now(); bootMark('menu-frame'); });
   boot.done();
+  bootMark('boot-done');
+  lateWatch(performance.now());
 });
 
 // Диагностика для QA (только чтение). Не используется игровой логикой.
@@ -2192,6 +2394,7 @@ window.__ASHEN__ = Object.freeze({
   get pauseReason() { return app.pauseReason; },
   get fps() { return Math.round(perf.fps); },
   perf: () => (perfTuner ? perfTuner.state() : null), // [PERF] автоподстройка: предел кадров, разрешение, уровень
+  camLoad: () => JSON.parse(JSON.stringify({ warm: app.camWarm, fightCap: app.fightCap, guard: camLoad.guard.state(), last: camLoad.guardLast, log: camLoad.warmLog, hidden: camLoad.hidden.map((o) => o.name) })), // [W5-КАМЕРА] QA: дешёвый кадр и страж трекинга
   programs: () => (renderer.info.programs || []).map((p) => ({ id: p.id, name: p.name, key: String(p.cacheKey).slice(0, 240) })), // [PERF] QA: какие шейдеры компилируются
   get tracking() { return visionStatus(); },
   hands: () => { try { const h = vision && vision.getHands(); return h ? JSON.parse(JSON.stringify({ ...h, left: h.left && { shape: h.left.shape, palmFacing: h.left.palmFacing, charge: h.left.charge }, right: h.right && { shape: h.right.shape, palmFacing: h.right.palmFacing, charge: h.right.charge } })) : null; } catch (e) { return null; } },

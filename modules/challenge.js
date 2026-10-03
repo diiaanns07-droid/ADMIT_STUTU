@@ -3,7 +3,7 @@
 //
 // Что здесь:
 //  - CHALLENGE — правила попытки: 60 с боя, фиксированный seed Регента (одинаковый порядок атак у всех),
-//    сложность «Лёгкая», отсчёт 3-2-1 перед стартом, пауза «ВРЕМЯ ВЫШЛО» перед итогами;
+//    своя сложность (прежняя «Лёгкая», combat 'challenge'), отсчёт 3-2-1 перед стартом, пауза «ВРЕМЯ ВЫШЛО» перед итогами;
 //  - scoreChallenge(tally) — очки: урон + лучшая серия + бонус за точность жестов + бонус за магию
 //    (события 'sigil_cast', 'rune_cast') и ультимейт (любое событие с «ultimate» в имени) + победа и
 //    оставшееся время; rankOf(score) — ранг S / A / B / C / D;
@@ -22,7 +22,7 @@
 export const CHALLENGE = Object.freeze({
   seconds: 60,
   seed: 20261002,          // одинаковый для всех порядок атак Регента
-  difficulty: 'easy',      // как у новичка по умолчанию: попытка честная и посильная с первого раза
+  difficulty: 'challenge', // [W5-СЛОЖНОСТЬ] своя сложность — прежняя «Лёгкая» (Регент −30%): попытка честная с первого раза, рекорды сравнимы
   countdownMs: 3000,       // 3-2-1 перед стартом (бой стоит)
   goMs: 700,               // «ВПЕРЁД!» держится после отсчёта
   timeUpMs: 1800,          // «ВРЕМЯ ВЫШЛО» поверх застывшего боя, потом — итоги
@@ -41,6 +41,14 @@ export const SCORE = Object.freeze({
   victory: 2500,           // Регент повержен
   perSecondLeft: 60,       // за каждую оставшуюся секунду при победе
 });
+
+// [W5-СЛОЖНОСТЬ] Обычный бой (не испытание): урон в очках — как у прежней «Лёгкой» (700 HP: Регент целиком = 7000) на
+// любом уровне; победа быстрее нормы уровня — FIGHT_PER_SECOND очков за каждую секунду (затянуть бой ради чар невыгодно);
+// затем множитель сложности (config.js combat.difficulty.*.scoreMul). Нормы — с запасом: в 1,5–2 раза дольше медианы
+// «среднего» бота (tools/balance_bot.mjs).
+export const FIGHT_DAMAGE_BASE = 700;
+export const FIGHT_PAR = Object.freeze({ easy: 240, normal: 330, hard: 420, nightmare: 480 });
+export const FIGHT_PER_SECOND = 30;
 
 export const RANKS = Object.freeze([
   Object.freeze({ id: 'S', min: 12000, title: 'Легенда арены' }),
@@ -133,11 +141,14 @@ export function createTally() {
 }
 
 // tally = { damage, maxCombo, accuracy (0–100 | null), gestures, magic, magicKinds, ultimates, victory, timeLeft }
+// [W5-СЛОЖНОСТЬ] + damageScale (обычный бой: урон в очках — как у Регента в FIGHT_DAMAGE_BASE HP), scoreMul и difficultyName —
+// множитель сложности отдельной строкой («Сложная» ×1,5, «Кошмар» ×2); без них — как раньше.
 export function scoreChallenge(tally) {
   const T = isObj(tally) ? tally : {};
   const parts = [];
   const dmg = Math.max(0, Math.round(num(T.damage)));
-  parts.push({ id: 'damage', label: 'Урон', detail: `${dmg}`, points: dmg * SCORE.damage });
+  const dScale = fin(T.damageScale) && T.damageScale > 0 ? T.damageScale : 1;
+  parts.push({ id: 'damage', label: 'Урон', detail: `${dmg}`, points: dmg * SCORE.damage * dScale });
   const combo = Math.max(0, Math.round(num(T.maxCombo)));
   parts.push({ id: 'combo', label: 'Лучшая серия', detail: combo ? `×${combo}` : '—', points: combo * SCORE.combo });
   const acc = fin(T.accuracy) ? clamp(Math.round(T.accuracy), 0, 100) : null;
@@ -151,9 +162,17 @@ export function scoreChallenge(tally) {
   parts.push({ id: 'magic', label: 'Магия и ультимейт', detail: magicDetail, points: magicPts });
   if (T.victory) {
     const left = Math.max(0, Math.floor(num(T.timeLeft)));
-    parts.push({ id: 'victory', label: 'Регент повержен', detail: left ? `+${left} с в запасе` : '', points: SCORE.victory + left * SCORE.perSecondLeft });
+    const rate = fin(T.perSecondLeft) && T.perSecondLeft >= 0 ? T.perSecondLeft : SCORE.perSecondLeft;   // [W5-СЛОЖНОСТЬ] обычный бой — своя цена секунды
+    const detail = left ? (T.fight ? `быстрее нормы на ${left} с` : `+${left} с в запасе`) : '';
+    parts.push({ id: 'victory', label: 'Регент повержен', detail, points: SCORE.victory + left * rate });
   }
   for (const p of parts) p.points = Math.max(0, Math.round(p.points));
+  const mul = fin(T.scoreMul) && T.scoreMul > 0 ? T.scoreMul : 1;
+  if (mul !== 1) {   // [W5-СЛОЖНОСТЬ]
+    const base = parts.reduce((s, p) => s + p.points, 0);
+    const nm = typeof T.difficultyName === 'string' && T.difficultyName ? `«${T.difficultyName}» ` : '';
+    parts.push({ id: 'difficulty', label: 'Сложность', detail: `${nm}×${String(mul).replace('.', ',')}`, points: Math.max(0, Math.round(base * (mul - 1))) });
+  }
   const total = parts.reduce((s, p) => s + p.points, 0);
   return { total, rank: rankOf(total), parts };
 }
@@ -207,6 +226,8 @@ function cleanEntry(e) {
     mode: e.mode === 'master' || e.mode === 'debug' ? e.mode : 'novice',
     hero: typeof e.hero === 'string' ? e.hero.slice(0, 24) : '',
     won: e.won === true,
+    diff: typeof e.diff === 'string' ? e.diff.slice(0, 16) : '',    // [W5-СЛОЖНОСТЬ] уровень сложности боя
+    sec: fin(e.sec) && e.sec > 0 ? Math.round(e.sec * 10) / 10 : null, // [W5-СЛОЖНОСТЬ] время боя, с
   };
 }
 export function sortHall(list) {
@@ -250,6 +271,7 @@ export function createHall(storage, { key = HALL_KEY, keep = HALL_KEEP, show = H
         id: `${t.toString(36)}-${(++seq).toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`,
         name: r.name || '', score: num(r.score), rank: r.rank, t, day: dayKey(t),
         acc: r.accuracy, dmg: r.damage, combo: r.maxCombo, mode: r.mode, hero: r.hero, won: !!r.won,
+        diff: r.difficulty, sec: r.elapsed,   // [W5-СЛОЖНОСТЬ]
       });
       const before = todays();
       const prevBest = before[0] || null;
@@ -355,13 +377,27 @@ export function createChallengeSession(rules = CHALLENGE) {
   };
 }
 
-// Итог попытки (или обычного боя) для экрана, зала славы и постера
-export function buildResult({ tally, snap, coach, session, kind = 'challenge', mode = 'novice', hero = '', heroName = '' } = {}) {
+// Итог попытки (или обычного боя) для экрана, зала славы и постера.
+// [W5-СЛОЖНОСТЬ] difficulty = { level, name, scoreMul } (combat.getDifficulty + название): в обычном бою урон в очках —
+// как у прежней «Лёгкой» (FIGHT_DAMAGE_BASE), победа быстрее нормы — бонус за секунды, затем множитель сложности.
+// «Испытание» — без изменений.
+export function buildResult({ tally, snap, coach, session, kind = 'challenge', mode = 'novice', hero = '', heroName = '', difficulty = null } = {}) {
   const T = tally && typeof tally.read === 'function' ? tally.read(snap, coach) : {};
   const won = !!(snap && snap.status === 'victory');
   const timeLeft = session ? session.timeLeft() : 0;
-  const sc = scoreChallenge({ ...T, victory: won, timeLeft: kind === 'challenge' ? timeLeft : 0 });
+  const D = isObj(difficulty) ? difficulty : {};
+  const maxHp = num(snap && snap.boss && snap.boss.maxHp);
+  const fight = kind === 'fight';
+  const scoreMul = fight && fin(D.scoreMul) && D.scoreMul > 0 ? D.scoreMul : 1;
+  const par = fight && typeof D.level === 'string' && FIGHT_PAR[D.level] ? FIGHT_PAR[D.level] : 0;
+  const fightLeft = par && won ? Math.max(0, par - num(snap && snap.time)) : 0;
+  const sc = scoreChallenge({
+    ...T, victory: won, timeLeft: kind === 'challenge' ? timeLeft : fightLeft,
+    damageScale: fight && maxHp > 0 ? FIGHT_DAMAGE_BASE / maxHp : 1, scoreMul, difficultyName: typeof D.name === 'string' ? D.name : '',
+    fight, perSecondLeft: fight ? FIGHT_PER_SECOND : undefined,
+  });
   return {
+    difficulty: typeof D.level === 'string' ? D.level : '', difficultyName: typeof D.name === 'string' ? D.name : '', scoreMul,   // [W5-СЛОЖНОСТЬ]
     kind, score: sc.total, rank: sc.rank, rankTitle: rankInfo(sc.rank).title, parts: sc.parts, next: nextRank(sc.total),
     outcome: kind === 'challenge' ? (session && session.outcome) || (won ? 'victory' : 'timeup') : won ? 'victory' : 'defeat',
     won, timeLeft, elapsed: kind === 'challenge' && session ? session.elapsed() : num(snap && snap.time),

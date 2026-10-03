@@ -23,6 +23,17 @@
  *      attack→recover→idle с переносом остатка, чтобы темп не зависел от FPS.
  *      Задержка старта атаки до начала кадра (< 1 кадра) вычитается из следующего
  *      idle, поэтому ошибка расписания ограничена и не накапливается.
+ *
+ * [W5-СЛОЖНОСТЬ] ПОВЕДЕНИЕ ПО СЛОЖНОСТИ. Уровень приходит в снимке (snapshot.difficulty — его ставит
+ * combat.setDifficulty) или через brain.setDifficulty(level). «Лёгкая», «Обычная» и «Испытание» — начальный
+ * баланс без изменений; «Сложная» и «Кошмар» — профили BOSS_DIFFICULTY поверх него:
+ *   короче замахи и паузы, раньше вторая стадия, упреждение прицела (удар и сфера — туда, куда идёт герой),
+ *   связки (следующая атака сразу после удара, без окна отдыха), новые приёмы в мешке атак:
+ *   'double' — двойной удар ладонью, 'volley' — залп сфер веером, 'trap' — «Каменный капкан» (Кошмар:
+ *   несколько кругов удара на полу вокруг героя, выход — рывок поперёк), и финт (замах обрывается —
+ *   decision.cancelIds — и сразу начинается настоящая атака с полным честным замахом).
+ *   Честность для камеры: любой замах не короче FAIR_MIN_WINDUP (0,45 с), реакции (cvLatency + human + margin)
+ *   и cue + lead — «!» над Регентом успевает у каждой атаки; профили только сужают этот запас, не отменяют.
  */
 
 export const BOSS_API_VERSION = 'ASHEN_V1';
@@ -32,7 +43,11 @@ export const BOSS_API_VERSION = 'ASHEN_V1';
  * [FEEL] Подписи телеграфа для HUD: как называется атака и чем на неё ответить. Ответ честный:
  * щит предлагается только для blockable-атак (удар ладонью щитом не держится — только уйти).
  */
-export function telegraphCounter(kind, blockable) {
+export function telegraphCounter(kind, blockable, move) {
+  // [W5-СЛОЖНОСТЬ] составные приёмы «Сложной» и «Кошмара» — свои подписи (ответ тот же, что у базового вида)
+  if (move === 'double') return { name: 'ДВОЙНОЙ УДАР', counter: 'РЫВОК из круга — и ещё раз' };
+  if (move === 'volley') return { name: 'ЗАЛП СФЕР', counter: blockable ? 'ЩИТ — держи до последней' : 'РЫВОК с линии' };
+  if (move === 'trap') return { name: 'КАМЕННЫЙ КАПКАН', counter: 'РЫВОК к Регенту или от него' };
   const name = kind === 'slam' ? 'УДАР ЛАДОНЬЮ' : kind === 'orb' ? 'СФЕРА' : kind === 'nova' ? 'НОВА' : 'АТАКА';
   let counter;
   if (kind === 'slam') counter = blockable ? 'ЩИТ или РЫВОК из круга' : 'РЫВОК — уйди из круга';
@@ -45,6 +60,15 @@ export function telegraphCounter(kind, blockable) {
 export const BOSS_TIME_EPSILON = 1e-6;
 
 const KINDS = Object.freeze(['slam', 'orb', 'nova']);
+// [W5-СЛОЖНОСТЬ] приёмы в мешке атак: базовые виды + составные. Составной приём — несколько AttackSpec
+// базовых видов (визуал и разрешение удара — как у обычных, новой графики не нужно).
+const MOVES = Object.freeze(['slam', 'orb', 'nova', 'double', 'volley', 'trap']);
+const BASE_OF_MOVE = Object.freeze({ slam: 'slam', orb: 'orb', nova: 'nova', double: 'slam', volley: 'orb', trap: 'slam' });
+/** [W5-СЛОЖНОСТЬ] Абсолютный пол замаха: задержка камеры 100–200 мс + реакция — короче не бывает ни на одном уровне. */
+export const FAIR_MIN_WINDUP = 0.45;
+// [W5-СЛОЖНОСТЬ] финт обрывает замах не позже чем за FEINT_CUE_MARGIN до «!» и не раньше FEINT_MIN_SHOWN от начала
+const FEINT_CUE_MARGIN = 0.1;
+const FEINT_MIN_SHOWN = 0.2;
 
 /**
  * Начальный баланс. Пары [стадия1, стадия2]. Это настраиваемые предположения
@@ -92,7 +116,97 @@ export const DEFAULT_BOSS_CONFIG = deepFreeze({
       radius: [9.5, 9.5], damage: [22, 26], blockable: true,
     },
   },
+  // [W5-СЛОЖНОСТЬ] Приёмы «Сложной» и «Кошмара». В начальном балансе выключены (нули), пары [стадия1, стадия2].
+  aimLead: [0, 0],           // упреждение: доля пути героя за время до удара (0 — бьёт туда, где герой сейчас)
+  aimLeadMax: 4.5,           // м: дальше упреждение не выносится
+  chain: {
+    chance: [0, 0],          // после удара — сразу следующая атака (без recover и паузы) с этой вероятностью
+    gap: 0.15,               // с: пауза между ударом и замахом связки
+    windupMul: 0.85,         // замах связки короче (но не ниже пола честности)
+  },
+  feint: { chance: [0, 0], at: [0.35, 0.6] }, // финт: замах обрывается на доле at — и сразу настоящая атака
+  double: { windup: 0.8 },   // второй удар «двойного удара»: замах (не ниже пола), цель — куда ушёл герой
+  volley: { count: 3, spreadDeg: 14, stagger: 0.18, damageMul: 0.8 }, // залп сфер веером, сферы — одна за другой
+  trap: { count: 3, spacing: 2.9, windup: [1.2, 1.05], damageMul: 0.9 }, // «Каменный капкан»: круги вдоль пути героя
+  // [W5-ДАЛЬНОСТЬ] герой может отойти от арены (свободный ход: бой держится до r арены + leash ≈ 19 м) и бить издали,
+  // а удар ладонью прижимался к арене (10 м), nova — 9,5 м. reach — до какого радиуса удар ладонью и капкан достают
+  // героя (0 — граница арены, как раньше); farPressure.dist — дальше этого от Регента он не тратит ход на nova
+  // (не достанет), а бьёт тем, что долетает: удар ладонью, сферы, залп.
+  reach: 0,
+  farPressure: { dist: 0 },
 });
+
+/**
+ * [W5-СЛОЖНОСТЬ] Поведение Регента по сложности — поверх начального баланса (createBossBrain(config) — база).
+ * easy / normal / challenge / base: null — начальный баланс без изменений («Испытание» и прежние тесты те же).
+ * Замахи: «Сложная» — от 0,85 с (cue 0,7 + lead 0,15), «Кошмар» — от 0,7 с (0,58 + 0,12); оба выше FAIR_MIN_WINDUP.
+ */
+export const BOSS_DIFFICULTY = deepFreeze({
+  easy: null,
+  normal: null,
+  hard: {
+    openingDelay: 2.0,
+    stage2Threshold: 0.6,    // вторая стадия раньше: при 60% здоровья
+    shiftDuration: 1.6,
+    reaction: { cvLatency: 0.2, human: 0.45, margin: 0.1 },
+    telegraph: { cue: 0.7, lead: 0.15 },
+    minRecover: 0.5,
+    // серии с передышками: связки и составные приёмы, между сериями — пауза (угроз в минуту ненамного больше, чем
+    // на «Обычной», но каждая требует ответа — упреждение не даёт автоходу уйти самому)
+    idle: { base: [2.3, 1.8], jitter: [0.4, 0.3] },
+    bag: {
+      stage1: { slam: 1, orb: 2, nova: 1, double: 1, volley: 1, trap: 0 },
+      stage2: { slam: 1, orb: 1, nova: 1, double: 2, volley: 2, trap: 0 },
+    },
+    novaMinGap: [3, 3],
+    aimLead: [0.45, 0.6],
+    chain: { chance: [0.25, 0.35], gap: 0.15, windupMul: 0.9 },
+    feint: { chance: [0.1, 0.15], at: [0.35, 0.6] },
+    double: { windup: 1.0 },
+    volley: { count: 3, spreadDeg: 14, stagger: 0.18, damageMul: 0.8 },
+    reach: 20,               // [W5-ДАЛЬНОСТЬ] удар ладонью достаёт и за ареной — издали не отстояться
+    farPressure: { dist: 10 },
+    attacks: {
+      slam: { windup: [1.3, 1.15], recover: [1.0, 0.85], damage: [15, 17] },
+      orb: { windup: [1.05, 0.95], recover: [0.85, 0.7], speed: [12, 13.5] },
+      nova: { windup: [1.65, 1.45], recover: [1.25, 1.05], damage: [24, 28], radius: [11.5, 12] },
+    },
+  },
+  nightmare: {
+    openingDelay: 1.6,
+    stage2Threshold: 0.7,    // вторая стадия почти сразу — при 70% здоровья
+    shiftDuration: 1.3,
+    reaction: { cvLatency: 0.15, human: 0.4, margin: 0.1 },
+    telegraph: { cue: 0.58, lead: 0.12 },
+    minRecover: 0.4,
+    idle: { base: [2.0, 1.6], jitter: [0.35, 0.3] },
+    bag: {
+      stage1: { slam: 2, orb: 1, nova: 1, double: 1, volley: 1, trap: 1 },
+      stage2: { slam: 1, orb: 1, nova: 1, double: 2, volley: 2, trap: 2 },
+    },
+    novaMinGap: [2, 2],
+    aimLead: [0.75, 0.9],
+    chain: { chance: [0.35, 0.45], gap: 0.12, windupMul: 0.85 },
+    feint: { chance: [0.15, 0.2], at: [0.3, 0.55] },
+    double: { windup: 0.8 },
+    volley: { count: 4, spreadDeg: 12, stagger: 0.16, damageMul: 0.8 },
+    trap: { count: 3, spacing: 2.9, windup: [1.05, 0.95], damageMul: 0.9 },
+    reach: 22,               // [W5-ДАЛЬНОСТЬ]
+    farPressure: { dist: 9 },
+    attacks: {
+      slam: { windup: [1.1, 0.95], recover: [0.8, 0.65], radius: [2.2, 2.3] },
+      orb: { windup: [0.9, 0.8], recover: [0.65, 0.55], speed: [13, 14.5] },
+      nova: { windup: [1.4, 1.2], recover: [1.0, 0.85], radius: [12, 12] },   // предел combat.bossAttack.maxRadius
+    },
+  },
+});
+
+/** [W5-СЛОЖНОСТЬ] Уровень из снимка: строка или { level }. Неизвестное — null (начальный баланс). */
+export function difficultyOfSnapshot(s) {
+  const d = isObj(s) ? s.difficulty : null;
+  const lv = typeof d === 'string' ? d : isObj(d) && typeof d.level === 'string' ? d.level : null;
+  return lv;
+}
 
 /** [FEEL] За сколько секунд до удара HUD ставит «!» над Регентом — из начального баланса (telegraph.cue). */
 export const BOSS_CUE_SEC = DEFAULT_BOSS_CONFIG.telegraph.cue;
@@ -104,8 +218,27 @@ const ACTION_OF_PHASE = Object.freeze({
 });
 
 export function createBossBrain(config) {
-  const cfg = normalizeConfig(config);
+  // [W5-СЛОЖНОСТЬ] база (config) + профиль уровня; нормализованные конфиги — в кэше по уровню
+  const baseInput = isObj(config) ? config : {};
+  const cfgCache = new Map();
+  let level = null;
+  let cfg = configFor(null);
   let st = freshState();
+
+  function configFor(lv) {
+    const key = lv && BOSS_DIFFICULTY[lv] ? lv : '';
+    if (!cfgCache.has(key)) cfgCache.set(key, normalizeConfig(key ? withProfile(baseInput, BOSS_DIFFICULTY[key]) : baseInput));
+    return cfgCache.get(key);
+  }
+  // Сменить уровень: со следующего кадра. Пока бой не начался (пауза перед первой атакой) — и пауза по уровню.
+  function useLevel(lv) {
+    const next = typeof lv === 'string' && lv ? lv : null;
+    if (next === level) return;
+    level = next;
+    const prevOpening = cfg.openingDelay;
+    cfg = configFor(level);
+    if (st.phase === 'idle' && st.idCounter === 0 && st.phaseDuration === prevOpening) st.phaseDuration = cfg.openingDelay;
+  }
 
   function freshState() {
     return {
@@ -123,10 +256,12 @@ export function createBossBrain(config) {
       bag: [],
       history: [],
       attacksSinceNova: Infinity,
-      current: null,   // только в windup/attack: {id, kind, attackDur, recover, aim}
+      current: null,   // только в windup/attack: {id, ids, kind, move, attackDur, recover, aim, feintAt}
       lag: 0,
       shifts: 0,
       lastSnapshotTime: null,
+      followUp: null,  // [W5-СЛОЖНОСТЬ] связка: { move|null, windupMul, windup } — следующая атака без отдыха
+      chains: 0, feints: 0,
     };
   }
 
@@ -162,6 +297,7 @@ export function createBossBrain(config) {
     st.shifts += 1;
     st.bag = [];
     st.current = null;
+    st.followUp = null;
     st.forced = (st.introQueue.length === 0 && cfg.stage2Opener) ? cfg.stage2Opener : null;
     out.stageChanged = true;
     setPhase('shift', Math.max(cfg.shiftDuration, minDuration), carry);
@@ -169,6 +305,7 @@ export function createBossBrain(config) {
 
   function enterDead() {
     st.current = null;
+    st.followUp = null;
     st.stage2Pending = false;
     setPhase('dead', Infinity, 0);
   }
@@ -185,6 +322,8 @@ export function createBossBrain(config) {
     }
     return true;
   }
+  const moveAllowed = (move, snap) => isAllowed(BASE_OF_MOVE[move] || move, snap);
+  let windupMulHint = 1;   // [W5-СЛОЖНОСТЬ] множитель замаха выбираемой атаки (связка короче) — для честности новы
 
   // NOVA честна, если у игрока есть реальная контригра: энергия на щит
   // или рывок, который успеет перезарядиться до удара.
@@ -192,7 +331,8 @@ export function createBossBrain(config) {
     const f = cfg.novaFairness;
     const energyKnown = isNum(snap.energy) && isNum(snap.maxEnergy) && snap.maxEnergy > 0;
     const energyOk = !energyKnown || snap.energy >= snap.maxEnergy * f.minEnergyFraction;
-    const windup = cfg.attacks.nova.windup[i];
+    // [W5-СЛОЖНОСТЬ] нова из связки — с укороченным замахом: проверяем тот замах, который будет на самом деле
+    const windup = windupMulHint === 1 ? cfg.attacks.nova.windup[i] : Math.max(cfg.windupFloor, cfg.attacks.nova.windup[i] * windupMulHint);
     const dashOk = isNum(snap.dashRemaining) && snap.dashRemaining <= Math.max(0, windup - f.dashSlack);
     return energyOk || dashOk;
   }
@@ -206,7 +346,7 @@ export function createBossBrain(config) {
   function makeBag() {
     const counts = st.stage === 1 ? cfg.bag.stage1 : cfg.bag.stage2;
     const arr = [];
-    for (const k of KINDS) for (let c = 0; c < counts[k]; c++) arr.push(k);
+    for (const k of MOVES) for (let c = 0; c < (counts[k] || 0); c++) arr.push(k);
     for (let i = arr.length - 1; i > 0; i--) { // Fisher–Yates на seed-ГПСЧ
       const j = Math.floor(st.rng() * (i + 1));
       const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
@@ -215,6 +355,7 @@ export function createBossBrain(config) {
   }
 
   function chooseKind(snap) {
+    if (st.introQueue[0] === 'nova' && isFar(snap)) st.introQueue.shift();   // [W5-ДАЛЬНОСТЬ] nova издали не достанет
     if (st.introQueue.length > 0) {
       const k = st.introQueue[0];
       if (isAllowed(k, snap)) { st.introQueue.shift(); return k; }
@@ -226,65 +367,168 @@ export function createBossBrain(config) {
       if (isAllowed(k, snap)) return k;
     }
     if (st.bag.length === 0) st.bag = makeBag();
+    // [W5-ДАЛЬНОСТЬ] герой далеко — сначала ходы, которые до него долетают (nova остаётся в мешке на потом)
+    if (isFar(snap)) {
+      for (let i = 0; i < st.bag.length; i++) {
+        if (BASE_OF_MOVE[st.bag[i]] !== 'nova' && moveAllowed(st.bag[i], snap)) return st.bag.splice(i, 1)[0];
+      }
+      if (isAllowed('slam', snap)) return 'slam';
+      if (isAllowed('orb', snap)) return 'orb';
+    }
     for (let i = 0; i < st.bag.length; i++) {
-      if (isAllowed(st.bag[i], snap)) return st.bag.splice(i, 1)[0];
+      if (moveAllowed(st.bag[i], snap)) return st.bag.splice(i, 1)[0];
     }
     return fallbackKind(snap);
   }
 
-  function beginAttack(snap) {
-    const kind = chooseKind(snap);
+  function isFar(snap) {
+    const d = cfg.farPressure.dist;
+    if (!(d > 0) || !snap.playerPos || !snap.bossPos) return false;
+    return Math.hypot(snap.playerPos.x - snap.bossPos.x, snap.playerPos.z - snap.bossPos.z) > d;
+  }
+  // [W5-ДАЛЬНОСТЬ] докуда удар ладонью и упреждение достают героя (не ближе границы арены)
+  function reachRadius() { return Math.max(cfg.arenaRadius, cfg.reach); }
+
+  // [W5-СЛОЖНОСТЬ] упреждение: куда придёт герой за t секунд (доля aimLead пути, не дальше aimLeadMax)
+  function leadPoint(snap, t) {
+    const p = snap.playerPos, v = snap.playerVel, k = cfg.aimLead[st.stage - 1];
+    if (!(k > 0) || !v) return { x: p.x, y: p.y, z: p.z };
+    let dx = v.x * t * k, dz = v.z * t * k;
+    const d = Math.hypot(dx, dz);
+    if (d > cfg.aimLeadMax) { dx *= cfg.aimLeadMax / d; dz *= cfg.aimLeadMax / d; }
+    return clampToArena({ x: p.x + dx, y: p.y, z: p.z + dz }, reachRadius());
+  }
+
+  function makeSpec(kind, windup, snap, opt) {
+    const o = opt || {};
     const i = st.stage - 1;
     const a = cfg.attacks[kind];
     const b = snap.bossPos;
-    const p = snap.playerPos;
     let origin;
     let target;
-    let aim;
     let projectileSpeed = 0;
-
     if (kind === 'slam') {
       origin = { x: b.x, y: 0, z: b.z };
-      target = clampToArena({ x: p.x, y: 0, z: p.z }, cfg.arenaRadius);
-      aim = copyVec(target);
+      const c = o.at || leadPoint(snap, windup);
+      target = clampToArena({ x: c.x, y: 0, z: c.z }, reachRadius());
     } else if (kind === 'orb') {
-      const dx = p.x - b.x;
-      const dz = p.z - b.z;
+      const p0 = o.at || snap.playerPos;
+      const dx = p0.x - b.x;
+      const dz = p0.z - b.z;
       const dist = Math.hypot(dx, dz);
       const ux = dist > 1e-4 ? dx / dist : 0;
       const uz = dist > 1e-4 ? dz / dist : 1;
       const fwd = Math.min(a.originForward, dist * 0.5);
       origin = { x: b.x + ux * fwd, y: b.y + a.originHeight, z: b.z + uz * fwd };
-      target = { x: p.x, y: p.y, z: p.z };
-      aim = copyVec(target);
       projectileSpeed = a.speed[i];
+      // упреждение сферы: замах + полёт
+      const p = o.at ? p0 : leadPoint(snap, windup + Math.max(0, dist - fwd) / projectileSpeed);
+      target = { x: p.x, y: snap.playerPos.y, z: p.z };
     } else {
       origin = { x: b.x, y: 0, z: b.z };
       target = { x: b.x, y: 0, z: b.z };
-      aim = { x: p.x, y: 0, z: p.z };
     }
-
     st.idCounter += 1;
-    const spec = {
+    return {
       id: 'boss-' + st.idCounter + '-' + kind,
       kind,
       origin,
       target,
-      windup: a.windup[i],
+      windup,
       radius: a.radius[i],
-      damage: a.damage[i],
+      damage: Math.round(a.damage[i] * (isNum(o.damageMul) ? o.damageMul : 1)),
       blockable: a.blockable,
       projectileSpeed,
       stage: st.stage, // расширение: для визуала стадии
-      cue: Math.min(cfg.telegraph.cue, a.windup[i]), // [FEEL] расширение: за сколько секунд до удара «!» над Регентом
+      cue: Math.min(cfg.telegraph.cue, windup), // [FEEL] расширение: за сколько секунд до удара «!» над Регентом
+      ...(o.move && o.move !== kind ? { move: o.move } : {}), // [W5-СЛОЖНОСТЬ] расширение: составной приём (подпись HUD)
     };
+  }
 
-    st.current = { id: spec.id, kind, attackDur: a.attack, recover: a.recover[i], aim };
+  // Выпуск атаки (одного или нескольких AttackSpec) в начале кадра. Возвращает массив.
+  function beginAttack(snap, opts) {
+    const o = opts || {};
+    const fu = o.followUp || null;
+    windupMulHint = fu && !fu.move && fu.windupMul ? fu.windupMul : 1;
+    const move = fu && fu.move && !(BASE_OF_MOVE[fu.move] === 'nova' && isFar(snap)) ? fu.move : chooseKind(snap);   // [W5-ДАЛЬНОСТЬ]
+    windupMulHint = 1;
+    const label = fu && fu.from ? fu.from : move;   // второй удар «двойного» подписан как «двойной»
+    const kind = BASE_OF_MOVE[move] || 'slam';
+    const i = st.stage - 1;
+    const a = cfg.attacks[kind];
+    const fair = (w) => Math.max(cfg.windupFloor, w);
+    let windup = fu ? fair(fu.windup !== undefined ? fu.windup : a.windup[i] * fu.windupMul) : a.windup[i];
+    const specs = [];
+    if (move === 'volley') {
+      // залп: сферы веером вокруг упреждённой точки, каждая следующая — позже на stagger
+      const V = cfg.volley;
+      const b = snap.bossPos;
+      const c = leadPoint(snap, windup + 0.4);
+      const n = V.count;
+      for (let k = 0; k < n; k++) {
+        const ang = ((k - (n - 1) / 2) * V.spreadDeg) * Math.PI / 180;
+        const dx = c.x - b.x, dz = c.z - b.z;
+        const cs = Math.cos(ang), sn = Math.sin(ang);
+        const at = { x: b.x + dx * cs - dz * sn, y: snap.playerPos.y, z: b.z + dx * sn + dz * cs };
+        specs.push(makeSpec('orb', windup + k * V.stagger, snap, { at, damageMul: V.damageMul, move }));
+      }
+    } else if (move === 'trap') {
+      // «Каменный капкан»: круги вдоль пути героя (по касательной к обходу), выход — поперёк, к Регенту или от него
+      const T = cfg.trap;
+      windup = fu ? windup : fair(T.windup[i]);
+      const c = leadPoint(snap, windup);
+      const b = snap.bossPos;
+      const rx = c.x - b.x, rz = c.z - b.z, r = Math.hypot(rx, rz) || 1;
+      const tx = -rz / r, tz = rx / r;
+      const n = T.count;
+      for (let k = 0; k < n; k++) {
+        const off = (k - (n - 1) / 2) * T.spacing;
+        specs.push(makeSpec('slam', windup, snap, { at: { x: c.x + tx * off, y: 0, z: c.z + tz * off }, damageMul: T.damageMul, move }));
+      }
+    } else {
+      specs.push(makeSpec(kind, windup, snap, { move: label }));
+    }
+    const last = specs[specs.length - 1];
+    const aim = kind === 'nova' ? { x: snap.playerPos.x, y: 0, z: snap.playerPos.z } : copyVec(last.target);
+    // финт: только у обычной атаки не из связки; замах оборвётся на доле at (feintAt — от начала замаха)
+    let feintAt = null;
+    if (!fu && !o.noFeint && specs.length === 1 && cfg.feint.chance[i] > 0 && st.rng() < cfg.feint.chance[i]) {
+      const f = cfg.feint.at;
+      const at = windup * (f[0] + st.rng() * Math.max(0, f[1] - f[0]));
+      // обрыв — до «!» над Регентом: «!» значит «удар будет», после него финта нет (замах слишком короткий — без финта)
+      const latest = windup - Math.min(cfg.telegraph.cue, windup) - FEINT_CUE_MARGIN;
+      if (latest >= FEINT_MIN_SHOWN) feintAt = Math.min(at, latest);
+    }
+    st.current = {
+      id: last.id, ids: specs.map((s) => s.id), kind, move,
+      attackDur: a.attack, recover: a.recover[i], aim, feintAt,
+      // [W5-СЛОЖНОСТЬ] залп: у каждой сферы свой момент удара — impactIds в свой кадр (по возрастанию замаха)
+      impacts: specs.map((sp) => ({ id: sp.id, at: sp.windup })).sort((x, y) => x.at - y.at),
+    };
     st.history.push(kind);
     if (st.history.length > 4) st.history.shift();
     st.attacksSinceNova = kind === 'nova' ? 0 : st.attacksSinceNova + 1;
-    setPhase('windup', spec.windup, 0);
-    return spec;
+    // двойной удар: второй удар — связкой сразу после первого, туда, куда ушёл герой
+    st.followUp = move === 'double' ? { move: 'slam', windup: cfg.double.windup, from: 'double' } : null;
+    setPhase('windup', Math.max(...specs.map((s) => s.windup)), 0);
+    return specs;
+  }
+
+  // После удара: связка (сразу следующая атака) или обычный отдых
+  function afterAttack(out, carry) {
+    const rec = st.current.recover;
+    st.current = null;
+    if (st.stage2Pending) { st.followUp = null; enterShift(out, carry, rec); return; }
+    const i = st.stage - 1;
+    if (!st.followUp && cfg.chain.chance[i] > 0 && st.introQueue.length === 0 && st.rng() < cfg.chain.chance[i]) {
+      st.followUp = { move: null, windupMul: cfg.chain.windupMul };
+    }
+    if (st.followUp) {
+      st.chains += 1;
+      setPhase('idle', cfg.chain.gap, carry);
+      return;
+    }
+    setPhase('recover', rec, carry);
   }
 
   function finish(out) {
@@ -306,6 +550,8 @@ export function createBossBrain(config) {
     if (st.phase === 'dead') return finish(out);
     if (!snapshot || typeof snapshot !== 'object') return finish(out); // нет данных — время не идёт
 
+    const lvSnap = difficultyOfSnapshot(snapshot); // [W5-СЛОЖНОСТЬ] уровень из снимка (combat.setDifficulty)
+    if (lvSnap !== null) useLevel(lvSnap);
     const snap = readSnapshot(snapshot);
     st.lastSnapshotTime = snap.time;
 
@@ -314,6 +560,7 @@ export function createBossBrain(config) {
     if (snap.playerDead) {
       st.halted = true;
       st.current = null;
+      st.followUp = null;
       st.stage2Pending = false;
       setPhase('idle', Infinity, 0);
       return finish(out);
@@ -328,9 +575,20 @@ export function createBossBrain(config) {
     if (st.stage2Pending && (st.phase === 'idle' || st.phase === 'recover')) {
       enterShift(out, 0, 0);
     }
+    // [W5-СЛОЖНОСТЬ] финт: замах обрывается (combat снимает телеграфы по cancelIds) — и сразу настоящая атака
+    if (st.phase === 'windup' && st.current && st.current.feintAt !== null &&
+        st.phaseElapsed >= st.current.feintAt - BOSS_TIME_EPSILON) {
+      out.cancelIds = st.current.ids.slice();
+      st.current = null;
+      st.feints += 1;
+      out.attacks.push(...beginAttack(snap, { noFeint: true }));
+    }
     if (st.phase === 'idle' && reached()) {
       st.lag = clamp(st.phaseElapsed - st.phaseDuration, 0, cfg.maxDt);
-      out.attacks.push(beginAttack(snap));
+      const fu = st.followUp;
+      st.followUp = null;
+      if (fu) st.lag = 0;
+      out.attacks.push(...beginAttack(snap, { followUp: fu }));
     }
 
     // --- продвижение ---
@@ -338,16 +596,18 @@ export function createBossBrain(config) {
     st.phaseElapsed += step;
 
     // --- конец кадра ---
+    if (st.phase === 'windup' && st.current) {
+      const im = st.current.impacts;
+      while (im.length > 1 && im[0].at <= st.phaseElapsed + BOSS_TIME_EPSILON) out.impactIds.push(im.shift().id);
+    }
     for (let guard = 0; guard < 6 && reached(); guard++) {
       const carry = Math.max(0, st.phaseElapsed - st.phaseDuration);
       if (st.phase === 'windup') {
-        out.impactIds.push(st.current.id);
+        out.impactIds.push(...st.current.impacts.map((x) => x.id));
         setPhase('attack', st.current.attackDur, carry);
       } else if (st.phase === 'attack') {
-        const rec = st.current.recover;
-        st.current = null;
-        if (st.stage2Pending) enterShift(out, carry, rec);
-        else setPhase('recover', rec, carry);
+        afterAttack(out, carry);
+        if (st.phase === 'idle') break; // связка: замах — в начале следующего кадра
       } else if (st.phase === 'recover' || st.phase === 'shift') {
         enterIdle(carry);
       } else {
@@ -379,10 +639,18 @@ export function createBossBrain(config) {
       bag: st.bag.slice(),
       history: st.history.slice(),
       shifts: st.shifts,
+      // [W5-СЛОЖНОСТЬ]
+      level,
+      currentMove: st.current ? st.current.move : null,
+      chains: st.chains,
+      feints: st.feints,
     };
   }
 
-  return { reset, update, getDebug, getConfig: () => cfg };
+  // [W5-СЛОЖНОСТЬ] уровень напрямую (тесты, стенды); в игре он приходит в снимке от combat
+  function setDifficulty(lv) { useLevel(lv); return level; }
+
+  return { reset, update, getDebug, getConfig: () => cfg, setDifficulty };
 }
 
 /**
@@ -460,7 +728,24 @@ function readSnapshot(s) {
     energy: player.energy,
     maxEnergy: player.maxEnergy,
     dashRemaining: cd.dashRemaining,
+    playerVel: isObj(player.velocity) && isNum(player.velocity.x) && isNum(player.velocity.z)   // [W5-СЛОЖНОСТЬ] для упреждения
+      ? { x: player.velocity.x, z: player.velocity.z } : null,
   };
+}
+
+// [W5-СЛОЖНОСТЬ] профиль уровня поверх базы: объекты сливаются по ключам, числа и массивы — заменяются
+function withProfile(input, profile) {
+  const raw = isObj(input) ? input : {};
+  const src = isObj(raw.boss)
+    ? Object.assign({}, raw.boss, { seed: raw.boss.seed !== undefined ? raw.boss.seed : raw.seed })
+    : raw;
+  return mergeDeep(src, profile);
+}
+function mergeDeep(a, b) {
+  if (!isObj(b)) return a;
+  const out = Object.assign({}, isObj(a) ? a : {});
+  for (const k of Object.keys(b)) out[k] = isObj(b[k]) ? mergeDeep(out[k], b[k]) : b[k];
+  return out;
 }
 
 function normalizeConfig(input) {
@@ -479,7 +764,7 @@ function normalizeConfig(input) {
   };
   const ts = o(src.telegraph);
   const telegraph = { cue: clamp(num(ts.cue, D.telegraph.cue, 0), 0, 3), lead: clamp(num(ts.lead, D.telegraph.lead, 0), 0, 2) };
-  const windupFloor = Math.max(num(src.minWindup, D.minWindup, 0),
+  const windupFloor = Math.max(FAIR_MIN_WINDUP, num(src.minWindup, D.minWindup, 0),   // [W5-СЛОЖНОСТЬ] пол 0,45 с
     reaction.cvLatency + reaction.human + reaction.margin, telegraph.cue + telegraph.lead);
   const minRecover = num(src.minRecover, D.minRecover, 0);
 
@@ -521,7 +806,39 @@ function normalizeConfig(input) {
 
   const thr = src.stage2Threshold;
 
+  // [W5-СЛОЖНОСТЬ] приёмы «Сложной» и «Кошмара» (в начальном балансе — нули)
+  const ch = o(src.chain), fe = o(src.feint), db = o(src.double), vo = o(src.volley), tr = o(src.trap);
+  const chance = (v, d) => pair(v, d, 0).map((x) => clamp(x, 0, 0.9));
+  const extra = {
+    aimLead: pair(src.aimLead, D.aimLead, 0).map((x) => clamp(x, 0, 1.2)),
+    aimLeadMax: num(src.aimLeadMax, D.aimLeadMax, 0),
+    chain: {
+      chance: chance(ch.chance, D.chain.chance),
+      gap: num(ch.gap, D.chain.gap, 0.05),
+      windupMul: clamp(num(ch.windupMul, D.chain.windupMul, 0.3), 0.3, 1),
+    },
+    feint: { chance: chance(fe.chance, D.feint.chance), at: pair(fe.at, D.feint.at, 0.1).map((x) => clamp(x, 0.1, 0.7)) },
+    double: { windup: Math.max(windupFloor, num(db.windup, D.double.windup, 0)) },
+    volley: {
+      count: clamp(Math.floor(num(vo.count, D.volley.count, 1)), 1, 4),   // combat принимает до 4 атак за шаг
+      spreadDeg: clamp(num(vo.spreadDeg, D.volley.spreadDeg, 0), 0, 45),
+      stagger: clamp(num(vo.stagger, D.volley.stagger, 0), 0, 0.6),
+      damageMul: clamp(num(vo.damageMul, D.volley.damageMul, 0), 0, 2),
+    },
+    trap: {
+      count: clamp(Math.floor(num(tr.count, D.trap.count, 1)), 1, 4),
+      spacing: clamp(num(tr.spacing, D.trap.spacing, 0.5), 0.5, 6),
+      windup: pair(tr.windup, D.trap.windup, 0.01).map((w) => Math.max(w, windupFloor)),
+      damageMul: clamp(num(tr.damageMul, D.trap.damageMul, 0), 0, 2),
+    },
+  };
+
+  const fp = o(src.farPressure);
+  extra.reach = clamp(num(src.reach, D.reach, 0), 0, 40);                    // [W5-ДАЛЬНОСТЬ]
+  extra.farPressure = { dist: clamp(num(fp.dist, D.farPressure.dist, 0), 0, 40) };
+
   return deepFreeze({
+    ...extra,
     seed: normalizeSeed(src.seed, D.seed),
     maxDt: num(src.maxDt, D.maxDt, 0.001),
     arenaRadius: num(src.arenaRadius, D.arenaRadius, 1),
@@ -549,9 +866,9 @@ function readBag(v, fallback) {
   const s = isObj(v) ? v : {};
   const out = {};
   let total = 0;
-  for (const k of KINDS) {
+  for (const k of MOVES) {   // [W5-СЛОЖНОСТЬ] + составные приёмы (по умолчанию 0)
     const c = s[k];
-    out[k] = isNum(c) && c >= 0 && c <= 10 ? Math.floor(c) : fallback[k];
+    out[k] = isNum(c) && c >= 0 && c <= 10 ? Math.floor(c) : (fallback[k] || 0);
     total += out[k];
   }
   if (total === 0 || out.slam + out.orb === 0) return Object.assign({}, fallback);

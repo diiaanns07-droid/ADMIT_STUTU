@@ -29,6 +29,7 @@
 
 import { loadVRM, loadHumanoidGLB, retargetClip, createGltfLoader, soleMarkers, soleLowFast, soleHeightFast, soleHeightSkinned, termsLow, skinnedVertexWorld, boneSubtree } from './vrmKit.js';   // [W5-ПОЛ] подошва
 import { createHeroPoses, rigFace, signaturePose, SIGNATURES } from './heroPoses.js'; // [W4-ПОЗЫ]
+import { createJob, ABORT, pinPrograms, retire, texturesOf, showTextures, hideTextures, uploadTextures, setRenderer, cacheInfo } from './heroCache.js'; // [W5-СМЕНА]
 
 // Карточки героев: имя, класс, стихия и три строки описания — для меню №8 и витрины (heroShowcase).
 export const HEROES = Object.freeze({
@@ -136,7 +137,7 @@ const clipCache = new Map();   // vrmUrl + '|' + lib → Promise<{ clips, stride
 let gltfLoaderP = null;
 let defaults = { atmosphere: null, shading: 'realistic', quality: 'medium' };
 // [HERO] общие настройки для экземпляров, созданных без явных параметров (удалённый игрок NET)
-export function configureHeroes(patch = {}) { defaults = { ...defaults, ...patch }; }
+export function configureHeroes(patch = {}) { defaults = { ...defaults, ...patch }; if (patch.renderer) setRenderer(patch.renderer); }   // [W5-СМЕНА] renderer — и кэшу смены
 
 function loadGltf(url) {
   if (!gltfCache.has(url)) {
@@ -170,8 +171,8 @@ const glbBytes = new Map();
 function fetchBytes(url, signal) {
   let e = glbBytes.get(url);
   if (!e) {
-    // [LOAD] index.html начинает качать модель выбранного героя и библиотеку клипов с первых миллисекунд страницы
-    // (window.__aoPrefetch: url → Promise<ArrayBuffer>) — здесь берём уже идущую загрузку; упала — качаем сами
+    // [LOAD] загрузка, начатая страницей заранее (window.__aoPrefetch: url → Promise<ArrayBuffer>), — берём её; упала — качаем сами.
+    // [W5-СТАРТ] index.html больше не качает заранее: модель и клипы качает warmHero со старта main.js (после кода игры)
     const pre = typeof window !== 'undefined' && window.__aoPrefetch && window.__aoPrefetch[url];
     const ctl = !pre && typeof AbortController === 'function' ? new AbortController() : null;
     const cur = e = { ctl, keep: !!pre, p: null };
@@ -187,6 +188,13 @@ function fetchBytes(url, signal) {
     else signal.addEventListener('abort', () => { if (!cur.keep) cur.ctl.abort(); }, { once: true });
   }
   return e.p;
+}
+
+// [W5-СТАРТ] атлас прядей (modules/heroHair.js) — только для героинь с волосами и того размера, что возьмёт причёска
+// (512² на low, иначе 1024²), в простое главного потока. Раньше 1024² рисовался при загрузке модуля для любого героя.
+function warmHairFor(def, quality) {
+  if (!def || !def.hair) return;
+  import('./heroHair.js').then((m) => { if (m.warmHairAtlas) m.warmHairAtlas(quality === 'low' ? 512 : 1024); }).catch(() => {});
 }
 
 // [LOAD] Начать загрузку героя до создания мира (main.js зовёт сразу после чтения настроек): модули оболочки,
@@ -343,98 +351,239 @@ export function createHeroModel({
     for (const o of extras) if (o) o.visible = on;
   }
 
-  function clear() {
-    const curScene = cur && cur.vrm ? cur.vrm.scene : null;
-    // якоря снять с костей до освобождения модели
-    for (const n of ANCHOR_NAMES) { const a = anchors[n]; if (a.parent) a.parent.remove(a); }
-    poses.unbind();   // [W4-ПОЗЫ]
-    if (cur) {
-      if (cur.face) { try { cur.face.dispose(); } catch (e) { /* ignore */ } }
-      cur.mixer.stopAllAction();
-      cur.mixer.uncacheRoot(cur.vrm.scene);
-      if (cur.gear && cur.gear.dispose) { try { cur.gear.dispose(); } catch (e) { console.warn('[HERO] снаряжение не освободилось', e && e.message); } }
-      if (cur.shade && cur.shade.dispose) { try { cur.shade.dispose(); } catch (e) { /* ignore */ } }
-      if (cur.aura) { try { cur.aura.dispose(); } catch (e) { /* ignore */ } }
-      if (cur.ghost) { try { cur.ghost.dispose(); } catch (e) { /* ignore */ } }
-      if (cur.model.parent) cur.model.parent.remove(cur.model);
+  // ---------------------------------------------------------------- [W5-СМЕНА] собранные герои
+  // Раньше смена героя начиналась с clear(): прежний герой освобождался (программы шейдеров уничтожались, место
+  // героя пустело), новый грузился и собирал всё заново одной длинной задачей. Теперь каждый герой — «запись» rec
+  // (как cur) со своим слотом (Group — корень героя: модель, аура и руна у ног вешаются на него). Слот в сцене
+  // только у показанного героя; остальные записи — готовые, отцеплены (без кадров, без видеопамяти текстур).
+  //   built  — id → запись, порядок Map = давность показа (LRU): текущий, прежний и соседи по меню (предсборка
+  //            в простое); лишние освобождаются (программы закреплены — вернувшийся герой не собирает шейдеры).
+  //   jobs   — сборки в работе (по одной за раз, кусками: в простое ≤ 8 мс, при смене — кадр за кадром).
+  //   fading — спрятанные записи, у которых ещё рассыпается светящийся силуэт (heroGhost) — растворение при смене.
+  // Новый герой показывается в один кадр, когда у него всё готово (программы собраны, текстуры загружены) — до тех
+  // пор на витрине стоит прежний: ни пустого места, ни T-позы, ни героини без волос и одежды.
+  const built = new Map(), jobs = new Map(), fading = new Set();
+  let buildChain = Promise.resolve();
+  // [W5-СМЕНА] сколько собранных героев держать: low — 2 (слабое железо, память), иначе 3
+  const lruMax = () => (opts.quality === 'low' ? 2 : 3);
+  // уровень сборки: на low материалы Standard и текстуры меньше — запись с другим уровнем пересобирается
+  const recKey = () => (opts.quality === 'low' ? 'low' : 'hi');
+  // соседи по карточкам меню (по кругу): следующий — первым
+  const neighbors = (id) => { const i = HERO_ORDER.indexOf(id), n = HERO_ORDER.length; return i < 0 ? [] : [HERO_ORDER[(i + 1) % n], HERO_ORDER[(i + n - 1) % n]]; };
+  let prevShown = null, swaps = 0;
+  // [W5-СМЕНА] текстуры прежнего показанного героя (одного) остаются в видеопамяти на medium/high: возврат к нему —
+  // без загрузки (иначе видеокарта заново грузит ~50 текстур с мипмапами). На low — только показанный. Бюджет
+  // текстур (config.visualBudget): показанный + один спрятанный ≈ +20–25 текстур, в пределах medium/high.
+  let residentHidden = null;
+  const keepResident = () => opts.quality !== 'low';
+  function releaseResident() {
+    const r = residentHidden;
+    residentHidden = null;
+    if (r && r !== cur && r.texShown) { hideTextures(r.texShown); r.texShown = null; }
+  }
+
+  // спрятать показанного героя: слот из сцены, якоря и слой поз отцеплены, видеопамять текстур отдана
+  function parkRec(rec) {
+    if (!rec) return;
+    if (rec === cur) {
+      for (const n of ANCHOR_NAMES) { const a = anchors[n]; if (a.parent) a.parent.remove(a); }
+      poses.unbind();   // [W4-ПОЗЫ]
+      act = null; actName = ''; holdName = '';
+      cur = null;
     }
-    if (curScene) import('@pixiv/three-vrm').then((V) => { try { V.VRMUtils.deepDispose(curScene); } catch (e) { /* ignore */ } }).catch(() => {});
-    cur = null; act = null; actName = ''; holdName = ''; lastStatus = ''; S.dead = false; S.pend = null;
-    pose.bowHeld = false; pose.bowCarry = 0; pose.wBow = 0; pose.draw = 0; S.endPz = null;   // [W4-ПОЗЫ] лук прежнего героя
-    S.ghostQ = null;
-    S.ready = false;
+    if (rec.gear && rec.gear.setBowHeld) { try { rec.gear.setBowHeld(false); } catch (e) { /* ignore */ } }
+    if (rec.gear && rec.gear.park) { try { rec.gear.park(); } catch (e) { /* ignore */ } }   // след посоха — из сцены
+    if (rec.aura && rec.aura.park) { try { rec.aura.park(); } catch (e) { /* ignore */ } }   // следы и пыль — из сцены
+    if (rec.slot.parent) rec.slot.parent.remove(rec.slot);
+    rec.shown = false;
+    if (rec.texShown) {
+      if (keepResident() && !rec.disposed) { if (residentHidden !== rec) releaseResident(); residentHidden = rec; }
+      else { if (residentHidden === rec) residentHidden = null; hideTextures(rec.texShown); rec.texShown = null; }
+    }
+  }
+  // освободить запись (вытеснена из LRU, сборка отменена, экземпляр закрыт). Программы её материалов закреплены
+  // (pinPrograms) — следующая сборка того же героя их не собирает; общие кэшированные текстуры отдают только
+  // видеопамять (холсты остаются в кэшах модулей).
+  function disposeRec(rec) {
+    if (!rec || rec.disposed) return;
+    rec.disposed = true;
+    if (residentHidden === rec) residentHidden = null;
+    fading.delete(rec);
+    if (built.get(rec.id) === rec) built.delete(rec.id);
+    if (rec === cur) parkRec(rec);
+    else if (rec.slot && rec.slot.parent) rec.slot.parent.remove(rec.slot);
+    if (rec.texShown) { hideTextures(rec.texShown); rec.texShown = null; }
+    const R = defaults.renderer;
+    try { pinPrograms(R, rec.slot); } catch (e) { /* ignore */ }
+    const tex = (() => { try { return texturesOf(rec.slot); } catch (e) { return null; } })();
+    if (rec.face) { try { rec.face.dispose(); } catch (e) { /* ignore */ } }
+    if (rec.mixer) { rec.mixer.stopAllAction(); if (rec.vrm) rec.mixer.uncacheRoot(rec.vrm.scene); }
+    if (rec.gear && rec.gear.dispose) { try { rec.gear.dispose(); } catch (e) { console.warn('[HERO] снаряжение не освободилось', e && e.message); } }
+    if (rec.shade && rec.shade.dispose) { try { rec.shade.dispose(); } catch (e) { /* ignore */ } }
+    if (rec.aura) { try { rec.aura.dispose(); } catch (e) { /* ignore */ } }
+    if (rec.ghost) { try { rec.ghost.dispose(); } catch (e) { /* ignore */ } }
+    // вместо VRMUtils.deepDispose: он освобождал и общие кэшированные текстуры (брови, атлас волос, ткань) —
+    // их видеопамять отдаём, только если ими не пользуется показанный герой; геометрию — всю (своя у записи)
+    if (rec.vrm) {
+      rec.vrm.scene.traverse((o) => {
+        if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+        if (o.isSkinnedMesh && o.skeleton && o.skeleton.boneTexture) { o.skeleton.boneTexture.dispose(); o.skeleton.boneTexture = null; }
+        for (const m of [].concat(o.material || [])) if (m) retire(m);
+      });
+    }
+    if (tex) hideTextures(tex);
+  }
+  // освободить всё лишнее: держим текущего, цель смены, прежнего показанного и соседей по меню
+  function trimLru() {
+    const max = lruMax();
+    if (built.size <= max) return;
+    const keep = [cur && cur.id, S.hero, prevShown, ...neighbors(S.hero)].filter(Boolean);
+    // кандидаты: от давно показанных к свежим; неприкосновенных — последними (по порядку keep)
+    const order = [...built.keys()].filter((id) => !keep.includes(id)).concat([...keep].reverse().filter((id) => built.has(id)));
+    for (const id of order) {
+      if (built.size <= max) break;
+      const rec = built.get(id);
+      if (!rec || rec === cur || id === S.hero || fading.has(rec)) continue;
+      disposeRec(rec);
+    }
   }
 
   // [HERO] таймер подмены процедурным героем при долгой загрузке модели
   let fallbackT = null;
   function clearFallback() { if (fallbackT) { clearTimeout(fallbackT); fallbackT = null; } S.fallback = false; }
 
-  // [LOAD] шейдеры модели собираются до показа (renderer.compileAsync + KHR_parallel_shader_compile: главный поток
-  // свободен, пока драйвер линкует программы). Иначе первый кадр с героем — рывок на сотни мс на слабой видеокарте.
-  // compile() собирает материалы обходом всех узлов (не только видимых), поэтому модель остаётся скрытой.
-  // Без KHR_parallel_shader_compile (программный рендер, старые драйверы) — как PARALLEL_COMPILE в main.js: compileAsync
-  // там предупреждает в консоли и компилирует синхронно, поэтому шейдеры героя собираются по-старому, при первом показе.
-  async function precompile(obj) {
+  // [LOAD] шейдеры модели собираются до показа. [W5-СМЕНА] Цель рендера — та же, что у кадра: на medium/high герой
+  // рисуется в HalfFloat-буфер постобработки (и в отражение пола) — ключ программы там другой (без тонмаппинга,
+  // линейный цвет), чем у сборки «на холст», поэтому прежняя предсборка (compileAsync без цели) собирала программы,
+  // которые кадр не использовал. Вариант берём по программам показанного героя; нет его — по уровню качества.
+  // Собираем по одному объекту за кусок; без KHR_parallel_shader_compile compile() лишь отдаёт команды видеокарте
+  // (связывание идёт в её процессе) — показ ждёт метку GPU (fenceSync), и первый кадр не ждёт сборку.
+  let warmRT = null;
+  function sceneOfRoot() { let sc = root; while (sc && !sc.isScene && sc.parent) sc = sc.parent; return sc && sc.isScene ? sc : null; }
+  function compileTargets() {
+    const R = defaults.renderer, out = new Set();
+    if (cur && R && R.properties) {
+      cur.slot.traverse((o) => {
+        if (out.size > 1) return;
+        for (const m of [].concat(o.material || [])) {
+          let pr = null;
+          try { pr = m && R.properties.get(m).programs; } catch (e) { pr = null; }
+          if (pr) for (const k of pr.keys()) out.add(String(k).includes(',srgb-linear,') ? 'rt' : 'screen');
+        }
+      });
+    }
+    if (!out.size) out.add(opts.quality === 'low' ? 'screen' : 'rt');
+    return out;
+  }
+  async function warmRec(rec, job) {
     const R = defaults.renderer, cam = defaults.camera;
-    if (!R || typeof R.compileAsync !== 'function' || !cam) return;
-    try { if (!(R.extensions && R.extensions.has('KHR_parallel_shader_compile'))) return; } catch (e) { return; }
-    let sc = root;
-    while (sc && !sc.isScene && sc.parent) sc = sc.parent;
-    if (!sc || !sc.isScene) return;
-    try { await R.compileAsync(obj, cam, sc); } catch (e) { /* рендер соберёт шейдеры сам */ }
+    if (!R || typeof R.compile !== 'function' || !cam) return;
+    const sc = sceneOfRoot();
+    if (!sc) return;
+    const want = compileTargets();
+    const key = [...want].sort().join(',') + '|' + opts.quality + '|' + opts.shading;
+    if (rec.warmKey === key) return;
+    const objs = [];
+    rec.slot.traverse((o) => { if (o.material && (o.isMesh || o.isPoints || o.isLine || o.isSprite)) objs.push(o); });
+    const done = new Set();
+    const progs0 = R.info && R.info.programs ? R.info.programs.length : -1;
+    for (const v of want) {
+      done.clear();
+      for (const o of objs) {
+        const ms = [].concat(o.material);
+        if (ms.every((m) => done.has(m))) continue;
+        const prev = R.getRenderTarget();
+        try {
+          if (v === 'rt') { if (!warmRT) warmRT = new THREE.WebGLRenderTarget(1, 1); R.setRenderTarget(warmRT); } else R.setRenderTarget(null);
+          R.compile(o, cam, sc);
+        } catch (e) { /* соберётся при первом кадре */ } finally { R.setRenderTarget(prev); }
+        for (const m of ms) done.add(m);
+        await job.slice();
+      }
+    }
+    if (warmRT) { warmRT.dispose(); warmRT = null; }   // 1×1 буфер нужен только на время сборки
+    rec.warmKey = key;
+    // метка готовности GPU: с KHR_parallel_shader_compile — опрос программ, без него — fenceSync; новых программ
+    // нет (все закреплены или уже собраны) — ждать нечего
+    const fresh = progs0 < 0 || !R.info.programs || R.info.programs.length !== progs0;
+    try {
+      if (!fresh) rec.gpu = null;
+      else if (R.extensions && R.extensions.has('KHR_parallel_shader_compile')) rec.gpu = { khr: true, mats: [...done] };
+      else rec.gpu = gpuFence();
+    } catch (e) { rec.gpu = null; }
+  }
+  // метка в очереди команд WebGL2: «видеокарта дошла до этого места» (связывание программ, загрузка текстур и мипмапов
+  // идут в процессе GPU — первый кадр с героем иначе ждал бы их синхронным вопросом getProgramInfoLog)
+  function gpuFence() {
+    const R = defaults.renderer, gl = R && R.getContext ? R.getContext() : null;
+    if (!gl || typeof gl.fenceSync !== 'function') return null;
+    const s = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    gl.flush();
+    return s ? { sync: s } : null;
+  }
+  async function gpuReady(rec, job, maxFrames = 240) {
+    const g = rec.gpu, R = defaults.renderer;
+    if (!g || !R) return;
+    const gl = R.getContext();
+    for (let i = 0; i < maxFrames; i++) {
+      let ok = true;
+      try {
+        if (g.sync) ok = gl.getSyncParameter(g.sync, gl.SYNC_STATUS) === gl.SIGNALED;
+        else for (const m of g.mats) { const p = R.properties.get(m).currentProgram; if (p && !p.isReady()) { ok = false; break; } }
+      } catch (e) { ok = true; }
+      if (ok) break;
+      await job.frame();
+      if (job.aborted) break;
+    }
+    if (g.sync) { try { gl.deleteSync(g.sync); } catch (e) { /* ignore */ } }
+    if (rec.gpu === g) rec.gpu = null;
   }
 
-  async function setHero(id) {
-    let def = HEROES[id] || EXTRA_HEROES[id] || HEROES.ashen;
-    // удалённый экземпляр не может взять процедурное тело мира: страж — на запасной модели
-    if (!def.vrm && !def.glb && !heroBody) def = { ...def, glb: HEROES.ashen.glb, height: 1.84, fallbackOf: def.id };
-    if (def.id === S.hero && (S.ready || (!def.vrm && !def.glb))) return;
-    const token = ++S.token;
-    S.hero = def.id;
-    clear();
-    const modelHero = !!(def.vrm || def.glb);
-    // [PERF] хронометраж появления героя (мс от начала setHero, нарастающим итогом) — панель F3 и tools/perf_bench.mjs
-    const tm = { id: def.id, t0: nowMs(), fetch: null, parse: null, prep: null, clips: null, setup: null, dress: null, compile: null, ready: null };
-    S.timing = tm;
-    // [HERO] выбрана модель: процедурное тело мира не мелькает ни при старте, ни при смене героя, ни в бою —
-    // до готовности модели место героя пустое (якоря на маркерах мира; витрина меню показывает «призыв»).
-    // Процедурный подменяет модель только через HERO_FALLBACK_MS (сеть) или если она не загрузилась совсем.
-    clearFallback();
-    showProcedural(!modelHero); parentAnchors();
-    if (!modelHero) { S.ready = !!heroBody; S.loading = false; return; }
-    S.loading = true;
-    // запасной таймер: только если за HERO_FALLBACK_MS модель даже не разобрана (сеть); если байты уже пришли
-    // и идёт разбор/оболочка/шейдеры (главный поток занят компиляцией мира), ждём дальше — плащ не мелькает
-    const armFallback = () => {
-      fallbackT = setTimeout(() => {
-        fallbackT = null;
-        if (token !== S.token || S.ready || S.disposed) return;
-        if (tm.parse !== null) { armFallback(); return; }
-        S.fallback = true; showProcedural(true);
-      }, HERO_FALLBACK_MS);
-    };
-    if (heroBody) armFallback();
+  // [W5-СМЕНА] сборка героя в отцепленный слот — по кускам (job.slice) и в очереди (одна сборка за раз)
+  function requestBuild(def, { idle = true, tm = null } = {}) {
+    const have = jobs.get(def.id);
+    if (have) { if (!idle) have.job.hurry(); if (tm) have.tm = tm; return have.p; }
+    if (!idle) for (const e of jobs.values()) if (e.job.idle) e.job.abort();   // спешная сборка не ждёт предсборку соседей
+    const entry = { job: createJob({ idle }), tm, def };
+    const run = () => (entry.job.aborted ? Promise.reject(ABORT) : buildRec(def, entry));
+    entry.p = buildChain.then(run, run).then(
+      (rec) => { if (jobs.get(def.id) === entry) jobs.delete(def.id); return rec; },
+      (e) => { if (jobs.get(def.id) === entry) jobs.delete(def.id); if (e === ABORT) return null; throw e; });
+    buildChain = entry.p.catch(() => null);
+    jobs.set(def.id, entry);
+    return entry.p;
+  }
+
+  async function buildRec(def, entry) {
+    const job = entry.job;
+    const mark = (k) => { const t = entry.tm; if (t) t[k] = nowMs() - t.t0; };
+    if (S.disposed) throw ABORT;
+    const url = def.glb ? new URL(def.glb, heroesBase).href : new URL(def.vrm, new URL(vrmUrl, base)).href;
+    prefetchHeroDeps(libUrls);   // [LOAD] клипы и модули оболочки — параллельно с моделью
+    warmHairFor(def, opts.quality);   // [W5-СТАРТ] атлас прядей — пока модель качается и разбирается
+    // [LOAD] байты GLB — через общий кэш (предзагрузка витрины, возврат к прежнему герою — без сети);
+    // не скачались (отмена предзагрузки, ошибка) — загрузчик попробует сам
+    const pre = def.glb ? await fetchBytes(url).catch(() => null) : null;
+    mark('fetch');
+    await job.slice(true);
+    const vrm = def.glb ? await loadHumanoidGLB(THREE, url, undefined, pre) : await loadVRM(THREE, url);
+    mark('parse');
+    const slot = new THREE.Group();
+    slot.name = 'hero-slot';
+    const rec = { id: def.id, def, key: recKey(), quality: opts.quality, shading: opts.shading, slot, vrm, url, shown: false };
     try {
-      const url = def.glb ? new URL(def.glb, heroesBase).href : new URL(def.vrm, new URL(vrmUrl, base)).href;
-      prefetchHeroDeps(libUrls);   // [LOAD] клипы и модули оболочки — параллельно с моделью
-      // [LOAD] байты GLB — через общий кэш (предзагрузка витрины, возврат к прежнему герою — без сети);
-      // не скачались (отмена предзагрузки, ошибка) — загрузчик попробует сам
-      const pre = def.glb ? await fetchBytes(url).catch(() => null) : null;
-      tm.fetch = nowMs() - tm.t0;
-      if (S.disposed || token !== S.token) return;   // пока качали, выбрали другого героя — дальше не грузим
-      const vrm = def.glb ? await loadHumanoidGLB(THREE, url, undefined, pre) : await loadVRM(THREE, url);
-      tm.parse = nowMs() - tm.t0;
-      if (def.recolor) await recolorHero(vrm, def.recolor, def.makeup || null, def.id);   // [W4-ЛИЦО] + лицо героини
+      await job.slice();
+      if (def.recolor) await recolorHero(vrm, def.recolor, def.makeup || null, def.id, job);   // [W4-ЛИЦО] + лицо героини
       if (def.hide) vrm.scene.traverse((o) => { if (o.isMesh && def.hide.some((n) => o.name.startsWith(n))) o.visible = false; });
       if (def.brows && !vrm.scene.userData.faceW4) thinBrows(vrm, def.brows);   // [W4-ЛИЦО] у героинь брови — лента с волосками
       if (def.smile) smileFace(vrm, def.smile);
       // пропорции: у Quaternius голова стилизованно крупная — чуть меньше (снаряжение головы крепится после)
       if (def.headScale) { const hb = vrm.humanoid.getRawBoneNode ? vrm.humanoid.getRawBoneNode('head') : null; if (hb) hb.scale.setScalar(def.headScale); }
-      tm.prep = nowMs() - tm.t0;
-      if (S.disposed || token !== S.token) { disposeVrm(vrm); return; }
+      mark('prep');
+      await job.slice();
       const lib = await buildClips(THREE, vrm, url, libUrls);
-      tm.clips = nowMs() - tm.t0;
-      if (S.disposed || token !== S.token) { disposeVrm(vrm); return; }
+      mark('clips');
+      await job.slice();
       // рост: VRoid ~1.5–1.6 м — подгоняем под героя
       if (vrm.humanoid.resetNormalizedPose) vrm.humanoid.resetNormalizedPose();
       vrm.scene.updateMatrixWorld(true);
@@ -449,6 +598,7 @@ export function createHeroModel({
       const soles = soleMarkers(THREE, vrm);
       vrm.scene.position.y = -(soles ? soles.restY : box.min.y);
       wrapG.add(vrm.scene);
+      await job.slice();
       const mixer = new THREE.AnimationMixer(vrm.scene);
       const legNames = new Set(LEG_VRM.map((b) => { const n = vrm.humanoid.getNormalizedBoneNode(b); return n && n.name; }).filter(Boolean));
       const full = {}, upper = {}, lower = {};
@@ -477,7 +627,7 @@ export function createHeroModel({
       }
       // [LOAD] до первой позы Idle модель не видна: иначе, пока надевается оболочка, на витрине стоит T-поза
       wrapG.visible = false;
-      root.add(wrapG);
+      slot.add(wrapG);   // [W5-СМЕНА] в свой слот (в сцену — только при показе)
       const H = vrm.humanoid;
       const nb = (n) => H.getNormalizedBoneNode(n);
       const bones = {};
@@ -491,40 +641,190 @@ export function createHeroModel({
       const tracked = new Set();
       for (const clip of Object.values(lib.clips)) for (const tr of clip.tracks) tracked.add(tr.name.split('.')[0]);
       const free = Object.values(bones).filter((b) => b && !tracked.has(b.name));
-      cur = { model: wrapG, vrm, mixer, full, upper, lower, midR, stride: lib.stride, loops: lib.loops, bones, free, scale: k, def, gear: null, shade: null, url, hands, rig: lib.rig, soles };
-      tm.setup = nowMs() - tm.t0;
+      Object.assign(rec, { model: wrapG, mixer, full, upper, lower, midR, stride: lib.stride, loops: lib.loops, bones, free, scale: k, gear: null, shade: null, hands, rig: lib.rig, soles });   // [W5-ПОЛ] soles
+      mark('setup');
+      await job.slice();
       // оболочка: реалистичные материалы (modules/heroShading.js) и снаряжение (modules/heroGear.js)
-      await dressUp(token);
-      tm.dress = nowMs() - tm.t0;
-      if (S.disposed || token !== S.token) return;
+      await dressUp(rec, job, entry);
+      mark('dress');
       // [W4-ПОЗЫ] кости лица — после оболочки (волосы подогнаны по весам головы) и до первого снимка образов рывка
-      try { cur.face = POSES_OFF || FACE_OFF ? null : rigFace(THREE, vrm, { mouth: true }); } catch (e) { cur.face = null; console.warn('[HERO] мимика', e && e.message); }
-      bindPoses();
+      try { rec.face = POSES_OFF || FACE_OFF ? null : rigFace(THREE, vrm, { mouth: true }); } catch (e) { rec.face = null; console.warn('[HERO] мимика', e && e.message); }
       for (const n of LOCO) if (full[n]) { full[n].play(); full[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); if (lower[n]) { lower[n].play(); lower[n].setEffectiveWeight(0); } }
       mixer.update(0);
-      await precompile(wrapG);   // [LOAD] программы шейдеров героя — до первого кадра с ним
-      tm.compile = nowMs() - tm.t0;
-      if (S.disposed || token !== S.token) return;
-      clearFallback();
-      showProcedural(false);
-      wrapG.visible = true;   // [LOAD] герой появляется сразу в позе Idle
-      parentAnchors();
-      if (S.lod) { const l = S.lod; S.lod = -1; applyLod(l); }   // LOD, заданный до загрузки
-      S.ready = true;
-      S.loading = false;
-      tm.ready = nowMs() - tm.t0;
-      S.appear = 1;   // появление: вспышка ауры (меню)
-      if (stance) setStance(stance);
+      wrapG.visible = true;   // [LOAD] модель видна только вместе со слотом — уже в позе Idle
+      await job.slice();
+      await warmRec(rec, job);   // [LOAD] программы шейдеров героя — до первого кадра с ним
+      mark('compile');
+      if (S.disposed) throw ABORT;
+      built.set(def.id, rec);
+      trimLru();
+      return rec;
     } catch (e) {
-      console.warn('[ASHEN] модель героя не загрузилась — процедурный герой:', e && e.message);
-      if (token === S.token) { clearFallback(); S.loading = false; clear(); S.hero = heroBody ? 'ashen' : def.id; showProcedural(true); parentAnchors(); S.ready = !!heroBody; }
+      disposeRec(rec);
+      throw e;
     }
+  }
+
+  // сбросить состояние экземпляра под другого героя: действия, поза, взгляд, рывок, лук — с чистого листа
+  function resetLife() {
+    act = null; actName = ''; actUntil = 0; actUpper = false; holdName = ''; lastStatus = '';
+    S.dead = false; S.pend = null; S.endPz = null; S.ghostQ = null; S.flare = 0; S.hurt = 0; S.recoil = 0; S.lean = 0; S.chestTwist = 0;
+    S.yawRate = 0; S.prevYaw = null; S.look = 0; S.lookWant = 0; S.lookT = 0.6; S.lookCam = false; S.idleT = 0; S.sigIdle = 0; S.sigDrawT = 0; S.lodAcc = 0;
+    for (const n of LOCO) S.wLoco[n] = n === 'Idle' ? 1 : 0;
+    S.phase = 0;
+    pose.bowHeld = false; pose.bowCarry = 0; pose.wBow = 0; pose.draw = 0; pose.wSpell = 0; pose.wStaff = 1;   // [W4-ПОЗЫ] лук прежнего героя
+    mirror.w = 0;
+  }
+  // показать запись: слот в сцену, состояние экземпляра — под неё (запись могла быть показана раньше)
+  function activateRec(rec) {
+    cur = rec;
+    built.delete(rec.id); built.set(rec.id, rec);   // свежий в LRU
+    root.add(rec.slot);
+    rec.shown = true;
+    if (residentHidden === rec) residentHidden = null;
+    const was = rec.texShown;
+    rec.texShown = texturesOf(rec.slot);
+    showTextures(rec.texShown);
+    if (was && was !== rec.texShown) hideTextures(was);   // прежний набор той же записи (текстуры — в новом)
+    resetLife();
+    // действия прежнего показа не доигрываются: на микшере остаются только клипы передвижения (покой)
+    for (const [n, a] of Object.entries(rec.full)) if (!LOCO.includes(n)) a.stop();
+    for (const a of Object.values(rec.upper)) a.stop();
+    for (const n of LOCO) {
+      const a = rec.full[n];
+      if (a) { if (!a.isRunning()) a.play(); a.enabled = true; a.setEffectiveWeight(n === 'Idle' ? 1 : 0); }
+      const lo = rec.lower[n];
+      if (lo) { if (!lo.isRunning()) lo.play(); lo.setEffectiveWeight(0); }
+    }
+    if (rec.hands) for (const side of ['left', 'right']) { const hh = rec.hands[side]; if (hh) for (const kk of Object.keys(hh.w)) hh.w[kk] = kk === 'relax' ? 1 : 0; }
+    // качество и вид сменились, пока герой был спрятан
+    if (rec.quality !== opts.quality) {
+      rec.quality = opts.quality;
+      if (rec.shade && rec.shade.setQuality) rec.shade.setQuality(opts.quality);
+      if (rec.gear && rec.gear.setQuality) rec.gear.setQuality(opts.quality);
+      if (rec.aura && rec.aura.setQuality) rec.aura.setQuality(opts.quality);
+    }
+    if (rec.shading !== opts.shading) {
+      rec.shading = opts.shading;
+      if (rec.shade && rec.shade.setMode) rec.shade.setMode(opts.shading);
+      if (rec.gear && rec.gear.setShading) rec.gear.setShading(opts.shading);
+    }
+    rec.simReset = true;   // ткань, пряди и пружины волос — с места (их частицы в мировых координатах)
+    bindPoses();
+    parentAnchors();
+    { const l = S.lod; S.lod = -1; applyLod(l); }   // LOD экземпляра — на эту запись
+    if (!rec.ghostWarm) { rec.ghostWarm = true; S.ghostWarm = true; }
+    clearFallback();
+    showProcedural(false);
+    S.ready = true;
+    S.loading = false;
+    S.appear = 1;   // появление: вспышка ауры (меню)
+    if (stance) setStance(stance);
+  }
+  // [W5-СМЕНА] подмена в один кадр: прежний герой рассыпается светящимся силуэтом (heroGhost) — новый выходит
+  // из вспышки (его силуэт сгорает поверх, открывая героя); витрина в тот же кадр даёт волну и вспышку портала
+  function swapTo(rec, tm) {
+    const old = cur && cur !== rec ? cur : null;
+    if (old) {
+      prevShown = old.id;
+      if (old.ghost) { try { if (old.ghost.snap(old.model)) fading.add(old); } catch (e) { /* без растворения */ } }
+    }
+    activateRec(rec);   // сначала новые текстуры — общие с прежним героем не выгружаются
+    if (old) parkRec(old);
+    swaps++;
+    if (old && rec.ghost) { try { rec.model.updateMatrixWorld(true); rec.ghost.snap(rec.model); } catch (e) { /* ignore */ } }
+    if (tm) { tm.ready = nowMs() - tm.t0; }
+    trimLru();
+  }
+  // показать готовую запись: программы на видеокарте собраны, текстуры загружены — подмена в один кадр
+  async function showRec(rec, token, tm) {
+    const job = createJob({ idle: false });
+    if (!rec.warmKey || rec.warmKey.split('|')[0] !== [...compileTargets()].sort().join(',')) await warmRec(rec, job);
+    await gpuReady(rec, job);
+    if (S.disposed || token !== S.token) return false;
+    tm.compile = nowMs() - tm.t0;
+    // текстуры — заранее и кусками (раньше — все в первом кадре с героем); затем ждём, пока видеокарта их загрузит
+    const tex = texturesOf(rec.slot);
+    showTextures(tex);   // пока грузятся — заняты (не выгружаются чужой сменой)
+    const sent = await uploadTextures(defaults.renderer, tex, job);
+    tm.upload = nowMs() - tm.t0;
+    if (sent) { rec.gpu = gpuFence(); await gpuReady(rec, job); }   // всё уже в видеопамяти — подмена сразу
+    tm.gpu = nowMs() - tm.t0;
+    if (S.disposed || token !== S.token) { if (rec !== cur) hideTextures(tex); return false; }
+    swapTo(rec, tm);
+    hideTextures(tex);   // набор перешёл в rec.texShown (activateRec)
+    return true;
+  }
+
+  async function setHero(id) {
+    let def = HEROES[id] || EXTRA_HEROES[id] || HEROES.ashen;
+    // удалённый экземпляр не может взять процедурное тело мира: страж — на запасной модели
+    if (!def.vrm && !def.glb && !heroBody) def = { ...def, glb: HEROES.ashen.glb, height: 1.84, fallbackOf: def.id };
+    if (def.id === S.hero && (S.ready || (!def.vrm && !def.glb))) return;
+    if (def.id === S.hero && S.loading) return;   // [W5-СМЕНА] уже собирается — повторный выбор не начинает заново
+    const token = ++S.token;
+    S.hero = def.id;
+    const modelHero = !!(def.vrm || def.glb);
+    // [PERF] хронометраж появления героя (мс от начала setHero, нарастающим итогом) — панель F3 и tools/perf_bench.mjs
+    const tm = { id: def.id, t0: nowMs(), fetch: null, parse: null, prep: null, clips: null, setup: null, dress: null, compile: null, ready: null, cached: false };
+    S.timing = tm;
+    clearFallback();
+    // [W5-СМЕНА] вернулись к герою, который ещё на сцене (пока собирался другой) — он и остаётся
+    if (cur && cur.id === def.id && cur.key === recKey()) { S.ready = true; S.loading = false; tm.cached = true; tm.ready = nowMs() - tm.t0; return; }
+    // [HERO] процедурный герой мира (страж без модели)
+    if (!modelHero) { if (cur) parkRec(cur); showProcedural(true); parentAnchors(); S.ready = !!heroBody; S.loading = false; return; }
+    S.ready = false;
+    S.loading = true;
+    // [HERO] выбрана модель: процедурное тело мира не мелькает ни при старте, ни при смене героя, ни в бою.
+    // [W5-СМЕНА] пока новый собирается, на месте героя стоит прежний; пусто (якоря на маркерах мира, витрина
+    // показывает «призыв») — только если прежнего нет (старт). Процедурный подменяет модель только через
+    // HERO_FALLBACK_MS (сеть) или если она не загрузилась совсем.
+    if (!cur) {
+      showProcedural(false); parentAnchors();
+      // запасной таймер: только если за HERO_FALLBACK_MS модель даже не разобрана (сеть); если байты уже пришли
+      // и идёт разбор/оболочка/шейдеры (главный поток занят компиляцией мира), ждём дальше — плащ не мелькает
+      const armFallback = () => {
+        fallbackT = setTimeout(() => {
+          fallbackT = null;
+          if (token !== S.token || S.ready || S.disposed) return;
+          if (tm.parse !== null) { armFallback(); return; }
+          S.fallback = true; showProcedural(true);
+        }, HERO_FALLBACK_MS);
+      };
+      if (heroBody) armFallback();
+    }
+    try {
+      let rec = built.get(def.id);
+      if (rec && rec.key !== recKey()) { disposeRec(rec); rec = null; }   // собран на другом уровне качества
+      if (rec) { tm.cached = true; for (const k of ['fetch', 'parse', 'prep', 'clips', 'setup', 'dress']) tm[k] = 0; }
+      else rec = await requestBuild(def, { idle: false, tm });
+      if (S.disposed || token !== S.token) return;   // пока собирали, выбрали другого героя — запись осталась в LRU
+      if (!rec) throw new Error('сборка героя отменена');
+      await showRec(rec, token, tm);
+    } catch (e) {
+      if (e === ABORT) return;
+      console.warn('[ASHEN] модель героя не загрузилась — процедурный герой:', e && e.message);
+      if (token === S.token) { clearFallback(); S.loading = false; if (cur) parkRec(cur); S.hero = heroBody ? 'ashen' : def.id; showProcedural(true); parentAnchors(); S.ready = !!heroBody; }
+    }
+  }
+  // [W5-СМЕНА] тихая предсборка героев (соседи по меню) в простое браузера; signal — отмена (выход из меню)
+  function prebuild(ids = [], { signal } = {}) {
+    const want = ids.filter((id) => HEROES[id] && (HEROES[id].glb || HEROES[id].vrm) && !built.has(id) && !jobs.has(id));
+    const room = Math.max(0, lruMax() - built.size - jobs.size + [...built.keys()].filter((id) => !ids.includes(id) && id !== (cur && cur.id) && id !== prevShown && id !== S.hero).length);
+    const ps = [];
+    for (const id of want.slice(0, Math.max(0, room))) {
+      const p = requestBuild(HEROES[id], { idle: true });
+      const entry = jobs.get(id);
+      if (signal && entry) {
+        if (signal.aborted) entry.job.abort();
+        else signal.addEventListener('abort', () => { if (entry.job.idle) entry.job.abort(); }, { once: true });
+      }
+      ps.push(p.catch(() => null));
+    }
+    return Promise.all(ps).then((r) => r.filter(Boolean).length);
   }
   const upperClips = new WeakMap(), lowerClips = new WeakMap();
   let heroTimeU = null; // общее время шейдеров героев (жилы лат, аура)
-  function disposeVrm(vrm) { import('@pixiv/three-vrm').then((V) => { try { V.VRMUtils.deepDispose(vrm.scene); } catch (e) { /* ignore */ } }).catch(() => {}); }
-  // [HERO] модель не загрузилась: страж — процедурное тело мира, прочие — запасная модель
-  void disposeVrm;
 
   // ---------------------------------------------------------------- кисти: хват оружия и пальцы
   // В покое нормализованного скелета (T-поза, ладони вниз) по костям кисти находим центр кулака и оси:
@@ -716,67 +1016,81 @@ export function createHeroModel({
   }
 
   // перекраска атласа костюма (heroShading.recolorTexture) — у каждого экземпляра своя текстура
-  async function recolorHero(vrm, rules, makeup = null, heroId = null) {
+  async function recolorHero(vrm, rules, makeup = null, heroId = null, job = null) {
     try {
       const m = await import('./heroShading.js');
       // [W4-ЛИЦО] лицо героини (characterLooks.FACE_LOOKS): пропорции, брови, подводка — и макияж атласа по нему
       const look = heroId ? (await import('./characterLooks.js')).faceLookOf(heroId) : null;
       if (look) { try { m.beautifyFace(THREE, vrm, look, { quality: opts.quality }); } catch (e) { console.warn('[HERO] лицо', e && e.message); } }
       const paint = look ? m.facePainter(look) : makeup ? m.makeupPainter(makeup) : null;
-      vrm.scene.traverse((o) => {
-        if (!o.isMesh) return;
-        for (const mt of [].concat(o.material)) {
-          const R = mt && rules[mt.name];
-          if (!R || !mt.map || mt.userData.recolored) continue;
-          const face = /^MI_Regular_Female/.test(mt.name) && !!paint;
-          const nt = m.recolorTexture(THREE, mt.map, R, face ? paint : null, mt.metalnessMap ? mt.metalnessMap.image : null, face ? (opts.quality === 'low' ? 1 : 2) : 1);   // [W4-ЛИЦО] на low — 512²
-          if (nt !== mt.map) { mt.map = nt; mt.userData.recolored = true; mt.needsUpdate = true; }
-        }
-      });
-    } catch (e) { console.warn('[HERO] перекраска', e && e.message); }
+      // [W5-СМЕНА] материалы — сначала списком, перекраска — по одному атласу за кусок; результат кэшируется по герою,
+      // материалу и масштабу (heroShading.recolorTexture): второй материал с тем же атласом (клон GLTFLoader с цветами
+      // вершин) и повторная сборка героя берут готовую текстуру
+      const list = [];
+      vrm.scene.traverse((o) => { if (o.isMesh) for (const mt of [].concat(o.material)) if (mt && rules[mt.name] && mt.map && !mt.userData.recolored && !list.includes(mt)) list.push(mt); });
+      for (const mt of list) {
+        const R = rules[mt.name];
+        const face = /^MI_Regular_Female/.test(mt.name) && !!paint;
+        const scale = face ? (opts.quality === 'low' ? 1 : 2) : 1;   // [W4-ЛИЦО] на low — 512²
+        const key = `${heroId || ''}|${mt.name}|${face ? 'face' : ''}|${scale}`;
+        const nt = m.recolorTexture(THREE, mt.map, R, face ? paint : null, mt.metalnessMap ? mt.metalnessMap.image : null, scale, key);
+        if (nt !== mt.map) { mt.map = nt; mt.userData.recolored = true; mt.needsUpdate = true; }
+        if (job) await job.slice();
+      }
+    } catch (e) { if (e === ABORT) throw e; console.warn('[HERO] перекраска', e && e.message); }
   }
 
-  async function dressUp(token) {
-    if (!cur) return;
-    const c = cur;
-    const tm = S.timing || {};   // [PERF] этапы оболочки (мс от начала setHero)
+  // [W5-СМЕНА] оболочка записи героя c (не cur): между частями — куски работы job (отмена — ABORT)
+  async function dressUp(c, job, entry) {
+    const tm = (entry && entry.tm) || {};   // [PERF] этапы оболочки (мс от начала setHero)
+    const mark = (k) => { if (entry && entry.tm) entry.tm[k] = nowMs() - (entry.tm.t0 || 0); };
     try {
       const m = await import('./heroShading.js');
-      if (token !== S.token || cur !== c) return;
+      if (job.aborted) throw ABORT;
       c.shade = m.shadeHero(THREE, c.vrm, { mode: opts.shading, atmosphere: opts.atmosphere, quality: opts.quality, heroId: c.def.id, fx: c.def.fx || null, hairColor: c.def.hair ? c.def.hair.color : null });
       heroTimeU = m.HERO_TIME;
-    } catch (e) { console.warn('[HERO] heroShading недоступен, MToon как есть:', e && e.message); }
-    tm.shade = nowMs() - (tm.t0 || 0);
+    } catch (e) { if (e === ABORT) throw e; console.warn('[HERO] heroShading недоступен, MToon как есть:', e && e.message); }
+    mark('shade');
+    await job.slice();
     try {
       const g = await import('./heroGear.js');
-      if (token !== S.token || cur !== c) return;
+      if (job.aborted) throw ABORT;
       // снаряжение крепится в позе Idle (кадр 0): рукоять посоха вертикально в опущенной руке
       if (c.full.Idle) { c.full.Idle.play(); c.full.Idle.setEffectiveWeight(1); c.mixer.update(0); }
       const add = c.def.adduct ?? 0.22; // та же поза рук, что в игре (см. applyLife)
-      adduct(c.bones.leftUpperArm, -add); adduct(c.bones.rightUpperArm, add);
+      adduct(c.bones.leftUpperArm, -add, c.model); adduct(c.bones.rightUpperArm, add, c.model);
       c.vrm.update(0);
-      c.gear = g.dressHero(THREE, c.vrm, { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null, circlet: c.def.circlet || null, lashes: c.def.lashes || null, hoodTrim: c.def.hoodTrim || null, fx: c.def.fx || null, grips: c.hands ? { R: c.hands.staffGrip, L: c.hands.bowGrip } : null });
+      const gOpts = { preset: c.def.gear, heroId: c.def.id, model: c.model, atmosphere: opts.atmosphere, quality: opts.quality, shading: opts.shading, ears: !!c.def.ears, hair: c.def.hair || null, circlet: c.def.circlet || null, lashes: c.def.lashes || null, hoodTrim: c.def.hoodTrim || null, fx: c.def.fx || null, grips: c.hands ? { R: c.hands.staffGrip, L: c.hands.bowGrip } : null };
+      // [W5-СМЕНА] dressHeroSteps — то же снаряжение по частям: между частями поток отдаётся (job.slice)
+      if (typeof g.dressHeroSteps === 'function') {
+        const it = g.dressHeroSteps(THREE, c.vrm, gOpts);
+        let r = it.next();
+        while (!r.done) { await job.slice(); r = it.next(); }
+        c.gear = r.value;
+      } else c.gear = g.dressHero(THREE, c.vrm, gOpts);
       if (c.full.Idle) c.full.Idle.stop();
-    } catch (e) { console.warn('[HERO] heroGear недоступен, без снаряжения:', e && e.message); }
-    tm.gear = nowMs() - (tm.t0 || 0);
+    } catch (e) { if (e === ABORT) throw e; console.warn('[HERO] heroGear недоступен, без снаряжения:', e && e.message); }
+    mark('gear');
     // тени героя без карт (см. noShadowMap): модель, ткань, пряди и снаряжение
     c.model.traverse((o) => { if (o.isMesh) o.onBeforeShadow = noShadowMap; });
+    await job.slice();
     // аура класса (частицы стихии в шейдере) — modules/heroAura.js
     if (c.def.fx) {
       try {
         const am = await import('./heroAura.js');
-        if (token !== S.token || cur !== c) return;
+        if (job.aborted) throw ABORT;
         c.aura = am.createHeroAura(THREE, c.model, c.def.fx, { quality: opts.quality, height: (c.def.height || 1.8) / (c.scale || 1) });
-      } catch (e) { console.warn('[HERO] аура недоступна:', e && e.message); }
+      } catch (e) { if (e === ABORT) throw e; console.warn('[HERO] аура недоступна:', e && e.message); }
     }
-    tm.aura = nowMs() - (tm.t0 || 0);
+    mark('aura');
     // остаточные образы рывка (modules/heroGhost.js): светящийся силуэт цвета стихии
     try {
       const gm = await import('./heroGhost.js');
-      if (token !== S.token || cur !== c) return;
+      if (job.aborted) throw ABORT;
       c.ghost = gm.createAfterimages(THREE, { color: (c.def.fx && c.def.fx.color) || 0x9ff4ff });
-      S.ghostWarm = true;   // невидимый снимок на следующем кадре (модель уже в сцене): шейдер собирается заранее
-    } catch (e) { console.warn('[HERO] остаточные образы недоступны:', e && e.message); }
+      // невидимый снимок на кадре после показа (модель уже в сцене): шейдер собирается заранее (activateRec)
+    } catch (e) { if (e === ABORT) throw e; console.warn('[HERO] остаточные образы недоступны:', e && e.message); }
+    void tm;
   }
 
   function setShading(mode) {
@@ -785,13 +1099,22 @@ export function createHeroModel({
     opts.shading = mode;
     if (cur && cur.shade && cur.shade.setMode) cur.shade.setMode(mode);
     if (cur && cur.gear && cur.gear.setShading) cur.gear.setShading(mode);
+    if (cur) cur.shading = mode;   // [W5-СМЕНА] спрятанные получат вид при показе (activateRec)
   }
   function setQuality(q) {
+    if (opts.quality === q) return;   // [W5-СМЕНА] без пересборки материалов на тот же уровень
     opts.quality = q;
     poses.setQuality(q);   // [W4-ПОЗЫ]
     if (cur && cur.shade && cur.shade.setQuality) cur.shade.setQuality(q);
     if (cur && cur.gear && cur.gear.setQuality) cur.gear.setQuality(q);
     if (cur && cur.aura && cur.aura.setQuality) cur.aura.setQuality(q);   // [W4-АУРА] после пересборки материалов — патч rim сразу
+    if (cur) cur.quality = q;
+    // [W5-СМЕНА] спрятанные: на другом уровне сборки (low ↔ medium/high) — освободить (соберутся заново), на том же —
+    // качество применится при показе; сборки в работе — отменить (собраны бы на прежнем уровне)
+    for (const e of jobs.values()) if (e.job.idle) e.job.abort();
+    for (const r of [...built.values()]) if (r !== cur && r.key !== recKey() && !fading.has(r)) disposeRec(r);
+    if (!keepResident()) releaseResident();   // на low видеопамять держит только показанный герой
+    trimLru();
   }
   // LOD: 0 — полный, 1 — пружины и ткань через кадр, без теней, 2 — без пружин, 10 Гц анимации
   const _lodV = new THREE.Vector3();
@@ -809,7 +1132,7 @@ export function createHeroModel({
   // QA: ?poses=0 — без слоя поз (клипы как раньше), ?face=0 — без костей лица
   const QS = typeof location !== 'undefined' && location.search ? location.search : '';
   const POSES_OFF = /[?&]poses=0/.test(QS), FACE_OFF = /[?&]face=0/.test(QS);
-  const posesOn = () => !POSES_OFF && !!(S.ready && cur && S.lod < 2);
+  const posesOn = () => !POSES_OFF && !!(cur && S.lod < 2);   // [W5-СМЕНА] показанный герой, даже пока собирается следующий
   const _gripP = new THREE.Vector3(), _tipP = new THREE.Vector3();
   function bindPoses() {
     if (!cur) return;
@@ -852,7 +1175,7 @@ export function createHeroModel({
   }
   // визитка витрины: какая и что она делает с луком (лук у плеча — в кулаке без прицела; натянутый — поза лука)
   function sigSync(dt) {
-    const id = sigWant === undefined ? S.hero : sigWant;
+    const id = sigWant === undefined ? (cur ? cur.id : S.hero) : sigWant;   // [W5-СМЕНА] визитка показанного героя
     const want = id && SIGNATURES[id] ? id : null;
     if (poses.signature !== want) { poses.setSignature(want); S.sigIdle = 0; S.sigDrawT = 0; }
     pose.bowCarry = 0;
@@ -1131,9 +1454,9 @@ export function createHeroModel({
 
   // руки клипов KayKit (коренастые персонажи) разведены в стороны: сводим плечи к телу
   const _ax = new THREE.Vector3(), _qa = new THREE.Quaternion(), _qp = new THREE.Quaternion();
-  function adduct(bone, angle) {
-    if (!bone || Math.abs(angle) < 1e-4) return;
-    cur.model.getWorldQuaternion(_qp);
+  function adduct(bone, angle, model = cur && cur.model) {   // [W5-СМЕНА] model — запись, которую одевают
+    if (!bone || Math.abs(angle) < 1e-4 || !model) return;
+    model.getWorldQuaternion(_qp);
     _ax.set(0, 0, 1).applyQuaternion(_qp);                    // ось «вперёд» героя в мире
     _qa.setFromAxisAngle(_ax, angle);
     bone.parent.updateWorldMatrix(true, false);
@@ -1200,7 +1523,10 @@ export function createHeroModel({
   }
 
   function update(dt, snap, events) {
-    if (!S.ready || !cur) return;
+    // [W5-СМЕНА] прежний герой, спрятанный при смене, рассыпается светящимся силуэтом — догорает сам
+    if (fading.size) for (const r of fading) { try { r.ghost.update(dt); if (!r.ghost.active()) fading.delete(r); } catch (e) { fading.delete(r); } }
+    // [W5-СМЕНА] пока новый герой собирается, на сцене живёт прежний (cur) — без пустого места и рывков позы
+    if (!cur) return;
     time += dt;
     if (heroTimeU) heroTimeU.value = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
     const P = snap && snap.player;
@@ -1434,7 +1760,9 @@ export function createHeroModel({
       // без пружин: только скелет и выражения
       vrm.humanoid.update(); if (em) em.update();
     } else vrm.update(Math.min(dt, 1 / 20));
-    if (cur.gear && cur.gear.update) cur.gear.update(dt, root, S.lod);
+    // [W5-СМЕНА] первый кадр после показа: шаг > 0,5 с — ткань, пряди и пружины волос встают на место (их частицы —
+    // в мировых координатах, а герой мог быть собран отцепленным или показан в другом месте)
+    if (cur.gear && cur.gear.update) { cur.gear.update(cur.simReset ? 0.6 : dt, root, S.lod); cur.simReset = false; }
     if (cur.aura) cur.aura.update(heroTimeU ? heroTimeU.value : time);
     if (cur.ghost) {
       if (S.ghostWarm) { S.ghostWarm = false; try { cur.ghost.snap(cur.model, true); } catch (e) { /* ignore */ } }
@@ -1563,7 +1891,11 @@ export function createHeroModel({
     S.disposed = true;
     clearFallback();
     S.loading = false;
-    clear();
+    // [W5-СМЕНА] сборки — отмена, все записи (показанная, спрятанные, догорающие) — освободить
+    for (const e of jobs.values()) e.job.abort();
+    for (const r of [...built.values(), ...fading]) disposeRec(r);
+    if (cur) disposeRec(cur);
+    S.ready = false;
     poses.dispose();
     showProcedural(true);
     if (ownRoot && root.parent) root.parent.remove(root);
@@ -1572,6 +1904,8 @@ export function createHeroModel({
   // [LOAD] скачать модели героев меню заранее (по одной, чтобы не забивать канал); signal — отмена
   function prefetch(ids = HERO_ORDER, { signal } = {}) {
     const urls = [...new Set(ids.map((id) => HEROES[id] && HEROES[id].glb).filter(Boolean).map((f) => new URL(f, heroesBase).href))];
+    const withHair = ids.map((id) => HEROES[id]).find((d) => d && d.hair);   // [W5-СТАРТ] героиня с волосами в очереди витрины
+    if (withHair && !(signal && signal.aborted)) warmHairFor(withHair, opts.quality);
     let chain = Promise.resolve();
     for (const u of urls) chain = chain.then(() => (signal && signal.aborted ? null : fetchBytes(u, signal)));
     return chain.then(() => true, () => false);
@@ -1582,6 +1916,11 @@ export function createHeroModel({
 
   return {
     prefetch,
+    prebuild, neighbors,   // [W5-СМЕНА] предсборка соседей в простое (витрина меню)
+    get shown() { return cur ? cur.id : null; },   // [W5-СМЕНА] кто на сцене (пока собирается новый — прежний)
+    get building() { return jobs.size; },
+    get swaps() { return swaps; },
+    warmsPrograms: true,   // [W5-СМЕНА] программы героя собираются здесь (main.js не пересобирает сцену после смены)   // [W5-СМЕНА] номер показа: витрина ловит появление (волна, вспышка) и отражение
     root, update, setHero, setPose, setMirror, getAnchors, setShading, setQuality, setLod, setStance, dispose,
     // [W4-ПОЗЫ] у героя с визиткой стойка витрины — её клип-основа
     menuStance: (id) => ((sigWant === undefined || sigWant === id) && SIGNATURES[id] ? SIGNATURES[id].stance : (HEROES[id] && HEROES[id].menuStance) || null),
@@ -1626,6 +1965,8 @@ export function createHeroModel({
         loading: !!S.loading, fallback: !!S.fallback,       // [HERO] модель грузится / процедурный подменяет её (долгая загрузка)
         poses: poses.state(), face: cur && cur.face ? cur.face.bones : 0,   // [W4-ПОЗЫ]
         lift: +(S.lift || 0).toFixed(4),   // [W5-ПОЛ] на сколько модель приподнята, чтобы подошва не ушла в пол
+        // [W5-СМЕНА] кэш смены: собранные герои (свежий — последний), сборки в работе, догорающие силуэты
+        cache: { shown: cur ? cur.id : null, built: [...built.keys()], jobs: [...jobs.keys()], fading: fading.size, ...cacheInfo() },
       };
     },
   };

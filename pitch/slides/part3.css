@@ -1,0 +1,184 @@
+/* Слайды 8–10: что улучшили после первого этапа и планы развития.
+ * Все правила — внутри [data-slide="8…10"] или с префиксом .p3-. Цвета — только токены (прозрачность — color-mix от токена).
+ * Сетка — по договору Д3: заголовок 80 px на y = 130, содержимое в полосе 300–960, текст не мельче 28 px.
+ * Движение — transform, opacity, clip-path, stroke-dashoffset, canvas: 300–900 мс; шторка едет 1,2 с.
+ * Конечное состояние — по умолчанию: вход назад, печать и reduced motion показывают его сразу. */
+
+/* ---------------------------------------------------------------- общее */
+.p3-slide { font-variant-numeric: lining-nums; }
+.p3-slide *, .p3-slide *::before, .p3-slide *::after { box-sizing: border-box; }
+/* сброс без веса (:where), чтобы отступы элементов ниже не приходилось перебивать */
+:where(.p3-slide) :where(ul, ol) { list-style: none; margin: 0; padding: 0; }
+:where(.p3-slide) :where(figure, p) { margin: 0; }
+.p3-slide .title {
+  position: absolute; left: 120px; top: 130px; z-index: 2; margin: 0; max-width: 1680px;
+  font-family: var(--f-display); font-weight: 600; font-size: 80px; line-height: 1.05; color: var(--parch);
+}
+.p3-slide .chip { font-size: 30px; padding: 10px 22px 11px; }
+/* вход назад, прыжок, печать: движок держит .is-instant — состояния без анимации */
+.p3-slide.is-instant [class*="p3-"], .p3-slide.is-instant [class*="p3-"]::before, .p3-slide.is-instant [class*="p3-"]::after { transition: none !important; animation: none !important; }
+
+/* ---------------------------------------------------------------- 8. Было → стало: шторка на весь слайд */
+[data-slide="8"] { padding: 0; background: var(--ink); }
+.p3-wipe {
+  position: absolute; inset: 0; z-index: 0; overflow: hidden; cursor: ew-resize; touch-action: none; user-select: none;
+  --p3-xa: 50%; --p3-xb: 50%; --p3-ease: cubic-bezier(.65, 0, .35, 1);
+}
+.p3-wipe__pair { position: absolute; inset: 0; }
+.p3-wipe__pair--a { --x: var(--p3-xa); }
+.p3-wipe__pair--b { --x: var(--p3-xb); opacity: 0; transition: opacity .45s var(--ease); }
+[data-slide="8"]:has(.p3-s8__cap--b.is-on) .p3-wipe__pair--b { opacity: 1; }
+.p3-wipe__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; -webkit-user-drag: none; }
+/* «Сегодня» лежит сверху и открывается справа от шторки */
+.p3-wipe__after { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--x)); transition: clip-path 1.2s var(--p3-ease); }
+.p3-wipe__edge {
+  position: absolute; inset: 0; pointer-events: none;
+  transform: translateX(var(--x)); transition: transform 1.2s var(--p3-ease), opacity .3s var(--ease);
+}
+.p3-wipe__edge::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: -1.5px; width: 3px; background: var(--gold-hi);
+  box-shadow: 0 0 18px 3px color-mix(in srgb, var(--gold-hi) 50%, transparent), 0 0 60px 10px color-mix(in srgb, var(--gold-b) 18%, transparent);
+}
+.p3-wipe__knob {
+  position: absolute; left: -38px; top: calc(50% - 38px); width: 76px; height: 76px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 26px; color: var(--gold-hi);
+  background: color-mix(in srgb, var(--ink) 78%, transparent); border: 2px solid var(--gold-hi);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--gold-hi) 40%, transparent);
+}
+.p3-wipe__knob .arr { width: .85em; height: .6em; vertical-align: 0; }
+.p3-wipe.is-drag .p3-wipe__after, .p3-wipe.is-drag .p3-wipe__edge { transition: none; }
+.p3-wipe.is-pre .p3-wipe__edge { opacity: 0; }
+.p3-wipe__tag {
+  position: absolute; bottom: 52px; z-index: 1; padding: 9px 20px 10px;
+  font-family: var(--f-body); font-weight: 500; font-size: 30px; line-height: 1.2; color: var(--text); white-space: nowrap;
+  background: color-mix(in srgb, var(--ink) 76%, transparent); border: 1px solid var(--line);
+}
+.p3-wipe__tag--before { left: 120px; }
+.p3-wipe__tag--after { right: 120px; color: var(--gold-hi); border-color: var(--gold); }
+/* затемнение под заголовком и метками — текст читается поверх любого кадра */
+.p3-s8__scrim {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--ink) 90%, transparent) 0, color-mix(in srgb, var(--ink) 66%, transparent) 230px, transparent 400px),
+    linear-gradient(0deg, color-mix(in srgb, var(--ink) 70%, transparent) 0, transparent 190px);
+}
+[data-slide="8"] > .kicker { z-index: 2; pointer-events: none; }
+[data-slide="8"] .title { pointer-events: none; text-shadow: 0 2px 24px var(--ink); }
+.p3-s8__cap {
+  position: absolute; left: 120px; top: 238px; z-index: 2; pointer-events: none;
+  font-family: var(--f-body); font-size: 40px; line-height: 52px; color: var(--text); text-shadow: 0 2px 16px var(--ink);
+  transition: opacity .3s var(--ease);
+}
+.p3-s8__cap--b { transition: opacity .3s var(--ease) .15s, translate .3s var(--ease) .15s; }
+[data-slide="8"]:has(.p3-s8__cap--b.is-on) .p3-s8__cap--a { opacity: 0; }
+
+/* ---------------------------------------------------------------- 9. Три волны: четыре цифры по шагам */
+[data-slide="9"] .p3-rows { position: absolute; left: 120px; top: 318px; width: 600px; display: flex; flex-direction: column; gap: 20px; }
+.p3-row {
+  position: relative; padding: 12px 0 14px 30px; border-left: 4px solid var(--line);
+  transition: opacity .3s var(--ease), translate .3s var(--ease), border-color .35s var(--ease), background-color .35s var(--ease);
+}
+.p3-row__k { display: block; font-family: var(--f-body); font-weight: 500; font-size: 30px; line-height: 38px; color: var(--muted); transition: color .35s var(--ease); }
+.p3-row__v {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--f-num); font-weight: 600; font-size: 52px; line-height: 64px; color: var(--parch); transition: color .35s var(--ease);
+}
+.p3-row__v .arr { color: var(--gold); width: 40px; height: 26px; margin: 0 6px; vertical-align: 0; }
+/* текущая строка — та, чей шаг раскрыт последним */
+[data-slide="9"]:not(:has(.p3-row--2.is-on)) .p3-row--1,
+[data-slide="9"]:has(.p3-row--2.is-on):not(:has(.p3-row--3.is-on)) .p3-row--2,
+[data-slide="9"]:has(.p3-row--3.is-on):not(:has(.p3-row--4.is-on)) .p3-row--3,
+[data-slide="9"]:has(.p3-row--4.is-on) .p3-row--4 {
+  border-left-color: var(--gold-hi); background-color: color-mix(in srgb, var(--gold) 12%, transparent);
+}
+[data-slide="9"]:not(:has(.p3-row--2.is-on)) .p3-row--1 .p3-row__k,
+[data-slide="9"]:has(.p3-row--2.is-on):not(:has(.p3-row--3.is-on)) .p3-row--2 .p3-row__k,
+[data-slide="9"]:has(.p3-row--3.is-on):not(:has(.p3-row--4.is-on)) .p3-row--3 .p3-row__k,
+[data-slide="9"]:has(.p3-row--4.is-on) .p3-row--4 .p3-row__k { color: var(--gold-b); }
+[data-slide="9"]:not(:has(.p3-row--2.is-on)) .p3-row--1 .p3-row__v,
+[data-slide="9"]:has(.p3-row--2.is-on):not(:has(.p3-row--3.is-on)) .p3-row--2 .p3-row__v,
+[data-slide="9"]:has(.p3-row--3.is-on):not(:has(.p3-row--4.is-on)) .p3-row--3 .p3-row__v,
+[data-slide="9"]:has(.p3-row--4.is-on) .p3-row--4 .p3-row__v { color: var(--gold-hi); }
+
+.p3-s9__stage { position: absolute; left: 780px; top: 300px; width: 1020px; height: 660px; }
+.p3-big {
+  position: absolute; inset: 0; display: grid; place-items: center; align-content: center; row-gap: 26px;
+  opacity: 0; transition: opacity .35s var(--ease);
+}
+[data-slide="9"]:not(:has(.p3-row--2.is-on)) .p3-big--entry,
+[data-slide="9"]:has(.p3-row--2.is-on):not(:has(.p3-row--3.is-on)) .p3-big--gest,
+[data-slide="9"]:has(.p3-row--3.is-on):not(:has(.p3-row--4.is-on)) .p3-big--assets,
+[data-slide="9"]:has(.p3-row--4.is-on) .p3-big--tests { opacity: 1; }
+/* старое и новое значение стоят в одной ячейке: со старого искры только снимают форму */
+.p3-big__from, .p3-big__to { grid-area: 1 / 1; display: flex; align-items: baseline; gap: 30px; white-space: nowrap; }
+.p3-big__from { visibility: hidden; }
+.p3-big__to { transition: opacity .4s var(--ease); }
+.p3-big__n {
+  font-family: var(--f-num); font-weight: 600; font-size: 280px; line-height: 1; letter-spacing: .01em; color: var(--gold-hi);
+  background: var(--grad-num); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.p3-big__u { font-family: var(--f-body); font-weight: 500; font-size: 64px; line-height: 1; color: var(--parch); }
+.p3-big__tag {
+  grid-area: 2 / 1; font-family: var(--f-caps); font-size: 34px; line-height: 1.2; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--gold-b); transition: opacity .4s var(--ease);
+}
+.p3-s9__fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; transition: opacity .4s var(--ease); }
+.p3-s9__stage.is-sparking .p3-s9__fx { opacity: 1; transition: none; }
+.p3-s9__stage.is-sparking .p3-big__to, .p3-s9__stage.is-sparking .p3-big__tag { opacity: 0; transition: none; }
+
+/* ---------------------------------------------------------------- 10. Что дальше: дорожная карта */
+.p3-road { position: absolute; left: 0; top: 300px; width: 1920px; height: 660px; }
+.p3-road__svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.p3-road__bed { fill: none; stroke: var(--line); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 2 16; }
+.p3-road__lit {
+  fill: none; stroke: var(--gold-hi); stroke-width: 6; stroke-linecap: round;
+  stroke-dasharray: 1 1; stroke-dashoffset: .857; transition: stroke-dashoffset .8s var(--ease);
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--gold-hi) 60%, transparent));
+}
+/* вход вперёд: дорога дорисовывается до первой станции (на .is-instant анимации нет — сразу итог) */
+[data-slide="10"].is-active .p3-road__lit { animation: p3-road-in .8s var(--ease) .15s backwards; }
+@keyframes p3-road-in { from { stroke-dashoffset: 1; } }
+[data-slide="10"]:has(.p3-st--2.is-on) .p3-road__lit { stroke-dashoffset: .5; }
+[data-slide="10"]:has(.p3-st--3.is-on) .p3-road__lit { stroke-dashoffset: 0; }
+/* станция: ромб стоит на дороге, под ним — подпись и пункты; ширина 500, центр — точка дороги */
+.p3-st { position: absolute; width: 500px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.p3-st--1 { left: 130px; top: 108px; }
+.p3-st--2 { left: 710px; top: 78px; }
+.p3-st--3 { left: 1290px; top: 103px; }
+.p3-st__gem {
+  width: 44px; height: 44px; transform: rotate(45deg); flex: none;
+  background: var(--gold-hi); border: 3px solid var(--gold-hi);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--ink) 100%, transparent), 0 0 26px 6px color-mix(in srgb, var(--gold-hi) 45%, transparent);
+}
+.p3-st--2 .p3-st__gem { background: var(--ink); }
+.p3-st__k {
+  margin-top: 40px; font-family: var(--f-caps); font-size: 34px; line-height: 1.2; letter-spacing: .12em; text-transform: uppercase; color: var(--gold-b);
+}
+.p3-st__list { margin-top: 24px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.p3-st--2 .p3-st__list .chip { border-color: var(--gold); }
+.p3-st__rune {
+  width: 150px; height: 150px; margin: -53px 0 0; flex: none; overflow: visible;
+  fill: none; stroke: var(--gold-hi); stroke-width: 3;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--gold-hi) 55%, transparent));
+}
+.p3-st__rune circle:first-child { fill: var(--ink); }
+.p3-st__rune .p3-thin { stroke: var(--gold); stroke-width: 1.5; }
+.p3-st--3 .p3-st__k { margin-top: 22px; }
+.p3-st__goal { margin-top: 14px; font-family: var(--f-display); font-weight: 600; font-size: 72px; line-height: 1.05; color: var(--gold-hi); text-shadow: 0 0 30px color-mix(in srgb, var(--gold-hi) 35%, transparent); }
+/* станция появляется — ромб коротко вспыхивает */
+[data-slide="10"].is-active .p3-st--1 .p3-st__gem { animation: p3-flare .7s var(--ease) .55s both; }
+[data-slide="10"] .p3-st.is-on .p3-st__gem, [data-slide="10"] .p3-st.is-on .p3-st__rune { animation: p3-flare .7s var(--ease) .35s both; }
+@keyframes p3-flare { 0% { scale: .6; opacity: 0; } 55% { scale: 1.18; opacity: 1; } 100% { scale: 1; opacity: 1; } }
+
+/* ---------------------------------------------------------------- уменьшенное движение и печать: сразу итог */
+@media (prefers-reduced-motion: reduce) {
+  .p3-s9__fx { display: none; }
+  .p3-s9__stage.is-sparking .p3-big__to, .p3-s9__stage.is-sparking .p3-big__tag { opacity: 1; }
+}
+@media print {
+  .p3-s9__fx, .p3-wipe__knob { display: none; }
+  /* градиент по тексту в PDF Chrome рисует рамки вокруг букв — цифры сплошным цветом */
+  .p3-big__n { background: none; -webkit-text-fill-color: currentColor; color: var(--gold-hi); }
+  .p3-s9__stage.is-sparking .p3-big__to, .p3-s9__stage.is-sparking .p3-big__tag { opacity: 1; }
+  .p3-road__lit { filter: none; }
+}

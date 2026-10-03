@@ -86,7 +86,7 @@ try {
     const r = await route.fetch();
     const body = (await r.text())
       .replace(/maxDt:\s*1 \/ 20/, 'maxDt: 0.5').replace(/stallSec:\s*0\.25/, 'stallSec: 5')
-      .replace(/easy:\s*\{\s*bossHp:\s*0\.7/, 'easy: { bossHp: 0.12');
+      .replace(/easy:\s*\{\s*bossHp:\s*[\d.]+/, 'easy: { bossHp: 0.12');
     return route.fulfill({ response: r, body, headers: { ...r.headers(), 'content-type': 'text/javascript' } });
   });
   const page = await ctx.newPage();

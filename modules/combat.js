@@ -59,7 +59,10 @@ export const DEFAULT_LAYOUT = Object.freeze({
 const EPS = 1e-9;
 const TWO_PI = Math.PI * 2;
 const ATTACK_KINDS = new Set(['slam', 'orb', 'nova']);
-export const DIFFICULTY_LEVELS = Object.freeze(['easy', 'normal']);   // [FEEL] уровни сложности боя с Регентом
+export const DIFFICULTY_LEVELS = Object.freeze(['easy', 'normal', 'hard', 'nightmare']);   // [FEEL][W5-СЛОЖНОСТЬ] уровни, которые выбирает игрок
+// [W5-СЛОЖНОСТЬ] служебные уровни: 'base' — без выбора (прежний баланс модуля: 1000 HP; тесты, стенды), 'challenge' —
+// «Испытание · 60 с» (прежняя «Лёгкая»: таблица рекордов сравнима с прошлыми попытками). Игра всегда зовёт setDifficulty.
+export const DIFFICULTY_PRESETS = Object.freeze([...DIFFICULTY_LEVELS, 'base', 'challenge']);
 const BOSS_ACTIONS = new Set(['idle', 'windup', 'attack', 'recover']);
 const MISS = Object.freeze({ hit: false, t: -1 });
 
@@ -273,12 +276,20 @@ export const DEFAULT_COMBAT_CONFIG = deepFreeze({
     turnRate: 2.5,          // рад/с
     hitReactTime: 0.35,     // только от burst, только в idle/recover
   },
-  // [FEEL] сложность боя с Регентом: множители здоровья и урона стража. Уровень выбирает игрок
-  // (settings.difficulty → setDifficulty), здесь по умолчанию 'normal' — прежний баланс без изменений.
+  // [FEEL][W5-СЛОЖНОСТЬ] сложность боя с Регентом. Уровень выбирает игрок (settings.difficulty → setDifficulty);
+  // игра берёт значения из config.js (combat.difficulty), здесь — те же по умолчанию.
+  //   bossHp, bossDamage — множители здоровья (от boss.maxHp) и урона стража;
+  //   fury — набор «Ярости клятвы», heal — лечение рун и печатей, shieldDrain — расход энергии щитом (держать и
+  //   принять удар), energyRegen — восстановление энергии; scoreMul — множитель очков за бой (итоги, постер, зал славы).
+  //   Поведение Регента по уровню (замахи, связки, приёмы) — modules/boss.js, BOSS_DIFFICULTY.
   difficulty: {
-    level: 'normal',        // 'easy' | 'normal'
-    easy: { bossHp: 0.7, bossDamage: 0.7 },
-    normal: { bossHp: 1, bossDamage: 1 },
+    level: 'base',          // без setDifficulty — прежний баланс модуля
+    base: { bossHp: 1, bossDamage: 1, fury: 1, heal: 1, shieldDrain: 1, energyRegen: 1, scoreMul: 1 },
+    challenge: { bossHp: 0.7, bossDamage: 0.7, fury: 1, heal: 1, shieldDrain: 1, energyRegen: 1, scoreMul: 1 },
+    easy: { bossHp: 4.6, bossDamage: 0.38, fury: 1, heal: 1, shieldDrain: 1, energyRegen: 1, scoreMul: 1 },
+    normal: { bossHp: 10, bossDamage: 0.4, fury: 1, heal: 1, shieldDrain: 1, energyRegen: 1, scoreMul: 1 },
+    hard: { bossHp: 12, bossDamage: 0.35, fury: 0.8, heal: 0.75, shieldDrain: 1.2, energyRegen: 0.9, scoreMul: 1.5 },
+    nightmare: { bossHp: 12.5, bossDamage: 0.33, fury: 0.65, heal: 0.5, shieldDrain: 1.4, energyRegen: 0.8, scoreMul: 2 },
   },
   bossAttack: {             // санитарные границы AttackSpec от bossBrain
     minWindup: 0.35,
@@ -392,8 +403,13 @@ function normalizeConfig(C) {
   C.encounter.aggroMemory = clamp(C.encounter.aggroMemory, 0, 120);
   C.burst.bothHandsBonus = clamp(C.burst.bothHandsBonus, 0, 3);
   const df = C.difficulty;   // [FEEL] сложность: множители в разумных пределах, неизвестный уровень — обычная
-  for (const lv of DIFFICULTY_LEVELS) { df[lv].bossHp = clamp(df[lv].bossHp, 0.2, 3); df[lv].bossDamage = clamp(df[lv].bossDamage, 0, 3); }
-  if (!DIFFICULTY_LEVELS.includes(df.level)) df.level = 'normal';
+  for (const lv of DIFFICULTY_PRESETS) {
+    const m = df[lv];   // [W5-СЛОЖНОСТЬ] здоровье — до ×20 (бой на минуты), остальное — в пределах ×0…3
+    m.bossHp = clamp(m.bossHp, 0.2, 20); m.bossDamage = clamp(m.bossDamage, 0, 3);
+    for (const k of ['fury', 'heal', 'energyRegen']) m[k] = clamp(m[k], 0, 3);
+    m.shieldDrain = clamp(m.shieldDrain, 0.1, 3); m.scoreMul = clamp(m.scoreMul, 0, 10);
+  }
+  if (!DIFFICULTY_PRESETS.includes(df.level)) df.level = 'normal';
   const bo = C.bolt;
   bo.interval = Math.max(0.05, bo.interval);
   bo.speed = clamp(bo.speed, 1, 120);
@@ -579,6 +595,10 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   let st = null;
   let warnedBrain = false;
   let PV = null;      // [PVP] дуэль игрок против игрока: логика — modules/pvp.js (attachPvp); null/off — бой с боссом
+  // [FEEL][W5-СЛОЖНОСТЬ] множители уровня сложности; в дуэли — без них (свой баланс modules/pvp.js)
+  function difficultyMods() { return C.difficulty[C.difficulty.level] || C.difficulty.normal; }
+  function dmod(key) { return PV && PV.on ? 1 : difficultyMods()[key]; }
+  function scaleBossDamage(dmg) { const m = difficultyMods().bossDamage; return m === 1 ? dmg : Math.round(dmg * m); }
 
   function freshState() {
     // старт: точка раскладки; если раскладка — заглушка, то по-старому (startAngle, orbitRadius)
@@ -862,6 +882,8 @@ export function createCombat({ config, bossBrain, layout } = {}) {
           // --- расширения: точный центр опасной зоны и урон ---
           center: vcopy(t.center), damage: t.damage,
         };
+        if (t.cue !== null) o.cue = t.cue;     // [W5-СЛОЖНОСТЬ]
+        if (t.move) o.move = t.move;
         if (t.kind === 'orb') { o.pathEnd = vcopy(t.pathEnd); o.projectileSpeed = t.speed; }
         return o;
       }),
@@ -874,6 +896,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     if (hand) { try { hand.decorateSnapshot(snap); } catch (e) { /* [HAND] снимок без стрел */ } } // [HAND]
     // [PVP] C4: режим, соперник и цель lock-on (в бою с боссом — Регент)
     snap.mode = PV && PV.on ? 'pvp' : 'boss';
+    snap.difficulty = C.difficulty.level;   // [W5-СЛОЖНОСТЬ] уровень боя: мозг Регента (поведение), значок у полосы Регента
     snap.opponent = null;
     snap.lockTarget = { position: vcopy(BOSS), kind: 'boss' };
     if (PV && PV.on) PV.decorate(snap);
@@ -1013,6 +1036,16 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       emit('boss_phase', bossAim(), { stage: 2, from: 1 });
     }
     B.decisionAction = BOSS_ACTIONS.has(dec.action) ? dec.action : 'idle';
+    // [W5-СЛОЖНОСТЬ] финт: мозг обрывает объявленный замах — телеграф снимается до выпуска новой атаки
+    if (Array.isArray(dec.cancelIds) && dec.cancelIds.length && st.telegraphs.length) {
+      const drop = new Set(dec.cancelIds.filter((x) => typeof x === 'string'));
+      const keep = [];
+      for (const t of st.telegraphs) {
+        if (drop.has(t.id)) emit('telegraph_cancel', t.center, { attackId: t.id, attackKind: t.kind, reason: 'feint' });
+        else keep.push(t);
+      }
+      st.telegraphs = keep;
+    }
     if (Array.isArray(dec.attacks)) {
       const n = Math.min(dec.attacks.length, C.sim.maxAttacksPerStep);
       for (let i = 0; i < n; i++) registerAttack(dec.attacks[i]);
@@ -1058,8 +1091,12 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       baseDamage: clamp(damage, 0, A.maxDamage),                // [FEEL] без сложности: от него — урон отражённой сферы
       blockable: spec.blockable === true,
       speed: 0, dir: null, pathEnd: null, travel: 0,
+      cue: null, move: null,   // [W5-СЛОЖНОСТЬ] «!» над Регентом за cue с до удара; составной приём (double / volley / trap)
     };
     tel.remaining = tel.duration = tel.windup;
+    const cue = Number(spec.cue);
+    if (Number.isFinite(cue) && cue > 0) tel.cue = Math.min(cue, tel.windup);
+    if (spec.move === 'double' || spec.move === 'volley' || spec.move === 'trap') tel.move = spec.move;
 
     if (kind === 'slam') {
       tel.radius = clamp(radius, A.minRadius, A.maxRadius);
@@ -1079,6 +1116,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       damage: tel.damage, blockable: tel.blockable,
       origin: vcopy(tel.origin), target: vcopy(tel.target), center: vcopy(tel.center),
       ...(kind === 'orb' ? { pathEnd: vcopy(tel.pathEnd), projectileSpeed: tel.speed } : {}),
+      ...(tel.move ? { move: tel.move } : {}), ...(tel.cue !== null ? { cue: tel.cue } : {}),   // [W5-СЛОЖНОСТЬ]
     });
     return true;
   }
@@ -1214,7 +1252,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       emit('block', point, { attackId: att.id, attackKind: att.kind, prevented: att.damage, bastion: true, energyAfter: P.energy });
     } else if (outcome === 'block') {
       st.stats.blocks++;
-      P.energy = Math.max(0, P.energy - C.shield.blockEnergyCost);
+      P.energy = Math.max(0, P.energy - C.shield.blockEnergyCost * dmod('shieldDrain'));   // [W5-СЛОЖНОСТЬ]
       P.regenDelay = C.player.energyRegenDelay;
       emit('block', point, { attackId: att.id, attackKind: att.kind, prevented: att.damage, energyAfter: P.energy });
       if (P.energy <= 0 && P.shielding) endShield('depleted');
@@ -1252,7 +1290,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     if (!I.shield) P.shieldLock = false;
     if (P.shielding) {
       if (!I.shield) { endShield(I.valid ? 'released' : 'input_lost'); return; }
-      P.energy -= C.shield.drainPerSec * h;
+      P.energy -= C.shield.drainPerSec * dmod('shieldDrain') * h;   // [W5-СЛОЖНОСТЬ]
       P.regenDelay = C.player.energyRegenDelay;
       if (P.energy <= EPS) { P.energy = 0; endShield('depleted'); }
     } else if (I.shield && !P.shieldLock) {
@@ -1575,7 +1613,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     const P = st.p;
     if (P.shielding) return;
     if (P.regenDelay > 0) { P.regenDelay = Math.max(0, P.regenDelay - h); return; }
-    P.energy = Math.min(C.player.maxEnergy, P.energy + C.player.energyRegen * h);
+    P.energy = Math.min(C.player.maxEnergy, P.energy + C.player.energyRegen * dmod('energyRegen') * h);   // [W5-СЛОЖНОСТЬ]
   }
 
   function tryBurst() {
@@ -1679,9 +1717,9 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       P.beam = Array.from({ length: S.ticks }, (_, i) => ({ i, t: 0.15 + i * S.interval }));
       emit('sigil_cast', chest, { sigil: 'delta', ticks: S.ticks, amount: S.ticks * S.damage, cleared, from: vcopy(chest), to: vcopy(to) });
     } else if (sg === 'cor') {
-      P.regen = S.duration; P.regenRate = S.heal / Math.max(0.1, S.duration);
+      P.regen = S.duration; P.regenRate = S.heal * dmod('heal') / Math.max(0.1, S.duration);   // [W5-СЛОЖНОСТЬ]
       P.ward = S.ward;
-      emit('sigil_cast', chest, { sigil: 'cor', heal: S.heal, duration: S.duration, ward: S.ward, from: vcopy(chest), to: vcopy(chest) });
+      emit('sigil_cast', chest, { sigil: 'cor', heal: Math.round(S.heal * dmod('heal')), duration: S.duration, ward: S.ward, from: vcopy(chest), to: vcopy(chest) });   // [W5-СЛОЖНОСТЬ] подпись «+N HP» — по уровню
       emit('ward_start', pp, { duration: S.ward });
     }
   }
@@ -1763,7 +1801,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       damageBoss(R.damage, 'rune', to);
     } else if (rune === 'orbis') {
       const before = P.hp;
-      P.hp = Math.min(C.player.maxHp, P.hp + R.heal);
+      P.hp = Math.min(C.player.maxHp, P.hp + R.heal * dmod('heal'));   // [W5-СЛОЖНОСТЬ] лечение по уровню
       P.ward = R.ward;
       emit('rune_cast', chest, { rune, heal: P.hp - before, ward: R.ward, from: vcopy(chest), to: vcopy(chest) });
       emit('ward_start', playerPos(), { duration: R.ward });
@@ -1774,8 +1812,8 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       P.vortex = R.duration;
       emit('rune_cast', chest, { rune, from: vcopy(chest), to: vcopy(chest), duration: R.duration, radius: R.radius });
     } else if (rune === 'lemnis') {
-      P.regen = R.duration; P.regenRate = R.heal / Math.max(0.1, R.duration);
-      emit('rune_cast', chest, { rune, from: vcopy(chest), to: vcopy(chest), heal: R.heal, duration: R.duration });
+      P.regen = R.duration; P.regenRate = R.heal * dmod('heal') / Math.max(0.1, R.duration);   // [W5-СЛОЖНОСТЬ]
+      emit('rune_cast', chest, { rune, from: vcopy(chest), to: vcopy(chest), heal: Math.round(R.heal * dmod('heal')), duration: R.duration });   // [W5-СЛОЖНОСТЬ] сколько вылечит на самом деле
     } else if (rune === 'caret') {
       const S = C.spark;
       emit('rune_cast', chest, { rune, from: vcopy(chest), to: vcopy(to), count: R.count });
@@ -1794,7 +1832,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
       }
     } else if (rune === 'vee') {
       const before = P.hp;
-      P.hp = Math.min(C.player.maxHp, P.hp + R.heal);
+      P.hp = Math.min(C.player.maxHp, P.hp + R.heal * dmod('heal'));   // [W5-СЛОЖНОСТЬ] лечение по уровню
       emit('rune_cast', chest, { rune, from: vcopy(to), to: vcopy(chest), heal: P.hp - before, amount: R.damage });
       damageBoss(R.damage, 'rune', to, { rune: 'vee' });
     } else if (rune === 'clepsydra') {
@@ -2411,10 +2449,10 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   // ---------------------------------------------------------------- [W3-ULT] «Ярость клятвы» и «Небесный суд»
   function ultAllowed() { return !(PV && PV.on); }   // в дуэли ультимейта нет
   function ultReady() { return ultAllowed() && st.p.fury >= C.ultimate.furyMax - 1e-6; }
-  function addFury(v) {
+  function addFury(v, raw) {
     const P = st.p;
     if (!(v > 0) || st.ult || !ultAllowed() || st.status !== 'playing') return;
-    P.fury = Math.min(C.ultimate.furyMax, P.fury + v);
+    P.fury = Math.min(C.ultimate.furyMax, P.fury + (raw ? v : v * dmod('fury')));   // [W5-СЛОЖНОСТЬ] ярость копится медленнее
     if (P.fury >= C.ultimate.furyMax - 1e-6 && !st.furyFullSent) {
       st.furyFullSent = true;
       emit('ultimate_ready', playerPos(), { fury: P.fury });
@@ -2433,7 +2471,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     const n = Number(v);
     st.p.fury = clamp(Number.isFinite(n) ? n : 0, 0, C.ultimate.furyMax);
     st.furyFullSent = false;
-    addFury(1e-9);   // полная — событие ultimate_ready
+    addFury(1e-9, true);   // полная — событие ultimate_ready
     return st.p.fury;
   }
   function tryUltimate() {
@@ -2536,15 +2574,18 @@ export function createCombat({ config, bossBrain, layout } = {}) {
   // [FEEL] сложность боя с Регентом (C.difficulty): здоровье стража и урон его атак.
   // Здоровье меняется со следующего reset() (или сразу, если бой ещё не начат), урон — с ближайшей атаки.
   const BOSS_HP0 = C.boss.maxHp;
-  function difficultyMods() { return C.difficulty[C.difficulty.level] || C.difficulty.normal; }
-  function scaleBossDamage(dmg) { const m = difficultyMods().bossDamage; return m === 1 ? dmg : Math.round(dmg * m); }
   function applyDifficulty() { C.boss.maxHp = Math.max(1, Math.round(BOSS_HP0 * difficultyMods().bossHp)); }
   function getDifficulty() {
     const m = difficultyMods();
-    return { level: C.difficulty.level, bossMaxHp: C.boss.maxHp, bossHpMul: m.bossHp, bossDamageMul: m.bossDamage };
+    return {
+      level: C.difficulty.level, bossMaxHp: C.boss.maxHp, bossHpMul: m.bossHp, bossDamageMul: m.bossDamage,
+      // [W5-СЛОЖНОСТЬ] восстановление героя и очки; selectable — уровень из меню (не служебный)
+      furyMul: m.fury, healMul: m.heal, shieldDrainMul: m.shieldDrain, energyRegenMul: m.energyRegen, scoreMul: m.scoreMul,
+      selectable: DIFFICULTY_LEVELS.includes(C.difficulty.level),
+    };
   }
   function setDifficulty(level) {
-    C.difficulty.level = DIFFICULTY_LEVELS.includes(level) ? level : 'normal';
+    C.difficulty.level = DIFFICULTY_PRESETS.includes(level) ? level : 'normal';
     applyDifficulty();
     const B = st.b;
     if (st.status === 'playing' && !B.dead && st.stats.damageDealt === 0) B.hp = C.boss.maxHp;

@@ -16,6 +16,12 @@
 // export: createDashBurst(THREE, { color, color2, count }) — пыль из-под ног и искры стихии на рывке:
 //   ОДНИ Points из кольцевого пула (1 вызов, пока есть живые частицы), баллистика — в вершинном шейдере.
 //   → { points, emit(kind, x,y,z, dx,dz, t, k), update(t), setColor, dispose }   kind: 'dash' | 'stop' | 'step'
+//
+// [W5-СМЕНА] Материалы — ShaderMaterial: в ключе программы three — номера исходников шейдеров (WebGLShaderCache), и
+// когда освобождён последний материал с этим исходником, следующий получает НОВЫЙ номер — программа собиралась
+// заново на каждую загрузку героя (смена героя в меню). dispose() отдаёт материал в heroCache.retire: первый
+// собранный материал каждого исходника остаётся «хранителем» (вне сцены, без текстур) — номер и программа живут.
+import { retire } from './heroCache.js';
 
 const VERT = /* glsl */`
 attribute vec3 aT;          // x — возраст (0 новый … 1 погас), y — поперёк (0 древко … 1 навершие), z — яркость замера
@@ -120,7 +126,7 @@ export function createTrail(THREE, { color = 0x9d7bff, n = 18, sub = 3, life = 0
     mesh, push, reset,
     setVisible(on) { if (!on) reset(); },
     get lit() { return lit; },
-    dispose() { if (mesh.parent) mesh.parent.remove(mesh); geo.dispose(); mat.dispose(); },
+    dispose() { if (mesh.parent) mesh.parent.remove(mesh); geo.dispose(); retire(mat); },   // [W5-СМЕНА] хранитель программы
   };
 }
 
@@ -208,7 +214,7 @@ export function createFootprints(THREE, { color = 0x9ff4ff, color2 = 0xffffff, c
     update(t) { U.uTime.value = t; if (mesh.visible && t - lastT > life) mesh.visible = false; },
     setColor(c1, c2) { U.uC1.value.set(c1); if (c2 !== undefined) U.uC2.value.set(c2); },
     get alive() { return mesh.visible; },
-    dispose() { if (mesh.parent) mesh.parent.remove(mesh); geo.dispose(); mat.dispose(); if (mesh.dispose) mesh.dispose(); },
+    dispose() { if (mesh.parent) mesh.parent.remove(mesh); geo.dispose(); retire(mat); if (mesh.dispose) mesh.dispose(); },   // [W5-СМЕНА]
   };
 }
 
@@ -340,6 +346,6 @@ export function createDashBurst(THREE, { color = 0x9ff4ff, color2 = 0xffffff, co
     update(t) { U.uTime.value = t; if (pts.visible && t > until + 0.05) pts.visible = false; },
     setColor(c1, c2) { U.uC1.value.set(c1); if (c2 !== undefined) U.uC2.value.set(c2); },
     get alive() { return pts.visible; },
-    dispose() { if (pts.parent) pts.parent.remove(pts); geo.dispose(); mat.dispose(); },
+    dispose() { if (pts.parent) pts.parent.remove(pts); geo.dispose(); retire(mat); },   // [W5-СМЕНА]
   };
 }

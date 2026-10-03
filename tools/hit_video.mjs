@@ -108,7 +108,7 @@ async function run(quality) {
     const r = await route.fetch();
     const body = (await r.text())
       .replace(/maxDt:\s*1 \/ 20/, 'maxDt: 0.5').replace(/stallSec:\s*0\.25/, 'stallSec: 5')
-      .replace(/easy:\s*\{\s*bossHp:\s*0\.7/, 'easy: { bossHp: ' + BOSS_HP);
+      .replace(/easy:\s*\{\s*bossHp:\s*[\d.]+/, 'easy: { bossHp: ' + BOSS_HP);
     return route.fulfill({ response: r, body, headers: { ...r.headers(), 'content-type': 'text/javascript' } });
   });
   // энергия восстанавливается быстрее (20 → 45 ед./с): сценарий укладывается в 15 с без «нет энергии»

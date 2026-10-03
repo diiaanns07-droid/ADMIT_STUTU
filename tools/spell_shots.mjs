@@ -111,7 +111,7 @@ try {
     const body = (await r.text())
       .replace(/maxDt:\s*1 \/ 20/, 'maxDt: 0.5').replace(/stallSec:\s*0\.25/, 'stallSec: 5')
       .replace(/combat:\s*\{/, COMBAT)
-      .replace(/easy:\s*\{\s*bossHp:\s*0\.7,\s*bossDamage:\s*0\.7\s*\}/, 'easy: { bossHp: 4, bossDamage: 0 }');
+      .replace(/easy:\s*\{\s*bossHp:\s*[\d.]+,\s*bossDamage:\s*[\d.]+\s*\}/, 'easy: { bossHp: 4, bossDamage: 0 }');
     return route.fulfill({ response: r, body, headers: { ...r.headers(), 'content-type': 'text/javascript' } });
   });
   const page = await ctx.newPage();

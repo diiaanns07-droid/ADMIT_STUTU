@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHEN OATH — питч финала ADMIT</title>
+<meta name="description" content="Тёмное фэнтези в браузере: управление телом и руками через веб-камеру. Презентация для финала ADMIT, кейс Motion.">
+<meta name="theme-color" content="#0b0a09">
+<!-- Превью ссылки (Telegram, WhatsApp, соцсети): адрес картинки — абсолютный, иначе превью не покажут. -->
+<meta property="og:type" content="website">
+<meta property="og:locale" content="ru_RU">
+<meta property="og:site_name" content="ASHEN OATH">
+<meta property="og:title" content="ASHEN OATH — питч финала ADMIT">
+<meta property="og:description" content="Тёмное фэнтези в браузере: управление телом и руками через веб-камеру">
+<meta property="og:url" content="https://diiaanns07-droid.github.io/ADMIT_STUTU/pitch/">
+<meta property="og:image" content="https://diiaanns07-droid.github.io/ADMIT_STUTU/pitch/media/p1/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="ASHEN OATH — камера вместо джойстика">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ASHEN OATH — питч финала ADMIT">
+<meta name="twitter:description" content="Тёмное фэнтези в браузере: управление телом и руками через веб-камеру">
+<meta name="twitter:image" content="https://diiaanns07-droid.github.io/ADMIT_STUTU/pitch/media/p1/og.jpg">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0a09'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23c4a265' stroke-width='1.6'/%3E%3Cpath d='M16 4v24M12 20l4 3 4-3' fill='none' stroke='%23c4a265' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<!-- Шрифты первого экрана (метка, логотип, подпись, lead) — заранее; остальные грузятся по мере надобности.
+     Только по http(s): из file:// предзагрузка шрифта упирается в CORS (сами шрифты из file:// грузятся и так). -->
+<script>
+  if (location.protocol !== 'file:') ['CormorantGaramond-var-latin', 'CormorantGaramond-500i-cyrillic', 'Forum-400-cyrillic', 'Forum-400-latin', 'AlegreyaSans-400-cyrillic'].forEach(function (f) {
+    var l = document.createElement('link'); l.rel = 'preload'; l.as = 'font'; l.type = 'font/woff2'; l.crossOrigin = 'anonymous'; l.href = 'fonts/' + f + '.woff2';
+    document.head.appendChild(l);
+  });
+</script>
+<!-- Порядок подключения — часть общего контракта: шрифты, движок, затем стили трёх частей. -->
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="deck.css">
+<link rel="stylesheet" href="slides/part1.css">
+<link rel="stylesheet" href="slides/part2.css">
+<link rel="stylesheet" href="slides/part3.css">
+</head>
+<body>
+<main class="deck" id="p1-deck" aria-roledescription="презентация">
+  <!-- Слайды, плашку навигации, «Содержание» и полосу прогресса вставляет deck.js (очередь window.DECK_QUEUE). -->
+</main>
+<!-- QR (версия 4, коррекция M) на https://diiaanns07-droid.github.io/ADMIT_STUTU/ — нарисован модулями SVG, без внешних сервисов.
+     Его клонирует финальный слайд 11 (slides/part1.js); dev/challenge.test.mjs сверяет его с QR игры. -->
+<template id="qr-game"><svg viewBox="0 0 41 41" role="img" aria-label="QR-код: https://diiaanns07-droid.github.io/ADMIT_STUTU/"><rect width="41" height="41" fill="#eadfc5"/><path fill="#15120f" d="M4 4h7v1h-7zM13 4h3v1h-3zM18 4h1v1h-1zM20 4h1v1h-1zM22 4h3v1h-3zM27 4h1v1h-1zM30 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM15 5h2v1h-2zM19 5h1v1h-1zM22 5h1v1h-1zM25 5h2v1h-2zM30 5h1v1h-1zM36 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM12 6h1v1h-1zM18 6h2v1h-2zM23 6h1v1h-1zM25 6h1v1h-1zM28 6h1v1h-1zM30 6h1v1h-1zM32 6h3v1h-3zM36 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM12 7h1v1h-1zM14 7h2v1h-2zM22 7h1v1h-1zM26 7h1v1h-1zM28 7h1v1h-1zM30 7h1v1h-1zM32 7h3v1h-3zM36 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM12 8h3v1h-3zM18 8h4v1h-4zM24 8h1v1h-1zM26 8h3v1h-3zM30 8h1v1h-1zM32 8h3v1h-3zM36 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM12 9h2v1h-2zM16 9h1v1h-1zM18 9h1v1h-1zM21 9h1v1h-1zM23 9h1v1h-1zM26 9h2v1h-2zM30 9h1v1h-1zM36 9h1v1h-1zM4 10h7v1h-7zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM26 10h1v1h-1zM28 10h1v1h-1zM30 10h7v1h-7zM12 11h1v1h-1zM14 11h3v1h-3zM18 11h1v1h-1zM20 11h1v1h-1zM23 11h3v1h-3zM28 11h1v1h-1zM4 12h1v1h-1zM6 12h5v1h-5zM14 12h5v1h-5zM21 12h1v1h-1zM23 12h2v1h-2zM26 12h3v1h-3zM30 12h5v1h-5zM4 13h1v1h-1zM6 13h1v1h-1zM13 13h2v1h-2zM16 13h2v1h-2zM20 13h6v1h-6zM27 13h1v1h-1zM30 13h2v1h-2zM33 13h2v1h-2zM36 13h1v1h-1zM4 14h1v1h-1zM6 14h2v1h-2zM9 14h3v1h-3zM13 14h2v1h-2zM16 14h4v1h-4zM21 14h1v1h-1zM25 14h2v1h-2zM30 14h1v1h-1zM32 14h1v1h-1zM34 14h2v1h-2zM5 15h1v1h-1zM7 15h3v1h-3zM11 15h1v1h-1zM13 15h2v1h-2zM17 15h1v1h-1zM19 15h4v1h-4zM24 15h1v1h-1zM26 15h1v1h-1zM28 15h2v1h-2zM32 15h4v1h-4zM5 16h1v1h-1zM10 16h1v1h-1zM12 16h1v1h-1zM14 16h1v1h-1zM18 16h3v1h-3zM24 16h3v1h-3zM28 16h2v1h-2zM31 16h1v1h-1zM33 16h1v1h-1zM36 16h1v1h-1zM4 17h3v1h-3zM9 17h1v1h-1zM11 17h4v1h-4zM16 17h2v1h-2zM19 17h1v1h-1zM21 17h2v1h-2zM28 17h2v1h-2zM33 17h1v1h-1zM35 17h2v1h-2zM4 18h3v1h-3zM8 18h1v1h-1zM10 18h4v1h-4zM19 18h2v1h-2zM22 18h1v1h-1zM24 18h1v1h-1zM26 18h1v1h-1zM29 18h2v1h-2zM33 18h1v1h-1zM35 18h1v1h-1zM4 19h1v1h-1zM7 19h1v1h-1zM12 19h1v1h-1zM14 19h1v1h-1zM18 19h2v1h-2zM25 19h1v1h-1zM29 19h2v1h-2zM32 19h1v1h-1zM34 19h1v1h-1zM4 20h2v1h-2zM7 20h1v1h-1zM9 20h5v1h-5zM18 20h4v1h-4zM26 20h1v1h-1zM28 20h2v1h-2zM31 20h2v1h-2zM36 20h1v1h-1zM4 21h1v1h-1zM6 21h2v1h-2zM9 21h1v1h-1zM14 21h1v1h-1zM18 21h1v1h-1zM20 21h1v1h-1zM22 21h6v1h-6zM30 21h2v1h-2zM33 21h2v1h-2zM36 21h1v1h-1zM8 22h1v1h-1zM10 22h1v1h-1zM13 22h2v1h-2zM17 22h1v1h-1zM19 22h2v1h-2zM22 22h1v1h-1zM24 22h3v1h-3zM29 22h1v1h-1zM31 22h2v1h-2zM34 22h2v1h-2zM4 23h1v1h-1zM7 23h2v1h-2zM12 23h1v1h-1zM16 23h4v1h-4zM24 23h2v1h-2zM28 23h1v1h-1zM31 23h4v1h-4zM36 23h1v1h-1zM5 24h4v1h-4zM10 24h4v1h-4zM15 24h1v1h-1zM17 24h2v1h-2zM22 24h2v1h-2zM25 24h1v1h-1zM27 24h1v1h-1zM29 24h1v1h-1zM31 24h1v1h-1zM33 24h1v1h-1zM35 24h2v1h-2zM4 25h5v1h-5zM12 25h1v1h-1zM15 25h2v1h-2zM18 25h3v1h-3zM24 25h2v1h-2zM27 25h3v1h-3zM33 25h1v1h-1zM36 25h1v1h-1zM4 26h1v1h-1zM6 26h7v1h-7zM14 26h2v1h-2zM23 26h1v1h-1zM28 26h2v1h-2zM31 26h1v1h-1zM33 26h1v1h-1zM35 26h1v1h-1zM4 27h1v1h-1zM7 27h2v1h-2zM13 27h3v1h-3zM20 27h1v1h-1zM22 27h5v1h-5zM28 27h1v1h-1zM33 27h3v1h-3zM4 28h1v1h-1zM6 28h1v1h-1zM8 28h3v1h-3zM12 28h1v1h-1zM16 28h2v1h-2zM21 28h3v1h-3zM28 28h5v1h-5zM34 28h1v1h-1zM36 28h1v1h-1zM12 29h2v1h-2zM17 29h1v1h-1zM20 29h4v1h-4zM26 29h1v1h-1zM28 29h1v1h-1zM32 29h1v1h-1zM34 29h1v1h-1zM36 29h1v1h-1zM4 30h7v1h-7zM13 30h2v1h-2zM16 30h1v1h-1zM19 30h3v1h-3zM24 30h1v1h-1zM26 30h3v1h-3zM30 30h1v1h-1zM32 30h1v1h-1zM34 30h1v1h-1zM4 31h1v1h-1zM10 31h1v1h-1zM12 31h1v1h-1zM15 31h3v1h-3zM20 31h5v1h-5zM27 31h2v1h-2zM32 31h3v1h-3zM36 31h1v1h-1zM4 32h1v1h-1zM6 32h3v1h-3zM10 32h1v1h-1zM12 32h3v1h-3zM17 32h4v1h-4zM24 32h3v1h-3zM28 32h6v1h-6zM4 33h1v1h-1zM6 33h3v1h-3zM10 33h1v1h-1zM12 33h1v1h-1zM14 33h2v1h-2zM17 33h3v1h-3zM21 33h2v1h-2zM25 33h1v1h-1zM27 33h3v1h-3zM32 33h1v1h-1zM34 33h1v1h-1zM36 33h1v1h-1zM4 34h1v1h-1zM6 34h3v1h-3zM10 34h1v1h-1zM12 34h2v1h-2zM15 34h7v1h-7zM24 34h2v1h-2zM30 34h2v1h-2zM33 34h2v1h-2zM4 35h1v1h-1zM10 35h1v1h-1zM13 35h1v1h-1zM15 35h2v1h-2zM19 35h1v1h-1zM22 35h1v1h-1zM25 35h1v1h-1zM29 35h2v1h-2zM32 35h3v1h-3zM4 36h7v1h-7zM12 36h1v1h-1zM16 36h1v1h-1zM18 36h2v1h-2zM21 36h1v1h-1zM24 36h1v1h-1zM28 36h4v1h-4zM34 36h2v1h-2z"/></svg></template>
+<noscript><p class="noscript">Презентации нужен JavaScript. Запасной вариант — ASHEN_OATH_pitch_dark.pdf рядом с этим файлом.</p></noscript>
+
+<script src="slides/part1.js"></script>
+<script src="slides/part2.js"></script>
+<script src="slides/part3.js"></script>
+<script src="deck.js"></script>
+</body>
+</html>

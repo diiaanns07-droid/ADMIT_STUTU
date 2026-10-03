@@ -144,11 +144,26 @@ async function warm() {
   log(`офлайн-кэш готов (${st.version}): ${st.warm.done - st.warm.skipped} докачано, ${st.warm.skipped} уже было${st.warm.errors ? `, ошибок ${st.warm.errors}` : ''}`);
 }
 
+// [W5-СТАРТ] меню на экране: заставка снята (index.html boot.done пишет __aoBootMs) или страница загружена — что раньше.
+// Событие load само по себе приходит поздно: пока собираются шейдеры первого кадра, его задача ждёт главный поток.
+function menuShown() {
+  return new Promise((resolve) => {
+    if (document.readyState === 'complete' || window.__aoBootMs !== undefined) { resolve(); return; }
+    let done = false;
+    const go = () => { if (!done) { done = true; resolve(); } };
+    window.addEventListener('load', go, { once: true });
+    const poll = () => { if (done) return; if (window.__aoBootMs !== undefined) go(); else setTimeout(poll, 250); };
+    poll();
+  });
+}
+
 async function main() {
-  if (document.readyState !== 'complete') await new Promise((r) => window.addEventListener('load', r, { once: true }));
-  await setupServiceWorker();
-  emit();
-  if (!window.__ASHEN__) { st.preload.status = 'skipped'; st.warm.status = 'skipped'; settle(); return; }   // игра не стартовала
+  await menuShown();
+  // [W5-СТАРТ] service worker ставится параллельно с предзагрузкой MediaPipe, а не до неё: «Играть» можно нажать сразу
+  // после меню, и камера не должна ждать установки кэша. Файлы MediaPipe до активации service worker ложатся в кэш
+  // браузера; докачка warm() ниже — уже через service worker.
+  const swP = setupServiceWorker().then(() => emit(), () => emit());
+  if (!window.__ASHEN__) { await swP; st.preload.status = 'skipped'; st.warm.status = 'skipped'; settle(); return; }   // игра не стартовала
   // не мешать миру и героям: сначала их ассеты (но не дольше 4 с — у MediaPipe низкий приоритет), потом MediaPipe
   for (let i = 0; i < 20; i++) {
     let pending = 0;
@@ -158,6 +173,7 @@ async function main() {
   }
   try { await preload(); } catch (e) { st.preload.status = 'error'; }
   emit();
+  await swP;
   await sleep(1500);
   try { await warm(); } catch (e) { st.warm.status = 'error'; }
   settle();
