@@ -784,6 +784,7 @@ export function createHeroModel({
     poses.setQuality(q);   // [W4-ПОЗЫ]
     if (cur && cur.shade && cur.shade.setQuality) cur.shade.setQuality(q);
     if (cur && cur.gear && cur.gear.setQuality) cur.gear.setQuality(q);
+    if (cur && cur.aura && cur.aura.setQuality) cur.aura.setQuality(q);   // [W4-АУРА] после пересборки материалов — патч rim сразу
   }
   // LOD: 0 — полный, 1 — пружины и ткань через кадр, без теней, 2 — без пружин, 10 Гц анимации
   const _lodV = new THREE.Vector3();
@@ -1206,6 +1207,7 @@ export function createHeroModel({
     if (S.lod >= 2) { S.lodAcc += dt; if (S.lodAcc < 0.1) return; dt = S.lodAcc; S.lodAcc = 0; }
     restoreClean();
     resetFree();
+    if (cur.aura && cur.aura.tick) cur.aura.tick(dt, snap, events, cur, anchors, remote);   // [W4-АУРА] ярость, заряд рук, оберег, следы
     if (!P) { // меню: покой (или стойка витрины)
       S.yawRate = 0; S.prevYaw = null;
       if (act && !holdName && time >= actUntil) { stopAct(0.3); if (stance) setStance(stance); }
