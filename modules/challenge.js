@@ -141,7 +141,7 @@ export function createTally() {
 }
 
 // tally = { damage, maxCombo, accuracy (0–100 | null), gestures, magic, magicKinds, ultimates, victory, timeLeft }
-// [W5-СЛОЖНОСТЬ] + damageScale (обычный бой: урон в очках — на 1000 HP Регента), scoreMul и difficultyName —
+// [W5-СЛОЖНОСТЬ] + damageScale (обычный бой: урон в очках — как у Регента в FIGHT_DAMAGE_BASE HP), scoreMul и difficultyName —
 // множитель сложности отдельной строкой («Сложная» ×1,5, «Кошмар» ×2); без них — как раньше.
 export function scoreChallenge(tally) {
   const T = isObj(tally) ? tally : {};
