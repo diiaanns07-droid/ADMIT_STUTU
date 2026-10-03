@@ -1,5 +1,6 @@
-/* ASHEN OATH — движок презентации: токены, сцена 1920×1080, общие классы, полоса Регента, печать.
- * Токены и общие классы — общий контракт всех частей (slides/part1–3.css): цвета только через var(). */
+/* ASHEN OATH — движок презентации: токены, сцена 1920×1080, типографика, общие компоненты, навигация, печать.
+ * Общий контракт всех частей (slides/part1–3.css): цвета — только через var(), размеры текста — классы ниже.
+ * Типографика: .title 80 px, .lead 40/52, текст 34/46; ничего мельче 28 px (.kicker, .cap, .src — 28 px). */
 
 :root {
   --ink: #0b0a09;
@@ -13,7 +14,7 @@
   --gold-deep: #9c7d45;
   --parch: #eadfc5;
   --text: #ece6d9;
-  --muted: #b9b1a1;
+  --muted: #cfc6b4;        /* вторичный текст: контраст 11:1 на --ink */
   --blood: #b0262a;
   --ember: #ff8a3c;
   --mana: #5aa0ff;
@@ -48,66 +49,80 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: var(--ink); }
+/* Горизонтальные жесты — презентации (свайп листает), а не браузеру: иначе свайп вправо уводит «назад» по истории. */
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--ink); touch-action: pan-y pinch-zoom; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
 body {
-  color: var(--text); font-family: var(--f-body); font-size: 32px; line-height: 1.375;
+  color: var(--text); font-family: var(--f-body); font-size: 34px; line-height: 46px;
   font-variant-numeric: lining-nums; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
 p, h1, h2, h3, h4, ul, ol, figure, blockquote { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
 img, video, svg { display: block; }
 a { color: inherit; }
 .noscript { position: fixed; inset: auto 0 40px; text-align: center; color: var(--muted); }
 
-/* ---------- Сцена: 1920×1080, масштаб --s = min(ширина/1920, высота/1080), вёрстка одна на любом экране */
+/* ---------- Сцена 1920×1080, масштаб --s = min(ширина/1920, высота/1080): слайд вписан целиком, без обрезки.
+ * fixed — сцена не раздувает документ (на телефоне иначе браузер расширяет страницу). */
 .deck {
-  position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px;
+  position: fixed; left: 50%; top: 50%; width: 1920px; height: 1080px;
   transform: translate(-50%, -50%) scale(var(--s)); transform-origin: 50% 50%;
   background: var(--ink); overflow: hidden;
 }
 .slide {
   position: absolute; inset: 0; z-index: 1; padding: 120px; overflow: hidden;
-  background: var(--grad-panel), var(--ink);
-  opacity: 0; visibility: hidden; transform: translateY(8px);
-  transition: opacity .4s var(--ease), transform .4s var(--ease), visibility 0s linear .4s;
+  background: var(--ink); visibility: hidden;
 }
-.slide.is-active {
-  z-index: 2; opacity: 1; visibility: visible; transform: none;
-  transition: opacity .4s var(--ease), transform .4s var(--ease), visibility 0s;
-}
+.slide.is-active { z-index: 3; visibility: visible; }
 .notes { display: none; }
 
-/* ---------- Шаги: data-step="1", "2"… скрыты до показа, раскрываются по одному (300 мс) */
-[data-step] { transition: opacity .3s var(--ease), translate .3s var(--ease); }
-[data-step]:not(.is-on) { opacity: 0; translate: 0 8px; }
+/* ---------- Переход «чернила света»: новый слайд проявляется за светлой чертой (450 мс), старый гаснет под ним */
+.slide.is-leaving { z-index: 2; visibility: visible; }
+.slide.is-dim { animation: ink-dim .45s var(--ease) both; }
+.slide.is-wipe { animation: ink-wipe .45s var(--ease) both; }
+.slide.is-wipe-back { animation: ink-wipe-back .45s var(--ease) both; }
+@keyframes ink-wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes ink-wipe-back { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0 0 0 0); } }
+@keyframes ink-dim { from { opacity: 1; } to { opacity: .15; } }
+.ink {
+  position: absolute; left: 0; top: 0; z-index: 4; width: 3px; height: 1080px; opacity: 0; pointer-events: none;
+  background: var(--gold-hi); box-shadow: 0 0 18px 4px rgba(243, 220, 160, .55), 0 0 60px 12px rgba(216, 179, 106, .22);
+}
 
-/* ---------- К5. Общие классы */
-.grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 24px; }
+/* ---------- Шаги (data-step), лесенка внутри шага, .reveal при входе вперёд */
+[data-step] { transition: opacity .3s var(--ease) var(--sd, 0ms), translate .3s var(--ease) var(--sd, 0ms); }
+[data-step]:not(.is-on) { opacity: 0; translate: 0 10px; }
+.reveal { opacity: 0; translate: 0 14px; transition: opacity .45s var(--ease) var(--rd, 0ms), translate .45s var(--ease) var(--rd, 0ms); }
+.reveal.is-shown { opacity: 1; translate: none; }
+/* data-particles: пока частицы летят, сам элемент скрыт */
+[data-particles] { transition: opacity .3s var(--ease); }
+[data-particles].is-forming { opacity: 0; transition: none; }
 
-/* Метка раздела: стоит над тезисом, тезис начинается на y = 120. */
+/* ---------- Типографика */
 .kicker {
   position: relative; display: inline-block;
-  font-family: var(--f-caps); font-size: 24px; line-height: 28px; font-weight: 400;
-  letter-spacing: .14em; text-transform: uppercase; color: var(--gold-b);
+  font-family: var(--f-caps); font-size: 28px; line-height: 32px; font-weight: 400;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--gold-hi);
 }
-.slide > .kicker { position: absolute; left: 120px; top: 66px; }
-/* «Чернила света»: золотая линия прочерчивается слева направо за 600 мс, яркий кончик ведёт линию. */
+.slide > .kicker { position: absolute; left: 120px; top: 56px; }
+/* «Чернила света»: под меткой прочерчивается золотая линия (600 мс), яркий кончик ведёт её */
 .kicker::after {
-  content: ''; position: absolute; left: 0; right: 0; bottom: -9px; height: 2px;
-  background: linear-gradient(90deg, rgba(196, 162, 101, .15), var(--gold) 55%, var(--gold-hi));
-  box-shadow: 0 0 10px rgba(243, 220, 160, .45);
+  content: ''; position: absolute; left: 0; right: 0; bottom: -10px; height: 2px;
+  background: linear-gradient(90deg, rgba(196, 162, 101, .2), var(--gold) 55%, var(--gold-hi));
   transform: scaleX(0); transform-origin: 0 50%;
 }
 .slide.is-active .kicker::after { transform: scaleX(1); transition: transform .6s var(--ease) .12s; }
 .slide.is-leaving .kicker::after { transform: scaleX(1); }
-
-.thesis {
-  font-family: var(--f-display); font-weight: 600; font-size: 68px; line-height: 1.08;
-  letter-spacing: .005em; color: var(--parch); max-width: 1680px; text-wrap: balance;
+.title, .thesis {
+  font-family: var(--f-display); font-weight: 600; font-size: 80px; line-height: 1.05;
+  letter-spacing: .003em; color: var(--parch); max-width: 1680px; text-wrap: balance;
 }
-.lead { font-family: var(--f-body); font-size: 32px; line-height: 44px; color: var(--text); max-width: 1320px; }
-.cap { font-family: var(--f-body); font-size: 24px; line-height: 1.35; color: var(--muted); }
-.src { font-family: var(--f-body); font-size: 20px; line-height: 1.4; color: var(--muted); }
+.lead { font-family: var(--f-body); font-size: 40px; line-height: 52px; color: var(--text); max-width: 1400px; }
+.text { font-family: var(--f-body); font-size: 34px; line-height: 46px; color: var(--text); }
+.cap { font-family: var(--f-body); font-size: 28px; line-height: 38px; color: var(--muted); }
+.src { font-family: var(--f-body); font-size: 28px; line-height: 38px; color: var(--muted); }
+.accent { color: var(--gold-hi); }
 
+/* Цифры: Cinzel (только латиница и цифры), русский текст рядом — .unit */
 .num {
   position: relative; display: inline-block;
   font-family: var(--f-num); font-weight: 600; font-size: 140px; line-height: 1; letter-spacing: .01em;
@@ -118,194 +133,203 @@ a { color: inherit; }
   font-family: var(--f-body); font-weight: 500; font-size: 40px; line-height: 1.15; color: var(--parch);
   -webkit-text-fill-color: currentColor;
 }
-/* Цифра «загорается руной»: маска уходит слева направо (500 мс), по кромке идёт светлая черта, затем одна вспышка.
- * Класс .is-lit ставит deck.js, когда цифра видна (слайд открыт, её шаг раскрыт). */
+/* Цифра «загорается руной»: маска слева направо (500 мс), светлая кромка, одна вспышка */
 .num[data-ignite]:not(.is-lit) { clip-path: inset(0 100% 0 0); }
 .num[data-ignite].is-lit { animation: ignite-mask .5s var(--ease) both; }
 .num[data-ignite]::before {
   content: ''; position: absolute; top: 4%; bottom: 4%; left: 0; width: 3px; border-radius: 2px;
-  background: var(--gold-hi); box-shadow: 0 0 14px 3px rgba(243, 220, 160, .7);
-  opacity: 0; pointer-events: none;
-}
-.num[data-ignite]::after {
-  content: ''; position: absolute; inset: -10% -6%; pointer-events: none;
-  background: radial-gradient(closest-side, rgba(243, 220, 160, .5), rgba(243, 220, 160, 0) 70%);
-  mix-blend-mode: screen; opacity: 0;
+  background: var(--gold-hi); box-shadow: 0 0 14px 3px rgba(243, 220, 160, .7); opacity: 0; pointer-events: none;
 }
 .num[data-ignite].is-lit::before { animation: ignite-edge .5s var(--ease) both; }
-.num[data-ignite].is-lit::after { animation: ignite-flash .45s ease-out .45s both; }
 @keyframes ignite-mask { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
-@keyframes ignite-edge {
-  0% { opacity: 0; transform: translateX(0); }
-  15% { opacity: 1; }
-  85% { opacity: 1; }
-  100% { opacity: 0; transform: translateX(var(--ignite-w, 0px)); }
-}
-@keyframes ignite-flash { 0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes ignite-edge { 0% { opacity: 0; transform: translateX(0); } 15%, 85% { opacity: 1; } 100% { opacity: 0; transform: translateX(var(--ignite-w, 0px)); } }
+/* data-roll: цифры прокручиваются барабаном до своего значения */
+.roll__col { display: inline-block; height: 1em; overflow: hidden; vertical-align: top; background: inherit; -webkit-background-clip: text; background-clip: text; }
+.roll__strip { display: block; background: inherit; -webkit-background-clip: text; background-clip: text;
+  transition: transform .9s cubic-bezier(.2, .8, .2, 1) var(--rd, 0ms); transform: translateY(calc(var(--d, 0) * -1em)); }
+.roll__strip > span { display: block; height: 1em; line-height: 1; background: inherit; -webkit-background-clip: text; background-clip: text; }
 
-/* Рамка панели игры (9 срезов) и уголки с ромбом. */
+/* ---------- Компоненты */
+.grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 24px; }
 .frame {
-  position: relative; background: var(--grad-panel);
-  border: 1px solid var(--bronze); border-image: var(--w4-frame) 42 / 34px / 3px stretch;
-  box-shadow: var(--shadow-panel);
+  position: relative; background: var(--grad-panel); border: 1px solid var(--bronze);
+  border-image: var(--w4-frame) 42 / 34px / 3px stretch; box-shadow: var(--shadow-panel);
 }
 .corner { position: relative; }
-.corner::before, .corner::after {
-  content: ''; position: absolute; width: 22px; height: 22px; pointer-events: none;
-  background: var(--bdo-corner) no-repeat;
-}
+.corner::before, .corner::after { content: ''; position: absolute; width: 22px; height: 22px; pointer-events: none; background: var(--bdo-corner) no-repeat; }
 .corner::before { left: -1px; top: -1px; }
 .corner::after { right: -1px; bottom: -1px; transform: scale(-1, -1); }
-
 .chip {
   display: inline-flex; align-items: center; gap: 12px;
-  font-family: var(--f-body); font-size: 26px; line-height: 1.2; color: var(--text);
-  padding: 9px 20px 10px; border: 1px solid var(--line); background: rgba(14, 15, 18, .72);
-  white-space: nowrap;
+  font-family: var(--f-body); font-size: 28px; line-height: 1.2; color: var(--text);
+  padding: 10px 22px 11px; border: 1px solid var(--line); background: var(--coal-deep); white-space: nowrap;
 }
-.chip::before {
-  content: ''; width: 9px; height: 9px; flex: none; transform: rotate(45deg);
-  background: var(--gold-b);
+.chip::before { content: ''; width: 10px; height: 10px; flex: none; transform: rotate(45deg); background: var(--gold-b); }
+.chip--wip { color: var(--muted); border-style: dashed; background: transparent; }
+.chip--wip::before { background: transparent; box-shadow: inset 0 0 0 2px var(--muted); }
+/* Видео или кадр в рамке игры */
+.media { position: relative; overflow: hidden; background: var(--coal-deep); border: 1px solid var(--bronze); box-shadow: var(--shadow-panel); }
+.media > video, .media > img { width: 100%; height: 100%; object-fit: cover; }
+/* Кнопки в стиле панелей игры */
+.btn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 14px; flex: none;
+  padding: 18px 30px; text-decoration: none; cursor: pointer;
+  font-family: var(--f-caps); font-size: 28px; line-height: 1; letter-spacing: .14em; text-transform: uppercase; color: var(--parch);
+  background: var(--grad-panel), var(--coal); border: 1px solid var(--bronze);
+  border-image: var(--w4-frame) 42 / 18px / 2px stretch; box-shadow: var(--shadow-panel);
 }
-/* «В работе · не в main»: серая, пунктир, ромб без заливки. */
-.chip--wip { color: var(--muted); border-style: dashed; background: rgba(14, 15, 18, .5); }
-.chip--wip::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted); }
-
-/* Стрелка «→» (в шрифтах её нет): <i class="arr"></i>, назад — <i class="arr arr--back"></i>. */
+.btn--primary { color: var(--ink); background: linear-gradient(180deg, var(--gold-hi), var(--gold-b)); border-image: none; border-color: var(--gold-hi); }
+.btn svg { width: 26px; height: 26px; fill: currentColor; flex: none; }
+.btn kbd { font-size: 28px; line-height: 1; padding: 2px 9px 3px; }
+.btn[aria-pressed="true"] { outline: 2px solid var(--gold-hi); outline-offset: 4px; }
+.btn:focus-visible { outline: 3px solid var(--gold-hi); outline-offset: 6px; }
+@media (hover: hover) { .btn { transition: transform .2s var(--ease); } .btn:hover { transform: translateY(-2px); } }
+/* Стрелка «→» (в шрифтах её нет): <i class="arr"></i>, назад — <i class="arr arr--back"></i> */
 .arr {
   display: inline-block; width: .9em; height: .55em; vertical-align: .1em; flex: none;
   background: currentColor; -webkit-mask: var(--arr-mask) center / contain no-repeat; mask: var(--arr-mask) center / contain no-repeat;
 }
 .arr--back { transform: scaleX(-1); }
-
-/* Постер вместо видео — только для печати. */
+kbd {
+  display: inline-block; min-width: 1.6em; padding: 1px 8px 2px; text-align: center;
+  font-family: var(--f-body); font-size: .9em; color: var(--text);
+  background: var(--coal-deep); border: 1px solid var(--line); border-bottom-width: 3px; border-radius: 4px;
+}
+/* Постер вместо видео — только для печати */
 .print-poster { display: none; }
+/* Фон слайда из data-bg (z-index −1: под содержимым, раскладку частей не трогаем) */
+.slide__bg { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.slide__bg img, .slide__bg video { width: 100%; height: 100%; object-fit: cover; }
+.slide__bg::after { content: ''; position: absolute; inset: 0; }
+.slide__bg--left::after { background: linear-gradient(90deg, var(--ink) 0%, rgba(11, 10, 9, .86) 36%, rgba(11, 10, 9, .3) 74%, rgba(11, 10, 9, .5) 100%); }
+.slide__bg--bottom::after { background: linear-gradient(0deg, var(--ink) 0%, rgba(11, 10, 9, .75) 40%, rgba(11, 10, 9, .25) 100%); }
+.slide__bg--full::after { background: var(--ink); opacity: .75; }
+/* data-demo: кнопка демонстрации внутри слайда (хук demo(el, action)) */
+[data-demo] { cursor: pointer; }
+[data-demo].is-playing { outline: 2px solid var(--gold-hi); outline-offset: 4px; }
 
-/* ---------- К9 (а). Полоса доклада — полоса здоровья Регента Нимба: ширина (13 − n) / 12 */
-.regent {
-  position: absolute; z-index: 20; left: 50%; top: 14px; width: 640px; margin-left: -320px;
-  pointer-events: none;
+/* ---------- Слои сцены: «волшебный переход», частицы, вспышка */
+.morph-layer { position: absolute; inset: 0; z-index: 16; pointer-events: none; }
+.morph-ghost { position: absolute; margin: 0; transform-origin: 0 0; box-sizing: border-box; }
+.is-morphing { visibility: hidden; }
+.fx { position: absolute; inset: 0; z-index: 12; width: 1920px; height: 1080px; pointer-events: none; }
+.flash {
+  position: absolute; inset: 0; z-index: 18; opacity: 0; pointer-events: none; mix-blend-mode: screen;
+  background: radial-gradient(70% 60% at 50% 40%, rgba(243, 220, 160, .55), rgba(216, 179, 106, .12) 60%, transparent 80%);
 }
-.regent__name {
-  position: relative; height: 24px; margin: 0 0 6px; text-align: center;
-  font-family: var(--f-caps); font-size: 20px; line-height: 24px; letter-spacing: .14em;
-  text-transform: uppercase; color: var(--gold-b); text-shadow: 0 1px 6px rgba(0, 0, 0, .8);
-}
-.regent__label { display: inline-block; transition: opacity .3s var(--ease); }
-.regent__label.is-swap { opacity: 0; }
-.regent__frame { position: relative; height: 10px; }
-.regent__frame::before, .regent__frame::after {
-  content: ''; position: absolute; top: 50%; width: 64px; height: 24px; margin-top: -12px;
-  background: var(--w4-wing) center / contain no-repeat; filter: drop-shadow(0 1px 2px #000);
-}
-.regent__frame::before { right: 100%; margin-right: 4px; }
-.regent__frame::after { left: 100%; margin-left: 4px; transform: scaleX(-1); }
-.regent__bar {
-  position: relative; height: 10px; overflow: hidden;
-  background: linear-gradient(180deg, var(--ink), var(--coal-deep));
-  box-shadow: 0 0 0 1px var(--bronze), 0 0 0 2px rgba(0, 0, 0, .7), inset 0 1px 3px rgba(0, 0, 0, .8);
-  transition: opacity .3s var(--ease);
-}
-.regent__fill, .regent__tail {
-  position: absolute; inset: 0; transform-origin: 0 50%; transform: scaleX(var(--hp, 1));
-}
-.regent__fill { background: var(--grad-hp); transition: transform .3s var(--ease); }
-.regent__fill::after {
-  content: ''; position: absolute; inset: 0 0 50% 0; background: linear-gradient(180deg, rgba(234, 223, 197, .3), transparent);
-}
-/* Светлый «хвост потери» догоняет полосу за 500 мс, когда она уже сжалась. */
-.regent__tail { background: var(--parch); opacity: .85; transition: transform .5s var(--ease) .3s; }
-.regent.is-heal .regent__tail { transition: none; }
-/* Регент повержен: полоса пустая и тусклая. */
-.regent.is-defeated .regent__bar { opacity: .55; }
-.regent.is-defeated .regent__name { color: var(--gold-hi); }
 
-/* ---------- К9 (б). Пепел и угольки: один canvas 1920×1080 (DPR 1), только слайды 1 и 13 */
-.ash { position: absolute; inset: 0; z-index: 10; width: 1920px; height: 1080px; pointer-events: none; }
+/* ---------- Плашка навигации (в нижнем поле слайда), полоса прогресса */
+.navbar {
+  position: absolute; left: 50%; bottom: 22px; z-index: 30; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px; padding: 6px; height: 68px;
+  background: rgba(14, 15, 18, .92); border: 1px solid var(--line); border-radius: 999px; box-shadow: var(--shadow-panel);
+  font-family: var(--f-body); font-size: 28px; line-height: 1; color: var(--text);
+  opacity: .5; transition: opacity .3s var(--ease);
+}
+.navbar.is-awake, .navbar:hover, .navbar:focus-within { opacity: 1; }
+.navbar button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 56px; min-width: 56px; padding: 0 20px;
+  font: inherit; color: inherit; background: transparent; border: 0; border-radius: 999px; cursor: pointer;
+}
+.navbar button:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: -2px; }
+@media (hover: hover) { .navbar button:hover { background: var(--coal); } }
+.navbar button[aria-pressed="true"] { color: var(--ink); background: var(--gold-hi); }
+.navbar svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.navbar .navbar__count { min-width: 120px; font-family: var(--f-num); font-size: 28px; letter-spacing: .04em; color: var(--gold-hi); }
+.navbar__sep { width: 1px; height: 36px; background: var(--line); }
+.progress { position: absolute; left: 0; right: 0; bottom: 0; z-index: 31; height: 5px; background: rgba(87, 74, 51, .45); pointer-events: none; }
+.progress i { position: absolute; inset: 0; transform-origin: 0 50%; transform: scaleX(var(--p, 0)); background: linear-gradient(90deg, var(--gold-deep), var(--gold-hi)); transition: transform .45s var(--ease); }
+
+/* ---------- «Содержание» с миниатюрами */
+.overview {
+  position: absolute; inset: 0; z-index: 40; padding: 80px 120px 120px;
+  background: rgba(11, 10, 9, .96); visibility: hidden; opacity: 0;
+  transition: opacity .3s var(--ease), visibility 0s linear .3s;
+}
+.overview.is-on { visibility: visible; opacity: 1; transition: opacity .3s var(--ease), visibility 0s; }
+.overview__head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 36px; }
+.overview__head h2 { font-family: var(--f-display); font-weight: 600; font-size: 64px; color: var(--parch); }
+.overview__grid { display: grid; grid-template-columns: repeat(4, 384px); gap: 32px 48px; justify-content: space-between; align-items: start; }
+.thumb { display: block; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.thumb__box { display: block; position: relative; width: 384px; height: 216px; overflow: hidden; background: var(--ink); border: 1px solid var(--line); }
+.thumb.is-current .thumb__box { border-color: var(--gold-hi); box-shadow: 0 0 0 2px var(--gold-hi); }
+.thumb:focus-visible .thumb__box { box-shadow: 0 0 0 3px var(--gold-hi); }
+.thumb__box .slide { visibility: visible; position: absolute; inset: auto; left: 0; top: 0; width: 1920px; height: 1080px; transform: scale(.2); transform-origin: 0 0; pointer-events: none; }
+.thumb__box [data-step], .thumb__box .reveal { opacity: 1 !important; translate: none !important; }
+.thumb__box [data-particles], .thumb__box .num[data-ignite] { opacity: 1 !important; clip-path: none !important; }
+.thumb__cap { display: flex; gap: 14px; margin-top: 12px; font-size: 28px; line-height: 34px; color: var(--text); }
+.thumb__cap b { font-family: var(--f-num); font-weight: 600; color: var(--gold-hi); }
+.thumb__cap span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
 /* ---------- Заглушка слайда, которого ещё нет в сборке */
 .slide--stub { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 28px; }
 .stub__n {
   font-family: var(--f-num); font-weight: 600; font-size: 140px; line-height: 1;
-  background: var(--grad-num); -webkit-background-clip: text; background-clip: text; color: transparent;
-  opacity: .5;
+  background: var(--grad-num); -webkit-background-clip: text; background-clip: text; color: transparent; opacity: .5;
 }
-.slide--stub .thesis { color: var(--muted); }
-.slide--stub .cap { max-width: 900px; }
+.slide--stub .title { color: var(--muted); }
 
-/* ---------- Служебное: чёрный экран, помощь, подсказки */
-.blackout {
-  position: fixed; inset: 0; z-index: 100; background: var(--ink);
-  opacity: 0; visibility: hidden; transition: opacity .3s var(--ease), visibility 0s linear .3s;
-}
+/* ---------- Служебное окна: чёрный экран, помощь, подсказка, «поверните телефон» */
+.blackout { position: fixed; inset: 0; z-index: 100; background: var(--ink); opacity: 0; visibility: hidden; transition: opacity .3s var(--ease), visibility 0s linear .3s; }
 .blackout.is-on { opacity: 1; visibility: visible; transition: opacity .3s var(--ease), visibility 0s; }
-.help {
-  position: fixed; inset: 0; z-index: 110; display: grid; place-items: center;
-  background: rgba(11, 10, 9, .82); opacity: 0; visibility: hidden;
-  transition: opacity .2s var(--ease), visibility 0s linear .2s;
-}
+.help { position: fixed; inset: 0; z-index: 110; display: grid; place-items: center; background: rgba(11, 10, 9, .85); opacity: 0; visibility: hidden; transition: opacity .2s var(--ease), visibility 0s linear .2s; }
 .help.is-on { opacity: 1; visibility: visible; transition: opacity .2s var(--ease), visibility 0s; }
 .help__box {
-  width: min(760px, 92vw); max-height: 90vh; overflow: auto; padding: 34px 40px 30px;
-  font-size: 18px; line-height: 1.45; color: var(--text);
-  background: var(--grad-panel), var(--coal); border: 1px solid var(--bronze);
-  border-image: var(--w4-frame) 42 / 22px / 2px stretch; box-shadow: var(--shadow-panel);
+  width: min(820px, 94vw); max-height: 92vh; overflow: auto; padding: 32px 40px 28px;
+  font-size: clamp(16px, 1.3vw, 20px); line-height: 1.45; color: var(--text);
+  background: var(--grad-panel), var(--coal); border: 1px solid var(--bronze); border-image: var(--w4-frame) 42 / 22px / 2px stretch; box-shadow: var(--shadow-panel);
 }
-.help__box h2 { font-family: var(--f-display); font-weight: 600; font-size: 30px; color: var(--parch); margin-bottom: 14px; }
+.help__box h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.6em; color: var(--parch); margin-bottom: 14px; }
 .help__box dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 22px; margin: 0; }
 .help__box dt { white-space: nowrap; text-align: right; }
 .help__box dd { margin: 0; color: var(--muted); }
-.help__box p { margin-top: 16px; font-size: 15px; color: var(--muted); }
-kbd {
-  display: inline-block; min-width: 1.7em; padding: 1px 7px 2px; text-align: center;
-  font-family: var(--f-body); font-size: .9em; color: var(--text);
-  background: var(--coal-deep); border: 1px solid var(--line); border-bottom-width: 3px; border-radius: 4px;
-}
+.help__box p { margin-top: 16px; color: var(--muted); }
 .toast {
-  position: fixed; left: 50%; bottom: 28px; z-index: 120; transform: translate(-50%, 10px);
-  padding: 10px 20px; font-size: 17px; color: var(--text); background: var(--coal);
-  border: 1px solid var(--line); box-shadow: var(--shadow-panel);
+  position: fixed; left: 50%; bottom: 28px; z-index: 120; transform: translate(-50%, 10px); padding: 10px 20px;
+  font-size: 18px; color: var(--text); background: var(--coal); border: 1px solid var(--line); box-shadow: var(--shadow-panel);
   opacity: 0; transition: opacity .3s var(--ease), transform .3s var(--ease); pointer-events: none;
 }
 .toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+.rotate { display: none; }
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate { position: fixed; inset: 0; z-index: 130; display: grid; place-items: center; padding: 24px; background: var(--grad-panel), var(--ink); text-align: center; }
+  .rotate__box { display: grid; justify-items: center; gap: 12px; color: var(--parch); }
+  .rotate__box svg { width: 96px; height: 96px; fill: none; stroke: var(--gold-b); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .rotate__box p { font-family: var(--f-display); font-weight: 600; font-size: 28px; }
+  .rotate__box .rotate__cap { font-family: var(--f-body); font-weight: 400; font-size: 18px; color: var(--muted); }
+}
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ---------- Мгновенный показ: вход назад, переход по hash, печать — сразу конечное состояние */
-.slide.is-instant [data-step],
-.slide.is-instant .kicker::after,
-.slide.is-instant .num[data-ignite],
-.slide.is-instant .num[data-ignite]::before,
-.slide.is-instant .num[data-ignite]::after { transition: none !important; animation: none !important; }
-.slide.is-instant .num[data-ignite]::before,
-.slide.is-instant .num[data-ignite]::after { opacity: 0; }
+.slide.is-instant [data-step], .slide.is-instant .reveal, .slide.is-instant [data-particles], .slide.is-instant .roll__strip,
+.slide.is-instant .kicker::after, .slide.is-instant .num[data-ignite], .slide.is-instant .num[data-ignite]::before { transition: none !important; animation: none !important; }
+.slide.is-instant .num[data-ignite]::before { opacity: 0; }
 
-/* ---------- Уменьшенное движение: сразу конечное состояние (deck.js не запускает пепел) */
+/* ---------- Уменьшенное движение: сразу конечное состояние */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     transition-duration: 0s !important; transition-delay: 0s !important;
     animation-duration: 1ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;
   }
-  .num[data-ignite]::before, .num[data-ignite]::after { animation: none !important; opacity: 0 !important; }
+  .num[data-ignite]::before { animation: none !important; opacity: 0 !important; }
 }
 
-/* ---------- К12. Печать: один слайд — одна страница 16:9, шаги раскрыты, видео заменено постером */
+/* ---------- Печать: один слайд — одна страница 16:9, шаги раскрыты, видео заменено постером */
 @page { size: 1920px 1080px; margin: 0; }
 @media print {
   html, body { width: 1920px; height: auto; overflow: visible; background: var(--ink); }
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .deck { position: static; left: auto; top: auto; width: 1920px; height: auto; transform: none; overflow: visible; background: none; }
-  .slide {
-    position: relative; inset: auto; width: 1920px; height: 1080px;
-    opacity: 1 !important; visibility: visible !important; transform: none !important;
-    break-after: page; page-break-after: always; break-inside: avoid;
-  }
+  .slide { position: relative; inset: auto; width: 1920px; height: 1080px; visibility: visible !important; opacity: 1 !important; clip-path: none !important; break-after: page; page-break-after: always; break-inside: avoid; }
   .slide:last-of-type { break-after: auto; page-break-after: auto; }
   *, *::before, *::after { transition: none !important; animation: none !important; }
-  [data-step] { opacity: 1 !important; translate: none !important; }
+  [data-step], .reveal { opacity: 1 !important; translate: none !important; }
+  [data-particles] { opacity: 1 !important; }
+  .roll__strip { transform: translateY(calc(var(--d, 0) * -1em)) !important; }
   .kicker::after { transform: none !important; }
   .num[data-ignite] { clip-path: none !important; }
-  .num[data-ignite]::before, .num[data-ignite]::after { display: none !important; }
+  .num[data-ignite]::before { display: none !important; }
   video { display: none !important; }
   .print-poster { display: block !important; }
-  .regent, .ash, .notes, .blackout, .help, .toast { display: none !important; }
+  .notes, .navbar, .progress, .overview, .ink, .morph-layer, .fx, .flash, .blackout, .help, .toast, .rotate { display: none !important; }
 }
