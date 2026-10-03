@@ -166,8 +166,8 @@ const glbBytes = new Map();
 function fetchBytes(url, signal) {
   let e = glbBytes.get(url);
   if (!e) {
-    // [LOAD] index.html начинает качать модель выбранного героя и библиотеку клипов с первых миллисекунд страницы
-    // (window.__aoPrefetch: url → Promise<ArrayBuffer>) — здесь берём уже идущую загрузку; упала — качаем сами
+    // [LOAD] загрузка, начатая страницей заранее (window.__aoPrefetch: url → Promise<ArrayBuffer>), — берём её; упала — качаем сами.
+    // [W5-СТАРТ] index.html больше не качает заранее: модель и клипы качает warmHero со старта main.js (после кода игры)
     const pre = typeof window !== 'undefined' && window.__aoPrefetch && window.__aoPrefetch[url];
     const ctl = !pre && typeof AbortController === 'function' ? new AbortController() : null;
     const cur = e = { ctl, keep: !!pre, p: null };
@@ -183,6 +183,13 @@ function fetchBytes(url, signal) {
     else signal.addEventListener('abort', () => { if (!cur.keep) cur.ctl.abort(); }, { once: true });
   }
   return e.p;
+}
+
+// [W5-СТАРТ] атлас прядей (modules/heroHair.js) — только для героинь с волосами и того размера, что возьмёт причёска
+// (512² на low, иначе 1024²), в простое главного потока. Раньше 1024² рисовался при загрузке модуля для любого героя.
+function warmHairFor(def, quality) {
+  if (!def || !def.hair) return;
+  import('./heroHair.js').then((m) => { if (m.warmHairAtlas) m.warmHairAtlas(quality === 'low' ? 512 : 1024); }).catch(() => {});
 }
 
 // [LOAD] Начать загрузку героя до создания мира (main.js зовёт сразу после чтения настроек): модули оболочки,
@@ -413,6 +420,7 @@ export function createHeroModel({
     try {
       const url = def.glb ? new URL(def.glb, heroesBase).href : new URL(def.vrm, new URL(vrmUrl, base)).href;
       prefetchHeroDeps(libUrls);   // [LOAD] клипы и модули оболочки — параллельно с моделью
+      warmHairFor(def, opts.quality);   // [W5-СТАРТ] атлас прядей — пока модель качается и разбирается
       // [LOAD] байты GLB — через общий кэш (предзагрузка витрины, возврат к прежнему герою — без сети);
       // не скачались (отмена предзагрузки, ошибка) — загрузчик попробует сам
       const pre = def.glb ? await fetchBytes(url).catch(() => null) : null;
@@ -1458,6 +1466,8 @@ export function createHeroModel({
   // [LOAD] скачать модели героев меню заранее (по одной, чтобы не забивать канал); signal — отмена
   function prefetch(ids = HERO_ORDER, { signal } = {}) {
     const urls = [...new Set(ids.map((id) => HEROES[id] && HEROES[id].glb).filter(Boolean).map((f) => new URL(f, heroesBase).href))];
+    const withHair = ids.map((id) => HEROES[id]).find((d) => d && d.hair);   // [W5-СТАРТ] героиня с волосами в очереди витрины
+    if (withHair && !(signal && signal.aborted)) warmHairFor(withHair, opts.quality);
     let chain = Promise.resolve();
     for (const u of urls) chain = chain.then(() => (signal && signal.aborted ? null : fetchBytes(u, signal)));
     return chain.then(() => true, () => false);

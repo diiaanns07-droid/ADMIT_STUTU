@@ -1,7 +1,7 @@
 // node dev/bootPlan.test.mjs — [W5-СТАРТ] порядок старта (core/bootPlan.js): что собирается до меню, что — после.
 // Сцена, рендерер и часы — фейковые: проверяется логика выбора и очереди, не скорость на железе
 // (скорость — tools/load_budget.mjs).
-import { menuDrawables, compileSet, createLateStart, createTrickleCompile, MENU_GROUPS } from '../core/bootPlan.js';
+import { menuDrawables, menuFrustum, compileSet, createLateStart, createTrickleCompile, MENU_GROUPS } from '../core/bootPlan.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -50,6 +50,30 @@ test('menuDrawables: свой набор групп и пустой корень
   ok(only.some((o) => o.name === 'spark'), 'группа из keep — целиком');
   ok(!only.some((o) => o.name === 'stone'), 'витрина не в keep — скрытая группа отброшена');
   ok(MENU_GROUPS.includes('menu-stage') && MENU_GROUPS.includes('hero-showcase'), 'группы витрины по умолчанию');
+});
+test('menuDrawables: frustum — только в кадре; небо (frustumCulled = false) и сцена витрины — всегда', () => {
+  const s = scene();
+  const sky = node('sky', { mesh: true }); sky.frustumCulled = false; sky.parent = s; s.children.push(sky);
+  const inFrame = new Set(['terrain', 'regent']);
+  const frustum = { intersectsObject: (o) => inFrame.has(o.name), intersectsSprite: () => false };
+  eq(names(menuDrawables(s, { frustum })), 'menu-stage-wave,pool,regent,sky,stone,summon,terrain', 'кадр + небо + витрина');
+  const broken = { intersectsObject: () => { throw new Error('нет boundingSphere'); }, intersectsSprite: () => true };
+  ok(menuDrawables(s, { frustum: broken }).some((o) => o.name === 'rock'), 'ошибка проверки — объект остаётся в списке');
+});
+test('menuFrustum: кадр шире камеры (запас на облёт витрины)', async () => {
+  let THREE = null;
+  try { THREE = await import(process.env.ASHEN_THREE || '../vendor/npm/three@0.185.1/build/three.module.min.js'); } catch (e) { THREE = null; }
+  ok(THREE, 'three не загрузился (ASHEN_THREE)');
+  const cam = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 1200);
+  cam.position.set(0, 1.5, 3); cam.lookAt(0, 1.2, 0); cam.updateMatrixWorld(true);
+  const plain = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+  const wide = menuFrustum(THREE, cam);
+  const at = (x, z) => { const m = new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshBasicMaterial()); m.position.set(x, 1.2, z); m.updateMatrixWorld(true); return m; };
+  const side = at(-7.1, -2);    // ~55° влево: вне кадра камеры (±40°), но в расширенном (±66°)
+  ok(!plain.intersectsObject(side) && wide.intersectsObject(side), 'сбоку — только в расширенном кадре');
+  ok(wide.intersectsObject(at(0, -5)), 'перед камерой — в кадре');
+  ok(!wide.intersectsObject(at(0, 9)), 'за спиной камеры — нет');
+  eq(cam.fov, 50, 'исходная камера не изменилась');
 });
 test('compileSet: traverse — по списку, traverseVisible — пусто (свет из сцены)', () => {
   const a = node('a', { mesh: true }), b = node('b', { mesh: true });

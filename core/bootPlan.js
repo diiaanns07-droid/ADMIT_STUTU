@@ -3,10 +3,13 @@
 // только в бою, а модули боя, камеры и дуэли грузились и строились вместе с героем на витрине. Здесь — правила, по
 // которым main.js делит старт на «до меню» и «после меню».
 //
-// menuDrawables(root, { visibleOnly = true, keep = MENU_GROUPS }) → [Object3D]
-//   Что рисует меню: видимые вместе с родителями объекты (без отсечения по кадру — витрина облетает героя) и всё внутри
-//   групп keep, даже скрытое (сцена витрины скрыта до первого кадра меню, столп призыва и волна появления — до поры).
+// menuDrawables(root, { visibleOnly = true, keep = MENU_GROUPS, frustum = null }) → [Object3D]
+//   Что рисует меню: видимые вместе с родителями объекты и всё внутри групп keep, даже скрытое (сцена витрины скрыта до
+//   первого кадра меню, столп призыва и волна появления — до поры). frustum (THREE.Frustum камеры витрины с запасом на
+//   облёт, menuFrustum) — ещё и только то, что в кадре; объекты с frustumCulled = false (небо) и группы keep — всегда.
 //   visibleOnly = false — все рисуемые объекты (пулы эффектов, магия рук, сцены Регента).
+// menuFrustum(THREE, camera, { fovK = 1.6, aspectK = 1.5 }) → THREE.Frustum камеры, расширенный на облёт витрины
+//   (дуга ±20° и подлёт) — то, что может попасть в кадр меню в первые секунды.
 // compileSet(list) → объект для renderer.compile / compileAsync(obj, camera, scene): материалы — по traverse списка,
 //   свет — из сцены (traverseVisible у списка пустой).
 // createLateStart({ maxMs, idle }) → { add(load), tick(st), fire(), onDone(fn), get fired, get pending }
@@ -16,26 +19,41 @@
 //   как все load() завершились (успешно или нет).
 // createTrickleCompile({ renderer, scene, camera, perStep, gapMs, schedule, stopped }) → { start(list), step(), get done, get added }
 //   Сборка шейдеров без KHR_parallel_shader_compile — по perStep новых программ за шаг: renderer.compile только ставит
-//   сборку в очередь GPU-процесса, главный поток её не ждёт. stopped() → true (бой начался) — остановка: дальше, как
+//   сборку в очередь GPU-процесса, главный поток её не ждёт. stopped() → true (main.js: ушли из меню) — остановка: дальше, как
 //   раньше, — при первом показе. schedule(fn, ms) — следующий шаг (в игре — таймер + requestIdleCallback).
 
 export const MENU_GROUPS = Object.freeze(['hero-showcase', 'menu-stage']);
 
 const drawable = (o) => !!((o.isMesh || o.isPoints || o.isLine || o.isSprite) && o.material);
 
-export function menuDrawables(root, { visibleOnly = true, keep = MENU_GROUPS } = {}) {
+const inView = (o, frustum) => {
+  if (!frustum || o.frustumCulled === false) return true;
+  try { return o.isSprite ? frustum.intersectsSprite(o) : frustum.intersectsObject(o); } catch (e) { return true; }
+};
+
+export function menuDrawables(root, { visibleOnly = true, keep = MENU_GROUPS, frustum = null } = {}) {
   const out = [];
   if (!root) return out;
   const keepSet = keep instanceof Set ? keep : new Set(keep || []);
   const walk = (o, all) => {
     const inKeep = all || keepSet.has(o.name);
     if (!inKeep && visibleOnly && !o.visible) return;
-    if (drawable(o)) out.push(o);
+    if (drawable(o) && (inKeep || inView(o, frustum))) out.push(o);
     const ch = o.children || [];
     for (let i = 0; i < ch.length; i++) walk(ch[i], inKeep);
   };
   walk(root, false);
   return out;
+}
+
+export function menuFrustum(THREE, camera, { fovK = 1.6, aspectK = 1.5 } = {}) {
+  const c = camera.clone();
+  c.fov = Math.min(170, camera.fov * fovK);
+  c.aspect = camera.aspect * aspectK;
+  c.updateProjectionMatrix();
+  c.updateMatrixWorld(true);
+  const m = new THREE.Matrix4().multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse);
+  return new THREE.Frustum().setFromProjectionMatrix(m);
 }
 
 export function compileSet(list) {

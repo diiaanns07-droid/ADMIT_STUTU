@@ -42,7 +42,7 @@ import { createTechniqueTrainer } from './modules/techniqueTrainer.js'; // [ТВ
 import { createUltimateGesture, ultTimeScale, ultCameraKeys } from './core/ultimate.js'; // [W3-ULT] «Небесный суд»
 import { createVoiceCoach, createVoiceDirector, createVoiceRecords } from './modules/voiceCoach.js'; // [W3-VOICE] подсказки и диктор — вслух
 import { createHandCursor } from './core/handCursor.js'; // [W3-CURSOR] курсор-кисть вместо мыши
-import { menuDrawables, compileSet, createLateStart, createTrickleCompile } from './core/bootPlan.js'; // [W5-СТАРТ] что до меню, что после
+import { menuDrawables, menuFrustum, compileSet, createLateStart, createTrickleCompile } from './core/bootPlan.js'; // [W5-СТАРТ] что до меню, что после
 
 const boot = window.__aoBoot || { fail: (m) => console.error(m), done: () => {} };
 // [W5-СТАРТ] вехи загрузки (Performance → Timings; tools/load_budget.mjs): код загружен → мир → меню → первый кадр → герой
@@ -1927,8 +1927,9 @@ function schedulePrecompile(why) {
 }
 // [W5-СТАРТ] Фоновая сборка того, что меню не рисует (скрытые пулы эффектов, магия рук, сцены Регента, отложенные модули).
 // С KHR_parallel_shader_compile — compileAsync всей сцены: драйвер собирает в своих потоках, главный поток свободен.
-// Без него (программный рендер, старые драйверы) — по 2 новые программы за шаг в простое (core/bootPlan.js): к первому
-// кадру боя программы уже собраны, а не собираются синхронно по 0,2–3 с при первом показе. В бою — остановка.
+// Без него (программный рендер, старые драйверы) — по 2 новые программы за шаг в простое, пока игрок в меню
+// (core/bootPlan.js): к первому кадру боя они собраны, а не собираются синхронно по 0,2–3 с при первом показе. Ушли из
+// меню — остановка: на экране камеры GPU-процесс нужен MediaPipe, остальное соберётся при первом показе, как раньше.
 let trickle = null;
 function backgroundCompile() {
   if (PARALLEL_COMPILE) { schedulePrecompile('фон'); return; }
@@ -1937,13 +1938,13 @@ function backgroundCompile() {
   trickle = createTrickleCompile({
     renderer, scene, camera, perStep: 2, gapMs: 250,
     schedule: (fn, ms) => setTimeout(() => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 2000 }) : fn()), ms),
-    stopped: () => app.screen === 'playing' || app.screen === 'intro',
+    stopped: () => app.screen !== 'menu',
   });
   trickle.start(menuDrawables(scene, { visibleOnly: false }));
   const report = () => {
     if (!trickle.done) { setTimeout(report, 500); return; }
     bootMark('bg-compiled');
-    console.info(`[perf] шейдеры (фон) поставлены в сборку за ${Math.round(performance.now() - t0)} мс: новых программ ${trickle.added}${trickle.stopped ? ' (остановлено боем)' : ''}${trickle.error ? ' (ошибка: ' + trickle.error.message + ')' : ''}`);
+    console.info(`[perf] шейдеры (фон) поставлены в сборку за ${Math.round(performance.now() - t0)} мс: новых программ ${trickle.added}${trickle.stopped ? ' (остановлено: ушли из меню)' : ''}${trickle.error ? ' (ошибка: ' + trickle.error.message + ')' : ''}`);
   };
   report();
 }
@@ -2224,10 +2225,21 @@ renderUI();
 // программы в своих потоках, главный поток свободен — модель героя разбирается и одевается параллельно, а первый
 // кадр не стоит несколько секунд. Экран загрузки («Сборка мира и героев…») остаётся до готовности, не дольше BOOT_COMPILE_MAX_MS.
 const BOOT_COMPILE_MAX_MS = 12000;
-// [W5-СТАРТ] Только то, что рисует меню (видимое): скрытое — пулы эффектов, магия рук, сцены Регента — собирается в фоне после
-// меню (backgroundCompile). Раньше до снятия заставки ждали все программы сцены, в том числе нужные только в бою.
+// [W5-СТАРТ] Только то, что рисует меню: видимое и в кадре витрины (с запасом на облёт) плюс сцена витрины. Скрытое (пулы
+// эффектов, магия рук, сцены Регента) и то, что за кадром (лес, деревня), собирается в фоне после меню (backgroundCompile).
+// Раньше до снятия заставки ждали все программы сцены, в том числе нужные только в бою.
+function menuCompileSet() {
+  let frustum = null;
+  if (app.screen === 'menu' && heroShowcase) {
+    // поза камеры первого кадра меню: шаг витрины длиной 0 с (первый кадр сделает то же самое)
+    try { scene.updateMatrixWorld(); if (heroShowcase.update(0, true, camera)) frustum = menuFrustum(THREE, camera); } catch (e) { frustum = null; }
+  }
+  const list = menuDrawables(scene, { frustum });
+  console.info(`[perf] до меню — шейдеры ${list.length} объектов${frustum ? ' в кадре витрины' : ''}`);
+  return compileSet(list);
+}
 const bootCompile = PARALLEL_COMPILE && typeof renderer.compileAsync === 'function'
-  ? Promise.race([heroShowcaseP.then(() => renderer.compileAsync(compileSet(menuDrawables(scene)), camera, scene)).catch(() => null), new Promise((r) => setTimeout(r, BOOT_COMPILE_MAX_MS))])
+  ? Promise.race([heroShowcaseP.then(() => renderer.compileAsync(menuCompileSet(), camera, scene)).catch(() => null), new Promise((r) => setTimeout(r, BOOT_COMPILE_MAX_MS))])
   : Promise.resolve();
 const tBoot0 = performance.now();
 bootCompile.then(() => {
