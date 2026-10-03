@@ -249,8 +249,18 @@ export const DEFAULT_VISION_CONFIG = Object.freeze({
   useWorker: 'auto',       // 'auto' | 'off' (или false)
   workerUrl: null,         // по умолчанию ./vision-worker.js рядом с vision.js
   cdnFallback: true,       // [OFFLINE] локальные файлы MediaPipe (vendor/) не загрузились — повторить с CDN
-  workerInitTimeoutMs: 30000, // без сообщений от worker дольше — откат в главный поток
+  workerInitTimeoutMs: 30000, // без сообщений от worker дольше — следующая ступень лестницы отката
   workerFrameTimeoutMs: 2500,
+  // [W5-КАМЕРА] лестница отката: воркер GPU → воркер CPU → главный поток GPU → главный поток CPU.
+  // Прогрев (пробный кадр) GPU-воркера — компиляция шейдеров; на слабой встроенной видеокарте, которую делит рендер, — секунды.
+  // Дольше этого — видеокарта не успевает: воркер на CPU (без GPU) запускается за 2–5 с и не зависит от рендера.
+  workerWarmupTimeoutMs: 15000,
+  workerFirstFrameTimeoutMs: 8000, // первые кадры нового движка (размер кадра, точки позы и кистей — новые шейдеры)
+  firstFramesGraceMs: 10000,       // столько после запуска движка без результатов — «Ожидание первых кадров», не «нет кадров»
+  slowGpuHz: 3,                    // GPU-движок отвечает реже этого (камера ≥ 10 к/с) дольше slowGpuMs — ступень ниже
+  slowGpuMs: 8000,
+  prefetch: true,                  // файлы MediaPipe — до воркера, с прогрессом (см. prefetchFiles)
+  prefetchStallMs: 20000,          // загрузка без единого байта дольше — дальше без неё
   delegate: 'GPU',         // 'GPU' (с откатом на CPU) | 'CPU'
   maxInferenceHz: 30,
   fallbackMaxHz: 15,       // главный поток: не чаще
@@ -1150,8 +1160,15 @@ const STAGE_TEXT = {
   wasm: 'Загрузка WASM-среды…',
   model: 'Загрузка модели позы…',
   warmup: 'Проверка распознавания…',
+  hands: 'Загрузка модели кистей…', // [W5-КАМЕРА] этап worker 'hands' показывался как «Загрузка…»
   fallback: 'Фоновый поток недоступен — запуск в основном потоке…',
+  // [W5-КАМЕРА] переход на следующую ступень лестницы отката
+  'fallback-worker-cpu': 'Видеокарта не успевает — распознавание переходит на процессор…',
+  'fallback-main-gpu': 'Фоновый поток не справился — распознавание в основном потоке…',
+  'fallback-main-cpu': 'Распознавание переходит на процессор в основном потоке…',
 };
+// [W5-КАМЕРА] ступень лестницы: 'worker-gpu' | 'worker-cpu' | 'main-gpu' | 'main-cpu'
+const ladderName = (s) => (s ? `${s.kind}-${String(s.delegate || '').toLowerCase()}` : null);
 
 export async function createVision(options = {}) {
   const video = options.video;
@@ -1216,8 +1233,14 @@ export async function createVision(options = {}) {
   let calibWaiter = null;
   let workerFallbackReason = null;
   let loadStage = null;
+  let loadText = null;      // [W5-КАМЕРА] текст этапа с числами (загрузка файлов: «12 из 25 МБ»)
   let stickyNote = null;
   let mpResolved = resolveMediaPipe(cfg.mediaPipe);
+  // [W5-КАМЕРА] лестница отката. floor — ступень, ниже которой уже спустились (новый движок, например при смене
+  // модели позы, начинается с неё, а не снова с GPU); history — переходы для диагностики и отчёта игрока;
+  // switching — идёт переход на следующую ступень (статус «загрузка», а не «нет кадров»);
+  // since/results/lastResultT — время запуска текущего движка и его ответы (первые кадры ждём дольше)
+  const ladder = { floor: 0, cur: null, history: [], switching: false, stageText: null, since: 0, results: 0, lastResultT: -Infinity, slowSince: null, firstResultMs: null };
   const loop = {
     mode: null, rvfcId: null, pollId: null, watchdogId: null, frameIntervalMs: 33.3,
     lastKey: undefined, busy: false, busySince: 0, dirty: false, dirtyKey: undefined,
@@ -1290,29 +1313,57 @@ export async function createVision(options = {}) {
         cameraFallback: perf.camFallback,
         mediaPipe: { version: mpResolved.version, versionMismatch: mpResolved.versionMismatch },
         handGestures: cfg.hands ? handsInterp.getDebug() : null,
+        // [W5-КАМЕРА] лестница отката: текущая ступень, все ступени, переходы, прогрев и первый ответ движка
+        engineStep: engine ? ladderName(engine) : null,
+        ladder: ladderSteps().map(ladderName),
+        ladderHistory: ladder.history.map((h) => ({ ...h })),
+        ladderSwitching: ladder.switching,
+        warmupMs: engine ? r1(engine.warmupMs) : null,
+        firstResultMs: r1(ladder.firstResultMs),
+        engineNote: engine ? engine.note : null,
+        camera: { fps: r1(cameraFps()), fresh: cameraFresh(nowMs()) },
       },
     };
   }
 
-  function noteLoadStage(stage, progress) {
+  // [W5-КАМЕРА] камера сама присылает кадры (последний не старше секунды) — отличаем «нет кадров с камеры»
+  // от «распознавание не успевает»
+  function cameraFresh(now) {
+    const a = perf.camArrivals;
+    return a.length > 0 && now - a[a.length - 1] <= 1000;
+  }
+
+  function noteLoadStage(stage, progress, text = null) {
     loadStage = stage;
-    if (st.status === 'loading') setStatus('loading', STAGE_TEXT[stage] || 'Загрузка…', Math.max(st.progress, progress || 0));
+    loadText = text;
+    // [W5-КАМЕРА] после перехода по лестнице отката на экране — его причина, а не подэтап загрузки
+    if (st.status === 'loading') setStatus('loading', ladder.stageText || text || STAGE_TEXT[stage] || 'Загрузка…', Math.max(st.progress, progress || 0));
   }
 
   function updateTrackingStatus(now, note = null) {
     if (note) stickyNote = { text: note, until: now + 4000 };
     if (!running || st.status === 'error') return;
+    // [W5-КАМЕРА] движок переходит на следующую ступень лестницы: это загрузка, а не потеря трекинга
+    if (ladder.switching) {
+      setStatus('loading', ladder.stageText || STAGE_TEXT[loadStage] || 'Перезапуск распознавания…', Math.max(st.progress, 0.35));
+      return;
+    }
     const c = interp.calibrationStatus();
     if (c && !c.result) return;
     const tr = interp.getTracking(now);
     const noFramesYet = tr.frameAgeMs === null || now - tr.frameAgeMs < runningSince;
-    if (noFramesYet && now - runningSince < 5000) {
+    // [W5-КАМЕРА] первые кадры нового движка (после прогрева или перехода по лестнице) идут дольше — новые шейдеры.
+    // Пока от него не было ни одного ответа и камера шлёт кадры — ждём firstFramesGraceMs, а не объявляем «нет кадров».
+    const since = Math.max(runningSince, ladder.since);
+    const firstWait = ladder.lastResultT < since && cameraFresh(now) && now - since < cfg.firstFramesGraceMs;
+    if ((noFramesYet && now - runningSince < 5000) || firstWait) {
       setStatus('loading', 'Ожидание первых кадров…', Math.max(st.progress, 0.95));
       return;
     }
     if (tr.lost) {
       let msg = 'Не видно плеч — сядьте в кадр';
-      if (noFramesYet || !tr.fresh) msg = 'Нет новых кадров с камеры';
+      // [W5-КАМЕРА] кадры с камеры идут, а ответов распознавания нет — это не «нет кадров с камеры»
+      if (noFramesYet || !tr.fresh) msg = cameraFresh(now) ? 'Распознавание не успевает за камерой' : 'Нет новых кадров с камеры';
       else if (tr.scaleWarning === 'far') msg = 'Вы дальше, чем при калибровке — сядьте ближе';
       else if (tr.scaleWarning === 'near') msg = 'Вы ближе, чем при калибровке — отодвиньтесь';
       stickyNote = null; // после потери старая подсказка неактуальна
@@ -1336,6 +1387,14 @@ export async function createVision(options = {}) {
     if (!md || typeof md.getUserMedia !== 'function') {
       return { code: 'unsupported', message: 'Этот браузер не даёт доступ к камере. Используйте Chrome или Edge через localhost или HTTPS.' };
     }
+    // [W5-КАМЕРА] встроенное окно (превью VS Code, iframe без allow="camera"): политика разрешений запрещает камеру —
+    // браузер отказывает сразу, без запроса, и совет «разрешите у адресной строки» там не выполнить
+    try {
+      const pp = typeof document !== 'undefined' ? (document.permissionsPolicy || document.featurePolicy) : null;
+      if (pp && typeof pp.allowsFeature === 'function' && !pp.allowsFeature('camera')) {
+        return { code: 'embedded-blocked', message: 'Камеру блокирует встроенное окно (например, превью VS Code). Откройте игру в отдельной вкладке Chrome или Edge.' };
+      }
+    } catch { /* политики разрешений нет — проверит сам getUserMedia */ }
     return null;
   }
 
@@ -1449,6 +1508,7 @@ export async function createVision(options = {}) {
       enginePromise = loadEngine().then((e) => {
         if (disposed) { closeEngine(e); throw visionError('disposed', 'Модуль камеры освобождён'); }
         engine = e;
+        activateEngine(e); // [W5-КАМЕРА]
         updateMinInterval();
         return e;
       }, (e) => { enginePromise = null; throw e; });
@@ -1456,9 +1516,144 @@ export async function createVision(options = {}) {
     return enginePromise;
   }
 
+  // ── [W5-КАМЕРА] лестница отката: воркер GPU → воркер CPU → главный поток GPU → главный поток CPU ──
+  // Ступени, доступные в этом браузере и с этими настройками (delegate 'CPU' — только CPU, useWorker 'off' — без воркера).
+  function ladderSteps() {
+    const steps = [];
+    const gpu = cfg.delegate !== 'CPU';
+    const wantWorker = !(cfg.useWorker === false || cfg.useWorker === 'off');
+    if (wantWorker && workerSupport().ok) {
+      if (gpu) steps.push({ kind: 'worker', delegate: 'GPU' });
+      steps.push({ kind: 'worker', delegate: 'CPU' });
+    }
+    if (gpu) steps.push({ kind: 'main', delegate: 'GPU' });
+    steps.push({ kind: 'main', delegate: 'CPU' });
+    return steps;
+  }
+  const stepIndex = (steps, s) => steps.findIndex((x) => ladderName(x) === ladderName(s));
+  function noteLadder(s, reason) {
+    ladder.history.push({ step: ladderName(s), reason: String(reason).slice(0, 200), atMs: Math.round(nowMs()) });
+    if (ladder.history.length > 8) ladder.history.shift();
+  }
+  // переход на ступень: текст этапа держится до готовности движка (подэтапы загрузки его не перебивают)
+  function noteLadderStage(s, progress = 0.35) {
+    const stage = `fallback-${ladderName(s)}`;
+    ladder.stageText = STAGE_TEXT[stage] || STAGE_TEXT.fallback;
+    loadStage = stage;
+    if (st.status === 'loading') setStatus('loading', ladder.stageText, Math.max(st.progress, progress));
+  }
+  // движок стал текущим: с этой ступени начинаются следующие движки (смена модели позы), первые кадры — с запасом
+  function activateEngine(e) {
+    const i = stepIndex(ladderSteps(), e);
+    if (i >= 0) ladder.floor = i;
+    ladder.cur = ladderName(e);
+    ladder.since = nowMs();
+    ladder.results = 0;
+    ladder.slowSince = null;
+    ladder.firstResultMs = null;
+    ladder.stageText = null;
+    perf.consecutiveErrors = 0;
+    // частота и время распознавания прошлого движка не переносятся (иначе лимит частоты главного потока
+    // считался бы по медленному GPU-воркеру)
+    perf.arrivals.length = 0;
+    perf.hz = 0;
+    perf.inferMs = null;
+  }
+  // таймаут ответа воркера на кадр: первые кадры нового движка компилируют шейдеры — ждём дольше
+  function frameTimeoutMs() {
+    return ladder.results < 3 ? Math.max(cfg.workerFrameTimeoutMs, cfg.workerFirstFrameTimeoutMs) : cfg.workerFrameTimeoutMs;
+  }
+  // Текущий движок не справился во время работы — следующая ступень (раньше: сразу главный поток).
+  async function stepDown(reason) {
+    if (switching || disposed || !engine) return;
+    const steps = ladderSteps();
+    const cur = engine;
+    const next = stepIndex(steps, cur) + 1;
+    if (next <= 0 || next >= steps.length) {
+      fail('model-failed', 'Распознавание позы остановилось и не перезапустилось. Обновите страницу.', new Error(reason));
+      return;
+    }
+    switching = true;
+    ladder.switching = true;
+    engine = null;
+    enginePromise = null;
+    loop.busy = false; loop.inflightSeq = null; loop.dirty = false;
+    closeEngine(cur);
+    if (cur.kind === 'worker') workerFallbackReason = reason;
+    noteLadder(cur, reason);
+    console.warn(`[vision] ${ladderName(cur)} не справляется — ступень ниже (${ladderName(steps[next])}):`, reason);
+    ladder.floor = next;
+    noteLadderStage(steps[next]);
+    updateTrackingStatus(nowMs());
+    // ensureEngine() во время перехода ждёт этот же движок, а не грузит второй
+    enginePromise = loadEngineFrom(mpResolved).then((e) => {
+      if (disposed) { closeEngine(e); throw visionError('disposed', 'Модуль камеры освобождён'); }
+      engine = e;
+      activateEngine(e);
+      updateMinInterval();
+      return e;
+    });
+    try {
+      await enginePromise;
+    } catch (err) {
+      enginePromise = null;
+      if (!disposed) fail('model-failed', 'Распознавание позы остановилось и не перезапустилось. Обновите страницу.', err);
+    } finally {
+      switching = false;
+      ladder.switching = false;
+    }
+  }
+  // GPU-движок отвечает, но очень редко (видеокарту занял рендер или она слишком слабая), хотя камера шлёт кадры:
+  // дольше slowGpuMs — ступень ниже (воркер на CPU от видеокарты не зависит)
+  function checkSlowGpu(now) {
+    const e = engine;
+    const hidden = typeof document !== 'undefined' && document.hidden;
+    const cam = cameraFps();
+    if (!e || e.delegate !== 'GPU' || switching || hidden || ladder.results < 3 || !(cam >= 10) || !(cfg.slowGpuHz > 0)) { ladder.slowSince = null; return; }
+    const win = 3000;
+    const recent = perf.arrivals.filter((t) => now - t <= win).length;
+    if (recent >= cfg.slowGpuHz * (win / 1000)) { ladder.slowSince = null; return; }
+    if (ladder.slowSince === null) ladder.slowSince = now;
+    else if (now - ladder.slowSince >= cfg.slowGpuMs) stepDown(`видеокарта распознаёт реже ${cfg.slowGpuHz} раз/с дольше ${Math.round(cfg.slowGpuMs / 1000)} с`);
+  }
+
   // [OFFLINE] сначала vendor/ (работает без интернета); не вышло — те же файлы с CDN
+  // [W5-КАМЕРА] файлы MediaPipe (~25 МБ) — до воркера, с прогрессом на экране. Воркер, пока качает WASM и модели,
+  // молчит (этапы model и hands), и на медленной сети (первый запуск с GitHub Pages) упирался в таймаут 30 с —
+  // потом главный поток качал ещё 11 МБ своего WASM. Скачанное ложится в кэш service worker или HTTP, и воркер берёт
+  // его оттуда; таймауты воркера меряют только запуск модели. Уже скачанное (предзагрузка offline.js) не качается
+  // повторно. Загрузка стоит дольше prefetchStallMs без единого байта — дальше без неё (воркер попробует сам).
+  async function prefetchFiles(mp) {
+    if (cfg.prefetch === false || typeof window === 'undefined' || typeof fetch !== 'function') return;
+    let list = [];
+    try { list = mediaPipePreloadList(mp).filter((u) => /^https?:/i.test(u)); } catch { list = []; }
+    if (!cfg.hands && mp.handModelUrl) list = list.filter((u) => u !== mp.handModelUrl);
+    if (!list.length) return;
+    const ac = typeof AbortController === 'function' ? new AbortController() : null;
+    let lastByte = Date.now();   // сеть — по настенным часам
+    const iv = ac ? setInterval(() => { if (Date.now() - lastByte > cfg.prefetchStallMs) ac.abort(); }, 250) : null;
+    const MB = (b) => (b / 1048576).toFixed(b < 10485760 ? 1 : 0).replace('.', ',');
+    try {
+      const r = await preloadMediaPipe(list, {
+        priority: 'high', signal: ac ? ac.signal : undefined,
+        onProgress: (p) => {
+          lastByte = Date.now();
+          if (p.done || !(p.total > 0)) return;
+          const f = Math.min(1, p.loaded / p.total);
+          // общий размер растёт по мере начала файлов — на экране только скачанное
+          if (f < 1) noteLoadStage('download', 0.3 * f, `Загрузка распознавания: ${MB(p.loaded)} МБ…`);
+        },
+      });
+      if (!r.ok) console.warn('[vision] файлы MediaPipe заранее не скачались — воркер загрузит сам:', r.errors.join('; '));
+    } finally {
+      clearInterval(iv);
+      loadText = null;
+    }
+  }
+
   async function loadEngine() {
     try {
+      await prefetchFiles(resolveMediaPipe(cfg.mediaPipe)); // [W5-КАМЕРА]
       return await loadEngineFrom(resolveMediaPipe(cfg.mediaPipe));
     } catch (e) {
       // только ошибки загрузки файлов (404, нет сети, модуль не импортировался), а не отказ GPU/модели
@@ -1471,22 +1666,32 @@ export async function createVision(options = {}) {
     }
   }
 
+  // [W5-КАМЕРА] движок — по лестнице отката, начиная со ступени floor (ниже которой уже спускались).
+  // Воркер молчит (таймаут: видеокарта не успевает прогреться) — следующая ступень, воркер на CPU.
+  // Воркер сообщил ошибку — он сам уже пробовал GPU и CPU (vision-worker.js): сразу главный поток.
+  // Главный поток сам пробует GPU, затем CPU; его ошибка — конец лестницы.
   async function loadEngineFrom(resolved) {
     mpResolved = resolved;
     const sup = workerSupport();
     const wantWorker = !(cfg.useWorker === false || cfg.useWorker === 'off');
-    if (wantWorker && sup.ok) {
+    if (!(wantWorker && sup.ok)) workerFallbackReason = wantWorker ? sup.reason : 'worker отключён настройкой useWorker';
+    const steps = ladderSteps();
+    let lastErr = null;
+    for (let i = Math.min(ladder.floor, steps.length - 1); i < steps.length; i++) {
+      const s = steps[i];
+      if (lastErr) noteLadderStage(s);
       try {
-        return await loadWorkerEngine(mpResolved);
+        return s.kind === 'worker' ? await loadWorkerEngine(mpResolved, s.delegate) : await loadMainEngine(mpResolved, s.delegate);
       } catch (e) {
+        lastErr = e;
+        if (disposed || s.kind === 'main') throw e;
         workerFallbackReason = String((e && e.message) || e);
-        console.warn('[vision] worker не прошёл самопроверку, откат в главный поток:', workerFallbackReason);
-        noteLoadStage('fallback', 0.35);
+        noteLadder(s, workerFallbackReason);
+        console.warn(`[vision] ${ladderName(s)} не прошёл самопроверку — ступень ниже:`, workerFallbackReason);
+        if (!(e && e.ladderTimeout)) { while (i + 1 < steps.length && steps[i + 1].kind === 'worker') i++; }
       }
-    } else {
-      workerFallbackReason = wantWorker ? sup.reason : 'worker отключён настройкой useWorker';
     }
-    return loadMainEngine(mpResolved);
+    throw lastErr || new Error('не удалось создать PoseLandmarker');
   }
 
   function workerScriptUrl() {
@@ -1497,7 +1702,7 @@ export async function createVision(options = {}) {
     return new URL('./vision-worker.js', import.meta.url).href;
   }
 
-  function loadWorkerEngine(mp) {
+  function loadWorkerEngine(mp, delegate = cfg.delegate) {
     return new Promise((resolve, reject) => {
       let w;
       let timer = null;
@@ -1517,13 +1722,20 @@ export async function createVision(options = {}) {
         w.removeEventListener('messageerror', onErr);
         if (err) { try { w.terminate(); } catch { /* уже завершён */ } reject(err); } else resolve(value);
       };
-      const arm = () => {
+      // [W5-КАМЕРА] прогрев GPU (пробный кадр компилирует шейдеры) — свой, более короткий таймаут: дольше него
+      // видеокарта не успевает, и воркер на CPU запустится быстрее; этапы с загрузкой файлов ждут workerInitTimeoutMs
+      const arm = (stage) => {
         clearTimeout(timer);
-        timer = setTimeout(() => finish(new Error(`worker молчит ${Math.round(cfg.workerInitTimeoutMs / 1000)} с (этап: ${loadStage || 'старт'})`)), cfg.workerInitTimeoutMs);
+        const ms = stage === 'warmup' && delegate !== 'CPU' ? cfg.workerWarmupTimeoutMs : cfg.workerInitTimeoutMs;
+        timer = setTimeout(() => {
+          const err = new Error(`worker молчит ${Math.round(ms / 1000)} с (этап: ${stage || 'старт'})`);
+          err.ladderTimeout = true;
+          finish(err);
+        }, ms);
       };
       const onMsg = (ev) => {
         const m = ev.data || {};
-        if (m.type === 'progress') { arm(); noteLoadStage(m.stage, m.progress); }
+        if (m.type === 'progress') { arm(m.stage); noteLoadStage(m.stage, m.progress); }
         else if (m.type === 'ready') finish(null, makeWorkerEngine(w, m));
         else if (m.type === 'init-error') finish(new Error(m.message || 'ошибка инициализации worker'));
       };
@@ -1535,7 +1747,7 @@ export async function createVision(options = {}) {
       w.addEventListener('error', onErr);
       w.addEventListener('messageerror', onErr);
       arm();
-      w.postMessage({ type: 'init', apiVersion: API_VERSION, mp: { moduleUrl: mp.moduleUrl, wasmRoot: mp.wasmRoot, modelUrl: mp.modelUrl }, delegate: cfg.delegate, options: poseOptions(), hands: handOptions(mp) });
+      w.postMessage({ type: 'init', apiVersion: API_VERSION, mp: { moduleUrl: mp.moduleUrl, wasmRoot: mp.wasmRoot, modelUrl: mp.modelUrl }, delegate, options: poseOptions(), hands: handOptions(mp) });
     });
   }
 
@@ -1546,12 +1758,12 @@ export async function createVision(options = {}) {
     w.addEventListener('message', (ev) => onWorkerMessage(e, ev));
     w.addEventListener('error', (ev) => {
       if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
-      if (engine === e) switchToMainFallback(`ошибка worker во время работы: ${(ev && ev.message) || ''}`);
+      if (engine === e) stepDown(`ошибка worker во время работы: ${(ev && ev.message) || ''}`); // [W5-КАМЕРА]
     });
     return e;
   }
 
-  async function loadMainEngine(mp) {
+  async function loadMainEngine(mp, want = cfg.delegate) {
     noteLoadStage('module', 0.35);
     const mod = await import(/* @vite-ignore */ mp.moduleUrl);
     const FilesetResolver = mod.FilesetResolver;
@@ -1559,7 +1771,7 @@ export async function createVision(options = {}) {
     if (!FilesetResolver || !PoseLandmarker) throw new Error('в модуле MediaPipe нет FilesetResolver/PoseLandmarker');
     noteLoadStage('wasm', 0.45);
     const fileset = await FilesetResolver.forVisionTasks(mp.wasmRoot); // классический загрузчик через <script>
-    const order = cfg.delegate === 'CPU' ? ['CPU'] : ['GPU', 'CPU'];
+    const order = want === 'CPU' ? ['CPU'] : ['GPU', 'CPU'];
     let lastErr = null;
     for (const delegate of order) {
       let lm = null;
@@ -1573,6 +1785,10 @@ export async function createVision(options = {}) {
         noteLoadStage('warmup', 0.85);
         const t0 = nowMs();
         warmupMain(lm);
+        // [W5-КАМЕРА] пробный кадр на GPU в основном потоке шёл дольше таймаута прогрева — каждый кадр будет вешать
+        // интерфейс: та же модель на CPU
+        const warmMs = nowMs() - t0;
+        if (delegate === 'GPU' && order.length > 1 && warmMs > cfg.workerWarmupTimeoutMs) throw new Error(`прогрев GPU в основном потоке ${Math.round(warmMs)} мс`);
         let hands = null;
         const ho = handOptions(mp);
         if (ho && mod.HandLandmarker) {
@@ -1618,29 +1834,6 @@ export async function createVision(options = {}) {
     } else if (e.landmarker) {
       try { e.landmarker.close(); } catch { /* ignore */ }
       try { if (e.hands) e.hands.close(); } catch { /* ignore */ }
-    }
-  }
-
-  async function switchToMainFallback(reason) {
-    if (switching || disposed) return;
-    switching = true;
-    const old = engine;
-    engine = null;
-    enginePromise = null; // иначе повторный start() получил бы уже закрытый движок
-    loop.busy = false; loop.inflightSeq = null; loop.dirty = false;
-    closeEngine(old);
-    workerFallbackReason = reason;
-    console.warn('[vision] переключение в главный поток:', reason);
-    try {
-      const e = await loadMainEngine(mpResolved);
-      if (disposed) { closeEngine(e); return; }
-      engine = e;
-      enginePromise = Promise.resolve(e);
-      updateMinInterval();
-    } catch (err) {
-      fail('model-failed', 'Распознавание позы остановилось и не перезапустилось. Обновите страницу.', err);
-    } finally {
-      switching = false;
     }
   }
 
@@ -1796,7 +1989,7 @@ export async function createVision(options = {}) {
     if (m.type === 'frame-error') {
       perf.errors++;
       perf.consecutiveErrors++;
-      if (perf.consecutiveErrors >= 3) { switchToMainFallback(`повторные ошибки в worker: ${m.message || ''}`); return; }
+      if (perf.consecutiveErrors >= 3) { stepDown(`повторные ошибки в worker: ${m.message || ''}`); return; } // [W5-КАМЕРА] ступень ниже
     } else {
       perf.consecutiveErrors = 0;
       if (running) handleResult(m.tMs, m.landmarks ? unpackCompactLandmarks(m.landmarks) : null, m.w, m.h, m.inferMs, unpackHands(m.hands, m.handsMeta));
@@ -1823,7 +2016,11 @@ export async function createVision(options = {}) {
     } catch (err) {
       perf.errors++;
       perf.consecutiveErrors++;
-      if (perf.consecutiveErrors >= 5) fail('model-failed', 'Сбой распознавания позы. Обновите страницу.', err);
+      if (perf.consecutiveErrors >= 5) {
+        // [W5-КАМЕРА] на GPU — ступень ниже (та же модель на CPU), а не «Обновите страницу»
+        if (e.delegate === 'GPU' && ladderSteps().some((s) => s.kind === 'main' && s.delegate === 'CPU')) stepDown(`повторные ошибки распознавания на GPU в основном потоке: ${(err && err.message) || err}`);
+        else fail('model-failed', 'Сбой распознавания позы. Обновите страницу.', err);
+      }
       return;
     } finally {
       try { if (res && typeof res.close === 'function') res.close(); } catch { /* ignore */ }
@@ -1835,7 +2032,11 @@ export async function createVision(options = {}) {
       catch { /* кадр без рук */ }
       finally { try { if (hr && typeof hr.close === 'function') hr.close(); } catch { /* ignore */ } }
     }
-    handleResult(now, lms, video.videoWidth, video.videoHeight, nowMs() - t0, hands);
+    const spent = nowMs() - t0;
+    handleResult(now, lms, video.videoWidth, video.videoHeight, spent, hands);
+    // [W5-КАМЕРА] кадр на GPU в основном потоке дольше таймаута кадра воркера (после первых кадров) вешает интерфейс:
+    // ступень ниже — та же модель на CPU
+    if (e.delegate === 'GPU' && engine === e && ladder.results > 3 && spent > cfg.workerFrameTimeoutMs) stepDown(`кадр на GPU в основном потоке ${Math.round(spent)} мс`);
   }
 
   function handsFromResult(res) {
@@ -1872,6 +2073,10 @@ export async function createVision(options = {}) {
   function handleResult(tMs, lms, w, h, inferMs, hands) {
     const arrived = nowMs();
     perf.results++;
+    // [W5-КАМЕРА] ответы текущего движка: первый — сколько ждали после запуска, дальше — обычный таймаут кадра
+    if (ladder.results === 0) ladder.firstResultMs = arrived - Math.max(runningSince, ladder.since);
+    ladder.results++;
+    ladder.lastResultT = arrived;
     perf.arrivals.push(arrived);
     if (perf.arrivals.length > 16) perf.arrivals.shift();
     const a = perf.arrivals;
@@ -1924,9 +2129,12 @@ export async function createVision(options = {}) {
       loop.mode = 'poll';
       schedulePoll();
     }
-    if (engine && engine.kind === 'worker' && loop.busy && now - loop.busySince > cfg.workerFrameTimeoutMs) {
-      switchToMainFallback(`worker не ответил на кадр за ${cfg.workerFrameTimeoutMs} мс`);
+    // [W5-КАМЕРА] таймаут кадра — ступень ниже по лестнице; первые кадры нового движка ждём дольше
+    const frameMs = frameTimeoutMs();
+    if (engine && engine.kind === 'worker' && loop.busy && now - loop.busySince > frameMs) {
+      stepDown(`worker не ответил на кадр за ${frameMs} мс`);
     }
+    checkSlowGpu(now);
     interp.tick(now);
     processCalibration(now);
     updateTrackingStatus(now);
@@ -1962,7 +2170,7 @@ export async function createVision(options = {}) {
       calibWaiter = null;
       updateTrackingStatus(now, c.message);
       if (w) w.reject(visionError('calibration-failed', c.message));
-    } else if (running) {
+    } else if (running && !ladder.switching) { // [W5-КАМЕРА] пока движок меняется — статус «загрузка»
       setStatus('calibrating', c.hint, c.progress);
     }
   }
@@ -2068,7 +2276,7 @@ export async function createVision(options = {}) {
       throw fail('video-failed', 'Видео с камеры не запустилось. Переподключите камеру и попробуйте снова.', e);
     }
     if (aborted()) throw visionError('aborted', 'Запуск камеры отменён');
-    if (!engine) setStatus('loading', STAGE_TEXT[loadStage] || 'Загрузка модели позы…', Math.max(0.3, st.progress));
+    if (!engine) setStatus('loading', ladder.stageText || loadText || STAGE_TEXT[loadStage] || 'Загрузка модели позы…', Math.max(0.3, st.progress)); // [W5-КАМЕРА]
     try {
       await engineP;
     } catch (e) {

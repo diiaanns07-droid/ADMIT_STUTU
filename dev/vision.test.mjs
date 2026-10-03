@@ -1366,14 +1366,18 @@ test('C10 worker не прошёл самопроверку → честный �
   ok(env.h.detectSources.some((src) => src === env.video), 'inference идёт в главном потоке по <video>');
 }));
 
-test('C11 worker: повторные ошибки кадров → переключение в главный поток на лету', () => withShell({ worker: true }, async (env, v) => {
+test('C11 worker: повторные ошибки кадров → ступень ниже на лету (воркер CPU, затем главный поток) [W5-КАМЕРА]', () => withShell({ worker: true }, async (env, v) => {
   await v.start();
   await pump(env, 300, null, { worker: true });
   env.h.detectThrows = (src) => !!src.__bitmap;
   await pump(env, 600, null, { worker: true });
   await settle(10);
   const s = v.getStatus();
-  eq(s.mode, 'main'); ok(/повторные ошибки/.test(s.debug.workerFallbackReason), s.debug.workerFallbackReason);
+  eq(s.mode, 'main');
+  // лестница: GPU-воркер (ошибки кадров) → воркер CPU (его пробный кадр тоже падает) → главный поток
+  const h = s.debug.ladderHistory;
+  eq(h.map((x) => x.step).join(','), 'worker-gpu,worker-cpu', 'ступени лестницы');
+  ok(/повторные ошибки/.test(h[0].reason), h[0].reason);
   await pump(env, 400, null);
   eq(v.getStatus().status, 'ready', 'трекинг продолжается');
   ok(v.getStatus().debug.errors >= 3, `ошибок кадров в worker: ${v.getStatus().debug.errors}`);
@@ -1394,15 +1398,20 @@ test('C16 ASHEN_V2: по умолчанию корпус героя не дви�
   ok(lean.every((f) => 'dashDir' in f && 'stick' in f && 'spark' in f && 'slash' in f && 'parry' in f && 'burstHand' in f), 'поля InputFrame V2');
 }));
 
-test('C12 worker не отвечает на кадр → таймаут и откат', () => withShell({ worker: true, config: { workerFrameTimeoutMs: 1000 } }, async (env, v) => {
+test('C12 worker не отвечает на кадр → таймаут → воркер CPU; CPU тоже молчит → главный поток [W5-КАМЕРА]', () => withShell({ worker: true, config: { workerFrameTimeoutMs: 1000, workerFirstFrameTimeoutMs: 1000 } }, async (env, v) => {
   await v.start();
   await pump(env, 300, null, { worker: true });
   FakeWorker.hooks.dropFrames = true;
   await pump(env, 1300, null, { worker: true });
   await realWait(300); // сторож проверяет раз в 200 мс реального времени
   await settle(10);
-  const s = v.getStatus();
-  eq(s.mode, 'main'); ok(/не ответил/.test(s.debug.workerFallbackReason), s.debug.workerFallbackReason);
+  let s = v.getStatus();
+  eq(s.mode, 'worker'); eq(s.delegate, 'CPU', 'ступень ниже — воркер на CPU'); ok(/не ответил/.test(s.debug.workerFallbackReason), s.debug.workerFallbackReason);
+  await pump(env, 1300, null, { worker: true });
+  await realWait(300);
+  await settle(10);
+  s = v.getStatus();
+  eq(s.mode, 'main', 'и воркер CPU молчит — главный поток'); ok(/не ответил/.test(s.debug.workerFallbackReason), s.debug.workerFallbackReason);
   FakeWorker.hooks.dropFrames = false;
   await pump(env, 400, null);
   ok(v.read().source === 'cv' && v.getStatus().status === 'ready', 'трекинг продолжается');
