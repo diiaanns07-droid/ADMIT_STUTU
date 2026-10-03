@@ -1,28 +1,21 @@
-/* Слайды 7–11: что изменилось со 2 октября и как это работает.
+/* Слайды 7–11: как это работает, проверка, что изменилось после отбора.
+ * Порядок: 7 — MediaPipe даёт точки, жесты наши; 8 — проверено; 9 — таймлайн «После отбора»;
+ * 10 — «Было → стало» (шторка); 11 — «Красивее — и загружается в 3,5 раза легче».
  * Обычный скрипт без модулей: работает и из file://. Регистрация — в window.DECK_QUEUE (контракт К3).
  * Состояния шагов (заливка «Ярости», шторка, свет по схеме) описаны в part3.css через .is-on,
- * поэтому при входе назад и в печати слайд показан целиком без участия скрипта. */
+ * поэтому при входе назад и в печати слайд показан целиком без участия скрипта.
+ * Цифры сверены на 63f908a (слияние PR №38, 03.10), база сравнения — версия отбора 15298a8 (30.09). */
 (function () {
   'use strict';
 
-  // Стрелка: в шрифтах нет «→», рисуем SVG того же цвета, что текст.
-  var AR = '<svg class="p3-ar" viewBox="0 0 26 12" role="img" aria-label="→"><path d="M1 6h21M17 1.5 22.5 6 17 10.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  // Руна-треугольник «▲» (в шрифтах тоже нет).
-  var TRI = '<svg class="p3-tri" viewBox="0 0 12 12" role="img" aria-label="▲"><path d="M6 1.2 11 10.6H1z" fill="currentColor"/></svg>';
+  // Стрелка: в шрифтах нет «→», рисует общий класс .arr (запасной вид — в part3.css).
+  var AR = '<i class="arr"></i>';
 
-  // Вход и уход: пока слайд скрыт, его состояния меняются без анимации (класс .p3-instant),
-  // чтобы при уходе шторка и заливка не «отматывались» на глазах, а при входе назад всё было сразу на месте.
-  function enter(el) {
-    el.classList.add('p3-instant');
-    requestAnimationFrame(function () { requestAnimationFrame(function () { el.classList.remove('p3-instant'); }); });
-  }
-  function leave(el) { el.classList.add('p3-instant'); }
-
-  // ---------------------------------------------------------------- 8. Шторка света: перетаскивание
+  // ---------------------------------------------------------------- шторка света: перетаскивание
   function wipeOf(el) { return el.querySelector('.p3-wipe'); }
   function wipeReset(el) {
     var w = wipeOf(el); if (!w) return;
-    w.style.removeProperty('--p3-xm'); w.style.removeProperty('--p3-xb');
+    w.style.removeProperty('--p3-xa'); w.style.removeProperty('--p3-xb');
     w.classList.remove('is-drag', 'is-split');
   }
   function wipeBind(el) {
@@ -30,11 +23,11 @@
     function put(e) {
       var r = w.getBoundingClientRect(); if (!r.width) return;
       var x = Math.min(100, Math.max(0, (e.clientX - r.left) / r.width * 100));
-      var battle = !!el.querySelector('[data-step="2"].is-on');
-      w.style.setProperty(battle ? '--p3-xb' : '--p3-xm', x.toFixed(2) + '%');
+      var second = !!el.querySelector('[data-step="2"].is-on');
+      w.style.setProperty(second ? '--p3-xb' : '--p3-xa', x.toFixed(2) + '%');
       w.classList.toggle('is-split', x > 0.5 && x < 99.5);
     }
-    // Клики по шторке не листают слайды (движок листает кликом по краям экрана).
+    // Шторку тянут мышью или пальцем; щелчки и свайпы по ней слайды не листают.
     w.addEventListener('pointerdown', function (e) {
       if (e.button > 0) return;
       e.stopPropagation(); e.preventDefault();
@@ -46,175 +39,33 @@
     w.addEventListener('pointerup', end);
     w.addEventListener('pointercancel', end);
     w.addEventListener('click', function (e) { e.stopPropagation(); });
+    w.addEventListener('touchstart', function (e) { e.stopPropagation(); }, { passive: true });
+    w.addEventListener('touchend', function (e) { e.stopPropagation(); });
+  }
+
+  // Видео, которое браузер не может проиграть (нет H.264 — например, Chromium без кодеков), прячет постер.
+  // Тогда на его месте показываем тот же кадр — .print-poster рядом с видео.
+  function videoFallback(el) {
+    el.querySelectorAll('video').forEach(function (v) {
+      var box = v.parentNode; box.classList.remove('p3-vid-failed');
+      if (v.p3Bound) return; v.p3Bound = true;
+      v.addEventListener('error', function () { if (v.getAttribute('src')) box.classList.add('p3-vid-failed'); });
+    });
   }
 
   var Q = (window.DECK_QUEUE = window.DECK_QUEUE || []);
 
-  // ---------------------------------------------------------------- 7. Со 2 октября
-  Q.push({
-    n: 7, sec: 45,
-    html: `<section class="slide p3-slide p3-s7" data-slide="7" data-title="Со 2 октября">
-  <header class="p3-head">
-    <p class="kicker">Со 2 октября — дня отбора в финал</p>
-    <h2 class="thesis">Три волны за два дня</h2>
-  </header>
-  <div class="p3-body">
-    <div class="p3-tl">
-      <div class="p3-tl__rail" aria-hidden="true">
-        <i class="p3-tl__fill p3-tl__fill--1"></i><i class="p3-tl__fill p3-tl__fill--2"></i><i class="p3-tl__fill p3-tl__fill--3"></i>
-      </div>
-      <ol class="p3-tl__nodes">
-        <li class="p3-tl__node p3-tl__node--base">
-          <span class="p3-tl__gem" aria-hidden="true"></span>
-          <span class="p3-tl__date">30.09</span>
-          <span class="p3-tl__name">версия отбора</span>
-        </li>
-        <li class="p3-tl__node p3-tl__node--1" data-step="1">
-          <span class="p3-tl__gem" aria-hidden="true"></span>
-          <span class="p3-tl__date">02.10</span>
-          <h3 class="p3-tl__name">Доступность</h3>
-          <ul class="p3-tl__list">
-            <li>«Новичок» и автоход</li>
-            <li>жесты на 8–15 Гц</li>
-            <li>вход: 7 кликов ${AR} 2</li>
-            <li>офлайн, свой звук</li>
-          </ul>
-        </li>
-        <li class="p3-tl__node p3-tl__node--2" data-step="2">
-          <span class="p3-tl__gem" aria-hidden="true"></span>
-          <span class="p3-tl__date">02.10</span>
-          <h3 class="p3-tl__name">Магия и режимы</h3>
-          <ul class="p3-tl__list">
-            <li>«Врата бури», «Столп небес»</li>
-            <li>«Небесный суд», «Дух игрока»</li>
-            <li>«Испытание · 60 с»</li>
-            <li>голос тренера, курсор-кисть</li>
-          </ul>
-        </li>
-        <li class="p3-tl__node p3-tl__node--3" data-step="3">
-          <span class="p3-tl__gem" aria-hidden="true"></span>
-          <span class="p3-tl__date">03.10</span>
-          <h3 class="p3-tl__name">Картинка</h3>
-          <ul class="p3-tl__list">
-            <li>новый Регент</li>
-            <li>интерфейс RPG, арена</li>
-            <li>лица, волосы, наряды</li>
-            <li>аура, витрина меню</li>
-          </ul>
-        </li>
-      </ol>
-    </div>
-    <div class="p3-s7__nums">
-      <div class="p3-s7__hero">
-        <span class="num" data-ignite>36</span>
-        <span class="unit">влитых PR<small>до отбора — 1</small></span>
-      </div>
-      <ul class="p3-s7__metrics">
-        <li><b class="p3-val">+387</b><span class="unit">коммитов</span></li>
-        <li><b class="p3-val">54&nbsp;470 ${AR} 85&nbsp;840</b><span class="unit">строк кода игры, +58&nbsp;%</span></li>
-        <li><b class="p3-val">75 ${AR} 104</b><span class="unit">модуля</span></li>
-        <li><b class="p3-val">32 ${AR} 62</b><span class="unit">набора тестов: вдвое больше, 0&nbsp;падений</span></li>
-      </ul>
-    </div>
-  </div>
-  <aside class="notes">Нас отобрали по версии от 30 сентября. Со 2 октября мы влили 36 пулл-реквестов тремя волнами. Первая — доступность: новичок, слабые ноутбуки, офлайн. Вторая — магия и режимы. Третья — картинка уровня RPG. Кода стало больше на 58 %, тестов — вдвое, и ни одного падения.</aside>
-</section>`,
-    enter: enter, leave: leave
-  });
-
-  // ---------------------------------------------------------------- 8. Было → стало
-  Q.push({
-    n: 8, sec: 50,
-    html: `<section class="slide p3-slide p3-s8" data-slide="8" data-title="Было → стало">
-  <header class="p3-head">
-    <p class="kicker">Было ${AR} стало</p>
-    <h2 class="thesis">Та же игра, другой уровень</h2>
-  </header>
-  <div class="p3-body">
-    <figure class="p3-wipe" aria-label="Шторка «до и после»: её можно тянуть мышью">
-      <div class="p3-wipe__pair p3-wipe__pair--menu">
-        <img class="p3-wipe__img" src="../docs/screenshots/menu.jpg" alt="Меню в версии отбора: три кнопки">
-        <span class="p3-wipe__tag p3-wipe__tag--before">версия отбора · 30.09</span>
-        <div class="p3-wipe__after">
-          <img class="p3-wipe__img" src="../docs/screenshots/w4-check/01_menu.jpg" alt="Меню 3 октября: шесть режимов">
-          <span class="p3-wipe__tag p3-wipe__tag--after">03.10</span>
-        </div>
-        <i class="p3-wipe__edge" aria-hidden="true"></i>
-      </div>
-      <div class="p3-wipe__pair p3-wipe__pair--battle">
-        <img class="p3-wipe__img" src="../docs/screenshots/battle.jpg" alt="Бой в версии отбора: отладочные надписи">
-        <span class="p3-wipe__tag p3-wipe__tag--before">версия отбора · 30.09</span>
-        <div class="p3-wipe__after">
-          <img class="p3-wipe__img" src="../docs/screenshots/w4-check/03_battle.jpg" alt="Бой 3 октября: интерфейс RPG">
-          <span class="p3-wipe__tag p3-wipe__tag--after">03.10</span>
-        </div>
-        <i class="p3-wipe__edge" aria-hidden="true"></i>
-      </div>
-    </figure>
-    <ol class="p3-s8__caps">
-      <li class="p3-s8__cap" data-step="1"><b>Меню:</b> 3 кнопки ${AR} 6 режимов</li>
-      <li class="p3-s8__cap" data-step="2"><b>Бой:</b> отладка ${AR} интерфейс RPG, «Ярость клятвы», «Дух игрока»</li>
-    </ol>
-    <p class="cap p3-s8__note">Кадры боя сняты с клавиатуры.</p>
-    <div class="p3-s8__strip">
-      <p class="p3-s8__cap p3-s8__cap--entry"><b>Вход:</b> 7 кликов ${AR} 2</p>
-      <img class="p3-s8__shot" src="../docs/screenshots/onboarding_before.jpg" alt="До: семь кликов до боя">
-      ${AR}
-      <img class="p3-s8__shot" src="../docs/screenshots/onboarding_after.jpg" alt="После: два клика до боя">
-    </div>
-  </div>
-  <aside class="notes">Слева то, что видело жюри на отборе, справа — сегодняшний main. Тот же экран и тот же герой. Вместо трёх кнопок — шесть режимов, вместо отладочных надписей — полноценный интерфейс, вход в бой за два клика вместо семи.</aside>
-</section>`,
-    enter: function (el) { wipeReset(el); wipeBind(el); enter(el); },
-    leave: function (el) { leave(el); wipeReset(el); },
-    step: function (el) { wipeReset(el); }
-  });
-
-  // ---------------------------------------------------------------- 9. Красивее — и легче
-  Q.push({
-    n: 9, sec: 35,
-    html: `<section class="slide p3-slide p3-s9" data-slide="9" data-title="Красивее и легче">
-  <header class="p3-head">
-    <p class="kicker">Картинка и скорость</p>
-    <h2 class="thesis">Красивее — и при этом легче</h2>
-  </header>
-  <div class="p3-body">
-    <figure class="p3-s9__boss">
-      <img src="../docs/screenshots/boss/compare_angles.jpg" alt="Регент Нимба до и после: обсидиан с золотом">
-      <span class="frame" aria-hidden="true"></span>
-    </figure>
-    <figure class="p3-s9__vid">
-      <video data-src="../docs/video/spells_before_after.mp4" poster="media/p3/spells_ba.jpg" muted loop playsinline preload="none"></video>
-      <img class="print-poster" src="media/p3/spells_ba.jpg" alt="">
-    </figure>
-    <div class="p3-s9__stat">
-      <span class="num" data-ignite>−26&nbsp;%</span>
-      <span class="unit">вызовов отрисовки в бою</span>
-      <p class="cap p3-s9__levels"><span>low 267 ${AR} 197</span><span>medium 426 ${AR} 317</span><span>high 634 ${AR} 468</span></p>
-    </div>
-    <ul class="p3-s9__steps">
-      <li data-step="1"><b>Ассеты</b> 35,7 ${AR} 10&nbsp;МБ</li>
-      <li data-step="2"><b>Заклинания</b> читаются с 5&nbsp;м</li>
-      <li data-step="3"><b>Бюджет кадра:</b> 0 превышений на всех уровнях качества</li>
-    </ul>
-    <p class="src p3-s9__src">docs/visual-budget.md</p>
-  </div>
-  <aside class="notes">Регент теперь из обсидиана с золотом, у арены огонь и мокрый пол, у героев новые лица и наряды. Это не стоило производительности: вызовов отрисовки в бою стало на четверть меньше, ассеты сжались в три с половиной раза.</aside>
-</section>`,
-    enter: enter, leave: leave
-  });
-
-  // ---------------------------------------------------------------- 10. Всё считается в браузере
+  // ---------------------------------------------------------------- 7. MediaPipe даёт точки — жесты распознаём сами
   // Схема из прежней презентации (слайд «Как работает»), упрощена до пяти узлов и перекрашена токенами.
-  // Узел: x — левый край, 256×290 на высоте 70; иконка — в квадрате 72 по центру сверху.
-  function node(i, x, step, icon, title, subs) {
+  // Узел: x — левый край, 256×250 на высоте 70; иконка — в квадрате 72 по центру сверху.
+  function node(i, x, icon, title, sub) {
     var cx = x + 128, y = 70;
-    var s = subs.map(function (t, j) { return '<text class="p3-d-s" x="' + cx + '" y="' + (y + 236 + j * 34) + '">' + t + '</text>'; }).join('');
-    return '<g class="p3-d-node p3-d-node--' + i + '"' + (step ? ' data-step="' + step + '"' : '') + '>' +
-      '<rect class="p3-d-box" x="' + x + '" y="' + y + '" width="256" height="290" rx="3"/>' +
+    return '<g class="p3-d-node p3-d-node--' + i + '">' +
+      '<rect class="p3-d-box" x="' + x + '" y="' + y + '" width="256" height="250" rx="3"/>' +
       '<path class="p3-d-gem" d="M' + (x + 228) + ' ' + (y - 14) + 'l14 14-14 14-14-14z"/>' +
-      '<g class="p3-d-ico" transform="translate(' + cx + ' ' + (y + 82) + ')">' + icon + '</g>' +
-      '<text class="p3-d-t" x="' + cx + '" y="' + (y + 194) + '">' + title + '</text>' + s + '</g>';
+      '<g class="p3-d-ico" transform="translate(' + cx + ' ' + (y + 78) + ')">' + icon + '</g>' +
+      '<text class="p3-d-t" x="' + cx + '" y="' + (y + 186) + '">' + title + '</text>' +
+      (sub ? '<text class="p3-d-s" x="' + cx + '" y="' + (y + 226) + '">' + sub + '</text>' : '') + '</g>';
   }
   var HAND = (function () {
     // 21 точка кисти — те же координаты, что на схеме прежней презентации, в масштабе иконки.
@@ -235,74 +86,180 @@
   var X = [0, 344, 698, 1052, 1406];
   var GAP = [0, 1, 2, 3].map(function (i) {
     var a = X[i] + 260, b = X[i + 1] - 6;
-    return '<g class="p3-d-link p3-d-link--' + (i + 1) + '"><path class="p3-d-a" d="M' + a + ' 215H' + b + '"/><path class="p3-d-run" pathLength="100" d="M' + a + ' 215H' + b + '"/></g>';
+    return '<g class="p3-d-link p3-d-link--' + (i + 1) + '"><path class="p3-d-a" d="M' + a + ' 195H' + b + '"/><path class="p3-d-run" pathLength="100" d="M' + a + ' 195H' + b + '"/></g>';
   });
-  var SVG10 = '<svg class="p3-d" viewBox="0 0 1680 384" role="img" aria-label="Схема: камера, MediaPipe в Web Worker на GPU, 21 точка кисти и поза, жесты и машины состояний, бой на three.js — всё внутри браузера">' +
+  // Скобки над узлами: что даёт библиотека (узлы 2–3) и что написано нами (узлы 4–5).
+  var BR_LIB = '<g class="p3-d-brace"><path d="M344 34V20H954V34"/><text class="p3-d-k" x="649" y="2">MediaPipe</text></g>';
+  var BR_OWN = '<g class="p3-d-brace p3-d-brace--own"><path d="M1052 34V20H1662V34"/><text class="p3-d-k" x="1357" y="2">Наш код</text></g>';
+  var SVG7 = '<svg class="p3-d" viewBox="0 -30 1680 360" role="img" aria-label="Схема: камера, MediaPipe на видеокарте, 21 точка кисти и поза, жесты нашим кодом, бой на three.js">' +
     '<defs><marker id="p3-ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" class="p3-d-ah"/></marker></defs>' +
-    '<rect class="p3-d-zone" x="326" y="22" width="1354" height="358" rx="4"/>' +
-    '<rect class="p3-d-zone-bg" x="345" y="4" width="196" height="36"/><text class="p3-d-k" x="360" y="32">Браузер</text>' +
-    node(1, X[0], 0, ICON.cam, 'Камера', ['обычная', 'веб-камера']) +
-    '<g data-step="1">' + GAP[0] + node(2, X[1], 0, ICON.chip, 'MediaPipe', ['0.10.35', 'Web Worker · GPU']) + '</g>' +
-    '<g data-step="2">' + GAP[1] + node(3, X[2], 0, ICON.hand, '21 точка', ['кисти', 'и поза тела']) + '</g>' +
-    '<g data-step="3">' + GAP[2] + node(4, X[3], 0, ICON.fsm, 'Жесты', ['и машины', 'состояний']) + '</g>' +
-    '<g data-step="4">' + GAP[3] + node(5, X[4], 0, ICON.tri, 'Бой', ['three.js 0.185']) + '</g>' +
+    node(1, X[0], ICON.cam, 'Камера', '') +
+    '<g data-step="1">' + GAP[0] + node(2, X[1], ICON.chip, 'MediaPipe', 'GPU') + '</g>' +
+    '<g data-step="2">' + GAP[1] + node(3, X[2], ICON.hand, '21 точка', '× 2 + поза') + BR_LIB + '</g>' +
+    '<g data-step="3">' + GAP[2] + node(4, X[3], ICON.fsm, 'Жесты', '') + '</g>' +
+    '<g data-step="4">' + GAP[3] + node(5, X[4], ICON.tri, 'Бой', 'three.js') + BR_OWN + '</g>' +
     '</svg>';
 
-  // «Поза через кадр» на 63f908a не работает (убрана в 7532fe0, поза считается на каждом кадре),
-  // поэтому про слабое железо — только то, что есть в коде: core/perfTuner.js и смена модели позы в main.js.
   Q.push({
-    n: 10, sec: 40,
-    html: `<section class="slide p3-slide p3-s10" data-slide="10" data-title="Как это работает">
-  <header class="p3-head">
-    <p class="kicker">Как это работает</p>
-    <h2 class="thesis">Всё считается в браузере</h2>
-  </header>
+    n: 7, sec: 40,
+    html: `<section class="slide p3-slide p3-s7" data-slide="7" data-title="Как это работает">
+  <p class="kicker">Под капотом</p>
+  <h2 class="thesis">MediaPipe даёт точки — жесты распознаём сами</h2>
   <div class="p3-body">
-    <div class="p3-s10__diagram">${SVG10}</div>
-    <ul class="p3-s10__facts">
-      <li><svg class="p3-ico" viewBox="0 0 48 48" aria-hidden="true"><path d="M14 34h21a8 8 0 0 0 1-15.9A11 11 0 0 0 15 16a9 9 0 0 0-1 18z"/><path d="M8 42 40 8"/></svg><span><b>0 кадров в сеть,</b> микрофон не используется</span></li>
-      <li><svg class="p3-ico" viewBox="0 0 48 48" aria-hidden="true"><path d="M6 16 24 7l18 9v18l-18 9-18-9z"/><path d="M6 16l18 9 18-9M24 25v18"/></svg><span><b>Офлайн:</b> всё в vendor/, service worker</span></li>
-      <li><svg class="p3-ico" viewBox="0 0 48 48" aria-hidden="true"><path d="M7 34a17 17 0 1 1 34 0"/><path d="M24 34 33 20"/><circle cx="24" cy="34" r="3"/></svg><span><b>Слабое железо:</b> автонастройка разрешения и качества, быстрая модель позы, если точная не успевает</span></li>
+    <div class="p3-s7__diagram">${SVG7}</div>
+    <ul class="p3-s7__facts">
+      <li><svg class="p3-ico" viewBox="0 0 48 48" aria-hidden="true"><path d="M10 38V10h28v28z"/><path d="M19 19l-5 5 5 5M29 19l5 5-5 5"/></svg><span><b>24 жеста, автоматы состояний и 63 подсказки</b> — наш код</span></li>
+      <li><svg class="p3-ico" viewBox="0 0 48 48" aria-hidden="true"><path d="M14 34h21a8 8 0 0 0 1-15.9A11 11 0 0 0 15 16a9 9 0 0 0-1 18z"/><path d="M8 42 40 8"/></svg><span><b>Видео не уходит в сеть</b></span></li>
+      <li><svg class="p3-ico" viewBox="0 0 48 48" aria-hidden="true"><path d="M6 16 24 7l18 9v18l-18 9-18-9z"/><path d="M6 16l18 9 18-9M24 25v18"/></svg><span><b>Без интернета:</b> всё в vendor/, service worker</span></li>
+      <li><svg class="p3-ico" viewBox="0 0 48 48" aria-hidden="true"><path d="M7 34a17 17 0 1 1 34 0"/><path d="M24 34 33 20"/><circle cx="24" cy="34" r="3"/></svg><span><b>Слабый ноутбук:</b> автонастройка качества, лёгкая модель позы</span></li>
     </ul>
   </div>
-  <aside class="notes">Видео не покидает ноутбук: распознавание идёт в браузере, в отдельном потоке на видеокарте. Все библиотеки лежат в репозитории, поэтому игра работает без интернета — на сцене и в школе. На слабом ноутбуке игра сама снижает нагрузку.</aside>
-</section>`,
-    enter: enter, leave: leave
+  <aside class="notes">MediaPipe — это только точки: двадцать одна на каждую кисть и поза тела. Всё остальное — наш код: 24 жеста, автоматы состояний и 63 подсказки «ОШИБКА». Распознавание идёт в браузере на видеокарте, видео не покидает ноутбук. Все библиотеки лежат в репозитории — игра работает без интернета, на сцене и в школе. На слабом ноутбуке игра сама снижает качество графики и берёт лёгкую модель позы.</aside>
+</section>`
   });
 
-  // ---------------------------------------------------------------- 11. Сложно — и проверено
+  // ---------------------------------------------------------------- 8. Проверено
   Q.push({
-    n: 11, sec: 35,
-    html: `<section class="slide p3-slide p3-s11" data-slide="11" data-title="Сложно — и проверено">
-  <header class="p3-head">
-    <p class="kicker">Проверка</p>
-    <h2 class="thesis">Сложно — и проверено</h2>
-  </header>
+    n: 8, sec: 35,
+    html: `<section class="slide p3-slide p3-s8" data-slide="8" data-title="Проверено">
+  <p class="kicker">Проверка</p>
+  <h2 class="thesis">Сложно — и проверено</h2>
   <div class="p3-body">
-    <div class="p3-s11__tiles">
+    <div class="p3-s8__tiles">
       <article class="corner p3-tile">
         <i class="p3-tile__bg" aria-hidden="true"></i>
         <svg class="p3-tile__ico" viewBox="-36 -40 72 80" aria-hidden="true"><g class="p3-hand">${HAND}</g></svg>
         <span class="num" data-ignite>96&nbsp;%</span>
-        <p class="unit">форм кисти на реальных фото HaGRID <span class="p3-dim">(130 из 135)</span></p>
+        <p class="p3-tile__txt">формы кисти на&nbsp;135 реальных фото <span class="p3-dim">(HaGRID)</span></p>
       </article>
       <article class="corner p3-tile" data-step="1">
         <i class="p3-tile__bg" aria-hidden="true"></i>
-        <svg class="p3-tile__ico" viewBox="0 0 84 72" aria-hidden="true"><path class="p3-ruler" d="M2 58h80"/><path class="p3-ticks" d="M7 52V22M17 52V22M27 52V22M37 52V22M47 52V22M57 52V22M67 52V22M77 52V22"/></svg>
+        <svg class="p3-tile__ico" viewBox="0 0 84 72" aria-hidden="true"><path d="M2 58h80"/><path class="p3-ticks" d="M7 52V22M17 52V22M27 52V22M37 52V22M47 52V22M57 52V22M67 52V22M77 52V22"/></svg>
         <span class="num">8<span class="unit p3-hz">Гц</span></span>
-        <p class="unit">жесты держатся при распознавании 8–15 раз в&nbsp;секунду; руна ${TRI} на 8&nbsp;Гц — 83&nbsp;%, ложных&nbsp;0</p>
+        <p class="p3-tile__txt">распознавание 8&nbsp;раз в&nbsp;секунду: <span class="p3-nw">83–100&nbsp;%</span> попыток, 0&nbsp;ложных <span class="p3-dim">· синтетический тест</span></p>
       </article>
       <article class="corner p3-tile" data-step="2">
         <i class="p3-tile__bg" aria-hidden="true"></i>
         <svg class="p3-tile__ico" viewBox="-40 -40 80 80" aria-hidden="true"><circle r="30"/><circle r="22" class="p3-thin"/><path d="M-12 1 -3 10 14 -9"/></svg>
-        <span class="num">1100+</span>
-        <p class="unit">автопроверок, 0&nbsp;падений</p>
+        <span class="num">1050+</span>
+        <p class="p3-tile__txt">проверок, 0&nbsp;падений; наборов <span class="p3-nw">31 ${AR} 59</span></p>
       </article>
     </div>
-    <p class="src p3-s11__src">dev/handGestures.real.test.mjs · dev/lowfps.test.mjs · прогон автотестов 03.10</p>
+    <p class="src p3-s8__src">dev/handGestures.real.test.mjs · dev/lowfps.test.mjs · прогон всех наборов</p>
   </div>
-  <aside class="notes">Жесты проверены на реальных фотографиях рук: 96 %. Они работают даже при 8 кадрах распознавания в секунду, это старый школьный ноутбук. Более тысячи ста автопроверок проходят без падений.</aside>
+  <aside class="notes">Жесты проверены на 135 реальных фотографиях рук из датасета HaGRID: 96 % форм кисти распознаются верно. В синтетическом тесте при 8 кадрах распознавания в секунду — это старый школьный ноутбук — жесты срабатывают в 83–100 % попыток и ни разу не ложно. Наборов тестов стало 59 вместо 31, больше 1050 проверок, ни одного падения.</aside>
+</section>`
+  });
+
+  // ---------------------------------------------------------------- 9. После отбора: таймлайн «Ярость клятвы»
+  Q.push({
+    n: 9, sec: 45,
+    html: `<section class="slide p3-slide p3-s9" data-slide="9" data-title="После отбора">
+  <p class="kicker">После отбора</p>
+  <h2 class="thesis">Три волны до финала</h2>
+  <div class="p3-body">
+    <div class="p3-tl">
+      <div class="p3-tl__rail" aria-hidden="true">
+        <i class="p3-tl__fill p3-tl__fill--1"></i><i class="p3-tl__fill p3-tl__fill--2"></i><i class="p3-tl__fill p3-tl__fill--3"></i>
+      </div>
+      <ol class="p3-tl__nodes">
+        <li class="p3-tl__node p3-tl__node--base">
+          <span class="p3-tl__gem" aria-hidden="true"></span>
+          <span class="p3-tl__date">30.09</span>
+          <span class="p3-tl__name">версия отбора <span class="p3-tl__hash">15298a8</span></span>
+        </li>
+        <li class="p3-tl__node" data-step="1"><span class="p3-tl__gem" aria-hidden="true"></span><span class="p3-tl__date">02.10</span><h3 class="p3-tl__name">Доступнее</h3></li>
+        <li class="p3-tl__node" data-step="2"><span class="p3-tl__gem" aria-hidden="true"></span><span class="p3-tl__date">02.10</span><h3 class="p3-tl__name">Глубже</h3></li>
+        <li class="p3-tl__node" data-step="3"><span class="p3-tl__gem" aria-hidden="true"></span><span class="p3-tl__date">03.10</span><h3 class="p3-tl__name">Красивее</h3></li>
+      </ol>
+    </div>
+    <ul class="p3-s9__nums">
+      <li><span class="p3-s9__label">Вход в бой</span><span class="p3-s9__row"><span class="num" data-ignite>6${AR}2</span><span class="unit">клика</span></span></li>
+      <li><span class="p3-s9__label">Жесты</span><span class="p3-s9__row"><span class="num">20${AR}24</span></span></li>
+      <li><span class="p3-s9__label">Ассеты</span><span class="p3-s9__row"><span class="num">36${AR}10</span><span class="unit">МБ</span></span></li>
+    </ul>
+  </div>
+  <aside class="notes">База — версия отбора от 30 сентября, коммит 15298a8. Первая волна, 2 октября — доступнее: режим «Новичок» и автоход, жесты держатся на 8–15 кадрах распознавания в секунду, вход в бой за два клика вместо шести, офлайн, свой звук, ассеты сжаты с 36 до 10 мегабайт. Вторая волна, тоже 2 октября — глубже: «Врата бури», «Столп небес», ультимейт «Небесный суд», «Дух игрока», «Испытание · 60 с», голос тренера, курсор-кисть; жестов стало 24 вместо 20. Третья, 3 октября — красивее: новый Регент, интерфейс уровня RPG, арена, лица, волосы и наряды героев, аура и витрина меню.</aside>
+</section>`
+  });
+
+  // ---------------------------------------------------------------- 10. Было → стало: шторка только для совпадающих кадров
+  Q.push({
+    n: 10, sec: 50,
+    html: `<section class="slide p3-slide p3-s10" data-slide="10" data-title="Было → стало">
+  <p class="kicker">Было ${AR} стало</p>
+  <h2 class="thesis">Та же игра, другой уровень</h2>
+  <div class="p3-body">
+    <figure class="p3-wipe" data-interactive data-no-nav aria-label="Шторка «до и после»: её можно тянуть мышью">
+      <div class="p3-wipe__pair p3-wipe__pair--a">
+        <img class="p3-wipe__img" src="../docs/screenshots/menu.jpg" alt="Меню в версии отбора: три кнопки">
+        <span class="p3-wipe__tag p3-wipe__tag--before">версия отбора · 30.09</span>
+        <div class="p3-wipe__after">
+          <img class="p3-wipe__img" src="../docs/screenshots/w4-check/01_menu.jpg" alt="Меню 3 октября: пять режимов и книга заклинаний">
+          <span class="p3-wipe__tag p3-wipe__tag--after">03.10</span>
+        </div>
+        <i class="p3-wipe__edge" aria-hidden="true"></i>
+      </div>
+      <div class="p3-wipe__pair p3-wipe__pair--b">
+        <img class="p3-wipe__img" src="media/p3/regent_before.jpg" alt="Регент Нимба в версии отбора">
+        <span class="p3-wipe__tag p3-wipe__tag--before">версия отбора · 30.09</span>
+        <div class="p3-wipe__after">
+          <img class="p3-wipe__img" src="media/p3/regent_after.jpg" alt="Регент Нимба 3 октября: обсидиан с золотом">
+          <span class="p3-wipe__tag p3-wipe__tag--after">03.10</span>
+        </div>
+        <i class="p3-wipe__edge" aria-hidden="true"></i>
+      </div>
+    </figure>
+    <ol class="p3-s10__caps">
+      <li class="p3-s10__cap" data-step="1"><b>Меню:</b> 3 кнопки ${AR} 5 режимов и книга заклинаний</li>
+      <li class="p3-s10__cap" data-step="2"><b>Регент:</b> обсидиан с золотом, корона-затмение</li>
+    </ol>
+    <div class="p3-s10__battle">
+      <p class="p3-s10__cap"><b>Бой:</b> отладка ${AR} интерфейс RPG</p>
+      <img class="p3-s10__shot" src="../docs/screenshots/battle.jpg" alt="Бой в версии отбора: отладочные надписи">
+      ${AR}
+      <img class="p3-s10__shot" src="../docs/screenshots/w4-check/03_battle.jpg" alt="Бой 3 октября: интерфейс RPG">
+    </div>
+    <p class="cap p3-s10__note">Кадры боя сняты с клавиатуры, с разных точек.</p>
+  </div>
+  <aside class="notes">Слева то, что видело жюри на отборе, справа — сегодняшний main, тот же кадр. В меню вместо трёх кнопок — пять режимов и книга заклинаний. Регент теперь из обсидиана с золотом, с короной-затмением. Бой снят с разных точек, поэтому показываем его рядом: вместо отладочных надписей — интерфейс уровня RPG с «Яростью клятвы» и «Духом игрока».</aside>
 </section>`,
-    enter: enter, leave: leave
+    enter: function (el) { wipeReset(el); wipeBind(el); },
+    leave: function (el) { wipeReset(el); },
+    step: function (el) { wipeReset(el); }
+  });
+
+  // ---------------------------------------------------------------- 11. Красивее — и загружается в 3,5 раза легче
+  // Тезис «легче в бою» не держим: после визуальной волны высокое качество упирается в процессор (1c2c4ad).
+  // «Легче» — про загрузку: assets/ 35,7 → 10,0 МБ (git ls-tree, 15298a8 → 63f908a; сжатие — eca6f51).
+  Q.push({
+    n: 11, sec: 35,
+    html: `<section class="slide p3-slide p3-s11" data-slide="11" data-title="Красивее и легче">
+  <p class="kicker">Картинка</p>
+  <h2 class="thesis">Красивее — и&nbsp;загружается в&nbsp;3,5&nbsp;раза легче</h2>
+  <div class="p3-body">
+    <figure class="p3-s11__look">
+      <img src="../docs/screenshots/attire/lineup_before_after.jpg" alt="Герои до и после: наряды, лица, волосы">
+      <span class="frame" aria-hidden="true"></span>
+    </figure>
+    <figure class="p3-s11__vid">
+      <video data-src="../docs/video/spells_before_after.mp4" poster="media/p3/spells_ba.jpg" muted loop playsinline preload="none"></video>
+      <img class="print-poster" src="media/p3/spells_ba.jpg" alt="">
+    </figure>
+    <div class="p3-s11__stat">
+      <span class="num" data-ignite>3,5×</span>
+      <span class="unit">ассеты 35,7 ${AR} 10&nbsp;МБ</span>
+      <p class="cap">модели — meshopt, текстуры — WebP</p>
+    </div>
+    <ul class="p3-s11__steps">
+      <li data-step="1"><b>Герои:</b> лица, волосы, наряды</li>
+      <li data-step="2"><b>Арена:</b> живой огонь, мокрый пол</li>
+      <li data-step="3"><b>Заклинания:</b> цвет стихии, ядро и ореол</li>
+    </ul>
+    <p class="src p3-s11__src">−26&nbsp;% вызовов отрисовки в бою — до/после визуальной волны 03.10, docs/visual-budget.md</p>
+  </div>
+  <aside class="notes">Картинка стала другой: новые лица, волосы и наряды героев, у арены живой огонь и мокрый пол, у заклинаний цвет стихии и яркое ядро. При этом игра загружается в три с половиной раза легче: ассеты сжались с 36 до 10 мегабайт — модели через meshopt, текстуры в WebP.</aside>
+</section>`,
+    enter: function (el) { videoFallback(el); }
   });
 })();
