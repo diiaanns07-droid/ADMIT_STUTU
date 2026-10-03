@@ -69,7 +69,7 @@
         <p class="lead s1__lead reveal">Тёмное фэнтези в браузере: героем управляют руки и тело через обычную веб-камеру.</p>
         <div class="s1__actions reveal">
           <button type="button" class="btn btn--primary" data-action="autoplay" aria-pressed="false">${PLAY}<span>Смотреть</span></button>
-          <a class="btn" href="ASHEN_OATH_pitch.pdf" download>PDF</a>
+          <a class="btn" href="ASHEN_OATH_pitch_dark.pdf" download>PDF</a>
           <a class="btn" href="../index.html" target="_blank" rel="noopener">Играть</a>
         </div>
       </div>
@@ -126,7 +126,7 @@
         <p class="s11__hands reveal">Ваши руки — это джойстик. Сыграйте сами.</p>
         <div class="s11__actions reveal">
           <a class="btn btn--primary" href="../index.html?demo&amp;present&amp;fury=100" target="_blank" rel="noopener">${PLAY}<span>Живой показ</span></a>
-          <a class="btn" href="ASHEN_OATH_pitch.pdf" download>PDF</a>
+          <a class="btn" href="ASHEN_OATH_pitch_dark.pdf" download>PDF</a>
         </div>
         ${team()}
       </div>
