@@ -5,11 +5,15 @@
 //   --shots     кадры витрины меню каждые 2 с первых 40 с (диафильм «что видит жюри»)
 //   --gzip      текстовые ответы (js, css, html, json) идут по каналу сжатыми, как на GitHub Pages;
 //               в отчёте тогда два числа: байты по сети (wire) и распакованные
+//   --nodraw    WebGL не рисует (вызовы draw* пустые): в облаке без видеокарты программный рендер забирает все ядра
+//               процессора, а на настоящей видеокарте — нет; так распознавание меряется без этой помехи [W5-КАМЕРА]
 // Сценарии (каждый — в новом профиле, без кэша):
 //   menu  — до появления меню (boot.done), до героя на витрине (hero.ready) и сколько докачивается в меню;
 //   fight — меню → «Отладка с клавиатуры» → «Играть» → «Продолжить без камеры» → бой: байты до старта боя и за первые 15 с боя;
 //   track — меню → «Играть» (сразу просит камеру; фейковая камера): байты до работающего трекинга и первого ответа
-//           распознавания, ступень лестницы отката и причина, если она понадобилась. [W5-КАМЕРА]
+//           распознавания, ступень лестницы отката и причина, если она понадобилась; trackSteady — распознаваний
+//           ≥ 3 в секунду (трекинг пригоден для боя). Адрес — как у игрока (?cursor=0: камера не включается
+//           в меню курсором-кистью; без ?uncapped=1 — с дешёвым кадром на время запуска камеры). [W5-КАМЕРА]
 // Байты — тела ответов (без сжатия на лету), включая CDN и модели MediaPipe.
 // Канал моделируется одной общей «трубой» FIFO: ответ занимает её на размер/ширину, плюс задержка.
 
@@ -32,6 +36,7 @@ const OUT = resolve(argOf('--out', join(ROOT, 'dev', 'scratch', 'load_budget')))
 const ONLY = (argOf('--only', 'menu,fight,track') || '').split(',').filter(Boolean);
 const SHOTS = argv.includes('--shots');
 const GZIP = argv.includes('--gzip');
+const NODRAW = argv.includes('--nodraw');
 const TEXT = /javascript|css|html|json|text\//;
 mkdirSync(OUT, { recursive: true });
 
@@ -71,8 +76,16 @@ function cdnFile(u) {
 }
 
 // ---------------------------------------------------------------- один сценарий
-async function runScenario(browser, base, name, steps) {
+async function runScenario(browser, base, name, steps, query = '?uncapped=1') {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, permissions: ['camera'] });
+  if (NODRAW) {
+    await ctx.addInitScript(() => {
+      for (const C of [window.WebGLRenderingContext, window.WebGL2RenderingContext]) {
+        if (!C) continue;
+        for (const k of ['drawElements', 'drawArrays', 'drawElementsInstanced', 'drawArraysInstanced', 'drawRangeElements']) if (typeof C.prototype[k] === 'function') C.prototype[k] = function () {};
+      }
+    });
+  }
   const t0 = { v: 0 };
   const log = [];          // { t, url, bytes, kind }
   let linkFree = 0;
@@ -113,7 +126,7 @@ async function runScenario(browser, base, name, steps) {
   const marks = {};
   const mark = (k) => { const t = now(); marks[k] = { t, bytes: bytesAt(t), wire: bytesAt(t, 'wire') }; return marks[k]; };
   t0.v = Date.now();
-  await page.goto(base + '?uncapped=1', { waitUntil: 'commit' });
+  await page.goto(base + query, { waitUntil: 'commit' });
   const shots = [];
   try { await steps({ page, mark, now, sleep, log, shots, marks }); } catch (e) { errors.push('сценарий: ' + (e && e.message)); }
   mark('end');
@@ -180,9 +193,10 @@ async function main() {
     mark('cameraClick');
     await waitFor(page, () => { const s = window.__ASHEN__.tracking; return s && ['ready', 'lost', 'calibrating'].includes(s.status); }, TO * 2); mark('tracking');
     await waitFor(page, () => { const s = window.__ASHEN__.tracking; return s && s.debug && s.debug.results > 0; }, TO * 2).then(() => mark('firstResult')).catch(() => {});
-    const t = await page.evaluate(() => { const s = window.__ASHEN__.tracking || {}; const d = s.debug || {}; return { status: s.status, message: s.message, step: d.engineStep, ladder: d.ladderHistory, hz: d.inferenceHz, firstResultMs: d.firstResultMs }; }).catch(() => null);
+    await waitFor(page, () => { const s = window.__ASHEN__.tracking; return s && s.debug && s.debug.inferenceHz >= 3 && s.debug.results >= 10; }, 90000).then(() => mark('trackSteady')).catch(() => {});
+    const t = await page.evaluate(() => { const s = window.__ASHEN__.tracking || {}; const d = s.debug || {}; return { status: s.status, message: s.message, step: d.engineStep, ladder: d.ladderHistory, hz: d.inferenceHz, firstResultMs: d.firstResultMs, fps: window.__ASHEN__.fps }; }).catch(() => null);
     if (t) mark('_track').info = t;
-  }));
+  }, '?cursor=0'));
 
   srv.close();
   await browser.close();
