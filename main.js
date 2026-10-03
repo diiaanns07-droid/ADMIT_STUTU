@@ -2243,6 +2243,7 @@ window.__ASHEN__ = Object.freeze({
     const gap = gapL === null ? gapR : gapR === null ? gapL : Math.min(gapL, gapR);
     return { ...f, floorL: L.y, floorR: R.y, floorObj: L.obj || R.obj, groundL: gy(f.atL[0], f.atL[1]), groundR: gy(f.atR[0], f.atR[1]), gapL, gapR, gap, screen: app.screen };
   },
+  heroFeetCost: (n, now) => (heroModel && heroModel.feetCost ? heroModel.feetCost(n, now) : null),   // [W5-ПОЛ] QA: мкс подошвы за кадр
   groundY: (x, z) => (worldLayout && typeof worldLayout.groundY === 'function' ? worldLayout.groundY(x, z) : null),   // [W5-ПОЛ] QA: земля героя (combat, камера)
   net: () => (netSession ? netSession.debug() : null),             // [NET]
   netSession: () => netSession,                                    // [NET] для тестов и №3

@@ -169,8 +169,11 @@ export const RIGS = Object.freeze({ mixamo: RIG, kaykit: RIG_KAYKIT });
 // в покое он выше подошвы, но при наклоне стопы носком вниз первым уходит в пол). Точки — в осях нормализованных
 // костей стопы и носка. Пол модели в покое — нижняя из них (restY, в осях vrm.scene). Один раз на модель (кэш).
 //   soleMarkers(THREE, vrm) → { L: [{ node, p, mesh, i }], R: [...], restY, bones } | null (нет костей стоп или сетки)
-//   soleHeightSkinned(m, out?) → нижняя точка подошвы в мире по вершинам сетки (точно; сырые кости — в позе кадра)
-//   soleHeight(m, out?) → то же по точкам, жёстко сидящим на нормализованных костях (быстро, без сетки)
+//   soleLowFast(m, res) → нижняя точка подошвы в мире ([L, R, min] в res): те же вершины сетки, но по нормализованным
+//                         костям (точно, без humanoid.update и перемножения матриц, без аллокаций) — для кадра игры
+//   soleHeightFast(m, out?) → то же числом (перенос клипов, проверки)
+//   soleHeightSkinned(m, out?) → то же скиннингом по сырым костям (сырые кости — в позе кадра; проверка и QA)
+//   soleHeight(m, out?) → по точкам, жёстко сидящим на нормализованных костях стопы и носка (без доли голени)
 //   out = { L, R, min }
 const SOLES = new WeakMap();
 // Вершина скин-сетки сразу в мире — как в шейдере: Σ w·(кость.matrixWorld · обратная привязки)·bindMatrix·v.
@@ -281,28 +284,101 @@ export function soleMarkers(THREE, vrm) {
     for (let j = 0; j < 4; j++) if (sw.getComponent(q.i, j) > 0) bs.add(q.mesh.skeleton.bones[si.getComponent(q.i, j)]);
   }
   out.bones = [...bs].filter(Boolean);
+  out.fast = soleTerms(THREE, H, out);
   SOLES.set(vrm, out);
   return out;
+}
+// [W5-ПОЛ] Точки подошвы для кадра — по нормализованным костям. three-vrm (humanoid.update) поворачивает сырую кость
+// так, что её мировая матрица = мировая нормализованной · C, где C = нормализованная⁻¹ · сырая в покое (постоянная);
+// у кости вне гуманоида (кончик носка) — через ближайшую кость гуманоида вверх по цепочке. Тогда вершина сетки
+// = Σ w · N.matrixWorld · (C · обратная привязки · bindMatrix · v): веса одного узла сворачиваются в один вектор
+// (x, y, z, Σw), а для высоты нужна только строка y матрицы узла. Узлы обновляются родитель раньше: у верхнего
+// (голень) — вся цепочка до корня сцены, у остальных — от родителя. Вызывается в покое (из soleMarkers).
+//   → { nodes, chain: Uint8Array, term: Float64Array [узел, x, y, z, w]…, pt: Int32Array (начало точки), side: Uint8Array }
+function soleTerms(THREE, H, m) {
+  const name = new Map();
+  for (const b of Object.keys(H.humanBones || {})) { const r = H.getRawBoneNode ? H.getRawBoneNode(b) : null; if (r) name.set(r, b); }
+  const normOf = (bone) => { for (let o = bone; o; o = o.parent) if (name.has(o)) return H.getNormalizedBoneNode(name.get(o)); return null; };
+  const nodes = [], term = [], pt = [], side = [];
+  const v = new THREE.Vector3(), t = new THREE.Vector3(), C = new THREE.Matrix4();
+  for (const [k, s] of [['L', 0], ['R', 1]]) {
+    for (const q of m[k]) {
+      const g = q.mesh.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, sk = q.mesh.skeleton;
+      v.fromBufferAttribute(g.attributes.position, q.i).applyMatrix4(q.mesh.bindMatrix);
+      const acc = new Map();
+      for (let j = 0; j < 4; j++) {
+        const w = sw.getComponent(q.i, j);
+        if (!w) continue;
+        const bi = si.getComponent(q.i, j), bone = sk.bones[bi], nn = normOf(bone);
+        if (!nn) return null;   // кость стопы вне гуманоида — без быстрых точек (тогда — точный скиннинг)
+        C.copy(nn.matrixWorld).invert().multiply(bone.matrixWorld).multiply(sk.boneInverses[bi]);
+        t.copy(v).applyMatrix4(C);
+        const a = acc.get(nn) || [0, 0, 0, 0];
+        a[0] += w * t.x; a[1] += w * t.y; a[2] += w * t.z; a[3] += w;
+        acc.set(nn, a);
+      }
+      pt.push(term.length / 5); side.push(s);
+      for (const [nn, a] of acc) {
+        let ni = nodes.indexOf(nn);
+        if (ni < 0) { ni = nodes.length; nodes.push(nn); }
+        term.push(ni, a[0], a[1], a[2], a[3]);
+      }
+    }
+  }
+  if (!pt.length) return null;
+  pt.push(term.length / 5);
+  // порядок обновления: родитель раньше дочерних (по глубине); номера узлов в term — под этот порядок
+  const depth = (o) => { let d = 0; for (let p = o.parent; p; p = p.parent) d++; return d; };
+  const order = nodes.map((n, i) => i).sort((a, b) => depth(nodes[a]) - depth(nodes[b]));
+  const re = new Array(nodes.length);
+  order.forEach((i, j) => { re[i] = j; });
+  for (let j = 0; j < term.length; j += 5) term[j] = re[term[j]];
+  const sorted = order.map((i) => nodes[i]);
+  return {
+    nodes: sorted, chain: Uint8Array.from(sorted.map((n) => (sorted.includes(n.parent) ? 0 : 1))),
+    term: Float64Array.from(term), pt: Int32Array.from(pt), side: Uint8Array.from(side), res: new Float64Array(3),
+  };
 }
 // Точно: те же точки как вершины сетки со всеми их весами (у пятки — доля голени: при сильно согнутом колене она
 // уходит вниз, хотя кость стопы стоит ровно). Сырые кости должны быть уже в позе кадра (vrm.humanoid.update()).
 export function soleHeightSkinned(m, out = null) {
   if (!m) return NaN;
-  for (const b of m.bones) b.updateWorldMatrix(true, false);
-  let min = Infinity;
-  for (const k of ['L', 'R']) {
-    let lo = Infinity;
-    for (const q of m[k]) {
-      const y = skinnedVertexWorld(q.mesh, q.i, m.v).y;
-      if (y < lo) lo = y;
-    }
-    if (out) out[k] = lo;
-    if (lo < min) min = lo;
-  }
-  if (out) out.min = min;
+  for (let i = 0; i < m.bones.length; i++) m.bones[i].updateWorldMatrix(true, false);
+  const lo0 = skinnedLow(m.L, m.v), lo1 = skinnedLow(m.R, m.v), min = lo0 < lo1 ? lo0 : lo1;
+  if (out) { out.L = lo0; out.R = lo1; out.min = min; }
   return min;
 }
-// Быстро и без сетки: точки жёстко на костях стопы и носка (нормализованный скелет) — для IK ног слоя поз
+function skinnedLow(list, v) {
+  let lo = Infinity;
+  for (let i = 0; i < list.length; i++) { const y = skinnedVertexWorld(list[i].mesh, list[i].i, v).y; if (y < lo) lo = y; }
+  return lo;
+}
+// Точно и дёшево (кадр игры): те же вершины сетки по нормализованным костям (soleTerms); сама обновляет их мировые
+// матрицы. Итог — в res (Float64Array(3): нижняя точка левой, правой и обеих стоп), функция возвращает res: без
+// аллокаций (число, возвращённое из функции, V8 упаковывает в кучу — 16 байт на вызов). Нужны быстрые точки (m.fast).
+export function soleLowFast(m, res) {
+  const f = m.fast, N = f.nodes, T = f.term, P = f.pt, ch = f.chain, sd = f.side;
+  for (let i = 0; i < N.length; i++) N[i].updateWorldMatrix(ch[i] === 1, false);
+  let lo0 = Infinity, lo1 = Infinity;
+  for (let p = 0, n = P.length - 1; p < n; p++) {
+    let y = 0;
+    for (let j = P[p] * 5, end = P[p + 1] * 5; j < end; j += 5) {
+      const e = N[T[j]].matrixWorld.elements;
+      y += e[1] * T[j + 1] + e[5] * T[j + 2] + e[9] * T[j + 3] + e[13] * T[j + 4];
+    }
+    if (sd[p] === 0) { if (y < lo0) lo0 = y; } else if (y < lo1) lo1 = y;
+  }
+  res[0] = lo0; res[1] = lo1; res[2] = lo0 < lo1 ? lo0 : lo1;
+  return res;
+}
+// То же числом (перенос клипов, проверки); нет быстрых точек — точный скиннинг (сырые кости — в позе кадра)
+export function soleHeightFast(m, out = null) {
+  if (!m || !m.fast) return soleHeightSkinned(m, out);
+  const r = soleLowFast(m, m.fast.res);
+  if (out) { out.L = r[0]; out.R = r[1]; out.min = r[2]; }
+  return r[2];
+}
+// Без сетки: точки жёстко на костях стопы и носка (нормализованный скелет)
 export function soleHeight(m, out = null) {
   if (!m) return NaN;
   let min = Infinity;
@@ -332,17 +408,19 @@ export const CONTACT = 0.1;
 // Скелет цели ставится в позу кадра (прямая кинематика нормализованных костей) и в конце возвращается в покой.
 function groundHips(THREE, vrm, bones, hips, qv, hp, lift, eps, soles, hipsParentInv) {
   const n = lift.length, H = vrm.humanoid;
-  const sync = () => { if (H.update) H.update(); };   // нормализованный скелет → сырые кости (сетка)
+  // нормализованный скелет → сырые кости (сетка): нужно только точному скиннингу, быстрые точки берут нормализованный
+  const sync = () => { if (H.update) H.update(); };
+  const raw = !soles.fast;
+  if (H.resetNormalizedPose) H.resetNormalizedPose();
   sync();
   vrm.scene.updateMatrixWorld(true);
-  const rest = soleHeightSkinned(soles);
+  const rest = soleHeightFast(soles);
   const corr = new Float32Array(n).fill(NaN), floor = new Float32Array(n);
   for (let f = 0; f < n; f++) {
     for (const b of bones) b.node.quaternion.fromArray(qv.get(b), f * 4);
     hips.node.position.fromArray(hp, f * 3);
-    hips.node.updateMatrixWorld(true);
-    sync();
-    floor[f] = rest - soleHeightSkinned(soles);   // поправка, ставящая подошву ровно на пол
+    if (raw) { hips.node.updateMatrixWorld(true); sync(); }
+    floor[f] = rest - soleHeightFast(soles);   // поправка, ставящая подошву ровно на пол
     if (lift[f] <= eps) corr[f] = floor[f];
   }
   if (H.resetNormalizedPose) H.resetNormalizedPose();

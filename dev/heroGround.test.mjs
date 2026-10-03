@@ -2,7 +2,8 @@
 // (assets/heroes/*.glb) и клипах KayKit — тот же путь, что в игре: vrmKit.retargetClip → heroModel (посадка,
 // микшер, слой поз heroPoses, наклон обёртки, подошва не ниже пола).
 //   1. Перенос клипов: в кадрах, где стопа источника стоит, подошва цели на полу (±1 см) — у всех клипов
-//      библиотеки и всех трёх моделей; в полёте (бег, прыжок, подскок рывка) — не ниже пола.
+//      библиотеки и всех трёх моделей; в полёте (бег, прыжок, подскок рывка) — не ниже пола. Подошва кадра
+//      (soleLowFast, по нормализованным костям) — та же, что скиннингом сетки (±0,1 мм), и без аллокаций.
 //   2. Каждый из пяти героев по кругу: витрина меню, покой, ходьба, бег, рывок, касты, щит, сфера, «Небесный суд»,
 //      удары по герою, победа, поражение, снова покой; смены героев между кругами. Подошва никогда не глубже
 //      2 см под полом; стоя — |подошва − пол| ≤ 2 см; таз и подошва в покое в конце — там же, где в начале.
@@ -92,6 +93,7 @@ const log = (m) => out.push(m);
         mixT.setTime(t); vrm.humanoid.update(); vrm.scene.updateMatrixWorld(true);
         const lift = Math.min(...sf.map((o, j) => o.getWorldPosition(v).y - sf0[j]));
         const gap = K.soleHeightSkinned(m) - m.restY;
+        worst.fast = Math.max(worst.fast || 0, Math.abs(K.soleHeightFast(m) - m.restY - gap));
         if (key && lift <= K.CONTACT * hips0) worst.c = Math.max(worst.c, Math.abs(gap));   // касание: подошва на полу
         else worst.f = Math.min(worst.f, gap);                                             // полёт и между кадрами: не ниже пола
         assert.ok(!key || lift > K.CONTACT * hips0 || Math.abs(gap) <= 0.01, `${f} «${clip.name}» t=${t.toFixed(2)}: стопа источника стоит, а подошва ${cm(gap)} от пола`);
@@ -101,7 +103,26 @@ const log = (m) => out.push(m);
       aS.stop(); mixS.uncacheRoot(src); aT.stop(); mixT.uncacheRoot(vrm.scene);
       vrm.humanoid.resetNormalizedPose(); vrm.humanoid.update();
     }
-    log(`перенос ${f}: ${lib.animations.length} клипов, касание — до ${cm(worst.c)} от пола, полёт — не ниже ${cm(worst.f)}`);
+    assert.ok(m.fast && worst.fast < 1e-4, `${f}: подошва по нормализованным костям расходится со скиннингом на ${(worst.fast * 1000).toFixed(3)} мм`);
+    log(`перенос ${f}: ${lib.animations.length} клипов, касание — до ${cm(worst.c)} от пола, полёт — не ниже ${cm(worst.f)}; быстрая подошва — до ${(worst.fast * 1000).toFixed(3)} мм от скиннинга`);
+    if (f === 'wizard.glb') {
+      // без аллокаций в кадре: 50 000 вызовов — ни одной сборки мусора и куча почти не растёт
+      const { PerformanceObserver } = await import('node:perf_hooks');
+      let gcs = 0;
+      const ob = new PerformanceObserver((l) => { gcs += l.getEntries().length; });
+      ob.observe({ entryTypes: ['gc'] });
+      const res = new Float64Array(3);
+      for (let i = 0; i < 5000; i++) K.soleLowFast(m, res);
+      await new Promise((r) => setTimeout(r, 20));
+      gcs = 0;
+      const h0 = process.memoryUsage().heapUsed;
+      for (let i = 0; i < 50000; i++) K.soleLowFast(m, res);
+      const dh = process.memoryUsage().heapUsed - h0;
+      await new Promise((r) => setTimeout(r, 20));
+      ob.disconnect();
+      assert.ok(gcs === 0 && dh < 65536, `soleLowFast аллоцирует: сборок мусора ${gcs}, куча +${(dh / 1024).toFixed(0)} КБ за 50 000 вызовов`);
+      log(`быстрая подошва: 50 000 вызовов — сборок мусора ${gcs}, куча +${(dh / 1024).toFixed(1)} КБ`);
+    }
   }
 }
 

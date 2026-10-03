@@ -26,7 +26,7 @@
 // heroRoot не задан — экземпляр создаёт свой root (для удалённого игрока) и сам ставит его по snapLike.player.
 // snapLike: нужен только { player: { position, yaw, velocity, action, hp, … как в snapshot } }.
 
-import { loadVRM, loadHumanoidGLB, retargetClip, createGltfLoader, soleMarkers, soleHeightSkinned, skinnedVertexWorld, boneSubtree } from './vrmKit.js';   // [W5-ПОЛ] подошва
+import { loadVRM, loadHumanoidGLB, retargetClip, createGltfLoader, soleMarkers, soleLowFast, soleHeightFast, soleHeightSkinned, skinnedVertexWorld, boneSubtree } from './vrmKit.js';   // [W5-ПОЛ] подошва
 import { createHeroPoses, rigFace, signaturePose, SIGNATURES } from './heroPoses.js'; // [W4-ПОЗЫ]
 
 // Карточки героев: имя, класс, стихия и три строки описания — для меню №8 и витрины (heroShowcase).
@@ -1401,13 +1401,16 @@ export function createHeroModel({
   // нижняя точка подошвы (soleMarkers, со скиннингом сетки) ниже пола героя — вся модель поднимается на столько же. Только вверх:
   // полёт бега и подскок рывка — из клипа, их не прижимаем. Пол — начало корня героя (высота земли под ним)
   // плюс подъём пола сцены (setFloorLift: пол витрины меню).
+  // Подошва — по нормализованным костям (vrmKit.soleLowFast: те же вершины сетки, точно, единицы мкс, без аллокаций):
+  // сырые кости и сетку three-vrm поставит в позу кадра ниже, в vrm.update.
   const _gf = new THREE.Vector3();
   function groundFeet() {
     const m = cur.soles;
     if (!m) { S.lift = 0; return; }
-    cur.vrm.humanoid.update();   // сырые кости — в позу кадра (vrm.update ниже повторит это и обновит пружины)
+    // без быстрых точек — точный скиннинг по сырым костям в позе кадра
+    const lo = m.fast ? soleLowFast(m, m.fast.res)[2] : (cur.vrm.humanoid.update(), soleHeightSkinned(m));
     const fl = S.floorLift || 0;
-    const pen = root.getWorldPosition(_gf).y + fl - soleHeightSkinned(m);
+    const pen = root.getWorldPosition(_gf).y + fl - lo;
     S.lift = pen > 1e-4 ? pen : 0;
     if (S.lift) cur.model.position.y = fl + S.lift;
   }
@@ -1513,6 +1516,17 @@ export function createHeroModel({
     };
   }
 
+  // [W5-ПОЛ] QA: цена подошвы за кадр, мкс — как groundFeet сейчас (fast: soleHeightFast) и прежним точным скиннингом
+  // (exact: humanoid.update + soleHeightSkinned); n повторов, часы now (при виртуальном времени замера — настоящие)
+  function feetCost(n = 2000, now = () => performance.now()) {
+    if (!cur || !S.ready || !cur.soles) return null;
+    const m = cur.soles, H = cur.vrm.humanoid;
+    const time = (fn) => { for (let i = 0; i < 50; i++) fn(); const t0 = now(); for (let i = 0; i < n; i++) fn(); return +(((now() - t0) / n) * 1000).toFixed(2); };
+    const fastUs = time(() => { root.getWorldPosition(_gf); if (m.fast) soleLowFast(m, m.fast.res); else soleHeightFast(m); });
+    const exactUs = time(() => { H.update(); root.getWorldPosition(_gf); soleHeightSkinned(m); });
+    return { hero: S.hero, quality: opts.quality, points: m.L.length + m.R.length, nodes: m.fast ? m.fast.nodes.length : 0, fastUs, exactUs };
+  }
+
   function dispose() {
     S.disposed = true;
     clearFallback();
@@ -1564,7 +1578,7 @@ export function createHeroModel({
     // остаточные образы рывка своей формы (modules/heroGhost.js) — effects.js тогда не рисует свой силуэт-заглушку
     get afterimages() { return !!(cur && cur.ghost && S.ready && S.lod < 2); },
     get shade() { return cur ? cur.shade : null; },   // QA
-    feet,   // [W5-ПОЛ] QA: стопы и подошва в мире
+    feet, feetCost,   // [W5-ПОЛ] QA: стопы и подошва в мире; цена подошвы за кадр
     get mixer() { return cur ? cur.mixer : null; },
     state: () => {
       let loco = 'Idle', wMax = -1;
