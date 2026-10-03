@@ -1412,6 +1412,7 @@ export function createEffects({ THREE, scene, camera, renderer, config } = {}) {
       v6 = createFxV6({
         THREE, root, camera, renderer, quality: liveSetting('quality') || 'medium', lightUnit: LIGHT_UNIT,
         reducedMotion: () => reducedMotion(),
+        heroId: () => liveSetting('hero'), // [W4-ЗАКЛИНАНИЯ] цвет героя окрашивает его заклинания (modules/fx/glsl.js HERO_ELEMENT)
         onShake: (v) => addTrauma(v), onKick: (dir, disp) => addKick(_an.copy(dir), disp),
         anchor: resolveAnchor,
         groundY: (x, z, fb) => (typeof groundFn === 'function' ? groundFn(x, z) : fb),

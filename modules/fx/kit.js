@@ -32,19 +32,22 @@ const MAX_PARTICLES = KIT_QUALITY.high.particles;
 
 // ---------------------------------------------------------------- градиенты (цвет и альфа по жизни)
 // Каждая строка — 64 точки sRGB + альфа. Узлы: [t, hex, alpha].
-const RAMP_W = 64, RAMP_ROWS = 48;
+// [W4-ЗАКЛИНАНИЯ] 128 строк (было 48): ~30 именованных + ~90 под hex-цвета палитр — иначе цвета тьмы/ветра/бури
+// молча падали в «золото» (текстура 64×128 RGBA = 32 КБ, одна на весь пул)
+const RAMP_W = 64, RAMP_ROWS = 128;
 const E = ELEMENTS;
 const RAMP_DEFS = {
   fire:    [[0, 0xfff6e0, 1], [0.12, 0xffd070, 1], [0.35, 0xff7a1e, 0.95], [0.65, 0xc2300c, 0.6], [1, 0x3a1810, 0]],
   flame:   [[0, 0xffffff, 0.2], [0.08, 0xfff0c0, 1], [0.3, 0xffa030, 1], [0.7, 0xe0400c, 0.55], [1, 0x601008, 0]],
   ember:   [[0, 0xffe2a0, 1], [0.3, 0xff8a2a, 1], [0.75, 0xc8340c, 0.8], [1, 0x501008, 0]],
-  storm:   [[0, 0xffffff, 1], [0.15, 0xd8f2ff, 1], [0.5, 0x6ab8ff, 0.8], [1, 0x2030a0, 0]],
+  storm:   [[0, 0xffffff, 1], [0.18, 0xe4f4ff, 1], [0.5, 0x86c6ff, 0.8], [1, 0x3050c0, 0]],   // [W4-ЗАКЛИНАНИЯ] гроза: бело-голубая
   heal:    [[0, 0xfffbe8, 1], [0.25, 0xffe38a, 1], [0.6, 0xa8f07a, 0.8], [1, 0x2f9a58, 0]],
   star:    [[0, 0xffffff, 1], [0.2, 0xffe6b0, 1], [0.55, 0xff9a70, 0.8], [1, 0x7a3cff, 0]],
-  wind:    [[0, 0xf4fffa, 0.9], [0.3, 0xc6f5e4, 0.8], [0.7, 0x7fc8b8, 0.5], [1, 0x4a6a66, 0]],
+  wind:    [[0, 0xf0fff6, 1], [0.25, 0xa6ffd6, 1], [0.6, 0x2ee39a, 0.8], [1, 0x0c5a3c, 0]],   // [W4-ЗАКЛИНАНИЯ] ветер: изумрудный
   eternal: [[0, 0xffffff, 1], [0.25, 0xffe9a8, 1], [0.6, 0xf2b0ff, 0.8], [1, 0x6a3cc0, 0]],
   frost:   [[0, 0xffffff, 1], [0.2, 0xdaf8ff, 1], [0.6, 0x7fd0ff, 0.8], [1, 0x2f5fb0, 0]],
-  void:    [[0, 0xfbeaff, 1], [0.2, 0xd8a0ff, 1], [0.55, 0x8a3cf0, 0.85], [1, 0x200640, 0]],
+  void:    [[0, 0xf2e2ff, 1], [0.2, 0xc890ff, 1], [0.55, 0x8c3cf4, 0.85], [1, 0x1a0438, 0]],  // [W4-ЗАКЛИНАНИЯ] тьма: фиолетовая
+  tempest: [[0, 0xffffff, 1], [0.15, 0xb4d4ff, 1], [0.5, 0x2f78ff, 0.9], [1, 0x2a1fc0, 0]],   // [W4-ЗАКЛИНАНИЯ] буря: электрик
   time:    [[0, 0xffffff, 1], [0.25, 0xd0eeff, 1], [0.65, 0x7ab0e0, 0.7], [1, 0x28406a, 0]],
   reset:   [[0, 0xffffff, 1], [0.3, 0xfff0c0, 1], [0.7, 0x8ab4ff, 0.7], [1, 0x3050c0, 0]],
   gold:    [[0, 0xfff3d6, 1], [0.3, 0xffcf80, 1], [0.7, 0xe8a14a, 0.75], [1, 0x8a4020, 0]],
@@ -60,6 +63,8 @@ const RAMP_DEFS = {
   leaf:    [[0, 0x8aa040, 1], [0.5, 0x6a7a2a, 1], [1, 0x4a4a1a, 0]],
   frostsmoke: [[0, 0xe8f8ff, 0], [0.15, 0xc0e0f0, 0.45], [1, 0x6a8aa0, 0]],
   voidsmoke: [[0, 0x6a3aa0, 0], [0.15, 0x2a1440, 0.6], [1, 0x0a0612, 0]],
+  // [W4-ЗАКЛИНАНИЯ] чёрное ядро тьмы (blend:'alpha' поверх фиолетового ореола)
+  darkcore: [[0, 0x000000, 0], [0.12, 0x07020e, 0.92], [0.75, 0x0c0418, 0.85], [1, 0x1a0830, 0]],
   white:   [[0, 0xffffff, 1], [1, 0xffffff, 0]],
   whiteHold: [[0, 0xffffff, 1], [0.7, 0xffffff, 1], [1, 0xffffff, 0]],
 };
@@ -404,7 +409,12 @@ export function createFxKit(deps) {
     if (!isNum(at.x) || !isNum(at.y) || !isNum(at.z)) return 0;
     let n = num(o.count, 10);
     if (!o.essential) n *= Q.decor;
-    n = Math.max(0, Math.round(n));
+    // [W4-ЗАКЛИНАНИЯ] «без каши»: при 3+ одновременных эффектах старые получают меньше частиц
+    const sh = scopeShare(curScope);
+    if (sh < 1) n *= o.essential ? Math.max(ESSENTIAL_FLOOR, sh) : sh;
+    // [W4-ЗАКЛИНАНИЯ] под урезанием — вероятностное округление: одиночные частицы по аккумуляторам тоже урезаются
+    // по доле, а не «всё или ничего»; без толчеи — как раньше (на low одиночный декор = 0)
+    n = Math.max(0, sh < 1 ? Math.floor(n + Math.random()) : Math.round(n));
     if (!n) return 0;
     const shape = o.shape || (num(o.radius, 0) > 0 ? 'sphere' : 'point');
     const R = num(o.radius, 0);
@@ -586,6 +596,55 @@ export function createFxKit(deps) {
     scrMat.uniforms.uAmount.value = scr.peak * Math.pow(1 - k, 2);
   }
 
+  // ---------------------------------------------------------------- [W4-ЗАКЛИНАНИЯ] приоритет эффектов («без каши»)
+  // Каждое заклинание — «сцена» (scope): её открывает диспетчер index.js на событие каста или удара, её наследуют
+  // акторы и after(), созданные внутри (хореографии менять не нужно). Пока живут 3+ сцены, частицы урезаются
+  // по свежести: новейшая — 100%, вторая — 75%, третья — 55%, старше — 40% (essential — не ниже 60%);
+  // фон без сцены (ауры, следы по снимку) при толчее — 50% (essential не трогаем). Одна сцена на ключ:
+  // очередь «OK»-снарядов или серия ударов — одна сцена, которая «молодеет» с каждым выстрелом.
+  const SCOPE_N = 16, SCOPE_HOLD = 0.7, ESSENTIAL_FLOOR = 0.6, SCOPE_MIN = 3;
+  const SHARE = [1, 0.75, 0.55, 0.4];
+  const scopes = [];
+  for (let i = 0; i < SCOPE_N; i++) scopes.push({ key: '', seq: 0, born: -1, until: -1 });
+  let curScope = null, scopeSeq = 0, shareFrame = -1, shareActive = 0;
+  function scopesActive() {
+    // число живых сцен — раз за кадр (emit зовётся сотни раз)
+    if (shareFrame !== clock) { shareFrame = clock; shareActive = 0; for (let i = 0; i < SCOPE_N; i++) if (scopes[i].until > clock) shareActive++; }
+    return shareActive;
+  }
+  function scopeShare(s) {
+    if (scopesActive() < SCOPE_MIN) return 1;
+    if (!s) return 0.5;
+    if (!(s.until > clock)) return SHARE[SHARE.length - 1];
+    let newer = 0;
+    for (let i = 0; i < SCOPE_N; i++) { const x = scopes[i]; if (x !== s && x.until > clock && x.seq > s.seq) newer++; }
+    return SHARE[Math.min(newer, SHARE.length - 1)];
+  }
+  /**
+   * Открыть сцену эффекта (ключ — одна сцена на очередь однотипных) и сделать её текущей. hold — сколько жить без акторов.
+   * renew:false — живая сцена с тем же ключом не «молодеет» (очередь снарядов: свежесть — от начала очереди).
+   */
+  function scope(key, hold, renew) {
+    const k = typeof key === 'string' ? key : '';
+    let s = null;
+    if (k) for (let i = 0; i < SCOPE_N; i++) { const x = scopes[i]; if (x.key === k && x.until > clock) { s = x; break; } }
+    if (!s) {
+      s = scopes[0];
+      for (let i = 0; i < SCOPE_N; i++) { const x = scopes[i]; if (!(x.until > clock)) { s = x; break; } if (x.seq < s.seq) s = x; }
+      s.until = -1;
+    }
+    const wasNew = !(s.until > clock);
+    if (wasNew || renew !== false) { s.seq = ++scopeSeq; s.born = clock; }
+    s.key = k; s.until = Math.max(s.until, clock + num(hold, SCOPE_HOLD));
+    if (wasNew) shareFrame = -1;
+    curScope = s;
+    return s;
+  }
+  /** Сделать сцену текущей (null — фон); возвращает прежнюю — для восстановления. */
+  function enterScope(s) { const prev = curScope; curScope = s || null; return prev; }
+  /** Продлить жизнь сцены (летящий снаряд держит свою сцену). */
+  function touchScope(s, sec) { if (s && s.until > clock) s.until = Math.max(s.until, clock + num(sec, 0.1)); }
+
   // ---------------------------------------------------------------- акторы / таймлайн
   const actors = [];
   const ACTOR_CAP = 96;
@@ -596,13 +655,20 @@ export function createFxKit(deps) {
     for (let i = 0; i < actors.length; i++) if (!actors[i].alive) { a = actors[i]; break; }
     if (!a) {
       if (actors.length >= ACTOR_CAP) { stats.dropped++; return null; }
-      a = { alive: false, t: 0, dur: 0, update: null, end: null, data: null, kill() { if (this.alive) { this.alive = false; finish(this); } } };
+      a = { alive: false, t: 0, dur: 0, update: null, end: null, data: null, scope: null, kill() { if (this.alive) { this.alive = false; finish(this); } } };
       actors.push(a);
     }
     a.alive = true; a.t = 0; a.dur = Math.max(0, num(o.dur, 1)); a.update = o.update || null; a.end = o.end || null; a.data = o.data || null;
+    a.scope = curScope;                                    // [W4-ЗАКЛИНАНИЯ] актор живёт в сцене своего заклинания
+    if (a.scope) touchScope(a.scope, a.dur + 0.15);
     return a;
   }
-  function finish(a) { const e = a.end; a.end = null; a.update = null; if (e) { try { e(a); } catch (err) { warn('actor.end', err); } } }
+  function finish(a) {
+    const e = a.end; a.end = null; a.update = null;
+    const prev = enterScope(a.scope); a.scope = null;
+    if (e) { try { e(a); } catch (err) { warn('actor.end', err); } }
+    curScope = prev;
+  }
   function after(sec, fn) { return actor({ dur: Math.max(0, num(sec, 0)), end: fn }); }
   function updateActors(dt) {
     for (let i = 0; i < actors.length; i++) {
@@ -612,7 +678,9 @@ export function createFxKit(deps) {
       const k = a.dur > 0 ? Math.min(1, a.t / a.dur) : 1;
       if (a.update) {
         let r;
+        const prev = enterScope(a.scope);
         try { r = a.update(a.t, k, dt, a); } catch (err) { warn('actor.update', err); r = false; }
+        curScope = prev;
         if (r === false) { a.alive = false; finish(a); continue; }
       }
       if (a.t >= a.dur) { a.alive = false; finish(a); }
@@ -685,6 +753,8 @@ export function createFxKit(deps) {
     for (const s of lights) { s.busy = false; s.l.intensity = 0; s.follow = null; }
     scrMesh.visible = false; scr.t = scr.dur;
     hitStopMs = 0;
+    for (let i = 0; i < SCOPE_N; i++) { scopes[i].until = -1; scopes[i].key = ''; } // [W4-ЗАКЛИНАНИЯ]
+    curScope = null; shareFrame = -1;
     flushParticles();
   }
   function aliveCount() { let n = 0; for (let i = 0; i < highWater; i++) if (deathAt[i] > clock) n++; return n; }
@@ -704,10 +774,11 @@ export function createFxKit(deps) {
     get Q() { return Q; },
     reduced,
     emit, flash, light, screenFlash, actor, after, distort,
+    scope, enterScope, touchScope, get currentScope() { return curScope; }, scopeShare: (s) => scopeShare(s === undefined ? curScope : s), // [W4-ЗАКЛИНАНИЯ]
     shake, kick, hitstop, takeHitStop,
     anchor, groundY, cameraPos,
     rampFor, rampRow, SPRITES, ELEMENTS,
     update, setQuality, clear, dispose,
-    stats: () => ({ particles: aliveCount(), cap, highWater, actors: actors.filter((a) => a.alive).length, lights: lights.filter((s) => s.busy).length, spawned: stats.spawned, dropped: stats.dropped }),
+    stats: () => ({ particles: aliveCount(), cap, highWater, actors: actors.filter((a) => a.alive).length, lights: lights.filter((s) => s.busy).length, spawned: stats.spawned, dropped: stats.dropped, scopes: scopesActive(), rampRows: customRow, rampCap: RAMP_ROWS }),
   };
 }

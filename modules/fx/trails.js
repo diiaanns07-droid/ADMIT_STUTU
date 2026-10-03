@@ -21,12 +21,13 @@ const NV = SLOTS * RP * 2;
 const NI = SLOTS * (RP - 1) * 6;
 const HANDLES = 128;       // кольцо ручек (живую ручку не переиспользуем)
 const IDLE = 4;            // сек без push и без видимых точек → слот освобождается сам
-const STYLES = Object.freeze({ energy: 0, fire: 1, smoke: 2, ghost: 3 });
+const STYLES = Object.freeze({ energy: 0, fire: 1, smoke: 2, ghost: 3, dark: 4 }); // [W4-ЗАКЛИНАНИЯ] dark — тьма: чёрное ядро
 const DEF = Object.freeze([
   Object.freeze({ color: ELEMENTS.storm.mid, hot: ELEMENTS.storm.core, width: 0.25, life: 0.35 }),
   Object.freeze({ color: ELEMENTS.fire.mid, hot: ELEMENTS.fire.core, width: 0.25, life: 0.35 }),
   Object.freeze({ color: ELEMENTS.fire.smoke, hot: ELEMENTS.fire.deep, width: 0.5, life: 1.0 }),
   Object.freeze({ color: ELEMENTS.frost.hot, hot: ELEMENTS.frost.core, width: 0.3, life: 0.6 }),
+  Object.freeze({ color: ELEMENTS.void.mid, hot: ELEMENTS.void.hot, width: 0.3, life: 0.4 }),
 ]);
 const QUALITY = Object.freeze({
   low: Object.freeze({ cap: 8, pts: 0.6, hq: 0 }),
@@ -97,7 +98,7 @@ void main() {
   float al = 0.0;                             // премультиплицированная «плотность» (0 — чистый аддитив)
   if (vSty < 0.5) {
     // energy: белое ядро + насыщенная середина + мягкий ореол, бегущие искры
-    float core = exp(-x2 * 38.0);
+    float core = exp(-x2 * 28.0);             // [W4-ЗАКЛИНАНИЯ] ядро шире — читается с проектора
     float body = exp(-x2 * 9.0);
     float halo = exp(-x2 * 2.6) * (1.0 - x2);
     float sp = 0.0;
@@ -129,6 +130,14 @@ void main() {
     float d = soft * smoothstep(0.2, 0.7, n + soft * 0.25) * pow(life, 1.3) * smoothstep(0.0, 0.06, a);
     al = clamp(d * 0.8 * min(vCol.a * 0.5, 1.5) * vW, 0.0, 0.95);
     col = mid * (0.55 + n * 0.8) * al + hot * (headK * soft * 0.6 * vCol.a * vW); // тлеющий край у источника
+  } else if (vSty > 3.5) {
+    // [W4-ЗАКЛИНАНИЯ] dark: тьма — чёрное ядро (затеняет фон), фиолетовый ободок и ореол светятся
+    float core = exp(-x2 * 10.0);
+    float halo = exp(-x2 * 2.2) * (1.0 - x2);
+    float rr = sqrt(x2);
+    float rim = exp(-(rr - 0.5) * (rr - 0.5) * 30.0);
+    col = (mid * (halo * 0.5 * sqrt(life) + rim * 0.95 * life) + hot * (rim * headK * 0.8)) * I * (1.0 - core * 0.9);
+    al = clamp(core * 0.92 * life, 0.0, 0.92) * vW;
   } else {
     // ghost: бледные пряди, волна по ширине
     float w = fxNoise2(vec2(s * 1.8 - uTime * 1.6, x * 1.4 + a * 2.0));
@@ -178,7 +187,7 @@ export function createTrails(deps) {
   geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e4);
   geo.setDrawRange(0, 0);
 
-  const uniforms = { uTime: { value: 0 }, uHQ: { value: 1 }, uViewH: { value: 720 }, uMinPx: { value: 1.6 } };
+  const uniforms = { uTime: { value: 0 }, uHQ: { value: 1 }, uViewH: { value: 720 }, uMinPx: { value: 2.2 } }; // [W4-ЗАКЛИНАНИЯ] тонкие ленты видны с 3–5 м
   const mat = new THREE.ShaderMaterial({
     uniforms, vertexShader: VS, fragmentShader: FS,
     ...premulBlend(THREE), depthWrite: false, depthTest: true, side: THREE.DoubleSide, fog: false,
@@ -200,7 +209,7 @@ export function createTrails(deps) {
   function makeSlot(i) {
     return {
       i, active: false, gen: 0, stopped: false, style: 0, width: 0.25, life: 0.35, taper: 1, intensity: 2, rival: 0,
-      maxP: 32, minDist: 0.05, spiral: 0, spiralRate: 18, phase0: 0, sOff: 0, born: 0, lastPush: 0,
+      maxP: 32, minDist: 0.05, spiral: 0, spiralRate: 18, phase0: 0, sOff: 0, born: 0, lastPush: 0, head: 0,
       col: [0, 0, 0], hot: [0, 0, 0],
       P: new Float32Array(MAXP * PF), nP: 0,
       hasHead: false, hr: [0, 0, 0], hd: [0, 0, 0], hB: 0, dir: [0, 0, -1],
@@ -216,7 +225,7 @@ export function createTrails(deps) {
     push(pos) { if (this.alive && hasVec(pos)) { try { pushPoint(this._s, pos.x, pos.y, pos.z); } catch (e) { /* не роняем */ } } }
     stop() { if (this.alive) this._s.stopped = true; }
     kill() { if (this.alive) freeSlot(this._s); }
-    setIntensity(v) { if (this.alive && isNum(v)) this._s.intensity = clamp(v, 0, 50); }
+    setIntensity(v) { if (this.alive && isNum(v)) this._s.intensity = Math.min(3, clamp(v, 0, 50) * 0.75); } // [W4-ЗАКЛИНАНИЯ] как в create
   }
   const handles = [];
   for (let i = 0; i < HANDLES; i++) handles.push(new TrailHandle());
@@ -267,6 +276,7 @@ export function createTrails(deps) {
     s.minDist = clamp(num(o.minDist, 0.05), 0.001, 5);
     s.spiral = clamp(num(o.spiral, 0), 0, 3);
     s.spiralRate = clamp(num(o.spiralRate, 18), -200, 200);
+    s.head = clamp(num(o.head, 0), 0, 3);   // [W4-ЗАКЛИНАНИЯ] «голова кометы»: лента толще у головы — видно, куда летит
     hexLin(isNum(o.color) ? o.color : df.color, s.col);
     hexLin(isNum(o.hot) ? o.hot : df.hot, s.hot);
     seedCounter = (seedCounter * 16807) % 2147483647;
@@ -332,11 +342,24 @@ export function createTrails(deps) {
   const RT = new Float32Array(RP * 3);
   function env(s, a) {
     const tp = s.taper;
+    const hd = s.head > 0 ? 1 + s.head * Math.exp(-a * 14) : 1;   // [W4-ЗАКЛИНАНИЯ] голова кометы
     switch (s.style) {
-      case 1: return (1 - tp * a) * (1 + 0.3 * Math.sin(a * Math.PI));          // пламя: «брюшко»
+      case 1: return (1 - tp * a) * (1 + 0.3 * Math.sin(a * Math.PI)) * hd;     // пламя: «брюшко»
       case 2: return (0.45 + 1.35 * Math.sqrt(a)) * (1 - 0.5 * tp * a * a);      // дым расширяется
       case 3: return (1 - tp * a * 0.85) * (0.8 + 0.5 * Math.sin(a * Math.PI));  // призрак
-      default: return 1 - tp * a;
+      default: return (1 - tp * a) * hd;
+    }
+  }
+  function putV(s, px, py, pz, i, a, sArc, hcoord) {
+    const cr = s.col, hr = s.hot;
+    for (let sd = -1; sd <= 1; sd += 2) {
+      const v = vertN++;
+      aPos[v * 3] = px; aPos[v * 3 + 1] = py; aPos[v * 3 + 2] = pz;
+      aTan[v * 4] = RT[i * 3]; aTan[v * 4 + 1] = RT[i * 3 + 1]; aTan[v * 4 + 2] = RT[i * 3 + 2]; aTan[v * 4 + 3] = RW[i];
+      aUv[v * 4] = a; aUv[v * 4 + 1] = sd; aUv[v * 4 + 2] = sArc; aUv[v * 4 + 3] = hcoord;
+      aCol[v * 4] = cr[0]; aCol[v * 4 + 1] = cr[1]; aCol[v * 4 + 2] = cr[2]; aCol[v * 4 + 3] = s.intensity;
+      aHot[v * 4] = hr[0]; aHot[v * 4 + 1] = hr[1]; aHot[v * 4 + 2] = hr[2]; aHot[v * 4 + 3] = s.rival;
+      aSty[v] = s.style;
     }
   }
   function addR(n, x, y, z, a, sArc) { RX[n * 3] = x; RX[n * 3 + 1] = y; RX[n * 3 + 2] = z; RA[n] = a; RS[n] = sArc; return n + 1; }
@@ -371,6 +394,12 @@ export function createTrails(deps) {
         1, RS[n - 1] + (P[o + 7] - RS[n - 1]) * f);
     }
     if (n < 2) return true;
+    // [W4-ЗАКЛИНАНИЯ] буфер точек полон, а все точки ещё живы (быстрый снаряд): возраст растягивается так,
+    // чтобы последняя точка была «хвостом» (a = 1) — лента сходит на нет конусом, а не обрывается
+    if (k === s.nP && s.nP >= s.maxP) {
+      const aL = RA[n - 1];
+      if (aL > 1e-3 && aL < 1) { const ik = 1 / aL; for (let i = 0; i < n; i++) RA[i] = Math.min(1, RA[i] * ik); }
+    }
     // дым поднимается и расширяется с возрастом
     const rise = s.style === 2 ? 0.35 * Math.min(life, 2) : 0;
     const w0 = s.width * 0.5;
@@ -390,25 +419,14 @@ export function createTrails(deps) {
     }
     const need = (n + 1) * 2;
     if (vertN + need > NV) return true;
-    const cr = s.col, hr = s.hot, I = s.intensity, rv = s.rival, st = s.style;
     const hwH = RW[0] > 1e-4 ? RW[0] : w0;
     const v0 = vertN;
     // «нос»: точка впереди головы на полуширину (круглый торец), координата головы -1
-    const put = (px, py, pz, i, a, sArc, hcoord) => {
-      for (let sd = -1; sd <= 1; sd += 2) {
-        const v = vertN++;
-        aPos[v * 3] = px; aPos[v * 3 + 1] = py; aPos[v * 3 + 2] = pz;
-        aTan[v * 4] = RT[i * 3]; aTan[v * 4 + 1] = RT[i * 3 + 1]; aTan[v * 4 + 2] = RT[i * 3 + 2]; aTan[v * 4 + 3] = RW[i];
-        aUv[v * 4] = a; aUv[v * 4 + 1] = sd; aUv[v * 4 + 2] = sArc; aUv[v * 4 + 3] = hcoord;
-        aCol[v * 4] = cr[0]; aCol[v * 4 + 1] = cr[1]; aCol[v * 4 + 2] = cr[2]; aCol[v * 4 + 3] = I;
-        aHot[v * 4] = hr[0]; aHot[v * 4 + 1] = hr[1]; aHot[v * 4 + 2] = hr[2]; aHot[v * 4 + 3] = rv;
-        aSty[v] = st;
-      }
-    };
+    // [W4-ЗАКЛИНАНИЯ] putV — функция модуля (раньше — замыкание на каждую ленту в каждом кадре)
     const cw = RW[0];
-    put(RX[0] + RT[0] * cw, RX[1] + RT[1] * cw, RX[2] + RT[2] * cw, 0, clamp(RA[0], 0, 1), RS[0] + cw, -1);
+    putV(s, RX[0] + RT[0] * cw, RX[1] + RT[1] * cw, RX[2] + RT[2] * cw, 0, clamp(RA[0], 0, 1), RS[0] + cw, -1);
     const sH = RS[0];
-    for (let i = 0; i < n; i++) put(RX[i * 3], RX[i * 3 + 1], RX[i * 3 + 2], i, clamp(RA[i], 0, 1), RS[i], (sH - RS[i]) / hwH);
+    for (let i = 0; i < n; i++) putV(s, RX[i * 3], RX[i * 3 + 1], RX[i * 3 + 2], i, clamp(RA[i], 0, 1), RS[i], (sH - RS[i]) / hwH);
     // индексы: квад между соседними точками
     for (let i = 0; i < n; i++) {
       const a0 = v0 + i * 2, o = idxN;

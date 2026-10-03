@@ -11,15 +11,21 @@
 //       hand_spell_hit — удар стихии по урону, hand_spell_cancel — «пшик» у ладони.
 //  PvP: data.remote / снаряд соперника → те же эффекты в цвете соперника (от него к нам).
 // Старые янтарные болты для 'arrow'/'hand_orb' подавлены (fx.suppress), их projectile_impact — тоже.
+// [W4-ЗАКЛИНАНИЯ] читаемость с проектора: сфера в полёте крупнее (×1,3, только облик), белое ядро + ореол, лента
+//  с «головой», белый штрих вперёд, короткий свет из пула; стрела — голова (белое ядро + ореол +30%), шире лента;
+//  предвестник у ладони (form) и у лука (release); ободок кольца выброса — цвет героя; стрела без стихии — в цвете
+//  героя; полёт снаряда живёт в сцене своего выстрела (kit scope); линии bolts — поправка на калибровку set().
 
-import { muzzle, explosion, afterglow, decal, trail, clamp, TAU, isNum, hasVec } from './common.js';
+import { muzzle, explosion, afterglow, decal, herald, rampOf, clamp, TAU, isNum, hasVec } from './common.js';
 
 const EL = { fire: 1, storm: 1, frost: 1, earth: 1 };
 const elOf = (e) => (typeof e === 'string' && EL[e] === 1 ? e : null);
 const num = (v, d) => (isNum(v) ? v : d);
 const RAMP_EL = { fire: 'fire', storm: 'storm', frost: 'frost', earth: 'ember' };
-const rampEl = (el, R) => (R ? 'rival' : RAMP_EL[el] || 'gold');
 const rnd = (a, b) => a + Math.random() * (b - a);
+const LK = 1 / 0.75;       // [W4-ЗАКЛИНАНИЯ] bolts.set() теперь калибрует яркость (×0,75) — линии лука/стрел как прежде
+const ORB_VIS = 1.3;       // [W4-ЗАКЛИНАНИЯ] видимый размер сферы в полёте (pr.radius — игровой, не трогаем)
+const SCOPE_WIN = 0.4;     // [W4-ЗАКЛИНАНИЯ] снаряд без id подхватывает сцену последнего выстрела не старше 0,4 с
 
 // Лук: доли высоты плеча и прогиб назад (доля D); кончики чуть загнуты вперёд (рекурв).
 const LS = [0, 0.37, 0.72, 1];
@@ -33,9 +39,16 @@ const LIFT = 0.35;         // подтяжка линий к камере (не 
 
 export function register(fx) {
   const THREE = fx.THREE, V3 = THREE.Vector3, kit = fx.kit, E = fx.E;
-  const pal = (el, R) => (R ? E.rival : (el ? E[el] : E.gold));
+  const REMOTE_D = { remote: true };
+  // [W4-ЗАКЛИНАНИЯ] стихия/палитра героя: стрела без стихии — «общая» — окрашена цветом героя; кольцо выброса — его ободок
+  const heroEl = () => (typeof fx.heroEl === 'function' ? fx.heroEl(null) : 'gold');
+  const heroP = (R) => (R ? E.rival : typeof fx.heroPal === 'function' ? fx.heroPal(null) : E.gold);
+  const pal = (el, R) => (R ? E.rival : (el ? E[el] : heroP(false)));
+  const rampEl = (el, R) => (R ? 'rival' : el ? RAMP_EL[el] || 'gold' : rampOf(heroEl(), false));
   // цвет ореола линий: у земли «mid» слишком бурый — берём раскалённый
-  const haloOf = (el, R) => (R ? E.rival.mid : el === 'earth' ? E.earth.hot : el ? E[el].mid : E.gold.hot);
+  const haloOf = (el, R) => (R ? E.rival.mid : el === 'earth' ? E.earth.hot : el ? E[el].mid : heroP(false).mid);
+  const rimOf = (R) => heroP(R).mid;
+  const lowQ = () => !!kit.Q && kit.Q.name === 'low';
   const clock = () => kit.clock;
   const UP = new V3(0, 1, 0);
   const _tg = new V3(), _h = new V3(), _a = new V3(), _b = new V3(), _c = new V3(), _d = new V3(), _e = new V3();
@@ -46,18 +59,20 @@ export function register(fx) {
   // ============================================================ световые линии (bolts.strike без излома)
   // Ручки bolts живут в кольце и переиспользуются, поэтому сверяем слот/поколение, прежде чем двигать.
   const _setO = { from: null, to: null, intensity: 1, color: 0, core: 0, rival: 0 };
+  const _strO = { from: null, to: null, width: 0.02, jitter: 0, branches: 0, segments: 2, flicker: false, star: false, origin: false, dur: 40, intensity: 1, color: 0, core: 0, rival: 0, lift: 0 };
   const mkLine = () => ({ h: null, s: null, g: -1, w: 0, retry: 0 });
   const lineAlive = (L) => { const h = L.h; return !!h && h._s === L.s && h._g === L.g && h.alive; };
   function lineSet(L, from, to, inten, col, core, rival, width, lift) {
     const B = fx.bolts;
     if (!B) return false;
+    inten *= LK; // [W4-ЗАКЛИНАНИЯ] spawn и set калибруют одинаково (×0,75, потолок 3) — возвращаем прежнюю яркость
     if (!lineAlive(L) || L.w !== width) {
       if (clock() < L.retry) return false;
       if (lineAlive(L)) { try { L.h.kill(); } catch (e) { /* ignore */ } }
       L.h = null;
-      try {
-        L.h = B.strike({ from, to, width, jitter: 0, branches: 0, segments: 2, flicker: false, star: false, origin: false, dur: 40, intensity: inten, color: col, core, rival, lift });
-      } catch (e) { L.h = null; }
+      _strO.from = from; _strO.to = to; _strO.width = width; _strO.intensity = inten; _strO.color = col; _strO.core = core; _strO.rival = rival; _strO.lift = lift;
+      try { L.h = B.strike(_strO); } catch (e) { L.h = null; }
+      _strO.from = null; _strO.to = null;
       if (!L.h || !L.h.alive) { L.h = null; L.retry = clock() + 0.3; return false; }
       L.s = L.h._s; L.g = L.h._g; L.w = width;
       return true;
@@ -67,10 +82,14 @@ export function register(fx) {
     return true;
   }
   function lineKill(L) { if (lineAlive(L)) { try { L.h.kill(); } catch (e) { /* ignore */ } } L.h = null; L.s = null; }
-  // короткий треск (дуга) — выстрелил и забыл
+  // короткий треск (дуга) — выстрелил и забыл; [W4-ЗАКЛИНАНИЯ] опции заранее (стрела бури зовёт 16–26 раз/с)
+  const _zapO = { from: null, to: null, color: 0, core: 0, dur: 0.09, rate: 30, width: 0.014, jitter: 0.3, intensity: 2.4, rival: 0 };
   function zap(from, to, col, core, R, dur, width, inten) {
     if (!fx.bolts) return;
-    try { fx.bolts.arc({ from, to, color: col, core, dur: dur || 0.09, rate: 30, width: width || 0.014, jitter: 0.3, intensity: inten || 2.4, rival: R ? 1 : 0 }); } catch (e) { /* ignore */ }
+    _zapO.from = from; _zapO.to = to; _zapO.color = col; _zapO.core = core; _zapO.dur = dur || 0.09; _zapO.width = width || 0.014;
+    _zapO.intensity = inten || 2.4; _zapO.rival = R ? 1 : 0;
+    try { fx.bolts.arc(_zapO); } catch (e) { /* ignore */ }
+    _zapO.from = null; _zapO.to = null;
   }
   function ring(pos, normal, r1, dur, col, core, R, inten) {
     if (!fx.shock) return false;
@@ -87,6 +106,14 @@ export function register(fx) {
     oGlow.color = color; oGlow.intensity = inten; oGlow.rival = !!R; oGlow.sprite = sprite || 'glow';
     kit.emit(oGlow);
   }
+  // [W4-ЗАКЛИНАНИЯ] белое ядро головы снаряда (рампа whiteHold — белое до конца жизни); stretch > 0 — штрих по скорости
+  const oCore = { at: null, vel: null, count: 1, speed: [0, 0], life: [0.05, 0.05], size: [0.2, 0.18], sizeVar: 0, ramp: 'whiteHold', intensity: 3, sprite: 'glow', stretch: 0, fadeIn: 0, curve: 1, essential: true, rival: false };
+  function coreAt(at, vel, size, life, inten, R, sprite, stretch) {
+    oCore.at = at; oCore.vel = vel; oCore.size[0] = size; oCore.size[1] = size * 0.85; oCore.life[0] = life; oCore.life[1] = life;
+    oCore.intensity = inten; oCore.rival = !!R; oCore.sprite = sprite || 'glow'; oCore.stretch = stretch || 0;
+    kit.emit(oCore);
+  }
+  const headLife = (dt) => Math.max(0.035, dt * 1.6); // [W4-ЗАКЛИНАНИЯ] голова не мигает и на 30 кадрах/с
   // Общий «универсальный» шаблон: заполняется полностью перед каждым вызовом (fill).
   const oP = {};
   const P_DEF = {
@@ -155,13 +182,17 @@ export function register(fx) {
     const top = [], bot = [], lines = [];
     for (let i = 0; i < 4; i++) { top.push(new V3()); bot.push(new V3()); }
     for (let i = 0; i < 10; i++) lines.push(mkLine());
-    return {
+    const B = {
       remote, phase: 0, t: 0, pt: 0, draw: 0, evDraw: 0, drawEv: -9, charged: false, wasCharged: false, element: null,
       lastEv: -9, lastStart: -9, lastRel: -9, offSince: -1, vis: 0,
       grip: new V3(), aim: new V3(), side: new V3(), up: new V3(), nock: new V3(), rest: new V3(), head: new V3(),
       vel: new V3(), prevGrip: new V3(), hasPrev: false, top, bot, lines,
       acc: { mote: 0, gem: 0, gath: 0, head: 0, aura: 0, arc: 0, fb: 0 }, glyph: null,
+      lightId: '', lightAt: new V3(), lightFollow: null,
     };
+    // [W4-ЗАКЛИНАНИЯ] свет выстрела летит со стрелой (запись снаряда по projectileId), без отдельного источника
+    B.lightFollow = () => { const r = B.lightId ? recs.get(B.lightId) : null; if (r) B.lightAt.copy(r.pos); return B.lightAt; };
+    return B;
   }
   const LB = makeBow(false), RB = makeBow(true);
   const bowOf = (d) => (fx.isRemote(d) ? RB : LB);
@@ -214,8 +245,12 @@ export function register(fx) {
 
   function bowStart(B, el) {
     const now = clock();
+    const gap = now - B.lastStart;
     B.lastStart = now; B.lastEv = now; B.offSince = -1;
     B.element = el;
+    // [W4-ЗАКЛИНАНИЯ] 3D-лук рисует handVisuals: bowStep гасит фазу каждый кадр, и без этой проверки
+    // materialize (≈50 частиц, 3 вспышки, знак) шёл бы каждый кадр натяжения — теперь раз на жест
+    if (fx.external && fx.external.bow && !B.remote) { if (gap > 0.35) { bowGeom(B, 0); materialize(B); } return; }
     if (B.phase === 1) return;
     const fresh = B.phase === 0;
     B.phase = 1; B.t = 0; B.pt = 0; B.draw = 0; B.evDraw = 0; B.drawEv = -9; B.charged = false; B.wasCharged = false;
@@ -262,10 +297,14 @@ export function register(fx) {
   const followLHead = () => (LB.phase === 1 ? _fh.copy(LB.head).addScaledVector(LB.aim, 0.06) : _fh);
   const followRHead = () => (RB.phase === 1 ? _fh2.copy(RB.head).addScaledVector(RB.aim, 0.06) : _fh2);
 
-  function bowRelease(B, charged, el) {
+  const HER = { symbol: '', dir: null, scale: 1, glyph: false };
+  const _mzO = { size: 1, count: 14 };
+  const _lgO = { color: 0, intensity: 1, range: 7, dur: 0.3, attack: 0.05, follow: null };
+  const _rh = new V3();
+  function bowRelease(B, charged, el, at) {
     const now = clock();
     if (now - B.lastRel < 0.22) return;
-    B.lastRel = now; B.lastEv = now;
+    B.lastRel = now; B.lastEv = now; B.lightId = '';
     if (el !== undefined) B.element = el;
     if (B.phase === 0) { B.phase = 1; B.draw = 1; B.hasPrev = false; bowGeom(B, 0); B.vis = 1; }
     else bowGeom(B, 0);
@@ -274,14 +313,25 @@ export function register(fx) {
     kit.flash(B.nock, { color: Pl.core, size: [0.12, 0.6], dur: 0.1, intensity: 3.4, sprite: 'star', pull: 0.5, rival: R });
     P(B.nock, 10); oP.shape = 'line'; oP.to = B.top[3]; sp(0.3, 1.2); lf(0.1, 0.22); sz(0.04, 0.01); oP.ramp = rampEl(E0, R); oP.intensity = 3; oP.sprite = 'spark'; oP.drag = 3; oP.rival = R; go();
     P(B.nock, 10); oP.shape = 'line'; oP.to = B.bot[3]; sp(0.3, 1.2); lf(0.1, 0.22); sz(0.04, 0.01); oP.ramp = rampEl(E0, R); oP.intensity = 3; oP.sprite = 'spark'; oP.drag = 3; oP.rival = R; go();
-    // выброс у лука
-    muzzle(fx, B.head, B.aim, E0 || 'gold', R, { size: charged ? 1.25 : 0.8, count: charged ? 24 : 14 });
-    kit.flash(B.head, { color: col, size: [0.2, charged ? 1.1 : 0.7], dur: 0.2, intensity: 2, sprite: 'ring', pull: 0.3, rival: R }); // [VFX] без кольца во весь экран
+    // [W4-ЗАКЛИНАНИЯ] предвестник у руки с луком (0,15 с): вспышка + руна стихии стрелы — там, где рождается стрела
+    _rh.copy(at && at.distanceToSquared(B.grip) < 0.64 ? at : B.grip);
+    HER.symbol = ''; HER.dir = B.aim; HER.scale = charged ? 0.9 : 0.75; HER.glyph = !!charged;
+    herald(fx, _rh, E0 || (R ? 'rival' : heroEl()), R, HER);
+    HER.dir = null;
+    // выброс у лука (искр меньше — часть взял предвестник)
+    _mzO.size = charged ? 1.25 : 0.8; _mzO.count = charged ? 16 : 8;
+    muzzle(fx, B.head, B.aim, E0 || (R ? 'rival' : heroEl()), R, _mzO);
+    // [W4-ЗАКЛИНАНИЯ] кольцо выброса — ободок цвета героя вокруг вспышки стихии (соперник — фиолетовый)
+    kit.flash(B.head, { color: rimOf(R), size: [0.25, charged ? 1.35 : 0.95], dur: 0.2, intensity: 2.1, sprite: 'ring', pull: 0.3, rival: R, delay: 0.02 }); // [VFX] без кольца во весь экран
     if (charged) {
       kit.flash(B.grip, { color: col, size: [0.4, 1.4], dur: 0.25, intensity: 1.8, sprite: 'glow', pull: 0.6, rival: R });
       shed(E0, R, B.head, B.aim, 3, 6, 1.4);
     }
-    kit.light(B.head, { color: col, intensity: charged ? 1.3 : 0.7, range: 7, dur: 0.25, attack: 0.05 });
+    // [W4-ЗАКЛИНАНИЯ] свет выстрела следует за стрелой (B.lightFollow), чуть дольше прежнего
+    B.lightAt.copy(B.head);
+    _lgO.color = col; _lgO.intensity = charged ? 1.3 : 0.7; _lgO.range = 7; _lgO.dur = 0.4; _lgO.attack = 0.05; _lgO.follow = B.lightFollow;
+    kit.light(B.head, _lgO);
+    _lgO.follow = null;
     kit.kick(B.aim, charged ? 0.022 : 0.012);
     if (charged) kit.shake(0.08);
     B.phase = 2; B.pt = 0; B.draw = 0; B.charged = false; B.wasCharged = false;
@@ -399,7 +449,7 @@ export function register(fx) {
 
   function bowStep(B, dt) {
     if (B.phase === 0) return;
-    if (fx.external && fx.external.bow && !B.remote) { B.phase = 0; B.vis = 0; for (const L of B.lines) lineKill(L); return; } // [VFX] 3D-лук рисует handVisuals (№6)
+    if (fx.external && fx.external.bow && !B.remote) { B.phase = 0; B.vis = 0; for (let i = 0; i < B.lines.length; i++) lineKill(B.lines[i]); return; } // [VFX] 3D-лук рисует handVisuals (№6)
     B.t += dt; B.pt += dt;
     if (B.phase === 1) B.vis = Math.min(1, B.vis + dt / 0.12);
     else {
@@ -429,9 +479,13 @@ export function register(fx) {
     if (d.element !== undefined) B.element = elOf(d.element);
     return true;
   });
+  const _rp = new V3();
   fx.on('bow_release', (ev, d) => {
     const B = bowOf(d);
-    bowRelease(B, !!d.charged, d.element !== undefined ? elOf(d.element) : undefined);
+    // [W4-ЗАКЛИНАНИЯ] сцена выстрела → стрела в полёте (по projectileId); свет выстрела — за этой стрелой
+    const pe = notePend(d, 'arrow');
+    bowRelease(B, !!d.charged, d.element !== undefined ? elOf(d.element) : undefined, fx.evPos(ev, _rp));
+    B.lightId = pe.id;
     return true;
   });
 
@@ -484,9 +538,12 @@ export function register(fx) {
 
   function ignite(O) {
     const R = O.remote, el = O.el, Pl = pal(el, R), ramp = rampEl(el, R);
-    kit.flash(O.pos, { color: Pl.core, size: [0.1, 0.8], dur: 0.14, intensity: 3.8, sprite: 'star', pull: 0.5, rival: R });
-    kit.flash(O.pos, { color: Pl.hot, size: [0.2, 1.1], dur: 0.24, intensity: 2, sprite: 'glow', pull: 0.5, rival: R });
-    P(O.pos, 22); oP.shape = 'ring'; oP.normal = O.dir; oP.radius = 0.05; oP.radial = 2.8; oP.tangent = 2; sp(0, 0.3); lf(0.18, 0.35); sz(0.06, 0.01);
+    // [W4-ЗАКЛИНАНИЯ] предвестник у ладони (0,15 с): белая звезда + кольцо стихии + руна-спрайт + искры —
+    // вместо прежних двух вспышек; чёткий знак — свой, у ладони (ниже), поэтому знак предвестника не берём
+    HER.symbol = ''; HER.dir = O.dir; HER.scale = 0.85; HER.glyph = false;
+    herald(fx, O.pos, el, R, HER);
+    HER.dir = null;
+    P(O.pos, 13); oP.shape = 'ring'; oP.normal = O.dir; oP.radius = 0.05; oP.radial = 2.8; oP.tangent = 2; sp(0, 0.3); lf(0.18, 0.35); sz(0.06, 0.01);
     oP.ramp = ramp; oP.intensity = 3; oP.sprite = 'spark'; oP.stretch = 0.025; oP.drag = 4; oP.rival = R; oP.essential = true; go();
     if (el === 'fire') { P(O.pos, 8); oP.radius = 0.05; sp(0.3, 1.2); lf(0.2, 0.35); sz(0.22, 0.05); oP.ramp = ramp; oP.intensity = 2.4; oP.sprite = 'flame'; oP.rot = 0; oP.gravity = -2; oP.drag = 3; oP.rival = R; go(); }
     else if (el === 'storm') { for (let i = 0; i < 3; i++) { const a = (i / 3) * TAU; _a.set(O.pos.x + Math.cos(a) * 0.3, O.pos.y + 0.2 * Math.sin(a * 2), O.pos.z + Math.sin(a) * 0.3); zap(O.pos, _a, Pl.mid, Pl.core, R, 0.14, 0.012, 2.4); } }
@@ -495,7 +552,8 @@ export function register(fx) {
     if (fx.glyph) {
       try {
         _a.copy(O.pos).addScaledVector(O.dir, 0.12);
-        fx.glyph.spawn({ pos: _a, normal: O.dir, radius: 0.34, symbol: el, color: haloOf(el, R), hot: Pl.core, intensity: 1.9, dur: 1.1, unfold: 0.14, fade: 0.3, spin: 2, rings: 2, ticks: 16, style: 'rune', rival: R ? 1 : 0, follow: R ? followRPalm : followLPalm });
+        // [W4-ЗАКЛИНАНИЯ] знак у ладони «выпрыгивает» со вспышкой с первого кадра (flare/pop) — чётко в 0,15 с предвестника
+        fx.glyph.spawn({ pos: _a, normal: O.dir, radius: 0.34, symbol: el, color: haloOf(el, R), hot: Pl.core, intensity: 1.9, dur: 1.1, unfold: 0.08, flare: 1, pop: 0.35, write: 0.06, fade: 0.3, spin: 2, rings: 2, ticks: 16, style: 'rune', rival: R ? 1 : 0, follow: R ? followRPalm : followLPalm });
       } catch (e) { /* ignore */ }
     }
     kit.light(O.pos, { color: Pl.hot, intensity: 0.8, range: 5, dur: 0.3, attack: 0.1 });
@@ -507,6 +565,7 @@ export function register(fx) {
   const followRPalm = () => (RO.on ? _fp2.copy(RO.pos).addScaledVector(RO.dir, 0.12) : _fp2);
   const followLOrb = () => LO.pos, followROrb = () => RO.pos;
 
+  const _arcO = { follow: null, color: 0, core: 0, dur: 30, rate: 26, width: 0.012, jitter: 0.4, intensity: 2.4, rival: 0, lift: 0.1 };
   // сфера стихии в ладони (каждый кадр)
   function orbDraw(O, dt) {
     const R = O.remote, el = O.el, Pl = pal(el, R), ramp = rampEl(el, R), r = O.r, pw = clamp(O.power, 0, 1);
@@ -516,7 +575,11 @@ export function register(fx) {
       glowAt(O.pos, O.vel, r * 3.2 * grow, 0.06, el === 'earth' && !R ? E.earth.hot : Pl.hot, 1.3 + 0.8 * pw, R, 'glow');
       glowAt(O.pos, O.vel, r * (el === 'earth' ? 0.9 : 1.3) * grow, 0.06, Pl.core, 2.6 + 1.2 * pw, R, 'glow');
     }
-    if (take(O.acc, 'light', 2.2, dt) > 0) kit.light(O.pos, { color: el === 'earth' ? E.earth.hot : Pl.hot, intensity: 0.35 + 0.6 * pw, range: 4 + 2 * pw, dur: 0.5, attack: 0.4, follow: R ? followROrb : followLOrb });
+    if (take(O.acc, 'light', 2.2, dt) > 0) {
+      _lgO.color = el === 'earth' ? E.earth.hot : Pl.hot; _lgO.intensity = 0.35 + 0.6 * pw; _lgO.range = 4 + 2 * pw; _lgO.dur = 0.5; _lgO.attack = 0.4; _lgO.follow = R ? followROrb : followLOrb;
+      kit.light(O.pos, _lgO);
+      _lgO.follow = null;
+    }
     let n;
     if (el === 'fire') {
       // вихрь пламени: языки на орбите вокруг ладони поднимаются
@@ -537,7 +600,9 @@ export function register(fx) {
         e.to.set(O.pos.x + Math.cos(a + 2.4) * Math.cos(b) * r * 1.05, O.pos.y + Math.sin(b + 1.1) * r * 1.05, O.pos.z + Math.sin(a + 2.4) * Math.cos(b) * r * 1.05);
         if (fx.bolts && !arcAlive(O, i) && O.t > i * 0.05) {
           try {
-            const h = fx.bolts.arc({ follow: O.follow[i], color: Pl.mid, core: Pl.core, dur: 30, rate: 26, width: 0.012, jitter: 0.4, intensity: 2.4 + pw, rival: R ? 1 : 0, lift: 0.1 });
+            _arcO.follow = O.follow[i]; _arcO.color = Pl.mid; _arcO.core = Pl.core; _arcO.intensity = 2.4 + pw; _arcO.rival = R ? 1 : 0;
+            const h = fx.bolts.arc(_arcO);
+            _arcO.follow = null;
             if (h && h.alive) { O.arcH[i] = h; O.arcS[i] = h._s; O.arcG[i] = h._g; }
           } catch (e2) { /* ignore */ }
         }
@@ -596,9 +661,12 @@ export function register(fx) {
     const el = elOf(d.element) || O.el || 'fire';
     const pw = clamp(num(d.power, O.power || 1), 0, 1);
     if (!O.on) { O.hasPrev = false; orbGeom(O, 0); }
-    const at = O.pos, dir = O.dir, Pl = pal(el, R), col = haloOf(el, R);
-    muzzle(fx, at, dir, el, R, { size: 0.9 + 0.5 * pw, count: 16 + Math.round(10 * pw) });
-    kit.flash(at, { color: col, size: [0.2, 0.8 + 0.3 * pw], dur: 0.2, intensity: 2, sprite: 'ring', pull: 0.4, rival: R }); // [VFX] без кольца во весь экран
+    const at = O.pos, dir = O.dir, Pl = pal(el, R);
+    notePend(d, 'hand_orb'); // [W4-ЗАКЛИНАНИЯ] сцена броска → сфера в полёте
+    _mzO.size = 0.9 + 0.5 * pw; _mzO.count = 16 + Math.round(10 * pw);
+    muzzle(fx, at, dir, el, R, _mzO);
+    // [W4-ЗАКЛИНАНИЯ] кольцо выброса — ободок цвета героя (стихия жеста — в вспышке и искрах; соперник — фиолетовый)
+    kit.flash(at, { color: rimOf(R), size: [0.25, 1.0 + 0.35 * pw], dur: 0.2, intensity: 2.1, sprite: 'ring', pull: 0.4, rival: R, delay: 0.02 }); // [VFX] без кольца во весь экран
     shed(el, R, at, dir, 2.5, 5, 1.6);
     kit.light(at, { color: Pl.hot, intensity: 1, range: 7, dur: 0.3, attack: 0.05 });
     kit.kick(dir, 0.018 + 0.014 * pw);
@@ -625,44 +693,100 @@ export function register(fx) {
   const recs = new Map();
   const recPool = [];
   let tag = 0;
+
+  // [W4-ЗАКЛИНАНИЯ] сцены выстрелов («без каши»): обработчик bow_release / hand_spell_throw запоминает текущую сцену
+  // (её открыл диспетчер index.js), запись снаряда забирает её по projectileId, иначе — последнюю того же вида и
+  // стороны не старше SCOPE_WIN; полёт рисуется внутри этой сцены и продлевает её.
+  const PEND_N = 8;
+  const pend = [];
+  for (let i = 0; i < PEND_N; i++) pend.push({ id: '', kind: '', R: false, scope: null, t: -9 });
+  let pendHead = 0;
+  function notePend(d, kind) {
+    const p = pend[pendHead]; pendHead = (pendHead + 1) % PEND_N;
+    const pid = d ? d.projectileId : undefined;
+    p.id = pid === undefined || pid === null ? '' : String(pid);
+    p.kind = kind; p.R = fx.isRemote(d); p.scope = kit.currentScope || null; p.t = clock();
+    return p;
+  }
+  const scopeAlive = (s) => !!s && s.until > clock();
+  function takePend(r) {
+    const now = clock();
+    let best = null;
+    for (let i = 0; i < PEND_N; i++) {
+      const p = pend[i];
+      if (!p.scope || now - p.t > 2) continue;
+      if (p.id && p.id === r.id) { best = p; break; }
+      if (p.kind === r.kind && p.R === r.R && now - p.t < SCOPE_WIN && (!best || p.t > best.t)) best = p;
+    }
+    if (!best) return null;
+    const s = best.scope;
+    best.scope = null;
+    return scopeAlive(s) ? s : null;
+  }
+
+  // лента-след без лишних объектов: опции заранее; мёртвая ручка (нет свободного слота) → null — работает запасной штрих
+  const _trO = { style: 'energy', width: 0.1, life: 0.22, intensity: 2.4, maxPoints: 20, taper: 1, head: 0, color: 0, hot: 0, rival: 0 };
+  function ribbon(style, color, hot, R, width, life, inten, maxP, head) {
+    if (!fx.trails) return null;
+    _trO.style = style; _trO.color = color; _trO.hot = hot; _trO.rival = R ? 1 : 0; _trO.width = width; _trO.life = life;
+    _trO.intensity = inten; _trO.maxPoints = maxP; _trO.head = head;
+    try { const h = fx.trails.create(_trO); return h && h.alive ? h : null; } catch (e) { return null; }
+  }
+  const mkRec = () => {
+    const r = { id: '', kind: '', el: null, R: false, rain: false, charged: false, pos: new V3(), prev: new V3(), vel: new V3(), dir: new V3(), age: 0, tag: 0, line: mkLine(), tr: null, tr2: null, acc: { a: 0, b: 0, c: 0, d: 0 }, spin: 0, r: 0.3, scope: null, follow: null };
+    r.follow = () => r.pos;
+    return r;
+  };
   function recGet(pr) {
-    const r = recPool.pop() || { id: '', kind: '', el: null, R: false, rain: false, charged: false, pos: new V3(), prev: new V3(), vel: new V3(), dir: new V3(), age: 0, tag: 0, line: mkLine(), tr: null, tr2: null, acc: { a: 0, b: 0, c: 0, d: 0 }, spin: 0, r: 0.3 };
+    const r = recPool.pop() || mkRec();
     r.id = String(pr.id); r.kind = pr.kind; r.el = elOf(pr.element);
     r.R = !!(pr.remote || pr.owner === 'opponent' || pr.owner === 'rival');
-    r.rain = !!pr.rain; r.charged = !!pr.charged; r.age = 0; r.tag = tag; r.spin = Math.random() * TAU;
+    r.rain = !!(pr.rain || pr.rainDrop); r.charged = !!pr.charged; r.age = 0; r.tag = tag; r.spin = Math.random() * TAU;
     r.r = clamp(num(pr.radius, 0.3), 0.12, 0.6);
     r.pos.set(pr.position.x, pr.position.y, pr.position.z); r.prev.copy(r.pos);
     if (hasVec(pr.velocity)) r.vel.set(pr.velocity.x, pr.velocity.y, pr.velocity.z); else r.vel.set(0, 0, 0);
     r.acc.a = r.acc.b = r.acc.c = r.acc.d = 0;
     r.tr = null; r.tr2 = null;
-    const Pl = pal(r.el, r.R);
+    r.scope = takePend(r);
+    const prevScope = kit.enterScope(r.scope);
     if (r.kind === 'arrow') {
-      r.tr = trail(fx, r.el || 'gold', r.R, { style: 'energy', width: r.rain ? 0.05 : r.charged ? 0.14 : 0.09, life: r.rain ? 0.14 : 0.22, intensity: r.rain ? 1.8 : 2.6, maxPoints: r.rain ? 12 : 20, taper: 1 });
+      const Pl = pal(r.el, r.R);
+      // [W4-ЗАКЛИНАНИЯ] лента шире (+30%) с «головой», цвет — ореол стрелы (у земли — раскалённый, не бурый)
+      r.tr = r.rain ? ribbon('energy', haloOf(r.el, r.R), Pl.core, r.R, 0.06, 0.14, 1.8, 12, 0.6)
+        : ribbon('energy', haloOf(r.el, r.R), Pl.core, r.R, r.charged ? 0.18 : 0.12, 0.22, 2.6, 20, 1.1);
       // материализация стрелы дождя в небе
       if (r.rain) kit.flash(r.pos, { color: Pl.hot, size: [0.2, 0.9], dur: 0.2, intensity: 2.4, sprite: 'star', pull: 0, rival: r.R });
     } else {
-      const st = r.el === 'fire' ? 'fire' : r.el === 'earth' ? 'smoke' : 'energy';
-      r.tr = trail(fx, r.el || 'fire', r.R, { style: st, width: r.r * 1.6, life: 0.3, intensity: 2.4, maxPoints: 24, taper: 1 });
+      const el = r.el || 'fire', Pl = pal(el, r.R);
+      const st = el === 'fire' ? 'fire' : el === 'earth' ? 'smoke' : 'energy';
+      // [W4-ЗАКЛИНАНИЯ] лента по видимому радиусу (×1,3) и толще у головы — видно, куда летит
+      r.tr = ribbon(st, Pl.mid, Pl.core, r.R, r.r * ORB_VIS * 1.6, 0.3, 2.4, 24, 1.3);
     }
+    kit.enterScope(prevScope);
     return r;
   }
   function recEnd(r) {
     if (r.tr) { try { r.tr.stop(); } catch (e) { /* ignore */ } r.tr = null; }
     if (r.tr2) { try { r.tr2.stop(); } catch (e) { /* ignore */ } r.tr2 = null; }
     lineKill(r.line);
+    r.scope = null;
     if (recPool.length < 32) recPool.push(r);
   }
 
   function arrowDraw(r, dt) {
     const R = r.R, el = r.el, Pl = pal(el, R), col = haloOf(el, R), ramp = rampEl(el, R);
-    const d = r.dir;
+    const d = r.dir, lh = headLife(dt);
     if (!r.rain) {
       _a.copy(r.pos).addScaledVector(d, -0.85); _b.copy(r.pos).addScaledVector(d, 0.06);
-      const ok = lineSet(r.line, _a, _b, r.charged ? 4 : 3, col, Pl.core, R ? 1 : 0, r.charged ? 0.026 : 0.017, 0);
-      if (!ok) { P(r.pos, 1); oP.vel = r.vel; sp(0, 0); lf(0.035, 0.035); sz(0.09, 0.08); oP.sizeVar = 0; oP.ramp = 'whiteHold'; oP.intensity = 3.5; oP.sprite = 'streak'; oP.stretch = 0.02; oP.rival = R; oP.essential = true; go(); }
-      glowAt(r.pos, r.vel, r.charged ? 0.6 : 0.36, 0.035, col, 2.2, R, 'glow');
+      // древко — линия bolts (ядро белое), чуть толще: читается с 3–5 м
+      const ok = lineSet(r.line, _a, _b, r.charged ? 4 : 3, col, Pl.core, R ? 1 : 0, r.charged ? 0.034 : 0.022, 0);
+      if (!ok) { P(r.pos, 1); oP.vel = r.vel; sp(0, 0); lf(lh, lh); sz(0.09, 0.08); oP.sizeVar = 0; oP.ramp = 'whiteHold'; oP.intensity = 3.5; oP.sprite = 'streak'; oP.stretch = 0.02; oP.rival = R; oP.essential = true; go(); }
+      // [W4-ЗАКЛИНАНИЯ] голова: ореол стихии (+30%) и белое ядро едут со стрелой (скорость носителя) — не пунктир
+      glowAt(r.pos, r.vel, r.charged ? 0.78 : 0.47, lh, col, 2.2, R, 'glow');
+      coreAt(r.pos, r.vel, r.charged ? 0.24 : 0.16, lh, 3, R, 'glow', 0);
       if (r.tr) { try { r.tr.push(r.pos); } catch (e) { r.tr = null; } }
-      streakTrail(r.prev, r.pos, d, r.tr ? 2 : 4, r.charged ? 0.09 : 0.06, 0.2, ramp, 2.8, R);
+      // штрихи-искры вдоль пути: при ленте — один (бюджет взяло ядро головы), без ленты — три
+      streakTrail(r.prev, r.pos, d, r.tr ? 1 : 3, r.charged ? 0.09 : 0.06, 0.2, ramp, 2.8, R);
       shed(el, R, r.pos, r.vel, 0.08, take(r.acc, 'a', r.charged ? 90 : 55, dt), r.charged ? 1.4 : 1);
       if (el === 'storm' && fx.bolts && take(r.acc, 'b', r.charged ? 26 : 16, dt) > 0) {
         _c.set(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)).multiplyScalar(0.35).addScaledVector(d, -rnd(0.3, 0.9)).add(r.pos);
@@ -680,7 +804,7 @@ export function register(fx) {
       }
     } else {
       // дождь: тонкая трасса, реже «линька»
-      P(r.pos, 1); oP.vel = r.vel; sp(0, 0); lf(0.04, 0.04); sz(0.06, 0.05); oP.sizeVar = 0; oP.color = col; oP.intensity = 3.4; oP.sprite = 'streak'; oP.stretch = 0.016; oP.rival = R; oP.essential = true; go();
+      P(r.pos, 1); oP.vel = r.vel; sp(0, 0); lf(Math.max(0.04, lh), Math.max(0.04, lh)); sz(0.06, 0.05); oP.sizeVar = 0; oP.color = col; oP.intensity = 3.4; oP.sprite = 'streak'; oP.stretch = 0.016; oP.rival = R; oP.essential = true; go();
       if (r.tr) { try { r.tr.push(r.pos); } catch (e) { r.tr = null; } }
       else streakTrail(r.prev, r.pos, d, 1, 0.035, 0.14, ramp, 2.6, R);
       shed(el, R, r.pos, r.vel, 0.1, take(r.acc, 'a', 14, dt), 0.7);
@@ -689,20 +813,31 @@ export function register(fx) {
 
   const ROCKS = [[0.5, 0.3, 0.1], [-0.45, 0.2, 0.35], [0.1, -0.5, -0.3], [-0.2, 0.45, -0.45], [0.35, -0.25, 0.5]];
   function orbFlyDraw(r, dt) {
-    const R = r.R, el = r.el || 'fire', Pl = pal(el, R), col = haloOf(el, R), ramp = rampEl(el, R), rr = r.r;
-    const hot = el === 'earth' && !R ? E.earth.hot : Pl.hot;
-    // ореол сгустка скромнее: первые метры полёта — у самой камеры
-    glowAt(r.pos, r.vel, rr * 2.2, 0.035, hot, 1.2, R, 'glow');
-    glowAt(r.pos, r.vel, rr * (el === 'earth' ? 0.9 : 1.2), 0.035, Pl.core, 2.4, R, 'glow');
+    // [W4-ЗАКЛИНАНИЯ] облик крупнее игрового радиуса (×1,3): белое ядро + цветной ореол + штрих вперёд + свет
+    const R = r.R, el = r.el || 'fire', Pl = pal(el, R), col = haloOf(el, R), ramp = rampEl(el, R), rr = r.r * ORB_VIS;
+    const lh = headLife(dt);
+    // ореол: первые ~0,12 с (у самой камеры) мягкий, дальше — сильнее и шире
+    const hk = clamp((r.age - 0.12) / 0.15, 0, 1);
+    glowAt(r.pos, r.vel, rr * (2.0 + 0.8 * hk), lh, col, (el === 'storm' ? 1.5 : 1.0) + 0.9 * hk, R, 'glow');
+    coreAt(r.pos, r.vel, rr * (el === 'earth' ? 0.9 : 1.15), lh, 2.8, R, 'glow', 0);
+    // белый штрих вперёд по полёту — «голова» читается и сбоку (на low — без него)
+    if (!lowQ()) { _c.copy(r.pos).addScaledVector(r.dir, rr * 0.55); coreAt(_c, r.vel, rr * 0.8, lh, 3, R, 'streak', 0.02); }
+    // короткий свет из общего пула, ≤4 обновлений/с (на low kit.light — no-op)
+    if (take(r.acc, 'd', 4, dt) > 0) {
+      _lgO.color = el === 'earth' && !R ? E.earth.hot : Pl.hot; _lgO.intensity = 0.6; _lgO.range = 6; _lgO.dur = 0.4; _lgO.attack = 0.03; _lgO.follow = r.follow;
+      kit.light(r.pos, _lgO);
+      _lgO.follow = null;
+    }
     if (r.tr) { try { r.tr.push(r.pos); } catch (e) { r.tr = null; } }
     else streakTrail(r.prev, r.pos, r.dir, 3, rr * 0.7, 0.22, ramp, 2.2, R);
     let n;
+    // слои стихии чуть реже прежнего — частицы головы (ядро/штрих) в пределах бюджета
     if (el === 'fire') {
-      n = take(r.acc, 'a', 140, dt);
+      n = take(r.acc, 'a', 110, dt);
       if (n > 0) { P(r.pos, n); oP.radius = rr * 0.5; _vk.copy(r.vel).multiplyScalar(0.25); oP.vel = _vk; sp(0.3, 1.2); lf(0.14, 0.28); sz(rr * 2, rr * 0.5); oP.ramp = ramp; oP.intensity = 2.5; oP.sprite = 'flame'; oP.rot = 0; oP.gravity = -2.5; oP.drag = 3; oP.turb = 0.8; oP.rival = R; oP.essential = true; go(); }
-      n = take(r.acc, 'b', 20, dt);
+      n = take(r.acc, 'b', 16, dt);
       if (n > 0) { P(r.pos, n); oP.radius = rr * 0.4; sp(0.2, 0.6); lf(0.5, 0.9); sz(rr * 1.4, rr * 3.4); oP.ramp = R ? 'voidsmoke' : 'firesmoke'; oP.intensity = 1; oP.sprite = 'smoke'; oP.blend = 'alpha'; oP.drag = 1.5; oP.gravity = -0.6; spin(-1, 1); oP.rival = R; go(); }
-      shed('fire', R, r.pos, r.vel, 0.1, take(r.acc, 'c', 30, dt), 1.2);
+      shed('fire', R, r.pos, r.vel, 0.1, take(r.acc, 'c', 22, dt), 1.2);
     } else if (el === 'storm') {
       if (fx.bolts && take(r.acc, 'b', 30, dt) > 0) {
         _c.set(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)).normalize().multiplyScalar(rr * rnd(1.4, 2.6)).add(r.pos);
@@ -710,25 +845,24 @@ export function register(fx) {
       }
       n = take(r.acc, 'a', 80, dt);
       if (n > 0) { P(r.pos, n); oP.shape = 'shell'; oP.radius = rr * 0.9; _vk.copy(r.vel).multiplyScalar(0.3); oP.vel = _vk; sp(1, 4); lf(0.08, 0.2); sz(0.06, 0.01); oP.ramp = ramp; oP.intensity = 3.4; oP.sprite = 'spark'; oP.stretch = 0.03; oP.drag = 3; oP.turb = 1.6; oP.rival = R; oP.essential = true; go(); }
-      glowAt(r.pos, r.vel, rr * 2.2, 0.035, Pl.mid, 1.6, R, 'glow');
     } else if (el === 'frost') {
-      n = take(r.acc, 'a', 110, dt);
+      n = take(r.acc, 'a', 85, dt);
       if (n > 0) { P(r.pos, n); oP.shape = 'shell'; oP.radius = rr * 0.75; _vk.copy(r.vel).multiplyScalar(0.85); oP.vel = _vk; sp(0, 0.5); lf(0.06, 0.14); sz(rr * 1, rr * 0.5); oP.ramp = ramp; oP.intensity = 2.5; oP.sprite = 'shard'; spin(-7, 7); oP.rival = R; oP.essential = true; go(); }
-      n = take(r.acc, 'b', 30, dt);
+      n = take(r.acc, 'b', 26, dt);
       if (n > 0) { P(r.pos, n); oP.radius = rr * 0.5; sp(0.1, 0.4); lf(0.4, 0.7); sz(rr * 1.2, rr * 3); oP.ramp = R ? 'voidsmoke' : 'frostsmoke'; oP.intensity = 1; oP.sprite = 'smoke'; oP.blend = 'alpha'; oP.drag = 1.5; oP.gravity = 0.4; spin(-1, 1); oP.rival = R; go(); }
-      shed('frost', R, r.pos, r.vel, 0.1, take(r.acc, 'c', 30, dt), 1.2);
+      shed('frost', R, r.pos, r.vel, 0.1, take(r.acc, 'c', 24, dt), 1.2);
     } else { // earth: вращающаяся глыба из обломков с магмой внутри
       r.spin += dt * 7;
       const ca = Math.cos(r.spin), sa = Math.sin(r.spin);
       for (let i = 0; i < ROCKS.length; i++) {
         const o = ROCKS[i];
         _c.set(r.pos.x + (o[0] * ca - o[2] * sa) * rr, r.pos.y + o[1] * rr, r.pos.z + (o[0] * sa + o[2] * ca) * rr);
-        P(_c, 1); oP.vel = r.vel; sp(0, 0); lf(0.04, 0.04); sz(rr * 1.05, rr * 1.0); oP.sizeVar = 0.15; oP.ramp = 'stone'; oP.intensity = 1; oP.sprite = 'debris'; oP.blend = 'alpha'; oP.rot = i * 1.3 + r.spin; oP.fadeIn = 0; oP.rival = R; oP.essential = true; go();
+        P(_c, 1); oP.vel = r.vel; sp(0, 0); lf(Math.max(0.04, lh), Math.max(0.04, lh)); sz(rr * 1.05, rr * 1.0); oP.sizeVar = 0.15; oP.ramp = 'stone'; oP.intensity = 1; oP.sprite = 'debris'; oP.blend = 'alpha'; oP.rot = i * 1.3 + r.spin; oP.fadeIn = 0; oP.rival = R; oP.essential = true; go();
       }
-      glowAt(r.pos, r.vel, rr * 1.2, 0.035, R ? E.rival.hot : 0xff7a2a, 2.6, R, 'ember');
-      n = take(r.acc, 'a', 40, dt);
+      glowAt(r.pos, r.vel, rr * 1.2, lh, R ? E.rival.hot : 0xff7a2a, 2.6, R, 'ember');
+      n = take(r.acc, 'a', 30, dt);
       if (n > 0) { P(r.pos, n); oP.radius = rr * 0.6; sp(0.2, 0.7); lf(0.5, 0.9); sz(rr * 1.2, rr * 2.8); oP.ramp = 'dust'; oP.intensity = 1; oP.alpha = 0.75; oP.sprite = 'smoke'; oP.blend = 'alpha'; oP.drag = 1.5; spin(-1, 1); oP.rival = R; go(); }
-      shed('earth', R, r.pos, r.vel, 0.1, take(r.acc, 'c', 20, dt), 1.3);
+      shed('earth', R, r.pos, r.vel, 0.1, take(r.acc, 'c', 14, dt), 1.3);
     }
   }
 
@@ -969,8 +1103,21 @@ export function register(fx) {
       if (r.age === 0) r.prev.copy(r.pos).addScaledVector(r.dir, -0.3);
       r.age += dt;
       if (dt <= 0) continue;
+      // [W4-ЗАКЛИНАНИЯ] полёт — в сцене своего выстрела: при толчее эффектов свежий выстрел не тонет в старых
+      if (r.scope && !scopeAlive(r.scope)) r.scope = null;
+      const prevScope = kit.enterScope(r.scope);
+      if (r.scope) kit.touchScope(r.scope, 0.25);
       if (r.kind === 'arrow') arrowDraw(r, dt); else orbFlyDraw(r, dt);
+      kit.enterScope(prevScope);
     }
     recs.forEach(endStale);
+  });
+
+  // [W4-ЗАКЛИНАНИЯ] сброс боя: снаряды, лук, сфера и сцены выстрелов — с нуля
+  fx.onClear(() => {
+    recs.forEach(recEnd); recs.clear();
+    for (let i = 0; i < PEND_N; i++) { pend[i].scope = null; pend[i].id = ''; pend[i].t = -9; }
+    bowOff(LB); bowOff(RB); LB.lightId = ''; RB.lightId = '';
+    orbOff(LO); orbOff(RO);
   });
 }
