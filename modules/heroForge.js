@@ -531,7 +531,7 @@ export function panelTextures(THREE, { base = 0x2a1a17, trim = 0xd8b070, glow = 
 
 // Ткань с плетением, вышитая кайма (побеги и ромбы) по краям и подолу, герб на спине.
 // → { map (sRGB), bump, emissive } — холсты 512×1024, u поперёк, v сверху вниз.
-export function capeTextures(THREE, { base = 0x2a1a17, trim = 0xd8b070, glow = 0xff8a3a, emblem = 'flame', key = '' } = {}) {
+export function capeTextures(THREE, { base = 0x2a1a17, trim = 0xd8b070, glow = 0xff8a3a, emblem = 'flame', key = '', stars = false } = {}) {
   if (typeof document === 'undefined') return {};
   const W = 512, H = 1024;
   const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
@@ -611,6 +611,25 @@ export function capeTextures(THREE, { base = 0x2a1a17, trim = 0xd8b070, glow = 0
   ge.strokeStyle = col(glow, 0.45); ge.lineWidth = 1.5; ge.strokeRect(10 + bw, -10, W - 20 - bw * 2, H - 12 - bh + 10);
   // тень под вышивкой (объём): тёмный отлив
   gm.globalCompositeOperation = 'multiply'; gm.globalAlpha = 0.25; border(gm, trimD, false); gm.globalCompositeOperation = 'source-over'; gm.globalAlpha = 1;
+  // [W4-НАРЯДЫ] звёздное небо по полотну (чародейка): звёзды-«крестики» серебром и светящаяся пыль,
+  // гуще к подолу; герб и кайма остаются чистыми
+  if (stars) {
+    let sd = 4711;
+    const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+    for (let i = 0; i < 70; i++) {
+      const x = 10 + bw + 14 + rnd() * (W - 2 * (10 + bw + 14)), y = 380 + (H - 12 - bh - 400) * Math.sqrt(rnd());
+      const r = 3 + rnd() * rnd() * 11;
+      if (Math.hypot(x - cx, y - cy) < R + 30) continue;
+      gm.fillStyle = col(trim, 1.1); star4(gm, x, y, r); gm.fill();
+      gb.fillStyle = '#fff'; star4(gb, x, y, r); gb.fill();
+      if (r > 6) { ge.save(); ge.shadowColor = glowC; ge.shadowBlur = 6; ge.fillStyle = col(glow, 1.1); star4(ge, x, y, r * 0.7); ge.fill(); ge.restore(); }
+    }
+    for (let i = 0; i < 260; i++) {
+      const x = 10 + bw + 8 + rnd() * (W - 2 * (10 + bw + 8)), y = 330 + (H - 12 - bh - 340) * Math.sqrt(rnd()), r = 0.6 + rnd() * 1.2;
+      gm.fillStyle = col(trim, 1.2); gm.globalAlpha = 0.7; gm.beginPath(); gm.arc(x, y, r, 0, TAU); gm.fill(); gm.globalAlpha = 1;
+      ge.fillStyle = col(glow, 0.5 + rnd() * 0.7); ge.beginPath(); ge.arc(x, y, r * 1.3, 0, TAU); ge.fill();
+    }
+  }
   const tex = (cv, color) => { const t = new THREE.CanvasTexture(cv); t.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; return t; };
   void key;
   return { map: tex(cm, true), bump: tex(cb, false), emissive: tex(ce, true) };
@@ -663,4 +682,367 @@ export function runeRingTexture(THREE) {
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.anisotropy = 4;
   return t;
+}
+
+// ---------------------------------------------------------------- [W4-НАРЯДЫ] текстуры нарядов героинь
+// Общий кэш со счётчиком ссылок: одинаковые героини (витрина, бой, удалённый игрок) делят холсты,
+// последний release() освобождает GPU-текстуры. Размер — по качеству (high ≤ 1024², low ≤ 512²).
+// Карты: map (sRGB), emissive (свечение вышивки цветом стихии) и «рельеф + альфа» в одной текстуре:
+// R — bumpMap (three читает .r), G — alphaMap (читает .g) — у лепестков и зубцов подола своя форма.
+const sharedTex = new Map();
+export function sharedTextures(key, make) {
+  let e = sharedTex.get(key);
+  if (!e) { e = { refs: 0, tex: make() || {} }; sharedTex.set(key, e); }
+  e.refs++;
+  let done = false;
+  return {
+    tex: e.tex,
+    release() {
+      if (done) return;
+      done = true;
+      if (--e.refs > 0) return;
+      for (const t of Object.values(e.tex)) if (t && t.dispose) t.dispose();
+      sharedTex.delete(key);
+    },
+  };
+}
+export const sharedTexCount = () => sharedTex.size;   // QA: освобождаются ли холсты
+
+const cssOf = (THREE, hex, k = 1, a = 1) => { const c = new THREE.Color(hex).multiplyScalar(k); return `rgba(${Math.round(Math.min(1, c.r) * 255)},${Math.round(Math.min(1, c.g) * 255)},${Math.round(Math.min(1, c.b) * 255)},${a})`; };
+const mkCanvas = (W, H) => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+function canvasTexture(THREE, cv, { color = false, wrapS = false, wrapT = false } = {}) {
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  t.anisotropy = 8;
+  t.wrapS = wrapS ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+  t.wrapT = wrapT ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+  return t;
+}
+// R ← рельеф, G ← альфа (оба холста в оттенках серого)
+function packBumpAlpha(bump, alpha) {
+  const W = bump.width, H = bump.height, out = mkCanvas(W, H), g = out.getContext('2d');
+  const b = bump.getContext('2d').getImageData(0, 0, W, H).data, a = alpha.getContext('2d').getImageData(0, 0, W, H).data;
+  const im = g.createImageData(W, H), px = im.data;
+  for (let i = 0; i < px.length; i += 4) { px[i] = b[i]; px[i + 1] = a[i]; px[i + 2] = 0; px[i + 3] = 255; }
+  g.putImageData(im, 0, 0);
+  return out;
+}
+// бархат и шёлк: основа с плетением и мягким ворсом (детерминированно)
+function fabricFill(g, W, H, css, { nap = 0.06, weave = 0.035, seed = 4242 } = {}) {
+  g.fillStyle = css; g.fillRect(0, 0, W, H);
+  const im = g.getImageData(0, 0, W, H), px = im.data;
+  let sd = seed;
+  const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4;
+    const wv = ((x + y) % 4 < 2 ? 1 + weave : 1 - weave);
+    const k = wv * (1 - nap + rnd() * nap * 2) * (1 + 0.04 * Math.sin(x * 0.07 + Math.sin(y * 0.013) * 3));
+    px[i] = Math.min(255, px[i] * k); px[i + 1] = Math.min(255, px[i + 1] * k); px[i + 2] = Math.min(255, px[i + 2] * k);
+  }
+  g.putImageData(im, 0, 0);
+}
+// четырёхлучевая звезда (вогнутые лучи); r — длинный луч, k — доля короткого
+function star4(g, x, y, r, k = 0.42, rot = 0) {
+  g.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const a = rot + (i / 8) * TAU, rr = i % 2 ? r * k : r;
+    const px = x + Math.sin(a) * rr, py = y - Math.cos(a) * rr;
+    if (i === 0) g.moveTo(px, py);
+    else { const am = rot + ((i - 0.5) / 8) * TAU; g.quadraticCurveTo(x + Math.sin(am) * r * 0.16, y - Math.cos(am) * r * 0.16, px, py); }
+  }
+  const am = rot + (7.5 / 8) * TAU;
+  g.quadraticCurveTo(x + Math.sin(am) * r * 0.16, y - Math.cos(am) * r * 0.16, x + Math.sin(rot) * r, y - Math.cos(rot) * r);
+  g.closePath();
+}
+// стрельчатый лепесток: прямые бока до ys, ниже — оживальное остриё к (xm, yt)
+function petalPath(g, x0, x1, yTop, ys, yt, round = 0.55) {
+  const xm = (x0 + x1) / 2, w = x1 - x0, h = yt - ys;
+  g.moveTo(x0, yTop); g.lineTo(x0, ys);
+  g.bezierCurveTo(x0, ys + h * round, xm - w * 0.2, yt - h * 0.1, xm, yt);
+  g.bezierCurveTo(xm + w * 0.2, yt - h * 0.1, x1, ys + h * round, x1, ys);
+  g.lineTo(x1, yTop);
+}
+
+// Лепестки полы (эльфийка): segs — [u0, u1] каждого лепестка в развёртке (u слева направо холста),
+// from — доля высоты, где начинаются разрезы, tips — длина лепестков (доля высоты до острия).
+// Шёлк основы, золотая кайма по контуру лепестка, жилка-стебель и боковые жилки тоном светлее,
+// пояс сверху с ромбами; свечение — нить внутри каймы и бусины на остриях.
+export function petalTextures(THREE, { base = 0xf1ece0, vein = null, edge = 0xd8b46a, glow = 0x7fe8ff, segs = [[0, 1]], from = 0.35, tips = null, size = 512 } = {}) {
+  if (typeof document === 'undefined') return {};
+  const W = size, H = size;
+  const cm = mkCanvas(W, H), cb = mkCanvas(W, H), ca = mkCanvas(W, H), ce = mkCanvas(W, H);
+  const gm = cm.getContext('2d'), gb = cb.getContext('2d'), ga = ca.getContext('2d'), ge = ce.getContext('2d');
+  const s = W / 512;
+  fabricFill(gm, W, H, cssOf(THREE, base), { nap: 0.035, weave: 0.025 });
+  gb.fillStyle = 'rgb(110,110,110)'; gb.fillRect(0, 0, W, H);
+  ga.fillStyle = '#000'; ga.fillRect(0, 0, W, H);
+  ge.fillStyle = '#000'; ge.fillRect(0, 0, W, H);
+  const yS = from * H, band = 0.06 * H;
+  ga.fillStyle = '#fff'; ga.fillRect(0, 0, W, yS + 2);
+  const P = segs.map(([u0, u1], k) => ({ x0: u0 * W, x1: u1 * W, yt: (tips ? tips[k] : 0.97) * H }));
+  // альфа: лепестки
+  for (const p of P) { ga.beginPath(); petalPath(ga, p.x0, p.x1, 0, yS, p.yt); ga.closePath(); ga.fill(); }
+  // объём лепестка: к краям темнее (ткань уходит от света), по середине — светлая полоса
+  for (const p of P) {
+    const gr = gm.createLinearGradient(p.x0, 0, p.x1, 0);
+    gr.addColorStop(0, 'rgba(0,0,0,0.2)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.07)'); gr.addColorStop(1, 'rgba(0,0,0,0.2)');
+    gm.save(); gm.beginPath(); petalPath(gm, p.x0, p.x1, band, yS, p.yt); gm.closePath(); gm.clip();
+    gm.fillStyle = gr; gm.fillRect(p.x0, band, p.x1 - p.x0, H);
+    const fade = gm.createLinearGradient(0, band, 0, yS);
+    fade.addColorStop(0, cssOf(THREE, base, 1, 1)); fade.addColorStop(1, cssOf(THREE, base, 1, 0));
+    gm.globalAlpha = 0.85; gm.fillStyle = fade; gm.fillRect(p.x0, band, p.x1 - p.x0, yS - band); gm.restore();
+  }
+  const veinC = vein != null ? vein : new THREE.Color(base).lerp(new THREE.Color(0xffffff), 0.5).getHex();
+  const both = (fn) => { fn(gm, false); fn(gb, true); };
+  // жилки: стебель от разреза к острию и боковые дуги (тон в тон, чуть светлее), рельеф сильнее
+  both((g, bump) => {
+    g.save(); g.strokeStyle = bump ? 'rgb(190,190,190)' : cssOf(THREE, veinC, 1, 0.75); g.lineCap = 'round';
+    for (const p of P) {
+      const xm = (p.x0 + p.x1) / 2, w = p.x1 - p.x0;
+      g.lineWidth = (bump ? 3 : 2.2) * s;
+      g.beginPath(); g.moveTo(xm, yS - band * 0.2); g.quadraticCurveTo(xm + w * 0.04, (yS + p.yt) / 2, xm, p.yt - 14 * s); g.stroke();
+      g.lineWidth = (bump ? 2 : 1.4) * s;
+      for (let k = 1; k <= 4; k++) {
+        const y = yS + ((p.yt - yS) * k) / 5.6;
+        for (const sg of [-1, 1]) { g.beginPath(); g.moveTo(xm, y); g.quadraticCurveTo(xm + sg * w * 0.18, y - 6 * s, xm + sg * w * 0.34, y - 22 * s); g.stroke(); }
+      }
+    }
+    g.restore();
+  });
+  // золотая кайма по контуру: широкая нить и тонкая внутри, тень стежка под ней
+  const edgePass = (g, c, w, inset) => {
+    g.save(); g.strokeStyle = c; g.lineWidth = w; g.lineJoin = 'round';
+    for (const p of P) { g.beginPath(); petalPath(g, p.x0 + inset, p.x1 - inset, band, yS + inset * 0.6, p.yt - inset * 1.3); g.stroke(); }
+    g.restore();
+  };
+  gm.save(); gm.translate(1.2 * s, 1.8 * s); edgePass(gm, 'rgba(0,0,0,0.35)', 7 * s, 5 * s); gm.restore();
+  edgePass(gm, cssOf(THREE, edge), 7 * s, 5 * s); edgePass(gm, cssOf(THREE, edge, 1.35), 2.2 * s, 5.5 * s);
+  edgePass(gm, cssOf(THREE, edge, 0.85), 1.6 * s, 13 * s);
+  edgePass(gb, '#fff', 8 * s, 5 * s); edgePass(gb, 'rgb(220,220,220)', 2 * s, 13 * s);
+  // пояс сверху: две нити и ромбы
+  both((g, bump) => {
+    g.save(); g.strokeStyle = bump ? '#fff' : cssOf(THREE, edge); g.fillStyle = g.strokeStyle; g.lineWidth = 4 * s;
+    for (const y of [band * 0.18, band * 0.95]) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+    g.lineWidth = 2 * s;
+    const n = Math.max(6, Math.round(W / (38 * s)));
+    for (let k = 0; k < n; k++) {
+      const x = ((k + 0.5) / n) * W, y = band * 0.56, a = band * 0.26;
+      g.beginPath(); g.moveTo(x, y - a); g.lineTo(x + a * 0.8, y); g.lineTo(x, y + a); g.lineTo(x - a * 0.8, y); g.closePath(); g.stroke();
+      g.beginPath(); g.arc(x, y, 2.6 * s, 0, TAU); g.fill();
+    }
+    g.restore();
+  });
+  // свечение: нить внутри каймы, бусины на остриях, сердцевины ромбов пояса
+  ge.save(); ge.shadowColor = cssOf(THREE, glow); ge.shadowBlur = 6 * s;
+  ge.strokeStyle = cssOf(THREE, glow, 0.85); ge.lineWidth = 1.6 * s;
+  for (const p of P) { ge.beginPath(); petalPath(ge, p.x0 + 13 * s, p.x1 - 13 * s, band * 1.2, yS + 8 * s, p.yt - 18 * s); ge.stroke(); }
+  ge.fillStyle = cssOf(THREE, glow, 1);
+  for (const p of P) { ge.beginPath(); ge.arc((p.x0 + p.x1) / 2, p.yt - 16 * s, 4 * s, 0, TAU); ge.fill(); }
+  const n = Math.max(6, Math.round(W / (38 * s)));
+  for (let k = 0; k < n; k++) { ge.beginPath(); ge.arc(((k + 0.5) / n) * W, band * 0.56, 2.4 * s, 0, TAU); ge.fill(); }
+  ge.restore();
+  // бусины-капли на остриях (золото поверх)
+  both((g, bump) => { g.save(); g.fillStyle = bump ? '#fff' : cssOf(THREE, edge, 1.2); for (const p of P) { g.beginPath(); g.arc((p.x0 + p.x1) / 2, p.yt - 16 * s, 5 * s, 0, TAU); g.fill(); } g.restore(); });
+  return { map: canvasTexture(THREE, cm, { color: true }), bumpAlpha: canvasTexture(THREE, packBumpAlpha(cb, ca)), emissive: canvasTexture(THREE, ce, { color: true }) };
+}
+
+// Звёздная вышивка (чародейка): вертикальная полоса полотнища — бархат, серебряная двойная кайма,
+// созвездия по центру (звёзды-«крестики» и тонкие нити между ними), полумесяцы, звёздная пыль;
+// подол — остриём ('point') или «ласточкиным хвостом» ('swallow'), кайма идёт по контуру острия.
+export function starTextures(THREE, { base = 0x1c1028, thread = 0xc8cde0, glow = 0xa77bff, hem = 'point', size = 1024, seed = 17 } = {}) {
+  if (typeof document === 'undefined') return {};
+  const H = size, W = size / 4, s = H / 1024;
+  const cm = mkCanvas(W, H), cb = mkCanvas(W, H), ca = mkCanvas(W, H), ce = mkCanvas(W, H);
+  const gm = cm.getContext('2d'), gb = cb.getContext('2d'), ga = ca.getContext('2d'), ge = ce.getContext('2d');
+  fabricFill(gm, W, H, cssOf(THREE, base), { nap: 0.08, weave: 0.03, seed: 777 });
+  gb.fillStyle = 'rgb(120,120,120)'; gb.fillRect(0, 0, W, H);
+  ge.fillStyle = '#000'; ge.fillRect(0, 0, W, H);
+  ga.fillStyle = '#000'; ga.fillRect(0, 0, W, H);
+  let sd = seed;
+  const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+  // контур полотнища: прямые бока, подол — остриё или «хвост»
+  const yH = H * 0.84, m = 4 * s;
+  const outline = (g, ins = 0) => {
+    g.moveTo(m + ins, -4); g.lineTo(m + ins, yH - ins * 0.2);
+    if (hem === 'swallow') { g.lineTo(W * 0.24 + ins * 0.2, H - 10 * s - ins * 1.6); g.lineTo(W / 2, H * 0.9 + ins * 0.9); g.lineTo(W * 0.76 - ins * 0.2, H - 10 * s - ins * 1.6); }
+    else g.quadraticCurveTo(W * 0.3, H * 0.93, W / 2, H - 8 * s - ins * 1.8), g.quadraticCurveTo(W * 0.7, H * 0.93, W - m - ins, yH - ins * 0.2);
+    g.lineTo(W - m - ins, yH - ins * 0.2); g.lineTo(W - m - ins, -4);
+  };
+  ga.fillStyle = '#fff'; ga.beginPath(); outline(ga, 0); ga.closePath(); ga.fill();
+  // кайма: широкая серебряная нить, тонкая внутри, тень стежка
+  const border = (g, c, w, ins) => { g.save(); g.strokeStyle = c; g.lineWidth = w; g.lineJoin = 'round'; g.beginPath(); outline(g, ins); g.stroke(); g.restore(); };
+  gm.save(); gm.translate(1 * s, 2 * s); border(gm, 'rgba(0,0,0,0.45)', 5 * s, 9 * s); gm.restore();
+  border(gm, cssOf(THREE, thread), 5 * s, 9 * s); border(gm, cssOf(THREE, thread, 0.75), 1.6 * s, 20 * s);
+  border(gb, '#fff', 6 * s, 9 * s); border(gb, 'rgb(210,210,210)', 2 * s, 20 * s);
+  // созвездия: звёзды вдоль полосы, нити между соседними
+  const stars = [];
+  for (let y = 70 * s; y < yH - 40 * s; y += (54 + rnd() * 40) * s) stars.push({ x: W * (0.28 + rnd() * 0.44), y, r: (7 + rnd() * 9) * s, big: rnd() > 0.7 });
+  const lines = (g, c, w) => { g.save(); g.strokeStyle = c; g.lineWidth = w; g.setLineDash([3 * s, 4 * s]); g.beginPath(); stars.forEach((p, i) => { if (i) g.lineTo(p.x, p.y); else g.moveTo(p.x, p.y); }); g.stroke(); g.restore(); };
+  lines(gm, cssOf(THREE, thread, 0.7, 0.8), 1.2 * s); lines(ge, cssOf(THREE, glow, 0.35), 1 * s);
+  for (const p of stars) {
+    const r = p.big ? p.r * 1.7 : p.r;
+    gm.fillStyle = cssOf(THREE, thread, 1.1); star4(gm, p.x, p.y, r); gm.fill();
+    gb.fillStyle = '#fff'; star4(gb, p.x, p.y, r); gb.fill();
+    ge.save(); ge.shadowColor = cssOf(THREE, glow); ge.shadowBlur = 8 * s; ge.fillStyle = cssOf(THREE, glow, 1.1); star4(ge, p.x, p.y, r * 0.8); ge.fill(); ge.restore();
+    if (p.big) { gm.strokeStyle = cssOf(THREE, thread, 0.9); gm.lineWidth = 1.2 * s; gm.beginPath(); gm.arc(p.x, p.y, r * 0.55, 0, TAU); gm.stroke(); }
+  }
+  // полумесяцы между созвездиями (по бокам)
+  for (let y = 160 * s; y < yH - 120 * s; y += 300 * s) {
+    for (const [g, c] of [[gm, cssOf(THREE, thread)], [gb, '#fff']]) {
+      g.save(); g.fillStyle = c; g.beginPath(); const x = W * 0.5, r = 15 * s;
+      g.arc(x, y, r, Math.PI * 0.25, Math.PI * 1.75, false); g.arc(x + r * 0.45, y, r * 0.82, Math.PI * 1.62, Math.PI * 0.38, true); g.closePath(); g.fill(); g.restore();
+    }
+  }
+  // звёздная пыль: мелкие точки (светятся)
+  for (let i = 0; i < 90; i++) {
+    const x = W * (0.12 + rnd() * 0.76), y = rnd() * yH, r = (0.6 + rnd() * 1.3) * s;
+    gm.fillStyle = cssOf(THREE, thread, 1.2, 0.8); gm.beginPath(); gm.arc(x, y, r, 0, TAU); gm.fill();
+    ge.fillStyle = cssOf(THREE, glow, 0.6 + rnd() * 0.6); ge.beginPath(); ge.arc(x, y, r * 1.2, 0, TAU); ge.fill();
+  }
+  // свечение: нить внутри каймы и звезда на острие подола
+  ge.save(); ge.shadowColor = cssOf(THREE, glow); ge.shadowBlur = 6 * s; border(ge, cssOf(THREE, glow, 0.8), 1.4 * s, 20 * s);
+  ge.fillStyle = cssOf(THREE, glow, 1.2); star4(ge, W / 2, H * (hem === 'swallow' ? 0.86 : 0.93), 10 * s); ge.fill(); ge.restore();
+  gm.fillStyle = cssOf(THREE, thread, 1.2); star4(gm, W / 2, H * (hem === 'swallow' ? 0.86 : 0.93), 12 * s); gm.fill();
+  return { map: canvasTexture(THREE, cm, { color: true }), bumpAlpha: canvasTexture(THREE, packBumpAlpha(cb, ca)), emissive: canvasTexture(THREE, ce, { color: true }) };
+}
+
+// Накидка-пелерина (лучница): u — по обхвату плеч, v — сверху вниз. Подол — зубцы-«листья» (дагги),
+// по подолу и передним краям — вышитая кайма, над подолом — завитки ветра (светятся), у ворота — тесьма.
+export function mantleTextures(THREE, { base = 0x1f3a26, trim = 0xc9a05a, glow = 0x9dffb0, dags = 13, size = 1024 } = {}) {
+  if (typeof document === 'undefined') return {};
+  const W = size, H = Math.round(size * 0.375), s = W / 1024;
+  const cm = mkCanvas(W, H), cb = mkCanvas(W, H), ca = mkCanvas(W, H), ce = mkCanvas(W, H);
+  const gm = cm.getContext('2d'), gb = cb.getContext('2d'), ga = ca.getContext('2d'), ge = ce.getContext('2d');
+  fabricFill(gm, W, H, cssOf(THREE, base), { nap: 0.09, weave: 0.03, seed: 991 });
+  gb.fillStyle = 'rgb(120,120,120)'; gb.fillRect(0, 0, W, H);
+  ge.fillStyle = '#000'; ge.fillRect(0, 0, W, H);
+  ga.fillStyle = '#000'; ga.fillRect(0, 0, W, H);
+  const yD = H * 0.74, yT = H - 4 * s, dw = W / dags;
+  const hemPath = (g, ins = 0) => {
+    g.moveTo(ins, -4); g.lineTo(ins, yD);
+    for (let k = 0; k < dags; k++) {
+      const x0 = k * dw, x1 = x0 + dw, xm = (x0 + x1) / 2, tip = yT - ins * 1.4 - (k % 2 ? 10 * s : 0);
+      g.bezierCurveTo(x0 + dw * 0.05, yD + (tip - yD) * 0.7, xm - dw * 0.22, tip, xm, tip);
+      g.bezierCurveTo(xm + dw * 0.22, tip, x1 - dw * 0.05, yD + (tip - yD) * 0.7, x1, yD);
+    }
+    g.lineTo(W - ins, -4);
+  };
+  ga.fillStyle = '#fff'; ga.beginPath(); hemPath(ga); ga.closePath(); ga.fill();
+  const stroke = (g, c, w, ins) => { g.save(); g.strokeStyle = c; g.lineWidth = w; g.lineJoin = 'round'; g.beginPath(); hemPath(g, ins); g.stroke(); g.restore(); };
+  gm.save(); gm.translate(1.5 * s, 2 * s); stroke(gm, 'rgba(0,0,0,0.4)', 7 * s, 8 * s); gm.restore();
+  stroke(gm, cssOf(THREE, trim), 7 * s, 8 * s); stroke(gm, cssOf(THREE, trim, 0.7), 2 * s, 19 * s);
+  stroke(gb, '#fff', 8 * s, 8 * s); stroke(gb, 'rgb(210,210,210)', 2.4 * s, 19 * s);
+  // завитки ветра над подолом: спирали по очереди вверх и вниз, между ними — листик
+  const swirl = (g, x, y, r, dir) => {
+    g.beginPath();
+    for (let i = 0; i <= 40; i++) { const t = i / 40, a = dir * t * TAU * 1.25, rr = r * (1 - 0.8 * t); const px = x + Math.cos(a) * rr - r, py = y + Math.sin(a) * rr; if (i) g.lineTo(px, py); else g.moveTo(px, py); }
+    g.stroke();
+  };
+  const sw = (g, c, w) => { g.save(); g.strokeStyle = c; g.lineWidth = w; g.lineCap = 'round'; for (let k = 0; k < dags; k++) swirl(g, (k + 0.5) * dw + dw * 0.18, yD - 22 * s, 13 * s, k % 2 ? 1 : -1); g.restore(); };
+  sw(gm, cssOf(THREE, trim, 0.95), 2.6 * s); sw(gb, '#fff', 3 * s);
+  ge.save(); ge.shadowColor = cssOf(THREE, glow); ge.shadowBlur = 7 * s; sw(ge, cssOf(THREE, glow, 0.9), 1.6 * s); ge.restore();
+  // тесьма у ворота и по передним краям
+  for (const [g, c] of [[gm, cssOf(THREE, trim)], [gb, '#fff']]) {
+    g.save(); g.fillStyle = c; g.fillRect(0, 0, W, 6 * s); g.fillRect(0, 12 * s, W, 2 * s);
+    g.fillRect(0, 0, 7 * s, yD); g.fillRect(W - 7 * s, 0, 7 * s, yD); g.restore();
+  }
+  ge.save(); ge.fillStyle = cssOf(THREE, glow, 0.5); ge.fillRect(0, 8 * s, W, 1.6 * s); ge.restore();
+  return { map: canvasTexture(THREE, cm, { color: true, wrapS: false }), bumpAlpha: canvasTexture(THREE, packBumpAlpha(cb, ca)), emissive: canvasTexture(THREE, ce, { color: true }) };
+}
+
+// Атлас «корсет + наручи» (лучница), развёртка — по обхвату (u: 0.5 — перед) и по высоте (v):
+//   корсет — v ∈ CORSET_V: вырез «сердечком» сверху, мыс спереди внизу, косточки-швы, тиснёный вьюнок,
+//            шнуровка спереди (люверсы и крест-накрест шнур), светящийся стежок по кромкам;
+//   наручи — v ∈ BRACE_V (u — вокруг предплечья, 0.5 — тыльная сторона), шнуровка по внутренней стороне.
+export const CORSET_V = [0.42, 1.0], BRACE_V = [0.0, 0.38];
+export function corsetTop(u) { const f = Math.abs(u - 0.5) * 2, sw = Math.max(0, 1 - f * 5); return 0.9 - 0.09 * Math.exp(-((f / 0.05) ** 2)) + 0.07 * sw * Math.sin(Math.min(1, f * 5) * Math.PI) - 0.05 * Math.max(0, f - 0.35); }
+export function corsetBot(u) { const f = Math.abs(u - 0.5) * 2; return 0.06 + 0.16 * Math.min(1, f / 0.32) ** 0.8 - 0.02 * Math.max(0, f - 0.6); }
+export function corsetTextures(THREE, { leather = 0x6a3e22, thread = 0xd9b26a, metal = 0xb08a50, glow = 0x9dffb0, size = 512 } = {}) {
+  if (typeof document === 'undefined') return {};
+  const W = size, H = size, s = W / 512;
+  const cm = mkCanvas(W, H), cb = mkCanvas(W, H), ca = mkCanvas(W, H), ce = mkCanvas(W, H);
+  const gm = cm.getContext('2d'), gb = cb.getContext('2d'), ga = ca.getContext('2d'), ge = ce.getContext('2d');
+  fabricFill(gm, W, H, cssOf(THREE, leather), { nap: 0.1, weave: 0.0, seed: 5150 });
+  gb.fillStyle = 'rgb(120,120,120)'; gb.fillRect(0, 0, W, H);
+  ge.fillStyle = '#000'; ge.fillRect(0, 0, W, H);
+  ga.fillStyle = '#000'; ga.fillRect(0, 0, W, H);
+  // зерно кожи в рельефе
+  { const im = gb.getImageData(0, 0, W, H), px = im.data; let sd = 31; const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; }; for (let i = 0; i < px.length; i += 4) { const v = 112 + rnd() * 26; px[i] = px[i + 1] = px[i + 2] = v; } gb.putImageData(im, 0, 0); }
+  const Y = (v) => (1 - v) * H;                            // v развёртки → строка холста (flipY)
+  const cv = (vh) => CORSET_V[0] + (CORSET_V[1] - CORSET_V[0]) * vh;
+  // контур корсета
+  const outline = (g, ins = 0) => {
+    const N = 96;
+    for (let i = 0; i <= N; i++) { const u = i / N; const x = u * W, y = Y(cv(corsetTop(u))) + ins; if (i) g.lineTo(x, y); else g.moveTo(x, y); }
+    for (let i = N; i >= 0; i--) { const u = i / N; g.lineTo(u * W, Y(cv(corsetBot(u))) - ins); }
+    g.closePath();
+  };
+  ga.fillStyle = '#fff'; ga.beginPath(); outline(ga); ga.fill();
+  // косточки-швы: 10 вертикальных полос (по обхвату), стежки по бокам шва
+  for (let k = 0; k < 10; k++) {
+    const u = (k + 0.5) / 10; if (Math.abs(u - 0.5) < 0.06) continue;
+    const x = u * W, y0 = Y(cv(corsetTop(u))), y1 = Y(cv(corsetBot(u)));
+    gm.fillStyle = 'rgba(0,0,0,0.28)'; gm.fillRect(x - 2.5 * s, y0, 5 * s, y1 - y0);
+    gb.fillStyle = 'rgb(70,70,70)'; gb.fillRect(x - 1.5 * s, y0, 3 * s, y1 - y0);
+    gm.save(); gm.strokeStyle = cssOf(THREE, thread, 0.9); gm.lineWidth = 1.1 * s; gm.setLineDash([3 * s, 3 * s]);
+    for (const dx of [-5, 5]) { gm.beginPath(); gm.moveTo(x + dx * s, y0 + 6 * s); gm.lineTo(x + dx * s, y1 - 6 * s); gm.stroke(); }
+    gm.restore();
+  }
+  // тиснёный вьюнок между швами (рельеф и чуть темнее)
+  for (let k = 0; k < 10; k++) {
+    const u0 = k / 10, x = (u0 + 0.05) * W; if (Math.abs(u0 + 0.05 - 0.5) < 0.06) continue;
+    const yA = Y(cv(corsetTop(u0 + 0.05))) + 14 * s, yB = Y(cv(corsetBot(u0 + 0.05))) - 14 * s;
+    for (const [g, c, w] of [[gm, 'rgba(0,0,0,0.18)', 2 * s], [gb, 'rgb(170,170,170)', 2.4 * s]]) {
+      g.save(); g.strokeStyle = c; g.lineWidth = w; g.beginPath();
+      for (let y = yA; y <= yB; y += 2) { const xx = x + Math.sin((y - yA) * 0.09 / s) * 7 * s; if (y === yA) g.moveTo(xx, y); else g.lineTo(xx, y); }
+      g.stroke(); g.restore();
+    }
+  }
+  // кромки: тёмный кант, стежок, светящаяся нить
+  const edge = (g, c, w, ins) => { g.save(); g.strokeStyle = c; g.lineWidth = w; g.beginPath(); outline(g, ins); g.stroke(); g.restore(); };
+  edge(gm, cssOf(THREE, leather, 0.45), 7 * s, 3 * s); edge(gb, '#fff', 6 * s, 3 * s);
+  gm.save(); gm.setLineDash([4 * s, 3 * s]); edge(gm, cssOf(THREE, thread), 1.3 * s, 9 * s); gm.restore();
+  ge.save(); ge.shadowColor = cssOf(THREE, glow); ge.shadowBlur = 5 * s; edge(ge, cssOf(THREE, glow, 0.7), 1.1 * s, 9 * s); ge.restore();
+  // шнуровка спереди: люверсы двумя рядами и шнур крест-накрест
+  {
+    const xL = W * 0.478, xR = W * 0.522, yA = Y(cv(corsetTop(0.5))) + 14 * s, yB = Y(cv(corsetBot(0.5))) - 12 * s, n = 7;
+    gm.fillStyle = cssOf(THREE, leather, 0.55); gm.fillRect(xL - 3 * s, yA - 8 * s, xR - xL + 6 * s, yB - yA + 14 * s);
+    const pts = []; for (let i = 0; i < n; i++) pts.push(yA + ((yB - yA) * i) / (n - 1));
+    for (const [g, c, w] of [[gm, cssOf(THREE, thread, 1.1), 2.2 * s], [gb, '#fff', 2.6 * s]]) {
+      g.save(); g.strokeStyle = c; g.lineWidth = w; g.beginPath();
+      for (let i = 0; i < n - 1; i++) { g.moveTo(xL, pts[i]); g.lineTo(xR, pts[i + 1]); g.moveTo(xR, pts[i]); g.lineTo(xL, pts[i + 1]); }
+      g.stroke(); g.restore();
+    }
+    for (const y of pts) for (const x of [xL, xR]) {
+      gm.fillStyle = cssOf(THREE, metal, 1.15); gm.beginPath(); gm.arc(x, y, 3.6 * s, 0, TAU); gm.fill();
+      gm.fillStyle = cssOf(THREE, leather, 0.3); gm.beginPath(); gm.arc(x, y, 1.6 * s, 0, TAU); gm.fill();
+      gb.fillStyle = '#fff'; gb.beginPath(); gb.arc(x, y, 3.8 * s, 0, TAU); gb.fill();
+    }
+  }
+  // наручи: полоса с заострённым краем к локтю, шнуровка по внутренней стороне, тиснёный лист снаружи
+  {
+    const bv = (t) => Y(BRACE_V[0] + (BRACE_V[1] - BRACE_V[0]) * t);   // t: 0 — запястье, 1 — к локтю
+    const shape = (g, ins = 0) => {
+      g.moveTo(0, bv(0) - ins);
+      for (let i = 0; i <= 64; i++) { const u = i / 64, d = Math.abs(u - 0.5) * 2; g.lineTo(u * W, bv(0.82 + 0.16 * (1 - d) ** 1.6) + ins); }
+      g.lineTo(W, bv(0) - ins); g.closePath();
+    };
+    ga.fillStyle = '#fff'; ga.beginPath(); shape(ga); ga.fill();
+    for (const [g, c, w] of [[gm, cssOf(THREE, leather, 0.42), 6 * s], [gb, '#fff', 6 * s]]) { g.save(); g.strokeStyle = c; g.lineWidth = w; g.beginPath(); shape(g, 3 * s); g.stroke(); g.restore(); }
+    gm.save(); gm.setLineDash([4 * s, 3 * s]); gm.strokeStyle = cssOf(THREE, thread); gm.lineWidth = 1.3 * s; gm.beginPath(); shape(gm, 9 * s); gm.stroke(); gm.restore();
+    ge.save(); ge.shadowColor = cssOf(THREE, glow); ge.shadowBlur = 5 * s; ge.strokeStyle = cssOf(THREE, glow, 0.7); ge.lineWidth = 1.1 * s; ge.beginPath(); shape(ge, 9 * s); ge.stroke(); ge.restore();
+    // лист на тыльной стороне (u = 0.5) и шнуровка на внутренней (u = 0 / 1 — шов)
+    const lx = W * 0.5, ly0 = bv(0.15), ly1 = bv(0.72);
+    for (const [g, c] of [[gm, cssOf(THREE, thread, 0.95)], [gb, '#fff']]) {
+      g.save(); g.strokeStyle = c; g.lineWidth = 2.4 * s; g.beginPath(); g.moveTo(lx, ly0);
+      g.bezierCurveTo(lx - 30 * s, (ly0 + ly1) / 2, lx - 12 * s, ly1 + 6 * s, lx, ly1); g.bezierCurveTo(lx + 12 * s, ly1 + 6 * s, lx + 30 * s, (ly0 + ly1) / 2, lx, ly0); g.stroke();
+      g.beginPath(); g.moveTo(lx, ly0); g.lineTo(lx, ly1); g.stroke(); g.restore();
+    }
+    for (const [g, c, w] of [[gm, cssOf(THREE, thread, 1.1), 2 * s], [gb, '#fff', 2.4 * s]]) {
+      g.save(); g.strokeStyle = c; g.lineWidth = w; g.beginPath();
+      for (let i = 0; i < 5; i++) { const ya = bv(0.12 + i * 0.15), yb = bv(0.12 + (i + 1) * 0.15); for (const x0 of [0, W]) { const sg = x0 ? -1 : 1; g.moveTo(x0 + sg * 6 * s, ya); g.lineTo(x0 + sg * 16 * s, yb); g.moveTo(x0 + sg * 16 * s, ya); g.lineTo(x0 + sg * 6 * s, yb); } }
+      g.stroke(); g.restore();
+    }
+  }
+  return { map: canvasTexture(THREE, cm, { color: true, wrapS: true }), bumpAlpha: canvasTexture(THREE, packBumpAlpha(cb, ca), { wrapS: true }), emissive: canvasTexture(THREE, ce, { color: true, wrapS: true }) };
 }
