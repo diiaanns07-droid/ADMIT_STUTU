@@ -47,7 +47,7 @@ export function telegraphCounter(kind, blockable, move) {
   // [W5-СЛОЖНОСТЬ] составные приёмы «Сложной» и «Кошмара» — свои подписи (ответ тот же, что у базового вида)
   if (move === 'double') return { name: 'ДВОЙНОЙ УДАР', counter: 'РЫВОК из круга — и ещё раз' };
   if (move === 'volley') return { name: 'ЗАЛП СФЕР', counter: blockable ? 'ЩИТ — держи до последней' : 'РЫВОК с линии' };
-  if (move === 'trap') return { name: 'КАМЕННЫЙ КАПКАН', counter: 'РЫВОК поперёк — к Регенту или от него' };
+  if (move === 'trap') return { name: 'КАМЕННЫЙ КАПКАН', counter: 'РЫВОК к Регенту или от него' };
   const name = kind === 'slam' ? 'УДАР ЛАДОНЬЮ' : kind === 'orb' ? 'СФЕРА' : kind === 'nova' ? 'НОВА' : 'АТАКА';
   let counter;
   if (kind === 'slam') counter = blockable ? 'ЩИТ или РЫВОК из круга' : 'РЫВОК — уйди из круга';

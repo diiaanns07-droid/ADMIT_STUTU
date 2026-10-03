@@ -915,6 +915,10 @@ function shortRaw(raw) {
 
 function telegraphText(tg) {
   const block = tg.blockable === true;
+  // [W5-СЛОЖНОСТЬ] составные приёмы «Сложной» и «Кошмара»
+  if (tg.move === 'double') return 'Двойной удар: уйдите из круга — и из второго.';
+  if (tg.move === 'volley') return block ? 'Залп сфер: держите щит до последней.' : 'Залп сфер: уходите с линии рывком.';
+  if (tg.move === 'trap') return 'Каменный капкан: рывком к Регенту или от него.';
   switch (tg.kind) {
     case 'slam':
       return block ? 'Регент бьёт ладонью: уйдите из круга или держите щит.' : 'Регент бьёт ладонью: уйдите из круга.';
@@ -3543,7 +3547,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setClass(boss, 'is-stage2', stage2);
         setClass(boss, 'is-dead', !!b && b.action === 'dead');
         // [W5-СЛОЖНОСТЬ] уровень боя — из снимка (у «Испытания» своя сложность — без значка)
-        const lv = s && typeof s.difficulty === 'string' && DIFFICULTY_NAMES[s.difficulty] ? s.difficulty : null;
+        const lv = s && s.mode !== 'pvp' && typeof s.difficulty === 'string' && DIFFICULTY_NAMES[s.difficulty] ? s.difficulty : null;   // в дуэли — без значка
         setHidden(diffBadge, !lv);
         if (lv) {
           setText(diffBadge, DIFFICULTY_NAMES[lv].name);

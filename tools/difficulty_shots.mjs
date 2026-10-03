@@ -4,10 +4,13 @@
 //   03_hard_battle     — бой на «Сложной»: значок у полосы Регента, «!» и подпись нового приёма (залп / двойной удар);
 //   04_nightmare_trap  — «Кошмар»: «Каменный капкан» — несколько кругов на полу;
 //   05_victory_normal  — победа на «Обычной»: сложность, очки, «попробуй «Сложную»!», зал славы дня, кнопка;
-//   06_defeat_hard     — поражение на «Сложной»: совет и кнопка «Полегче: «Обычная»».
-// node tools/difficulty_shots.mjs [--out docs/screenshots/w5-difficulty] [--only 01,03] [--chromium путь]
-import { mkdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+//   06_defeat_hard     — поражение на «Сложной»: совет и кнопка «Полегче: «Обычная»»;
+//   07_video           — видео «Кошмара» (--video путь.mp4): капкан, залп, двойной удар — кадр в кадр, 30 к/с.
+// node tools/difficulty_shots.mjs [--out docs/screenshots/w5-difficulty] [--only 01,03] [--video docs/video/w5_nightmare.mp4] [--chromium путь]
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join, resolve, dirname } from 'node:path';
 import { HERE, sleep, args, loadPlaywright, chromiumPath, startServer, launchBrowser, openGame } from './visual_common.mjs';
 
 const A = args();
@@ -90,7 +93,8 @@ try {
       await sleep(800);
       report.victory = { ok: r.ok, steps: r.n, ...(await g.page.evaluate(() => ({
         rows: [...document.querySelectorAll('.ao-panel--victory .ao-stat')].filter((x) => !x.hidden).map((x) => x.textContent.trim()),
-        next: (document.querySelector('.ao-panel--victory .ao-tip--next') || {}).textContent || '',
+        lead: (document.querySelector('.ao-panel--victory .ao-lead') || {}).textContent || '',
+        level: (document.querySelector('.ao-panel--victory .ao-result__levelline') || {}).textContent || '',
         btn: (document.querySelector('.ao-panel--victory .ao-result__level') || {}).textContent || '',
         hall: [...document.querySelectorAll('.ao-panel--victory .ao-fhall__row')].map((x) => x.textContent.trim()),
       }))) };
@@ -112,6 +116,32 @@ try {
       }))) };
       log(`  поражение: ${JSON.stringify(report.defeat)}`);
       await shot(g, '06_defeat_hard');
+    });
+  }
+  if (want('07')) {
+    const OUTV = resolve(HERE, A.of('--video', 'docs/video/w5_nightmare.mp4'));
+    await session({ difficulty: 'nightmare' }, { levels: { nightmare: { bossHp: 4, bossDamage: 0.05 } } }, async (g) => {
+      await g.toBattle();
+      await g.walkToBoss();
+      const dir = mkdtempSync(join(tmpdir(), 'w5v-'));
+      let n = 0;
+      const rec = async (count) => {
+        for (let i = 0; i < count; i++) { await g.step(1); await g.page.screenshot({ path: join(dir, `${String(n++).padStart(5, '0')}.jpg`), type: 'jpeg', quality: 85 }); }
+      };
+      await g.page.keyboard.down('KeyJ');
+      const seen = [];
+      for (const move of ['trap', 'volley', 'double']) {
+        const w = await g.stepUntil(`(s) => s && s.telegraphs.some((t) => t.move === '${move}' && t.remaining > 0.5)`, { max: 600, ms: 100 });
+        if (!w.ok) { log(`  видео: не дождались ${move}`); continue; }
+        await rec(105);   // 3,5 с: замах, «!», удар
+        seen.push(move);
+      }
+      await g.page.keyboard.up('KeyJ');
+      mkdirSync(dirname(OUTV), { recursive: true });
+      execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', '30', '-i', join(dir, '%05d.jpg'), '-vf', 'scale=1280:-2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '28', '-movflags', '+faststart', OUTV]);
+      rmSync(dir, { recursive: true, force: true });
+      report.video = { file: OUTV, frames: n, moves: seen };
+      log(`  видео: ${OUTV} (${n} кадров: ${seen.join(', ')})`);
     });
   }
 } finally {

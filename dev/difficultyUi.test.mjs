@@ -80,6 +80,16 @@ test('HUD: несколько кругов («Каменный капкан») �
   assert(has(away, /вы вне круга/), 'герой вне всех кругов');
 });
 
+test('HUD: финал боя — «Регент повержен · время боя · «Сложная»»', () => {
+  const fc = fakeCanvas();
+  const hud = createBattleHud({ canvas: fc.canvas });
+  const s = { ...snap([]), status: 'victory', boss: { position: { x: 0, y: 0, z: 0 }, hp: 0, maxHp: 12000, action: 'dead', stage: 2 } };
+  const f = (events) => hud.frame({ dtReal: 1 / 60, timeScale: 1, screen: 'playing', snapshot: s, events, input: null, project, viewport: { w: 1366, h: 768 }, intro: { active: false, t: 0, duration: 5 }, settings: {}, resumeLeftMs: 0, pois: [], coach: null, layout: null });
+  f([{ id: 'v1', type: 'victory', position: { x: 0, y: 3, z: 0 }, data: { time: 272 } }]);
+  for (let i = 0; i < 20; i++) f([]);
+  assert(has(fc.texts, /Регент повержен · время боя 4:32 · «Сложная»/), fc.texts.filter((t) => /Регент/.test(t)).join(' | '));
+});
+
 test('очки: обычный бой — урон на 1000 HP Регента, множитель «Сложная» ×1,5 и «Кошмар» ×2 отдельной строкой', () => {
   const T = { damage: 12000, maxCombo: 20, accuracy: 80, gestures: 20, magic: 2, magicKinds: 1, ultimates: 2 };
   const mk = (lv, maxHp, mul) => {

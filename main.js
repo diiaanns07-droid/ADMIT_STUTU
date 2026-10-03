@@ -1333,25 +1333,23 @@ function diffInfo() {
 function finishFight(win) {
   if (chal.fight || chal.session.active || (pvpCtl && pvpCtl.active)) return;
   const r = challengeResult('fight');
-  let extra = {};
+  let extra = {}, hall = [];
   if (win && DIFFICULTY_NAMES[r.difficulty]) {
     const h = chal.fightHall.add({ ...r, name: '' });
     extra = { place: h.place, total: h.total, isRecord: h.isRecord && h.total > 1, entryId: h.entry.id };
+    // строки зала для экрана итогов — один раз (не читать хранилище каждый кадр): топ-5 и своё место
+    const all = chal.fightHall.all();
+    const me = all.findIndex((e) => e.id === h.entry.id);
+    hall = all.map((e, i) => i).filter((i) => i < 5 || i === me)
+      .map((i) => { const e = all[i]; return { id: e.id, place: i + 1, score: e.score, diff: e.diff, time: e.sec, heroName: (HEROES[e.hero] || {}).name || '', name: e.name }; });
   }
-  chal.fight = { ...r, ...extra };
+  chal.fight = { ...r, ...extra, hall };
 }
 // [W5-СЛОЖНОСТЬ] итоги обычного боя для экрана: уровень, множитель, итог и зал славы (топ-5 и своё место)
 function fightView() {
   const d = diffInfo();
   const end = app.screen === 'victory' || app.screen === 'defeat';
-  let hall = [];
-  if (app.screen === 'victory' && chal.fight) {
-    const all = chal.fightHall.all();
-    const me = chal.fight.entryId ? all.findIndex((e) => e.id === chal.fight.entryId) : -1;
-    const idx = all.map((e, i) => i).filter((i) => i < 5 || i === me);
-    hall = idx.map((i) => { const e = all[i]; return { id: e.id, place: i + 1, score: e.score, diff: e.diff, time: e.sec, heroName: (HEROES[e.hero] || {}).name || '', name: e.name }; });
-  }
-  return { level: d.level, scoreMul: d.scoreMul, result: end ? chal.fight : null, hall };
+  return { level: d.level, scoreMul: d.scoreMul, result: end ? chal.fight : null, hall: app.screen === 'victory' && chal.fight ? chal.fight.hall : [] };
 }
 // конец попытки: итог → зал славы дня (имя впишут на экране итогов) → постер
 function finishChallenge() {
