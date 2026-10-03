@@ -171,7 +171,7 @@ export const RIGS = Object.freeze({ mixamo: RIG, kaykit: RIG_KAYKIT });
 // Так же — колено и голень (knee): выпуклая оболочка сетки бедра и голени (поза на колене).
 //   soleMarkers(THREE, vrm) → { L: [{ node, p, mesh, i }], R: [...], restY, bones, fast, knee } | null (нет костей стоп
 //                             или сетки); fast, knee — наборы pointTerms для termsLow
-//   termsLow(f, res) → нижняя точка набора в мире ([L, R, min] в res)
+//   termsLow(f, res) → нижняя точка набора в мире ([L, R, min] в res); termsLowSide(f, s, res) — одна нога в res[s]
 //   soleLowFast(m, res) → нижняя точка подошвы в мире ([L, R, min] в res): те же вершины сетки, но по нормализованным
 //                         костям (точно, без humanoid.update и перемножения матриц, без аллокаций) — для кадра игры
 //   soleHeightFast(m, out?) → то же числом (перенос клипов, проверки)
@@ -364,8 +364,12 @@ function pointTerms(THREE, H, m) {
   order.forEach((i, j) => { re[i] = j; });
   for (let j = 0; j < term.length; j += 5) term[j] = re[term[j]];
   const sorted = order.map((i) => nodes[i]);
+  // сторона узла: 0/1 — только точки одной ноги на нём, 2 — общий (таз)
+  const ns = new Uint8Array(sorted.length);
+  for (let p = 0; p + 1 < pt.length; p++) for (let j = pt[p] * 5; j < pt[p + 1] * 5; j += 5) ns[term[j]] |= side[p] ? 2 : 1;
   return {
-    nodes: sorted, chain: Uint8Array.from(sorted.map((n) => (sorted.includes(n.parent) ? 0 : 1))),
+    nodes: sorted, nodeSide: Uint8Array.from(ns, (b) => (b === 1 ? 0 : b === 2 ? 1 : 2)),
+    chain: Uint8Array.from(sorted.map((n) => (sorted.includes(n.parent) ? 0 : 1))),
     term: Float64Array.from(term), pt: Int32Array.from(pt), side: Uint8Array.from(side), res: new Float64Array(3),
   };
 }
@@ -403,6 +407,24 @@ export function termsLow(f, res) {
   return res;
 }
 export function soleLowFast(m, res) { return termsLow(m.fast, res); }
+// Одна нога (s: 0 — левая, 1 — правая) в res[s]: узлы этой стороны — только от родителя (без цепочки до корня), для IK
+// ног слоя поз, где бедро, голень и стопа уже обновлены, а носок — нет
+export function termsLowSide(f, s, res) {
+  const N = f.nodes, T = f.term, P = f.pt, sd = f.side, ns = f.nodeSide;
+  for (let i = 0; i < N.length; i++) if (ns[i] === s) N[i].updateWorldMatrix(false, false);
+  let lo = Infinity;
+  for (let p = 0, n = P.length - 1; p < n; p++) {
+    if (sd[p] !== s) continue;
+    let y = 0;
+    for (let j = P[p] * 5, end = P[p + 1] * 5; j < end; j += 5) {
+      const e = N[T[j]].matrixWorld.elements;
+      y += e[1] * T[j + 1] + e[5] * T[j + 2] + e[9] * T[j + 3] + e[13] * T[j + 4];
+    }
+    if (y < lo) lo = y;
+  }
+  res[s] = lo;
+  return res;
+}
 // То же числом (перенос клипов, проверки); нет быстрых точек — точный скиннинг (сырые кости — в позе кадра)
 export function soleHeightFast(m, out = null) {
   if (!m || !m.fast) return soleHeightSkinned(m, out);

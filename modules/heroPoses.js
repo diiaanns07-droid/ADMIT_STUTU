@@ -25,7 +25,7 @@
 // в длинах руки, в «боковых» осях: o — наружу (у левой +x, у правой −x), u — вверх, f — вперёд.
 
 import { HERO_SPELL_POSE } from '../core/handMagic.js';
-import { termsLow } from './vrmKit.js';   // [W5-ПОЛ] нижняя точка колена и голени (точки сетки ног)
+import { termsLow, termsLowSide } from './vrmKit.js';   // [W5-ПОЛ] нижняя точка подошвы, колена и голени (точки сетки ног)
 
 export const POSES_VERSION = 'W4-poses-1';
 
@@ -595,8 +595,10 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     rotateWorld(b, _q);
     c.updateWorldMatrix(false, false);
   }
-  // [W5-ПОЛ] нижняя точка подошвы стопы i (0 — левая, 1 — правая) в мире; кость стопы уже обновлена, носок — её дочь
+  // [W5-ПОЛ] нижняя точка подошвы стопы i (0 — левая, 1 — правая) в мире; бедро, голень и стопа уже обновлены (ik2).
+  // Точно — по вершинам сетки (vrmKit.termsLowSide, та же подошва, что у heroModel); без них — жёсткие точки на стопе
   function soleLow(i) {
+    if (rig.soles.fast) return termsLowSide(rig.soles.fast, i, _kr)[i];
     const list = rig.soles[i ? 'R' : 'L'], f = rigLegs[i][2];
     let lo = Infinity;
     for (let j = 0; j < list.length; j++) {
