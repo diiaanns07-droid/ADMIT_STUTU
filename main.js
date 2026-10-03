@@ -2208,7 +2208,7 @@ window.__ASHEN__ = Object.freeze({
   coachEnd: () => (coachEnd ? JSON.parse(JSON.stringify(coachEnd)) : null), // [ТВИСТ «ОШИБКА»] итог боя со сравнением
   activeHint: () => { const a = getActiveHint(); return a ? { ...a, pictogram: a.pictogram ? a.pictogram.length : 0 } : null; },
   hero: () => (heroModel ? heroModel.state() : null),
-  heroShowcase: () => (heroShowcase ? { weight: heroShowcase.weight, zoom: +heroShowcase.zoom.toFixed(2), lights: heroShowcase.group.children.filter((o) => o.isLight).map((l) => [l.name, +l.intensity.toFixed(1)]) } : null), // [HERO] QA
+  heroShowcase: () => (heroShowcase ? { weight: heroShowcase.weight, zoom: +heroShowcase.zoom.toFixed(2), lights: heroShowcase.group.children.filter((o) => o.isLight).map((l) => [l.name, +l.intensity.toFixed(1)]), stage: heroShowcase.stage || null } : null), // [HERO] QA; [W4-ВИТРИНА] stage — сцена витрины
   heroAnchors: () => { if (!heroModel || !heroModel.getAnchors) return null; const a = heroModel.getAnchors(), v = new THREE.Vector3(); return Object.fromEntries(Object.entries(a).map(([k, o]) => { o.getWorldPosition(v); return [k, { x: +v.x.toFixed(3), y: +v.y.toFixed(3), z: +v.z.toFixed(3), attached: !!o.parent }]; })); }, // [HERO] C5
   net: () => (netSession ? netSession.debug() : null),             // [NET]
   netSession: () => netSession,                                    // [NET] для тестов и №3
