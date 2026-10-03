@@ -255,7 +255,7 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
   let stage = null, reflectKey = '';
   try { stage = createMenuStage({ THREE, scene, quality: settings.quality, reducedMotion: !!settings.reducedMotion, prebuild: true }); } catch (e) { console.warn('[W4-ВИТРИНА] сцена витрины', e); stage = null; }
   function stageTick(dt, active, camera, w, fxc, zc) {
-    if (!stage) return;
+    if (!stage) { if (heroModel && heroModel.setFloorLift) heroModel.setFloorLift(0); return; }   // [W5-ПОЛ]
     try {
       if (stage.quality !== settings.quality) stage.setQuality(settings.quality);
       stage.setReducedMotion(!!settings.reducedMotion);
@@ -268,7 +268,8 @@ export function createHeroShowcase({ THREE, scene, heroRoot, heroModel = null, g
       V.appear = S.ap || 0;
       V.loading = S.loadT; V.fogColor = scene.fog && scene.fog.color ? scene.fog.color : null; V.zoom = zc; V.orbit = S.orbit || 0;
       stage.update(dt, V);
-    } catch (e) { console.warn('[W4-ВИТРИНА] сцена витрины отключена', e); try { stage.dispose(); } catch (err) { /* ignore */ } stage = null; }
+      if (heroModel && heroModel.setFloorLift) heroModel.setFloorLift(stage.floorY || 0);   // [W5-ПОЛ] герой — на полу витрины
+    } catch (e) { console.warn('[W4-ВИТРИНА] сцена витрины отключена', e); try { stage.dispose(); } catch (err) { /* ignore */ } stage = null; if (heroModel && heroModel.setFloorLift) heroModel.setFloorLift(0); }
   }
   const V = { w: 0, active: false, heroPos: null, heroYaw: 0, camera: null, fx: null, element: '', key: null, appear: 0, loading: 0, fogColor: null, zoom: 0, orbit: 0 };
 

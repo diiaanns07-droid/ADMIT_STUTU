@@ -3057,7 +3057,11 @@ float ashPuddle( vec2 xz ) {
     if (r < 12.95) return -0.9;
     if (elfVillage) { const b = elfVillage.groundAt(x, z); if (b !== null) return Math.max(b, terrainH(x, z)); } // горбатый мостик
     if (brightForest) { const b = brightForest.groundAt(x, z); if (b !== null) return Math.max(b, terrainH(x, z)); } // [FOREST] мостики через ручей
-    return terrainH(x, z);
+    // [W5-ПОЛ] поверх рельефа в зонах лежит свой видимый пол (луг деревни +3,5 см, подстилка леса +5 см) — герой на нём
+    let lift = 0;
+    if (elfVillage && elfVillage.floorLift) lift = Math.max(lift, elfVillage.floorLift(x, z));
+    if (brightForest && brightForest.floorLift) lift = Math.max(lift, brightForest.floorLift(x, z));
+    return terrainH(x, z) + lift;
   }
   // [ASHEN_V3] ходить можно до скального вала у края мира и по мелководью озера
   function layoutWalkable(x, z) {
@@ -4508,8 +4512,16 @@ float ashPuddle( vec2 xz ) {
     const pos = vec3(p && p.position, DEF_HERO.x, DEF_HERO.y, DEF_HERO.z);
     const bpos = vec3(b && b.position, 0, 0, 0);
     // [V4] корпус по высоте сглажен (ступени, кочки не дёргают героя); стопы IK встают на настоящую землю
+    // [W5-ПОЛ] сглаживается только скачок земли (ступень: быстрее 2,5 м/с по вертикали); плавный склон корень
+    // повторяет сразу — иначе на подъёме он отставал на v·уклон/16 (до 10 см на бегу), а у героя-модели нет IK
+    // стоп по земле, и стопы уходили в склон
     if (!Number.isFinite(hs.rootY) || Math.abs(pos.y - hs.rootY) > 1.2 || dt <= 0) hs.rootY = pos.y;
-    else hs.rootY += (pos.y - hs.rootY) * dampK(pos.y > hs.rootY ? 16 : 11, dt);
+    else {
+      const dg = Number.isFinite(hs.groundY) ? pos.y - hs.groundY : 0;
+      if (Math.abs(dg) <= Math.max(0.02, 2.5 * dt)) hs.rootY += dg;
+      hs.rootY += (pos.y - hs.rootY) * dampK(pos.y > hs.rootY ? 16 : 11, dt);
+    }
+    hs.groundY = pos.y;
     heroRoot.position.set(pos.x, hs.rootY, pos.z);
     const faceYaw = Math.atan2(bpos.x - pos.x, bpos.z - pos.z);
     const tYaw = num(p && p.yaw, faceYaw) + num(wc.yawOffset, 0);

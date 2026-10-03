@@ -23,7 +23,7 @@
 // heroRoot не задан — экземпляр создаёт свой root (для удалённого игрока) и сам ставит его по snapLike.player.
 // snapLike: нужен только { player: { position, yaw, velocity, action, hp, … как в snapshot } }.
 
-import { loadVRM, loadHumanoidGLB, retargetClip, createGltfLoader } from './vrmKit.js';
+import { loadVRM, loadHumanoidGLB, retargetClip, createGltfLoader, soleMarkers, soleHeight } from './vrmKit.js';   // [W5-ПОЛ] подошва
 import { createHeroPoses, rigFace, signaturePose, SIGNATURES } from './heroPoses.js'; // [W4-ПОЗЫ]
 
 // Карточки героев: имя, класс, стихия и три строки описания — для меню №8 и витрины (heroShowcase).
@@ -440,7 +440,10 @@ export function createHeroModel({
       const wrapG = new THREE.Group(); // поворот корпуса, наклон и масштаб — на обёртке
       wrapG.name = 'hero-model';
       wrapG.scale.setScalar(k);
-      vrm.scene.position.y = -box.min.y;
+      // [W5-ПОЛ] на пол — подошвой (нижние вершины стоп в покое), а не низом общей рамки: в рамку попадает
+      // всё, что ниже стоп (подол, плащ), и герой встал бы на него. Нет сетки на костях стоп — по рамке, как раньше.
+      const soles = soleMarkers(THREE, vrm);
+      vrm.scene.position.y = -(soles ? soles.restY : box.min.y);
       wrapG.add(vrm.scene);
       const mixer = new THREE.AnimationMixer(vrm.scene);
       const legNames = new Set(LEG_VRM.map((b) => { const n = vrm.humanoid.getNormalizedBoneNode(b); return n && n.name; }).filter(Boolean));
@@ -484,7 +487,7 @@ export function createHeroModel({
       const tracked = new Set();
       for (const clip of Object.values(lib.clips)) for (const tr of clip.tracks) tracked.add(tr.name.split('.')[0]);
       const free = Object.values(bones).filter((b) => b && !tracked.has(b.name));
-      cur = { model: wrapG, vrm, mixer, full, upper, lower, midR, stride: lib.stride, loops: lib.loops, bones, free, scale: k, def, gear: null, shade: null, url, hands, rig: lib.rig };
+      cur = { model: wrapG, vrm, mixer, full, upper, lower, midR, stride: lib.stride, loops: lib.loops, bones, free, scale: k, def, gear: null, shade: null, url, hands, rig: lib.rig, soles };
       tm.setup = nowMs() - tm.t0;
       // оболочка: реалистичные материалы (modules/heroShading.js) и снаряжение (modules/heroGear.js)
       await dressUp(token);
@@ -808,7 +811,7 @@ export function createHeroModel({
     if (!cur) return;
     const staff = !!(cur.gear && cur.gear.staffTip), bow = !!(cur.gear && cur.gear.bow);
     poses.bind({
-      bones: cur.bones, hands: cur.hands, vrm: cur.vrm, model: cur.model, height: cur.def.height || 1.75, orientHand,
+      bones: cur.bones, hands: cur.hands, vrm: cur.vrm, model: cur.model, height: cur.def.height || 1.75, orientHand, soles: cur.soles,   // [W5-ПОЛ]
       // древко посоха: точка хвата и направление к навершию (мир) — для второй руки на древке
       staffAxis(outP, outDir) {
         const g = cur && cur.hands && cur.hands.staffGrip, tip = cur && cur.gear && cur.gear.staffTip;
@@ -1180,6 +1183,7 @@ export function createHeroModel({
     if (cur.bones.hips) (cur.cleanHipsP || (cur.cleanHipsP = new THREE.Vector3())).copy(cur.bones.hips.position);   // [W4-ПОЗЫ] сдвиг таза
   }
   function restoreClean() {
+    cur.model.position.y = S.floorLift || 0;   // [W5-ПОЛ] подъём прошлого кадра (groundFeet) — заново; пол сцены выше корня — на него
     if (!cur.clean) return;
     const L = cur.touched;
     for (let i = 0; i < L.length; i++) L[i].quaternion.copy(cur.clean[i]);
@@ -1384,10 +1388,28 @@ export function createHeroModel({
     vrmTick(dt);
   }
 
+  // [W5-ПОЛ] Подошва не ниже пола. После всех слоёв кадра (клип, позы, лук, наклон обёртки на бегу и отдача от
+  // удара — обёртка поворачивается вокруг точки пола между стопами, и стопа впереди или позади уходила вниз)
+  // нижняя точка подошвы (soleMarkers) ниже пола героя — вся модель поднимается на столько же. Только вверх:
+  // полёт бега и подскок рывка — из клипа, их не прижимаем. Пол — начало корня героя (высота земли под ним)
+  // плюс подъём пола сцены (setFloorLift: пол витрины меню).
+  const _gf = new THREE.Vector3();
+  function groundFeet() {
+    const m = cur.soles;
+    if (!m) { S.lift = 0; return; }
+    const nodes = m.nodes || (m.nodes = [...new Set([...m.L, ...m.R].map((x) => x.node))]);
+    for (const n of nodes) n.updateWorldMatrix(true, false);
+    const fl = S.floorLift || 0;
+    const pen = root.getWorldPosition(_gf).y + fl - soleHeight(m);
+    S.lift = pen > 1e-4 ? pen : 0;
+    if (S.lift) cur.model.position.y = fl + S.lift;
+  }
+
   // VRM: моргание раз в 2–5 с, обновление (нормализованный скелет → меш, пружины волос и одежды), ткань
   function vrmTick(dt) {
     const vrm = cur && cur.vrm;
     if (!vrm) return;
+    groundFeet();   // [W5-ПОЛ]
     // моргание: быстро закрыть (35%), медленнее открыть; изредка — двойное
     S.blinkT -= dt;
     if (S.blinkT <= 0) { S.blink = 0.2; S.blinkT = Math.random() < 0.15 ? 0.32 : 2 + Math.random() * 3.5; }
@@ -1445,6 +1467,45 @@ export function createHeroModel({
     else if (holdName === 'stance') stopAct(0.4);
   }
 
+  // [W5-ПОЛ] QA: высота костей стоп и носков, нижняя точка подошвы каждой стопы (по вершинам сетки, точно) и по
+  // точкам soleMarkers (как считает перенос клипов) — в мире, вместе с x, z нижней точки (пол меряется под ней)
+  function feet() {
+    if (!cur || !S.ready) return null;
+    cur.model.updateMatrixWorld(true);
+    const H = cur.vrm.humanoid, v = new THREE.Vector3();
+    const by = (n) => { const b = H.getNormalizedBoneNode(n); return b ? +b.getWorldPosition(v).y.toFixed(4) : null; };
+    if (!cur.footV) {
+      cur.footV = [];
+      const sides = [['L', 'left'], ['R', 'right']].map(([k, s]) => [k, [H.getRawBoneNode ? H.getRawBoneNode(s + 'Foot') : null, H.getRawBoneNode ? H.getRawBoneNode(s + 'Toes') : null].filter(Boolean)]);
+      cur.vrm.scene.traverse((o) => {
+        if (!o.isSkinnedMesh || !o.skeleton || !o.geometry.attributes.skinIndex) return;
+        const g = o.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+        for (const [k, bs] of sides) {
+          const ids = bs.map((b) => o.skeleton.bones.indexOf(b)).filter((i) => i >= 0);
+          if (!ids.length) continue;
+          const list = [];
+          for (let i = 0; i < g.attributes.position.count; i++) { let w = 0; for (let j = 0; j < 4; j++) if (ids.includes(si.getComponent(i, j))) w += sw.getComponent(i, j); if (w > 0.5) list.push(i); }
+          if (list.length) cur.footV.push({ o, k, list });
+        }
+      });
+    }
+    const low = { L: { y: Infinity, x: 0, z: 0 }, R: { y: Infinity, x: 0, z: 0 } };
+    for (const { o, k, list } of cur.footV) {
+      if (!o.visible) continue;
+      for (const i of list) { o.getVertexPosition(i, v); v.applyMatrix4(o.matrixWorld); if (v.y < low[k].y) low[k] = { y: v.y, x: v.x, z: v.z }; }
+    }
+    const mk = {};
+    if (cur.soles) soleHeight(cur.soles, mk);
+    const r4 = (x) => (Number.isFinite(x) ? +x.toFixed(4) : null);
+    root.getWorldPosition(v);
+    return {
+      hero: S.hero, root: r4(v.y), footL: by('leftFoot'), footR: by('rightFoot'), toesL: by('leftToes'), toesR: by('rightToes'), hips: by('hips'),
+      soleL: r4(low.L.y), soleR: r4(low.R.y), sole: r4(Math.min(low.L.y, low.R.y)),
+      atL: [r4(low.L.x), r4(low.L.z)], atR: [r4(low.R.x), r4(low.R.z)],
+      markL: r4(mk.L), markR: r4(mk.R), act: actName, pose: poses.active || '', loco: (() => { let n = 'Idle', w = -1; for (const l of LOCO) if (S.wLoco[l] > w) { w = S.wLoco[l]; n = l; } return n; })(),
+    };
+  }
+
   function dispose() {
     S.disposed = true;
     clearFallback();
@@ -1480,6 +1541,8 @@ export function createHeroModel({
     heroFx: (id) => (HEROES[id] && HEROES[id].fx) || null,
     // жест «выхода» в меню: клип один раз на всё тело, затем снова стойка
     setGaze(k) { const g = k > 0.5 ? 1 : 0; if (g !== (S.gaze || 0)) { S.gaze = g; if (g) S.lookT = 0; } },
+    // [W5-ПОЛ] видимый пол сцены выше корня героя на h м (витрина меню: пол над плитами арены) — модель стоит на нём
+    setFloorLift(h) { S.floorLift = clamp(num(h), 0, 0.1); },
     flourish(name = 'CastRaise') {
       // [W4-ПОЗЫ] жест визитки (у лучницы — новый выстрел-натяг), клип поверх визитки не играем
       if (cur && S.inMenu && posesOn() && poses.signature) { if (!poses.flourish()) S.sigDrawT = 0; S.sigIdle = 0; return; }
@@ -1494,6 +1557,7 @@ export function createHeroModel({
     // остаточные образы рывка своей формы (modules/heroGhost.js) — effects.js тогда не рисует свой силуэт-заглушку
     get afterimages() { return !!(cur && cur.ghost && S.ready && S.lod < 2); },
     get shade() { return cur ? cur.shade : null; },   // QA
+    feet,   // [W5-ПОЛ] QA: стопы и подошва в мире
     get mixer() { return cur ? cur.mixer : null; },
     state: () => {
       let loco = 'Idle', wMax = -1;
@@ -1508,6 +1572,7 @@ export function createHeroModel({
         procedural: heroBody ? !!heroBody.visible : null,   // [PERF] QA: виден ли процедурный герой мира (плащ с руной)
         loading: !!S.loading, fallback: !!S.fallback,       // [HERO] модель грузится / процедурный подменяет её (долгая загрузка)
         poses: poses.state(), face: cur && cur.face ? cur.face.bones : 0,   // [W4-ПОЗЫ]
+        lift: +(S.lift || 0).toFixed(4),   // [W5-ПОЛ] на сколько модель приподнята, чтобы подошва не ушла в пол
       };
     },
   };

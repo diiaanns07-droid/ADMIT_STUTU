@@ -479,6 +479,7 @@ export function createBrightForest({
 
   return {
     root, colliders, groundAt, update, setQuality, configure, dispose, drainEvents, mood, plan, map,
+    floorLift: (x, z) => forestFloorLift(BF, plan, x, z),   // [W5-ПОЛ] высота подстилки над рельефом
     center: plan.center, radius: BF.r,
     get weight() { return state.weight; },
     get inside() { return state.inside; },
@@ -594,6 +595,14 @@ function buildLight(ctx) {
 /* ------------------------------ Лесная подстилка ------------------------------ */
 // Сетка 1.2 м по зоне точно по рельефу (+5 см): мох и трава с пятнами, тропы (утоптанная земля с
 // камешками), влажно у воды, солнечные пятна сквозь листву (дрожат на ветру). Край зоны — дизеринг.
+// [W5-ПОЛ] подстилка лежит на FLOOR_LIFT выше рельефа (иначе рельеф с другой сеткой проступал бы сквозь неё); у края
+// зоны тает — floorLift(x, z) повторяет её высоту для земли героя (world.layoutGroundY), иначе стопы уходили в неё на 5 см
+export const FLOOR_LIFT = 0.05;
+export function forestFloorLift(BF, plan, x, z) {
+  const R = BF.r + 24, d = Math.hypot(x - BF.x, z - BF.z);
+  if (d > R || plan.waterDist(x, z) < -1.6) return 0;
+  return FLOOR_LIFT * (1 - smoothstep(R - 20, R, d));
+}
 function buildFloor(ctx) {
   const { THREE, BF, plan, gy, map } = ctx;
   const R = BF.r + 24, step = 1.2, N = Math.ceil((2 * R) / step);
@@ -604,7 +613,7 @@ function buildFloor(ctx) {
     const wd = plan.waterDist(x, z);
     if (wd < -1.6) continue;                              // глубоко под водой земля не нужна
     id[j * (N + 1) + i] = pos.length / 3;
-    pos.push(x, gy(x, z) + 0.05, z);
+    pos.push(x, gy(x, z) + FLOOR_LIFT, z);   // [W5-ПОЛ]
     const s = map.sample(x, z);
     const fade = 1 - ctx.smoothstep(R - 20, R, d);
     let shade = 0;

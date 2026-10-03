@@ -260,7 +260,7 @@ function signatureGesture(id, base) {
 
 // ---------------------------------------------------------------- слой поз героя
 // rig: { bones (нормализованные, + ноги), hands (heroModel.setupHands), model, vrm, orientHand(h, dir, thumb, w),
-//        female, staff: () => bool, bowRest: () => bool }
+//        female, staff: () => bool, bowRest: () => bool, soles? } — [W5-ПОЛ] soles: точки подошвы (vrmKit.soleMarkers)
 export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', female = false, stance = 'staff' } = {}) {
   const V = () => new THREE.Vector3();
   const Q = () => new THREE.Quaternion();
@@ -268,6 +268,7 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
   const _p = V(), _s = V(), _a = V(), _b = V(), _c = V(), _d = V(), _m = V(), _t = V(), _u = V(), _w = V(), _o = V(), _o2 = V();
   const footW = [V(), V()], footQ = [Q(), Q()], kneeW = [V(), V()], hipW = [V(), V()];
   const _ia = V(), _ib = V(), _ic = V(), _id = V(), _im = V(), _it = V(), _iu = V(), _iw = V();   // только для ik2
+  const _sp = V();   // [W5-ПОЛ] точка подошвы
   // aout — смесь слоя действий (перекрёст только по нему: иначе смещения покоя в первом кадре удвоились бы),
   // out — итог кадра (действие + покой + вздрагивание)
   const out = new Float32Array(N), aout = new Float32Array(N), act = new Float32Array(N), idle = new Float32Array(N), prev = new Float32Array(N);
@@ -592,6 +593,18 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     rotateWorld(b, _q);
     c.updateWorldMatrix(false, false);
   }
+  // [W5-ПОЛ] нижняя точка подошвы стопы i (0 — левая, 1 — правая) в мире; кость стопы уже обновлена, носок — её дочь
+  function soleLow(i) {
+    const list = rig.soles[i ? 'R' : 'L'], f = rigLegs[i][2];
+    let lo = Infinity;
+    for (let j = 0; j < list.length; j++) {
+      const { node, p } = list[j];
+      if (node !== f) node.updateWorldMatrix(false, false);
+      const y = _sp.copy(p).applyMatrix4(node.matrixWorld).y;
+      if (y < lo) lo = y;
+    }
+    return lo;
+  }
   // вектор из «боковых» осей руки (o наружу, u, f) → оси героя → мир
   function sideDir(v, base, j, sgn, outV) { return outV.set(v[base + j] * sgn, v[base + j + 1], v[base + j + 2]); }
 
@@ -636,6 +649,7 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
     vrm.scene.getWorldQuaternion(_qm); _qmi.copy(_qm).invert();
     const legW = legsOn() && st.legOk ? clamp01(out[I.LEG]) : 0;
     const hipsMove = legW > 0.01 && B.hips && B.leftUpperLeg && B.rightUpperLeg && B.leftFoot && B.rightFoot;
+    const floorY = rig.model && rig.model.matrixWorld ? rig.model.matrixWorld.elements[13] : 0;   // [W5-ПОЛ] пол — начало обёртки
     // стопы до сдвига таза: где их поставил клип
     if (hipsMove) {
       const legs = rigLegs;
@@ -666,7 +680,9 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
         _w.set(0, 0, 1).applyQuaternion(_qm);
         _m.normalize().lerp(_w, 0.5).normalize();
         _u.copy(_m);
-        ik2(u, l, f, _t, _u, legW, 0.9995);
+        // [W5-ПОЛ] IK — всегда в цель (вес 1): сдвиг таза и шаг стопы уже взяты с весом legW; частичный поворот
+        // (прежний вес legW) тянул стопу вниз вместе с тазом — при переходе к колену поражения носок уходил в пол
+        ik2(u, l, f, _t, _u, 1, 0.9995);
         // стопа: прежний поворот в мире + разворот носка (рысканье) и наклон (колено поражения)
         l.matrixWorld.decompose(_p, _pq, _s);
         const yw = out[i ? I.FRYW : I.FLYW] * legW, pt = out[i ? I.FRP : I.FLP] * legW;
@@ -675,6 +691,16 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
         if (pt) { _w.set(1, 0, 0).applyQuaternion(_qm); _q1.setFromAxisAngle(_w, pt); _q.premultiply(_q1); }
         f.quaternion.copy(_pq.invert().multiply(_q));
         f.updateWorldMatrix(false, false);
+        // [W5-ПОЛ] подошва не ниже пола: нижняя точка стопы (rig.soles — точки подошвы heroModel) под полом (носок
+        // на колене, наклон стопы, шаг) — цель стопы выше на столько же, IK заново и тот же поворот стопы
+        const pen = rig.soles ? floorY - soleLow(i) : 0;
+        if (pen > 1e-4) {
+          _t.y += pen;
+          ik2(u, l, f, _t, _u, 1, 0.9995);
+          l.matrixWorld.decompose(_p, _pq, _s);
+          f.quaternion.copy(_pq.invert().multiply(_q));
+          f.updateWorldMatrix(false, false);
+        }
       }
     }
     // корпус: позвоночник, грудь, шея, голова (локально — у нормализованных костей покой единичный)

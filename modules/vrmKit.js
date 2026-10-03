@@ -153,12 +153,124 @@ const RIG_KAYKIT = [
   ['rightHand', 'wrist.r', 'full', 'hand.r', 'rightMiddleProximal', 'hand.r'],
   ['leftUpperLeg', 'upperleg.l', 'full', 'lowerleg.l', 'leftLowerLeg'],
   ['leftLowerLeg', 'lowerleg.l', 'full', 'foot.l', 'leftFoot'],
-  ['leftFoot', 'foot.l', 'full', 'toes.l', 'leftToes'],
+  // [W5-ПОЛ] стопа — дельтой от своего покоя, а не по направлению «стопа → носок» источника: у KayKit оно
+  // смотрит вниз на 46° (высокий голеностоп), у героев Quaternius — на 22–27°; совмещение покоя наклоняло
+  // каждую стопу носком вниз на 19–24°, и носки уходили в пол на 5–8 см. Носок источника — для опоры.
+  ['leftFoot', 'foot.l', 'delta', 'toes.l', 'leftToes'],
   ['rightUpperLeg', 'upperleg.r', 'full', 'lowerleg.r', 'rightLowerLeg'],
   ['rightLowerLeg', 'lowerleg.r', 'full', 'foot.r', 'rightFoot'],
-  ['rightFoot', 'foot.r', 'full', 'toes.r', 'rightToes'],
+  ['rightFoot', 'foot.r', 'delta', 'toes.r', 'rightToes'],
 ];
 export const RIGS = Object.freeze({ mixamo: RIG, kaykit: RIG_KAYKIT });
+
+// [W5-ПОЛ] Подошва модели: точки сетки стоп, которые в покое стоят на полу (самая нижняя вершина стопы, пятка,
+// носок, внутренний и внешний край — среди вершин не выше 12 мм над нижней), в осях нормализованных костей
+// стопы и носка. Пол модели в покое — нижняя из них (restY, в осях vrm.scene). Один раз на модель (кэш).
+//   soleMarkers(THREE, vrm) → { L: [{ node, p }], R: [...], restY } | null (нет костей стоп или сетки на них)
+//   soleHeight(m, out?) → нижняя точка подошвы в мире (кости — с актуальными matrixWorld); out = { L, R, min }
+const SOLES = new WeakMap();
+export function soleMarkers(THREE, vrm) {
+  if (SOLES.has(vrm)) return SOLES.get(vrm);
+  const H = vrm.humanoid;
+  const raw = (n) => (H.getRawBoneNode ? H.getRawBoneNode(n) : null) || H.getNormalizedBoneNode(n);
+  // покой: нормализованный скелет и сетка (сырые кости) — в позе привязки
+  if (H.resetNormalizedPose) H.resetNormalizedPose();
+  if (H.update) H.update();
+  vrm.scene.updateMatrixWorld(true);
+  const toScene = new THREE.Matrix4().copy(vrm.scene.matrixWorld).invert();
+  const v = new THREE.Vector3(), loc = new THREE.Vector3();
+  const sides = { L: { foot: raw('leftFoot'), toes: raw('leftToes'), nf: H.getNormalizedBoneNode('leftFoot'), nt: H.getNormalizedBoneNode('leftToes'), pts: [] },
+    R: { foot: raw('rightFoot'), toes: raw('rightToes'), nf: H.getNormalizedBoneNode('rightFoot'), nt: H.getNormalizedBoneNode('rightToes'), pts: [] } };
+  vrm.scene.traverse((o) => {
+    if (!o.isSkinnedMesh || !o.skeleton || !o.visible || !o.geometry || !o.geometry.attributes.skinIndex) return;
+    const bones = o.skeleton.bones, si = o.geometry.attributes.skinIndex, sw = o.geometry.attributes.skinWeight, n = o.geometry.attributes.position.count;
+    for (const S of Object.values(sides)) {
+      if (!S.foot || !S.nf) continue;
+      const iF = bones.indexOf(S.foot), iT = S.toes ? bones.indexOf(S.toes) : -1;
+      if (iF < 0 && iT < 0) continue;
+      for (let i = 0; i < n; i++) {
+        let wf = 0, wt = 0;
+        for (let j = 0; j < 4; j++) { const b = si.getComponent(i, j), w = sw.getComponent(i, j); if (b === iF) wf += w; else if (b === iT) wt += w; }
+        if (wf + wt < 0.5) continue;
+        o.getVertexPosition(i, v); v.applyMatrix4(o.matrixWorld);
+        loc.copy(v).applyMatrix4(toScene);
+        S.pts.push({ w: v.clone(), l: loc.clone(), toe: wt > wf });
+      }
+    }
+  });
+  let restY = Infinity;
+  for (const S of Object.values(sides)) for (const p of S.pts) restY = Math.min(restY, p.l.y);
+  if (!Number.isFinite(restY)) { SOLES.set(vrm, null); return null; }
+  const out = { L: [], R: [], restY, v: new THREE.Vector3() };
+  for (const [k, S] of Object.entries(sides)) {
+    if (!S.pts.length) continue;
+    let lo = Infinity;
+    for (const p of S.pts) lo = Math.min(lo, p.l.y);
+    const low = S.pts.filter((p) => p.l.y < lo + 0.012);
+    const pick = new Set([low.reduce((a, b) => (b.l.y < a.l.y ? b : a))]);
+    for (const ax of ['x', 'z']) { pick.add(low.reduce((a, b) => (b.l[ax] < a.l[ax] ? b : a))); pick.add(low.reduce((a, b) => (b.l[ax] > a.l[ax] ? b : a))); }
+    for (const p of pick) {
+      const node = p.toe && S.nt ? S.nt : S.nf;
+      out[k].push({ node, p: node.worldToLocal(p.w.clone()) });
+    }
+  }
+  SOLES.set(vrm, out);
+  return out;
+}
+export function soleHeight(m, out = null) {
+  if (!m) return NaN;
+  let min = Infinity;
+  for (const k of ['L', 'R']) {
+    let lo = Infinity;
+    for (const { node, p } of m[k]) {
+      const y = m.v.copy(p).applyMatrix4(node.matrixWorld).y;
+      if (y < lo) lo = y;
+    }
+    if (out) out[k] = lo;
+    if (lo < min) min = lo;
+  }
+  if (out) out.min = min;
+  return min;
+}
+
+const n0 = (clip, fps) => Math.max(2, Math.ceil(clip.duration * fps) + 1);   // кадров семплирования клипа
+
+// [W5-ПОЛ] Высота таза по опоре. Кадры, где стопа источника стоит (поднята над покоем не выше eps), — касание:
+// таз цели сдвигается по вертикали так, чтобы нижняя точка её подошвы была ровно на полу покоя. Между касаниями
+// (полёт бега, прыжок, подскок рывка) поправка идёт линейно от соседних касаний — полёт клипа сохраняется,
+// но подошва и там не ниже пола.
+// Скелет цели ставится в позу кадра (прямая кинематика нормализованных костей) и в конце возвращается в покой.
+function groundHips(THREE, vrm, bones, hips, qv, hp, lift, eps, soles, hipsParentInv) {
+  const n = lift.length, H = vrm.humanoid;
+  vrm.scene.updateMatrixWorld(true);
+  const rest = soleHeight(soles);
+  const corr = new Float32Array(n).fill(NaN), floor = new Float32Array(n);
+  for (let f = 0; f < n; f++) {
+    for (const b of bones) b.node.quaternion.fromArray(qv.get(b), f * 4);
+    hips.node.position.fromArray(hp, f * 3);
+    hips.node.updateMatrixWorld(true);
+    floor[f] = rest - soleHeight(soles);   // поправка, ставящая подошву ровно на пол
+    if (lift[f] <= eps) corr[f] = floor[f];
+  }
+  if (H.resetNormalizedPose) H.resetNormalizedPose();
+  vrm.scene.updateMatrixWorld(true);
+  // промежутки без касания — линейно между соседними касаниями (по краям — ближайшее); касаний нет — без поправки
+  let prev = -1;
+  for (let f = 0; f <= n; f++) {
+    if (f < n && Number.isNaN(corr[f])) continue;
+    for (let g = prev + 1; g < f; g++) {
+      corr[g] = prev < 0 ? (f < n ? corr[f] : 0) : f >= n ? corr[prev] : corr[prev] + (corr[f] - corr[prev]) * ((g - prev) / (f - prev));
+    }
+    prev = f;
+  }
+  const d = new THREE.Vector3();
+  for (let f = 0; f < n; f++) {
+    if (corr[f] < floor[f]) corr[f] = floor[f];   // и в полёте подошва не уходит под пол
+    d.set(0, corr[f], 0).applyQuaternion(hipsParentInv);
+    hp[f * 3] += d.x; hp[f * 3 + 1] += d.y; hp[f * 3 + 2] += d.z;
+  }
+}
+
 export function retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo') {
   const H = vrm.humanoid;
   const TABLE = RIGS[rig] || RIG;
@@ -201,6 +313,13 @@ export function retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo
   const restHipsSrcP = hips ? wp(hips.src) : new THREE.Vector3();
   const restHipsLocal = hips ? hips.node.position.clone() : new THREE.Vector3();
   const hipsParentInv = hips ? wq(hips.node.parent).invert() : new THREE.Quaternion();
+  // [W5-ПОЛ] опора источника: на сколько голеностоп и носок каждой стопы поднялись над своим покоем (нижняя из
+  // четырёх точек); подошва цели — точки сетки стоп (soleMarkers). Высоту таза из масштаба по высоте таза
+  // («таз KayKit ниже корней ног» — масштаб не тот) поправляем по опоре: см. ниже, после семплирования.
+  const srcFeet = [];
+  for (const r of TABLE) if (r[0] === 'leftFoot' || r[0] === 'rightFoot') for (const o of [byName(r[1]), r[3] ? byName(r[3]) : null]) if (o) srcFeet.push([o, wp(o).y]);
+  const soles = hips && srcFeet.length ? soleMarkers(THREE, vrm) : null;
+  const lift = soles ? new Float32Array(n0(clip, fps)) : null;
   // семплирование клипа источника
   const mixer = new THREE.AnimationMixer(srcScene);
   const action = mixer.clipAction(clip);
@@ -208,7 +327,7 @@ export function retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo
   action.setLoop(THREE.LoopOnce, 1);
   action.clampWhenFinished = true;
   action.play();
-  const n = Math.max(2, Math.ceil(clip.duration * fps) + 1);
+  const n = n0(clip, fps);
   const times = new Float32Array(n);
   const qv = new Map(bones.map((b) => [b, new Float32Array(n * 4)]));
   const hp = new Float32Array(n * 3);
@@ -244,8 +363,10 @@ export function retargetClip(THREE, clip, srcScene, vrm, fps = 30, rig = 'mixamo
       dir.copy(wp(hips.src)).sub(restHipsSrcP).multiplyScalar(posScale).applyQuaternion(hipsParentInv);
       hp[f * 3] = restHipsLocal.x + dir.x; hp[f * 3 + 1] = restHipsLocal.y + dir.y; hp[f * 3 + 2] = restHipsLocal.z + dir.z;
     }
+    if (lift) { let m = Infinity; for (const [o, y0] of srcFeet) m = Math.min(m, wp(o).y - y0); lift[f] = m; }
   }
   action.stop(); mixer.uncacheRoot(srcScene);
+  if (lift) groundHips(THREE, vrm, bones, hips, qv, hp, lift, 0.02 * Math.max(srcHipsH, 1e-3), soles, hipsParentInv);
   const tracks = [];
   for (const b of bones) tracks.push(new THREE.QuaternionKeyframeTrack(`${b.node.name}.quaternion`, times, qv.get(b)));
   if (hips) tracks.push(new THREE.VectorKeyframeTrack(`${hips.node.name}.position`, times, hp));

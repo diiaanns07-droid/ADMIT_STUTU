@@ -45,6 +45,9 @@ const MAX_PARTS = 420, MAX_ROCKS = 22, MAX_MIST = 4;
 // Центр кольца — на высоте ≈2,8 м: с камеры витрины он ложится за голову героя (вихрь — ореол за силуэтом).
 const PORTAL = { x: -1.2, z: -9.3, rMid: 2.45, thick: 0.5, depth: 0.78, lift: 0.36 };
 const FLOOR_R = 9.5;
+// [W5-ПОЛ] пол витрины на 1,2 см выше корня героя: накрывает неровные плиты арены (±1,1–1,6 см) под ним.
+// Герой встаёт на этот пол (floorY → heroModel.setFloorLift), а не на корень — иначе пол закрывал низ подошв.
+const FLOOR_Y = 0.012;
 
 // ---------------------------------------------------------------- GLSL: общий шум и туман
 const NOISE = /* glsl */`
@@ -722,7 +725,7 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
       uTexM: { value: new THREE.Matrix4() }, uWave: { value: -1 }, uWaveR: { value: 7.5 }, uR: { value: FLOOR_R }, uSummon: { value: 0 },
     }, { ...premul, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
     floor.name = 'menu-stage-floor';
-    floor.position.y = 0.012;
+    floor.position.y = FLOOR_Y;
     floor.renderOrder = -1;
     floor.onBeforeRender = (renderer, sc, camera) => { M.renderer = renderer; try { renderMirror(renderer, sc, camera); } catch (e) { M.on = false; freeMirror(); console.warn('[W4-ВИТРИНА] отражение отключено', e && e.message); } };
     own(floor);
@@ -957,5 +960,7 @@ export function createMenuStage({ THREE, scene, quality = 'medium', reducedMotio
     if (root.parent) root.parent.remove(root);
   }
 
-  return { group: root, update, setQuality, setReducedMotion, setReflect, wave, portalWorld, info, dispose, get quality() { return S.q; } };
+  return { group: root, update, setQuality, setReducedMotion, setReflect, wave, portalWorld, info, dispose, get quality() { return S.q; },
+    // [W5-ПОЛ] высота видимого пола витрины над корнем героя (м): пол тает вместе со сценой (uK), скрыт — 0
+    get floorY() { return S.built && root.visible ? FLOOR_Y * U.uK.value : 0; } };
 }
