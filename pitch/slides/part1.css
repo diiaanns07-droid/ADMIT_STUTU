@@ -1,123 +1,90 @@
-/* ASHEN OATH — слайды 1, 2 и 13. Цвета — только токены из deck.css. */
+/* ASHEN OATH — слайды 1, 2, 3 и 11. Цвета — только токены из deck.css; текст не мельче 28 px. */
 
-/* ---------- 1. Титул: логотип как в заставке игры, справа — арена Регента */
-.s1__art {
-  position: absolute; right: 0; top: 50%; width: 1434px; height: 762px; margin-top: -381px; pointer-events: none;
-  /* кадр 956×508 ровно в 1,5 раза; слева и по краям уходит в темноту фона */
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 44%), linear-gradient(180deg, transparent 0%, #000 16%, #000 82%, transparent 100%);
-  -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(90deg, transparent 0%, #000 44%), linear-gradient(180deg, transparent 0%, #000 16%, #000 82%, transparent 100%);
-  mask-composite: intersect;
-}
-.s1__art img { width: 100%; height: 100%; object-fit: cover; }
-.s1__body {
-  position: absolute; left: 120px; top: 260px; bottom: 120px; width: 880px;
-  display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
-}
-.s1__logo {
-  display: inline-grid; justify-items: start; margin: 0 0 0 -.04em;
-  font-family: var(--f-display); font-weight: 500; font-size: 150px; line-height: .92;
+/* ---------- Логотип как в заставке игры: ASHEN — сигил — OATH. Размер задаёт font-size */
+.logo {
+  position: relative; display: inline-grid; justify-items: start;
+  font-family: var(--f-display); font-weight: 500; line-height: .92;
   letter-spacing: .17em; color: var(--parch); text-shadow: 0 2px 24px rgba(0, 0, 0, .6);
 }
-.s1__word { display: block; white-space: nowrap; }
-.s1__word span { display: inline-block; }
-.s1__rule {
-  display: flex; align-items: center; gap: 16px; width: 100%; height: .42em; margin: .08em 0 .1em;
-  color: var(--gold);
-}
-.s1__rule::before { content: ''; width: .4em; height: 2px; background: var(--gold); opacity: .7; flex: none; }
-.s1__rule::after {
-  content: ''; flex: 1; height: 2px; transform-origin: 0 50%;
-  background: linear-gradient(90deg, var(--gold), rgba(196, 162, 101, .1));
-}
-.s1__sigil { display: block; width: .42em; height: .42em; flex: none; }
-.s1__sigil svg { width: 100%; height: 100%; }
-.s1__tag {
-  margin-top: 30px; font-family: var(--f-display); font-style: italic; font-weight: 500;
-  font-size: 56px; line-height: 1.15; color: var(--gold-hi);
-}
-.s1__lead { margin-top: 30px; max-width: 760px; }
+.logo__word { display: block; white-space: nowrap; }
+.logo__rule { display: flex; align-items: center; gap: .1em; width: 100%; height: .42em; margin: .08em 0 .1em; color: var(--gold-b); }
+.logo__line { display: block; flex: none; width: .4em; height: max(2px, .013em); background: var(--gold-b); }
+.logo__line--long { flex: 1; width: auto; background: linear-gradient(90deg, var(--gold-b), rgba(196, 162, 101, .15)); }
+.logo__sigil { display: block; width: .42em; height: .42em; flex: none; }
+.logo__sigil svg { width: 100%; height: 100%; }
 
-/* Проявление: логотип за 600 мс, буквы сходятся от разрядки .24em к .17em; подпись и lead — через 150 и 300 мс. */
-.s1.is-intro .s1__logo { opacity: 0; }
-.s1.is-intro .s1__word span { transform: translateX(calc(var(--i) * .07em)); }
-.s1.is-intro .s1__rule::after { transform: scaleX(0); }
-.s1.is-intro .s1__sigil { opacity: 0; }
-.s1.is-intro .s1__tag, .s1.is-intro .s1__lead { opacity: 0; transform: translateY(8px); }
-.s1.is-intro.is-play .s1__logo { opacity: 1; transition: opacity .6s var(--ease); }
-.s1.is-intro.is-play .s1__word span { transform: none; transition: transform .6s var(--ease); }
-.s1.is-intro.is-play .s1__rule::after { transform: none; transition: transform .6s var(--ease) .1s; }
-.s1.is-intro.is-play .s1__sigil { opacity: 1; transition: opacity .4s var(--ease) .2s; }
-.s1.is-intro.is-play .s1__tag { opacity: 1; transform: none; transition: opacity .4s var(--ease) .15s, transform .4s var(--ease) .15s; }
-.s1.is-intro.is-play .s1__lead { opacity: 1; transform: none; transition: opacity .4s var(--ease) .3s, transform .4s var(--ease) .3s; }
-
-/* ---------- 2. Проблема: три причины по шагам, затем поворот */
-.s2__list {
-  position: absolute; left: 120px; right: 120px; top: 372px; margin: 0; padding: 0; list-style: none;
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 48px;
+/* ---------- 1. Титул: логотип и подпись слева, живой бой справа на всю высоту */
+.s1__video {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 1140px; pointer-events: none;
+  /* видео 1280×720 по высоте кадра — ровно 1,5×; левый край уходит в темноту */
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 30%); mask-image: linear-gradient(90deg, transparent 0%, #000 30%);
 }
-.s2__item { border-top: 1px solid var(--line); padding-top: 36px; }
-.s2__icon { display: block; width: 48px; height: 48px; color: var(--gold); }
-.s2__icon svg { width: 48px; height: 48px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.s2__item p { margin-top: 28px; font-size: 38px; line-height: 1.28; color: var(--text); text-wrap: balance; }
+.s1__video video, .s1__video img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; }
+.s1__body { position: absolute; left: 120px; top: 200px; bottom: 140px; width: 860px; display: flex; flex-direction: column; justify-content: center; }
+.s1__title { margin: 0 0 0 -.04em; font-size: 150px; font-weight: 500; line-height: 1; }
+.s1__logo { font-size: 150px; }
+.s1__tag { margin-top: 34px; font-family: var(--f-display); font-style: italic; font-weight: 500; font-size: 60px; line-height: 1.1; color: var(--gold-hi); }
+.s1__lead { margin-top: 26px; max-width: 760px; }
+.s1__actions { display: flex; gap: 16px; margin-top: 48px; }
+
+/* ---------- 2. Идея: проблема → поворот → решение */
+.s2__mark { position: absolute; right: 120px; top: 44px; font-size: 30px; }
+.s2__list { position: absolute; left: 120px; right: 120px; top: 300px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 48px; }
+.s2__item { border-top: 2px solid var(--line); padding-top: 34px; }
+.s2__icon { display: block; width: 56px; height: 56px; color: var(--gold-b); }
+.s2__icon svg { width: 56px; height: 56px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.s2__item p { margin-top: 24px; font-size: 40px; line-height: 52px; color: var(--text); text-wrap: balance; }
 .s2__turn {
-  position: absolute; left: 120px; right: 120px; top: 724px;
-  font-family: var(--f-display); font-weight: 600; font-size: 92px; line-height: 1.05; color: var(--gold-hi);
-  text-shadow: 0 0 48px rgba(243, 220, 160, .16);
+  position: absolute; left: 120px; right: 120px; top: 600px;
+  font-family: var(--f-display); font-weight: 600; font-size: 88px; line-height: 1.05; color: var(--gold-hi);
 }
-.s2__turn::before { content: ''; display: block; width: 96px; height: 2px; margin-bottom: 34px; background: var(--gold); }
+.s2__turn::before { content: ''; display: block; width: 96px; height: 3px; margin-bottom: 30px; background: var(--gold-b); }
+.s2__solve { position: absolute; left: 120px; right: 120px; top: 800px; font-size: 48px; line-height: 60px; color: var(--parch); }
+.s2__solve span { font-family: var(--f-display); font-weight: 600; letter-spacing: .12em; color: var(--gold-hi); }
 
-/* ---------- 13. Клятва */
-.s13__bg { position: absolute; inset: 0; overflow: hidden; }
-/* Фон — кадр docs/screenshots/kino/7_death_orbit.jpg: только магический круг с осколками (без надписи «ПОБЕДА»,
- * плашки «DEBUG / НЕ CV» и окна камеры), размытие 6 px запечено заранее (media/p1/oath-bg.jpg): CSS-фильтр на весь
- * экран компоновщик пересчитывает каждый кадр, и угольки на слабом ноутбуке дёргались бы. Это размытая фактура
- * под затемнением 80 %, а не кадр игры, поэтому увеличение не видно. */
-.s13__bg img { width: 100%; height: 100%; object-fit: cover; }
-.s13__bg::after { content: ''; position: absolute; inset: 0; background: var(--ink); opacity: .8; }
-.s13__main { position: absolute; left: 120px; top: 120px; width: 1120px; }
-.s13__oath { font-size: 84px; line-height: 1.06; max-width: none; }
-.s13__hands {
-  margin-top: 36px; font-family: var(--f-display); font-style: italic; font-weight: 500;
-  font-size: 52px; line-height: 1.15; color: var(--gold-hi);
+/* ---------- 3. Игра: видео 1262×710 (без увеличения), три цифры справа */
+.s3__video { position: absolute; left: 120px; top: 250px; width: 1262px; height: 710px; margin: 0; }
+.s3__cap {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 56px 28px 18px;
+  font-size: 28px; line-height: 36px; color: var(--parch); background: linear-gradient(0deg, rgba(11, 10, 9, .92), transparent);
 }
-.s13__row { margin-top: 96px; display: flex; align-items: center; gap: 64px; }
-.s13__live {
-  position: relative; display: inline-flex; align-items: center; gap: 16px; flex: none;
-  padding: 22px 42px 22px 34px; text-decoration: none;
-  font-family: var(--f-caps); font-size: 28px; line-height: 1; letter-spacing: .14em; text-transform: uppercase; color: var(--gold-hi);
-  background: var(--grad-panel), var(--coal); border: 1px solid var(--bronze);
-  border-image: var(--w4-frame) 42 / 22px / 2px stretch; box-shadow: var(--shadow-panel);
-  transition: transform .2s var(--ease);
-}
-.s13__live svg { width: 26px; height: 26px; fill: var(--gold-hi); }
-.s13__live:hover { transform: translateY(-2px); }
-.s13__live:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 6px; }
-.s13__team-k { font-family: var(--f-caps); font-size: 26px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold-b); }
-.s13__people { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 14px 44px; }
-.s13__member { display: flex; flex-direction: column; }
-.s13__name { font-size: 34px; line-height: 1.2; color: var(--text); }
-.s13__role { font-size: 26px; line-height: 1.25; color: var(--muted); }
-.s13__qr { position: absolute; right: 120px; top: 271px; width: 440px; margin: 0; text-align: center; }
-.s13__code {
-  padding: 22px; background: var(--parch);
-  box-shadow: 0 0 0 1px var(--gold-deep), 0 0 0 10px var(--coal), 0 0 0 11px var(--line), 0 30px 80px rgba(0, 0, 0, .6);
-}
-.s13__code svg { width: 100%; height: auto; shape-rendering: crispEdges; }
-.s13__code rect { fill: var(--parch); }
-.s13__code path { fill: var(--ink); }
-.s13__url { margin-top: 36px; font-size: 28px; line-height: 1.3; color: var(--gold-hi); }
-.s13__url span { display: block; }
-.s13__src { position: absolute; left: 120px; right: 120px; bottom: 120px; }
+.s3__stats { position: absolute; left: 1446px; right: 120px; top: 250px; height: 710px; display: flex; flex-direction: column; justify-content: space-between; }
+.s3__stats li { display: flex; flex-direction: column; padding-left: 28px; border-left: 2px solid var(--line); }
+.s3__stats .num { font-size: 150px; }
+.s3__stats .unit { margin-top: 6px; }
 
-/* Сигнатурный момент: клятва проявляется слева направо (800 мс), строка про руки — следом. */
-.s13.is-sig .s13__oath { clip-path: inset(-24px 100% -24px -24px); }
-.s13.is-sig.is-oath .s13__oath { clip-path: inset(-24px -24px -24px -24px); transition: clip-path .8s var(--ease); }
-.s13.is-sig .s13__hands { opacity: 0; transform: translateY(8px); }
-.s13.is-sig.is-oath .s13__hands { opacity: 1; transform: none; transition: opacity .4s var(--ease) .7s, transform .4s var(--ease) .7s; }
+/* ---------- 11. Клятва */
+.s11__bg { position: absolute; inset: 0; overflow: hidden; }
+.s11__bg img { width: 100%; height: 100%; object-fit: cover; }
+.s11__bg::after { content: ''; position: absolute; inset: 0; background: var(--ink); opacity: .82; }
+.s11__oath {
+  position: absolute; left: 120px; right: 120px; top: 132px;
+  font-family: var(--f-display); font-weight: 600; font-size: 66px; line-height: 1.05; color: var(--parch); white-space: nowrap;
+}
+/* Печать клятвы: сигил прорисовывается за 700 мс при входе вперёд, из него вылетают частицы */
+.s11__seal { position: absolute; left: 120px; top: 330px; width: 300px; height: 300px; color: var(--gold-b); }
+.s11__seal svg { width: 100%; height: 100%; stroke-width: .9; }
+.s11__seal svg [pathLength] { stroke-dasharray: 1; stroke-dashoffset: 1; }
+.s11.is-active .s11__seal svg [pathLength] { stroke-dashoffset: 0; transition: stroke-dashoffset .7s var(--ease); }
+.slide.is-instant .s11__seal svg [pathLength] { transition: none; }
+.s11__main { position: absolute; left: 500px; top: 360px; width: 820px; }
+.s11__hands { font-family: var(--f-display); font-style: italic; font-weight: 500; font-size: 56px; line-height: 1.12; color: var(--gold-hi); }
+.s11__actions { display: flex; gap: 16px; margin-top: 44px; }
+.s11__team { margin-top: 44px; }
+.s11__people { display: flex; flex-wrap: wrap; gap: 12px 44px; margin-top: 18px; }
+.s11__member { display: flex; flex-direction: column; }
+.s11__name { font-size: 34px; line-height: 44px; color: var(--text); }
+.s11__role { font-size: 28px; line-height: 36px; color: var(--muted); }
+.s11__qr { position: absolute; right: 120px; top: 300px; width: 400px; margin: 0; text-align: center; }
+.s11__code { padding: 20px; background: var(--parch); box-shadow: 0 0 0 1px var(--gold-deep), 0 0 0 10px var(--coal), 0 0 0 11px var(--line), 0 30px 80px rgba(0, 0, 0, .6); }
+.s11__code svg { width: 100%; height: auto; shape-rendering: crispEdges; }
+.s11__code rect { fill: var(--parch); }
+.s11__code path { fill: var(--ink); }
+.s11__url { margin-top: 30px; font-size: 28px; line-height: 38px; color: var(--gold-hi); }
+.s11__src { position: absolute; left: 120px; right: 120px; bottom: 120px; }
 
+/* В PDF кнопки не работают — печатаем адрес и QR, без кнопок. */
 @media print {
-  .s13__oath { clip-path: none !important; }
-  .s13__hands, .s1__logo, .s1__tag, .s1__lead, .s1__sigil { opacity: 1 !important; transform: none !important; }
-  .s1__word span, .s1__rule::after { transform: none !important; }
+  .s1__actions, .s11__actions { display: none !important; }
+  .s11__seal svg [pathLength] { stroke-dashoffset: 0 !important; }
 }
