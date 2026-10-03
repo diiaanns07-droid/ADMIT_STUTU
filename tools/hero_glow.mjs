@@ -4,6 +4,7 @@
 //   node tools/hero_glow.mjs --label t --quality high --heroes elf --no-battle             — часть замера
 //   node tools/hero_glow.mjs --haze --heroes elf,ashen   — дымка витрины: метрики через 0,5…12 с после выбора героя
 // Флаги: --size 1366x768 (по умолчанию) --jobs 2 (уровни параллельно) --out DIR --seed N
+//        --report-only — без прогона: таблица и листы заново по OUT/metrics.json (с --compare — и лист «ДО / ПОСЛЕ»)
 //
 // Рамка героя — проекция на экран рамки его сеток (скелетные и непрозрачные; ауры, искры, кольца — нет).
 // Лицо — прямоугольник у якоря головы (heroModel: кость head + 0,1 м), смещённый к лицу; лицо видно с камеры
@@ -17,7 +18,7 @@
 
 import { spawn } from 'node:child_process';
 import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join, resolve, relative } from 'node:path';
+import { join, resolve, relative, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -263,38 +264,46 @@ function report(all, cmp) {
   return L.join('\n') + '\n';
 }
 
-function sheet(all) {
-  // лист «пять героев рядом»: строки — кадры (меню, бой спереди) по уровням качества
-  const rows = [];
-  for (const q of Object.keys(all.results)) for (const k of ['menu', 'battleFront', 'battle']) {
-    const items = HEROES.map((h) => all.results[q][h] && all.results[q][h][k]).filter(Boolean);
-    if (items.length) rows.push({ q, k, items: HEROES.map((h) => ({ h, m: all.results[q][h] && all.results[q][h][k] })) });
+// кадр героя для листа: рамка героя с полями → PNG 260×420
+function thumb(src, r, png) {
+  let vf = 'scale=-2:420';
+  if (r) {
+    const hh = Math.min(H, Math.round((r.y1 - r.y0) * 1.15)), ww = Math.min(W, Math.round(hh * 0.62));
+    const cx = Math.round((r.x0 + r.x1) / 2), cy = Math.round((r.y0 + r.y1) / 2);
+    const x = Math.max(0, Math.min(W - ww, cx - ww / 2)), y = Math.max(0, Math.min(H - hh, cy - hh / 2));
+    vf = `crop=${ww}:${hh}:${Math.round(x)}:${Math.round(y)},scale=260:420`;
   }
-  if (!rows.length) return;
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', src, '-vf', vf, png]);
+  return png;
+}
+const KN = { menu: 'меню', battleFront: 'бой спереди', battle: 'бой' };
+const capOf = (h, k, q, m, tag = '') => (tag ? `${tag}${NAMES[h]} · ${pct(m.over)}` : `${NAMES[h]} · ${KN[k]} · ${q} · пересвет ${pct(m.over)}`) + (m.face != null ? ` · лицо ${m.face.toFixed(2)}` : '');
+function makeSheet(out, cols, title, items) {
+  if (!items.length) return;
+  try { execFileSync(process.execPath, [join(HERE, 'tools', 'sheet.mjs'), '--out', out, '--cols', String(cols), '--title', title, ...items], { stdio: 'inherit' }); } catch (e) { log('лист не собран: ' + e.message); }
+}
+
+function sheet(all, cmp, cmpDir) {
+  // лист «пять героев рядом»: по листу на кадр (меню, бой спереди, бой) и уровень качества;
+  // с --compare — ещё лист «ДО / ПОСЛЕ»: верхний ряд — прошлый замер, нижний — этот
   const tdir = join(tmpdir(), `hg_thumbs_${process.pid}`);
   mkdirSync(tdir, { recursive: true });
-  const KN = { menu: 'меню', battleFront: 'бой спереди', battle: 'бой' };
-  for (const row of rows) {
-    const it = [];
-    for (const { h, m } of row.items) {
+  for (const q of Object.keys(all.results)) for (const k of ['menu', 'battleFront', 'battle']) {
+    const it = [], was = [], now = [];
+    for (const h of HEROES) {
+      const m = all.results[q][h] && all.results[q][h][k];
       if (!m || !m.file) continue;
-      const src = join(OUT, m.file);
-      // кадр героя: рамка героя с полями, в высоту 420
-      const r = m.rect;
-      const png = join(tdir, `${row.q}_${row.k}_${h}.png`);
-      let vf = 'scale=-2:420';
-      if (r) {
-        const hh = Math.round((r.y1 - r.y0) * 1.15), ww = Math.round(hh * 0.62);
-        const cx = Math.round((r.x0 + r.x1) / 2), cy = Math.round((r.y0 + r.y1) / 2);
-        const x = Math.max(0, Math.min(W - ww, cx - ww / 2)), y = Math.max(0, Math.min(H - hh, cy - hh / 2));
-        vf = `crop=${Math.min(ww, W)}:${Math.min(hh, H)}:${Math.round(x)}:${Math.round(y)},scale=260:420`;
+      try { it.push(`${thumb(join(OUT, m.file), m.rect, join(tdir, `${q}_${k}_${h}.png`))}:${capOf(h, k, q, m)}`); } catch (e) { log('кадр листа: ' + e.message); continue; }
+      const c = cmp && cmp.results && cmp.results[q] && cmp.results[q][h] && cmp.results[q][h][k];
+      if (c && c.file && cmpDir && existsSync(join(cmpDir, c.file))) {
+        try {
+          was.push(`${thumb(join(cmpDir, c.file), c.rect, join(tdir, `was_${q}_${k}_${h}.png`))}:${capOf(h, k, q, c, 'ДО · ')}`);
+          now.push(`${join(tdir, `${q}_${k}_${h}.png`)}:${capOf(h, k, q, m, 'ПОСЛЕ · ')}`);
+        } catch (e) { log('кадр сравнения: ' + e.message); }
       }
-      try { execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', src, '-vf', vf, png]); it.push(`${png}:${NAMES[h]} · ${KN[row.k]} · ${row.q} · пересвет ${pct(m.over)}${m.face != null ? ` · лицо ${m.face.toFixed(2)}` : ''}`); } catch (e) { log('кадр листа: ' + e.message); }
     }
-    if (!it.length) continue;
-    try {
-      execFileSync(process.execPath, [join(HERE, 'tools', 'sheet.mjs'), '--out', join(OUT, `sheet_${row.q}_${row.k}.jpg`), '--cols', String(it.length), '--title', `ASHEN OATH · засветка героев «${LABEL}» · ${KN[row.k]} · ${row.q}`, ...it], { stdio: 'inherit' });
-    } catch (e) { log('лист не собран: ' + e.message); }
+    makeSheet(join(OUT, `sheet_${q}_${k}.jpg`), it.length, `ASHEN OATH · засветка героев «${LABEL}» · ${KN[k]} · ${q}`, it);
+    if (was.length && was.length === now.length) makeSheet(join(OUT, `compare_${q}_${k}.jpg`), was.length, `ASHEN OATH · засветка героев · ДО / ПОСЛЕ · ${KN[k]} · ${q} · ${SIZE.join('×')}`, [...was, ...now]);
   }
 }
 
@@ -306,6 +315,15 @@ function git(root) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
 async function main() {
 mkdirSync(OUT, { recursive: true });
+if (A.has('--report-only')) {
+  // без прогона: таблица и листы заново по OUT/metrics.json (например, после правки листов или с другим --compare)
+  const all = JSON.parse(readFileSync(join(OUT, 'metrics.json'), 'utf8'));
+  const cmp = COMPARE && existsSync(COMPARE) ? JSON.parse(readFileSync(COMPARE, 'utf8')) : null;
+  writeFileSync(join(OUT, 'metrics.md'), report(all, cmp));
+  if (!all.results || !Object.values(all.results).some((r) => Object.values(r).some((x) => x && x.haze))) sheet(all, cmp, COMPARE ? dirname(resolve(COMPARE)) : '');
+  log(`отчёт → ${relative(HERE, OUT)}`);
+  return;
+}
 if (PART) {
   // дочерний процесс: один уровень качества
   const { chromium } = loadPlaywright();
@@ -334,6 +352,6 @@ for (const q of QS) { if (parts[q]) { all.results[q] = parts[q].res; all.errors.
 writeFileSync(join(OUT, 'metrics.json'), JSON.stringify(all, null, 1) + '\n');
 const cmp = COMPARE && existsSync(COMPARE) ? JSON.parse(readFileSync(COMPARE, 'utf8')) : null;
 writeFileSync(join(OUT, 'metrics.md'), report(all, cmp));
-if (!HAZE) sheet(all);
+if (!HAZE) sheet(all, cmp, COMPARE ? dirname(resolve(COMPARE)) : '');
 log(`готово → ${relative(HERE, OUT)}`);
 }
