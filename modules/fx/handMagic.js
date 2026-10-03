@@ -381,7 +381,7 @@ export function register(fx) {
     // импульс бежит по контуру (тьма — лента с чёрным ядром)
     const dark = darkOf(el, R);
     const rib = trail(fx, el, R, { style: dark ? 'dark' : 'energy', width: 0.12, life: 0.32, intensity: 2.2, maxPoints: 64, minDist: 0.01, ...(dark ? { hot: pal.hot } : null) });
-    const head = { color: pal.core, size: [0.28 * sz, 0.16 * sz], dur: 0.07, intensity: 3.2, sprite: 'star', pull: 0.18, fadeIn: 0.01, curve: 1, rival: R };
+    const head = { color: pal.core, size: [0.24 * sz, 0.14 * sz], dur: 0.07, intensity: 2.4, sprite: 'star', pull: 0.18, fadeIn: 0.01, curve: 1, rival: R };
     const hs = { at: null, count: 1, speed: [0.8, 2.6], life: [0.2, 0.4], size: [0.05, 0.01], ramp, intensity: 3.4, sprite: 'spark', stretch: 0.03, drag: 2, essential: true, rival: R };
     let di = 0;
     kit.actor({

@@ -301,8 +301,9 @@ export function airRune(fx, c, rune, el, o) {
     try {
       air.glyph = g.spawn({
         pos, billboard: true, radius: R, symbol: rune, symbolScale: 0.8, style: 'bare', color: P.mid, hot: P.core,
-        // чёткие линии с белым ядром и умеренным ореолом: на проекторе с bloom сильный ореол съедает форму знака
-        intensity: isNum(o.intensity) ? o.intensity : 2.1, symbolGlow: 1.25, write: isNum(o.write) ? o.write : 0.09, flare: 0.6, pop: 0.35, unfold: 0.12,
+        // «чернила света»: линии чуть ярче порога bloom (белое ядро, цветная кайма), ореол слабый — у светлых стихий
+        // (гроза, звезда, лёд, время) сильный ореол с bloom превращал знак в пятно
+        intensity: isNum(o.intensity) ? o.intensity : 1.35, symbolGlow: 0.9, write: isNum(o.write) ? o.write : 0.09, flare: 0.25, pop: 0.35, unfold: 0.12,
         dur: hold + travel + 0.1, fade: 0.08, spin: 0, rival: remote ? 1 : 0, dark: el === 'void' && !remote,
       });
     } catch (e) { air.glyph = null; }
@@ -310,9 +311,9 @@ export function airRune(fx, c, rune, el, o) {
   const gen = air.glyph ? air.glyph.gen : -1;
   // вспышка-ореол за знаком (bloom)
   _hf.rival = !!remote; _hf.fadeIn = 0.03; _hf.curve = 0.5; _hf.rot = 0;
-  _hf.color = P.hot; _hf.size[0] = R * 0.8; _hf.size[1] = R * 1.7; _hf.dur = 0.24; _hf.intensity = 0.9; _hf.sprite = 'glow'; _hf.pull = 0.2;
+  _hf.color = P.mid; _hf.size[0] = R * 0.8; _hf.size[1] = R * 1.6; _hf.dur = 0.22; _hf.intensity = 0.55; _hf.sprite = 'glow'; _hf.pull = 0.2;
   kit.flash(pos, _hf);
-  _hf.color = P.core; _hf.size[0] = R * 0.25; _hf.size[1] = R * 0.85; _hf.dur = 0.1; _hf.intensity = 2.4; _hf.sprite = 'star'; _hf.pull = 0.25;
+  _hf.color = P.core; _hf.size[0] = R * 0.2; _hf.size[1] = R * 0.7; _hf.dur = 0.09; _hf.intensity = 1.8; _hf.sprite = 'star'; _hf.pull = 0.25;
   kit.flash(pos, _hf);
   if (!air.glyph && o.glyph !== false) {
     // без подсистемы знаков — руна-спрайт атласа
@@ -327,11 +328,12 @@ export function airRune(fx, c, rune, el, o) {
     if (cam && cam.matrixWorld) { const e = cam.matrixWorld.elements; ux = e[0]; uy = e[1]; uz = e[2]; vx = e[4]; vy = e[5]; vz = e[6]; }
     const side = 0.8 * 1.3 * R;
     _ae.ramp = rampOf(el, remote); _ae.rival = !!remote; _ae.at = _ap; _ae.count = 1;
-    const st = kit.Q && kit.Q.name === 'low' ? 2 : 1;
-    for (let i = 0; i < pts.length; i += st) {
+    // только искры через точку (на low — через три): мягкие «glow» по штрихам сливались с bloom в пятно
+    const st = kit.Q && kit.Q.name === 'low' ? 4 : 2;
+    _ae.sprite = 'spark'; _ae.size[0] = 0.06; _ae.intensity = 2.6;
+    for (let i = 1; i < pts.length; i += st) {
       const q = pts[i], lx = (q.x - 0.5) * side, ly = (0.5 - q.y) * side;
       _ap.x = pos.x + ux * lx + vx * ly; _ap.y = pos.y + uy * lx + vy * ly; _ap.z = pos.z + uz * lx + vz * ly;
-      _ae.sprite = i & 1 ? 'spark' : 'glow'; _ae.size[0] = i & 1 ? 0.07 : 0.12; _ae.intensity = i & 1 ? 3 : 1.5;
       kit.emit(_ae);
     }
     _ae.at = null;
