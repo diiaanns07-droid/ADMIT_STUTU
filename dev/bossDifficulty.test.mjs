@@ -183,6 +183,32 @@ test('подписи телеграфа: составные приёмы — с�
   void DEFAULT_BOSS_CONFIG;
 });
 
+// [W5-ДАЛЬНОСТЬ] герой стоит далеко (16 м — свободный ход, бой ещё держится): на «Сложной» и «Кошмаре» удар ладонью
+// достаёт его, nova не тратится; на «Лёгкой» и «Обычной» — прежнее поведение (удар прижат к арене 10 м)
+function farRun(level, sec = 120) {
+  const b = createBossBrain({ seed: 11 });
+  const specs = [];
+  for (let i = 0; i < sec / DT; i++) {
+    const s = { status: 'playing', time: i * DT, difficulty: level,
+      player: { position: { x: 0, y: 0, z: 16 }, velocity: { x: 0, z: 0 }, hp: 100, energy: 80, maxEnergy: 100 },
+      boss: { position: { x: 0, y: 0, z: 0 }, hp: 1000, maxHp: 1000 }, cooldowns: { dashRemaining: 0 } };
+    for (const a of b.update(DT, s).attacks) specs.push(a);
+  }
+  return specs;
+}
+test('дальность: издали на «Сложной»/«Кошмаре» удар ладонью достаёт, nova не тратится; «Лёгкая» — как раньше', () => {
+  for (const lv of ['hard', 'nightmare']) {
+    const sp = farRun(lv);
+    const slams = sp.filter((s) => s.kind === 'slam' && !s.move);   // капкан и второй удар «двойного» — свои точки
+    assert(slams.length >= 5, `${lv}: ударов ладонью издали ${slams.length}`);
+    assert(slams.every((s) => Math.hypot(s.target.x, s.target.z - 16) < 0.5), `${lv}: удар ладонью не дотянулся до героя в 16 м`);
+    const novas = sp.filter((s) => s.kind === 'nova').length;
+    assert(novas <= 1, `${lv}: nova издали ${novas} раз — тратит ходы впустую`);
+  }
+  const easy = farRun('easy').filter((s) => s.kind === 'slam');
+  assert(easy.length > 0 && easy.every((s) => Math.hypot(s.target.x, s.target.z) <= 10 + 1e-6), '«Лёгкая»: удар ладонью прижат к арене, как раньше');
+});
+
 let failed = 0;
 const t0 = Date.now();
 for (const t of tests) {

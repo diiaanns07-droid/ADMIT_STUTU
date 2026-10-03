@@ -125,6 +125,12 @@ export const DEFAULT_BOSS_CONFIG = deepFreeze({
   double: { windup: 0.8 },   // второй удар «двойного удара»: замах (не ниже пола), цель — куда ушёл герой
   volley: { count: 3, spreadDeg: 14, stagger: 0.18, damageMul: 0.8 }, // залп сфер веером, сферы — одна за другой
   trap: { count: 3, spacing: 2.9, windup: [1.2, 1.05], damageMul: 0.9 }, // «Каменный капкан»: круги вдоль пути героя
+  // [W5-ДАЛЬНОСТЬ] герой может отойти от арены (свободный ход: бой держится до r арены + leash ≈ 19 м) и бить издали,
+  // а удар ладонью прижимался к арене (10 м), nova — 9,5 м. reach — до какого радиуса удар ладонью и капкан достают
+  // героя (0 — граница арены, как раньше); farPressure.dist — дальше этого от Регента он не тратит ход на nova
+  // (не достанет), а бьёт тем, что долетает: удар ладонью, сферы, залп.
+  reach: 0,
+  farPressure: { dist: 0 },
 });
 
 /**
@@ -155,10 +161,12 @@ export const BOSS_DIFFICULTY = deepFreeze({
     feint: { chance: [0.1, 0.15], at: [0.35, 0.6] },
     double: { windup: 1.0 },
     volley: { count: 3, spreadDeg: 14, stagger: 0.18, damageMul: 0.8 },
+    reach: 20,               // [W5-ДАЛЬНОСТЬ] удар ладонью достаёт и за ареной — издали не отстояться
+    farPressure: { dist: 10 },
     attacks: {
       slam: { windup: [1.3, 1.15], recover: [1.0, 0.85], damage: [15, 17] },
       orb: { windup: [1.05, 0.95], recover: [0.85, 0.7], speed: [12, 13.5] },
-      nova: { windup: [1.65, 1.45], recover: [1.25, 1.05], damage: [24, 28] },
+      nova: { windup: [1.65, 1.45], recover: [1.25, 1.05], damage: [24, 28], radius: [11.5, 12] },
     },
   },
   nightmare: {
@@ -180,10 +188,12 @@ export const BOSS_DIFFICULTY = deepFreeze({
     double: { windup: 0.8 },
     volley: { count: 4, spreadDeg: 12, stagger: 0.16, damageMul: 0.8 },
     trap: { count: 3, spacing: 2.9, windup: [1.05, 0.95], damageMul: 0.9 },
+    reach: 22,               // [W5-ДАЛЬНОСТЬ]
+    farPressure: { dist: 9 },
     attacks: {
       slam: { windup: [1.1, 0.95], recover: [0.8, 0.65], radius: [2.2, 2.3] },
       orb: { windup: [0.9, 0.8], recover: [0.65, 0.55], speed: [13, 14.5] },
-      nova: { windup: [1.4, 1.2], recover: [1.0, 0.85] },
+      nova: { windup: [1.4, 1.2], recover: [1.0, 0.85], radius: [12, 12] },   // предел combat.bossAttack.maxRadius
     },
   },
 });
@@ -340,6 +350,7 @@ export function createBossBrain(config) {
   }
 
   function chooseKind(snap) {
+    if (st.introQueue[0] === 'nova' && isFar(snap)) st.introQueue.shift();   // [W5-ДАЛЬНОСТЬ] nova издали не достанет
     if (st.introQueue.length > 0) {
       const k = st.introQueue[0];
       if (isAllowed(k, snap)) { st.introQueue.shift(); return k; }
@@ -351,11 +362,27 @@ export function createBossBrain(config) {
       if (isAllowed(k, snap)) return k;
     }
     if (st.bag.length === 0) st.bag = makeBag();
+    // [W5-ДАЛЬНОСТЬ] герой далеко — сначала ходы, которые до него долетают (nova остаётся в мешке на потом)
+    if (isFar(snap)) {
+      for (let i = 0; i < st.bag.length; i++) {
+        if (BASE_OF_MOVE[st.bag[i]] !== 'nova' && moveAllowed(st.bag[i], snap)) return st.bag.splice(i, 1)[0];
+      }
+      if (isAllowed('slam', snap)) return 'slam';
+      if (isAllowed('orb', snap)) return 'orb';
+    }
     for (let i = 0; i < st.bag.length; i++) {
       if (moveAllowed(st.bag[i], snap)) return st.bag.splice(i, 1)[0];
     }
     return fallbackKind(snap);
   }
+
+  function isFar(snap) {
+    const d = cfg.farPressure.dist;
+    if (!(d > 0) || !snap.playerPos || !snap.bossPos) return false;
+    return Math.hypot(snap.playerPos.x - snap.bossPos.x, snap.playerPos.z - snap.bossPos.z) > d;
+  }
+  // [W5-ДАЛЬНОСТЬ] докуда удар ладонью и упреждение достают героя (не ближе границы арены)
+  function reachRadius() { return Math.max(cfg.arenaRadius, cfg.reach); }
 
   // [W5-СЛОЖНОСТЬ] упреждение: куда придёт герой за t секунд (доля aimLead пути, не дальше aimLeadMax)
   function leadPoint(snap, t) {
@@ -364,7 +391,7 @@ export function createBossBrain(config) {
     let dx = v.x * t * k, dz = v.z * t * k;
     const d = Math.hypot(dx, dz);
     if (d > cfg.aimLeadMax) { dx *= cfg.aimLeadMax / d; dz *= cfg.aimLeadMax / d; }
-    return clampToArena({ x: p.x + dx, y: p.y, z: p.z + dz }, cfg.arenaRadius);
+    return clampToArena({ x: p.x + dx, y: p.y, z: p.z + dz }, reachRadius());
   }
 
   function makeSpec(kind, windup, snap, opt) {
@@ -378,7 +405,7 @@ export function createBossBrain(config) {
     if (kind === 'slam') {
       origin = { x: b.x, y: 0, z: b.z };
       const c = o.at || leadPoint(snap, windup);
-      target = clampToArena({ x: c.x, y: 0, z: c.z }, cfg.arenaRadius);
+      target = clampToArena({ x: c.x, y: 0, z: c.z }, reachRadius());
     } else if (kind === 'orb') {
       const p0 = o.at || snap.playerPos;
       const dx = p0.x - b.x;
@@ -417,7 +444,7 @@ export function createBossBrain(config) {
   function beginAttack(snap, opts) {
     const o = opts || {};
     const fu = o.followUp || null;
-    const move = fu && fu.move ? fu.move : chooseKind(snap);
+    const move = fu && fu.move && !(BASE_OF_MOVE[fu.move] === 'nova' && isFar(snap)) ? fu.move : chooseKind(snap);   // [W5-ДАЛЬНОСТЬ]
     const label = fu && fu.from ? fu.from : move;   // второй удар «двойного» подписан как «двойной»
     const kind = BASE_OF_MOVE[move] || 'slam';
     const i = st.stage - 1;
@@ -789,6 +816,10 @@ function normalizeConfig(input) {
       damageMul: clamp(num(tr.damageMul, D.trap.damageMul, 0), 0, 2),
     },
   };
+
+  const fp = o(src.farPressure);
+  extra.reach = clamp(num(src.reach, D.reach, 0), 0, 40);                    // [W5-ДАЛЬНОСТЬ]
+  extra.farPressure = { dist: clamp(num(fp.dist, D.farPressure.dist, 0), 0, 40) };
 
   return deepFreeze({
     ...extra,
