@@ -282,6 +282,28 @@ P.yaw = 0;
   log(`остановка (бег, стрейф, ходьба, назад → покой): подошва до ${cm(worst.v)} от пола (${worst.id} ${worst.name})`);
 }
 
+// ---------------------------------------------------------------- ступень арены: корень ниже земли
+// world сглаживает подъём корня на ступень (0,33 м за ~0,2 с), земля из снимка (combat: LAY.groundY) — уже наверху:
+// подошва — на ступени, а не в ней. Второй экземпляр героя на своём корне (как heroRoot мира).
+{
+  const hr = new THREE.Group();
+  const m2 = HM.createHeroModel({ THREE, heroRoot: hr, hero: 'ranger', quality: 'medium', heroesUrl: HEROES_URL, baseUrl: pathToFileURL(join(HERE, '../assets/quaternius/')).href });
+  for (let i = 0; i < 4000 && !(m2.ready && m2.hero === 'ranger'); i++) await new Promise((r) => setTimeout(r, 5));
+  assert.ok(m2.ready, 'второй герой загрузился');
+  const at = (y) => ({ status: 'playing', ultimate: null, player: { position: { x: 0, y, z: 0 }, yaw: 0, velocity: { x: 0, y: 0, z: 0 }, action: 'idle', hp: 80, maxHp: 100 } });
+  for (let i = 0; i < 30; i++) m2.update(DT, at(0), []);
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < 12; i++) {
+    hr.position.y = 0.33 * (1 - Math.exp(-16 * (i + 1) * DT));   // корень догоняет ступень
+    m2.update(DT, at(0.33), []);
+    const g = m2.feet().sole - 0.33;
+    lo = Math.min(lo, g); hi = Math.max(hi, g);
+  }
+  assert.ok(lo >= -TOL && hi <= TOL, `ступень 0,33 м: подошва ${cm(lo)}…${cm(hi)} от её верха`);
+  m2.dispose();
+  log(`ступень арены (корень догоняет 0,2 с): подошва ${cm(lo)}…${cm(hi)} от верха ступени`);
+}
+
 // ---------------------------------------------------------------- долгий покой: таз не уплывает за 2 минуты
 {
   const id = HM.HERO_ORDER[1];

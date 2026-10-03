@@ -1569,10 +1569,14 @@ export function createHeroModel({
       applyFingers(dt, pz ? poses.fingers(handWants(), PC) : handWants());
       if (pz) faceTick(dt);
       S.inMenu = true;
+      S.groundY = NaN;
       vrmTick(dt);
       return;
     }
     S.inMenu = false;
+    // [W5-ПОЛ] земля под героем из снимка (бой: combat — LAY.groundY) — пол подошвы, когда корень ниже неё: на ступени
+    // арены (0,33 м) корень поднимается сглаженно (камера не дёргается), а стопы уходили в ступень на 0,1–0,2 с
+    S.groundY = P && P.position && Number.isFinite(P.position.y) ? P.position.y : NaN;
     pose.bowCarry = 0;   // [W4-ПОЗЫ] лук «у плеча» — только на витрине и в победе
     const status = snap.status || 'playing';
     const yaw = root.rotation.y;
@@ -1737,8 +1741,8 @@ export function createHeroModel({
     if (!m) { S.lift = 0; return; }
     // без быстрых точек — точный скиннинг по сырым костям в позе кадра
     const lo = m.fast ? soleLowFast(m, m.fast.res)[2] : (cur.vrm.humanoid.update(), soleHeightSkinned(m));
-    const fl = S.floorLift || 0;
-    const pen = root.getWorldPosition(_gf).y + fl - lo;
+    const fl = S.floorLift || 0, ry = root.getWorldPosition(_gf).y;
+    const pen = (S.groundY > ry ? S.groundY : ry) + fl - lo;   // пол — корень или земля под героем, что выше
     // посадка: герой стоит (вне меню, по снимку не идёт, нет действия на всё тело — у рывка, удара, победы свой полёт),
     // а подошва над полом — модель вниз до касания. Висела она на переходе «бег, стрейф → покой»: клип бега в фазе
     // полёта подмешан к покою, таз выше — стопы на 2–12 см над полом 0,2–0,3 с
