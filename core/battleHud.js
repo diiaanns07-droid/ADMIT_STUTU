@@ -318,7 +318,8 @@ export function createBattleHud({ canvas } = {}) {
     const P = snap && snap.player;
     const hp = P && Number.isFinite(P.hp) ? P.hp : -1;
     if (!live || hp < 0) { heal.last = hp; heal.acc = 0; heal.t = 9; return; }
-    if (heal.last >= 0 && hp > heal.last + 0.01) heal.acc += hp - heal.last;
+    // [W4-СБОРКА] скачок больше половины запаса — не лечение, а новый раунд дуэли (pvp.respawn: HP полный посреди боя)
+    if (heal.last >= 0 && hp > heal.last + 0.01 && !(P.maxHp > 0 && hp - heal.last > P.maxHp * 0.5)) heal.acc += hp - heal.last;
     heal.last = hp;
     heal.t += dtR;                                           // с прошлого «+N»: разовое лечение — сразу, реген — раз в 0,45 с
     if (heal.acc >= 1 && heal.t >= 0.45) {

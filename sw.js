@@ -17,7 +17,7 @@
 'use strict';
 
 // <AO_MANIFEST> — генерирует node tools/sw_manifest.mjs, руками не править
-const VERSION = 'eb2270005d5b';
+const VERSION = 'a89484b710aa';
 const VENDOR_VERSION = 'b3f563930682';
 const SHELL = [
   "./",
