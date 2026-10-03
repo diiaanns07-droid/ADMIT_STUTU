@@ -5,8 +5,9 @@
 //      библиотеки и всех трёх моделей; в полёте (бег, прыжок, подскок рывка) — не ниже пола. Подошва кадра
 //      (soleLowFast, по нормализованным костям) — та же, что скиннингом сетки (±0,1 мм), и без аллокаций.
 //   2. Каждый из пяти героев по кругу: витрина меню, покой, ходьба, бег, рывок, касты, щит, сфера, «Небесный суд»,
-//      удары по герою, победа, поражение, снова покой; смены героев между кругами. Подошва никогда не глубже
-//      2 см под полом; стоя — |подошва − пол| ≤ 2 см; таз и подошва в покое в конце — там же, где в начале.
+//      удары по герою, победа, поражение, снова покой; смены героев между кругами, третий круг — герой повёрнут.
+//      Подошва никогда не глубже 2 см под полом; стоя — |подошва − пол| ≤ 2 см; колено и голень — не ниже пола,
+//      в поражении обе стопы на полу; носок не разворачивается рывком; таз и подошва в покое в конце — там же.
 //   3. low / high: то же для покоя и победы; пол сцены выше корня (витрина) — подошва на нём.
 //   4. Корень героя по земле (world.followRootY): склон — без отставания, ступень арены — плавно.
 // three.js: ASHEN_THREE или vendor/ (как остальные тесты); 'three/addons/' и '@pixiv/three-vrm' — из vendor/.
@@ -143,7 +144,7 @@ function snap({ vx = 0, vz = 0, action = 'idle', status = 'playing', ult = null,
 function step(s, ev = [], floor = 0) {
   model.update(DT, s, ev);
   const f = model.feet();
-  return { gap: f.sole - floor, hips: f.hips, sole: f.sole };
+  return { gap: f.sole - floor, hips: f.hips, sole: f.sole, gapL: f.soleL - floor, gapR: f.soleR - floor, knee: f.knee - floor, yawL: f.toeYawL, yawR: f.toeYawR };
 }
 // сценарий одного героя: [название, кадров, снимок(i), события(i), стоя?]
 const ev = (type, data = {}) => [{ type, data }];
@@ -174,12 +175,14 @@ const SCRIPT = [
 // окна стойки: меню и покой — где вес «действия» отыгран (первые 0,5 с перехода не берём)
 const idleStat = (rows) => { const r = rows.slice(15); const mean = (k) => r.reduce((a, x) => a + x[k], 0) / r.length; return { gap: mean('gap'), hips: mean('hips') }; };
 const first = {};
-let worstSink = { v: 0 }, worstStand = { v: 0 };
-for (const [round, ids] of [[1, HM.HERO_ORDER], [2, [...HM.HERO_ORDER].reverse()]]) {
+let worstSink = { v: 0 }, worstStand = { v: 0 }, worstKnee = { v: 0 }, worstToe = { v: 0 };
+// третий круг — герой повёрнут на 1,2 рад (поворот стопы не должен сбиваться на оси мира)
+const TOE_PHASES = new Set(['меню', 'покой', 'выброс', 'удары', 'победа', 'поражение', 'снова покой']);
+for (const [round, ids, yaw] of [[1, HM.HERO_ORDER, 0], [2, [...HM.HERO_ORDER].reverse(), 0], [3, ['ashen', 'elf', 'archmage'], 1.2]]) {
   for (const id of ids) {
     model.setHero(id);
     await ready(id);
-    P.x = 0; P.z = 0;
+    P.x = 0; P.z = 0; P.yaw = yaw;
     const seen = {};
     for (const [name, n, mk, evs, standing] of SCRIPT) {
       const rows = [];
@@ -195,6 +198,17 @@ for (const [round, ids] of [[1, HM.HERO_ORDER], [2, [...HM.HERO_ORDER].reverse()
           if (Math.abs(r.gap) > worstStand.v) worstStand = { v: Math.abs(r.gap), id, name, i };
           assert.ok(Math.abs(r.gap) <= TOL, `${id} «${name}» кадр ${i}: стоя, а подошва ${cm(r.gap)} от пола`);
         }
+        // колено и голень не ниже пола (поза на колене); в поражении — обе стопы на полу (опорная и носок колена)
+        if (-r.knee > worstKnee.v) worstKnee = { v: -r.knee, id, name, i };
+        assert.ok(r.knee >= -TOL, `${id} «${name}» кадр ${i}: колено в полу на ${cm(-r.knee)}`);
+        if (name === 'поражение' && i >= 45) assert.ok(Math.max(r.gapL, r.gapR) <= TOL, `${id} поражение кадр ${i}: стопа над полом — L ${cm(r.gapL)}, R ${cm(r.gapR)}`);
+        // носок не мечется: разворот стопы относительно взгляда героя за кадр — меньше 20°
+        const pr = rows.length > 1 ? rows[rows.length - 2] : null;
+        if (pr && TOE_PHASES.has(name)) {
+          const dy = Math.max(Math.abs(r.yawL - pr.yawL), Math.abs(r.yawR - pr.yawR));
+          if (dy > worstToe.v) worstToe = { v: dy, id, name, i, yaw };
+          assert.ok(dy < 20, `${id} «${name}» кадр ${i} (поворот ${yaw}): носок развернулся за кадр на ${dy.toFixed(0)}°`);
+        }
       }
       seen[name] = rows;
     }
@@ -208,6 +222,8 @@ for (const [round, ids] of [[1, HM.HERO_ORDER], [2, [...HM.HERO_ORDER].reverse()
   }
 }
 log(`medium: глубже всего ${cm(worstSink.v)} (${worstSink.id || '—'} «${worstSink.name || ''}»), стоя — до ${cm(worstStand.v)} от пола (${worstStand.id} «${worstStand.name}»)`);
+log(`колено: глубже всего ${cm(worstKnee.v)} (${worstKnee.id || '—'} «${worstKnee.name || ''}»); носок за кадр — до ${worstToe.v.toFixed(1)}° (${worstToe.id} «${worstToe.name}», поворот ${worstToe.yaw})`);
+P.yaw = 0;
 
 // ---------------------------------------------------------------- долгий покой: таз не уплывает за 2 минуты
 {

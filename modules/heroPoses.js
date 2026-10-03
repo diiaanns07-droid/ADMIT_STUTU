@@ -25,6 +25,7 @@
 // в длинах руки, в «боковых» осях: o — наружу (у левой +x, у правой −x), u — вверх, f — вперёд.
 
 import { HERO_SPELL_POSE } from '../core/handMagic.js';
+import { termsLow } from './vrmKit.js';   // [W5-ПОЛ] нижняя точка колена и голени (точки сетки ног)
 
 export const POSES_VERSION = 'W4-poses-1';
 
@@ -260,7 +261,7 @@ function signatureGesture(id, base) {
 
 // ---------------------------------------------------------------- слой поз героя
 // rig: { bones (нормализованные, + ноги), hands (heroModel.setupHands), model, vrm, orientHand(h, dir, thumb, w),
-//        female, staff: () => bool, bowRest: () => bool, soles? } — [W5-ПОЛ] soles: точки подошвы (vrmKit.soleMarkers)
+//        female, staff: () => bool, bowRest: () => bool, soles? } — [W5-ПОЛ] soles: точки подошвы и колена (vrmKit.soleMarkers)
 export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', female = false, stance = 'staff' } = {}) {
   const V = () => new THREE.Vector3();
   const Q = () => new THREE.Quaternion();
@@ -268,7 +269,8 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
   const _p = V(), _s = V(), _a = V(), _b = V(), _c = V(), _d = V(), _m = V(), _t = V(), _u = V(), _w = V(), _o = V(), _o2 = V();
   const footW = [V(), V()], footQ = [Q(), Q()], kneeW = [V(), V()], hipW = [V(), V()];
   const _ia = V(), _ib = V(), _ic = V(), _id = V(), _im = V(), _it = V(), _iu = V(), _iw = V();   // только для ik2
-  const _sp = V();   // [W5-ПОЛ] точка подошвы
+  const _sp = V(), _qF = Q();   // [W5-ПОЛ] точка подошвы; поворот стопы в мире (ik2 пишет в общий _q)
+  const footT = [V(), V()], poleU = [V(), V()], footR = [Q(), Q()], _kr = new Float64Array(3);   // [W5-ПОЛ] цели ног — для колена
   // aout — смесь слоя действий (перекрёст только по нему: иначе смещения покоя в первом кадре удвоились бы),
   // out — итог кадра (действие + покой + вздрагивание)
   const out = new Float32Array(N), aout = new Float32Array(N), act = new Float32Array(N), idle = new Float32Array(N), prev = new Float32Array(N);
@@ -686,19 +688,40 @@ export function createHeroPoses(THREE, { quality = 'medium', heroId = 'ashen', f
         // стопа: прежний поворот в мире + разворот носка (рысканье) и наклон (колено поражения)
         l.matrixWorld.decompose(_p, _pq, _s);
         const yw = out[i ? I.FRYW : I.FLYW] * legW, pt = out[i ? I.FRP : I.FLP] * legW;
-        _q.copy(footQ[i]);
-        if (yw) { _w.set(0, 1, 0).applyQuaternion(_qm); _q1.setFromAxisAngle(_w, yw); _q.premultiply(_q1); }
-        if (pt) { _w.set(1, 0, 0).applyQuaternion(_qm); _q1.setFromAxisAngle(_w, pt); _q.premultiply(_q1); }
-        f.quaternion.copy(_pq.invert().multiply(_q));
+        _qF.copy(footQ[i]);
+        if (yw) { _w.set(0, 1, 0).applyQuaternion(_qm); _q1.setFromAxisAngle(_w, yw); _qF.premultiply(_q1); }
+        if (pt) { _w.set(1, 0, 0).applyQuaternion(_qm); _q1.setFromAxisAngle(_w, pt); _qF.premultiply(_q1); }
+        f.quaternion.copy(_pq.invert().multiply(_qF));
         f.updateWorldMatrix(false, false);
         // [W5-ПОЛ] подошва не ниже пола: нижняя точка стопы (rig.soles — точки подошвы heroModel) под полом (носок
-        // на колене, наклон стопы, шаг) — цель стопы выше на столько же, IK заново и тот же поворот стопы
+        // на колене, наклон стопы, шаг) — цель стопы выше на столько же, IK заново и тот же поворот стопы (_qF:
+        // общий _q ik2 перезаписывает поворотом голени — стопа вставала по осям мира и висела над полом)
         const pen = rig.soles ? floorY - soleLow(i) : 0;
         if (pen > 1e-4) {
           _t.y += pen;
           ik2(u, l, f, _t, _u, 1, 0.9995);
           l.matrixWorld.decompose(_p, _pq, _s);
-          f.quaternion.copy(_pq.invert().multiply(_q));
+          f.quaternion.copy(_pq.invert().multiply(_qF));
+          f.updateWorldMatrix(false, false);
+        }
+        footT[i].copy(_t); poleU[i].copy(_u); footR[i].copy(_qF);
+      }
+      // [W5-ПОЛ] колено и голень не ниже пола (поза на колене — поражение): нижняя точка оболочки сетки ног
+      // (rig.soles.knee) под полом — таз выше на столько же, ноги заново в те же цели стоп с тем же поворотом стоп
+      // (подошвы остаются на полу); колено поднимается чуть меньше таза — до трёх шагов
+      const kn = rig.soles && rig.soles.knee;
+      for (let it = 0; kn && it < 3; it++) {
+        const kp = floorY - termsLow(kn, _kr)[2];
+        if (kp <= 1e-4) break;
+        B.hips.parent.matrixWorld.decompose(_p, _pq, _s);
+        _o.set(0, kp, 0).applyQuaternion(_pq.invert()).divideScalar(_s.x || 1);
+        B.hips.position.add(_o);
+        B.hips.updateWorldMatrix(true, false);
+        for (let i = 0; i < 2; i++) {
+          const u = legs[i][0], l = legs[i][1], f = legs[i][2];
+          ik2(u, l, f, footT[i], poleU[i], 1, 0.9995);
+          l.matrixWorld.decompose(_p, _pq, _s);
+          f.quaternion.copy(_pq.invert().multiply(footR[i]));
           f.updateWorldMatrix(false, false);
         }
       }

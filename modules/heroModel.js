@@ -26,7 +26,7 @@
 // heroRoot не задан — экземпляр создаёт свой root (для удалённого игрока) и сам ставит его по snapLike.player.
 // snapLike: нужен только { player: { position, yaw, velocity, action, hp, … как в snapshot } }.
 
-import { loadVRM, loadHumanoidGLB, retargetClip, createGltfLoader, soleMarkers, soleLowFast, soleHeightFast, soleHeightSkinned, skinnedVertexWorld, boneSubtree } from './vrmKit.js';   // [W5-ПОЛ] подошва
+import { loadVRM, loadHumanoidGLB, retargetClip, createGltfLoader, soleMarkers, soleLowFast, soleHeightFast, soleHeightSkinned, termsLow, skinnedVertexWorld, boneSubtree } from './vrmKit.js';   // [W5-ПОЛ] подошва
 import { createHeroPoses, rigFace, signaturePose, SIGNATURES } from './heroPoses.js'; // [W4-ПОЗЫ]
 
 // Карточки героев: имя, класс, стихия и три строки описания — для меню №8 и витрины (heroShowcase).
@@ -1506,13 +1506,23 @@ export function createHeroModel({
     }
     const mk = {};
     if (cur.soles) soleHeightSkinned(cur.soles, mk);
+    // колено и голень (точки оболочки сетки ног); разворот носка от взгляда героя, градусы (+ — влево)
+    const kn = cur.soles && cur.soles.knee ? termsLow(cur.soles.knee, new Float64Array(3)) : null;
+    const fwd = new THREE.Vector3().setFromMatrixColumn(root.matrixWorld, 2);
+    const toeYaw = (s) => {
+      const a = H.getNormalizedBoneNode(s + 'Foot'), b = H.getNormalizedBoneNode(s + 'Toes');
+      if (!a || !b) return null;
+      const d = b.getWorldPosition(new THREE.Vector3()).sub(a.getWorldPosition(new THREE.Vector3()));
+      return +((Math.atan2(fwd.z * d.x - fwd.x * d.z, fwd.x * d.x + fwd.z * d.z) * 180) / Math.PI).toFixed(1);
+    };
     const r4 = (x) => (Number.isFinite(x) ? +x.toFixed(4) : null);
     root.getWorldPosition(v);
     return {
       hero: S.hero, root: r4(v.y), footL: by('leftFoot'), footR: by('rightFoot'), toesL: by('leftToes'), toesR: by('rightToes'), hips: by('hips'),
       soleL: r4(low.L.y), soleR: r4(low.R.y), sole: r4(Math.min(low.L.y, low.R.y)),
       atL: [r4(low.L.x), r4(low.L.z)], atR: [r4(low.R.x), r4(low.R.z)],
-      markL: r4(mk.L), markR: r4(mk.R), act: actName, pose: poses.active || '', loco: (() => { let n = 'Idle', w = -1; for (const l of LOCO) if (S.wLoco[l] > w) { w = S.wLoco[l]; n = l; } return n; })(),
+      markL: r4(mk.L), markR: r4(mk.R), kneeL: kn ? r4(kn[0]) : null, kneeR: kn ? r4(kn[1]) : null, knee: kn ? r4(kn[2]) : null,
+      toeYawL: toeYaw('left'), toeYawR: toeYaw('right'), act: actName, pose: poses.active || '', loco: (() => { let n = 'Idle', w = -1; for (const l of LOCO) if (S.wLoco[l] > w) { w = S.wLoco[l]; n = l; } return n; })(),
     };
   }
 

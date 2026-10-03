@@ -168,7 +168,10 @@ export const RIGS = Object.freeze({ mixamo: RIG, kaykit: RIG_KAYKIT });
 // до 75° и «вниз-вбок» до 45°: нижняя часть выпуклой оболочки (пятка, края подошвы, загнутый вверх носок сабатона —
 // в покое он выше подошвы, но при наклоне стопы носком вниз первым уходит в пол). Точки — в осях нормализованных
 // костей стопы и носка. Пол модели в покое — нижняя из них (restY, в осях vrm.scene). Один раз на модель (кэш).
-//   soleMarkers(THREE, vrm) → { L: [{ node, p, mesh, i }], R: [...], restY, bones } | null (нет костей стоп или сетки)
+// Так же — колено и голень (knee): выпуклая оболочка сетки бедра и голени (поза на колене).
+//   soleMarkers(THREE, vrm) → { L: [{ node, p, mesh, i }], R: [...], restY, bones, fast, knee } | null (нет костей стоп
+//                             или сетки); fast, knee — наборы pointTerms для termsLow
+//   termsLow(f, res) → нижняя точка набора в мире ([L, R, min] в res)
 //   soleLowFast(m, res) → нижняя точка подошвы в мире ([L, R, min] в res): те же вершины сетки, но по нормализованным
 //                         костям (точно, без humanoid.update и перемножения матриц, без аллокаций) — для кадра игры
 //   soleHeightFast(m, out?) → то же числом (перенос клипов, проверки)
@@ -212,8 +215,10 @@ export function soleMarkers(THREE, vrm) {
   const toScene = new THREE.Matrix4().copy(vrm.scene.matrixWorld).invert();
   const v = new THREE.Vector3(), loc = new THREE.Vector3();
   const side = (s) => {
-    const foot = raw(s + 'Foot'), toes = raw(s + 'Toes');
-    return { all: boneSubtree(foot), toes: boneSubtree(toes), nf: H.getNormalizedBoneNode(s + 'Foot'), nt: H.getNormalizedBoneNode(s + 'Toes'), pts: [] };
+    const foot = raw(s + 'Foot'), toes = raw(s + 'Toes'), all = boneSubtree(foot);
+    // нога выше стопы: бедро и голень (их дочерние кости, кроме стопы) — для точек колена (kp)
+    const leg = new Set([...boneSubtree(raw(s + 'UpperLeg'))].filter((b) => !all.has(b)));
+    return { all, toes: boneSubtree(toes), leg, nf: H.getNormalizedBoneNode(s + 'Foot'), nt: H.getNormalizedBoneNode(s + 'Toes'), pts: [], kp: [] };
   };
   const sides = { L: side('left'), R: side('right') };
   // один проход по сырым массивам весов, матрицы костей — один раз на сетку (без getComponent и множеств на вершину)
@@ -221,10 +226,15 @@ export function soleMarkers(THREE, vrm) {
   vrm.scene.traverse((o) => {
     if (!o.isSkinnedMesh || !o.skeleton || !o.visible || !o.geometry || !o.geometry.attributes.skinIndex) return;
     const bones = o.skeleton.bones, SI = o.geometry.attributes.skinIndex, SW = o.geometry.attributes.skinWeight, n = o.geometry.attributes.position.count;
-    // кость → 1/2 (стопа левой/правой), +2 — носок
+    // кость → 1/2 (стопа левой/правой), +2 — носок; 5/6 — бедро и голень левой/правой
     const tag = new Uint8Array(bones.length);
     let any = false;
-    bones.forEach((b, i) => { for (let s2 = 0; s2 < 2; s2++) { const S = SIDE[s2]; if (S.nf && S.all.has(b)) { tag[i] = 1 + s2 + (S.toes.has(b) ? 2 : 0); any = true; } } });
+    bones.forEach((b, i) => {
+      for (let s2 = 0; s2 < 2; s2++) {
+        const S = SIDE[s2];
+        if (S.nf && S.all.has(b)) { tag[i] = 1 + s2 + (S.toes.has(b) ? 2 : 0); any = true; } else if (S.nf && S.leg.has(b)) { tag[i] = 5 + s2; any = true; }
+      }
+    });
     if (!any) return;
     const si = SI.array, sw = SW.array, ws = SI.itemSize, ww = SW.itemSize;
     const wk = SW.normalized ? 1 / (sw instanceof Uint8Array ? 255 : sw instanceof Uint16Array ? 65535 : 1) : 1;
@@ -232,16 +242,18 @@ export function soleMarkers(THREE, vrm) {
     const BM = new Array(bones.length).fill(null), bind = o.bindMatrix, pos = o.geometry.attributes.position;
     const bm = (k) => BM[k] || (BM[k] = new THREE.Matrix4().multiplyMatrices(toScene, new THREE.Matrix4().multiplyMatrices(bones[k].matrixWorld, o.skeleton.boneInverses[k])));
     for (let i = 0; i < n; i++) {
-      let fL = 0, tL = 0, fR = 0, tR = 0;
+      let fL = 0, tL = 0, fR = 0, tR = 0, gL = 0, gR = 0;
       for (let j = 0; j < 4; j++) {
         const t = tag[si[i * ws + j]];
         if (!t) continue;
         const w = sw[i * ww + j] * wk;
-        if (t === 1 || t === 3) fL += w; else fR += w;
+        if (t === 5) gL += w; else if (t === 6) gR += w;
+        else if (t === 1 || t === 3) fL += w; else fR += w;
         if (t === 3) tL += w; else if (t === 4) tR += w;
       }
       const s2 = fL >= 0.5 ? 0 : fR >= 0.5 ? 1 : -1;
-      if (s2 < 0) continue;
+      const g2 = s2 >= 0 ? -1 : gL >= 0.5 ? 0 : gR >= 0.5 ? 1 : -1;   // вершина ноги выше стопы
+      if (s2 < 0 && g2 < 0) continue;
       const wf = s2 ? fR : fL, wt = s2 ? tR : tL;
       // вершина в осях vrm.scene: Σ w · (кость · обратная привязки) · bindMatrix · v
       v.fromBufferAttribute(pos, i).applyMatrix4(bind);
@@ -252,7 +264,8 @@ export function soleMarkers(THREE, vrm) {
         loc.copy(v).applyMatrix4(bm(si[i * ws + j]));
         x += loc.x * w; y += loc.y * w; z += loc.z * w;
       }
-      SIDE[s2].pts.push({ x, y, z, toe: wt > wf - wt, mesh: o, i });
+      if (s2 >= 0) SIDE[s2].pts.push({ x, y, z, toe: wt > wf - wt, mesh: o, i });
+      else SIDE[g2].kp.push({ x, y, z, mesh: o, i });
     }
   });
   let restY = Infinity;
@@ -284,18 +297,35 @@ export function soleMarkers(THREE, vrm) {
     for (let j = 0; j < 4; j++) if (sw.getComponent(q.i, j) > 0) bs.add(q.mesh.skeleton.bones[si.getComponent(q.i, j)]);
   }
   out.bones = [...bs].filter(Boolean);
-  out.fast = soleTerms(THREE, H, out);
+  out.fast = pointTerms(THREE, H, out);
+  // [W5-ПОЛ] колено и голень (бедро и голень выше стопы): опорные точки по 64 направлениям сферы — выпуклая оболочка
+  // сетки ноги, любая её точка может лечь на пол (колено поражения). Для слоя поз: таз выше, если голень ушла в пол.
+  const knee = { L: [], R: [] };
+  for (const [k, S] of Object.entries(sides)) {
+    if (!S.kp.length) continue;
+    const pick = new Set();
+    for (let j = 0, N = 64; j < N; j++) {
+      const yy = 1 - (2 * (j + 0.5)) / N, r = Math.sqrt(1 - yy * yy), ph = j * Math.PI * (3 - Math.sqrt(5));
+      d.set(r * Math.cos(ph), yy, r * Math.sin(ph));
+      let best = null, bd = -Infinity;
+      for (const p of S.kp) { const q = p.x * d.x + p.y * d.y + p.z * d.z; if (q > bd) { bd = q; best = p; } }
+      pick.add(best);
+    }
+    knee[k] = [...pick];
+  }
+  out.knee = knee.L.length || knee.R.length ? pointTerms(THREE, H, knee) : null;
   SOLES.set(vrm, out);
   return out;
 }
-// [W5-ПОЛ] Точки подошвы для кадра — по нормализованным костям. three-vrm (humanoid.update) поворачивает сырую кость
+// [W5-ПОЛ] Точки сетки для кадра (подошва, колено) — по нормализованным костям. three-vrm (humanoid.update) поворачивает сырую кость
 // так, что её мировая матрица = мировая нормализованной · C, где C = нормализованная⁻¹ · сырая в покое (постоянная);
 // у кости вне гуманоида (кончик носка) — через ближайшую кость гуманоида вверх по цепочке. Тогда вершина сетки
 // = Σ w · N.matrixWorld · (C · обратная привязки · bindMatrix · v): веса одного узла сворачиваются в один вектор
 // (x, y, z, Σw), а для высоты нужна только строка y матрицы узла. Узлы обновляются родитель раньше: у верхнего
 // (голень) — вся цепочка до корня сцены, у остальных — от родителя. Вызывается в покое (из soleMarkers).
-//   → { nodes, chain: Uint8Array, term: Float64Array [узел, x, y, z, w]…, pt: Int32Array (начало точки), side: Uint8Array }
-function soleTerms(THREE, H, m) {
+//   pointTerms(THREE, H, { L: [{ mesh, i }], R: [...] })
+//   → { nodes, chain: Uint8Array, term: Float64Array [узел, x, y, z, w]…, pt: Int32Array (начало точки), side: Uint8Array, res }
+function pointTerms(THREE, H, m) {
   const name = new Map();
   for (const b of Object.keys(H.humanBones || {})) { const r = H.getRawBoneNode ? H.getRawBoneNode(b) : null; if (r) name.set(r, b); }
   const normOf = (bone) => { for (let o = bone; o; o = o.parent) if (name.has(o)) return H.getNormalizedBoneNode(name.get(o)); return null; };
@@ -353,11 +383,12 @@ function skinnedLow(list, v) {
   for (let i = 0; i < list.length; i++) { const y = skinnedVertexWorld(list[i].mesh, list[i].i, v).y; if (y < lo) lo = y; }
   return lo;
 }
-// Точно и дёшево (кадр игры): те же вершины сетки по нормализованным костям (soleTerms); сама обновляет их мировые
-// матрицы. Итог — в res (Float64Array(3): нижняя точка левой, правой и обеих стоп), функция возвращает res: без
-// аллокаций (число, возвращённое из функции, V8 упаковывает в кучу — 16 байт на вызов). Нужны быстрые точки (m.fast).
-export function soleLowFast(m, res) {
-  const f = m.fast, N = f.nodes, T = f.term, P = f.pt, ch = f.chain, sd = f.side;
+// Точно и дёшево (кадр игры): нижняя точка набора pointTerms по нормализованным костям; сама обновляет их мировые
+// матрицы. Итог — в res (Float64Array(3): нижняя точка левой, правой ноги и обеих), функция возвращает res: без
+// аллокаций (число, возвращённое из функции, V8 упаковывает в кучу — 16 байт на вызов).
+//   termsLow(f, res) — любой набор (m.fast — подошва, m.knee — колено и голень); soleLowFast(m, res) — подошва
+export function termsLow(f, res) {
+  const N = f.nodes, T = f.term, P = f.pt, ch = f.chain, sd = f.side;
   for (let i = 0; i < N.length; i++) N[i].updateWorldMatrix(ch[i] === 1, false);
   let lo0 = Infinity, lo1 = Infinity;
   for (let p = 0, n = P.length - 1; p < n; p++) {
@@ -371,6 +402,7 @@ export function soleLowFast(m, res) {
   res[0] = lo0; res[1] = lo1; res[2] = lo0 < lo1 ? lo0 : lo1;
   return res;
 }
+export function soleLowFast(m, res) { return termsLow(m.fast, res); }
 // То же числом (перенос клипов, проверки); нет быстрых точек — точный скиннинг (сырые кости — в позе кадра)
 export function soleHeightFast(m, out = null) {
   if (!m || !m.fast) return soleHeightSkinned(m, out);
