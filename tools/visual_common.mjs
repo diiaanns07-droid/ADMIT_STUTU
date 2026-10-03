@@ -229,7 +229,7 @@ export function configPatcher({ bossHp, bossDamage, normalHp, normalDamage } = {
 }
 
 // Новый контекст с игрой: настройки игрока, часы, подмена config.js; ждёт меню и загрузку ассетов
-export async function openGame(browser, server, { size = [1280, 720], settings = {}, patch = {}, query = '?uncapped=1', seed = 20261002, log = () => {} } = {}) {
+export async function openGame(browser, server, { size = [1280, 720], settings = {}, patch = {}, query = '?uncapped=1', seed = 20261002, log = () => {}, beforeGoto = null } = {}) {
   const ctx = await browser.newContext({ viewport: { width: size[0], height: size[1] }, deviceScaleFactor: 1, ignoreHTTPSErrors: true });
   const s = { qualityAuto: false, reducedMotion: false, difficulty: 'easy', volume: 0, muted: true, voice: false, ...settings };
   await ctx.addInitScript((st) => {
@@ -240,6 +240,7 @@ export async function openGame(browser, server, { size = [1280, 720], settings =
   }, s);
   await ctx.addInitScript(CLOCK, seed);
   await ctx.route(/\/config\.js(\?.*)?$/, configPatcher(patch));
+  if (beforeGoto) await beforeGoto(ctx);   // [W5-СВЕТ] свои маршруты опыта (tools/hero_haze_ab.mjs) — до загрузки страницы
   const page = await ctx.newPage();
   page.setDefaultTimeout(240000);   // программный рендер под нагрузкой (параллельные уровни) отвечает медленно
   const errors = [];

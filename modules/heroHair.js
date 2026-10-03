@@ -39,7 +39,8 @@ import { config } from '../config.js';
 // tt — просвечивание, len — длина от макушки (м, до масштаба героя), hood — капюшон оставить
 const STYLES = {
   // эльфийка: длинные платиновые, прямой пробор, тонкие косы от висков назад (полу-распущенные), обруч
-  elf: { spec1: [1.0, 0.97, 0.92], spec1K: 0.11, spec2: [1.0, 0.84, 0.58], spec2K: 0.07, tt: 0.4, kk: [140, 40, -0.08, 0.13], len: 0.9, motion: 1 },
+  // [W5-СВЕТ] tt 0,4 → 0,18: платиновые волосы против контрового светились почти белым (в 4–5 раз ярче лучницы)
+  elf: { spec1: [1.0, 0.97, 0.92], spec1K: 0.11, spec2: [1.0, 0.84, 0.58], spec2K: 0.07, tt: 0.18, kk: [140, 40, -0.08, 0.13], len: 0.9, motion: 1 },
   // чародейка: гладкие чёрные, ровная чёлка и боковые пряди «химэ», фиолетовый отлив
   hime: { spec1: [0.9, 0.88, 1.0], spec1K: 0.24, spec2: [0.5, 0.36, 1.0], spec2K: 0.09, tt: 0.2, kk: [320, 90, -0.06, 0.12], len: 0.8, motion: 0.8 },
   // лучница: каштановая высокая коса-хвост, выбившиеся пряди у лица
@@ -955,7 +956,7 @@ export function buildHair(THREE, ctx) {
     grp.add(new THREE.Mesh(ctx.G(ctx.tube(THREE, new THREE.CatmullRomCurve3(cp), 60, 6, (v) => 0.0026 + 0.0012 * Math.sin(Math.PI * v), { flat: 0.6 })), ctx.mats.trim));
     const mid = S(Math.PI, pf, 0.0175);
     const setting = new THREE.Mesh(ctx.G(new THREE.TorusGeometry(0.009, 0.0022, 6, 16)), ctx.mats.trim);
-    const gemM = ctx.Mt(new ctx.Std({ name: 'gear-circlet-gem', color: ctx.circlet.gem || 0x7fe8ff, emissive: ctx.circlet.gem || 0x7fe8ff, emissiveIntensity: 0.8, roughness: 0.05, flatShading: true }));
+    const gemM = ctx.Mt(new ctx.Std({ name: 'gear-circlet-gem', color: ctx.circlet.gem || 0x7fe8ff, emissive: ctx.circlet.gem || 0x7fe8ff, emissiveIntensity: 0.5, roughness: 0.05, flatShading: true }));   // [W5-СВЕТ] было 0,8
     const drop = new THREE.Mesh(ctx.G(ctx.gem(THREE, { r: 0.007, h: 0.024, n: 6 })), gemM);
     const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), FWD);
     setting.position.copy(mid).addScaledVector(UP, -0.012); setting.quaternion.copy(q);

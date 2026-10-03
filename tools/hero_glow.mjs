@@ -20,6 +20,7 @@ import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { HERE, args, HERO_IDS, loadPlaywright, chromiumPath, startServer, launchBrowser, openGame } from './visual_common.mjs';
 
 const A = args();
@@ -42,7 +43,7 @@ const log = (m) => console.error(`[hero_glow ${((Date.now() - T0) / 1000).toFixe
 const NAMES = { ashen: 'Пепельный страж', elf: 'Эльфийка', dark: 'Тёмная чародейка', ranger: 'Лучница', archmage: 'Архимаг' };
 
 // ------------------------------------------------------------------ в странице: рамка героя и лицо на экране
-function HERO_RECTS() {
+export function HERO_RECTS() {
   const P = window.__vb.probe, scene = P && P.scene, cam = P && P.camera;
   const root = scene && scene.getObjectByName('hero');
   if (!root || !cam) return null;
@@ -93,7 +94,7 @@ function HERO_RECTS() {
 }
 
 // метрики по PNG кадра (декодирование — в странице, без npm-пакетов)
-async function METRICS({ b64, rects }) {
+export async function METRICS({ b64, rects }) {
   const blob = await (await fetch('data:image/png;base64,' + b64)).blob();
   const bmp = await createImageBitmap(blob);
   const cv = new OffscreenCanvas(bmp.width, bmp.height);
@@ -128,14 +129,22 @@ async function METRICS({ b64, rects }) {
   };
 }
 
+// Программный рендер: кадр 1366×768 — ~5 с, поэтому длинные отрезки идут в маленьком окне (480×270), а перед
+// снимком окно возвращается к SIZE и проходят 4 кадра (постобработка и витрина успевают под новый размер)
+const SMALL = [480, 270];
+async function view(g, big) { await g.page.setViewportSize(big ? { width: W, height: H } : { width: SMALL[0], height: SMALL[1] }); }
+
 async function measure(g, file, kind) {
   const { page } = g;
+  await view(g, true);
+  await g.step(4);
   const rects = await page.evaluate(HERO_RECTS);
   const png = await page.screenshot({ type: 'png', timeout: 240000 });
   const m = rects ? await page.evaluate(METRICS, { b64: png.toString('base64'), rects }) : { error: 'нет героя' };
   // кадр в JPEG (для PR и листа)
   const jpg = file.replace(/\.png$/, '.jpg');
   await page.screenshot({ path: jpg, type: 'jpeg', quality: 84, timeout: 240000 });
+  await view(g, false);
   log(`${kind}: пересвет ${pct(m.over)}, лицо ${m.face ?? '—'} (σ ${m.faceSd ?? '—'}), фон ${m.bg ?? '—'}, контраст ${m.contrast ?? '—'}`);
   return { ...m, file: relative(OUT, jpg) };
 }
@@ -147,7 +156,7 @@ async function runQuality(browser, server, q) {
   const errors = [];
   if (HAZE) {
     // дымка витрины: каждый герой — выбор карточки, затем кадры через 0,5…12 с (виртуальных) после «готов»
-    const g = await openGame(browser, server, { size: SIZE, seed: SEED, settings: { quality: q, hero: HEROES[0] === 'ashen' ? 'dark' : 'ashen' }, patch: { bossHp: 3, bossDamage: 0 }, log: (m) => log(`${q} haze: ${m}`) });
+    const g = await openGame(browser, server, { size: SMALL, seed: SEED, settings: { quality: q, hero: HEROES[0] === 'ashen' ? 'dark' : 'ashen' }, patch: { bossHp: 3, bossDamage: 0 }, log: (m) => log(`${q} haze: ${m}`) });
     const { page } = g;
     await g.hideUi(true);
     for (const h of HEROES) {
@@ -155,13 +164,13 @@ async function runQuality(browser, server, q) {
       await g.hideUi(false);
       await page.locator('label.ao-herocard', { has: page.locator(`input[value="${h}"]`) }).click({ timeout: 240000 });
       await g.hideUi(true);
-      await page.mouse.move(W - 4, 4);
+      await page.mouse.move(SMALL[0] - 4, 4);
       await page.waitForFunction((id) => { const s = window.__ASHEN__.hero(); return s && s.hero === id && s.ready; }, h, { timeout: 240000, polling: 50 }).catch(() => errors.push(`${h}: не загрузился`));
       await g.virtual(true);
       let t = 0;
       const series = [];
       for (const at of [0.5, 1, 2, 4, 8, 12]) {
-        await g.step(Math.round((at - t) * 30)); t = at;
+        await g.step(Math.max(0, Math.round((at - t) * 30) - 4)); t = at;   // ещё 4 кадра — в measure
         const m = await measure(g, join(OUT, `${q}_${h}_haze_${String(at).replace('.', '_')}s.png`), `${q} ${h} ${at} с`);
         const sc = await page.evaluate(() => window.__ASHEN__.heroShowcase());
         series.push({ t: at, ...m, showcase: sc });
@@ -174,13 +183,13 @@ async function runQuality(browser, server, q) {
   }
   for (const h of HEROES) {
     const r = (res[h] = {});
-    const g = await openGame(browser, server, { size: SIZE, seed: SEED, settings: { quality: q, hero: h }, patch: { bossHp: 3, bossDamage: 0 }, log: (m) => log(`${q} ${h}: ${m}`) });
+    const g = await openGame(browser, server, { size: SMALL, seed: SEED, settings: { quality: q, hero: h }, patch: { bossHp: 3, bossDamage: 0 }, log: (m) => log(`${q} ${h}: ${m}`) });
     const { page } = g;
     try {
       if (!NO_MENU) {
         // витрина: «выход» героя отыгран (2,5 с), как видит игрок; интерфейс скрыт — в кадре только 3D
         await g.virtual(true);
-        await page.mouse.move(W - 4, 4);
+        await page.mouse.move(SMALL[0] - 4, 4);
         await g.step(75);
         await g.hideUi(true);
         await g.step(2);
@@ -202,11 +211,10 @@ async function runQuality(browser, server, q) {
           const f = [Math.sin(pose.yaw), 0, Math.cos(pose.yaw)];
           const hd = pose.head;
           await g.setCam({ pos: [hd[0] + f[0] * 2.6, hd[1] - 0.05, hd[2] + f[2] * 2.6], at: [hd[0], hd[1] - 0.5, hd[2]], fov: 34 });
-          await g.step(2);
           r.battleFront = await measure(g, join(OUT, `${q}_${h}_battle_front.png`), `${q} ${h} бой спереди`);
           // заряд заклинания (J — огонь, удержание 0,6 с): свечение рук
           await page.keyboard.down('KeyJ');
-          await g.step(18);
+          await g.step(14);
           r.battleCharge = await measure(g, join(OUT, `${q}_${h}_battle_charge.png`), `${q} ${h} заряд спереди`);
           await page.keyboard.up('KeyJ');
           await g.setCam(null);
@@ -294,7 +302,9 @@ function git(root) {
   try { return { commit: execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: root }).toString().trim(), branch: execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: root }).toString().trim() }; } catch (e) { return {}; }
 }
 
-// ------------------------------------------------------------------ запуск
+// ------------------------------------------------------------------ запуск (импорт модуля — только функции замера)
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
+async function main() {
 mkdirSync(OUT, { recursive: true });
 if (PART) {
   // дочерний процесс: один уровень качества
@@ -326,3 +336,4 @@ const cmp = COMPARE && existsSync(COMPARE) ? JSON.parse(readFileSync(COMPARE, 'u
 writeFileSync(join(OUT, 'metrics.md'), report(all, cmp));
 if (!HAZE) sheet(all);
 log(`готово → ${relative(HERE, OUT)}`);
+}

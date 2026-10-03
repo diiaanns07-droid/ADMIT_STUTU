@@ -119,13 +119,13 @@ export function patchHeroLight(THREE, mat) {
     float hWrap = saturate( ( hNL + 0.5 ) / 1.5 );
     totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * ( hDiff + max( hWrap - hDiff, 0.0 ) * vec3( 0.5, 0.31, 0.25 ) ) * hMet;
     float hTr = pow( saturate( dot( hV, - heroRimDir ) ), 3.0 ) * pow( 1.0 - saturate( dot( hN, hV ) ), 1.5 );
-    totalEmissiveRadiance += heroRimColor * diffuseColor.rgb * vec3( 1.0, 0.36, 0.24 ) * hTr * 1.4;` : `float hDiff = mix( saturate( hNL ), saturate( ( hNL + 0.35 ) / 1.35 ), 0.35 );
+    totalEmissiveRadiance += heroRimColor * diffuseColor.rgb * vec3( 1.0, 0.36, 0.24 ) * hTr * 0.8;   // [W5-СВЕТ] просвет ушей и щёк: было 1,4` : `float hDiff = mix( saturate( hNL ), saturate( ( hNL + 0.35 ) / 1.35 ), 0.35 );
     totalEmissiveRadiance += diffuseColor.rgb * heroKeyColor * hDiff * hMet;`}
     vec3 hH = normalize( heroKeyDir + hV );
     float hSpec = pow( saturate( dot( hN, hH ) ), mix( 90.0, 12.0, roughnessFactor ) ) * ( 1.0 - roughnessFactor );
     totalEmissiveRadiance += heroKeyColor * hSpec * mix( vec3( 0.1 ), diffuseColor.rgb * 1.8 + 0.06, metalnessFactor ) * ( 1.0 + 0.6 * metalnessFactor );
     float hF = pow( 1.0 - saturate( dot( hN, hV ) ), 4.0 );   // узкая кромка: силуэт, а не заливка тёмных тканей
-    totalEmissiveRadiance += heroRimColor * hF * saturate( dot( hN, heroRimDir ) * 0.6 + 0.45 );
+    totalEmissiveRadiance += heroRimColor * hF * saturate( dot( hN, heroRimDir ) * 0.75 + 0.2 );   // [W5-СВЕТ] кромка со стороны контрового (было · 0,6 + 0,45 — по всему силуэту)
     totalEmissiveRadiance += diffuseColor.rgb * heroFillColor * ( 0.4 + 0.6 * saturate( dot( hN, hV ) ) ) * hMet;
   }`);
   };
@@ -220,7 +220,7 @@ void RE_Direct_Hair( const in IncidentLight directLight, const in vec3 geometryP
     totalEmissiveRadiance += heroKeyColor * hairKKSpec( hN, hV, heroKeyDir );
     // кромка света витрины — узкая, только со стороны контрового и в цвет волос (не белый ободок)
     float hF = pow( 1.0 - saturate( dot( normal, hV ) ), 4.0 );
-    totalEmissiveRadiance += heroRimColor * hF * saturate( dot( hN, heroRimDir ) ) * 0.3 * mix( vec3( 1.0 ), diffuseColor.rgb * 2.5, 0.6 );
+    totalEmissiveRadiance += heroRimColor * hF * saturate( dot( hN, heroRimDir ) ) * 0.22 * mix( vec3( 1.0 ), diffuseColor.rgb * 1.6, 0.6 );   // [W5-СВЕТ] было 0,3 и альбедо ×2,5 (светлые волосы — белый ободок)
     totalEmissiveRadiance += heroRimColor * hairTrans( hN, hV, heroRimDir, diffuseColor.rgb );
     totalEmissiveRadiance += diffuseColor.rgb * heroFillColor * ( 0.4 + 0.6 * saturate( dot( normal, hV ) ) );
   }`);
