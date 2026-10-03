@@ -1627,6 +1627,8 @@ export async function createVision(options = {}) {
     if (cfg.prefetch === false || typeof window === 'undefined' || typeof fetch !== 'function') return;
     let list = [];
     try { list = mediaPipePreloadList(mp).filter((u) => /^https?:/i.test(u)); } catch { list = []; }
+    // с локального сервера (START_GAME.cmd) воркер получит файлы мгновенно — качать заранее нечего (как в offline.js)
+    list = list.filter((u) => { try { return !/^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/.test(new URL(u).hostname); } catch { return true; } });
     if (!cfg.hands && mp.handModelUrl) list = list.filter((u) => u !== mp.handModelUrl);
     if (!list.length) return;
     const ac = typeof AbortController === 'function' ? new AbortController() : null;

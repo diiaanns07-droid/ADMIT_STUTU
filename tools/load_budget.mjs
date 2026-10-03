@@ -7,8 +7,9 @@
 //               в отчёте тогда два числа: байты по сети (wire) и распакованные
 // Сценарии (каждый — в новом профиле, без кэша):
 //   menu  — до появления меню (boot.done), до героя на витрине (hero.ready) и сколько докачивается в меню;
-//   fight — меню → «Отладка с клавиатуры» → бой: байты до старта боя и за первые 15 с боя;
-//   track — меню → «Начать» → «Разрешить камеру» (фейковая камера): байты до работающего трекинга.
+//   fight — меню → «Отладка с клавиатуры» → «Играть» → «Продолжить без камеры» → бой: байты до старта боя и за первые 15 с боя;
+//   track — меню → «Играть» (сразу просит камеру; фейковая камера): байты до работающего трекинга и первого ответа
+//           распознавания, ступень лестницы отката и причина, если она понадобилась. [W5-КАМЕРА]
 // Байты — тела ответов (без сжатия на лету), включая CDN и модели MediaPipe.
 // Канал моделируется одной общей «трубой» FIFO: ответ занимает её на размер/ширину, плюс задержка.
 
@@ -164,19 +165,23 @@ async function main() {
   if (ONLY.includes('fight')) results.push(await runScenario(browser, base, 'fight', async ({ page, mark, sleep }) => {
     await waitFor(page, () => !!window.__ASHEN__, TO); mark('menu');
     await page.getByText('Отладка с клавиатуры').click();
-    await page.getByRole('button', { name: 'Начать' }).first().click();
+    await page.getByRole('button', { name: 'Играть', exact: true }).first().click();   // [W5-КАМЕРА] было «Начать» (до быстрого входа)
     await page.getByRole('button', { name: /Продолжить без камеры/ }).click();
     await page.getByRole('button', { name: 'В бой' }).click();
     await waitFor(page, () => ['intro', 'playing'].includes(window.__ASHEN__.screen), TO); mark('fight');
     await sleep(15000); mark('fight15s');
   }));
 
+  // [W5-КАМЕРА] «Играть» сразу просит камеру (быстрый вход): кнопок «Начать» и «Разрешить камеру» в меню больше нет
   if (ONLY.includes('track')) results.push(await runScenario(browser, base, 'track', async ({ page, mark }) => {
     await waitFor(page, () => !!window.__ASHEN__, TO); mark('menu');
-    await page.getByRole('button', { name: 'Начать' }).first().click();
-    await page.getByRole('button', { name: 'Разрешить камеру' }).click();
+    await waitFor(page, () => [...document.querySelectorAll('button')].some((b) => b.offsetParent && b.textContent.trim() === 'Играть'), TO);
+    await page.getByRole('button', { name: 'Играть', exact: true }).first().click();
     mark('cameraClick');
     await waitFor(page, () => { const s = window.__ASHEN__.tracking; return s && ['ready', 'lost', 'calibrating'].includes(s.status); }, TO * 2); mark('tracking');
+    await waitFor(page, () => { const s = window.__ASHEN__.tracking; return s && s.debug && s.debug.results > 0; }, TO * 2).then(() => mark('firstResult')).catch(() => {});
+    const t = await page.evaluate(() => { const s = window.__ASHEN__.tracking || {}; const d = s.debug || {}; return { status: s.status, message: s.message, step: d.engineStep, ladder: d.ladderHistory, hz: d.inferenceHz, firstResultMs: d.firstResultMs }; }).catch(() => null);
+    if (t) mark('_track').info = t;
   }));
 
   srv.close();
@@ -187,6 +192,7 @@ async function main() {
   for (const r of results) {
     lines.push(`## ${r.name} (${r.requests} запросов)`);
     for (const [k, m] of Object.entries(r.marks)) if (!k.startsWith('_')) lines.push(`- ${k}: ${s(m.t)} с, ${MB(m.bytes)} МБ${GZIP ? ` (по сети ${MB(m.wire)} МБ)` : ''}`);
+    if (r.marks._track && r.marks._track.info) lines.push(`- распознавание: ${JSON.stringify(r.marks._track.info)}`); // [W5-КАМЕРА]
     const top = Object.entries(r.files).sort((a, b) => b[1] - a[1]).slice(0, 25);
     lines.push('', '| файл | МБ |', '|---|---|', ...top.map(([f, b]) => `| ${f} | ${MB(b)} |`), '');
     if (r.errors.length) lines.push('ошибки:', ...r.errors.map((e) => '  ' + e), '');

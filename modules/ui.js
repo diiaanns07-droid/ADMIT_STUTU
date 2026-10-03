@@ -32,6 +32,7 @@ import { createTutorialTrainer, TRAINER_STEPS } from '../core/tutorialTrainer.js
 import { COACH_GROUPS, hintPictogram } from '../core/gestureCoach.js'; // [ТВИСТ «ОШИБКА»] итоги: жесты и пиктограммы
 import { createTechniqueScreen } from './techniqueTrainer.js';            // [ТВИСТ «ОШИБКА»] «Тренажёр техники»
 import { createChallengeScreen, createChallengeMenuButton } from './challenge.js'; // [W3-CHALLENGE] «Испытание · 60 с»
+import { cameraAdvice, startupHint, diagRows, reportText } from './camReport.js'; // [W5-КАМЕРА] «что делать» и «Диагностика»
 
 export const API_VERSION = 'ASHEN_V1';
 
@@ -613,6 +614,7 @@ function normTracking(t) {
     confidence: o && isNum(o.confidence) ? clamp(o.confidence, 0, 1) : null,
     calibrated: o && typeof o.calibrated === 'boolean' ? o.calibrated : null,
     parts: normParts((o && o.parts) || (dbg && (dbg.parts || dbg.visibility))),
+    code: o && typeof o.error === 'string' ? o.error : null, // [W5-КАМЕРА] код ошибки vision — «что делать» по коду, а не по словам
   };
 }
 
@@ -1193,12 +1195,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     let lastKey = null;
     return {
       node,
-      show(rawText) {
+      show(rawText, code = null) {
         setHidden(node, false);
         const key = String(rawText || '');
-        if (key === lastKey) return;
-        lastKey = key;
-        const info = explainError(key);
+        if (`${code}|${key}` === lastKey) return;
+        lastKey = `${code}|${key}`;
+        // [W5-КАМЕРА] ошибка vision с кодом — совет по коду (camReport.js), иначе — как раньше, по словам
+        const info = (code && cameraAdvice(code, key, { embedded: embeddedWindow() })) || explainError(key);
         title.textContent = info.title;
         reason.textContent = info.reason;
         steps.replaceChildren(...info.steps.map((s) => el('li', { text: s })));
@@ -1208,6 +1211,87 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       },
       hide() {
         setHidden(node, true);
+      },
+    };
+  }
+
+  // [W5-КАМЕРА] игра открыта во встроенном окне (превью VS Code, iframe)
+  function embeddedWindow() {
+    try { return win.self !== win.top; } catch (err) { return true; }
+  }
+  // [W5-КАМЕРА] экран камеры и калибровки: крупная строка статуса (withLine), «Что делать», пока распознавание
+  // не запустилось, и «Диагностика» с «Скопировать отчёт» (камера к/с, распознаваний в секунду, воркер или
+  // основной поток, GPU/CPU, кадры игры). Отчёт владелец присылает нам, когда игра не видит камеру.
+  function camStatBlock({ withLine = false } = {}) {
+    const line = withLine ? statusLine('ao-camstat__line') : null;
+    const todoTitle = el('strong', { class: 'ao-camstat__title' });
+    const todoSteps = el('ul', { class: 'ao-camstat__steps' });
+    const todo = el('div', { class: 'ao-camstat__todo', role: 'status', hidden: true }, todoTitle, todoSteps);
+    const node = el('div', { class: 'ao-camstat', hidden: true }, line ? line.node : null, todo);
+    const list = el('dl', { class: 'ao-camdiag__list' });
+    const note = el('span', { class: 'ao-camdiag__note', 'aria-live': 'polite' });
+    const report = el('textarea', { class: 'ao-camdiag__report', readonly: true, rows: '7', 'aria-label': 'Отчёт камеры', hidden: true });
+    const copy = localBtn('Скопировать отчёт', () => { copyReport(); });
+    const diag = el('details', { class: 'ao-camdiag' }, el('summary', { text: 'Диагностика' }), list, el('div', { class: 'ao-camdiag__foot' }, copy.node, note), report);
+    let last = { tracking: null, diag: null, screen: '' };
+    let stKey = '';
+    let stSince = 0;
+    let todoKey = '';
+    let paintedAt = -1e9;
+    let noteTimer = 0;
+    const text = () => reportText(last.tracking, { ...(last.diag || {}), screen: last.screen });
+    function paintDiag() {
+      paintedAt = win.performance.now();
+      list.replaceChildren(...diagRows(last.tracking, last.diag).flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { text: v })]));
+    }
+    listen(diag, 'toggle', () => { if (diag.open) paintDiag(); });
+    function flash(msgText) {
+      setText(note, msgText);
+      cancel(noteTimer);
+      noteTimer = later(() => setText(note, ''), 3000);
+    }
+    async function copyReport() {
+      const t = text();
+      let ok = false;
+      try {
+        if (win.isSecureContext && win.navigator.clipboard && typeof win.navigator.clipboard.writeText === 'function') { await win.navigator.clipboard.writeText(t); ok = true; }
+      } catch (err) { ok = false; }
+      if (!ok) {
+        // без Clipboard API (адрес не https, запрет браузера): выделенный текст и copy; не вышло — текст на экране для Ctrl+C
+        report.value = t;
+        report.hidden = false;
+        try { report.select(); ok = !!doc.execCommand && doc.execCommand('copy'); } catch (err) { ok = false; }
+      } else report.hidden = true;
+      flash(ok ? 'Отчёт скопирован — пришлите его разработчикам' : 'Скопируйте отчёт из поля ниже (Ctrl+C)');
+    }
+    return {
+      node,
+      diag,
+      paint(ctx) {
+        const tr = ctx.tr;
+        last = { tracking: ctx.vm.tracking && typeof ctx.vm.tracking === 'object' ? ctx.vm.tracking : null, diag: ctx.vm.camDiag || null, screen: ctx.screen };
+        if (tr.status !== stKey) { stKey = tr.status; stSince = ctx.now; }
+        const hint = ctx.debug || tr.status === 'error' ? null : startupHint(tr, { sinceMs: ctx.now - stSince, embedded: embeddedWindow() });
+        const key = hint ? `${hint.text}|${hint.steps.join('|')}` : '';
+        if (key !== todoKey) {
+          todoKey = key;
+          if (hint) { todoTitle.textContent = hint.text; todoSteps.replaceChildren(...hint.steps.map((x) => el('li', { text: x }))); }
+          setAttr(todo, 'data-tone', hint ? hint.tone : null);
+        }
+        setHidden(todo, !hint);
+        let showLine = false;
+        if (line) {
+          showLine = !ctx.debug && (tr.status === 'permission' || tr.status === 'loading' || tr.status === 'lost');
+          if (showLine) {
+            const info = describeTracking(tr, cfg);
+            const secs = Math.floor((ctx.now - stSince) / 1000);
+            const extra = tr.status === 'loading' ? [tr.progress > 0 && tr.progress < 1 ? pct(tr.progress) : '', secs >= 3 ? `${secs} с` : ''].filter(Boolean).join(' · ') : '';
+            paintStatus(line, { tone: info.tone, label: tr.message || info.label }, extra);
+          }
+          setHidden(line.node, !showLine);
+        }
+        setHidden(node, !(showLine || hint));
+        if (diag.open && ctx.now - paintedAt > 250) paintDiag();
       },
     };
   }
@@ -1632,6 +1716,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const msg = el('p', { class: 'ao-msg' });
     const err = errorBox();
     const host = el('div', { class: 'ao-slothost' });
+    const camStat = camStatBlock({ withLine: cfg.quickStart }); // [W5-КАМЕРА]
     const panel = el(
       'div',
       { class: 'ao-panel ao-panel--camera ao-frame' },
@@ -1661,7 +1746,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
             }),
           ),
         ),
-        el('div', { class: 'ao-col ao-col--media' }, host, status.node, msg),
+        el('div', { class: 'ao-col ao-col--media' }, host, el('div', { class: 'ao-train__statusrow' }, status.node, camStat.diag), camStat.node, msg), // [W5-КАМЕРА]
       ),
       err.node,
       el('div', { class: 'ao-actions' }, enable.node, next.node, skip.node, el('span', { class: 'ao-spacer' }), back.node),
@@ -1682,8 +1767,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         tip('lock', 'Видео остаётся на компьютере'));
       setAttr(h, 'aria-live', 'polite');
       const node = el('div', { class: 'ao-panel ao-panel--camera ao-panel--onb ao-frame' },
-        el('div', { class: 'ao-onb__head' }, h, sub), stage, tips, err.node,
-        el('div', { class: 'ao-actions ao-actions--onb' }, enable.node, next.node, skip.node, el('span', { class: 'ao-spacer' }), back.node));
+        el('div', { class: 'ao-onb__head' }, h, sub), stage, camStat.node, tips, err.node, // [W5-КАМЕРА] строка статуса и «что делать»
+        el('div', { class: 'ao-actions ao-actions--onb' }, enable.node, next.node, skip.node, camStat.diag, el('span', { class: 'ao-spacer' }), back.node));
       return { node, frame, ring, hands, sub };
     })() : null;
     let running = false;
@@ -1713,6 +1798,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
       else if (!running) { title = pend ? 'Включаем камеру…' : 'Камера выключена'; sub = pend ? '' : 'Нажмите «Включить камеру».'; }
       else if (scale === 'far') { title = 'Сядьте ближе'; sub = 'Или замрите на 1,5 с — игра подстроится.'; }
       else if (scale === 'near') { title = 'Отодвиньтесь'; sub = 'Или замрите на 1,5 с — игра подстроится.'; }
+      else if (st === 'lost' && /Нет новых кадров/.test(hint)) { title = 'Камера молчит'; sub = 'Кадры с камеры не приходят.'; }   // [W5-КАМЕРА] не «пересядьте»
+      else if (st === 'lost' && /не успевает/.test(hint)) { title = 'Распознавание отстаёт'; sub = 'Игра освобождает видеокарту…'; }
       else if (!shoulders) { title = 'Сядьте в рамку'; sub = 'Чтобы плечи и кисти попали в кадр.'; }
       else if (calibrating && /опустите/i.test(hint)) { title = 'Опустите руки'; sub = 'И замрите на полторы секунды.'; }
       else if (calibrating) { title = prog > 0.02 ? 'Замрите…' : 'Сядьте ровно'; sub = prog > 0.02 ? pct(prog) : 'Руки вниз.'; }
@@ -1752,8 +1839,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         }
         setText(msg, text);
         setHidden(msg, !text);
-        if (st === 'error') err.show(ctx.errorText);
+        if (st === 'error') err.show(ctx.errorText, ctx.tr.code);   // [W5-КАМЕРА] код ошибки vision
         else err.hide();
+        camStat.paint(ctx);   // [W5-КАМЕРА]
         let label = 'Разрешить камеру';
         if (st === 'permission') label = 'Ждём разрешения…';
         else if (st === 'loading') label = 'Загрузка модели…';
@@ -1848,6 +1936,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     const confText = el('span', { class: 'ao-kv__v' });
     const msg = el('p', { class: 'ao-msg' });
     const err = errorBox();
+    const camStat = camStatBlock(); // [W5-КАМЕРА]
     const enable = btn('Включить камеру', pressEnable, { variant: 'primary', iconName: 'camera' });
     const run = btn('Начать калибровку', pressCalibrate, { variant: 'primary' });
     const next = btn('Далее: обучение', () => invoke('onStart', { from: 'calibration' }), { variant: 'primary' });
@@ -1874,7 +1963,8 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
           el(
             'div',
             { class: 'ao-block' },
-            status.node,
+            el('div', { class: 'ao-train__statusrow' }, status.node, camStat.diag), // [W5-КАМЕРА]
+            camStat.node,
             el('div', { class: 'ao-kv' }, el('span', { class: 'ao-kv__k', text: 'Калибровка' }), progressText),
             progress.node,
             el('div', { class: 'ao-kv' }, el('span', { class: 'ao-kv__k', text: 'Уверенность распознавания' }), confText),
@@ -1927,9 +2017,10 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setText(msg, text);
         setHidden(msg, !text);
 
-        if (st === 'error') err.show(ctx.errorText);
+        if (st === 'error') err.show(ctx.errorText, ctx.tr.code);   // [W5-КАМЕРА]
         else if (state.calib.error) err.show(state.calib.error);
         else err.hide();
+        camStat.paint(ctx);   // [W5-КАМЕРА]
 
         const off = !running && !CAMERA_STARTING.includes(st);
         setBtn(enable, { hidden: !off, disabled: pendEnable, label: pendEnable ? 'Запрашиваем…' : st === 'error' ? 'Повторить' : 'Включить камеру' });

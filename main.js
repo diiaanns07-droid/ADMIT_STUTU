@@ -1569,7 +1569,29 @@ function renderUI() {
     autoResumeMs: app.autoResume ? Math.max(0, app.autoResume.at - performance.now()) : null,
     onboard: { quick: QUICK, restored: app.onb.restored, demo: DEMO,
       starting: app.screen === 'camera' && app.onb.autoEnabled && !app.error && (!vision || visionStatus().status === 'idle') }, // камера уже запрошена
+    camDiag: app.screen === 'camera' || app.screen === 'calibration' ? camDiagView() : null, // [W5-КАМЕРА] «Диагностика» экрана камеры
   });
+}
+// [W5-КАМЕРА] для «Диагностики» и «Скопировать отчёт» на экране камеры: кадры игры, видеокарта, дешёвый кадр, офлайн;
+// собирается не чаще 4 раз в секунду
+const camDiagCache = { t: -1e9, v: null };
+function camDiagView() {
+  const now = performance.now();
+  if (now - camDiagCache.t < 250 && camDiagCache.v) return camDiagCache.v;
+  let p = null;
+  try { p = perfTuner ? perfTuner.state() : null; } catch (e) { p = null; }
+  let off = null;
+  try { const o = window.__aoOffline && window.__aoOffline.state(); off = o ? { sw: o.sw, preload: o.preload && o.preload.status } : null; } catch (e) { off = null; }
+  let embedded = false;
+  try { embedded = window.self !== window.top; } catch (e) { embedded = true; }
+  camDiagCache.t = now;
+  camDiagCache.v = {
+    fps: Math.round(perf.fps), quality: settings.quality, qualityAuto: settings.qualityAuto !== false,
+    perf: p && { tier: p.tier, scale: p.scale, capFps: p.capFps, fps: p.fps, gpu: p.gpu, gpuClass: p.gpuClass, gpuMs: p.gpuMs, cores: p.cores, memory: p.memory, refreshHz: p.refreshHz, auto: p.auto },
+    warm: app.camWarm, fightCap: app.fightCap, warmLog: camLoad.warmLog.slice(-4), guard: camLoad.guard.state(),
+    secure: window.isSecureContext !== false, embedded, url: location.origin + location.pathname, ua: navigator.userAgent, offline: off,
+  };
+  return camDiagCache.v;
 }
 // [W3-SQUAT] модель позы и частота распознавания — для подготовки и диагностики
 function squatPoseInfo() {

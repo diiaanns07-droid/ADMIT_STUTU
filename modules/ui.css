@@ -5320,3 +5320,109 @@ html[data-ao-q='low'] .ao-hero.is-lowen .ao-bar--energy::before {
     border-image-width: 26px;
   }
 }
+
+/* ------------------------------------------------------------------ [W5-КАМЕРА] экран камеры: статус, «что делать», диагностика */
+.ao-camstat {
+  align-self: stretch;
+  margin: 0 0 0.6rem;
+  text-align: left;
+}
+.ao-camstat__line {
+  justify-content: center;
+}
+.ao-camstat__line .ao-dot {
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-top: 0.45em;
+}
+.ao-camstat__line .ao-status__label {
+  font-size: 1.22rem;
+  line-height: 1.3;
+}
+.ao-camstat__line .ao-status__detail {
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+}
+.ao-camstat__todo {
+  margin-top: 0.45rem;
+  padding: 0.45rem 0.8rem 0.5rem;
+  border-left: 3px solid var(--ao-warn);
+  background: rgba(10, 10, 12, 0.45);
+  font-size: 0.92rem;
+}
+.ao-camstat__todo[data-tone='bad'] {
+  border-left-color: var(--ao-bad);
+}
+.ao-camstat__title {
+  display: block;
+  margin-bottom: 0.15rem;
+}
+.ao-camstat__title::before {
+  content: 'Что делать: ';
+  color: var(--ao-muted);
+  font-weight: 400;
+}
+.ao-camstat__steps {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--ao-text);
+}
+.ao-camdiag {
+  font-size: 0.84rem;
+  color: var(--ao-text);
+  text-align: left;
+}
+.ao-camdiag > summary {
+  cursor: pointer;
+  color: var(--ao-muted);
+  padding: 0.3rem 0.2rem;
+}
+.ao-camdiag[open] {
+  flex-basis: 100%;
+  order: 3;
+}
+.ao-train__statusrow > .ao-camdiag[open] {
+  order: 2;
+}
+.ao-camdiag[open] > summary {
+  margin-bottom: 0.3rem;
+}
+.ao-camdiag__list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.12rem 0.8rem;
+  max-height: 26vh;
+  overflow: auto;
+  margin: 0 0 0.35rem;
+}
+.ao-camdiag__list dt {
+  color: var(--ao-muted);
+}
+.ao-camdiag__list dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.ao-camdiag__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.8rem;
+}
+.ao-camdiag .ao-btn {
+  min-height: 0;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.84rem;
+}
+.ao-camdiag__note {
+  color: var(--ao-good);
+}
+.ao-camdiag__report {
+  width: 100%;
+  margin-top: 0.4rem;
+  font: 0.78rem/1.35 ui-monospace, Consolas, monospace;
+  color: var(--ao-text);
+  background: rgba(8, 9, 11, 0.7);
+  border: 1px solid rgba(196, 162, 101, 0.4);
+  resize: vertical;
+}

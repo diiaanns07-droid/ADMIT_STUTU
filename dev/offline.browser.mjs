@@ -1,12 +1,12 @@
 // [OFFLINE] Игра без интернета: первый запуск онлайн → context.setOffline(true) → перезагрузка.
 // Проверяет, что повторный запуск стартует целиком из кэша service worker (sw.js) и что модель
 // распознавания (MediaPipe: модуль, WASM, модели позы и кистей) инициализируется без сети.
-// Печатает цифры: время до меню, время «Разрешить камеру» → распознавание работает, байты по сети.
+// Печатает цифры: время до меню, время «Играть» → распознавание работает, байты по сети.
 //
 //   node dev/offline.browser.mjs [--mbps 25] [--menu-wait 8000] [--out DIR] [--browser PATH] [--no-before] [--draw] [--gpu] [--report]
 //
 //   --mbps N      сеть площадки: все запросы идут через прокси с общей полосой N Мбит/с (0 — без ограничения)
-//   --menu-wait   сколько «человек смотрит меню» перед «Начать» → «Разрешить камеру», мс
+//   --menu-wait   сколько «человек смотрит меню» перед «Играть» (сразу просит камеру), мс
 //   --no-before   без прогона «до» (?sw=0&preload=0: MediaPipe качается только после нажатия, как раньше)
 //   --draw        рисовать WebGL всегда (по умолчанию выключено между скриншотами: в headless рендер
 //                 программный и съедает CPU — worker MediaPipe тогда не успевает за 30 с)
@@ -165,7 +165,7 @@ async function shot(p, name) {
   } catch (e) { /* ignore */ }
 }
 
-// Один запуск: меню → «человек смотрит меню» → «Начать» → «Разрешить камеру» → распознавание.
+// Один запуск: меню → «человек смотрит меню» → «Играть» (сразу просит камеру) → распознавание.
 async function run(ctx, label, query = '', opts = {}) {
   const p = await ctx.newPage();
   const w0 = wire.bytes;
@@ -184,11 +184,11 @@ async function run(ctx, label, query = '', opts = {}) {
   await sleep(MENU_WAIT);
   out.offline = await p.evaluate(() => (window.__aoOffline ? window.__aoOffline.state() : null)).catch(() => null);
   await shot(p, `${label}_1_menu.png`);
-  const btn = (text) => p.locator('button:visible', { hasText: text }).first();
-  await btn('Начать').click();
-  await p.waitForFunction(() => window.__ASHEN__.screen === 'camera', null, { timeout: 10000, polling: 50 }).catch(() => {});
+  // [W5-КАМЕРА] быстрый вход: «Играть» сразу просит камеру — кнопок «Начать» и «Разрешить камеру» больше нет
+  const btn = (text) => p.getByRole('button', { name: text, exact: true }).first();
   const tClick = await p.evaluate(() => performance.now());
-  await btn('Разрешить камеру').click();
+  await btn('Играть').click();
+  await p.waitForFunction(() => window.__ASHEN__.screen === 'camera', null, { timeout: 10000, polling: 50 }).catch(() => {});
   // распознавание запущено: статус ready/lost/calibrating и пришёл хотя бы один результат
   const st = await p.waitForFunction(() => { const t = window.__ASHEN__.tracking; const ok = t && ['ready', 'lost', 'calibrating'].includes(t.status) && t.debug && t.debug.results > 0; return ok ? t.status : (t && t.status === 'error' ? 'error' : false); }, null, { timeout: 120000, polling: 50 })
     .then((h) => h.jsonValue(), () => 'timeout');
@@ -256,7 +256,7 @@ try {
       pre ? `${pre.status}, ${MB(pre.loaded)} из ${MB(pre.total)} МБ за ${MENU_WAIT / 1000} с меню` : 'нет состояния');
   }
   check('первый запуск: распознавание запустилось', works(first), `${first.cameraStatus} за ${first.cameraMs} мс`);
-  if (before && works(before) && works(first)) check('«Разрешить камеру» быстрее, чем без предзагрузки', first.cameraMs < before.cameraMs, `${before.cameraMs} → ${first.cameraMs} мс`);
+  if (before && works(before) && works(first)) check('«Играть» → распознавание быстрее, чем без предзагрузки', first.cameraMs < before.cameraMs, `${before.cameraMs} → ${first.cameraMs} мс`);
   check('service worker управляет страницей' + (LOOPBACK ? '' : ' и докачал всё'), !!(sw && sw.controlled && sw.state && sw.state.ready && sw.state.warm.errors === 0 && (LOOPBACK || sw.state.warm.status === 'done')), JSON.stringify(sw).slice(0, 240));
   check('второй запуск: игра стартовала', second.booted, second.bootErr || `меню за ${second.menuMs} мс`);
   if (!LOOPBACK) check('второй запуск: по сети меньше 0,5 МБ (только сверка 304)', second.wireMB < 0.5, `${second.wireMB} МБ, запросов ${second.wireReq}`);
