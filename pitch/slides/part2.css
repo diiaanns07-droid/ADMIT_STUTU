@@ -1,6 +1,7 @@
 /* ASHEN OATH — презентация финала, слайды 3, 4, 5, 6 и 12.
  * Стили только внутри своих слайдов ([data-slide="3|4|5|6|12"]) или с префиксом .p2-.
  * Общие классы (.kicker, .thesis, .num, .frame, .chip…) и токены — из deck.css, здесь только раскладка.
+ * Цвета — только токены deck.css (полупрозрачные — через color-mix).
  * Движение: шаги 300 мс, полоса здоровья 300 + 500 мс; только opacity, transform и translate.
  * Мгновенный показ (.is-instant: вход назад, переход по hash, печать) и «уменьшенное движение» — сразу конечный вид. */
 
@@ -10,7 +11,7 @@
 /* Кадр игры. Коробка .p2-shot — это рамка: орнамент .frame выступает на 3 px наружу (до поля 120 px),
  * снимок внутри с отступом 9 px. Обрезку делает обёртка .p2-crop, координаты снимка — в её системе. */
 .p2-shot { position: absolute; margin: 0; }
-.p2-crop { position: absolute; inset: 9px; overflow: hidden; background: var(--coal-deep); box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 18px 50px rgba(0, 0, 0, .55); }
+.p2-crop { position: absolute; inset: 9px; overflow: hidden; background: var(--coal-deep); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 60%, transparent), 0 18px 50px color-mix(in srgb, var(--ink) 55%, transparent); }
 .p2-crop > img, .p2-crop > video { position: absolute; max-width: none; }
 .p2-shot > .frame.p2-ring { position: absolute; inset: 0; z-index: 2; background: none; box-shadow: none; pointer-events: none; }
 .p2-fig-note { position: absolute; left: 9px; white-space: nowrap; }
@@ -29,7 +30,7 @@
 /* Подсветка зоны кадра под каждый шаг — цветом руки; появляется на месте, без сдвига */
 [data-slide="3"] .p2-hl {
   position: absolute; z-index: 1; border: 2px solid var(--hl); border-radius: 6px;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, .55), 0 0 26px color-mix(in srgb, var(--hl) 55%, transparent), inset 0 0 18px color-mix(in srgb, var(--hl) 22%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 55%, transparent), 0 0 26px color-mix(in srgb, var(--hl) 55%, transparent), inset 0 0 18px color-mix(in srgb, var(--hl) 22%, transparent);
   transition: opacity .3s var(--ease), transform .3s var(--ease);
 }
 [data-slide="3"] .p2-hl[data-step]:not(.is-on) { translate: none; transform: scale(1.06); }
@@ -44,16 +45,16 @@
 [data-slide="3"] .p2-s3-cap { position: absolute; left: 1120px; top: 545px; }
 
 /* ================= Слайд 4 — «Один жест — удар, как в кино» ================= */
-/* снимок 1120×480: клип и постер уже обрезаны до кадра 7:3 — без чёрных полос и плашки отладки */
-[data-slide="4"] .p2-s4-shot { left: 3px; top: 40px; width: 1138px; height: 498px; }
-[data-slide="4"] .p2-s4-shot video, [data-slide="4"] .p2-s4-shot img { left: 0; top: 0; width: 1120px; height: 480px; object-fit: cover; }
-[data-slide="4"] .p2-s4-shot .p2-fig-note { top: 512px; }
+/* снимок 1080×463: клип и постер 1120×480 (×0,964) уже обрезаны до кадра 7:3 — без чёрных полос и плашки отладки */
+[data-slide="4"] .p2-s4-shot { left: 3px; top: 40px; width: 1098px; height: 481px; }
+[data-slide="4"] .p2-s4-shot video, [data-slide="4"] .p2-s4-shot img { left: 0; top: 0; width: 1080px; height: 463px; object-fit: cover; }
+[data-slide="4"] .p2-s4-shot .p2-fig-note { top: 495px; }
 /* Последовательность ульты: узлы-ромбы, как заклёпки на полосах игры; линия к узлу прочерчивается вместе с шагом */
-[data-slide="4"] .p2-seq { position: absolute; left: 1200px; top: 49px; width: 480px; padding: 0; list-style: none; }
+[data-slide="4"] .p2-seq { position: absolute; left: 1150px; top: 49px; width: 530px; padding: 0; list-style: none; }
 [data-slide="4"] .p2-seq > li { position: relative; padding-left: 44px; min-height: 96px; }
 [data-slide="4"] .p2-seq > li::before {
   content: ''; position: absolute; left: 3px; top: 12px; width: 14px; height: 14px; transform: rotate(45deg);
-  background: var(--gold-hi); box-shadow: 0 0 0 3px var(--ink), 0 0 0 4px var(--gold-deep), 0 0 14px rgba(243, 220, 160, .45);
+  background: var(--gold-hi); box-shadow: 0 0 0 3px var(--ink), 0 0 0 4px var(--gold-deep), 0 0 14px color-mix(in srgb, var(--gold-hi) 45%, transparent);
 }
 [data-slide="4"] .p2-seq > li + li::after {
   content: ''; position: absolute; left: 9px; top: -66px; width: 2px; height: 70px;
@@ -66,13 +67,12 @@
 [data-slide="4"] .p2-seq > li.p2-seq-hit { padding-left: 0; margin-top: 18px; }
 [data-slide="4"] .p2-seq > li.p2-seq-hit::before, [data-slide="4"] .p2-seq > li.p2-seq-hit::after { content: none; }
 [data-slide="4"] .p2-seq-hit .num { display: block; width: max-content; }
-[data-slide="4"] .p2-pct { margin-left: .06em; font-size: .62em; }
 [data-slide="4"] .p2-seq-hit .unit { display: block; margin-top: 8px; }
 /* Мини-полоса Регента, как полоса доклада: красная заливка сжимается на 28 %, светлый «хвост потери» догоняет */
 [data-slide="4"] .p2-hp {
   position: relative; display: block; width: 440px; height: 10px; margin-top: 22px; overflow: hidden;
   background: linear-gradient(180deg, var(--ink), var(--coal-deep));
-  box-shadow: 0 0 0 1px var(--bronze), 0 0 0 2px rgba(0, 0, 0, .7), inset 0 1px 3px rgba(0, 0, 0, .8);
+  box-shadow: 0 0 0 1px var(--bronze), 0 0 0 2px color-mix(in srgb, var(--ink) 70%, transparent), inset 0 1px 3px color-mix(in srgb, var(--ink) 80%, transparent);
 }
 [data-slide="4"] .p2-hp > i { position: absolute; inset: 0; transform-origin: 0 50%; }
 [data-slide="4"] .p2-hp-fill { background: var(--grad-hp); transition: transform .3s var(--ease) .35s; }
@@ -85,7 +85,7 @@
 [data-slide="5"] .p2-s5-shot img { left: 0; top: -35px; width: 1656px; height: 546px; }
 [data-slide="5"] .p2-names {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; display: grid; grid-template-columns: repeat(5, 1fr);
-  padding: 70px 0 18px; list-style: none; background: linear-gradient(180deg, transparent, rgba(11, 10, 9, .78) 62%, rgba(11, 10, 9, .9));
+  padding: 70px 0 18px; list-style: none; background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ink) 78%, transparent) 62%, color-mix(in srgb, var(--ink) 90%, transparent));
 }
 [data-slide="5"] .p2-names > li { text-align: center; font-family: var(--f-caps); font-size: 26px; line-height: 30px; letter-spacing: .1em; text-transform: uppercase; color: var(--parch); }
 [data-slide="5"] .p2-s5-stats { position: absolute; left: 0; top: 432px; width: 820px; }
@@ -116,11 +116,11 @@
 [data-slide="6"] .p2-live {
   position: absolute; right: 0; top: 556px; display: inline-flex; align-items: center; gap: 14px; height: 72px; padding: 0 30px;
   font-family: var(--f-caps); font-size: 28px; letter-spacing: .12em; text-transform: uppercase; color: var(--gold-hi); text-decoration: none;
-  border: 1px solid var(--gold-deep); background: linear-gradient(180deg, rgba(216, 179, 106, .16), rgba(216, 179, 106, .04));
-  box-shadow: inset 0 1px 0 rgba(243, 220, 160, .2), 0 10px 26px rgba(0, 0, 0, .45);
+  border: 1px solid var(--gold-deep); background: linear-gradient(180deg, color-mix(in srgb, var(--gold-b) 16%, transparent), color-mix(in srgb, var(--gold-b) 4%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gold-hi) 20%, transparent), 0 10px 26px color-mix(in srgb, var(--ink) 45%, transparent);
   transition: border-color .2s var(--ease), box-shadow .2s var(--ease);
 }
-[data-slide="6"] .p2-live:hover, [data-slide="6"] .p2-live:focus-visible { border-color: var(--gold-hi); box-shadow: inset 0 1px 0 rgba(243, 220, 160, .3), 0 0 22px rgba(243, 220, 160, .25); outline: none; }
+[data-slide="6"] .p2-live:hover, [data-slide="6"] .p2-live:focus-visible { border-color: var(--gold-hi); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gold-hi) 30%, transparent), 0 0 22px color-mix(in srgb, var(--gold-hi) 25%, transparent); outline: none; }
 [data-slide="6"] .p2-live svg { width: 22px; height: 22px; flex: none; }
 
 /* Постер под видео и на экране: пока клип грузится или если браузер его не играет, виден кадр, а не пустая рамка */

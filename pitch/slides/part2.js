@@ -55,7 +55,7 @@
       <li data-step="2"><span class="p2-seq-t">Облёт камеры</span><span class="p2-seq-v">3,6&nbsp;с</span></li>
       <li data-step="3"><span class="p2-seq-t">Меч из&nbsp;света</span></li>
       <li class="p2-seq-hit" data-step="4">
-        <span class="num" data-ignite>−28<span class="p2-pct">%</span></span>
+        <span class="num" data-ignite>−28&nbsp;%</span>
         <span class="unit">здоровья Регента</span>
         <span class="p2-hp" aria-hidden="true"><i class="p2-hp-loss"></i><i class="p2-hp-fill"></i></span>
       </li>
