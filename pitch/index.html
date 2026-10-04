@@ -9,7 +9,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231a1813'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23d9a441' stroke-width='2'/%3E%3Cpath d='M16 6v20' stroke='%23d9a441' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="fonts/fonts.css">
 <style>
-/* Презентация одним файлом: 7 слайдов на 5 минут. Сцена 1920×1080 вписывается в окно целиком.
+/* Презентация одним файлом: 13 слайдов; PDF читается без докладчика, в браузере слайды 4, 7 и 9 интерактивны. Сцена 1920×1080 вписывается в окно целиком.
  * Светлая «бумага», тёмные окна — кадры игры и экран камеры; бронза игры — единственный акцент.
  * Работает из file:// и без сети: шрифты в fonts/, кадры в media/. */
 :root {
@@ -26,6 +26,8 @@
   --screen-dim: #9a907c;
   --flesh: #4d4336;
   --right: #ff9a3c;
+  --left-ink: #2a64bf;   /* левая рука на бумаге */
+  --right-ink: #c25c12;  /* правая рука на бумаге */
   --err: #ff5a3d;
   --ok: #52c873;
   --f-display: 'Cormorant Garamond', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
@@ -70,13 +72,15 @@ a { color: inherit; }
 
 /* ---------- 1. Титул: текст на бумаге, Регент — тёмной половиной справа */
 .s1-text { position: absolute; left: 120px; top: 0; bottom: 0; width: 820px; display: flex; flex-direction: column; justify-content: center; }
-.s1-logo { margin-top: 30px; font: 600 172px/.88 var(--f-display); letter-spacing: .05em; color: var(--ink); }
+.s1-logo { margin-top: 26px; font: 600 160px/.88 var(--f-display); letter-spacing: .05em; color: var(--ink); }
 .s1-logo span { display: block; }
 .s1-tag { margin-top: 34px; font: italic 500 64px/1.05 var(--f-display); color: var(--accent); }
 .s1 .lead { margin-top: 28px; max-width: 760px; }
-.s1-facts { display: flex; gap: 56px; margin-top: 54px; padding-top: 28px; border-top: 2px solid var(--rule); }
+.s1-facts { display: flex; gap: 56px; margin-top: 46px; padding-top: 28px; border-top: 2px solid var(--rule); }
 .s1-facts li { font-size: 30px; line-height: 1.2; color: var(--ink-2); }
 .s1-facts b { display: block; margin-bottom: 8px; font: 600 72px/1 var(--f-num); color: var(--ink); }
+.s1-url { margin-top: 34px; font-size: 28px; color: var(--ink-2); }
+.s1-url b { font-weight: 500; color: var(--ink); }
 .s1-img { position: absolute; right: 0; top: 0; bottom: 0; width: 900px; overflow: hidden; background: var(--screen); }
 .s1-img img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 45%; }
 
@@ -219,7 +223,9 @@ a { color: inherit; }
 .st__goal { margin-top: 18px; font: 600 80px/1 var(--f-display); color: var(--ink); }
 
 /* ---------- 7. Финал */
-.s7-oath { position: absolute; left: 120px; top: 230px; width: 1100px; font: 600 100px/1.02 var(--f-display); letter-spacing: -.01em; text-wrap: balance; }
+.s7-img { position: absolute; right: 0; top: 0; bottom: 0; width: 900px; overflow: hidden; background: var(--screen); }
+.s7-img img { width: 100%; height: 100%; object-fit: cover; object-position: 55% 50%; }
+.s7-oath { position: absolute; left: 120px; top: 230px; width: 840px; font: 600 92px/1.02 var(--f-display); letter-spacing: -.01em; text-wrap: balance; }
 .s7-oath em { font-style: italic; font-weight: 500; color: var(--accent); }
 .s7-act { position: absolute; left: 120px; top: 760px; display: flex; gap: 16px; align-items: center; }
 .s7-url { position: absolute; left: 120px; top: 870px; font-size: 30px; color: var(--ink-2); }
@@ -227,7 +233,71 @@ a { color: inherit; }
 .s7-qr__code { padding: 22px; border-radius: 18px; background: var(--paper); border: 2px solid var(--ink); }
 .s7-qr__code svg { width: 100%; height: auto; shape-rendering: crispEdges; }
 .s7-qr p { margin-top: 22px; font-size: 32px; }
-.s7-thanks { position: absolute; right: 120px; top: 900px; width: 440px; text-align: center; font: italic 500 56px/1 var(--f-display); color: var(--accent); }
+.s7-thanks { position: absolute; left: 120px; top: 930px; font: italic 500 56px/1 var(--f-display); color: var(--accent); }
+
+
+/* ---------- Что это за игра: меню слева, факты справа */
+.g-shot { position: absolute; left: 120px; top: 300px; width: 1100px; height: 619px; border-radius: 16px; overflow: hidden; background: var(--screen); }
+.g-shot img { width: 100%; height: 100%; object-fit: cover; }
+.facts { position: absolute; left: 1290px; right: 120px; top: 300px; height: 619px; display: grid; grid-template-rows: repeat(4, 1fr); }
+.facts li { display: flex; flex-direction: column; justify-content: center; border-top: 2px solid var(--rule); }
+.facts li:last-child { border-bottom: 2px solid var(--rule); }
+.facts b { font: 600 46px/1.05 var(--f-display); }
+.facts span { margin-top: 6px; font-size: 28px; line-height: 1.3; color: var(--ink-2); }
+.d { font-family: var(--f-num); font-size: .82em; letter-spacing: .02em; }
+
+/* ---------- Карта жестов: три колонки, цвет — рука, как в игре */
+.map { position: absolute; left: 120px; right: 120px; top: 372px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 44px; }
+.map__h { padding: 15px 20px; border-radius: 10px; font: 500 30px/1 var(--f-body); letter-spacing: .12em; text-transform: uppercase; color: var(--paper); background: var(--c); }
+.map__col--l { --c: var(--left-ink); } .map__col--r { --c: var(--right-ink); } .map__col--b { --c: var(--accent); }
+.map ul { margin-top: 6px; }
+.map li { display: flex; flex-direction: column; padding: 8px 2px; border-bottom: 2px solid var(--rule); font-size: 28px; line-height: 1.25; color: var(--ink-2); }
+.map li b { font-weight: 500; font-size: 32px; line-height: 1.2; color: var(--ink); }
+.map__foot { position: absolute; left: 120px; right: 120px; top: 942px; font-size: 30px; line-height: 1.3; color: var(--ink-2); }
+.map__foot b { color: var(--ink); font-weight: 500; }
+
+/* ---------- Под капотом: конвейер и цифры проверки */
+.pipe { position: absolute; left: 120px; right: 120px; top: 300px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 60px; }
+.pipe li { position: relative; padding: 26px 28px 30px; border-radius: 14px; background: var(--screen); min-height: 236px; }
+.pipe li + li::before { content: ''; position: absolute; left: -48px; top: calc(50% - 12px); width: 36px; height: 24px; background: var(--accent);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 11'%3E%3Cpath d='M1 5.5h14.5M11.5 1.2l4.6 4.3-4.6 4.3' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 11'%3E%3Cpath d='M1 5.5h14.5M11.5 1.2l4.6 4.3-4.6 4.3' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; }
+.pipe b { display: block; font: 500 34px/1.15 var(--f-body); color: var(--screen-ink); }
+.pipe span { display: block; margin-top: 12px; font-size: 28px; line-height: 1.3; color: var(--screen-dim); }
+.pipe li.is-ours { background: var(--accent); }
+.pipe li.is-ours b, .pipe li.is-ours span { color: var(--screen); }
+.stats { position: absolute; left: 120px; right: 120px; top: 600px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 60px; }
+.stats li { padding-top: 18px; border-top: 3px solid var(--ink); }
+.stats b { display: block; font: 600 72px/1 var(--f-num); color: var(--accent); }
+.stats b.w { font: 600 66px/1 var(--f-display); }
+.stats span { display: block; margin-top: 14px; font-size: 28px; line-height: 1.3; color: var(--ink-2); }
+.tech-foot { position: absolute; left: 120px; right: 120px; top: 900px; padding-top: 18px; border-top: 2px solid var(--rule); font-size: 30px; line-height: 1.3; }
+
+/* ---------- «ОШИБКА» в игре: три кадра */
+.trio { position: absolute; left: 120px; right: 120px; top: 300px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 44px; }
+.trio figure { height: 420px; border-radius: 14px; overflow: hidden; background: var(--screen); }
+.trio img { width: 100%; height: 100%; object-fit: contain; }
+.trio b { display: block; margin-top: 22px; font: 600 42px/1.1 var(--f-display); }
+.trio span { display: block; margin-top: 8px; font-size: 28px; line-height: 1.3; color: var(--ink-2); }
+.trio-foot { position: absolute; left: 120px; right: 120px; top: 920px; font-size: 30px; line-height: 1.3; }
+
+/* ---------- Что появилось: три кадра и список */
+.ng3 { position: absolute; left: 120px; right: 120px; top: 300px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 44px; }
+.ng3 img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 14px; background: var(--screen); }
+.ng3 b { display: block; margin-top: 18px; font: 600 40px/1.1 var(--f-display); }
+.ng3 span { display: block; margin-top: 6px; font-size: 28px; line-height: 1.3; color: var(--ink-2); }
+.newlist { position: absolute; left: 120px; right: 120px; top: 790px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 44px; padding-top: 24px; border-top: 2px solid var(--rule); }
+.newlist li { position: relative; padding-left: 30px; font-size: 30px; line-height: 1.25; }
+.newlist li::before { content: ''; position: absolute; left: 2px; top: .45em; width: 12px; height: 12px; rotate: 45deg; background: var(--accent); }
+
+/* ---------- Проверьте сами */
+.try { position: absolute; left: 120px; top: 300px; width: 1100px; }
+.try li { display: grid; grid-template-columns: 96px 1fr; align-items: center; padding: 22px 0; border-top: 2px solid var(--rule); }
+.try li:last-child { border-bottom: 2px solid var(--rule); }
+.try b { font: 600 60px/1 var(--f-num); color: var(--accent); }
+.try span { font-size: 38px; line-height: 1.25; }
+.try-links { position: absolute; left: 120px; top: 860px; width: 1100px; font-size: 30px; line-height: 1.45; color: var(--ink-2); }
+.try-links b { font-weight: 500; color: var(--ink); }
 
 /* ---------- Панель навигации, прогресс, заметки */
 .bar { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 10; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; background: var(--ink); color: var(--paper); font: 500 17px/1 var(--f-body); opacity: .22; transition: opacity .3s; }
@@ -250,6 +320,7 @@ a { color: inherit; }
   .slide { position: relative; width: 1920px; height: 1080px; visibility: visible !important; opacity: 1 !important; break-after: page; }
   .slide:last-child { break-after: auto; }
   [data-step] { opacity: 1 !important; translate: none !important; }
+  .flow li { opacity: 1 !important; }
   .bar, .prog, .notes-box, .ctrl, .err-ctrl, .s7-act { display: none !important; }
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
@@ -258,7 +329,6 @@ a { color: inherit; }
 <body>
 <main class="deck" id="deck" aria-roledescription="презентация">
 
-<!-- 1 -->
 <section class="slide s1" data-title="ASHEN OATH" data-sec="20">
   <div class="s1-text">
     <p class="kicker">Финал ADMIT</p>
@@ -270,12 +340,12 @@ a { color: inherit; }
       <li><b>24</b>жеста</li>
       <li><b>5</b>режимов</li>
     </ul>
+    <p class="s1-url">Играть: <b>diiaanns07-droid.github.io/ADMIT_STUTU</b></p>
   </div>
   <figure class="s1-img"><img src="media/title_regent.jpg" alt="Регент Нимба — босс игры, кадр из сегодняшней версии"></figure>
   <aside class="notes">Здравствуйте! Мы — команда ASHEN OATH. Это action-RPG прямо в браузере, где джойстик — ваши руки. Обычный ноутбук, веб-камера, ссылка — и вы сражаетесь с боссом, Регентом Нимба, руками и телом. Пять героев, двадцать четыре жеста, пять режимов.</aside>
 </section>
 
-<!-- 2 -->
 <section class="slide s2" data-title="Идея" data-sec="40">
   <div class="s2-left">
     <p class="kicker">Идея</p>
@@ -302,8 +372,21 @@ a { color: inherit; }
   <aside class="notes">Игры с движением упираются в железо: приставка, VR, датчики стоят дорого. Фитнес-приложения бросают через неделю. А мы часами сидим за ноутбуком. [Дальше] Но камера уже есть в каждом ноутбуке и в каждом классе. [Дальше] Мы сделали её джойстиком: открыл ссылку — играешь, ничего не нужно покупать и устанавливать.</aside>
 </section>
 
-<!-- 3 -->
-<section class="slide s3" data-title="Управление движениями" data-sec="75" data-steps="5" data-ctl="scheme">
+<!-- Что это за игра -->
+<section class="slide s-game" data-title="Что это за игра" data-sec="25">
+  <p class="kicker">Идея</p>
+  <h2 class="title">Бой с&nbsp;боссом, где джойстик&nbsp;— руки</h2>
+  <figure class="g-shot"><img src="media/menu.jpg" alt="Главное меню игры: герой, кнопка «Играть», режимы и настройки"></figure>
+  <ul class="facts">
+    <li><b>Регент Нимба</b><span>босс с&nbsp;двумя стадиями боя</span></li>
+    <li><b><span class="d">5</span> героев</b><span>выбор в&nbsp;меню, у&nbsp;каждого свой облик</span></li>
+    <li><b><span class="d">5</span> режимов</b><span>бой с&nbsp;Регентом, «Испытание · 60&nbsp;с», тренажёр техники, «Клятва героя», онлайн-дуэль</span></li>
+    <li><b>Без установки</b><span>нужны веб-камера и&nbsp;Chrome или Edge</span></li>
+  </ul>
+  <aside class="notes">Это настоящая action-RPG в браузере. Босс — Регент Нимба, у боя две стадии. Пять героев, пять режимов: бой с Регентом, «Испытание · 60 секунд», тренажёр техники, «Клятва героя» и онлайн-дуэль. Ничего не нужно ставить — нужны веб-камера и Chrome или Edge.</aside>
+</section>
+
+<section class="slide s3" data-title="Как рука становится командой" data-sec="75" data-steps="5" data-ctl="scheme" data-print-step="4">
   <p class="kicker">Управление движениями</p>
   <h2 class="title">Как рука становится командой</h2>
   <div class="cam" data-interactive>
@@ -344,7 +427,54 @@ a { color: inherit; }
   <aside class="notes">Как это работает. [1] Камера даёт кадр — он не уходит в интернет, всё считается в браузере. [2] Модель MediaPipe от Google находит на кисти 21 точку — в отдельном потоке на видеокарте. [3] Дальше наш код: насколько согнут каждый палец, как быстро движется рука, сколько держится поза. Кулак держим около полсекунды — кольцо заряда краснеет. [4] Резко раскрыли — автомат жестов узнаёт «Выброс». [5] И в бою волна энергии бьёт Регента. Так устроены все 24 жеста. Точки на экране — настоящие координаты MediaPipe с фото датасета HaGRID из наших тестов.</aside>
 </section>
 
-<!-- 4 -->
+<!-- Карта жестов -->
+<section class="slide s-map" data-title="Карта жестов" data-sec="30">
+  <p class="kicker">Управление движениями</p>
+  <h2 class="title">Левая&nbsp;— движение, правая&nbsp;— магия, две&nbsp;— печати</h2>
+  <div class="map">
+    <div class="map__col map__col--l"><p class="map__h">Левая рука</p><ul>
+      <li><b>Ладонь у&nbsp;груди</b>герой идёт, выше&nbsp;— бег</li>
+      <li><b>Рука вбок</b>поворот</li>
+      <li><b>Резкий дёрг</b>рывок и&nbsp;уклон</li>
+      <li><b>Толчок ладонью к&nbsp;камере</b>щит</li>
+      <li><b>Кулак, резко раскрыть</b>парирование</li></ul></div>
+    <div class="map__col map__col--r"><p class="map__h">Правая рука</p><ul>
+      <li><b>«OK»</b>магические снаряды</li>
+      <li><b>Щелчок указательным</b>«Искра»</li>
+      <li><b>Взмах ребром ладони</b>«Рассечение»</li>
+      <li><b>Кулак, резко раскрыть</b>выброс энергии</li>
+      <li><b>Фигура пальцем в&nbsp;воздухе</b>10 рун: копьё, молния, лечение…</li></ul></div>
+    <div class="map__col map__col--b"><p class="map__h">Две руки</p><ul>
+      <li><b>Ладони друг к&nbsp;другу</b>сфера</li>
+      <li><b>Хлопок</b>громовая волна</li>
+      <li><b>Сомкнуть и&nbsp;развести</b>«Врата бури»</li>
+      <li><b>Растянуть вверх-вниз</b>«Столп небес»</li>
+      <li><b>Обе руки над головой</b>«Небесный суд»</li></ul></div>
+  </div>
+  <p class="map__foot"><b>24 жеста.</b> Для первого раза — режим «Новичок»: 5 базовых жестов и&nbsp;автоход.</p>
+  <aside class="notes">Руки разделены: левая ведёт героя — ладонь у груди, поворот рукой вбок, рывок резким дёргом, щит толчком ладони. Правая колдует: «OK» — снаряды, щелчок — искра, фигуры пальцем — десять рун. Двумя руками — печати: сфера, хлопок, «Врата бури», «Столп небес» и ультимейт «Небесный суд». Всего 24 жеста, а новичку хватает пяти.</aside>
+</section>
+
+<!-- Под капотом -->
+<section class="slide s-tech" data-title="Под капотом" data-sec="30">
+  <p class="kicker">Техническая реализация</p>
+  <h2 class="title">Всё считается в&nbsp;браузере</h2>
+  <ol class="pipe">
+    <li><b>Веб-камера</b><span>кадр остаётся на&nbsp;устройстве</span></li>
+    <li><b>MediaPipe 0.10.35</b><span>поза и&nbsp;21 точка каждой кисти, Web Worker на&nbsp;видеокарте</span></li>
+    <li class="is-ours"><b>Наш код</b><span>геометрия кисти, автоматы жестов, 63 подсказки</span></li>
+    <li><b>Игра на&nbsp;three.js</b><span>бой, эффекты, звук</span></li>
+  </ol>
+  <ul class="stats">
+    <li><b>96 %</b><span>форм кисти узнано на&nbsp;135 реальных фото HaGRID</span></li>
+    <li><b>0</b><span>ложных срабатываний при 8&nbsp;кадрах в&nbsp;секунду, узнано 83–100 % попыток (синтетический тест)</span></li>
+    <li><b>71</b><span>набор автотестов, 0&nbsp;падений</span></li>
+    <li><b class="w">Офлайн</b><span>библиотеки и&nbsp;модели в&nbsp;репозитории, service worker</span></li>
+  </ul>
+  <p class="tech-foot">Слабый ноутбук: распознавание само переходит с&nbsp;видеокарты на&nbsp;процессор, графика подстраивает качество.</p>
+  <aside class="notes">Под капотом. Кадр с камеры никуда не уходит. MediaPipe 0.10.35 в отдельном потоке на видеокарте даёт позу и 21 точку каждой кисти. Всё остальное — наш код: геометрия кисти, автоматы жестов, 63 подсказки. Игра — на three.js. Проверено: 96 % форм кисти на 135 реальных фото HaGRID, при 8 кадрах в секунду — ноль ложных срабатываний, 71 набор автотестов без падений. Работает офлайн, а на слабом ноутбуке распознавание само переходит на процессор.</aside>
+</section>
+
 <section class="slide s4" data-title="Режим «ОШИБКА»" data-sec="60" data-steps="3" data-ctl="error">
   <p class="kicker">Режим «ОШИБКА»</p>
   <h2 class="title">Не «не распознано», а&nbsp;«что исправить»</h2>
@@ -375,7 +505,19 @@ a { color: inherit; }
   <aside class="notes">Самое важное — режим «ОШИБКА». Обычная игра говорит «не распознано», и человек не понимает, что не так. Наша видит, что именно. Здесь «OK» почти получился, но кольцо не замкнуто. [Проверить] Игра подсвечивает кончики большого и указательного пальцев и пишет — и говорит голосом: «Сомкни кончики в кольцо». [Исправить] Сомкнули — снаряды полетели. [Дальше] Таких подсказок 63: 49 к жестам и положению в кадре, 14 к технике приседаний и отжиманий.</aside>
 </section>
 
-<!-- 5 -->
+<!-- «ОШИБКА» в игре -->
+<section class="slide s-err2" data-title="«ОШИБКА» в игре" data-sec="30">
+  <p class="kicker">Режим «ОШИБКА»</p>
+  <h2 class="title">Подсказки на&nbsp;каждом шаге</h2>
+  <ul class="trio">
+    <li><figure><img src="media/tutorial.jpg" alt="Обучение «Научись за 60 секунд»: карточка ошибки щита"></figure><b>Обучение за&nbsp;60 секунд</b><span>щит не&nbsp;встал&nbsp;— «толкни ладонь к&nbsp;камере сантиметров на&nbsp;20»</span></li>
+    <li><figure><img src="media/squat_fault.jpg" alt="Тренировка клятвы: приседания и подсказка по технике"></figure><b>Тренер техники</b><span>приседания: «опускайся подконтрольно», чистый повтор&nbsp;— два очка</span></li>
+    <li><figure><img src="media/results.jpg" alt="Итоги боя: точность жестов и самая частая ошибка"></figure><b>Итог боя</b><span>точность по&nbsp;жестам и&nbsp;самая частая ошибка с&nbsp;советом</span></li>
+  </ul>
+  <p class="trio-foot">Подсказки звучат голосом тренера.</p>
+  <aside class="notes">Подсказки работают везде: в обучении «Научись за 60 секунд», в тренере техники для приседаний и отжиманий и в итогах боя — с точностью по каждому жесту и самой частой ошибкой. И всё это звучит голосом тренера.</aside>
+</section>
+
 <section class="slide s5" data-title="Что улучшили" data-sec="55" data-steps="4" data-ctl="wipe">
   <p class="kicker">После первого этапа · 30.09 <i class="arr"></i> 03.10</p>
   <h2 class="title">Тот же бой&nbsp;— другой уровень</h2>
@@ -394,7 +536,26 @@ a { color: inherit; }
   <aside class="notes">Что улучшили после первого этапа. Это один и тот же кадр боя: слева версия, которую вы видели 30 сентября, справа — сегодняшняя. Новая арена с огнём и мокрым полом, Регент из обсидиана с золотом. Шторку можно потянуть. [1] Вход в бой — 2 клика вместо 6. [2] Жестов 24 вместо 20: «Врата бури», «Столп небес» и ультимейт «Небесный суд». [3] Игра грузится в 3,5 раза легче: 10 мегабайт вместо 36. [4] Наборов автотестов 71 вместо 32, больше тысячи проверок, ни одного падения.</aside>
 </section>
 
-<!-- 6 -->
+<!-- Что появилось -->
+<section class="slide s-new" data-title="Что появилось" data-sec="30">
+  <p class="kicker">После первого этапа</p>
+  <h2 class="title">Что появилось в&nbsp;игре</h2>
+  <ul class="ng3">
+    <li><img src="media/judgement.jpg" alt="«Небесный суд»: удар светом по Регенту"><b>«Небесный суд»</b><span>ультимейт всем телом: облёт камеры и&nbsp;меч из&nbsp;света</span></li>
+    <li><img src="media/challenge_poster.jpg" alt="Постер победы в «Испытании · 60 с» с рангом S"><b>«Испытание · 60&nbsp;с»</b><span>ранг S–D, «Зал славы дня», постер победы</span></li>
+    <li><img src="media/spellbook.jpg" alt="«Книга заклинаний»: все жесты с объяснениями"><b>«Книга заклинаний»</b><span>все жесты с&nbsp;объяснениями</span></li>
+  </ul>
+  <ul class="newlist">
+    <li>«Новичок»: 5 жестов и&nbsp;автоход</li>
+    <li>«Врата бури» и&nbsp;«Столп небес»</li>
+    <li>«Дух игрока» повторяет пальцы</li>
+    <li>Курсор-кисть: меню без мыши</li>
+    <li>Голос тренера</li>
+    <li>Работает без интернета</li>
+  </ul>
+  <aside class="notes">Что появилось после первого этапа: ультимейт всем телом «Небесный суд», минутное «Испытание» с рангами и постером победы, «Книга заклинаний». А ещё режим «Новичок», «Врата бури» и «Столп небес», «Дух игрока», который повторяет руки и пальцы, курсор-кисть вместо мыши, голос тренера и работа без интернета.</aside>
+</section>
+
 <section class="slide s6" data-title="Что дальше" data-sec="35">
   <p class="kicker">Планы развития</p>
   <h2 class="title">Что дальше</h2>
@@ -413,7 +574,24 @@ a { color: inherit; }
   <aside class="notes">Что дальше. То, что на первом этапе было в работе, уже в игре — влито 3 октября: быстрый вход; на слабом ноутбуке распознавание само переходит с видеокарты на процессор, и камера не отваливается; две новые сложности — «Сложная» и «Кошмар». [Дальше] Следующее — казахский язык и режим учителя: класс играет, учитель видит технику каждого. [Дальше] Цель — пилот в школе: урок движения, где джойстик — это руки.</aside>
 </section>
 
-<!-- 7 -->
+<!-- Проверьте сами -->
+<section class="slide s-try" data-title="Проверьте сами" data-sec="20">
+  <p class="kicker">Live demo</p>
+  <h2 class="title">Проверьте сами за&nbsp;минуту</h2>
+  <ol class="try">
+    <li><b>1</b><span>Откройте ссылку или QR в&nbsp;Chrome или Edge</span></li>
+    <li><b>2</b><span>Разрешите камеру&nbsp;— видео не&nbsp;уходит в&nbsp;сеть</span></li>
+    <li><b>3</b><span>Сядьте примерно в&nbsp;метре от&nbsp;камеры</span></li>
+    <li><b>4</b><span>Первый раз&nbsp;— «Новичок» и&nbsp;обучение за&nbsp;60 секунд</span></li>
+  </ol>
+  <p class="try-links">Игра: <b>diiaanns07-droid.github.io/ADMIT_STUTU</b><br>Код: <b>github.com/diiaanns07-droid/ADMIT_STUTU</b></p>
+  <figure class="s7-qr">
+    <div class="s7-qr__code"><svg viewBox="0 0 41 41" role="img" aria-label="QR-код: https://diiaanns07-droid.github.io/ADMIT_STUTU/"><rect width="41" height="41" fill="#eadfc5"/><path fill="#15120f" d="M4 4h7v1h-7zM13 4h3v1h-3zM18 4h1v1h-1zM20 4h1v1h-1zM22 4h3v1h-3zM27 4h1v1h-1zM30 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM15 5h2v1h-2zM19 5h1v1h-1zM22 5h1v1h-1zM25 5h2v1h-2zM30 5h1v1h-1zM36 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM12 6h1v1h-1zM18 6h2v1h-2zM23 6h1v1h-1zM25 6h1v1h-1zM28 6h1v1h-1zM30 6h1v1h-1zM32 6h3v1h-3zM36 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM12 7h1v1h-1zM14 7h2v1h-2zM22 7h1v1h-1zM26 7h1v1h-1zM28 7h1v1h-1zM30 7h1v1h-1zM32 7h3v1h-3zM36 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM12 8h3v1h-3zM18 8h4v1h-4zM24 8h1v1h-1zM26 8h3v1h-3zM30 8h1v1h-1zM32 8h3v1h-3zM36 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM12 9h2v1h-2zM16 9h1v1h-1zM18 9h1v1h-1zM21 9h1v1h-1zM23 9h1v1h-1zM26 9h2v1h-2zM30 9h1v1h-1zM36 9h1v1h-1zM4 10h7v1h-7zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM26 10h1v1h-1zM28 10h1v1h-1zM30 10h7v1h-7zM12 11h1v1h-1zM14 11h3v1h-3zM18 11h1v1h-1zM20 11h1v1h-1zM23 11h3v1h-3zM28 11h1v1h-1zM4 12h1v1h-1zM6 12h5v1h-5zM14 12h5v1h-5zM21 12h1v1h-1zM23 12h2v1h-2zM26 12h3v1h-3zM30 12h5v1h-5zM4 13h1v1h-1zM6 13h1v1h-1zM13 13h2v1h-2zM16 13h2v1h-2zM20 13h6v1h-6zM27 13h1v1h-1zM30 13h2v1h-2zM33 13h2v1h-2zM36 13h1v1h-1zM4 14h1v1h-1zM6 14h2v1h-2zM9 14h3v1h-3zM13 14h2v1h-2zM16 14h4v1h-4zM21 14h1v1h-1zM25 14h2v1h-2zM30 14h1v1h-1zM32 14h1v1h-1zM34 14h2v1h-2zM5 15h1v1h-1zM7 15h3v1h-3zM11 15h1v1h-1zM13 15h2v1h-2zM17 15h1v1h-1zM19 15h4v1h-4zM24 15h1v1h-1zM26 15h1v1h-1zM28 15h2v1h-2zM32 15h4v1h-4zM5 16h1v1h-1zM10 16h1v1h-1zM12 16h1v1h-1zM14 16h1v1h-1zM18 16h3v1h-3zM24 16h3v1h-3zM28 16h2v1h-2zM31 16h1v1h-1zM33 16h1v1h-1zM36 16h1v1h-1zM4 17h3v1h-3zM9 17h1v1h-1zM11 17h4v1h-4zM16 17h2v1h-2zM19 17h1v1h-1zM21 17h2v1h-2zM28 17h2v1h-2zM33 17h1v1h-1zM35 17h2v1h-2zM4 18h3v1h-3zM8 18h1v1h-1zM10 18h4v1h-4zM19 18h2v1h-2zM22 18h1v1h-1zM24 18h1v1h-1zM26 18h1v1h-1zM29 18h2v1h-2zM33 18h1v1h-1zM35 18h1v1h-1zM4 19h1v1h-1zM7 19h1v1h-1zM12 19h1v1h-1zM14 19h1v1h-1zM18 19h2v1h-2zM25 19h1v1h-1zM29 19h2v1h-2zM32 19h1v1h-1zM34 19h1v1h-1zM4 20h2v1h-2zM7 20h1v1h-1zM9 20h5v1h-5zM18 20h4v1h-4zM26 20h1v1h-1zM28 20h2v1h-2zM31 20h2v1h-2zM36 20h1v1h-1zM4 21h1v1h-1zM6 21h2v1h-2zM9 21h1v1h-1zM14 21h1v1h-1zM18 21h1v1h-1zM20 21h1v1h-1zM22 21h6v1h-6zM30 21h2v1h-2zM33 21h2v1h-2zM36 21h1v1h-1zM8 22h1v1h-1zM10 22h1v1h-1zM13 22h2v1h-2zM17 22h1v1h-1zM19 22h2v1h-2zM22 22h1v1h-1zM24 22h3v1h-3zM29 22h1v1h-1zM31 22h2v1h-2zM34 22h2v1h-2zM4 23h1v1h-1zM7 23h2v1h-2zM12 23h1v1h-1zM16 23h4v1h-4zM24 23h2v1h-2zM28 23h1v1h-1zM31 23h4v1h-4zM36 23h1v1h-1zM5 24h4v1h-4zM10 24h4v1h-4zM15 24h1v1h-1zM17 24h2v1h-2zM22 24h2v1h-2zM25 24h1v1h-1zM27 24h1v1h-1zM29 24h1v1h-1zM31 24h1v1h-1zM33 24h1v1h-1zM35 24h2v1h-2zM4 25h5v1h-5zM12 25h1v1h-1zM15 25h2v1h-2zM18 25h3v1h-3zM24 25h2v1h-2zM27 25h3v1h-3zM33 25h1v1h-1zM36 25h1v1h-1zM4 26h1v1h-1zM6 26h7v1h-7zM14 26h2v1h-2zM23 26h1v1h-1zM28 26h2v1h-2zM31 26h1v1h-1zM33 26h1v1h-1zM35 26h1v1h-1zM4 27h1v1h-1zM7 27h2v1h-2zM13 27h3v1h-3zM20 27h1v1h-1zM22 27h5v1h-5zM28 27h1v1h-1zM33 27h3v1h-3zM4 28h1v1h-1zM6 28h1v1h-1zM8 28h3v1h-3zM12 28h1v1h-1zM16 28h2v1h-2zM21 28h3v1h-3zM28 28h5v1h-5zM34 28h1v1h-1zM36 28h1v1h-1zM12 29h2v1h-2zM17 29h1v1h-1zM20 29h4v1h-4zM26 29h1v1h-1zM28 29h1v1h-1zM32 29h1v1h-1zM34 29h1v1h-1zM36 29h1v1h-1zM4 30h7v1h-7zM13 30h2v1h-2zM16 30h1v1h-1zM19 30h3v1h-3zM24 30h1v1h-1zM26 30h3v1h-3zM30 30h1v1h-1zM32 30h1v1h-1zM34 30h1v1h-1zM4 31h1v1h-1zM10 31h1v1h-1zM12 31h1v1h-1zM15 31h3v1h-3zM20 31h5v1h-5zM27 31h2v1h-2zM32 31h3v1h-3zM36 31h1v1h-1zM4 32h1v1h-1zM6 32h3v1h-3zM10 32h1v1h-1zM12 32h3v1h-3zM17 32h4v1h-4zM24 32h3v1h-3zM28 32h6v1h-6zM4 33h1v1h-1zM6 33h3v1h-3zM10 33h1v1h-1zM12 33h1v1h-1zM14 33h2v1h-2zM17 33h3v1h-3zM21 33h2v1h-2zM25 33h1v1h-1zM27 33h3v1h-3zM32 33h1v1h-1zM34 33h1v1h-1zM36 33h1v1h-1zM4 34h1v1h-1zM6 34h3v1h-3zM10 34h1v1h-1zM12 34h2v1h-2zM15 34h7v1h-7zM24 34h2v1h-2zM30 34h2v1h-2zM33 34h2v1h-2zM4 35h1v1h-1zM10 35h1v1h-1zM13 35h1v1h-1zM15 35h2v1h-2zM19 35h1v1h-1zM22 35h1v1h-1zM25 35h1v1h-1zM29 35h2v1h-2zM32 35h3v1h-3zM4 36h7v1h-7zM12 36h1v1h-1zM16 36h1v1h-1zM18 36h2v1h-2zM21 36h1v1h-1zM24 36h1v1h-1zM28 36h4v1h-4zM34 36h2v1h-2z"/></svg></div>
+    <p>Сыграйте сами</p>
+  </figure>
+  <aside class="notes">Проверить можно самим за минуту: открыть ссылку в Chrome или Edge, разрешить камеру, сесть примерно в метре. В первый раз поможет режим «Новичок» и обучение за 60 секунд.</aside>
+</section>
+
 <section class="slide s7" data-title="Клятва" data-sec="20">
   <p class="kicker">ASHEN OATH</p>
   <p class="s7-oath">Любой ноутбук с&nbsp;камерой&nbsp;— <em>игра, тренер и&nbsp;урок движения</em></p>
@@ -421,11 +599,8 @@ a { color: inherit; }
     <a class="btn btn--primary" href="../index.html?demo&amp;present&amp;fury=100" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15L19.5 12z"/></svg>Живой показ</a>
     <a class="btn" href="ASHEN_OATH_pitch.pdf" download>PDF</a>
   </div>
-  <p class="s7-url">diiaanns07-droid.github.io/ADMIT_STUTU</p>
-  <figure class="s7-qr">
-    <div class="s7-qr__code"><svg viewBox="0 0 41 41" role="img" aria-label="QR-код: https://diiaanns07-droid.github.io/ADMIT_STUTU/"><rect width="41" height="41" fill="#eadfc5"/><path fill="#15120f" d="M4 4h7v1h-7zM13 4h3v1h-3zM18 4h1v1h-1zM20 4h1v1h-1zM22 4h3v1h-3zM27 4h1v1h-1zM30 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM15 5h2v1h-2zM19 5h1v1h-1zM22 5h1v1h-1zM25 5h2v1h-2zM30 5h1v1h-1zM36 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM12 6h1v1h-1zM18 6h2v1h-2zM23 6h1v1h-1zM25 6h1v1h-1zM28 6h1v1h-1zM30 6h1v1h-1zM32 6h3v1h-3zM36 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM12 7h1v1h-1zM14 7h2v1h-2zM22 7h1v1h-1zM26 7h1v1h-1zM28 7h1v1h-1zM30 7h1v1h-1zM32 7h3v1h-3zM36 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM12 8h3v1h-3zM18 8h4v1h-4zM24 8h1v1h-1zM26 8h3v1h-3zM30 8h1v1h-1zM32 8h3v1h-3zM36 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM12 9h2v1h-2zM16 9h1v1h-1zM18 9h1v1h-1zM21 9h1v1h-1zM23 9h1v1h-1zM26 9h2v1h-2zM30 9h1v1h-1zM36 9h1v1h-1zM4 10h7v1h-7zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM26 10h1v1h-1zM28 10h1v1h-1zM30 10h7v1h-7zM12 11h1v1h-1zM14 11h3v1h-3zM18 11h1v1h-1zM20 11h1v1h-1zM23 11h3v1h-3zM28 11h1v1h-1zM4 12h1v1h-1zM6 12h5v1h-5zM14 12h5v1h-5zM21 12h1v1h-1zM23 12h2v1h-2zM26 12h3v1h-3zM30 12h5v1h-5zM4 13h1v1h-1zM6 13h1v1h-1zM13 13h2v1h-2zM16 13h2v1h-2zM20 13h6v1h-6zM27 13h1v1h-1zM30 13h2v1h-2zM33 13h2v1h-2zM36 13h1v1h-1zM4 14h1v1h-1zM6 14h2v1h-2zM9 14h3v1h-3zM13 14h2v1h-2zM16 14h4v1h-4zM21 14h1v1h-1zM25 14h2v1h-2zM30 14h1v1h-1zM32 14h1v1h-1zM34 14h2v1h-2zM5 15h1v1h-1zM7 15h3v1h-3zM11 15h1v1h-1zM13 15h2v1h-2zM17 15h1v1h-1zM19 15h4v1h-4zM24 15h1v1h-1zM26 15h1v1h-1zM28 15h2v1h-2zM32 15h4v1h-4zM5 16h1v1h-1zM10 16h1v1h-1zM12 16h1v1h-1zM14 16h1v1h-1zM18 16h3v1h-3zM24 16h3v1h-3zM28 16h2v1h-2zM31 16h1v1h-1zM33 16h1v1h-1zM36 16h1v1h-1zM4 17h3v1h-3zM9 17h1v1h-1zM11 17h4v1h-4zM16 17h2v1h-2zM19 17h1v1h-1zM21 17h2v1h-2zM28 17h2v1h-2zM33 17h1v1h-1zM35 17h2v1h-2zM4 18h3v1h-3zM8 18h1v1h-1zM10 18h4v1h-4zM19 18h2v1h-2zM22 18h1v1h-1zM24 18h1v1h-1zM26 18h1v1h-1zM29 18h2v1h-2zM33 18h1v1h-1zM35 18h1v1h-1zM4 19h1v1h-1zM7 19h1v1h-1zM12 19h1v1h-1zM14 19h1v1h-1zM18 19h2v1h-2zM25 19h1v1h-1zM29 19h2v1h-2zM32 19h1v1h-1zM34 19h1v1h-1zM4 20h2v1h-2zM7 20h1v1h-1zM9 20h5v1h-5zM18 20h4v1h-4zM26 20h1v1h-1zM28 20h2v1h-2zM31 20h2v1h-2zM36 20h1v1h-1zM4 21h1v1h-1zM6 21h2v1h-2zM9 21h1v1h-1zM14 21h1v1h-1zM18 21h1v1h-1zM20 21h1v1h-1zM22 21h6v1h-6zM30 21h2v1h-2zM33 21h2v1h-2zM36 21h1v1h-1zM8 22h1v1h-1zM10 22h1v1h-1zM13 22h2v1h-2zM17 22h1v1h-1zM19 22h2v1h-2zM22 22h1v1h-1zM24 22h3v1h-3zM29 22h1v1h-1zM31 22h2v1h-2zM34 22h2v1h-2zM4 23h1v1h-1zM7 23h2v1h-2zM12 23h1v1h-1zM16 23h4v1h-4zM24 23h2v1h-2zM28 23h1v1h-1zM31 23h4v1h-4zM36 23h1v1h-1zM5 24h4v1h-4zM10 24h4v1h-4zM15 24h1v1h-1zM17 24h2v1h-2zM22 24h2v1h-2zM25 24h1v1h-1zM27 24h1v1h-1zM29 24h1v1h-1zM31 24h1v1h-1zM33 24h1v1h-1zM35 24h2v1h-2zM4 25h5v1h-5zM12 25h1v1h-1zM15 25h2v1h-2zM18 25h3v1h-3zM24 25h2v1h-2zM27 25h3v1h-3zM33 25h1v1h-1zM36 25h1v1h-1zM4 26h1v1h-1zM6 26h7v1h-7zM14 26h2v1h-2zM23 26h1v1h-1zM28 26h2v1h-2zM31 26h1v1h-1zM33 26h1v1h-1zM35 26h1v1h-1zM4 27h1v1h-1zM7 27h2v1h-2zM13 27h3v1h-3zM20 27h1v1h-1zM22 27h5v1h-5zM28 27h1v1h-1zM33 27h3v1h-3zM4 28h1v1h-1zM6 28h1v1h-1zM8 28h3v1h-3zM12 28h1v1h-1zM16 28h2v1h-2zM21 28h3v1h-3zM28 28h5v1h-5zM34 28h1v1h-1zM36 28h1v1h-1zM12 29h2v1h-2zM17 29h1v1h-1zM20 29h4v1h-4zM26 29h1v1h-1zM28 29h1v1h-1zM32 29h1v1h-1zM34 29h1v1h-1zM36 29h1v1h-1zM4 30h7v1h-7zM13 30h2v1h-2zM16 30h1v1h-1zM19 30h3v1h-3zM24 30h1v1h-1zM26 30h3v1h-3zM30 30h1v1h-1zM32 30h1v1h-1zM34 30h1v1h-1zM4 31h1v1h-1zM10 31h1v1h-1zM12 31h1v1h-1zM15 31h3v1h-3zM20 31h5v1h-5zM27 31h2v1h-2zM32 31h3v1h-3zM36 31h1v1h-1zM4 32h1v1h-1zM6 32h3v1h-3zM10 32h1v1h-1zM12 32h3v1h-3zM17 32h4v1h-4zM24 32h3v1h-3zM28 32h6v1h-6zM4 33h1v1h-1zM6 33h3v1h-3zM10 33h1v1h-1zM12 33h1v1h-1zM14 33h2v1h-2zM17 33h3v1h-3zM21 33h2v1h-2zM25 33h1v1h-1zM27 33h3v1h-3zM32 33h1v1h-1zM34 33h1v1h-1zM36 33h1v1h-1zM4 34h1v1h-1zM6 34h3v1h-3zM10 34h1v1h-1zM12 34h2v1h-2zM15 34h7v1h-7zM24 34h2v1h-2zM30 34h2v1h-2zM33 34h2v1h-2zM4 35h1v1h-1zM10 35h1v1h-1zM13 35h1v1h-1zM15 35h2v1h-2zM19 35h1v1h-1zM22 35h1v1h-1zM25 35h1v1h-1zM29 35h2v1h-2zM32 35h3v1h-3zM4 36h7v1h-7zM12 36h1v1h-1zM16 36h1v1h-1zM18 36h2v1h-2zM21 36h1v1h-1zM24 36h1v1h-1zM28 36h4v1h-4zM34 36h2v1h-2z"/></svg></div>
-    <p>Сыграйте сами</p>
-  </figure>
+  <p class="s7-url">Играть: diiaanns07-droid.github.io/ADMIT_STUTU</p>
+  <figure class="s7-img"><img src="media/arena_1003.jpg" alt="Арена боя с Регентом"></figure>
   <p class="s7-thanks">Спасибо!</p>
   <aside class="notes">Наша клятва: любой ноутбук с камерой — это игра, тренер и урок движения. QR ведёт в игру — попробуйте сами, она откроется в браузере. А сейчас покажем вживую. Спасибо!</aside>
 </section>
@@ -724,7 +899,7 @@ a { color: inherit; }
   window.addEventListener('resize', fit);
   window.addEventListener('hashchange', function () { var k = parseInt(location.hash.slice(1), 10); if (k) go(k - 1, 'jump'); });
   // Печать: каждый слайд — в конечном состоянии
-  function printAll() { slides.forEach(function (el, i) { var keep = cur; cur = i; setStep(maxOf(el), false); cur = keep; }); }
+  function printAll() { slides.forEach(function (el, i) { var keep = cur; cur = i; setStep(+el.getAttribute('data-print-step') || maxOf(el), false); cur = keep; }); }
   window.addEventListener('beforeprint', printAll);
 
   fit();
