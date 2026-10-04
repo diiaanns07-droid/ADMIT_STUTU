@@ -1,865 +1,923 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ASHEN OATH — камера вместо джойстика · финал ADMIT</title>
-<meta name="description" content="Браузерная action-RPG: героем управляют руки и тело через обычную веб-камеру. Презентация для финала хакатона ADMIT.">
-<meta property="og:title" content="ASHEN OATH — камера вместо джойстика">
-<meta property="og:description" content="Браузерная action-RPG: героем управляют руки и тело через обычную веб-камеру. Финал ADMIT.">
-<meta property="og:image" content="https://diiaanns07-droid.github.io/ADMIT_STUTU/pitch/media/og-white.jpg">
-<meta property="og:type" content="website">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="theme-color" content="#F7F9FC">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234263EB'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='white' stroke-width='3'/%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" media="print" onload="this.media='all'">
-<script>document.documentElement.className+=' js';</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Питч ASHEN OATH</title>
+<meta name="description" content="ASHEN OATH — action-RPG в браузере: героем управляют руки и тело через веб-камеру. Презентация для финала ADMIT.">
+<meta name="theme-color" content="#f4f3ef">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231a1813'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23d9a441' stroke-width='2'/%3E%3Cpath d='M16 6v20' stroke='%23d9a441' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
-/* =========================================================
-   1. Цвета, размеры, базовые стили
-   ========================================================= */
-:root{
-  --bg:#F7F9FC; --surface:#FFFFFF; --text:#17243B; --muted:#526175;
-  --accent:#4263EB; --accent2:#087E8B; --warn:#B4541A; --line:#E1E7EF;
-  --accent-50:#EEF2FE; --accent-100:#DCE3FC; --accent-200:#B8C6F8; --accent-700:#3350CF;
-  --teal-50:#E6F3F4; --teal-700:#06646F; --warn-50:#FBF1E6; --ok:#2F8F5B; --ok-50:#E7F4EC; --err:#C2413A; --err-50:#FBECEA;
-  --ink-30:#AAB5C4; --ink-15:#D3DAE4;
-  --u: min(calc(100vw / 1920), calc(100vh / 1080));
-  --fs-hero: max(40px, calc(104 * var(--u)));
-  --fs-h2: max(28px, calc(56 * var(--u)));
-  --fs-h3: max(18px, calc(30 * var(--u)));
-  --fs-lead: max(17px, calc(29 * var(--u)));
-  --fs-body: max(16px, calc(26 * var(--u)));
-  --fs-sm: max(14px, calc(22 * var(--u)));
-  --fs-xs: max(12px, calc(18 * var(--u)));
-  --fs-num: max(40px, calc(96 * var(--u)));
-  --sp-1: max(6px, calc(10 * var(--u)));
-  --sp-2: max(10px, calc(18 * var(--u)));
-  --sp-3: max(14px, calc(28 * var(--u)));
-  --sp-4: max(18px, calc(44 * var(--u)));
-  --pad-x: max(18px, calc(112 * var(--u)));
-  --pad-top: max(16px, calc(56 * var(--u)));
-  --panel-h: max(44px, calc(58 * var(--u)));
-  --reserve: calc(var(--panel-h) + max(20px, calc(40 * var(--u))));
-  --r: max(10px, calc(16 * var(--u)));
-  --shadow-sm: 0 1px 2px rgba(21,34,56,.05), 0 4px 14px rgba(21,34,56,.05);
-  --shadow: 0 1px 2px rgba(21,34,56,.06), 0 10px 30px rgba(21,34,56,.10);
-  --ease: cubic-bezier(.2,.7,.2,1);
-  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", Ubuntu, Arial, sans-serif;
+/* Презентация одним файлом: 13 слайдов; PDF читается без докладчика, в браузере слайды 4, 7 и 9 интерактивны. Сцена 1920×1080 вписывается в окно целиком.
+ * Светлая «бумага», тёмные окна — кадры игры и экран камеры; бронза игры — единственный акцент.
+ * Работает из file:// и без сети: шрифты в fonts/, кадры в media/. */
+:root {
+  --paper: #f4f3ef;
+  --paper-2: #e7e4dc;
+  --rule: #cbc6b9;
+  --ink: #1a1813;
+  --ink-2: #4c473d;
+  --accent: #a46f14;
+  --accent-text: #845810;
+  --screen: #15130f;
+  --screen-2: #2b271f;
+  --screen-ink: #f0e9da;
+  --screen-dim: #9a907c;
+  --flesh: #4d4336;
+  --right: #ff9a3c;
+  --left-ink: #2a64bf;   /* левая рука на бумаге */
+  --right-ink: #c25c12;  /* правая рука на бумаге */
+  --err: #ff5a3d;
+  --ok: #52c873;
+  --f-display: 'Cormorant Garamond', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  --f-body: 'Alegreya Sans', 'Segoe UI', system-ui, 'Noto Sans', Arial, sans-serif;
+  --f-num: 'Cinzel', 'Palatino Linotype', Georgia, serif;   /* цифры как в игре: ровные, без «прыгающих» старых форм */
+  --f-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+  color-scheme: light;
 }
-*,*::before,*::after{box-sizing:border-box}
-html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
-.js body{overflow:hidden}
-h1,h2,h3,p,ul,ol,figure{margin:0}
-ul,ol{padding:0;list-style:none}
-button{font:inherit;color:inherit;cursor:pointer}
-a{color:var(--accent)}
-img{display:block;max-width:100%}
-:focus-visible{outline:3px solid var(--accent-200);outline-offset:2px;border-radius:6px}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper); }
+body { font-family: var(--f-body); color: var(--ink); font-variant-numeric: lining-nums; -webkit-font-smoothing: antialiased; touch-action: pan-y pinch-zoom; }
+p, h1, h2, ul, ol, figure { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+img, svg { display: block; }
+a { color: inherit; }
 
-/* =========================================================
-   2. Слайды
-   ========================================================= */
-/* без JavaScript (встроенные просмотрщики) — слайды идут друг под другом, как документ */
-.slide{position:relative;min-height:100vh;padding:var(--pad-top) var(--pad-x) var(--sp-4);display:flex;flex-direction:column;gap:var(--sp-3);border-bottom:1px solid var(--line)}
-/* с JavaScript — презентация: один слайд на экран */
-.js .deck{position:fixed;inset:0}
-.js .slide{position:absolute;inset:0;min-height:0;border:0;padding-bottom:var(--reserve);
-  opacity:0;visibility:hidden;transform:translateY(14px);transition:opacity .45s var(--ease),transform .45s var(--ease),visibility 0s linear .45s}
-.js .slide.is-active{opacity:1;visibility:visible;transform:none;transition:opacity .45s var(--ease),transform .45s var(--ease),visibility 0s}
-.js .slide.is-back{transform:translateY(-14px)}
-.kicker{font-size:var(--fs-xs);font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
-.kicker b{color:var(--muted);font-weight:700}
-.head{display:flex;flex-direction:column;gap:max(4px,calc(8*var(--u)))}
-h2{font-size:var(--fs-h2);line-height:1.08;font-weight:800;letter-spacing:-.02em}
-.sub{font-size:var(--fs-lead);color:var(--muted);line-height:1.35;max-width:62ch}
-.body{flex:1;min-height:0;display:grid;gap:var(--sp-4)}
-.cols-2{grid-template-columns:1.15fr 1fr;align-items:center}
-.cols-2b{grid-template-columns:1fr 1.15fr;align-items:center}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-sm);padding:var(--sp-3)}
-.shot{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:max(6px,calc(10*var(--u)));overflow:hidden}
-.shot img{width:100%;height:auto;border-radius:calc(var(--r) - 6px);background:#0d0e12}
-.shot figcaption{font-size:var(--fs-xs);color:var(--muted);padding:max(6px,calc(10*var(--u))) max(4px,calc(6*var(--u))) 0}
-.foot{font-size:var(--fs-xs);color:var(--muted);line-height:1.4}
-.foot b{color:var(--text);font-weight:600}
-.lead{font-size:var(--fs-lead);line-height:1.4;color:var(--text)}
-.muted{color:var(--muted)}
-.tag{display:inline-block;font-size:var(--fs-xs);font-weight:600;padding:.2em .6em;border-radius:999px;background:var(--accent-50);color:var(--accent-700)}
-.tag--teal{background:var(--teal-50);color:var(--teal-700)}
-.tag--warn{background:var(--warn-50);color:var(--warn)}
+/* ---------- Сцена и слайды */
+.deck { position: fixed; left: 50%; top: 50%; width: 1920px; height: 1080px; transform: translate(-50%, -50%) scale(var(--s, 1)); overflow: hidden; background: var(--paper); }
+.slide { position: absolute; inset: 0; padding: 96px 120px 120px; background: var(--paper); visibility: hidden; opacity: 0; transition: opacity .35s var(--ease), visibility 0s linear .35s; }
+.slide.is-on { z-index: 2; visibility: visible; opacity: 1; transition: opacity .35s var(--ease); }
+.notes { display: none; }
+[data-step] { transition: opacity .35s var(--ease), translate .35s var(--ease); }
+[data-step]:not(.is-shown) { opacity: 0; translate: 0 12px; }
+.slide.is-instant, .slide.is-instant *, .slide.is-instant *::before, .slide.is-instant *::after { transition: none !important; animation: none !important; }
 
-/* появление элементов слайда по порядку рассказа */
-.js [data-r]{opacity:0;transform:translateY(16px);transition:opacity .5s var(--ease),transform .5s var(--ease);transition-delay:calc(var(--i,0) * 90ms + 120ms)}
-.js .slide.is-active [data-r]{opacity:1;transform:none}
-
-/* кнопки */
-.btn{display:inline-flex;align-items:center;gap:.45em;font-size:var(--fs-sm);font-weight:600;padding:.62em 1.1em;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--text);text-decoration:none;box-shadow:var(--shadow-sm);transition:background .2s,border-color .2s,transform .15s}
-.btn:hover{border-color:var(--accent-200);background:var(--accent-50)}
-.btn:active{transform:translateY(1px)}
-.btn--primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.btn--primary:hover{background:var(--accent-700);border-color:var(--accent-700)}
-.btn[disabled]{opacity:.45;cursor:default}
-.row{display:flex;flex-wrap:wrap;gap:max(8px,calc(12*var(--u)));align-items:center}
-
-/* цифры */
-.stat{display:flex;flex-direction:column;gap:max(2px,calc(4*var(--u)))}
-.stat__n{font-size:var(--fs-num);font-weight:800;line-height:1;letter-spacing:-.03em;color:var(--accent);font-variant-numeric:tabular-nums}
-.stat__t{font-size:var(--fs-sm);color:var(--muted);line-height:1.35}
-.stat__t b{color:var(--text)}
-
-/* =========================================================
-   3. Отдельные слайды
-   ========================================================= */
-/* 1 — титул */
-.s-title .body{grid-template-columns:1fr 1.05fr;align-items:center}
-.hero-h{font-size:var(--fs-hero);line-height:1;font-weight:800;letter-spacing:-.03em}
-.hero-h span{display:block;color:var(--accent);font-size:.62em;letter-spacing:-.02em;margin-top:.18em}
-.hero-lead{font-size:var(--fs-lead);line-height:1.45;color:var(--muted);border-left:4px solid var(--accent);padding-left:var(--sp-2);margin-top:var(--sp-3);max-width:34ch}
-.toc{display:grid;grid-template-columns:1fr 1fr;gap:max(8px,calc(14*var(--u))) var(--sp-3);margin-top:var(--sp-4)}
-.toc li{display:flex;gap:.6em;align-items:baseline;font-size:var(--fs-sm);font-weight:600}
-.toc li i{font-style:normal;color:var(--accent);font-size:var(--fs-xs);font-weight:700}
-
-/* 2 — проблема */
-.probs{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-3)}
-.prob{display:flex;flex-direction:column;gap:var(--sp-2)}
-.prob svg{width:max(34px,calc(56*var(--u)));height:auto;color:var(--accent)}
-.prob h3{font-size:var(--fs-h3);line-height:1.2}
-.prob p{font-size:var(--fs-sm);color:var(--muted);line-height:1.4}
-.answer{display:flex;align-items:center;gap:var(--sp-3);background:var(--accent);color:#fff;border-radius:var(--r);padding:var(--sp-3) var(--sp-4);box-shadow:var(--shadow)}
-.answer svg{flex:none;width:max(40px,calc(72*var(--u)));height:auto}
-.answer p{font-size:var(--fs-h3);font-weight:700;line-height:1.25}
-.answer small{display:block;font-size:var(--fs-sm);font-weight:500;opacity:.85;margin-top:.25em}
-
-/* 3 — решение */
-.stats3{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-2)}
-.modes{display:flex;flex-direction:column;gap:max(6px,calc(10*var(--u)));margin-top:var(--sp-3)}
-.modes li{display:grid;grid-template-columns:max(150px,calc(250*var(--u))) 1fr;gap:var(--sp-2);font-size:var(--fs-sm);line-height:1.35;padding-bottom:max(6px,calc(10*var(--u)));border-bottom:1px solid var(--line)}
-.modes li b{font-weight:700}
-.modes li span{color:var(--muted)}
-
-/* 4 — конвейер распознавания */
-.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:max(8px,calc(12*var(--u)));position:relative}
-.steps::before{content:"";position:absolute;left:10%;right:10%;top:max(14px,calc(20*var(--u)));height:2px;background:var(--line)}
-.steps .bar{position:absolute;left:10%;top:max(14px,calc(20*var(--u)));height:2px;background:var(--accent);width:0;transition:width .5s var(--ease)}
-.step{position:relative;display:flex;flex-direction:column;align-items:center;gap:max(6px,calc(10*var(--u)));text-align:center;font-size:var(--fs-sm);font-weight:600;color:var(--muted)}
-.step i{font-style:normal;display:grid;place-items:center;width:max(28px,calc(40*var(--u)));height:max(28px,calc(40*var(--u)));border-radius:50%;background:var(--surface);border:2px solid var(--ink-15);font-size:var(--fs-xs);font-weight:800;color:var(--muted);transition:background .3s,border-color .3s,color .3s}
-.step.on{color:var(--text)}
-.step.on i{background:var(--accent);border-color:var(--accent);color:#fff}
-.pipe{display:grid;grid-template-columns:auto 1fr;gap:var(--sp-4);align-items:center}
-.hand{width:max(220px,calc(420*var(--u)));height:auto}
-.hand .bone{stroke:var(--ink-15);stroke-width:5;stroke-linecap:round;fill:none;transition:stroke .4s}
-.hand .pt{fill:var(--ink-30);transition:fill .3s,r .3s}
-.hand.s2 .pt{fill:var(--accent)}
-.hand.s2 .bone{stroke:var(--accent-200)}
-.hand .ang{fill:none;stroke:var(--accent2);stroke-width:4;opacity:0;transition:opacity .4s}
-.hand.s3 .ang{opacity:1}
-.hand .ring{fill:none;stroke:var(--accent);stroke-width:4;opacity:0;transition:opacity .4s}
-.hand.s4 .ring{opacity:1}
-.hand .cam{fill:var(--accent-50);stroke:var(--accent-200);stroke-width:3;transition:opacity .4s}
-.hand.s2 .cam{opacity:.35}
-.explain{display:flex;flex-direction:column;gap:var(--sp-2)}
-.explain h3{font-size:var(--fs-h3)}
-.explain p{font-size:var(--fs-body);color:var(--muted);line-height:1.45;min-height:4.4em}
-.explain .out{display:none;align-items:center;gap:var(--sp-2);font-size:var(--fs-h3);font-weight:800;color:var(--accent)}
-.explain .out.show{display:flex;animation:pop .45s var(--ease)}
-@keyframes pop{from{transform:scale(.9);opacity:0}to{transform:none;opacity:1}}
-
-/* 5 — управление */
-.ctl{display:flex;flex-direction:column;gap:var(--sp-2)}
-.ctl__g{display:grid;grid-template-columns:max(130px,calc(200*var(--u))) 1fr;gap:var(--sp-2);align-items:start;padding:var(--sp-2) var(--sp-3);border-radius:var(--r);background:var(--surface);border:1px solid var(--line);border-left:5px solid var(--accent)}
-.ctl__g--r{border-left-color:var(--warn)}
-.ctl__g--b{border-left-color:var(--accent2)}
-.ctl__g h3{font-size:var(--fs-body);font-weight:800}
-.ctl__g ul{display:flex;flex-direction:column;gap:max(3px,calc(6*var(--u)))}
-.ctl__g li{font-size:var(--fs-sm);line-height:1.35}
-.ctl__g li b{font-weight:700}
-.ctl__g li span{color:var(--muted)}
-
-/* 6 — «ОШИБКА» */
-.tabs{display:flex;flex-wrap:wrap;gap:max(6px,calc(10*var(--u)))}
-.tabs button{font-size:var(--fs-sm);font-weight:600;padding:.5em 1em;border-radius:999px;border:1px solid var(--line);background:var(--surface)}
-.tabs button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
-.err{display:grid;grid-template-columns:1fr auto 1fr;gap:var(--sp-3);align-items:stretch}
-.err__box{border-radius:var(--r);padding:var(--sp-3);display:flex;flex-direction:column;gap:var(--sp-1)}
-.err__box small{font-size:var(--fs-xs);font-weight:700;letter-spacing:.1em;text-transform:uppercase}
-.err__box p{font-size:var(--fs-h3);font-weight:700;line-height:1.3}
-.err__was{background:var(--surface);border:1px solid var(--line)}
-.err__was small{color:var(--muted)}
-.err__old{font-size:var(--fs-sm)!important;font-weight:500!important;color:var(--ink-30);text-decoration:line-through}
-.err__now{background:var(--err-50);border:1px solid #F2C9C4}
-.err__now small{color:var(--err)}
-.err__arrow{display:grid;place-items:center;color:var(--accent)}
-.err__arrow svg{width:max(28px,calc(48*var(--u)));height:auto}
-.err.flip .err__now{animation:pop .45s var(--ease)}
-
-/* 7 — тренер техники */
-.pair{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3)}
-.pair .shot{position:relative}
-.pair .shot img{height:max(200px,calc(430*var(--u)));object-fit:cover;object-position:center top}
-.badge{position:absolute;top:max(14px,calc(22*var(--u)));left:max(14px,calc(22*var(--u)));font-size:var(--fs-xs);font-weight:800;padding:.3em .7em;border-radius:999px;color:#fff}
-.badge--err{background:var(--err)}
-.badge--ok{background:var(--ok)}
-.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-3)}
-.fact{font-size:var(--fs-sm);line-height:1.4;color:var(--muted)}
-.fact b{display:block;font-size:var(--fs-h3);color:var(--text);margin-bottom:.15em}
-
-/* 8 — технологии */
-.techl{display:flex;flex-direction:column;gap:var(--sp-2)}
-.techl li{display:grid;grid-template-columns:max(30px,calc(48*var(--u))) 1fr;gap:var(--sp-2);align-items:start;font-size:var(--fs-body);line-height:1.4}
-.techl li svg{width:100%;height:auto;color:var(--accent2)}
-.techl li b{display:block;font-weight:700}
-.techl li span{color:var(--muted);font-size:var(--fs-sm)}
-.tiles{display:grid;grid-template-columns:1fr;gap:var(--sp-2)}
-.tile{display:grid;grid-template-columns:max(150px,calc(300*var(--u))) 1fr;align-items:center;gap:var(--sp-3)}
-.tile .stat__n{font-size:max(34px,calc(76*var(--u)));white-space:nowrap}
-.meter{height:6px;border-radius:3px;background:var(--accent-50);overflow:hidden;margin-top:max(6px,calc(10*var(--u)))}
-.meter i{display:block;height:100%;width:0;background:var(--accent);border-radius:3px;transition:width 1.1s var(--ease) .3s}
-.slide .meter i{width:var(--w)}
-.js .slide .meter i{width:0}
-.js .slide.is-active .meter i{width:var(--w)}
-
-/* 9 — было → стало */
-.ba{position:relative;border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--line);background:#0d0e12;aspect-ratio:16/9;max-height:100%;touch-action:none;user-select:none}
-.ba img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.ba__before{clip-path:inset(0 calc(100% - var(--x,50%)) 0 0)}
-.ba__line{position:absolute;top:0;bottom:0;left:var(--x,50%);width:3px;margin-left:-1.5px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.15)}
-.ba__knob{position:absolute;top:50%;left:var(--x,50%);width:max(36px,calc(56*var(--u)));height:max(36px,calc(56*var(--u)));margin:calc(max(36px,calc(56*var(--u))) / -2);border-radius:50%;background:#fff;box-shadow:var(--shadow);display:grid;place-items:center;color:var(--accent);cursor:ew-resize}
-.ba__lbl{position:absolute;top:max(10px,calc(16*var(--u)));font-size:var(--fs-xs);font-weight:800;padding:.3em .8em;border-radius:999px;background:rgba(255,255,255,.92);color:var(--text)}
-.ba__lbl--l{left:max(10px,calc(16*var(--u)))}
-.ba__lbl--r{right:max(10px,calc(16*var(--u)))}
-.ba-side{display:flex;flex-direction:column;gap:var(--sp-3)}
-.ba-side ul{display:flex;flex-direction:column;gap:max(8px,calc(12*var(--u)))}
-.ba-side li{font-size:var(--fs-sm);line-height:1.4;color:var(--muted)}
-.ba-side li b{color:var(--text)}
-
-/* 10 — волны */
-.tl{position:relative;display:grid;grid-template-columns:repeat(5,1fr);gap:max(8px,calc(14*var(--u)));padding-top:max(26px,calc(40*var(--u)))}
-.tl::before{content:"";position:absolute;left:0;right:0;top:max(9px,calc(14*var(--u)));height:3px;border-radius:2px;background:var(--line)}
-.tl .fill{position:absolute;left:0;top:max(9px,calc(14*var(--u)));height:3px;border-radius:2px;background:var(--accent);width:0;transition:width 1.4s var(--ease) .3s}
-.tl .fill{width:100%}
-.js .tl .fill{width:0}
-.js .slide.is-active .tl .fill{width:100%}
-.wave{position:relative;display:flex;flex-direction:column;gap:max(4px,calc(8*var(--u)));padding:var(--sp-2);border-radius:var(--r);background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow-sm)}
-.wave::before{content:"";position:absolute;top:calc(-1 * max(26px,calc(40*var(--u))) + max(4px,calc(7*var(--u))));left:var(--sp-2);width:max(14px,calc(18*var(--u)));height:max(14px,calc(18*var(--u)));border-radius:50%;background:var(--surface);border:3px solid var(--accent)}
-.wave--base::before{border-color:var(--ink-30)}
-.wave small{font-size:var(--fs-xs);font-weight:700;color:var(--accent);letter-spacing:.06em}
-.wave--base small{color:var(--muted)}
-.wave h3{font-size:var(--fs-body);font-weight:800}
-.wave li{font-size:var(--fs-xs);line-height:1.4;color:var(--muted)}
-.nums4{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--sp-3)}
-.nums4 .stat__n{font-size:max(30px,calc(68*var(--u)))}
-.arr{display:inline-block;margin:0 .15em;color:var(--ink-30);font-weight:600}
-
-/* 11 — применение */
-.who{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-3);align-items:start;align-content:center}
-.who .card{display:flex;flex-direction:column;gap:var(--sp-2);padding:0;overflow:hidden}
-.who .card img{width:100%;aspect-ratio:16/9;object-fit:cover;object-position:center top;background:#0d0e12}
-.who .card div{padding:0 var(--sp-3) var(--sp-3);display:flex;flex-direction:column;gap:max(4px,calc(8*var(--u)))}
-.who h3{font-size:var(--fs-h3)}
-.who p{font-size:var(--fs-sm);color:var(--muted);line-height:1.4}
-.road{display:flex;flex-wrap:wrap;align-items:center;gap:max(8px,calc(12*var(--u)))}
-.road b{font-size:var(--fs-sm);margin-right:.3em}
-
-/* 12 — вопросы и ответы */
-.faq{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-2)}
-.qa{display:flex;flex-direction:column;gap:max(6px,calc(10*var(--u)));padding:var(--sp-2) var(--sp-3)}
-.qa h3{font-size:var(--fs-sm);font-weight:700;line-height:1.3}
-.qa h3 i{font-style:normal;color:var(--accent);margin-right:.35em}
-.qa button{align-self:flex-start;font-size:var(--fs-xs);font-weight:600;color:var(--accent);background:none;border:0;padding:0}
-.qa p{font-size:var(--fs-xs);color:var(--muted);line-height:1.45;display:none}
-.qa.open p{display:block;animation:pop .35s var(--ease)}
-.final{display:grid;grid-template-columns:1fr auto;gap:var(--sp-4);align-items:center}
-.final h3{font-size:var(--fs-h3);line-height:1.25}
-.qr{width:max(120px,calc(210*var(--u)));padding:max(6px,calc(10*var(--u)));background:#fff;border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-sm)}
-.qr svg{display:block;width:100%;height:auto}
-
-/* =========================================================
-   4. Панель навигации и содержание
-   ========================================================= */
-.nav{position:fixed;left:50%;bottom:max(10px,calc(20*var(--u)));transform:translateX(-50%);display:flex;align-items:center;gap:2px;height:var(--panel-h);padding:0 max(6px,calc(8*var(--u)));background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:999px;box-shadow:var(--shadow);z-index:10}
-.nav button{display:inline-flex;align-items:center;gap:.4em;height:calc(var(--panel-h) - 12px);padding:0 .9em;border:0;border-radius:999px;background:transparent;font-size:var(--fs-xs);font-weight:600;color:var(--text)}
-.nav button:hover{background:var(--accent-50)}
-.nav button[disabled]{opacity:.35;cursor:default;background:transparent}
-.nav .count{font-size:var(--fs-xs);font-weight:700;color:var(--muted);padding:0 .6em;font-variant-numeric:tabular-nums}
-.nav .sep{width:1px;height:50%;background:var(--line);margin:0 2px}
-.nav svg{width:1.1em;height:1.1em}
-.progress{position:fixed;left:0;top:0;height:3px;background:var(--accent);width:0;transition:width .4s var(--ease);z-index:10}
-.toc-panel{position:fixed;inset:0;background:rgba(23,36,59,.28);display:none;align-items:center;justify-content:center;z-index:20}
-.toc-panel.open{display:flex}
-.toc-panel .card{width:min(92vw,760px);max-height:84vh;overflow:auto;padding:var(--sp-3)}
-.toc-panel h2{font-size:var(--fs-h3);margin-bottom:var(--sp-2)}
-.toc-panel ol{display:flex;flex-direction:column;gap:2px}
-.toc-panel button{width:100%;text-align:left;display:flex;gap:.8em;padding:.55em .7em;border:0;border-radius:10px;background:none;font-size:var(--fs-sm)}
-.toc-panel button:hover,.toc-panel button[aria-current="true"]{background:var(--accent-50)}
-.toc-panel button i{font-style:normal;font-weight:700;color:var(--accent);min-width:2ch}
-.hint{position:fixed;right:max(12px,calc(24*var(--u)));bottom:max(14px,calc(28*var(--u)));font-size:var(--fs-xs);color:var(--muted);transition:opacity .6s;z-index:9}
-.hint.hide{opacity:0}
-
-/* узкий экран и телефон */
-@media (max-aspect-ratio:4/3){
-  .s-title .body,.cols-2,.cols-2b,.pipe,.final{grid-template-columns:1fr}
-  .s-title .shot,.pipe .hand{max-width:70%;justify-self:center}
+/* ---------- Типографика */
+.kicker { font: 500 28px/1 var(--f-body); letter-spacing: .14em; text-transform: uppercase; color: var(--accent-text); }
+.title { margin-top: 22px; font: 600 84px/1.04 var(--f-display); letter-spacing: -.005em; color: var(--ink); text-wrap: balance; max-width: 1680px; }
+.lead { font-size: 40px; line-height: 52px; color: var(--ink); }
+.arr { display: inline-block; width: .8em; height: .5em; vertical-align: .12em; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 11'%3E%3Cpath d='M1 5.5h14.5M11.5 1.2l4.6 4.3-4.6 4.3' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 11'%3E%3Cpath d='M1 5.5h14.5M11.5 1.2l4.6 4.3-4.6 4.3' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; }
+.btn {
+  display: inline-flex; align-items: center; gap: 12px; padding: 16px 28px; border-radius: 999px; cursor: pointer; text-decoration: none;
+  font: 500 28px/1 var(--f-body); color: var(--ink); background: transparent; border: 2px solid var(--ink);
 }
-html:not(.js) .nav,html:not(.js) .hint,html:not(.js) .progress{display:none}
-@media (orientation:portrait) and (max-width:820px){
-  .js body{overflow:auto}
-  .js .deck{position:static}
-  .js .slide{position:relative;inset:auto;min-height:0;opacity:1;visibility:visible;transform:none;padding-bottom:var(--sp-4);border-bottom:1px solid var(--line)}
-  .js [data-r]{opacity:1;transform:none}
-  .nav,.hint,.progress{display:none}
-  .probs,.stats3,.who,.faq,.facts,.pair,.nums4,.tl,.steps,.err{grid-template-columns:1fr}
-  .err__arrow{transform:rotate(90deg)}
-  .tl::before,.tl .fill,.steps::before,.steps .bar{display:none}
-}
-@media (prefers-reduced-motion:reduce){
-  *,*::before,*::after{transition:none!important;animation:none!important}
-  [data-r]{opacity:1;transform:none}
-}
+.btn--primary { color: var(--paper); background: var(--ink); }
+.btn svg { width: 22px; height: 22px; fill: currentColor; }
+.btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+@media (hover: hover) { .btn { transition: background-color .2s, color .2s; } .btn:not(.btn--primary):hover { background: var(--paper-2); } }
 
-/* =========================================================
-   5. Печать / PDF: один слайд — одна страница 16:9
-   ========================================================= */
-@page{size:1920px 1080px;margin:0}
-@media print{
-  :root{--u:1px}
-  html,body{height:auto;overflow:visible;background:#fff}
-  .deck{position:static}
-  .slide,.js .slide{position:relative;inset:auto;width:1920px;height:1080px;min-height:0;border:0;opacity:1!important;visibility:visible!important;transform:none!important;break-after:page;page-break-after:always;padding-bottom:56px}
-  .js body{overflow:visible}
-  .js .deck{position:static}
-  [data-r],.js [data-r]{opacity:1!important;transform:none!important}
-  .nav,.progress,.toc-panel,.hint,.no-print{display:none!important}
-  .qa p{display:block!important}
-  .qa button{display:none}
-  .meter i,.js .slide .meter i{width:var(--w)!important}
-  .tl .fill,.js .tl .fill{width:100%!important}
-  .ba__before{clip-path:inset(0 50% 0 0)!important}
-  .ba__line,.ba__knob{left:50%!important}
-  .explain .out{display:flex!important}
+/* ---------- 1. Титул: текст на бумаге, Регент — тёмной половиной справа */
+.s1-text { position: absolute; left: 120px; top: 0; bottom: 0; width: 820px; display: flex; flex-direction: column; justify-content: center; }
+.s1-logo { margin-top: 26px; font: 600 160px/.88 var(--f-display); letter-spacing: .05em; color: var(--ink); }
+.s1-logo span { display: block; }
+.s1-tag { margin-top: 34px; font: italic 500 64px/1.05 var(--f-display); color: var(--accent); }
+.s1 .lead { margin-top: 28px; max-width: 760px; }
+.s1-facts { display: flex; gap: 56px; margin-top: 46px; padding-top: 28px; border-top: 2px solid var(--rule); }
+.s1-facts li { font-size: 30px; line-height: 1.2; color: var(--ink-2); }
+.s1-facts b { display: block; margin-bottom: 8px; font: 600 72px/1 var(--f-num); color: var(--ink); }
+.s1-url { margin-top: 34px; font-size: 28px; color: var(--ink-2); }
+.s1-url b { font-weight: 500; color: var(--ink); }
+.s1-img { position: absolute; right: 0; top: 0; bottom: 0; width: 900px; overflow: hidden; background: var(--screen); }
+.s1-img img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 45%; }
+
+/* ---------- 2. Идея: проблема слева, ноутбук справа */
+.s2-left { position: absolute; left: 120px; top: 96px; width: 900px; }
+.s2-list { margin-top: 60px; display: grid; gap: 26px; }
+.s2-list li { display: flex; align-items: center; gap: 26px; font-size: 38px; line-height: 1.2; }
+.s2-list svg { width: 54px; height: 54px; flex: none; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.s2-turn { margin-top: 70px; font: 600 66px/1.06 var(--f-display); color: var(--accent); text-wrap: balance; }
+.s2-solve { margin-top: 20px; font-size: 40px; line-height: 52px; }
+.s2-laptop { position: absolute; right: 120px; top: 300px; width: 760px; height: 470px; overflow: visible; }
+.lp-lid { fill: var(--ink); }
+.lp-screen { fill: var(--screen); }
+.lp-base { fill: var(--paper-2); stroke: var(--rule); stroke-width: 2; }
+.lp-notch { fill: var(--rule); }
+.lp-cam { fill: var(--screen-dim); transition: fill .3s; }
+.lp-ring { fill: none; stroke: var(--accent); stroke-width: 3; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.lp-shot { opacity: 0; transition: opacity .6s var(--ease); }
+.s2.st-1 .lp-cam { fill: var(--right); }
+.s2.st-1 .lp-ring { animation: ring 1.6s var(--ease) infinite; }
+.s2.st-1 .lp-ring--2 { animation-delay: .5s; }
+.s2.st-2 .lp-shot { opacity: 1; }
+@keyframes ring { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(7); } }
+
+/* ---------- Экран камеры (слайды 3 и 4) */
+.cam { position: absolute; left: 120px; top: 300px; width: 900px; height: 620px; border-radius: 20px; overflow: hidden; background: var(--screen); }
+.cam > svg { width: 100%; height: 100%; }
+.cam-vf { fill: none; stroke: var(--screen-dim); stroke-width: 3; opacity: .6; }
+.cam-lbl { font: 500 26px var(--f-mono); letter-spacing: .06em; fill: var(--screen-dim); }
+.cam-lbl--hi { fill: var(--screen-ink); }
+.h-flesh line { stroke: var(--flesh); stroke-width: 50; stroke-linecap: round; }
+.h-flesh polygon { fill: var(--flesh); stroke: var(--flesh); stroke-width: 50; stroke-linejoin: round; }
+.h-flesh { transition: opacity .5s var(--ease); }
+.h-bone { stroke: var(--right); stroke-width: 5; stroke-linecap: round; opacity: .85; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .35s var(--ease) var(--d, 0ms); }
+.h-pt { fill: var(--right); stroke: var(--screen); stroke-width: 4; opacity: 0; transform-box: fill-box; transform-origin: center; scale: .2; transition: opacity .2s var(--ease) var(--d, 0ms), scale .3s var(--ease) var(--d, 0ms), fill .3s; }
+.hand.pts-on .h-pt { opacity: 1; scale: 1; }
+.hand.pts-on .h-bone { stroke-dashoffset: 0; }
+.scan { fill: url(#scanGrad); opacity: 0; }
+.scan.run { animation: scan 1s var(--ease) both; }
+@keyframes scan { 0% { opacity: 1; transform: translateY(-140px); } 100% { opacity: 0; transform: translateY(620px); } }
+
+/* ---------- 3. Как рука становится командой */
+.flow { position: absolute; left: 1100px; right: 120px; top: 296px; display: grid; gap: 10px; }
+.flow li { display: grid; grid-template-columns: 64px 1fr; column-gap: 16px; padding: 14px 0 12px; border-top: 2px solid var(--rule); opacity: .4; transition: opacity .3s var(--ease), border-color .3s; }
+.flow li.is-done { opacity: 1; }
+.flow li.is-cur { opacity: 1; border-top-color: var(--accent); }
+.flow .n { grid-row: span 2; font: 600 40px/1.1 var(--f-num); color: var(--ink-2); }
+.flow li.is-cur .n { color: var(--accent); }
+.flow b { font-weight: 500; font-size: 36px; line-height: 1.15; }
+.flow span { font-size: 28px; line-height: 1.3; color: var(--ink-2); }
+.ctrl { position: absolute; left: 1100px; top: 892px; display: flex; gap: 14px; }
+.curl { fill: none; stroke: var(--screen-ink); stroke-width: 3; opacity: 0; transition: opacity .3s var(--ease) var(--d, 0ms); }
+.charge { fill: none; stroke: var(--right); stroke-width: 9; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; transition: opacity .2s; }
+.charge.on { opacity: 1; }
+.charge.fill { stroke-dashoffset: 0; stroke: var(--err); transition: stroke-dashoffset .6s linear, stroke .6s steps(1, end), opacity .2s; }
+.ray { stroke: var(--right); stroke-width: 6; stroke-linecap: round; opacity: 0; }
+.rays.go .ray { animation: ray .7s var(--ease) both; }
+@keyframes ray { 0% { opacity: 1; stroke-dashoffset: 1; } 70% { opacity: 1; } 100% { opacity: 0; stroke-dashoffset: -1; } }
+.chip rect { fill: var(--screen-2); stroke: var(--screen-dim); stroke-width: 2; transition: fill .25s, stroke .25s; }
+.chip text { font: 600 26px var(--f-mono); letter-spacing: .06em; fill: var(--screen-dim); text-anchor: middle; transition: fill .25s; }
+.chip.lit rect { fill: var(--right); stroke: var(--right); }
+.chip.lit text { fill: var(--screen); }
+.chips { opacity: 0; transition: opacity .3s; }
+.chips.on { opacity: 1; }
+.chip-arr { fill: var(--screen-dim); }
+.shot { opacity: 0; transition: opacity .6s var(--ease); }
+.shot.on { opacity: 1; }
+.shot-cap rect { fill: var(--screen); }
+.shot-cap text { font: 500 30px var(--f-body); fill: var(--screen-ink); }
+
+/* ---------- 4. Режим «ОШИБКА» */
+.h-pt.is-err { fill: var(--err); }
+.h-pt.is-ok { fill: var(--ok); }
+.mark-link { stroke: var(--err); stroke-width: 5; stroke-dasharray: 10 10; stroke-linecap: round; opacity: 0; transition: opacity .3s, stroke .3s; }
+.mark-link.on { opacity: 1; }
+.mark-link.is-ok { stroke: var(--ok); stroke-dasharray: none; }
+.mark-ring { fill: none; stroke: var(--err); stroke-width: 4; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.mark-ring.on { opacity: 1; animation: pulse 1.2s ease-out infinite; }
+.mark-ring.is-ok { stroke: var(--ok); animation: none; }
+@keyframes pulse { 0% { scale: .7; opacity: 1; } 100% { scale: 1.5; opacity: 0; } }
+.mark-lbl rect { fill: var(--err); }
+.mark-lbl text { font: 700 26px var(--f-mono); letter-spacing: .08em; fill: var(--screen); }
+.mark-lbl { opacity: 0; transition: opacity .3s; }
+.mark-lbl.on { opacity: 1; }
+.mark-lbl.is-ok rect { fill: var(--ok); }
+.err-side { position: absolute; left: 1100px; right: 120px; top: 300px; }
+.card { padding: 26px 30px 30px; border-radius: 14px; background: var(--screen); border: 3px solid var(--err); color: var(--screen-ink); }
+.card__h { font: 700 26px/1.2 var(--f-mono); letter-spacing: .08em; color: var(--err); }
+.card__t { margin-top: 14px; font-size: 38px; line-height: 1.22; }
+.card.is-ok { border-color: var(--ok); }
+.card.is-ok .card__h { color: var(--ok); }
+.card .if-ok { display: none; }
+.card.is-ok .if-ok { display: block; }
+.card.is-ok .if-err { display: none; }
+.err-src { margin-top: 14px; font-size: 28px; line-height: 1.3; color: var(--ink-2); }
+.err-num { margin-top: 44px; display: grid; grid-template-columns: auto 1fr; column-gap: 26px; align-items: center; padding-top: 30px; border-top: 2px solid var(--rule); }
+.err-num b { grid-row: span 2; font: 600 150px/.9 var(--f-num); color: var(--accent); }
+.err-num span { font-size: 40px; line-height: 1.1; }
+.err-num small { font-size: 28px; line-height: 1.3; color: var(--ink-2); }
+.err-ctrl { position: absolute; left: 1100px; top: 892px; display: flex; gap: 14px; }
+
+/* ---------- 5. Было → стало: шторка и четыре цифры */
+.wipe { position: absolute; left: 120px; top: 300px; width: 1104px; height: 621px; border-radius: 16px; overflow: hidden; background: var(--screen); cursor: ew-resize; touch-action: none; user-select: none; --x: 50%; }
+.wipe img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; -webkit-user-drag: none; }
+.wipe__after { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--x)); transition: clip-path 1.2s cubic-bezier(.65, 0, .35, 1); }
+.wipe__edge { position: absolute; inset: 0; pointer-events: none; transform: translateX(var(--x)); transition: transform 1.2s cubic-bezier(.65, 0, .35, 1); }
+.wipe__edge::before { content: ''; position: absolute; top: 0; bottom: 0; left: -2px; width: 4px; background: var(--paper); }
+.wipe__knob { position: absolute; left: -32px; top: calc(50% - 32px); width: 64px; height: 64px; border-radius: 50%; background: var(--paper); color: var(--ink); display: flex; align-items: center; justify-content: center; gap: 2px; font-size: 22px; box-shadow: 0 4px 20px color-mix(in srgb, var(--ink) 40%, transparent); }
+.wipe__knob .arr:first-child { transform: scaleX(-1); }
+.wipe.is-drag .wipe__after, .wipe.is-drag .wipe__edge { transition: none; }
+.wipe__tag { position: absolute; bottom: 22px; padding: 8px 16px; border-radius: 8px; font: 500 28px/1.1 var(--f-body); color: var(--screen-ink); background: color-mix(in srgb, var(--screen) 78%, transparent); }
+.wipe__tag--a { left: 22px; }
+.wipe__tag--b { right: 22px; color: var(--screen); background: var(--paper); }
+.gain { position: absolute; left: 1300px; right: 120px; top: 300px; height: 621px; display: grid; grid-template-rows: repeat(4, 1fr); }
+.gain li { display: flex; flex-direction: column; justify-content: center; border-top: 2px solid var(--rule); }
+.gain li:last-child { border-bottom: 2px solid var(--rule); }
+.gain__k { font-size: 28px; line-height: 1.2; color: var(--ink-2); }
+.gain__v { display: flex; align-items: baseline; gap: 14px; margin-top: 6px; white-space: nowrap; }
+.gain__old { font: 600 44px/1 var(--f-num); color: var(--ink-2); text-decoration: line-through; text-decoration-thickness: 3px; text-decoration-color: color-mix(in srgb, var(--ink-2) 60%, transparent); }
+.gain__v .arr { color: var(--accent); font-size: 40px; }
+.gain__new { font: 600 84px/.9 var(--f-num); color: var(--accent); }
+.gain__u { font-size: 30px; color: var(--ink); }
+
+/* ---------- 6. Что дальше: дорога */
+.road { position: absolute; left: 0; top: 410px; width: 1920px; height: 560px; }
+.road svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.road__bed { fill: none; stroke: var(--rule); stroke-width: 5; stroke-dasharray: 3 14; stroke-linecap: round; }
+.road__lit { fill: none; stroke: var(--accent); stroke-width: 7; stroke-linecap: round; stroke-dasharray: 1 1; stroke-dashoffset: .82; transition: stroke-dashoffset .8s var(--ease); }
+.s6.st-1 .road__lit { stroke-dashoffset: .5; }
+.s6.st-2 .road__lit { stroke-dashoffset: 0; }
+.st { position: absolute; top: 60px; width: 520px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.st--1 { left: 100px; } .st--2 { left: 700px; } .st--3 { left: 1300px; }
+.st__gem { width: 40px; height: 40px; rotate: 45deg; background: var(--accent); border: 4px solid var(--accent); box-shadow: 0 0 0 10px var(--paper); }
+.st--2 .st__gem { background: var(--paper); }
+.st--3 .st__gem { width: 56px; height: 56px; background: var(--ink); border-color: var(--ink); }
+.st__k { margin-top: 44px; font: 500 28px/1 var(--f-body); letter-spacing: .14em; text-transform: uppercase; color: var(--accent-text); }
+.st__list { margin-top: 26px; display: grid; gap: 14px; justify-items: center; }
+.st__list li { font-size: 34px; line-height: 1.2; padding: 10px 22px; border: 2px solid var(--rule); border-radius: 999px; background: var(--paper); }
+.st--1 .st__list li { border-color: var(--accent); }
+.st__goal { margin-top: 18px; font: 600 80px/1 var(--f-display); color: var(--ink); }
+
+/* ---------- 7. Финал */
+.s7-img { position: absolute; right: 0; top: 0; bottom: 0; width: 900px; overflow: hidden; background: var(--screen); }
+.s7-img img { width: 100%; height: 100%; object-fit: cover; object-position: 55% 50%; }
+.s7-oath { position: absolute; left: 120px; top: 230px; width: 840px; font: 600 92px/1.02 var(--f-display); letter-spacing: -.01em; text-wrap: balance; }
+.s7-oath em { font-style: italic; font-weight: 500; color: var(--accent); }
+.s7-act { position: absolute; left: 120px; top: 760px; display: flex; gap: 16px; align-items: center; }
+.s7-url { position: absolute; left: 120px; top: 870px; font-size: 30px; color: var(--ink-2); }
+.s7-qr { position: absolute; right: 120px; top: 300px; width: 440px; text-align: center; }
+.s7-qr__code { padding: 22px; border-radius: 18px; background: var(--paper); border: 2px solid var(--ink); }
+.s7-qr__code svg { width: 100%; height: auto; shape-rendering: crispEdges; }
+.s7-qr p { margin-top: 22px; font-size: 32px; }
+.s7-thanks { position: absolute; left: 120px; top: 930px; font: italic 500 56px/1 var(--f-display); color: var(--accent); }
+
+
+/* ---------- Что это за игра: меню слева, факты справа */
+.g-shot { position: absolute; left: 120px; top: 300px; width: 1100px; height: 619px; border-radius: 16px; overflow: hidden; background: var(--screen); }
+.g-shot img { width: 100%; height: 100%; object-fit: cover; }
+.facts { position: absolute; left: 1290px; right: 120px; top: 300px; height: 619px; display: grid; grid-template-rows: repeat(4, 1fr); }
+.facts li { display: flex; flex-direction: column; justify-content: center; border-top: 2px solid var(--rule); }
+.facts li:last-child { border-bottom: 2px solid var(--rule); }
+.facts b { font: 600 46px/1.05 var(--f-display); }
+.facts span { margin-top: 6px; font-size: 28px; line-height: 1.3; color: var(--ink-2); }
+.d { font-family: var(--f-num); font-size: .82em; letter-spacing: .02em; }
+
+/* ---------- Карта жестов: три колонки, цвет — рука, как в игре */
+.map { position: absolute; left: 120px; right: 120px; top: 372px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 44px; }
+.map__h { padding: 15px 20px; border-radius: 10px; font: 500 30px/1 var(--f-body); letter-spacing: .12em; text-transform: uppercase; color: var(--paper); background: var(--c); }
+.map__col--l { --c: var(--left-ink); } .map__col--r { --c: var(--right-ink); } .map__col--b { --c: var(--accent); }
+.map ul { margin-top: 6px; }
+.map li { display: flex; flex-direction: column; padding: 8px 2px; border-bottom: 2px solid var(--rule); font-size: 28px; line-height: 1.25; color: var(--ink-2); }
+.map li b { font-weight: 500; font-size: 32px; line-height: 1.2; color: var(--ink); }
+.map__foot { position: absolute; left: 120px; right: 120px; top: 942px; font-size: 30px; line-height: 1.3; color: var(--ink-2); }
+.map__foot b { color: var(--ink); font-weight: 500; }
+
+/* ---------- Под капотом: конвейер и цифры проверки */
+.pipe { position: absolute; left: 120px; right: 120px; top: 300px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 60px; }
+.pipe li { position: relative; padding: 26px 28px 30px; border-radius: 14px; background: var(--screen); min-height: 236px; }
+.pipe li + li::before { content: ''; position: absolute; left: -48px; top: calc(50% - 12px); width: 36px; height: 24px; background: var(--accent);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 11'%3E%3Cpath d='M1 5.5h14.5M11.5 1.2l4.6 4.3-4.6 4.3' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 11'%3E%3Cpath d='M1 5.5h14.5M11.5 1.2l4.6 4.3-4.6 4.3' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; }
+.pipe b { display: block; font: 500 34px/1.15 var(--f-body); color: var(--screen-ink); }
+.pipe span { display: block; margin-top: 12px; font-size: 28px; line-height: 1.3; color: var(--screen-dim); }
+.pipe li.is-ours { background: var(--accent); }
+.pipe li.is-ours b, .pipe li.is-ours span { color: var(--screen); }
+.stats { position: absolute; left: 120px; right: 120px; top: 600px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 60px; }
+.stats li { padding-top: 18px; border-top: 3px solid var(--ink); }
+.stats b { display: block; font: 600 72px/1 var(--f-num); color: var(--accent); }
+.stats b.w { font: 600 66px/1 var(--f-display); }
+.stats span { display: block; margin-top: 14px; font-size: 28px; line-height: 1.3; color: var(--ink-2); }
+.tech-foot { position: absolute; left: 120px; right: 120px; top: 900px; padding-top: 18px; border-top: 2px solid var(--rule); font-size: 30px; line-height: 1.3; }
+
+/* ---------- «ОШИБКА» в игре: три кадра */
+.trio { position: absolute; left: 120px; right: 120px; top: 300px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 44px; }
+.trio figure { height: 420px; border-radius: 14px; overflow: hidden; background: var(--screen); }
+.trio img { width: 100%; height: 100%; object-fit: contain; }
+.trio b { display: block; margin-top: 22px; font: 600 42px/1.1 var(--f-display); }
+.trio span { display: block; margin-top: 8px; font-size: 28px; line-height: 1.3; color: var(--ink-2); }
+.trio-foot { position: absolute; left: 120px; right: 120px; top: 920px; font-size: 30px; line-height: 1.3; }
+
+/* ---------- Что появилось: три кадра и список */
+.ng3 { position: absolute; left: 120px; right: 120px; top: 300px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 44px; }
+.ng3 img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 14px; background: var(--screen); }
+.ng3 b { display: block; margin-top: 18px; font: 600 40px/1.1 var(--f-display); }
+.ng3 span { display: block; margin-top: 6px; font-size: 28px; line-height: 1.3; color: var(--ink-2); }
+.newlist { position: absolute; left: 120px; right: 120px; top: 790px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 44px; padding-top: 24px; border-top: 2px solid var(--rule); }
+.newlist li { position: relative; padding-left: 30px; font-size: 30px; line-height: 1.25; }
+.newlist li::before { content: ''; position: absolute; left: 2px; top: .45em; width: 12px; height: 12px; rotate: 45deg; background: var(--accent); }
+
+/* ---------- Проверьте сами */
+.try { position: absolute; left: 120px; top: 300px; width: 1100px; }
+.try li { display: grid; grid-template-columns: 96px 1fr; align-items: center; padding: 22px 0; border-top: 2px solid var(--rule); }
+.try li:last-child { border-bottom: 2px solid var(--rule); }
+.try b { font: 600 60px/1 var(--f-num); color: var(--accent); }
+.try span { font-size: 38px; line-height: 1.25; }
+.try-links { position: absolute; left: 120px; top: 860px; width: 1100px; font-size: 30px; line-height: 1.45; color: var(--ink-2); }
+.try-links b { font-weight: 500; color: var(--ink); }
+
+/* ---------- Панель навигации, прогресс, заметки */
+.bar { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 10; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; background: var(--ink); color: var(--paper); font: 500 17px/1 var(--f-body); opacity: .22; transition: opacity .3s; }
+.bar.is-awake, .bar:hover, .bar:focus-within { opacity: 1; }
+.bar button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.bar button:focus-visible { outline: 2px solid var(--accent); }
+.bar svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.bar__n { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+.prog { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; height: 4px; background: var(--paper-2); }
+.prog i { position: absolute; inset: 0; background: var(--accent); transform-origin: 0 50%; transform: scaleX(var(--p, 0)); transition: transform .4s var(--ease); }
+.notes-box { position: fixed; left: 16px; right: 16px; bottom: 70px; z-index: 11; max-width: 980px; margin: 0 auto; padding: 18px 22px; border-radius: 12px; background: var(--ink); color: var(--paper); font-size: 20px; line-height: 1.45; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; transition-delay: 0s !important; animation: none !important; }
+}
+@page { size: 1920px 1080px; margin: 0; }
+@media print {
+  html, body { height: auto; overflow: visible; }
+  .deck { position: static; transform: none; width: 1920px; height: auto; overflow: visible; }
+  .slide { position: relative; width: 1920px; height: 1080px; visibility: visible !important; opacity: 1 !important; break-after: page; }
+  .slide:last-child { break-after: auto; }
+  [data-step] { opacity: 1 !important; translate: none !important; }
+  .flow li { opacity: 1 !important; }
+  .bar, .prog, .notes-box, .ctrl, .err-ctrl, .s7-act { display: none !important; }
+  *, *::before, *::after { transition: none !important; animation: none !important; }
 }
 </style>
+<noscript><style>
+  /* без JavaScript (встроенные просмотрщики): все слайды документом, как при печати */
+  html, body { height: auto; overflow: auto; }
+  .deck { position: static; transform: none; height: auto; overflow: visible; margin: 0 auto; }
+  @media (max-width: 1919px) { .deck { zoom: .75; } }
+  @media (max-width: 1439px) { .deck { zoom: .5; } }
+  @media (max-width: 959px) { .deck { zoom: .2; } }
+  .slide { position: relative; width: 1920px; height: 1080px; visibility: visible !important; opacity: 1 !important; border-bottom: 2px solid var(--line, #ddd); }
+  [data-step], .flow li, .shot, .lp-shot, .chips, .mark-lbl { opacity: 1 !important; translate: none !important; }
+  .bar, .prog, .notes-box, .ctrl, .err-ctrl, .s7-act { display: none !important; }
+</style></noscript>
 </head>
 <body>
-<div class="progress" aria-hidden="true"></div>
-<main class="deck" id="deck">
+<main class="deck" id="deck" aria-roledescription="презентация">
 
-<!-- ============================ 1. Титул ============================ -->
-<section class="slide s-title" data-title="ASHEN OATH: камера вместо джойстика">
-  <div class="body">
-    <div>
-      <p class="kicker" data-r style="--i:0">Финал ADMIT · кейс Motion</p>
-      <h1 class="hero-h" data-r style="--i:1">ASHEN OATH<span>камера вместо джойстика</span></h1>
-      <p class="hero-lead" data-r style="--i:2">Браузерная action-RPG: героем управляют руки и&nbsp;тело через обычную веб-камеру. Без контроллера, установки и&nbsp;датчиков.</p>
-      <ol class="toc" data-r style="--i:3">
-        <li><i>1</i>Проблема и решение</li>
-        <li><i>2</i>Как это работает</li>
-        <li><i>3</i>Что изменилось после отбора</li>
-        <li><i>4</i>Кому это нужно</li>
-      </ol>
-      <div class="row no-print" data-r style="--i:4;margin-top:var(--sp-4)">
-        <a class="btn btn--primary" href="../" target="_blank" rel="noopener">▶ Играть</a>
-        <a class="btn" href="ASHEN_OATH_pitch.pdf" download>PDF</a>
-      </div>
-    </div>
-    <figure class="shot" data-r style="--i:2">
-      <img src="../docs/screenshots/w4-check/01_menu.jpg" alt="Главное меню игры: пять героев, режимы, героиня на витрине" width="1366" height="768">
-      <figcaption>Главное меню: 5 героев, 5 режимов, сложность от «Лёгкой» до «Кошмара»</figcaption>
-    </figure>
-  </div>
-  <p class="foot" data-r style="--i:5">Играть: <b>diiaanns07-droid.github.io/ADMIT_STUTU</b> · Chrome или Edge, любая веб-камера ноутбука</p>
-</section>
-
-<!-- ============================ 2. Проблема ============================ -->
-<section class="slide" data-title="Проблема: игры с движением требуют железа">
-  <div class="head">
-    <p class="kicker" data-r style="--i:0">01 · Проблема</p>
-    <h2 data-r style="--i:1">Игры с движением требуют железа</h2>
-    <p class="sub" data-r style="--i:2">Двигаться интересно, когда это игра. Но для таких игр обычно нужно отдельное устройство.</p>
-  </div>
-  <div class="body" style="align-content:center;gap:var(--sp-4)">
-    <div class="probs">
-      <div class="card prob" data-r style="--i:3">
-        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="15" width="38" height="20" rx="10"/><path d="M15 21v8M11 25h8"/><circle cx="32" cy="23" r="1.5" fill="currentColor"/><circle cx="36" cy="27" r="1.5" fill="currentColor"/></svg>
-        <h3>Приставки и VR — дорого</h3>
-        <p>Отдельное устройство есть далеко не у каждого школьника и не в каждом классе.</p>
-      </div>
-      <div class="card prob" data-r style="--i:4">
-        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="13" y="5" width="22" height="38" rx="4"/><path d="M20 37h8"/><path d="M19 16l10 10M29 16L19 26"/></svg>
-        <h3>Фитнес-приложения бросают</h3>
-        <p>Повторять упражнения за видео скучно: нет цели, нет игры, нет обратной связи.</p>
-      </div>
-      <div class="card prob" data-r style="--i:5">
-        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="9" width="34" height="22" rx="3"/><path d="M3 37h42"/><path d="M24 15v6l4 3"/></svg>
-        <h3>Часами сидим за ноутбуком</h3>
-        <p>Учёба и игры — сидя. Движения в течение дня всё меньше.</p>
-      </div>
-    </div>
-    <div class="answer" data-r style="--i:6">
-      <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="8"/><circle cx="24" cy="24" r="2" fill="currentColor"/></svg>
-      <p>Веб-камера уже есть в каждом ноутбуке — мы сделали её джойстиком.<small>Ничего не нужно покупать и устанавливать: открыть ссылку и играть.</small></p>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ 3. Решение ============================ -->
-<section class="slide" data-title="Решение: бой с Регентом руками перед камерой">
-  <div class="head">
-    <p class="kicker" data-r style="--i:0">02 · Решение</p>
-    <h2 data-r style="--i:1">Бой с Регентом — руками перед камерой</h2>
-    <p class="sub" data-r style="--i:2">Тёмное фэнтези в браузере: щит, магия и рывки — жестами, без мыши и клавиатуры.</p>
-  </div>
-  <div class="body cols-2">
-    <figure class="shot" data-r style="--i:3">
-      <img src="../docs/screenshots/w5-difficulty/03_hard_battle.jpg" alt="Бой с Регентом Нимба на «Сложной»: подпись атаки и подсказка, что делать" width="1366" height="768" loading="lazy">
-      <figcaption>Бой на «Сложной»: Регент показывает атаку заранее — «РЫВОК из круга»</figcaption>
-    </figure>
-    <div>
-      <div class="stats3">
-        <div class="stat" data-r style="--i:4"><span class="stat__n" data-count="5">5</span><span class="stat__t">героев</span></div>
-        <div class="stat" data-r style="--i:5"><span class="stat__n" data-count="24">24</span><span class="stat__t">жеста</span></div>
-        <div class="stat" data-r style="--i:6"><span class="stat__n" data-count="5">5</span><span class="stat__t">режимов</span></div>
-      </div>
-      <ul class="modes">
-        <li data-r style="--i:7"><b>Бой с Регентом</b><span>две фазы, 4 сложности, ультимейт всем телом</span></li>
-        <li data-r style="--i:8"><b>Испытание · 60 с</b><span>одна минута для всех, ранг S–D, зал славы дня</span></li>
-        <li data-r style="--i:9"><b>Тренажёр техники</b><span>жест по шагам и подсказка, что не так</span></li>
-        <li data-r style="--i:10"><b>Клятва героя</b><span>настоящие отжимания и приседания усиливают героя</span></li>
-        <li data-r style="--i:11"><b>Онлайн-дуэль</b><span>двое игроков, у каждого своя камера</span></li>
-      </ul>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ 4. Как работает ============================ -->
-<section class="slide" data-title="Как рука становится командой" id="s-pipe">
-  <div class="head">
-    <p class="kicker" data-r style="--i:0">03 · Как это работает</p>
-    <h2 data-r style="--i:1">Как рука становится командой</h2>
-    <p class="sub" data-r style="--i:2">MediaPipe находит точки кисти и тела. Всё, что дальше, — наш код.</p>
-  </div>
-  <div class="steps" data-r style="--i:3">
-    <span class="bar"></span>
-    <div class="step on"><i>1</i>Кадр камеры</div>
-    <div class="step"><i>2</i>21 точка кисти</div>
-    <div class="step"><i>3</i>Геометрия</div>
-    <div class="step"><i>4</i>Автомат состояний</div>
-    <div class="step"><i>5</i>Действие</div>
-  </div>
-  <div class="body pipe">
-    <svg class="hand" viewBox="0 0 300 330" data-r style="--i:4" aria-label="Схема кисти: 21 точка">
-      <rect class="cam" x="10" y="10" width="280" height="310" rx="18"/>
-      <g class="bones"></g>
-      <path class="ang" d="M150 160 a26 26 0 0 1 26 -8"/>
-      <circle class="ring" cx="152" cy="188" r="48"/>
-      <g class="pts"></g>
-    </svg>
-    <div class="explain card" data-r style="--i:5">
-      <h3 id="pipe-title">1. Кадр камеры</h3>
-      <p id="pipe-text">Обычная веб-камера ноутбука, 640×480. Кадр обрабатывается прямо в браузере и никуда не отправляется.</p>
-      <div class="out" id="pipe-out"><svg width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>«OK» → снаряд летит в Регента</span></div>
-      <div class="row no-print">
-        <button class="btn btn--primary" id="pipe-run">▶ Запустить</button>
-        <button class="btn" id="pipe-next">Дальше ›</button>
-        <button class="btn" id="pipe-reset">Сначала</button>
-      </div>
-    </div>
-  </div>
-  <p class="foot" data-r style="--i:6"><b>MediaPipe (Google)</b> даёт 21 точку каждой кисти и 33 точки тела. <b>Наше:</b> распознавание 24 жестов, автоматы состояний, 63 подсказки «ОШИБКА», бой и графика.</p>
-</section>
-
-<!-- ============================ 5. Управление ============================ -->
-<section class="slide" data-title="Левая — движение, правая — магия">
-  <div class="head">
-    <p class="kicker" data-r style="--i:0">04 · Управление</p>
-    <h2 data-r style="--i:1">Левая — движение, правая — магия</h2>
-    <p class="sub" data-r style="--i:2">Как в настоящей игре: одна рука ведёт героя, другая колдует, две вместе — сильные приёмы.</p>
-  </div>
-  <div class="body cols-2b">
-    <div class="ctl">
-      <div class="ctl__g" data-r style="--i:3"><h3>Левая рука</h3><ul>
-        <li><b>Ход</b> <span>— ладонь у груди</span></li>
-        <li><b>Рывок</b> <span>— резкий дёрг левой</span></li>
-        <li><b>Щит</b> <span>— толчок ладони к камере</span></li></ul></div>
-      <div class="ctl__g ctl__g--r" data-r style="--i:4"><h3>Правая рука</h3><ul>
-        <li><b>Снаряд</b> <span>— жест «OK»</span></li>
-        <li><b>Выброс</b> <span>— кулак → резко раскрыть ладонь</span></li>
-        <li><b>Искра и руны</b> <span>— указательным пальцем</span></li></ul></div>
-      <div class="ctl__g ctl__g--b" data-r style="--i:5"><h3>Две руки</h3><ul>
-        <li><b>«Врата бури» и «Столп небес»</b> <span>— ладони вместе → растянуть</span></li>
-        <li><b>«Небесный суд»</b> <span>— обе руки над головой: −28 % здоровья Регента</span></li></ul></div>
-    </div>
-    <figure class="shot" data-r style="--i:4">
-      <img src="media/p2/burst.jpg" alt="Выброс двумя руками: критический урон по Регенту" width="840" height="330" loading="lazy">
-      <figcaption>Выброс двумя руками ×1,6 — критический удар</figcaption>
-    </figure>
-  </div>
-</section>
-
-<!-- ============================ 6. ОШИБКА ============================ -->
-<section class="slide" data-title="Твист кейса: «ОШИБКА» — что исправить" id="s-err">
-  <div class="head">
-    <p class="kicker" data-r style="--i:0">05 · Твист кейса «ОШИБКА»</p>
-    <h2 data-r style="--i:1">Не «не распознано», а «что исправить»</h2>
-    <p class="sub" data-r style="--i:2">Когда жест не получился, игра говорит голосом и на экране, что именно поправить.</p>
-  </div>
-  <div class="tabs no-print" role="tablist" data-r style="--i:3">
-    <button role="tab" aria-selected="true" data-k="0">«OK» · снаряд</button>
-    <button role="tab" aria-selected="false" data-k="1">Щит</button>
-    <button role="tab" aria-selected="false" data-k="2">«Небесный суд»</button>
-    <button role="tab" aria-selected="false" data-k="3">Приседание</button>
-  </div>
-  <div class="body" style="align-content:center">
-    <div class="err" data-r style="--i:4">
-      <div class="err__box err__was"><small>Что сделал игрок</small><p id="err-did">Показал «OK», но кончики пальцев не сомкнулись</p><span class="err__old">Обычно: «жест не распознан»</span></div>
-      <div class="err__arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 12h16M14 6l6 6-6 6"/></svg></div>
-      <div class="err__box err__now"><small>ОШИБКА · что сказала игра</small><p id="err-say">Сомкни кончики большого и указательного в кольцо</p></div>
-    </div>
-  </div>
-  <div class="row" data-r style="--i:5;justify-content:space-between">
-    <div class="stats3" style="grid-template-columns:repeat(3,auto);gap:var(--sp-4)">
-      <div class="stat"><span class="stat__n" data-count="63">63</span><span class="stat__t">подсказки «ОШИБКА»</span></div>
-      <div class="stat"><span class="stat__n" data-count="49">49</span><span class="stat__t">к рукам и телу</span></div>
-      <div class="stat"><span class="stat__n" data-count="14">14</span><span class="stat__t">к технике упражнений</span></div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ 7. Тренер техники ============================ -->
-<section class="slide" data-title="Клятва героя: тренер, который видит технику">
-  <div class="head">
-    <p class="kicker" data-r style="--i:0">06 · Клятва героя</p>
-    <h2 data-r style="--i:1">Тренер, который видит технику</h2>
-    <p class="sub" data-r style="--i:2">Настоящие приседания и отжимания перед камерой дают очки клятвы, а очки — улучшения героя.</p>
-  </div>
-  <div class="body" style="grid-template-rows:1fr auto">
-    <div class="pair">
-      <figure class="shot" data-r style="--i:3"><span class="badge badge--err">Ошибка · засчитано +1</span>
-        <img src="../docs/screenshots/squat/counted_fault.jpg" alt="Приседание с ошибкой: «Слишком быстро — опускайся подконтрольно»" width="820" height="582" loading="lazy">
-        <figcaption>«Слишком быстро — опускайся подконтрольно, 2 секунды вниз»</figcaption></figure>
-      <figure class="shot" data-r style="--i:4"><span class="badge badge--ok">Чисто · +2</span>
-        <img src="../docs/screenshots/squat/clean_gold.jpg" alt="Чистое приседание: «Чисто! +2»" width="820" height="582" loading="lazy">
-        <figcaption>Чистый повтор — вдвое больше очков</figcaption></figure>
-    </div>
-    <div class="facts">
-      <p class="fact" data-r style="--i:5"><b>+1 и +2</b>повтор с ошибкой — очко и подсказка, чистый — два очка</p>
-      <p class="fact" data-r style="--i:6"><b>«Мастер»</b>в строгом режиме засчитываются только чистые повторы</p>
-      <p class="fact" data-r style="--i:7"><b>7 улучшений</b>здоровье, энергия, скорость, урон — за очки клятвы</p>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ 8. Технологии ============================ -->
-<section class="slide" data-title="Технологии: всё в браузере — и проверено">
-  <div class="head">
-    <p class="kicker" data-r style="--i:0">07 · Технологии и качество</p>
-    <h2 data-r style="--i:1">Всё работает в браузере — и проверено</h2>
-  </div>
-  <div class="body cols-2b" style="align-items:center">
-    <ul class="techl">
-      <li data-r style="--i:2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><div><b>Видео не уходит в сеть</b><span>распознавание — в браузере, в отдельном потоке (Web Worker)</span></div></li>
-      <li data-r style="--i:3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 8.8a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><path d="M3 3l18 18"/></svg><div><b>Работает без интернета</b><span>все библиотеки в репозитории, офлайн-кэш service worker</span></div></li>
-      <li data-r style="--i:4"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><div><b>Потянет слабый ноутбук</b><span>автонастройка качества и запасные режимы распознавания</span></div></li>
-      <li data-r style="--i:5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 22V12M21 7l-9 5-9-5"/></svg><div><b>three.js, MediaPipe, GitHub Pages</b><span>открыл ссылку — играешь, ничего не устанавливая</span></div></li>
+<section class="slide s1" data-title="ASHEN OATH" data-sec="20">
+  <div class="s1-text">
+    <p class="kicker">Финал ADMIT</p>
+    <h1 class="s1-logo" lang="en"><span>ASHEN</span><span>OATH</span></h1>
+    <p class="s1-tag">Камера вместо джойстика</p>
+    <p class="lead">Action-RPG в&nbsp;браузере: героем управляют руки и&nbsp;тело через обычную веб-камеру.</p>
+    <ul class="s1-facts">
+      <li><b>5</b>героев</li>
+      <li><b>24</b>жеста</li>
+      <li><b>5</b>режимов</li>
     </ul>
-    <div class="tiles">
-      <div class="card tile" data-r style="--i:3"><span class="stat__n" data-count="96" data-suffix=" %">96 %</span><div class="stat__t"><b>форм кисти распознано верно</b> на 135 реальных фото (HaGRID)<div class="meter"><i style="--w:96%"></i></div></div></div>
-      <div class="card tile" data-r style="--i:4"><span class="stat__n" data-count="8" data-suffix=" Гц">8 Гц</span><div class="stat__t"><b>жесты работают и при 8 кадрах/с:</b> 83–100 % попыток, 0 ложных (синтетический тест)<div class="meter"><i style="--w:83%"></i></div></div></div>
-      <div class="card tile" data-r style="--i:5"><span class="stat__n" data-count="1250" data-suffix="+">1250+</span><div class="stat__t"><b>автопроверок в 71 наборе, 0 падений</b> — при каждом обновлении<div class="meter"><i style="--w:100%"></i></div></div></div>
-    </div>
+    <p class="s1-url">Играть: <b>diiaanns07-droid.github.io/ADMIT_STUTU</b></p>
   </div>
+  <figure class="s1-img"><img src="media/title_regent.jpg" alt="Регент Нимба — босс игры, кадр из сегодняшней версии"></figure>
+  <aside class="notes">Здравствуйте! Мы — команда ASHEN OATH. Это action-RPG прямо в браузере, где джойстик — ваши руки. Обычный ноутбук, веб-камера, ссылка — и вы сражаетесь с боссом, Регентом Нимба, руками и телом. Пять героев, двадцать четыре жеста, пять режимов.</aside>
 </section>
 
-<!-- ============================ 9. Было → стало ============================ -->
-<section class="slide" data-title="После отбора: было → стало" id="s-ba">
-  <div class="head">
-    <p class="kicker" data-r style="--i:0">08 · После отбора в финал</p>
-    <h2 data-r style="--i:1">Та же игра — другой уровень</h2>
+<section class="slide s2" data-title="Идея" data-sec="40">
+  <div class="s2-left">
+    <p class="kicker">Идея</p>
+    <h2 class="title">Игры с&nbsp;движением требуют железа</h2>
+    <ul class="s2-list">
+      <li><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M6 17a4 4 0 0 1 4-4h28a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-8.6a3 3 0 0 1-2.8-2l-1-2.7a2.8 2.8 0 0 0-5.2 0l-1 2.7a3 3 0 0 1-2.8 2H10a4 4 0 0 1-4-4z"/></svg>Приставка и&nbsp;VR&nbsp;— дорого</li>
+      <li><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M3 24h5M40 24h5M14 24h20"/><rect x="8" y="15" width="6" height="18" rx="1.5"/><rect x="34" y="15" width="6" height="18" rx="1.5"/></svg>Фитнес-приложения бросают</li>
+      <li><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="4" y="14" width="25" height="17" rx="1.5"/><path d="M1.5 35h30l-1.5 3H3z"/><circle cx="37" cy="14" r="8"/><path d="M37 9.5V14l3 2"/></svg>Часами сидим за&nbsp;ноутбуком</li>
+    </ul>
+    <p class="s2-turn" data-step="1">А&nbsp;камера уже есть в&nbsp;каждом ноутбуке</p>
+    <p class="s2-solve" data-step="2">Мы сделали её&nbsp;джойстиком.</p>
   </div>
-  <div class="body cols-2" style="grid-template-columns:1.6fr 1fr">
-    <div class="ba" id="ba" data-r style="--i:2" aria-label="Сравнение: версия отбора и сегодняшняя версия. Тяните ползунок.">
-      <img class="ba__after" id="ba-after" src="../docs/screenshots/w4-check/01_menu.jpg" alt="Сегодня" loading="lazy">
-      <img class="ba__before" id="ba-before" src="../docs/screenshots/menu.jpg" alt="Версия отбора 30.09" loading="lazy">
-      <span class="ba__line"></span>
-      <span class="ba__knob" aria-hidden="true"><svg width="60%" height="60%" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l-6 6 6 6M15 6l6 6-6 6"/></svg></span>
-      <span class="ba__lbl ba__lbl--l" id="ba-lbl">30.09 · отбор</span>
-      <span class="ba__lbl ba__lbl--r">Сегодня</span>
-    </div>
-    <div class="ba-side">
-      <div class="tabs no-print" role="tablist" data-r style="--i:3">
-        <button role="tab" aria-selected="true" data-pair="0">Меню</button>
-        <button role="tab" aria-selected="false" data-pair="1">Регент</button>
-      </div>
-      <ul data-r style="--i:4" id="ba-notes">
-        <li><b>3 кнопки → 5 режимов</b> и книга заклинаний</li>
-        <li><b>Героиня на витрине</b> — новые лица, волосы, наряды</li>
-        <li><b>Вход в бой: 6 кликов → 2</b></li>
-      </ul>
-      <p class="foot no-print" data-r style="--i:5">Тяните ползунок или нажмите на кадр.</p>
-    </div>
-  </div>
+  <svg class="s2-laptop" viewBox="0 0 760 470" role="img" aria-label="Ноутбук: камера над экраном, на экране — бой из игры">
+    <defs><clipPath id="lpClip"><rect x="84" y="46" width="592" height="333" rx="6"/></clipPath></defs>
+    <rect class="lp-lid" x="60" y="0" width="640" height="414" rx="24"/>
+    <rect class="lp-screen" x="84" y="46" width="592" height="333" rx="6"/>
+    <image class="lp-shot" href="media/arena_1003.jpg" x="84" y="46" width="592" height="333" preserveAspectRatio="xMidYMid slice" clip-path="url(#lpClip)"/>
+    <circle class="lp-ring" cx="380" cy="23" r="7"/>
+    <circle class="lp-ring lp-ring--2" cx="380" cy="23" r="7"/>
+    <circle class="lp-cam" cx="380" cy="23" r="7"/>
+    <path class="lp-base" d="M24 414H736Q760 414 760 430V436Q760 454 736 454H24Q0 454 0 436V430Q0 414 24 414Z"/>
+    <rect class="lp-notch" x="318" y="414" width="124" height="9" rx="4.5"/>
+  </svg>
+  <aside class="notes">Игры с движением упираются в железо: приставка, VR, датчики стоят дорого. Фитнес-приложения бросают через неделю. А мы часами сидим за ноутбуком. [Дальше] Но камера уже есть в каждом ноутбуке и в каждом классе. [Дальше] Мы сделали её джойстиком: открыл ссылку — играешь, ничего не нужно покупать и устанавливать.</aside>
 </section>
 
-<!-- ============================ 10. Волны ============================ -->
-<section class="slide" data-title="Пять волн доработок после отбора">
-  <div class="head">
-    <p class="kicker" data-r style="--i:0">09 · После отбора · 30.09 → 04.10</p>
-    <h2 data-r style="--i:1">Доступнее, глубже, красивее, надёжнее</h2>
-  </div>
-  <div class="tl">
-    <span class="fill"></span>
-    <div class="wave wave--base" data-r style="--i:2"><small>30.09</small><h3>Версия отбора</h3><ul><li>бой, базовые жесты</li><li>3 кнопки в меню</li></ul></div>
-    <div class="wave" data-r style="--i:3"><small>02.10</small><h3>Доступнее</h3><ul><li>«Новичок» и автоход</li><li>вход в 2 клика, офлайн</li></ul></div>
-    <div class="wave" data-r style="--i:4"><small>02.10</small><h3>Глубже</h3><ul><li>«Врата бури», «Столп небес»</li><li>«Небесный суд», «Испытание · 60 с»</li></ul></div>
-    <div class="wave" data-r style="--i:5"><small>03.10</small><h3>Красивее</h3><ul><li>новый Регент и арена</li><li>лица, волосы, наряды героев</li></ul></div>
-    <div class="wave" data-r style="--i:6"><small>04.10</small><h3>Надёжнее</h3><ul><li>«Сложная» и «Кошмар»</li><li>камера на слабых ноутбуках</li></ul></div>
-  </div>
-  <div class="body" style="align-content:center">
-    <div class="nums4">
-      <div class="stat" data-r style="--i:7"><span class="stat__n">6<span class="arr">→</span><span data-count="2">2</span></span><span class="stat__t">клика до боя</span></div>
-      <div class="stat" data-r style="--i:8"><span class="stat__n">21<span class="arr">→</span><span data-count="24">24</span></span><span class="stat__t">жеста</span></div>
-      <div class="stat" data-r style="--i:9"><span class="stat__n">36<span class="arr">→</span><span data-count="10">10</span></span><span class="stat__t">МБ ассетов</span></div>
-      <div class="stat" data-r style="--i:10"><span class="stat__n">1<span class="arr">→</span><span data-count="4">4</span></span><span class="stat__t">уровня сложности</span></div>
-    </div>
-  </div>
+<!-- Что это за игра -->
+<section class="slide s-game" data-title="Что это за игра" data-sec="25">
+  <p class="kicker">Идея</p>
+  <h2 class="title">Бой с&nbsp;боссом, где джойстик&nbsp;— руки</h2>
+  <figure class="g-shot"><img src="media/menu.jpg" alt="Главное меню игры: герой, кнопка «Играть», режимы и настройки"></figure>
+  <ul class="facts">
+    <li><b>Регент Нимба</b><span>босс с&nbsp;двумя стадиями боя</span></li>
+    <li><b><span class="d">5</span> героев</b><span>выбор в&nbsp;меню, у&nbsp;каждого свой облик</span></li>
+    <li><b><span class="d">5</span> режимов</b><span>бой с&nbsp;Регентом, «Испытание · 60&nbsp;с», тренажёр техники, «Клятва героя», онлайн-дуэль</span></li>
+    <li><b>Без установки</b><span>нужны веб-камера и&nbsp;Chrome или Edge</span></li>
+  </ul>
+  <aside class="notes">Это настоящая action-RPG в браузере. Босс — Регент Нимба, у боя две стадии. Пять героев, пять режимов: бой с Регентом, «Испытание · 60 секунд», тренажёр техники, «Клятва героя» и онлайн-дуэль. Ничего не нужно ставить — нужны веб-камера и Chrome или Edge.</aside>
 </section>
 
-<!-- ============================ 11. Применение ============================ -->
-<section class="slide" data-title="Кому это нужно и что дальше">
-  <div class="head">
-    <p class="kicker" data-r style="--i:0">10 · Применение</p>
-    <h2 data-r style="--i:1">Кому это нужно и что дальше</h2>
+<section class="slide s3" data-title="Как рука становится командой" data-sec="75" data-steps="5" data-ctl="scheme" data-print-step="4">
+  <p class="kicker">Управление движениями</p>
+  <h2 class="title">Как рука становится командой</h2>
+  <div class="cam" data-interactive>
+    <svg viewBox="0 0 900 620" role="img" aria-label="Экран камеры: кисть, 21 точка, жест «Выброс»">
+      <defs>
+        <linearGradient id="scanGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff9a3c" stop-opacity="0"/><stop offset="1" stop-color="#ff9a3c" stop-opacity=".35"/></linearGradient>
+      </defs>
+      <path class="cam-vf" d="M30 90V30h60M810 30h60v60M870 530v60h-60M90 590H30v-60"/>
+      <text class="cam-lbl cam-lbl--hi" x="56" y="70">КАМЕРА · ПРАВАЯ РУКА</text>
+      <text class="cam-lbl" x="844" y="70" text-anchor="end">0 кадров в сеть</text>
+      <rect class="scan" x="0" y="0" width="900" height="140"/>
+      <g class="hand" data-pose="fist" data-cx="450" data-cy="505" data-s="205"></g>
+      <g class="chips">
+        <g class="chip" data-chip="1"><rect x="146" y="540" width="184" height="50" rx="10"/><text x="238" y="575">КУЛАК</text></g>
+        <path class="chip-arr" d="M342 558l14 7-14 7z"/>
+        <g class="chip" data-chip="2"><rect x="368" y="540" width="184" height="50" rx="10"/><text x="460" y="575">РАСКРЫТЬ</text></g>
+        <path class="chip-arr" d="M564 558l14 7-14 7z"/>
+        <g class="chip" data-chip="3"><rect x="590" y="540" width="184" height="50" rx="10"/><text x="682" y="575">ВЫБРОС</text></g>
+      </g>
+      <g class="shot">
+        <image href="media/burst.jpg" x="0" y="0" width="900" height="507" preserveAspectRatio="xMidYMid slice"/>
+        <g class="shot-cap"><rect x="0" y="507" width="900" height="113"/><text x="56" y="574">В&#160;бою: выброс энергии бьёт Регента</text></g>
+      </g>
+    </svg>
   </div>
-  <div class="body" style="grid-template-rows:1fr auto">
-    <div class="who">
-      <div class="card" data-r style="--i:2"><img src="../docs/screenshots/w4-check/11_offline_menu.jpg" alt="Меню игры без сети" loading="lazy"><div><h3>Школа</h3><p>Урок физкультуры или перемена в классе: без установки, офлайн, дуэль по локальной сети.</p></div></div>
-      <div class="card" data-r style="--i:3"><img src="../docs/screenshots/squat/clean_gold.jpg" alt="Тренировка приседаний" loading="lazy" style="object-position:center 30%"><div><h3>Дом</h3><p>Короткая тренировка с контролем техники приседаний и отжиманий — в игре, а не по видео.</p></div></div>
-      <div class="card" data-r style="--i:4"><img src="../docs/screenshots/novice_menu.jpg" alt="Режим «Новичок»" loading="lazy"><div><h3>Доступность</h3><p>Можно играть сидя. «Новичок» — базовые жесты и автоход. Мышь не нужна.</p></div></div>
-    </div>
-    <div class="road" data-r style="--i:5"><b>Дальше:</b><span class="tag">Казахский язык</span><span class="tag tag--teal">Режим учителя</span><span class="tag tag--warn">Пилот в школе</span></div>
+  <ol class="flow">
+    <li data-row="1"><span class="n">1</span><b>Кадр с&nbsp;камеры</b><span>видео не&nbsp;покидает браузер</span></li>
+    <li data-row="2"><span class="n">2</span><b>21 точка кисти</b><span>MediaPipe на&nbsp;видеокарте</span></li>
+    <li data-row="3"><span class="n">3</span><b>Геометрия</b><span>наш код: сгибы пальцев, удержание</span></li>
+    <li data-row="4"><span class="n">4</span><b>Жест</b><span>кулак, затем резко раскрыть</span></li>
+    <li data-row="5"><span class="n">5</span><b>Удар в&nbsp;бою</b><span>выброс энергии по&nbsp;Регенту</span></li>
+  </ol>
+  <div class="ctrl">
+    <button class="btn btn--primary" type="button" data-demo="run"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15L19.5 12z"/></svg>Запустить</button>
+    <button class="btn" type="button" data-demo="next">Дальше</button>
+    <button class="btn" type="button" data-demo="reset">Сначала</button>
   </div>
+  <aside class="notes">Как это работает. [1] Камера даёт кадр — он не уходит в интернет, всё считается в браузере. [2] Модель MediaPipe от Google находит на кисти 21 точку — в отдельном потоке на видеокарте. [3] Дальше наш код: насколько согнут каждый палец, как быстро движется рука, сколько держится поза. Кулак держим около полсекунды — кольцо заряда краснеет. [4] Резко раскрыли — автомат жестов узнаёт «Выброс». [5] И в бою волна энергии бьёт Регента. Так устроены все 24 жеста. Точки на экране — настоящие координаты MediaPipe с фото датасета HaGRID из наших тестов.</aside>
 </section>
 
-<!-- ============================ 12. Вопросы и финал ============================ -->
-<section class="slide" data-title="Вопросы и ответы · попробуйте сами" id="s-faq">
-  <div class="head">
-    <p class="kicker" data-r style="--i:0">11 · Вопросы и ответы</p>
-    <h2 data-r style="--i:1">Частые вопросы</h2>
+<!-- Карта жестов -->
+<section class="slide s-map" data-title="Карта жестов" data-sec="30">
+  <p class="kicker">Управление движениями</p>
+  <h2 class="title">Левая&nbsp;— движение, правая&nbsp;— магия, две&nbsp;— печати</h2>
+  <div class="map">
+    <div class="map__col map__col--l"><p class="map__h">Левая рука</p><ul>
+      <li><b>Ладонь у&nbsp;груди</b>герой идёт, выше&nbsp;— бег</li>
+      <li><b>Рука вбок</b>поворот</li>
+      <li><b>Резкий дёрг</b>рывок и&nbsp;уклон</li>
+      <li><b>Толчок ладонью к&nbsp;камере</b>щит</li>
+      <li><b>Кулак, резко раскрыть</b>парирование</li></ul></div>
+    <div class="map__col map__col--r"><p class="map__h">Правая рука</p><ul>
+      <li><b>«OK»</b>магические снаряды</li>
+      <li><b>Щелчок указательным</b>«Искра»</li>
+      <li><b>Взмах ребром ладони</b>«Рассечение»</li>
+      <li><b>Кулак, резко раскрыть</b>выброс энергии</li>
+      <li><b>Фигура пальцем в&nbsp;воздухе</b>10 рун: копьё, молния, лечение…</li></ul></div>
+    <div class="map__col map__col--b"><p class="map__h">Две руки</p><ul>
+      <li><b>Ладони друг к&nbsp;другу</b>сфера</li>
+      <li><b>Хлопок</b>громовая волна</li>
+      <li><b>Сомкнуть и&nbsp;развести</b>«Врата бури»</li>
+      <li><b>Растянуть вверх-вниз</b>«Столп небес»</li>
+      <li><b>Обе руки над головой</b>«Небесный суд»</li></ul></div>
   </div>
-  <div class="faq">
-    <div class="card qa" data-r style="--i:2"><h3><i>01</i>Нужен ли интернет?</h3><button>Показать ответ ⌄</button><p>Только для первого открытия. Потом игра работает офлайн, а видео с камеры никуда не отправляется.</p></div>
-    <div class="card qa" data-r style="--i:3"><h3><i>02</i>Какая камера нужна?</h3><button>Показать ответ ⌄</button><p>Любая встроенная веб-камера ноутбука. Браузер — Chrome или Edge.</p></div>
-    <div class="card qa" data-r style="--i:4"><h3><i>03</i>Что здесь своё, а что от Google?</h3><button>Показать ответ ⌄</button><p>MediaPipe даёт точки кисти и тела. Распознавание 24 жестов, автоматы, подсказки «ОШИБКА», бой и графика — наш код.</p></div>
-    <div class="card qa" data-r style="--i:5"><h3><i>04</i>Потянет ли слабый ноутбук?</h3><button>Показать ответ ⌄</button><p>Да: качество графики подстраивается само, а распознавание переходит на запасной режим, если видеокарта не успевает.</p></div>
-    <div class="card qa" data-r style="--i:6"><h3><i>05</i>Можно без камеры?</h3><button>Показать ответ ⌄</button><p>Да: в меню включите «Отладка с клавиатуры» — все приёмы на клавишах.</p></div>
-    <div class="card qa" data-r style="--i:7"><h3><i>06</i>Что дальше?</h3><button>Показать ответ ⌄</button><p>Казахский язык, режим учителя для класса и пилот в школе.</p></div>
+  <p class="map__foot"><b>24 жеста.</b> Для первого раза — режим «Новичок»: 5 базовых жестов и&nbsp;автоход.</p>
+  <aside class="notes">Руки разделены: левая ведёт героя — ладонь у груди, поворот рукой вбок, рывок резким дёргом, щит толчком ладони. Правая колдует: «OK» — снаряды, щелчок — искра, фигуры пальцем — десять рун. Двумя руками — печати: сфера, хлопок, «Врата бури», «Столп небес» и ультимейт «Небесный суд». Всего 24 жеста, а новичку хватает пяти.</aside>
+</section>
+
+<!-- Под капотом -->
+<section class="slide s-tech" data-title="Под капотом" data-sec="30">
+  <p class="kicker">Техническая реализация</p>
+  <h2 class="title">Всё считается в&nbsp;браузере</h2>
+  <ol class="pipe">
+    <li><b>Веб-камера</b><span>кадр остаётся на&nbsp;устройстве</span></li>
+    <li><b>MediaPipe 0.10.35</b><span>поза и&nbsp;21 точка каждой кисти, Web Worker на&nbsp;видеокарте</span></li>
+    <li class="is-ours"><b>Наш код</b><span>геометрия кисти, автоматы жестов, 63 подсказки</span></li>
+    <li><b>Игра на&nbsp;three.js</b><span>бой, эффекты, звук</span></li>
+  </ol>
+  <ul class="stats">
+    <li><b>96 %</b><span>форм кисти узнано на&nbsp;135 реальных фото HaGRID</span></li>
+    <li><b>0</b><span>ложных срабатываний при 8&nbsp;кадрах в&nbsp;секунду, узнано 83–100 % попыток (синтетический тест)</span></li>
+    <li><b>71</b><span>набор автотестов, 0&nbsp;падений</span></li>
+    <li><b class="w">Офлайн</b><span>библиотеки и&nbsp;модели в&nbsp;репозитории, service worker</span></li>
+  </ul>
+  <p class="tech-foot">Слабый ноутбук: распознавание само переходит с&nbsp;видеокарты на&nbsp;процессор, графика подстраивает качество.</p>
+  <aside class="notes">Под капотом. Кадр с камеры никуда не уходит. MediaPipe 0.10.35 в отдельном потоке на видеокарте даёт позу и 21 точку каждой кисти. Всё остальное — наш код: геометрия кисти, автоматы жестов, 63 подсказки. Игра — на three.js. Проверено: 96 % форм кисти на 135 реальных фото HaGRID, при 8 кадрах в секунду — ноль ложных срабатываний, 71 набор автотестов без падений. Работает офлайн, а на слабом ноутбуке распознавание само переходит на процессор.</aside>
+</section>
+
+<section class="slide s4" data-title="Режим «ОШИБКА»" data-sec="60" data-steps="3" data-ctl="error">
+  <p class="kicker">Режим «ОШИБКА»</p>
+  <h2 class="title">Не «не распознано», а&nbsp;«что исправить»</h2>
+  <div class="cam" data-interactive>
+    <svg viewBox="0 0 900 620" role="img" aria-label="Экран камеры: жест «OK» почти получился, игра показывает, что исправить">
+      <path class="cam-vf" d="M30 90V30h60M810 30h60v60M870 530v60h-60M90 590H30v-60"/>
+      <text class="cam-lbl cam-lbl--hi" x="56" y="70">КАМЕРА · ПРАВАЯ РУКА</text>
+      <text class="cam-lbl" x="844" y="70" text-anchor="end">жест «OK»</text>
+      <g class="hand pts-on" data-pose="almost" data-cx="420" data-cy="560" data-s="215"></g>
+      <line class="mark-link" x1="0" y1="0" x2="0" y2="0"/>
+      <circle class="mark-ring" r="30"/>
+      <g class="mark-lbl"><rect width="150" height="46" rx="8"/><text x="18" y="33">СОМКНИ</text></g>
+    </svg>
   </div>
-  <div class="final card" data-r style="--i:8">
-    <div>
-      <h3>Любой ноутбук с камерой — игра, тренер и урок движения.</h3>
-      <p class="muted" style="font-size:var(--fs-sm);margin-top:.4em">Отсканируйте QR или откройте <b>diiaanns07-droid.github.io/ADMIT_STUTU</b></p>
-      <div class="row no-print" style="margin-top:var(--sp-2)"><a class="btn btn--primary" href="../" target="_blank" rel="noopener">▶ Играть</a><a class="btn" href="ASHEN_OATH_pitch.pdf" download>Скачать PDF</a></div>
+  <div class="err-side">
+    <div class="card" data-step="1">
+      <p class="card__h"><span class="if-err">ОШИБКА · «OK» · СНАРЯД</span><span class="if-ok">РАСПОЗНАНО · «OK» · СНАРЯД</span></p>
+      <p class="card__t"><span class="if-err">Сомкни кончики большого и&nbsp;указательного в&nbsp;кольцо</span><span class="if-ok">Снаряды летят, пока держишь жест</span></p>
     </div>
-    <div class="qr"><svg viewBox="0 0 41 41" role="img" aria-label="QR-код: https://diiaanns07-droid.github.io/ADMIT_STUTU/"><rect width="41" height="41" fill="#ffffff"/><path fill="#15120f" d="M4 4h7v1h-7zM13 4h3v1h-3zM18 4h1v1h-1zM20 4h1v1h-1zM22 4h3v1h-3zM27 4h1v1h-1zM30 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM15 5h2v1h-2zM19 5h1v1h-1zM22 5h1v1h-1zM25 5h2v1h-2zM30 5h1v1h-1zM36 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM12 6h1v1h-1zM18 6h2v1h-2zM23 6h1v1h-1zM25 6h1v1h-1zM28 6h1v1h-1zM30 6h1v1h-1zM32 6h3v1h-3zM36 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM12 7h1v1h-1zM14 7h2v1h-2zM22 7h1v1h-1zM26 7h1v1h-1zM28 7h1v1h-1zM30 7h1v1h-1zM32 7h3v1h-3zM36 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM12 8h3v1h-3zM18 8h4v1h-4zM24 8h1v1h-1zM26 8h3v1h-3zM30 8h1v1h-1zM32 8h3v1h-3zM36 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM12 9h2v1h-2zM16 9h1v1h-1zM18 9h1v1h-1zM21 9h1v1h-1zM23 9h1v1h-1zM26 9h2v1h-2zM30 9h1v1h-1zM36 9h1v1h-1zM4 10h7v1h-7zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM26 10h1v1h-1zM28 10h1v1h-1zM30 10h7v1h-7zM12 11h1v1h-1zM14 11h3v1h-3zM18 11h1v1h-1zM20 11h1v1h-1zM23 11h3v1h-3zM28 11h1v1h-1zM4 12h1v1h-1zM6 12h5v1h-5zM14 12h5v1h-5zM21 12h1v1h-1zM23 12h2v1h-2zM26 12h3v1h-3zM30 12h5v1h-5zM4 13h1v1h-1zM6 13h1v1h-1zM13 13h2v1h-2zM16 13h2v1h-2zM20 13h6v1h-6zM27 13h1v1h-1zM30 13h2v1h-2zM33 13h2v1h-2zM36 13h1v1h-1zM4 14h1v1h-1zM6 14h2v1h-2zM9 14h3v1h-3zM13 14h2v1h-2zM16 14h4v1h-4zM21 14h1v1h-1zM25 14h2v1h-2zM30 14h1v1h-1zM32 14h1v1h-1zM34 14h2v1h-2zM5 15h1v1h-1zM7 15h3v1h-3zM11 15h1v1h-1zM13 15h2v1h-2zM17 15h1v1h-1zM19 15h4v1h-4zM24 15h1v1h-1zM26 15h1v1h-1zM28 15h2v1h-2zM32 15h4v1h-4zM5 16h1v1h-1zM10 16h1v1h-1zM12 16h1v1h-1zM14 16h1v1h-1zM18 16h3v1h-3zM24 16h3v1h-3zM28 16h2v1h-2zM31 16h1v1h-1zM33 16h1v1h-1zM36 16h1v1h-1zM4 17h3v1h-3zM9 17h1v1h-1zM11 17h4v1h-4zM16 17h2v1h-2zM19 17h1v1h-1zM21 17h2v1h-2zM28 17h2v1h-2zM33 17h1v1h-1zM35 17h2v1h-2zM4 18h3v1h-3zM8 18h1v1h-1zM10 18h4v1h-4zM19 18h2v1h-2zM22 18h1v1h-1zM24 18h1v1h-1zM26 18h1v1h-1zM29 18h2v1h-2zM33 18h1v1h-1zM35 18h1v1h-1zM4 19h1v1h-1zM7 19h1v1h-1zM12 19h1v1h-1zM14 19h1v1h-1zM18 19h2v1h-2zM25 19h1v1h-1zM29 19h2v1h-2zM32 19h1v1h-1zM34 19h1v1h-1zM4 20h2v1h-2zM7 20h1v1h-1zM9 20h5v1h-5zM18 20h4v1h-4zM26 20h1v1h-1zM28 20h2v1h-2zM31 20h2v1h-2zM36 20h1v1h-1zM4 21h1v1h-1zM6 21h2v1h-2zM9 21h1v1h-1zM14 21h1v1h-1zM18 21h1v1h-1zM20 21h1v1h-1zM22 21h6v1h-6zM30 21h2v1h-2zM33 21h2v1h-2zM36 21h1v1h-1zM8 22h1v1h-1zM10 22h1v1h-1zM13 22h2v1h-2zM17 22h1v1h-1zM19 22h2v1h-2zM22 22h1v1h-1zM24 22h3v1h-3zM29 22h1v1h-1zM31 22h2v1h-2zM34 22h2v1h-2zM4 23h1v1h-1zM7 23h2v1h-2zM12 23h1v1h-1zM16 23h4v1h-4zM24 23h2v1h-2zM28 23h1v1h-1zM31 23h4v1h-4zM36 23h1v1h-1zM5 24h4v1h-4zM10 24h4v1h-4zM15 24h1v1h-1zM17 24h2v1h-2zM22 24h2v1h-2zM25 24h1v1h-1zM27 24h1v1h-1zM29 24h1v1h-1zM31 24h1v1h-1zM33 24h1v1h-1zM35 24h2v1h-2zM4 25h5v1h-5zM12 25h1v1h-1zM15 25h2v1h-2zM18 25h3v1h-3zM24 25h2v1h-2zM27 25h3v1h-3zM33 25h1v1h-1zM36 25h1v1h-1zM4 26h1v1h-1zM6 26h7v1h-7zM14 26h2v1h-2zM23 26h1v1h-1zM28 26h2v1h-2zM31 26h1v1h-1zM33 26h1v1h-1zM35 26h1v1h-1zM4 27h1v1h-1zM7 27h2v1h-2zM13 27h3v1h-3zM20 27h1v1h-1zM22 27h5v1h-5zM28 27h1v1h-1zM33 27h3v1h-3zM4 28h1v1h-1zM6 28h1v1h-1zM8 28h3v1h-3zM12 28h1v1h-1zM16 28h2v1h-2zM21 28h3v1h-3zM28 28h5v1h-5zM34 28h1v1h-1zM36 28h1v1h-1zM12 29h2v1h-2zM17 29h1v1h-1zM20 29h4v1h-4zM26 29h1v1h-1zM28 29h1v1h-1zM32 29h1v1h-1zM34 29h1v1h-1zM36 29h1v1h-1zM4 30h7v1h-7zM13 30h2v1h-2zM16 30h1v1h-1zM19 30h3v1h-3zM24 30h1v1h-1zM26 30h3v1h-3zM30 30h1v1h-1zM32 30h1v1h-1zM34 30h1v1h-1zM4 31h1v1h-1zM10 31h1v1h-1zM12 31h1v1h-1zM15 31h3v1h-3zM20 31h5v1h-5zM27 31h2v1h-2zM32 31h3v1h-3zM36 31h1v1h-1zM4 32h1v1h-1zM6 32h3v1h-3zM10 32h1v1h-1zM12 32h3v1h-3zM17 32h4v1h-4zM24 32h3v1h-3zM28 32h6v1h-6zM4 33h1v1h-1zM6 33h3v1h-3zM10 33h1v1h-1zM12 33h1v1h-1zM14 33h2v1h-2zM17 33h3v1h-3zM21 33h2v1h-2zM25 33h1v1h-1zM27 33h3v1h-3zM32 33h1v1h-1zM34 33h1v1h-1zM36 33h1v1h-1zM4 34h1v1h-1zM6 34h3v1h-3zM10 34h1v1h-1zM12 34h2v1h-2zM15 34h7v1h-7zM24 34h2v1h-2zM30 34h2v1h-2zM33 34h2v1h-2zM4 35h1v1h-1zM10 35h1v1h-1zM13 35h1v1h-1zM15 35h2v1h-2zM19 35h1v1h-1zM22 35h1v1h-1zM25 35h1v1h-1zM29 35h2v1h-2zM32 35h3v1h-3zM4 36h7v1h-7zM12 36h1v1h-1zM16 36h1v1h-1zM18 36h2v1h-2zM21 36h1v1h-1zM24 36h1v1h-1zM28 36h4v1h-4zM34 36h2v1h-2z"/></svg></div>
+    <p class="err-src" data-step="1">Подсказка из&nbsp;игры: подсвечены точки 4 и&nbsp;8</p>
+    <div class="err-num" data-step="3"><b data-count="63">63</b><span>подсказки</span><small>49 — к&nbsp;жестам и&nbsp;кадру, 14&nbsp;— к&nbsp;технике упражнений</small></div>
   </div>
-  <p class="foot" style="font-size:max(11px,calc(15*var(--u)))">three.js · MediaPipe (Google) · three-vrm (pixiv) · PeerJS · Quaternius · KayKit · VRoid · Poly Haven · шрифт Inter (OFL). Звук и мир — свои.</p>
+  <div class="err-ctrl">
+    <button class="btn btn--primary" type="button" data-demo="check">Проверить</button>
+    <button class="btn" type="button" data-demo="fix">Исправить</button>
+    <button class="btn" type="button" data-demo="reset">Сначала</button>
+  </div>
+  <aside class="notes">Самое важное — режим «ОШИБКА». Обычная игра говорит «не распознано», и человек не понимает, что не так. Наша видит, что именно. Здесь «OK» почти получился, но кольцо не замкнуто. [Проверить] Игра подсвечивает кончики большого и указательного пальцев и пишет — и говорит голосом: «Сомкни кончики в кольцо». [Исправить] Сомкнули — снаряды полетели. [Дальше] Таких подсказок 63: 49 к жестам и положению в кадре, 14 к технике приседаний и отжиманий.</aside>
+</section>
+
+<!-- «ОШИБКА» в игре -->
+<section class="slide s-err2" data-title="«ОШИБКА» в игре" data-sec="30">
+  <p class="kicker">Режим «ОШИБКА»</p>
+  <h2 class="title">Подсказки на&nbsp;каждом шаге</h2>
+  <ul class="trio">
+    <li><figure><img src="media/tutorial.jpg" alt="Обучение «Научись за 60 секунд»: карточка ошибки щита"></figure><b>Обучение за&nbsp;60 секунд</b><span>щит не&nbsp;встал&nbsp;— «толкни ладонь к&nbsp;камере сантиметров на&nbsp;20»</span></li>
+    <li><figure><img src="media/squat_fault.jpg" alt="Тренировка клятвы: приседания и подсказка по технике"></figure><b>Тренер техники</b><span>приседания: «опускайся подконтрольно», чистый повтор&nbsp;— два очка</span></li>
+    <li><figure><img src="media/results.jpg" alt="Итоги боя: точность жестов и самая частая ошибка"></figure><b>Итог боя</b><span>точность по&nbsp;жестам и&nbsp;самая частая ошибка с&nbsp;советом</span></li>
+  </ul>
+  <p class="trio-foot">Подсказки звучат голосом тренера.</p>
+  <aside class="notes">Подсказки работают везде: в обучении «Научись за 60 секунд», в тренере техники для приседаний и отжиманий и в итогах боя — с точностью по каждому жесту и самой частой ошибкой. И всё это звучит голосом тренера.</aside>
+</section>
+
+<section class="slide s5" data-title="Что улучшили" data-sec="55" data-steps="4" data-ctl="wipe">
+  <p class="kicker">После первого этапа · 30.09 <i class="arr"></i> 03.10</p>
+  <h2 class="title">Тот же бой&nbsp;— другой уровень</h2>
+  <figure class="wipe" data-interactive aria-label="Шторка «было — стало»: тяните мышью или пальцем">
+    <img src="media/arena_0930.jpg" alt="Бой с Регентом — версия первого этапа, 30 сентября">
+    <span class="wipe__tag wipe__tag--a">Первый этап · 30.09</span>
+    <div class="wipe__after"><img src="media/arena_1003.jpg" alt="Тот же кадр сегодня, 3 октября"><span class="wipe__tag wipe__tag--b">Сейчас · 03.10</span></div>
+    <i class="wipe__edge" aria-hidden="true"><i class="wipe__knob"><i class="arr"></i><i class="arr"></i></i></i>
+  </figure>
+  <ul class="gain">
+    <li data-step="1"><span class="gain__k">Вход в&nbsp;бой</span><span class="gain__v"><span class="gain__old">6</span><i class="arr"></i><span class="gain__new">2</span><span class="gain__u">клика</span></span></li>
+    <li data-step="2"><span class="gain__k">Жесты</span><span class="gain__v"><span class="gain__old">21</span><i class="arr"></i><span class="gain__new">24</span><span class="gain__u">жеста</span></span></li>
+    <li data-step="3"><span class="gain__k">Ассеты</span><span class="gain__v"><span class="gain__old">35,8</span><i class="arr"></i><span class="gain__new">10</span><span class="gain__u">МБ</span></span></li>
+    <li data-step="4"><span class="gain__k">Автотесты, 0&nbsp;падений</span><span class="gain__v"><span class="gain__old">32</span><i class="arr"></i><span class="gain__new">71</span><span class="gain__u">набор</span></span></li>
+  </ul>
+  <aside class="notes">Что улучшили после первого этапа. Это один и тот же кадр боя: слева версия, которую вы видели 30 сентября, справа — сегодняшняя. Новая арена с огнём и мокрым полом, Регент из обсидиана с золотом. Шторку можно потянуть. [1] Вход в бой — 2 клика вместо 6. [2] Жестов 24 вместо 20: «Врата бури», «Столп небес» и ультимейт «Небесный суд». [3] Игра грузится в 3,5 раза легче: 10 мегабайт вместо 36. [4] Наборов автотестов 71 вместо 32, больше тысячи проверок, ни одного падения.</aside>
+</section>
+
+<!-- Что появилось -->
+<section class="slide s-new" data-title="Что появилось" data-sec="30">
+  <p class="kicker">После первого этапа</p>
+  <h2 class="title">Что появилось в&nbsp;игре</h2>
+  <ul class="ng3">
+    <li><img src="media/judgement.jpg" alt="«Небесный суд»: удар светом по Регенту"><b>«Небесный суд»</b><span>ультимейт всем телом: облёт камеры и&nbsp;меч из&nbsp;света</span></li>
+    <li><img src="media/challenge_poster.jpg" alt="Постер победы в «Испытании · 60 с» с рангом S"><b>«Испытание · 60&nbsp;с»</b><span>ранг S–D, «Зал славы дня», постер победы</span></li>
+    <li><img src="media/spellbook.jpg" alt="«Книга заклинаний»: все жесты с объяснениями"><b>«Книга заклинаний»</b><span>все жесты с&nbsp;объяснениями</span></li>
+  </ul>
+  <ul class="newlist">
+    <li>«Новичок»: 5 жестов и&nbsp;автоход</li>
+    <li>«Врата бури» и&nbsp;«Столп небес»</li>
+    <li>«Дух игрока» повторяет пальцы</li>
+    <li>Курсор-кисть: меню без мыши</li>
+    <li>Голос тренера</li>
+    <li>Работает без интернета</li>
+  </ul>
+  <aside class="notes">Что появилось после первого этапа: ультимейт всем телом «Небесный суд», минутное «Испытание» с рангами и постером победы, «Книга заклинаний». А ещё режим «Новичок», «Врата бури» и «Столп небес», «Дух игрока», который повторяет руки и пальцы, курсор-кисть вместо мыши, голос тренера и работа без интернета.</aside>
+</section>
+
+<section class="slide s6" data-title="Что дальше" data-sec="35">
+  <p class="kicker">Планы развития</p>
+  <h2 class="title">Что дальше</h2>
+  <div class="road">
+    <svg viewBox="0 0 1920 560" aria-hidden="true">
+      <path class="road__bed" d="M120 92C240 92 280 82 360 82S760 62 960 62 1360 78 1560 78 1760 70 1800 70"/>
+      <path class="road__lit" pathLength="1" d="M120 92C240 92 280 82 360 82S760 62 960 62 1360 78 1560 78 1760 70 1800 70"/>
+    </svg>
+    <div class="st st--1" style="top:62px"><i class="st__gem"></i><p class="st__k">Уже в&nbsp;игре · 03.10</p>
+      <ul class="st__list"><li>Быстрый вход</li><li>Камера на&nbsp;слабых ноутбуках</li><li>Сложность «Кошмар»</li></ul></div>
+    <div class="st st--2" style="top:42px" data-step="1"><i class="st__gem"></i><p class="st__k">Дальше</p>
+      <ul class="st__list"><li>Казахский язык</li><li>Режим учителя</li><li>Кооператив онлайн</li></ul></div>
+    <div class="st st--3" style="top:50px" data-step="2"><i class="st__gem"></i><p class="st__k">Цель</p>
+      <p class="st__goal">Пилот в&nbsp;школе</p></div>
+  </div>
+  <aside class="notes">Что дальше. То, что на первом этапе было в работе, уже в игре — влито 3 октября: быстрый вход; на слабом ноутбуке распознавание само переходит с видеокарты на процессор, и камера не отваливается; две новые сложности — «Сложная» и «Кошмар». [Дальше] Следующее — казахский язык и режим учителя: класс играет, учитель видит технику каждого. [Дальше] Цель — пилот в школе: урок движения, где джойстик — это руки.</aside>
+</section>
+
+<!-- Проверьте сами -->
+<section class="slide s-try" data-title="Проверьте сами" data-sec="20">
+  <p class="kicker">Live demo</p>
+  <h2 class="title">Проверьте сами за&nbsp;минуту</h2>
+  <ol class="try">
+    <li><b>1</b><span>Откройте ссылку или QR в&nbsp;Chrome или Edge</span></li>
+    <li><b>2</b><span>Разрешите камеру&nbsp;— видео не&nbsp;уходит в&nbsp;сеть</span></li>
+    <li><b>3</b><span>Сядьте примерно в&nbsp;метре от&nbsp;камеры</span></li>
+    <li><b>4</b><span>Первый раз&nbsp;— «Новичок» и&nbsp;обучение за&nbsp;60 секунд</span></li>
+  </ol>
+  <p class="try-links">Игра: <b>diiaanns07-droid.github.io/ADMIT_STUTU</b><br>Код: <b>github.com/diiaanns07-droid/ADMIT_STUTU</b></p>
+  <figure class="s7-qr">
+    <div class="s7-qr__code"><svg viewBox="0 0 41 41" role="img" aria-label="QR-код: https://diiaanns07-droid.github.io/ADMIT_STUTU/"><rect width="41" height="41" fill="#eadfc5"/><path fill="#15120f" d="M4 4h7v1h-7zM13 4h3v1h-3zM18 4h1v1h-1zM20 4h1v1h-1zM22 4h3v1h-3zM27 4h1v1h-1zM30 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM15 5h2v1h-2zM19 5h1v1h-1zM22 5h1v1h-1zM25 5h2v1h-2zM30 5h1v1h-1zM36 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM12 6h1v1h-1zM18 6h2v1h-2zM23 6h1v1h-1zM25 6h1v1h-1zM28 6h1v1h-1zM30 6h1v1h-1zM32 6h3v1h-3zM36 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM12 7h1v1h-1zM14 7h2v1h-2zM22 7h1v1h-1zM26 7h1v1h-1zM28 7h1v1h-1zM30 7h1v1h-1zM32 7h3v1h-3zM36 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM12 8h3v1h-3zM18 8h4v1h-4zM24 8h1v1h-1zM26 8h3v1h-3zM30 8h1v1h-1zM32 8h3v1h-3zM36 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM12 9h2v1h-2zM16 9h1v1h-1zM18 9h1v1h-1zM21 9h1v1h-1zM23 9h1v1h-1zM26 9h2v1h-2zM30 9h1v1h-1zM36 9h1v1h-1zM4 10h7v1h-7zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM26 10h1v1h-1zM28 10h1v1h-1zM30 10h7v1h-7zM12 11h1v1h-1zM14 11h3v1h-3zM18 11h1v1h-1zM20 11h1v1h-1zM23 11h3v1h-3zM28 11h1v1h-1zM4 12h1v1h-1zM6 12h5v1h-5zM14 12h5v1h-5zM21 12h1v1h-1zM23 12h2v1h-2zM26 12h3v1h-3zM30 12h5v1h-5zM4 13h1v1h-1zM6 13h1v1h-1zM13 13h2v1h-2zM16 13h2v1h-2zM20 13h6v1h-6zM27 13h1v1h-1zM30 13h2v1h-2zM33 13h2v1h-2zM36 13h1v1h-1zM4 14h1v1h-1zM6 14h2v1h-2zM9 14h3v1h-3zM13 14h2v1h-2zM16 14h4v1h-4zM21 14h1v1h-1zM25 14h2v1h-2zM30 14h1v1h-1zM32 14h1v1h-1zM34 14h2v1h-2zM5 15h1v1h-1zM7 15h3v1h-3zM11 15h1v1h-1zM13 15h2v1h-2zM17 15h1v1h-1zM19 15h4v1h-4zM24 15h1v1h-1zM26 15h1v1h-1zM28 15h2v1h-2zM32 15h4v1h-4zM5 16h1v1h-1zM10 16h1v1h-1zM12 16h1v1h-1zM14 16h1v1h-1zM18 16h3v1h-3zM24 16h3v1h-3zM28 16h2v1h-2zM31 16h1v1h-1zM33 16h1v1h-1zM36 16h1v1h-1zM4 17h3v1h-3zM9 17h1v1h-1zM11 17h4v1h-4zM16 17h2v1h-2zM19 17h1v1h-1zM21 17h2v1h-2zM28 17h2v1h-2zM33 17h1v1h-1zM35 17h2v1h-2zM4 18h3v1h-3zM8 18h1v1h-1zM10 18h4v1h-4zM19 18h2v1h-2zM22 18h1v1h-1zM24 18h1v1h-1zM26 18h1v1h-1zM29 18h2v1h-2zM33 18h1v1h-1zM35 18h1v1h-1zM4 19h1v1h-1zM7 19h1v1h-1zM12 19h1v1h-1zM14 19h1v1h-1zM18 19h2v1h-2zM25 19h1v1h-1zM29 19h2v1h-2zM32 19h1v1h-1zM34 19h1v1h-1zM4 20h2v1h-2zM7 20h1v1h-1zM9 20h5v1h-5zM18 20h4v1h-4zM26 20h1v1h-1zM28 20h2v1h-2zM31 20h2v1h-2zM36 20h1v1h-1zM4 21h1v1h-1zM6 21h2v1h-2zM9 21h1v1h-1zM14 21h1v1h-1zM18 21h1v1h-1zM20 21h1v1h-1zM22 21h6v1h-6zM30 21h2v1h-2zM33 21h2v1h-2zM36 21h1v1h-1zM8 22h1v1h-1zM10 22h1v1h-1zM13 22h2v1h-2zM17 22h1v1h-1zM19 22h2v1h-2zM22 22h1v1h-1zM24 22h3v1h-3zM29 22h1v1h-1zM31 22h2v1h-2zM34 22h2v1h-2zM4 23h1v1h-1zM7 23h2v1h-2zM12 23h1v1h-1zM16 23h4v1h-4zM24 23h2v1h-2zM28 23h1v1h-1zM31 23h4v1h-4zM36 23h1v1h-1zM5 24h4v1h-4zM10 24h4v1h-4zM15 24h1v1h-1zM17 24h2v1h-2zM22 24h2v1h-2zM25 24h1v1h-1zM27 24h1v1h-1zM29 24h1v1h-1zM31 24h1v1h-1zM33 24h1v1h-1zM35 24h2v1h-2zM4 25h5v1h-5zM12 25h1v1h-1zM15 25h2v1h-2zM18 25h3v1h-3zM24 25h2v1h-2zM27 25h3v1h-3zM33 25h1v1h-1zM36 25h1v1h-1zM4 26h1v1h-1zM6 26h7v1h-7zM14 26h2v1h-2zM23 26h1v1h-1zM28 26h2v1h-2zM31 26h1v1h-1zM33 26h1v1h-1zM35 26h1v1h-1zM4 27h1v1h-1zM7 27h2v1h-2zM13 27h3v1h-3zM20 27h1v1h-1zM22 27h5v1h-5zM28 27h1v1h-1zM33 27h3v1h-3zM4 28h1v1h-1zM6 28h1v1h-1zM8 28h3v1h-3zM12 28h1v1h-1zM16 28h2v1h-2zM21 28h3v1h-3zM28 28h5v1h-5zM34 28h1v1h-1zM36 28h1v1h-1zM12 29h2v1h-2zM17 29h1v1h-1zM20 29h4v1h-4zM26 29h1v1h-1zM28 29h1v1h-1zM32 29h1v1h-1zM34 29h1v1h-1zM36 29h1v1h-1zM4 30h7v1h-7zM13 30h2v1h-2zM16 30h1v1h-1zM19 30h3v1h-3zM24 30h1v1h-1zM26 30h3v1h-3zM30 30h1v1h-1zM32 30h1v1h-1zM34 30h1v1h-1zM4 31h1v1h-1zM10 31h1v1h-1zM12 31h1v1h-1zM15 31h3v1h-3zM20 31h5v1h-5zM27 31h2v1h-2zM32 31h3v1h-3zM36 31h1v1h-1zM4 32h1v1h-1zM6 32h3v1h-3zM10 32h1v1h-1zM12 32h3v1h-3zM17 32h4v1h-4zM24 32h3v1h-3zM28 32h6v1h-6zM4 33h1v1h-1zM6 33h3v1h-3zM10 33h1v1h-1zM12 33h1v1h-1zM14 33h2v1h-2zM17 33h3v1h-3zM21 33h2v1h-2zM25 33h1v1h-1zM27 33h3v1h-3zM32 33h1v1h-1zM34 33h1v1h-1zM36 33h1v1h-1zM4 34h1v1h-1zM6 34h3v1h-3zM10 34h1v1h-1zM12 34h2v1h-2zM15 34h7v1h-7zM24 34h2v1h-2zM30 34h2v1h-2zM33 34h2v1h-2zM4 35h1v1h-1zM10 35h1v1h-1zM13 35h1v1h-1zM15 35h2v1h-2zM19 35h1v1h-1zM22 35h1v1h-1zM25 35h1v1h-1zM29 35h2v1h-2zM32 35h3v1h-3zM4 36h7v1h-7zM12 36h1v1h-1zM16 36h1v1h-1zM18 36h2v1h-2zM21 36h1v1h-1zM24 36h1v1h-1zM28 36h4v1h-4zM34 36h2v1h-2z"/></svg></div>
+    <p>Сыграйте сами</p>
+  </figure>
+  <aside class="notes">Проверить можно самим за минуту: открыть ссылку в Chrome или Edge, разрешить камеру, сесть примерно в метре. В первый раз поможет режим «Новичок» и обучение за 60 секунд.</aside>
+</section>
+
+<section class="slide s7" data-title="Клятва" data-sec="20">
+  <p class="kicker">ASHEN OATH</p>
+  <p class="s7-oath">Любой ноутбук с&nbsp;камерой&nbsp;— <em>игра, тренер и&nbsp;урок движения</em></p>
+  <div class="s7-act">
+    <a class="btn btn--primary" href="../index.html?demo&amp;present&amp;fury=100" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15L19.5 12z"/></svg>Живой показ</a>
+    <a class="btn" href="ASHEN_OATH_pitch.pdf" download>PDF</a>
+  </div>
+  <p class="s7-url">Играть: diiaanns07-droid.github.io/ADMIT_STUTU</p>
+  <figure class="s7-img"><img src="media/arena_1003.jpg" alt="Арена боя с Регентом"></figure>
+  <p class="s7-thanks">Спасибо!</p>
+  <aside class="notes">Наша клятва: любой ноутбук с камерой — это игра, тренер и урок движения. QR ведёт в игру — попробуйте сами, она откроется в браузере. А сейчас покажем вживую. Спасибо!</aside>
 </section>
 
 </main>
 
-<nav class="nav no-print" aria-label="Навигация по презентации">
-  <button id="prev" aria-label="Назад"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg>Назад</button>
-  <span class="count" id="count">01 / 12</span>
-  <button id="next" aria-label="Дальше">Дальше<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button>
-  <span class="sep"></span>
-  <button id="toc-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Содержание</button>
-  <button id="fs-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>Во весь экран</button>
+<nav class="bar" aria-label="Навигация">
+  <button type="button" data-nav="prev" aria-label="Назад"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+  <span class="bar__n" aria-live="polite"></span>
+  <button type="button" data-nav="next" aria-label="Вперёд"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+  <button type="button" data-nav="full" aria-label="Во весь экран (F)"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
 </nav>
-<div class="toc-panel" id="toc" role="dialog" aria-modal="true" aria-label="Содержание"><div class="card"><h2>Содержание</h2><ol id="toc-list"></ol></div></div>
-<p class="hint no-print" id="hint">→ / пробел — дальше · F — во весь экран</p>
+<div class="prog" aria-hidden="true"><i></i></div>
+<div class="notes-box" hidden></div>
 
 <script>
+/* Клавиши: → пробел PageDown — вперёд (сначала шаги слайда); ← PageUp — назад; Home/End; F — полный экран;
+ * N — заметки докладчика. Щелчок по правой трети — вперёд, по левой — назад; на телефоне — свайп.
+ * Номер слайда — в адресе (#3). Вход назад и переход по номеру показывают слайд сразу целиком. */
 (function () {
   'use strict';
-  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
-  var N = slides.length, cur = -1;
-  var reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var $ = function (id) { return document.getElementById(id); };
+  var deck = document.getElementById('deck');
+  var slides = [].slice.call(deck.querySelectorAll('.slide'));
+  var bar = document.querySelector('.bar'), barN = bar.querySelector('.bar__n');
+  var prog = document.querySelector('.prog i'), notesBox = document.querySelector('.notes-box');
+  var reducedMQ = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  function reduced() { return !!(reducedMQ && reducedMQ.matches); }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function svg(tag, attrs, parent) { var e = document.createElementNS(SVGNS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
 
-  /* ---------- счётчики: число растёт от нуля при показе слайда ---------- */
-  function countUp(el) {
-    var to = +el.getAttribute('data-count'), suf = el.getAttribute('data-suffix') || '';
-    if (reduced || !isFinite(to)) { el.textContent = to + suf; return; }
-    var t0 = performance.now(), dur = 900;
+  /* ---------- Кисть: 21 точка MediaPipe. Координаты — настоящие, из dev/fixtures/hands/hagrid_images.json
+   * (MediaPipe HandLandmarker 0.10.35 по фото датасета HaGRID, CC BY-SA 4.0): запястье в начале координат,
+   * ось запястье → основание среднего пальца смотрит вверх, её длина — 1. «almost» — тот же «OK»
+   * с отведённым большим пальцем: так выглядит жест, который почти получился. */
+  var POSE = {
+    fist: [[0.000,0.000],[0.334,-0.213],[0.636,-0.560],[0.694,-0.849],[0.464,-0.878],[0.287,-1.011],[0.340,-1.092],[0.347,-0.752],[0.303,-0.686],[0.000,-1.000],[0.069,-1.065],[0.125,-0.651],[0.107,-0.650],[-0.252,-0.908],[-0.186,-1.002],[-0.086,-0.640],[-0.113,-0.620],[-0.491,-0.790],[-0.416,-0.858],[-0.312,-0.639],[-0.326,-0.600]],
+    open: [[0.000,0.000],[0.312,-0.194],[0.570,-0.475],[0.781,-0.697],[0.838,-0.931],[0.252,-0.978],[0.318,-1.348],[0.352,-1.552],[0.372,-1.721],[0.000,-1.000],[-0.026,-1.406],[-0.028,-1.640],[-0.035,-1.836],[-0.223,-0.920],[-0.314,-1.268],[-0.345,-1.478],[-0.366,-1.676],[-0.416,-0.766],[-0.580,-0.967],[-0.686,-1.113],[-0.769,-1.259]],
+    ok: [[0.000,0.000],[0.255,-0.121],[0.465,-0.279],[0.657,-0.418],[0.823,-0.572],[0.200,-0.885],[0.442,-1.063],[0.631,-0.946],[0.777,-0.787],[0.000,-1.000],[0.086,-1.462],[0.174,-1.760],[0.232,-2.020],[-0.224,-0.962],[-0.352,-1.438],[-0.430,-1.757],[-0.481,-2.025],[-0.444,-0.792],[-0.666,-1.102],[-0.804,-1.316],[-0.911,-1.522]],
+    almost: [[0.000,0.000],[0.255,-0.121],[0.465,-0.279],[0.702,-0.271],[0.927,-0.289],[0.200,-0.885],[0.442,-1.063],[0.631,-0.946],[0.777,-0.787],[0.000,-1.000],[0.086,-1.462],[0.174,-1.760],[0.232,-2.020],[-0.224,-0.962],[-0.352,-1.438],[-0.430,-1.757],[-0.481,-2.025],[-0.444,-0.792],[-0.666,-1.102],[-0.804,-1.316],[-0.911,-1.522]],
+  };
+  var BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+  var PALM = [0, 1, 5, 9, 13, 17];
+  function Hand(g) {
+    this.g = g; this.cx = +g.getAttribute('data-cx'); this.cy = +g.getAttribute('data-cy'); this.s = +g.getAttribute('data-s');
+    this.base = g.getAttribute('data-pose'); this.pose = POSE[this.base].map(function (p) { return p.slice(); });
+    var flesh = svg('g', { 'class': 'h-flesh' }, g);
+    this.palm = svg('polygon', {}, flesh);
+    this.fl = BONES.map(function () { return svg('line', {}, flesh); });
+    var bones = svg('g', { 'class': 'h-bones' }, g);
+    this.bl = BONES.map(function (b, i) { var l = svg('line', { 'class': 'h-bone', pathLength: 1 }, bones); l.style.setProperty('--d', (200 + i * 30) + 'ms'); return l; });
+    var pts = svg('g', { 'class': 'h-pts' }, g);
+    this.pt = this.pose.map(function (p, i) { var c = svg('circle', { 'class': 'h-pt', r: 11 }, pts); c.style.setProperty('--d', (i * 40) + 'ms'); return c; });
+    this.raf = 0; this.draw();
+  }
+  Hand.prototype.xy = function (i) { var p = this.pose[i]; return [this.cx + p[0] * this.s, this.cy + p[1] * this.s]; };
+  Hand.prototype.draw = function () {
+    var self = this, P = this.pose.map(function (p, i) { return self.xy(i); });
+    this.palm.setAttribute('points', PALM.map(function (i) { return P[i][0].toFixed(1) + ',' + P[i][1].toFixed(1); }).join(' '));
+    BONES.forEach(function (b, i) {
+      [self.fl[i], self.bl[i]].forEach(function (l) { l.setAttribute('x1', P[b[0]][0].toFixed(1)); l.setAttribute('y1', P[b[0]][1].toFixed(1)); l.setAttribute('x2', P[b[1]][0].toFixed(1)); l.setAttribute('y2', P[b[1]][1].toFixed(1)); });
+    });
+    this.pt.forEach(function (c, i) { c.setAttribute('cx', P[i][0].toFixed(1)); c.setAttribute('cy', P[i][1].toFixed(1)); });
+    if (this.onDraw) this.onDraw();
+  };
+  Hand.prototype.set = function (name) { cancelAnimationFrame(this.raf); this.pose = POSE[name].map(function (p) { return p.slice(); }); this.draw(); };
+  Hand.prototype.morph = function (name, ms, done) {
+    var self = this, from = this.pose.map(function (p) { return p.slice(); }), to = POSE[name], t0 = 0;
+    cancelAnimationFrame(this.raf);
+    if (reduced()) { this.set(name); if (done) done(); return; }
     (function tick(t) {
-      var k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
-      el.textContent = Math.round(to * e) + suf;
-      if (k < 1) requestAnimationFrame(tick);
-    })(t0);
-  }
+      if (!t0) t0 = t;
+      var u = Math.min(1, (t - t0) / ms), e = u < .5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+      self.pose = from.map(function (p, i) { return [p[0] + (to[i][0] - p[0]) * e, p[1] + (to[i][1] - p[1]) * e]; });
+      self.draw();
+      if (u < 1) self.raf = requestAnimationFrame(tick); else if (done) done();
+    })(performance.now());
+  };
+  Hand.prototype.center = function () { var x = 0, y = 0; PALM.forEach(function (i) { var p = this.xy(i); x += p[0]; y += p[1]; }, this); return [x / PALM.length, y / PALM.length]; };
 
-  /* ---------- смена слайда ---------- */
-  function go(n, opts) {
-    n = Math.max(0, Math.min(N - 1, n));
-    if (n === cur) return;
-    var prev = cur; cur = n;
-    slides.forEach(function (s, i) {
-      s.classList.toggle('is-active', i === n);
-      s.classList.toggle('is-back', prev >= 0 && i === prev && n < prev);
-      s.setAttribute('aria-hidden', i === n ? 'false' : 'true');
-    });
-    var s = slides[n];
-    s.querySelectorAll('[data-count]').forEach(countUp);
-    if (hooks[s.id]) hooks[s.id](s);
-    $('count').textContent = pad(n + 1) + ' / ' + pad(N);
-    $('prev').disabled = n === 0; $('next').disabled = n === N - 1;
-    document.querySelector('.progress').style.width = ((n + 1) / N * 100) + '%';
-    if (!(opts && opts.noHash)) history.replaceState(null, '', '#' + (n + 1));
-    if (prev >= 0) $('hint').classList.add('hide');
-  }
-  function next() { go(cur + 1); }
-  function prev() { go(cur - 1); }
-
-  /* ---------- слайд 4: конвейер «кадр → точки → геометрия → автомат → действие» ---------- */
-  // 21 точка кисти (схематично): запястье, по 4 точки на палец
-  var P = [[150,290],[112,262],[86,232],[68,204],[56,178],[124,186],[118,138],[114,104],[110,74],[152,180],[152,128],[152,92],[152,58],[178,186],[186,138],[190,106],[194,80],[202,198],[214,160],[222,134],[228,110]];
-  var B = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
-  var NS = 'http://www.w3.org/2000/svg';
-  var hand = document.querySelector('#s-pipe .hand');
-  B.forEach(function (b) { var l = document.createElementNS(NS, 'line'); l.setAttribute('class', 'bone'); l.setAttribute('x1', P[b[0]][0]); l.setAttribute('y1', P[b[0]][1]); l.setAttribute('x2', P[b[1]][0]); l.setAttribute('y2', P[b[1]][1]); hand.querySelector('.bones').appendChild(l); });
-  P.forEach(function (p) { var c = document.createElementNS(NS, 'circle'); c.setAttribute('class', 'pt'); c.setAttribute('cx', p[0]); c.setAttribute('cy', p[1]); c.setAttribute('r', 7); hand.querySelector('.pts').appendChild(c); });
-  var STEPS = [
-    ['1. Кадр камеры', 'Обычная веб-камера ноутбука. Кадр обрабатывается прямо в браузере и никуда не отправляется.'],
-    ['2. 21 точка кисти', 'MediaPipe в отдельном потоке (Web Worker) находит 21 точку каждой кисти и 33 точки тела.'],
-    ['3. Геометрия', 'Наш код считает сгибы пальцев, куда смотрит ладонь и с какой скоростью движется рука.'],
-    ['4. Автомат состояний', 'Жест засчитывается, только если форма держится нужное время. Случайные движения не срабатывают.'],
-    ['5. Действие', 'Игра выполняет приём — или, если жест не получился, подсказывает, что поправить.'],
-  ];
-  var pipeStep = 0, pipeTimer = 0;
-  function pipeShow(k) {
-    pipeStep = k;
-    var steps = document.querySelectorAll('#s-pipe .step');
-    steps.forEach(function (e, i) { e.classList.toggle('on', i <= k); });
-    document.querySelector('#s-pipe .bar').style.width = (k / 4 * 80) + '%';
-    hand.setAttribute('class', 'hand' + (k >= 1 ? ' s2' : '') + (k >= 2 ? ' s3' : '') + (k >= 3 ? ' s4' : ''));
-    $('pipe-title').textContent = STEPS[k][0];
-    $('pipe-text').textContent = STEPS[k][1];
-    $('pipe-out').classList.toggle('show', k === 4);
-    $('pipe-next').disabled = k === 4;
-  }
-  function pipeStop() { clearInterval(pipeTimer); pipeTimer = 0; }
-  $('pipe-next').addEventListener('click', function () { pipeStop(); if (pipeStep < 4) pipeShow(pipeStep + 1); });
-  $('pipe-reset').addEventListener('click', function () { pipeStop(); pipeShow(0); });
-  $('pipe-run').addEventListener('click', function () {
-    pipeStop(); pipeShow(0);
-    pipeTimer = setInterval(function () { if (pipeStep >= 4) { pipeStop(); return; } pipeShow(pipeStep + 1); }, reduced ? 200 : 1300);
-  });
-
-  /* ---------- слайд 6: «ОШИБКА» — что сделал игрок → что сказала игра ---------- */
-  var ERR = [
-    ['Показал «OK», но кончики пальцев не сомкнулись', 'Сомкни кончики большого и указательного в кольцо'],
-    ['Просто поднял левую ладонь, без толчка', 'Резко толкни левую ладонь к камере сантиметров на 20 — просто поднятая ладонь щит не ставит'],
-    ['Для «Небесного суда» поднял только одну руку', 'Подними ОБЕ руки над головой — локти выше плеч'],
-    ['Присел слишком быстро', 'Слишком быстро — опускайся подконтрольно, 2 секунды вниз'],
-  ];
-  var errBox = document.querySelector('#s-err .err');
-  document.querySelectorAll('#s-err [data-k]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var k = +b.getAttribute('data-k');
-      document.querySelectorAll('#s-err [data-k]').forEach(function (x) { x.setAttribute('aria-selected', x === b ? 'true' : 'false'); });
-      $('err-did').textContent = ERR[k][0]; $('err-say').textContent = ERR[k][1];
-      errBox.classList.remove('flip'); void errBox.offsetWidth; errBox.classList.add('flip');
-    });
-  });
-
-  /* ---------- слайд 9: шторка «было → стало» ---------- */
-  var PAIRS = [
-    { lbl: '30.09 · отбор', b: '../docs/screenshots/menu.jpg', a: '../docs/screenshots/w4-check/01_menu.jpg', notes: ['<b>3 кнопки → 5 режимов</b> и книга заклинаний', '<b>Героиня на витрине</b> — новые лица, волосы, наряды', '<b>Вход в бой: 6 кликов → 2</b>'] },
-    { lbl: '02.10 · до обновления графики', b: 'media/p3/regent_game_before.jpg', a: 'media/p3/regent_game_after.jpg', notes: ['<b>Регент</b> — обсидиан с золотом, корона-нимб', '<b>Арена</b> — живой огонь и мокрый пол', '<b>Ассеты: 36 → 10 МБ</b>'] },
-  ];
-  var ba = $('ba'), dragging = false, sweepRaf = 0;
-  function setX(p) { ba.style.setProperty('--x', Math.max(0, Math.min(100, p)) + '%'); }
-  function fromEvent(e) { var r = ba.getBoundingClientRect(); return (e.clientX - r.left) / r.width * 100; }
-  ba.addEventListener('pointerdown', function (e) { dragging = true; cancelAnimationFrame(sweepRaf); ba.setPointerCapture(e.pointerId); setX(fromEvent(e)); });
-  ba.addEventListener('pointermove', function (e) { if (dragging) setX(fromEvent(e)); });
-  ba.addEventListener('pointerup', function () { dragging = false; });
-  function sweep() {
-    if (reduced) { setX(50); return; }
-    var t0 = performance.now();
-    cancelAnimationFrame(sweepRaf);
-    (function tick(t) {   // открываем «сегодня» слева направо и останавливаемся посередине
-      var k = Math.min(1, (t - t0) / 1600), e = 1 - Math.pow(1 - k, 3);
-      setX(100 - 50 * e);
-      if (k < 1) sweepRaf = requestAnimationFrame(tick);
-    })(t0);
-  }
-  document.querySelectorAll('#s-ba [data-pair]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var p = PAIRS[+btn.getAttribute('data-pair')];
-      document.querySelectorAll('#s-ba [data-pair]').forEach(function (x) { x.setAttribute('aria-selected', x === btn ? 'true' : 'false'); });
-      $('ba-before').src = p.b; $('ba-after').src = p.a; $('ba-lbl').textContent = p.lbl;
-      $('ba-notes').innerHTML = p.notes.map(function (t) { return '<li>' + t + '</li>'; }).join('');
-      sweep();
-    });
-  });
-
-  /* ---------- слайд 12: вопросы ---------- */
-  document.querySelectorAll('.qa button').forEach(function (b) {
-    b.addEventListener('click', function () { var q = b.parentNode; q.classList.toggle('open'); b.textContent = q.classList.contains('open') ? 'Скрыть ответ ⌃' : 'Показать ответ ⌄'; });
-  });
-
-  var hooks = {
-    's-pipe': function () { pipeStop(); pipeShow(0); },
-    's-ba': function () { sweep(); },
+  /* ---------- Слайд 3: кадр → 21 точка → геометрия → жест → удар */
+  var CTL = {};
+  CTL.scheme = function (el) {
+    var svgEl = el.querySelector('.cam svg'), hand = new Hand(el.querySelector('.hand'));
+    var scan = el.querySelector('.scan'), chips = el.querySelector('.chips'), shot = el.querySelector('.shot');
+    var c = hand.center();
+    var charge = svg('circle', { 'class': 'charge', cx: c[0].toFixed(1), cy: (c[1] - 30).toFixed(1), r: 205, pathLength: 1, transform: 'rotate(-90 ' + c[0].toFixed(1) + ' ' + (c[1] - 30).toFixed(1) + ')' });
+    svgEl.insertBefore(charge, hand.g);
+    var curls = [6, 10, 14, 18].map(function (i, k) { var a = svg('circle', { 'class': 'curl', r: 24 }, svgEl); a.style.setProperty('--d', (k * 90) + 'ms'); return a; });
+    hand.onDraw = function () { [6, 10, 14, 18].forEach(function (i, k) { var p = hand.xy(i); curls[k].setAttribute('cx', p[0].toFixed(1)); curls[k].setAttribute('cy', p[1].toFixed(1)); }); };
+    hand.draw();
+    var rays = svg('g', { 'class': 'rays' }, svgEl);
+    for (var i = 0; i < 14; i++) {
+      var a = i / 14 * Math.PI * 2, r0 = 120, r1 = 300;
+      var ry = svg('line', { 'class': 'ray', pathLength: 1, 'stroke-dasharray': '.45 1',
+        x1: (c[0] + Math.cos(a) * r0).toFixed(1), y1: (c[1] - 60 + Math.sin(a) * r0).toFixed(1),
+        x2: (c[0] + Math.cos(a) * r1).toFixed(1), y2: (c[1] - 60 + Math.sin(a) * r1).toFixed(1) }, rays);
+      ry.style.animationDelay = (i % 3) * 40 + 'ms';
+    }
+    svgEl.appendChild(shot);
+    var timers = [];
+    function clear() { timers.forEach(clearTimeout); timers = []; }
+    function chip(n, on) { el.querySelector('[data-chip="' + n + '"]').classList.toggle('lit', on); }
+    return {
+      render: function (k, anim) {
+        clear();
+        el.querySelectorAll('.flow li').forEach(function (li) {
+          var n = +li.getAttribute('data-row');
+          li.classList.toggle('is-done', n < k); li.classList.toggle('is-cur', n === k);
+        });
+        hand.g.querySelector('.h-flesh').style.opacity = k >= 2 ? .55 : 1;
+        if (anim && k === 1) { scan.classList.remove('run'); void scan.getBBox(); scan.classList.add('run'); }
+        hand.g.classList.toggle('pts-on', k >= 2);
+        curls.forEach(function (a) { a.style.opacity = k === 3 ? 1 : 0; });
+        chips.classList.toggle('on', k >= 3);
+        chip(1, k >= 3); chip(2, k >= 4); chip(3, k >= 4 && !anim || k >= 5);
+        charge.classList.toggle('on', k === 3);
+        if (k === 3) {
+          charge.classList.remove('fill');
+          if (anim) { void charge.getBBox(); timers.push(setTimeout(function () { charge.classList.add('fill'); }, 60)); }
+          else charge.classList.add('fill');
+        } else charge.classList.remove('fill');
+        if (k >= 4) {
+          if (anim && k === 4) {
+            hand.set('fist');
+            timers.push(setTimeout(function () {
+              hand.morph('open', 220, function () { chip(3, true); rays.classList.remove('go'); void rays.getBBox(); rays.classList.add('go'); });
+            }, 350));
+          } else { hand.set('open'); chip(3, true); }
+        } else { hand.set('fist'); rays.classList.remove('go'); }
+        shot.classList.toggle('on', k >= 5);
+      },
+      stop: clear
+    };
   };
 
-  /* ---------- содержание ---------- */
-  var tocList = $('toc-list'), toc = $('toc');
-  slides.forEach(function (s, i) {
-    var li = document.createElement('li'), b = document.createElement('button');
-    b.innerHTML = '<i>' + pad(i + 1) + '</i>' + s.getAttribute('data-title');
-    b.addEventListener('click', function () { closeToc(); go(i); });
-    li.appendChild(b); tocList.appendChild(li);
-  });
-  function openToc() { toc.classList.add('open'); tocList.querySelectorAll('button').forEach(function (b, i) { b.setAttribute('aria-current', i === cur ? 'true' : 'false'); }); var c = tocList.querySelectorAll('button')[cur]; if (c) c.focus(); }
-  function closeToc() { toc.classList.remove('open'); }
-  toc.addEventListener('click', function (e) { if (e.target === toc) closeToc(); });
+  /* ---------- Слайд 4: «OK» почти получился → подсказка игры (точки 4 и 8, «СОМКНИ») → исправили */
+  CTL.error = function (el) {
+    var svgEl = el.querySelector('.cam svg'), hand = new Hand(el.querySelector('.hand'));
+    var link = el.querySelector('.mark-link'), ring = el.querySelector('.mark-ring'), lbl = el.querySelector('.mark-lbl');
+    var card = el.querySelector('.card'), num = el.querySelector('[data-count]');
+    var state = 'idle';
+    hand.onDraw = function () {
+      var a = hand.xy(4), b = hand.xy(8);
+      link.setAttribute('x1', a[0].toFixed(1)); link.setAttribute('y1', a[1].toFixed(1)); link.setAttribute('x2', b[0].toFixed(1)); link.setAttribute('y2', b[1].toFixed(1));
+      var mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      ring.setAttribute('cx', mx.toFixed(1)); ring.setAttribute('cy', my.toFixed(1));
+      lbl.setAttribute('transform', 'translate(' + (Math.max(a[0], b[0]) + 40).toFixed(1) + ' ' + (my - 23).toFixed(1) + ')');
+    };
+    hand.draw();
+    svgEl.appendChild(link); svgEl.appendChild(ring); svgEl.appendChild(lbl);
+    function marks(on, ok) {
+      [hand.pt[4], hand.pt[8]].forEach(function (c) { c.classList.toggle('is-err', on && !ok); c.classList.toggle('is-ok', on && ok); });
+      [link, ring, lbl].forEach(function (e) { e.classList.toggle('on', on); e.classList.toggle('is-ok', !!ok); });
+      lbl.querySelector('text').textContent = ok ? 'ЕСТЬ' : 'СОМКНИ';
+      lbl.querySelector('rect').setAttribute('width', ok ? 104 : 150);
+      card.classList.toggle('is-ok', !!ok);
+    }
+    var cntRaf = 0;
+    function count(anim) {
+      cancelAnimationFrame(cntRaf);
+      var to = +num.getAttribute('data-count');
+      if (!anim || reduced()) { num.textContent = to; return; }
+      var t0 = 0;
+      (function tick(t) { if (!t0) t0 = t; var u = Math.min(1, (t - t0) / 700); num.textContent = Math.round(to * (1 - Math.pow(1 - u, 3))); if (u < 1) cntRaf = requestAnimationFrame(tick); })(performance.now());
+    }
+    return {
+      render: function (k, anim) {
+        if (k >= 2) {
+          if (anim && k === 2) { hand.set('almost'); marks(true, false); hand.morph('ok', 650, function () { marks(true, true); }); }
+          else if (state !== 'ok' || !anim) { hand.set('ok'); marks(true, true); }
+          state = 'ok';
+        } else { hand.set('almost'); marks(k >= 1, false); state = k >= 1 ? 'err' : 'idle'; }
+        if (k === 3) count(anim); else if (k < 3) num.textContent = num.getAttribute('data-count');
+      },
+      stop: function () { cancelAnimationFrame(cntRaf); }
+    };
+  };
 
-  /* ---------- управление ---------- */
-  function fullscreen() { var d = document; if (d.fullscreenElement) d.exitFullscreen(); else if (d.documentElement.requestFullscreen) d.documentElement.requestFullscreen().catch(function () {}); }
-  $('prev').addEventListener('click', prev);
-  $('next').addEventListener('click', next);
-  $('toc-btn').addEventListener('click', openToc);
-  $('fs-btn').addEventListener('click', fullscreen);
+  /* ---------- Слайд 5: шторка «было → стало» сама едет к середине, дальше тянется мышью или пальцем */
+  CTL.wipe = function (el) {
+    var w = el.querySelector('.wipe'), t = 0;
+    function put(e) { var r = w.getBoundingClientRect(); if (!r.width) return; var x = Math.min(100, Math.max(0, (e.clientX - r.left) / r.width * 100)); clearTimeout(t); w.style.setProperty('--x', x.toFixed(2) + '%'); }
+    w.addEventListener('pointerdown', function (e) { if (e.button > 0) return; e.preventDefault(); try { w.setPointerCapture(e.pointerId); } catch (err) { /* без захвата */ } w.classList.add('is-drag'); put(e); });
+    w.addEventListener('pointermove', function (e) { if (w.classList.contains('is-drag')) put(e); });
+    w.addEventListener('pointerup', function () { w.classList.remove('is-drag'); });
+    w.addEventListener('pointercancel', function () { w.classList.remove('is-drag'); });
+    return {
+      enter: function (fresh) {
+        clearTimeout(t); w.style.removeProperty('--x');
+        if (!fresh || reduced()) return;
+        w.classList.add('is-drag'); w.style.setProperty('--x', '100%'); void w.offsetWidth; w.classList.remove('is-drag');
+        t = setTimeout(function () { w.style.removeProperty('--x'); }, 500);
+      },
+      render: function () {},
+      stop: function () { clearTimeout(t); }
+    };
+  };
+
+  /* ---------- Навигация */
+  var ctl = slides.map(function (el) { var k = el.getAttribute('data-ctl'); return k && CTL[k] ? CTL[k](el) : null; });
+  var cur = -1, shown = 0, runT = 0;
+  function maxOf(el) {
+    var m = +el.getAttribute('data-steps') || 0;
+    el.querySelectorAll('[data-step]').forEach(function (e) { m = Math.max(m, +e.getAttribute('data-step')); });
+    return m;
+  }
+  function setStep(k, anim) {
+    var el = slides[cur]; shown = k;
+    el.querySelectorAll('[data-step]').forEach(function (e) { e.classList.toggle('is-shown', +e.getAttribute('data-step') <= k); });
+    for (var i = 1; i <= 5; i++) el.classList.toggle('st-' + i, i <= k);
+    if (ctl[cur]) ctl[cur].render(k, anim && !reduced());
+    ui();
+  }
+  function stopRun() { clearTimeout(runT); runT = 0; }
+  function go(i, mode) {
+    i = Math.max(0, Math.min(slides.length - 1, i));
+    if (i === cur) return;
+    stopRun();
+    var prev = slides[cur];
+    if (prev) { prev.classList.remove('is-on'); if (ctl[cur]) ctl[cur].stop(); }
+    cur = i;
+    var el = slides[cur], fresh = mode === 'fwd' && !reduced();
+    el.classList.toggle('is-instant', !fresh);
+    setStep(fresh ? 0 : maxOf(el), false);
+    void el.offsetWidth;
+    el.classList.remove('is-instant');
+    el.classList.add('is-on');
+    if (ctl[cur] && ctl[cur].enter) ctl[cur].enter(fresh);
+    try { history.replaceState(null, '', '#' + (cur + 1)); } catch (e) { /* file:// в старых браузерах */ }
+    document.title = cur === 0 ? 'Питч ASHEN OATH' : 'ASHEN OATH · ' + el.getAttribute('data-title');
+    ui();
+  }
+  function next() { stopRun(); var el = slides[cur]; if (shown < maxOf(el)) setStep(shown + 1, true); else go(cur + 1, 'fwd'); }
+  function prev() { stopRun(); go(cur - 1, 'back'); }
+  function ui() {
+    var el = slides[cur], m = maxOf(el);
+    barN.textContent = pad(cur + 1) + ' / ' + pad(slides.length);
+    prog.style.setProperty('--p', ((cur + (m ? shown / (m + 1) : 0)) / (slides.length - 1)).toFixed(4));
+    var n = el.querySelector('.notes');
+    if (!notesBox.hidden) notesBox.textContent = n ? n.textContent : '';
+  }
+  // Кнопки демонстрации внутри слайда
+  function demo(action) {
+    var el = slides[cur], m = maxOf(el);
+    stopRun();
+    if (action === 'reset') { setStep(0, false); return; }
+    if (action === 'next') { if (shown < m) setStep(shown + 1, true); return; }
+    if (action === 'check') { setStep(1, true); return; }
+    if (action === 'fix') { setStep(Math.max(2, shown < 2 ? 2 : shown), true); return; }
+    if (action === 'run') {
+      if (shown >= m) setStep(0, false);
+      (function tick() { if (shown < m) { setStep(shown + 1, true); runT = setTimeout(tick, shown === 3 ? 1500 : 1300); } })();
+    }
+  }
+
+  function fit() { document.documentElement.style.setProperty('--s', Math.min(window.innerWidth / 1920, window.innerHeight / 1080)); }
+  function fullscreen() {
+    var d = document;
+    if (!d.fullscreenElement) { if (d.documentElement.requestFullscreen) d.documentElement.requestFullscreen().catch(function () {}); }
+    else if (d.exitFullscreen) d.exitFullscreen().catch(function () {});
+  }
+  var wakeT = 0;
+  function wake() { bar.classList.add('is-awake'); clearTimeout(wakeT); wakeT = setTimeout(function () { bar.classList.remove('is-awake'); }, 2200); }
+
   document.addEventListener('keydown', function (e) {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
-    if (toc.classList.contains('open')) { if (e.key === 'Escape') closeToc(); return; }
-    var t = e.target && e.target.tagName;
-    var k = e.key;
-    if (k === 'ArrowRight' || k === 'PageDown' || (k === ' ' && t !== 'BUTTON') || (k === 'Enter' && t !== 'BUTTON' && t !== 'A')) { e.preventDefault(); next(); }
-    else if (k === 'ArrowLeft' || k === 'PageUp' || k === 'Backspace') { e.preventDefault(); prev(); }
-    else if (k === 'Home') go(0);
-    else if (k === 'End') go(N - 1);
-    else if (e.code === 'KeyF') fullscreen();
-    else if (e.code === 'KeyC') openToc();
+    var c = e.code, t = e.target;
+    if (t && t.closest && t.closest('button, a') && (c === 'Enter' || c === 'Space')) return;
+    if (c === 'ArrowRight' || c === 'ArrowDown' || c === 'Space' || c === 'PageDown' || c === 'Enter') { next(); e.preventDefault(); }
+    else if (c === 'ArrowLeft' || c === 'ArrowUp' || c === 'PageUp' || c === 'Backspace') { prev(); e.preventDefault(); }
+    else if (c === 'Home') { go(0, 'jump'); e.preventDefault(); }
+    else if (c === 'End') { go(slides.length - 1, 'jump'); e.preventDefault(); }
+    else if (c === 'KeyF' && !e.repeat) { fullscreen(); e.preventDefault(); }
+    else if (c === 'KeyN' && !e.repeat) { notesBox.hidden = !notesBox.hidden; ui(); }
   });
-  // свайп на телефоне и планшете
-  var sx = null, sy = 0;
-  document.addEventListener('touchstart', function (e) { if (e.target.closest('.ba')) return; sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    var nb = t.closest && t.closest('[data-nav]');
+    if (nb) { var k = nb.getAttribute('data-nav'); if (k === 'prev') prev(); else if (k === 'next') next(); else fullscreen(); return; }
+    var db = t.closest && t.closest('[data-demo]');
+    if (db) { demo(db.getAttribute('data-demo')); return; }
+    if (t.closest && t.closest('a, button, [data-interactive], .notes-box')) return;
+    var x = e.clientX / window.innerWidth;
+    if (x > .67) next(); else if (x < .33) prev();
+  });
+  var tx = null, ty = null;
+  document.addEventListener('touchstart', function (e) { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
   document.addEventListener('touchend', function (e) {
-    if (sx === null) return;
-    var dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; sx = null;
+    if (tx === null) return;
+    var t = e.target; if (t.closest && t.closest('[data-interactive]')) { tx = null; return; }
+    var dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = ty = null;
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.3) { if (dx < 0) next(); else prev(); }
-  }, { passive: true });
-  window.addEventListener('hashchange', function () { var k = parseInt(location.hash.slice(1), 10); if (k) go(k - 1, { noHash: true }); });
-  // печать: все шаги раскрыты, цифры — конечные
-  window.addEventListener('beforeprint', function () { document.querySelectorAll('[data-count]').forEach(function (el) { el.textContent = el.getAttribute('data-count') + (el.getAttribute('data-suffix') || ''); }); pipeShow(4); });
+  });
+  document.addEventListener('mousemove', wake, { passive: true });
+  window.addEventListener('resize', fit);
+  window.addEventListener('hashchange', function () { var k = parseInt(location.hash.slice(1), 10); if (k) go(k - 1, 'jump'); });
+  // Печать: каждый слайд — в конечном состоянии
+  function printAll() { slides.forEach(function (el, i) { var keep = cur; cur = i; setStep(+el.getAttribute('data-print-step') || maxOf(el), false); cur = keep; }); }
+  window.addEventListener('beforeprint', printAll);
 
+  fit();
   var start = parseInt((location.hash || '').slice(1), 10);
-  go(start > 0 ? start - 1 : 0, { noHash: !start });
-  setTimeout(function () { $('hint').classList.add('hide'); }, 6000);
+  go(start ? start - 1 : 0, start > 1 ? 'jump' : 'fwd');
+  wake();
+  window.DECK = { go: function (n) { go(n - 1, 'jump'); }, next: next, prev: prev, demo: demo, printAll: printAll, get n() { return cur + 1; }, get step() { return shown; } };
 })();
 </script>
 </body>
