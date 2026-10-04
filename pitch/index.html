@@ -2,36 +2,737 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ASHEN OATH — финал ADMIT</title>
-<meta name="description" content="ASHEN OATH: камера вместо джойстика. Презентация для финала ADMIT, кейс Motion.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0a09'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23c4a265' stroke-width='1.6'/%3E%3Cpath d='M16 4v24M12 20l4 3 4-3' fill='none' stroke='%23c4a265' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
-<!-- Порядок подключения — часть общего контракта: шрифты, движок, затем стили трёх частей. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Питч ASHEN OATH</title>
+<meta name="description" content="ASHEN OATH — action-RPG в браузере: героем управляют руки и тело через веб-камеру. Презентация для финала ADMIT.">
+<meta name="theme-color" content="#f4f3ef">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231a1813'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23d9a441' stroke-width='2'/%3E%3Cpath d='M16 6v20' stroke='%23d9a441' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="fonts/fonts.css">
-<link rel="stylesheet" href="deck.css">
-<link rel="stylesheet" href="slides/part1.css">
-<link rel="stylesheet" href="slides/part2.css">
-<link rel="stylesheet" href="slides/part3.css">
+<style>
+/* Презентация одним файлом: 7 слайдов на 5 минут. Сцена 1920×1080 вписывается в окно целиком.
+ * Светлая «бумага», тёмные окна — кадры игры и экран камеры; бронза игры — единственный акцент.
+ * Работает из file:// и без сети: шрифты в fonts/, кадры в media/. */
+:root {
+  --paper: #f4f3ef;
+  --paper-2: #e7e4dc;
+  --rule: #cbc6b9;
+  --ink: #1a1813;
+  --ink-2: #4c473d;
+  --accent: #a46f14;
+  --accent-text: #845810;
+  --screen: #15130f;
+  --screen-2: #2b271f;
+  --screen-ink: #f0e9da;
+  --screen-dim: #9a907c;
+  --flesh: #4d4336;
+  --right: #ff9a3c;
+  --err: #ff5a3d;
+  --ok: #52c873;
+  --f-display: 'Cormorant Garamond', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  --f-body: 'Alegreya Sans', 'Segoe UI', system-ui, 'Noto Sans', Arial, sans-serif;
+  --f-num: 'Cinzel', 'Palatino Linotype', Georgia, serif;   /* цифры как в игре: ровные, без «прыгающих» старых форм */
+  --f-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper); }
+body { font-family: var(--f-body); color: var(--ink); font-variant-numeric: lining-nums; -webkit-font-smoothing: antialiased; touch-action: pan-y pinch-zoom; }
+p, h1, h2, ul, ol, figure { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+img, svg { display: block; }
+a { color: inherit; }
+
+/* ---------- Сцена и слайды */
+.deck { position: fixed; left: 50%; top: 50%; width: 1920px; height: 1080px; transform: translate(-50%, -50%) scale(var(--s, 1)); overflow: hidden; background: var(--paper); }
+.slide { position: absolute; inset: 0; padding: 96px 120px 120px; background: var(--paper); visibility: hidden; opacity: 0; transition: opacity .35s var(--ease), visibility 0s linear .35s; }
+.slide.is-on { z-index: 2; visibility: visible; opacity: 1; transition: opacity .35s var(--ease); }
+.notes { display: none; }
+[data-step] { transition: opacity .35s var(--ease), translate .35s var(--ease); }
+[data-step]:not(.is-shown) { opacity: 0; translate: 0 12px; }
+.slide.is-instant, .slide.is-instant *, .slide.is-instant *::before, .slide.is-instant *::after { transition: none !important; animation: none !important; }
+
+/* ---------- Типографика */
+.kicker { font: 500 28px/1 var(--f-body); letter-spacing: .14em; text-transform: uppercase; color: var(--accent-text); }
+.title { margin-top: 22px; font: 600 84px/1.04 var(--f-display); letter-spacing: -.005em; color: var(--ink); text-wrap: balance; max-width: 1680px; }
+.lead { font-size: 40px; line-height: 52px; color: var(--ink); }
+.arr { display: inline-block; width: .8em; height: .5em; vertical-align: .12em; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 11'%3E%3Cpath d='M1 5.5h14.5M11.5 1.2l4.6 4.3-4.6 4.3' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 11'%3E%3Cpath d='M1 5.5h14.5M11.5 1.2l4.6 4.3-4.6 4.3' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; }
+.btn {
+  display: inline-flex; align-items: center; gap: 12px; padding: 16px 28px; border-radius: 999px; cursor: pointer; text-decoration: none;
+  font: 500 28px/1 var(--f-body); color: var(--ink); background: transparent; border: 2px solid var(--ink);
+}
+.btn--primary { color: var(--paper); background: var(--ink); }
+.btn svg { width: 22px; height: 22px; fill: currentColor; }
+.btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+@media (hover: hover) { .btn { transition: background-color .2s, color .2s; } .btn:not(.btn--primary):hover { background: var(--paper-2); } }
+
+/* ---------- 1. Титул: текст на бумаге, Регент — тёмной половиной справа */
+.s1-text { position: absolute; left: 120px; top: 0; bottom: 0; width: 820px; display: flex; flex-direction: column; justify-content: center; }
+.s1-logo { margin-top: 30px; font: 600 172px/.88 var(--f-display); letter-spacing: .05em; color: var(--ink); }
+.s1-logo span { display: block; }
+.s1-tag { margin-top: 34px; font: italic 500 64px/1.05 var(--f-display); color: var(--accent); }
+.s1 .lead { margin-top: 28px; max-width: 760px; }
+.s1-facts { display: flex; gap: 56px; margin-top: 54px; padding-top: 28px; border-top: 2px solid var(--rule); }
+.s1-facts li { font-size: 30px; line-height: 1.2; color: var(--ink-2); }
+.s1-facts b { display: block; margin-bottom: 8px; font: 600 72px/1 var(--f-num); color: var(--ink); }
+.s1-img { position: absolute; right: 0; top: 0; bottom: 0; width: 900px; overflow: hidden; background: var(--screen); }
+.s1-img img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 45%; }
+
+/* ---------- 2. Идея: проблема слева, ноутбук справа */
+.s2-left { position: absolute; left: 120px; top: 96px; width: 900px; }
+.s2-list { margin-top: 60px; display: grid; gap: 26px; }
+.s2-list li { display: flex; align-items: center; gap: 26px; font-size: 38px; line-height: 1.2; }
+.s2-list svg { width: 54px; height: 54px; flex: none; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.s2-turn { margin-top: 70px; font: 600 66px/1.06 var(--f-display); color: var(--accent); text-wrap: balance; }
+.s2-solve { margin-top: 20px; font-size: 40px; line-height: 52px; }
+.s2-laptop { position: absolute; right: 120px; top: 300px; width: 760px; height: 470px; overflow: visible; }
+.lp-lid { fill: var(--ink); }
+.lp-screen { fill: var(--screen); }
+.lp-base { fill: var(--paper-2); stroke: var(--rule); stroke-width: 2; }
+.lp-notch { fill: var(--rule); }
+.lp-cam { fill: var(--screen-dim); transition: fill .3s; }
+.lp-ring { fill: none; stroke: var(--accent); stroke-width: 3; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.lp-shot { opacity: 0; transition: opacity .6s var(--ease); }
+.s2.st-1 .lp-cam { fill: var(--right); }
+.s2.st-1 .lp-ring { animation: ring 1.6s var(--ease) infinite; }
+.s2.st-1 .lp-ring--2 { animation-delay: .5s; }
+.s2.st-2 .lp-shot { opacity: 1; }
+@keyframes ring { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(7); } }
+
+/* ---------- Экран камеры (слайды 3 и 4) */
+.cam { position: absolute; left: 120px; top: 300px; width: 900px; height: 620px; border-radius: 20px; overflow: hidden; background: var(--screen); }
+.cam > svg { width: 100%; height: 100%; }
+.cam-vf { fill: none; stroke: var(--screen-dim); stroke-width: 3; opacity: .6; }
+.cam-lbl { font: 500 26px var(--f-mono); letter-spacing: .06em; fill: var(--screen-dim); }
+.cam-lbl--hi { fill: var(--screen-ink); }
+.h-flesh line { stroke: var(--flesh); stroke-width: 50; stroke-linecap: round; }
+.h-flesh polygon { fill: var(--flesh); stroke: var(--flesh); stroke-width: 50; stroke-linejoin: round; }
+.h-flesh { transition: opacity .5s var(--ease); }
+.h-bone { stroke: var(--right); stroke-width: 5; stroke-linecap: round; opacity: .85; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .35s var(--ease) var(--d, 0ms); }
+.h-pt { fill: var(--right); stroke: var(--screen); stroke-width: 4; opacity: 0; transform-box: fill-box; transform-origin: center; scale: .2; transition: opacity .2s var(--ease) var(--d, 0ms), scale .3s var(--ease) var(--d, 0ms), fill .3s; }
+.hand.pts-on .h-pt { opacity: 1; scale: 1; }
+.hand.pts-on .h-bone { stroke-dashoffset: 0; }
+.scan { fill: url(#scanGrad); opacity: 0; }
+.scan.run { animation: scan 1s var(--ease) both; }
+@keyframes scan { 0% { opacity: 1; transform: translateY(-140px); } 100% { opacity: 0; transform: translateY(620px); } }
+
+/* ---------- 3. Как рука становится командой */
+.flow { position: absolute; left: 1100px; right: 120px; top: 296px; display: grid; gap: 10px; }
+.flow li { display: grid; grid-template-columns: 64px 1fr; column-gap: 16px; padding: 14px 0 12px; border-top: 2px solid var(--rule); opacity: .4; transition: opacity .3s var(--ease), border-color .3s; }
+.flow li.is-done { opacity: 1; }
+.flow li.is-cur { opacity: 1; border-top-color: var(--accent); }
+.flow .n { grid-row: span 2; font: 600 40px/1.1 var(--f-num); color: var(--ink-2); }
+.flow li.is-cur .n { color: var(--accent); }
+.flow b { font-weight: 500; font-size: 36px; line-height: 1.15; }
+.flow span { font-size: 28px; line-height: 1.3; color: var(--ink-2); }
+.ctrl { position: absolute; left: 1100px; top: 892px; display: flex; gap: 14px; }
+.curl { fill: none; stroke: var(--screen-ink); stroke-width: 3; opacity: 0; transition: opacity .3s var(--ease) var(--d, 0ms); }
+.charge { fill: none; stroke: var(--right); stroke-width: 9; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; transition: opacity .2s; }
+.charge.on { opacity: 1; }
+.charge.fill { stroke-dashoffset: 0; stroke: var(--err); transition: stroke-dashoffset .6s linear, stroke .6s steps(1, end), opacity .2s; }
+.ray { stroke: var(--right); stroke-width: 6; stroke-linecap: round; opacity: 0; }
+.rays.go .ray { animation: ray .7s var(--ease) both; }
+@keyframes ray { 0% { opacity: 1; stroke-dashoffset: 1; } 70% { opacity: 1; } 100% { opacity: 0; stroke-dashoffset: -1; } }
+.chip rect { fill: var(--screen-2); stroke: var(--screen-dim); stroke-width: 2; transition: fill .25s, stroke .25s; }
+.chip text { font: 600 26px var(--f-mono); letter-spacing: .06em; fill: var(--screen-dim); text-anchor: middle; transition: fill .25s; }
+.chip.lit rect { fill: var(--right); stroke: var(--right); }
+.chip.lit text { fill: var(--screen); }
+.chips { opacity: 0; transition: opacity .3s; }
+.chips.on { opacity: 1; }
+.chip-arr { fill: var(--screen-dim); }
+.shot { opacity: 0; transition: opacity .6s var(--ease); }
+.shot.on { opacity: 1; }
+.shot-cap rect { fill: var(--screen); }
+.shot-cap text { font: 500 30px var(--f-body); fill: var(--screen-ink); }
+
+/* ---------- 4. Режим «ОШИБКА» */
+.h-pt.is-err { fill: var(--err); }
+.h-pt.is-ok { fill: var(--ok); }
+.mark-link { stroke: var(--err); stroke-width: 5; stroke-dasharray: 10 10; stroke-linecap: round; opacity: 0; transition: opacity .3s, stroke .3s; }
+.mark-link.on { opacity: 1; }
+.mark-link.is-ok { stroke: var(--ok); stroke-dasharray: none; }
+.mark-ring { fill: none; stroke: var(--err); stroke-width: 4; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.mark-ring.on { opacity: 1; animation: pulse 1.2s ease-out infinite; }
+.mark-ring.is-ok { stroke: var(--ok); animation: none; }
+@keyframes pulse { 0% { scale: .7; opacity: 1; } 100% { scale: 1.5; opacity: 0; } }
+.mark-lbl rect { fill: var(--err); }
+.mark-lbl text { font: 700 26px var(--f-mono); letter-spacing: .08em; fill: var(--screen); }
+.mark-lbl { opacity: 0; transition: opacity .3s; }
+.mark-lbl.on { opacity: 1; }
+.mark-lbl.is-ok rect { fill: var(--ok); }
+.err-side { position: absolute; left: 1100px; right: 120px; top: 300px; }
+.card { padding: 26px 30px 30px; border-radius: 14px; background: var(--screen); border: 3px solid var(--err); color: var(--screen-ink); }
+.card__h { font: 700 26px/1.2 var(--f-mono); letter-spacing: .08em; color: var(--err); }
+.card__t { margin-top: 14px; font-size: 38px; line-height: 1.22; }
+.card.is-ok { border-color: var(--ok); }
+.card.is-ok .card__h { color: var(--ok); }
+.card .if-ok { display: none; }
+.card.is-ok .if-ok { display: block; }
+.card.is-ok .if-err { display: none; }
+.err-src { margin-top: 14px; font-size: 28px; line-height: 1.3; color: var(--ink-2); }
+.err-num { margin-top: 44px; display: grid; grid-template-columns: auto 1fr; column-gap: 26px; align-items: center; padding-top: 30px; border-top: 2px solid var(--rule); }
+.err-num b { grid-row: span 2; font: 600 150px/.9 var(--f-num); color: var(--accent); }
+.err-num span { font-size: 40px; line-height: 1.1; }
+.err-num small { font-size: 28px; line-height: 1.3; color: var(--ink-2); }
+.err-ctrl { position: absolute; left: 1100px; top: 892px; display: flex; gap: 14px; }
+
+/* ---------- 5. Было → стало: шторка и четыре цифры */
+.wipe { position: absolute; left: 120px; top: 300px; width: 1104px; height: 621px; border-radius: 16px; overflow: hidden; background: var(--screen); cursor: ew-resize; touch-action: none; user-select: none; --x: 50%; }
+.wipe img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; -webkit-user-drag: none; }
+.wipe__after { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--x)); transition: clip-path 1.2s cubic-bezier(.65, 0, .35, 1); }
+.wipe__edge { position: absolute; inset: 0; pointer-events: none; transform: translateX(var(--x)); transition: transform 1.2s cubic-bezier(.65, 0, .35, 1); }
+.wipe__edge::before { content: ''; position: absolute; top: 0; bottom: 0; left: -2px; width: 4px; background: var(--paper); }
+.wipe__knob { position: absolute; left: -32px; top: calc(50% - 32px); width: 64px; height: 64px; border-radius: 50%; background: var(--paper); color: var(--ink); display: flex; align-items: center; justify-content: center; gap: 2px; font-size: 22px; box-shadow: 0 4px 20px color-mix(in srgb, var(--ink) 40%, transparent); }
+.wipe__knob .arr:first-child { transform: scaleX(-1); }
+.wipe.is-drag .wipe__after, .wipe.is-drag .wipe__edge { transition: none; }
+.wipe__tag { position: absolute; bottom: 22px; padding: 8px 16px; border-radius: 8px; font: 500 28px/1.1 var(--f-body); color: var(--screen-ink); background: color-mix(in srgb, var(--screen) 78%, transparent); }
+.wipe__tag--a { left: 22px; }
+.wipe__tag--b { right: 22px; color: var(--screen); background: var(--paper); }
+.gain { position: absolute; left: 1300px; right: 120px; top: 300px; height: 621px; display: grid; grid-template-rows: repeat(4, 1fr); }
+.gain li { display: flex; flex-direction: column; justify-content: center; border-top: 2px solid var(--rule); }
+.gain li:last-child { border-bottom: 2px solid var(--rule); }
+.gain__k { font-size: 28px; line-height: 1.2; color: var(--ink-2); }
+.gain__v { display: flex; align-items: baseline; gap: 14px; margin-top: 6px; white-space: nowrap; }
+.gain__old { font: 600 44px/1 var(--f-num); color: var(--ink-2); text-decoration: line-through; text-decoration-thickness: 3px; text-decoration-color: color-mix(in srgb, var(--ink-2) 60%, transparent); }
+.gain__v .arr { color: var(--accent); font-size: 40px; }
+.gain__new { font: 600 84px/.9 var(--f-num); color: var(--accent); }
+.gain__u { font-size: 30px; color: var(--ink); }
+
+/* ---------- 6. Что дальше: дорога */
+.road { position: absolute; left: 0; top: 410px; width: 1920px; height: 560px; }
+.road svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.road__bed { fill: none; stroke: var(--rule); stroke-width: 5; stroke-dasharray: 3 14; stroke-linecap: round; }
+.road__lit { fill: none; stroke: var(--accent); stroke-width: 7; stroke-linecap: round; stroke-dasharray: 1 1; stroke-dashoffset: .82; transition: stroke-dashoffset .8s var(--ease); }
+.s6.st-1 .road__lit { stroke-dashoffset: .5; }
+.s6.st-2 .road__lit { stroke-dashoffset: 0; }
+.st { position: absolute; top: 60px; width: 520px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.st--1 { left: 100px; } .st--2 { left: 700px; } .st--3 { left: 1300px; }
+.st__gem { width: 40px; height: 40px; rotate: 45deg; background: var(--accent); border: 4px solid var(--accent); box-shadow: 0 0 0 10px var(--paper); }
+.st--2 .st__gem { background: var(--paper); }
+.st--3 .st__gem { width: 56px; height: 56px; background: var(--ink); border-color: var(--ink); }
+.st__k { margin-top: 44px; font: 500 28px/1 var(--f-body); letter-spacing: .14em; text-transform: uppercase; color: var(--accent-text); }
+.st__list { margin-top: 26px; display: grid; gap: 14px; justify-items: center; }
+.st__list li { font-size: 34px; line-height: 1.2; padding: 10px 22px; border: 2px solid var(--rule); border-radius: 999px; background: var(--paper); }
+.st--1 .st__list li { border-color: var(--accent); }
+.st__goal { margin-top: 18px; font: 600 80px/1 var(--f-display); color: var(--ink); }
+
+/* ---------- 7. Финал */
+.s7-oath { position: absolute; left: 120px; top: 230px; width: 1100px; font: 600 100px/1.02 var(--f-display); letter-spacing: -.01em; text-wrap: balance; }
+.s7-oath em { font-style: italic; font-weight: 500; color: var(--accent); }
+.s7-act { position: absolute; left: 120px; top: 760px; display: flex; gap: 16px; align-items: center; }
+.s7-url { position: absolute; left: 120px; top: 870px; font-size: 30px; color: var(--ink-2); }
+.s7-qr { position: absolute; right: 120px; top: 300px; width: 440px; text-align: center; }
+.s7-qr__code { padding: 22px; border-radius: 18px; background: var(--paper); border: 2px solid var(--ink); }
+.s7-qr__code svg { width: 100%; height: auto; shape-rendering: crispEdges; }
+.s7-qr p { margin-top: 22px; font-size: 32px; }
+.s7-thanks { position: absolute; right: 120px; top: 900px; width: 440px; text-align: center; font: italic 500 56px/1 var(--f-display); color: var(--accent); }
+
+/* ---------- Панель навигации, прогресс, заметки */
+.bar { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 10; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; background: var(--ink); color: var(--paper); font: 500 17px/1 var(--f-body); opacity: .22; transition: opacity .3s; }
+.bar.is-awake, .bar:hover, .bar:focus-within { opacity: 1; }
+.bar button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.bar button:focus-visible { outline: 2px solid var(--accent); }
+.bar svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.bar__n { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+.prog { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; height: 4px; background: var(--paper-2); }
+.prog i { position: absolute; inset: 0; background: var(--accent); transform-origin: 0 50%; transform: scaleX(var(--p, 0)); transition: transform .4s var(--ease); }
+.notes-box { position: fixed; left: 16px; right: 16px; bottom: 70px; z-index: 11; max-width: 980px; margin: 0 auto; padding: 18px 22px; border-radius: 12px; background: var(--ink); color: var(--paper); font-size: 20px; line-height: 1.45; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; transition-delay: 0s !important; animation: none !important; }
+}
+@page { size: 1920px 1080px; margin: 0; }
+@media print {
+  html, body { height: auto; overflow: visible; }
+  .deck { position: static; transform: none; width: 1920px; height: auto; overflow: visible; }
+  .slide { position: relative; width: 1920px; height: 1080px; visibility: visible !important; opacity: 1 !important; break-after: page; }
+  .slide:last-child { break-after: auto; }
+  [data-step] { opacity: 1 !important; translate: none !important; }
+  .bar, .prog, .notes-box, .ctrl, .err-ctrl, .s7-act { display: none !important; }
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+</style>
 </head>
 <body>
-<main class="deck" id="p1-deck" aria-roledescription="презентация">
-  <!-- Слайды вставляет deck.js из очереди window.DECK_QUEUE (slides/part1–3.js). -->
-  <canvas class="ash" id="p1-ash" width="1920" height="1080" aria-hidden="true"></canvas>
-  <div class="regent" id="p1-regent" aria-hidden="true">
-    <p class="regent__name"><span class="regent__label">Регент Нимба</span></p>
-    <div class="regent__frame">
-      <div class="regent__bar"><i class="regent__tail"></i><i class="regent__fill"></i></div>
-    </div>
-  </div>
-</main>
-<!-- QR (версия 4, коррекция M) на https://diiaanns07-droid.github.io/ADMIT_STUTU/ — нарисован модулями SVG, без внешних сервисов.
-     Его клонирует слайд 13 (slides/part1.js); dev/challenge.test.mjs сверяет его с QR игры. -->
-<template id="qr-game"><svg viewBox="0 0 41 41" role="img" aria-label="QR-код: https://diiaanns07-droid.github.io/ADMIT_STUTU/"><rect width="41" height="41" fill="#eadfc5"/><path fill="#15120f" d="M4 4h7v1h-7zM13 4h3v1h-3zM18 4h1v1h-1zM20 4h1v1h-1zM22 4h3v1h-3zM27 4h1v1h-1zM30 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM15 5h2v1h-2zM19 5h1v1h-1zM22 5h1v1h-1zM25 5h2v1h-2zM30 5h1v1h-1zM36 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM12 6h1v1h-1zM18 6h2v1h-2zM23 6h1v1h-1zM25 6h1v1h-1zM28 6h1v1h-1zM30 6h1v1h-1zM32 6h3v1h-3zM36 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM12 7h1v1h-1zM14 7h2v1h-2zM22 7h1v1h-1zM26 7h1v1h-1zM28 7h1v1h-1zM30 7h1v1h-1zM32 7h3v1h-3zM36 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM12 8h3v1h-3zM18 8h4v1h-4zM24 8h1v1h-1zM26 8h3v1h-3zM30 8h1v1h-1zM32 8h3v1h-3zM36 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM12 9h2v1h-2zM16 9h1v1h-1zM18 9h1v1h-1zM21 9h1v1h-1zM23 9h1v1h-1zM26 9h2v1h-2zM30 9h1v1h-1zM36 9h1v1h-1zM4 10h7v1h-7zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM26 10h1v1h-1zM28 10h1v1h-1zM30 10h7v1h-7zM12 11h1v1h-1zM14 11h3v1h-3zM18 11h1v1h-1zM20 11h1v1h-1zM23 11h3v1h-3zM28 11h1v1h-1zM4 12h1v1h-1zM6 12h5v1h-5zM14 12h5v1h-5zM21 12h1v1h-1zM23 12h2v1h-2zM26 12h3v1h-3zM30 12h5v1h-5zM4 13h1v1h-1zM6 13h1v1h-1zM13 13h2v1h-2zM16 13h2v1h-2zM20 13h6v1h-6zM27 13h1v1h-1zM30 13h2v1h-2zM33 13h2v1h-2zM36 13h1v1h-1zM4 14h1v1h-1zM6 14h2v1h-2zM9 14h3v1h-3zM13 14h2v1h-2zM16 14h4v1h-4zM21 14h1v1h-1zM25 14h2v1h-2zM30 14h1v1h-1zM32 14h1v1h-1zM34 14h2v1h-2zM5 15h1v1h-1zM7 15h3v1h-3zM11 15h1v1h-1zM13 15h2v1h-2zM17 15h1v1h-1zM19 15h4v1h-4zM24 15h1v1h-1zM26 15h1v1h-1zM28 15h2v1h-2zM32 15h4v1h-4zM5 16h1v1h-1zM10 16h1v1h-1zM12 16h1v1h-1zM14 16h1v1h-1zM18 16h3v1h-3zM24 16h3v1h-3zM28 16h2v1h-2zM31 16h1v1h-1zM33 16h1v1h-1zM36 16h1v1h-1zM4 17h3v1h-3zM9 17h1v1h-1zM11 17h4v1h-4zM16 17h2v1h-2zM19 17h1v1h-1zM21 17h2v1h-2zM28 17h2v1h-2zM33 17h1v1h-1zM35 17h2v1h-2zM4 18h3v1h-3zM8 18h1v1h-1zM10 18h4v1h-4zM19 18h2v1h-2zM22 18h1v1h-1zM24 18h1v1h-1zM26 18h1v1h-1zM29 18h2v1h-2zM33 18h1v1h-1zM35 18h1v1h-1zM4 19h1v1h-1zM7 19h1v1h-1zM12 19h1v1h-1zM14 19h1v1h-1zM18 19h2v1h-2zM25 19h1v1h-1zM29 19h2v1h-2zM32 19h1v1h-1zM34 19h1v1h-1zM4 20h2v1h-2zM7 20h1v1h-1zM9 20h5v1h-5zM18 20h4v1h-4zM26 20h1v1h-1zM28 20h2v1h-2zM31 20h2v1h-2zM36 20h1v1h-1zM4 21h1v1h-1zM6 21h2v1h-2zM9 21h1v1h-1zM14 21h1v1h-1zM18 21h1v1h-1zM20 21h1v1h-1zM22 21h6v1h-6zM30 21h2v1h-2zM33 21h2v1h-2zM36 21h1v1h-1zM8 22h1v1h-1zM10 22h1v1h-1zM13 22h2v1h-2zM17 22h1v1h-1zM19 22h2v1h-2zM22 22h1v1h-1zM24 22h3v1h-3zM29 22h1v1h-1zM31 22h2v1h-2zM34 22h2v1h-2zM4 23h1v1h-1zM7 23h2v1h-2zM12 23h1v1h-1zM16 23h4v1h-4zM24 23h2v1h-2zM28 23h1v1h-1zM31 23h4v1h-4zM36 23h1v1h-1zM5 24h4v1h-4zM10 24h4v1h-4zM15 24h1v1h-1zM17 24h2v1h-2zM22 24h2v1h-2zM25 24h1v1h-1zM27 24h1v1h-1zM29 24h1v1h-1zM31 24h1v1h-1zM33 24h1v1h-1zM35 24h2v1h-2zM4 25h5v1h-5zM12 25h1v1h-1zM15 25h2v1h-2zM18 25h3v1h-3zM24 25h2v1h-2zM27 25h3v1h-3zM33 25h1v1h-1zM36 25h1v1h-1zM4 26h1v1h-1zM6 26h7v1h-7zM14 26h2v1h-2zM23 26h1v1h-1zM28 26h2v1h-2zM31 26h1v1h-1zM33 26h1v1h-1zM35 26h1v1h-1zM4 27h1v1h-1zM7 27h2v1h-2zM13 27h3v1h-3zM20 27h1v1h-1zM22 27h5v1h-5zM28 27h1v1h-1zM33 27h3v1h-3zM4 28h1v1h-1zM6 28h1v1h-1zM8 28h3v1h-3zM12 28h1v1h-1zM16 28h2v1h-2zM21 28h3v1h-3zM28 28h5v1h-5zM34 28h1v1h-1zM36 28h1v1h-1zM12 29h2v1h-2zM17 29h1v1h-1zM20 29h4v1h-4zM26 29h1v1h-1zM28 29h1v1h-1zM32 29h1v1h-1zM34 29h1v1h-1zM36 29h1v1h-1zM4 30h7v1h-7zM13 30h2v1h-2zM16 30h1v1h-1zM19 30h3v1h-3zM24 30h1v1h-1zM26 30h3v1h-3zM30 30h1v1h-1zM32 30h1v1h-1zM34 30h1v1h-1zM4 31h1v1h-1zM10 31h1v1h-1zM12 31h1v1h-1zM15 31h3v1h-3zM20 31h5v1h-5zM27 31h2v1h-2zM32 31h3v1h-3zM36 31h1v1h-1zM4 32h1v1h-1zM6 32h3v1h-3zM10 32h1v1h-1zM12 32h3v1h-3zM17 32h4v1h-4zM24 32h3v1h-3zM28 32h6v1h-6zM4 33h1v1h-1zM6 33h3v1h-3zM10 33h1v1h-1zM12 33h1v1h-1zM14 33h2v1h-2zM17 33h3v1h-3zM21 33h2v1h-2zM25 33h1v1h-1zM27 33h3v1h-3zM32 33h1v1h-1zM34 33h1v1h-1zM36 33h1v1h-1zM4 34h1v1h-1zM6 34h3v1h-3zM10 34h1v1h-1zM12 34h2v1h-2zM15 34h7v1h-7zM24 34h2v1h-2zM30 34h2v1h-2zM33 34h2v1h-2zM4 35h1v1h-1zM10 35h1v1h-1zM13 35h1v1h-1zM15 35h2v1h-2zM19 35h1v1h-1zM22 35h1v1h-1zM25 35h1v1h-1zM29 35h2v1h-2zM32 35h3v1h-3zM4 36h7v1h-7zM12 36h1v1h-1zM16 36h1v1h-1zM18 36h2v1h-2zM21 36h1v1h-1zM24 36h1v1h-1zM28 36h4v1h-4zM34 36h2v1h-2z"/></svg></template>
-<noscript><p class="noscript">Презентации нужен JavaScript. Запасной вариант — ASHEN_OATH_pitch.pdf рядом с этим файлом.</p></noscript>
+<main class="deck" id="deck" aria-roledescription="презентация">
 
-<script src="slides/part1.js"></script>
-<script src="slides/part2.js"></script>
-<script src="slides/part3.js"></script>
-<script src="deck.js"></script>
+<!-- 1 -->
+<section class="slide s1" data-title="ASHEN OATH" data-sec="20">
+  <div class="s1-text">
+    <p class="kicker">Финал ADMIT</p>
+    <h1 class="s1-logo" lang="en"><span>ASHEN</span><span>OATH</span></h1>
+    <p class="s1-tag">Камера вместо джойстика</p>
+    <p class="lead">Action-RPG в&nbsp;браузере: героем управляют руки и&nbsp;тело через обычную веб-камеру.</p>
+    <ul class="s1-facts">
+      <li><b>5</b>героев</li>
+      <li><b>24</b>жеста</li>
+      <li><b>5</b>режимов</li>
+    </ul>
+  </div>
+  <figure class="s1-img"><img src="media/title_regent.jpg" alt="Регент Нимба — босс игры, кадр из сегодняшней версии"></figure>
+  <aside class="notes">Здравствуйте! Мы — команда ASHEN OATH. Это action-RPG прямо в браузере, где джойстик — ваши руки. Обычный ноутбук, веб-камера, ссылка — и вы сражаетесь с боссом, Регентом Нимба, руками и телом. Пять героев, двадцать четыре жеста, пять режимов.</aside>
+</section>
+
+<!-- 2 -->
+<section class="slide s2" data-title="Идея" data-sec="40">
+  <div class="s2-left">
+    <p class="kicker">Идея</p>
+    <h2 class="title">Игры с&nbsp;движением требуют железа</h2>
+    <ul class="s2-list">
+      <li><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M6 17a4 4 0 0 1 4-4h28a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-8.6a3 3 0 0 1-2.8-2l-1-2.7a2.8 2.8 0 0 0-5.2 0l-1 2.7a3 3 0 0 1-2.8 2H10a4 4 0 0 1-4-4z"/></svg>Приставка и&nbsp;VR&nbsp;— дорого</li>
+      <li><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M3 24h5M40 24h5M14 24h20"/><rect x="8" y="15" width="6" height="18" rx="1.5"/><rect x="34" y="15" width="6" height="18" rx="1.5"/></svg>Фитнес-приложения бросают</li>
+      <li><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="4" y="14" width="25" height="17" rx="1.5"/><path d="M1.5 35h30l-1.5 3H3z"/><circle cx="37" cy="14" r="8"/><path d="M37 9.5V14l3 2"/></svg>Часами сидим за&nbsp;ноутбуком</li>
+    </ul>
+    <p class="s2-turn" data-step="1">А&nbsp;камера уже есть в&nbsp;каждом ноутбуке</p>
+    <p class="s2-solve" data-step="2">Мы сделали её&nbsp;джойстиком.</p>
+  </div>
+  <svg class="s2-laptop" viewBox="0 0 760 470" role="img" aria-label="Ноутбук: камера над экраном, на экране — бой из игры">
+    <defs><clipPath id="lpClip"><rect x="84" y="46" width="592" height="333" rx="6"/></clipPath></defs>
+    <rect class="lp-lid" x="60" y="0" width="640" height="414" rx="24"/>
+    <rect class="lp-screen" x="84" y="46" width="592" height="333" rx="6"/>
+    <image class="lp-shot" href="media/arena_1003.jpg" x="84" y="46" width="592" height="333" preserveAspectRatio="xMidYMid slice" clip-path="url(#lpClip)"/>
+    <circle class="lp-ring" cx="380" cy="23" r="7"/>
+    <circle class="lp-ring lp-ring--2" cx="380" cy="23" r="7"/>
+    <circle class="lp-cam" cx="380" cy="23" r="7"/>
+    <path class="lp-base" d="M24 414H736Q760 414 760 430V436Q760 454 736 454H24Q0 454 0 436V430Q0 414 24 414Z"/>
+    <rect class="lp-notch" x="318" y="414" width="124" height="9" rx="4.5"/>
+  </svg>
+  <aside class="notes">Игры с движением упираются в железо: приставка, VR, датчики стоят дорого. Фитнес-приложения бросают через неделю. А мы часами сидим за ноутбуком. [Дальше] Но камера уже есть в каждом ноутбуке и в каждом классе. [Дальше] Мы сделали её джойстиком: открыл ссылку — играешь, ничего не нужно покупать и устанавливать.</aside>
+</section>
+
+<!-- 3 -->
+<section class="slide s3" data-title="Управление движениями" data-sec="75" data-steps="5" data-ctl="scheme">
+  <p class="kicker">Управление движениями</p>
+  <h2 class="title">Как рука становится командой</h2>
+  <div class="cam" data-interactive>
+    <svg viewBox="0 0 900 620" role="img" aria-label="Экран камеры: кисть, 21 точка, жест «Выброс»">
+      <defs>
+        <linearGradient id="scanGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff9a3c" stop-opacity="0"/><stop offset="1" stop-color="#ff9a3c" stop-opacity=".35"/></linearGradient>
+      </defs>
+      <path class="cam-vf" d="M30 90V30h60M810 30h60v60M870 530v60h-60M90 590H30v-60"/>
+      <text class="cam-lbl cam-lbl--hi" x="56" y="70">КАМЕРА · ПРАВАЯ РУКА</text>
+      <text class="cam-lbl" x="844" y="70" text-anchor="end">0 кадров в сеть</text>
+      <rect class="scan" x="0" y="0" width="900" height="140"/>
+      <g class="hand" data-pose="fist" data-cx="450" data-cy="505" data-s="205"></g>
+      <g class="chips">
+        <g class="chip" data-chip="1"><rect x="146" y="540" width="184" height="50" rx="10"/><text x="238" y="575">КУЛАК</text></g>
+        <path class="chip-arr" d="M342 558l14 7-14 7z"/>
+        <g class="chip" data-chip="2"><rect x="368" y="540" width="184" height="50" rx="10"/><text x="460" y="575">РАСКРЫТЬ</text></g>
+        <path class="chip-arr" d="M564 558l14 7-14 7z"/>
+        <g class="chip" data-chip="3"><rect x="590" y="540" width="184" height="50" rx="10"/><text x="682" y="575">ВЫБРОС</text></g>
+      </g>
+      <g class="shot">
+        <image href="media/burst.jpg" x="0" y="0" width="900" height="507" preserveAspectRatio="xMidYMid slice"/>
+        <g class="shot-cap"><rect x="0" y="507" width="900" height="113"/><text x="56" y="574">В&#160;бою: выброс энергии бьёт Регента</text></g>
+      </g>
+    </svg>
+  </div>
+  <ol class="flow">
+    <li data-row="1"><span class="n">1</span><b>Кадр с&nbsp;камеры</b><span>видео не&nbsp;покидает браузер</span></li>
+    <li data-row="2"><span class="n">2</span><b>21 точка кисти</b><span>MediaPipe на&nbsp;видеокарте</span></li>
+    <li data-row="3"><span class="n">3</span><b>Геометрия</b><span>наш код: сгибы пальцев, удержание</span></li>
+    <li data-row="4"><span class="n">4</span><b>Жест</b><span>кулак, затем резко раскрыть</span></li>
+    <li data-row="5"><span class="n">5</span><b>Удар в&nbsp;бою</b><span>выброс энергии по&nbsp;Регенту</span></li>
+  </ol>
+  <div class="ctrl">
+    <button class="btn btn--primary" type="button" data-demo="run"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15L19.5 12z"/></svg>Запустить</button>
+    <button class="btn" type="button" data-demo="next">Дальше</button>
+    <button class="btn" type="button" data-demo="reset">Сначала</button>
+  </div>
+  <aside class="notes">Как это работает. [1] Камера даёт кадр — он не уходит в интернет, всё считается в браузере. [2] Модель MediaPipe от Google находит на кисти 21 точку — в отдельном потоке на видеокарте. [3] Дальше наш код: насколько согнут каждый палец, как быстро движется рука, сколько держится поза. Кулак держим около полсекунды — кольцо заряда краснеет. [4] Резко раскрыли — автомат жестов узнаёт «Выброс». [5] И в бою волна энергии бьёт Регента. Так устроены все 24 жеста. Точки на экране — настоящие координаты MediaPipe с фото датасета HaGRID из наших тестов.</aside>
+</section>
+
+<!-- 4 -->
+<section class="slide s4" data-title="Режим «ОШИБКА»" data-sec="60" data-steps="3" data-ctl="error">
+  <p class="kicker">Режим «ОШИБКА»</p>
+  <h2 class="title">Не «не распознано», а&nbsp;«что исправить»</h2>
+  <div class="cam" data-interactive>
+    <svg viewBox="0 0 900 620" role="img" aria-label="Экран камеры: жест «OK» почти получился, игра показывает, что исправить">
+      <path class="cam-vf" d="M30 90V30h60M810 30h60v60M870 530v60h-60M90 590H30v-60"/>
+      <text class="cam-lbl cam-lbl--hi" x="56" y="70">КАМЕРА · ПРАВАЯ РУКА</text>
+      <text class="cam-lbl" x="844" y="70" text-anchor="end">жест «OK»</text>
+      <g class="hand pts-on" data-pose="almost" data-cx="420" data-cy="560" data-s="215"></g>
+      <line class="mark-link" x1="0" y1="0" x2="0" y2="0"/>
+      <circle class="mark-ring" r="30"/>
+      <g class="mark-lbl"><rect width="150" height="46" rx="8"/><text x="18" y="33">СОМКНИ</text></g>
+    </svg>
+  </div>
+  <div class="err-side">
+    <div class="card" data-step="1">
+      <p class="card__h"><span class="if-err">ОШИБКА · «OK» · СНАРЯД</span><span class="if-ok">РАСПОЗНАНО · «OK» · СНАРЯД</span></p>
+      <p class="card__t"><span class="if-err">Сомкни кончики большого и&nbsp;указательного в&nbsp;кольцо</span><span class="if-ok">Снаряды летят, пока держишь жест</span></p>
+    </div>
+    <p class="err-src" data-step="1">Подсказка из&nbsp;игры: подсвечены точки 4 и&nbsp;8</p>
+    <div class="err-num" data-step="3"><b data-count="63">63</b><span>подсказки</span><small>49 — к&nbsp;жестам и&nbsp;кадру, 14&nbsp;— к&nbsp;технике упражнений</small></div>
+  </div>
+  <div class="err-ctrl">
+    <button class="btn btn--primary" type="button" data-demo="check">Проверить</button>
+    <button class="btn" type="button" data-demo="fix">Исправить</button>
+    <button class="btn" type="button" data-demo="reset">Сначала</button>
+  </div>
+  <aside class="notes">Самое важное — режим «ОШИБКА». Обычная игра говорит «не распознано», и человек не понимает, что не так. Наша видит, что именно. Здесь «OK» почти получился, но кольцо не замкнуто. [Проверить] Игра подсвечивает кончики большого и указательного пальцев и пишет — и говорит голосом: «Сомкни кончики в кольцо». [Исправить] Сомкнули — снаряды полетели. [Дальше] Таких подсказок 63: 49 к жестам и положению в кадре, 14 к технике приседаний и отжиманий.</aside>
+</section>
+
+<!-- 5 -->
+<section class="slide s5" data-title="Что улучшили" data-sec="55" data-steps="4" data-ctl="wipe">
+  <p class="kicker">После первого этапа · 30.09 <i class="arr"></i> 03.10</p>
+  <h2 class="title">Тот же бой&nbsp;— другой уровень</h2>
+  <figure class="wipe" data-interactive aria-label="Шторка «было — стало»: тяните мышью или пальцем">
+    <img src="media/arena_0930.jpg" alt="Бой с Регентом — версия первого этапа, 30 сентября">
+    <span class="wipe__tag wipe__tag--a">Первый этап · 30.09</span>
+    <div class="wipe__after"><img src="media/arena_1003.jpg" alt="Тот же кадр сегодня, 3 октября"><span class="wipe__tag wipe__tag--b">Сейчас · 03.10</span></div>
+    <i class="wipe__edge" aria-hidden="true"><i class="wipe__knob"><i class="arr"></i><i class="arr"></i></i></i>
+  </figure>
+  <ul class="gain">
+    <li data-step="1"><span class="gain__k">Вход в&nbsp;бой</span><span class="gain__v"><span class="gain__old">6</span><i class="arr"></i><span class="gain__new">2</span><span class="gain__u">клика</span></span></li>
+    <li data-step="2"><span class="gain__k">Жесты</span><span class="gain__v"><span class="gain__old">20</span><i class="arr"></i><span class="gain__new">24</span><span class="gain__u">жеста</span></span></li>
+    <li data-step="3"><span class="gain__k">Загрузка</span><span class="gain__v"><span class="gain__old">35,7</span><i class="arr"></i><span class="gain__new">10</span><span class="gain__u">МБ</span></span></li>
+    <li data-step="4"><span class="gain__k">Автотесты, 0&nbsp;падений</span><span class="gain__v"><span class="gain__old">32</span><i class="arr"></i><span class="gain__new">71</span><span class="gain__u">набор</span></span></li>
+  </ul>
+  <aside class="notes">Что улучшили после первого этапа. Это один и тот же кадр боя: слева версия, которую вы видели 30 сентября, справа — сегодняшняя. Новая арена с огнём и мокрым полом, Регент из обсидиана с золотом. Шторку можно потянуть. [1] Вход в бой — 2 клика вместо 6. [2] Жестов 24 вместо 20: «Врата бури», «Столп небес» и ультимейт «Небесный суд». [3] Игра грузится в 3,5 раза легче: 10 мегабайт вместо 36. [4] Наборов автотестов 71 вместо 32, больше тысячи проверок, ни одного падения.</aside>
+</section>
+
+<!-- 6 -->
+<section class="slide s6" data-title="Что дальше" data-sec="35">
+  <p class="kicker">Планы развития</p>
+  <h2 class="title">Что дальше</h2>
+  <div class="road">
+    <svg viewBox="0 0 1920 560" aria-hidden="true">
+      <path class="road__bed" d="M120 92C240 92 280 82 360 82S760 62 960 62 1360 78 1560 78 1760 70 1800 70"/>
+      <path class="road__lit" pathLength="1" d="M120 92C240 92 280 82 360 82S760 62 960 62 1360 78 1560 78 1760 70 1800 70"/>
+    </svg>
+    <div class="st st--1" style="top:62px"><i class="st__gem"></i><p class="st__k">Уже в&nbsp;игре · 03.10</p>
+      <ul class="st__list"><li>Быстрый вход</li><li>Камера на&nbsp;слабых ноутбуках</li><li>Сложность «Кошмар»</li></ul></div>
+    <div class="st st--2" style="top:42px" data-step="1"><i class="st__gem"></i><p class="st__k">Дальше</p>
+      <ul class="st__list"><li>Казахский язык</li><li>Режим учителя</li></ul></div>
+    <div class="st st--3" style="top:50px" data-step="2"><i class="st__gem"></i><p class="st__k">Цель</p>
+      <p class="st__goal">Пилот в&nbsp;школе</p></div>
+  </div>
+  <aside class="notes">Что дальше. То, что на первом этапе было в работе, уже в игре — влито 3 октября: быстрый вход; на слабом ноутбуке распознавание само переходит с видеокарты на процессор, и камера не отваливается; две новые сложности — «Сложная» и «Кошмар». [Дальше] Следующее — казахский язык и режим учителя: класс играет, учитель видит технику каждого. [Дальше] Цель — пилот в школе: урок движения, где джойстик — это руки.</aside>
+</section>
+
+<!-- 7 -->
+<section class="slide s7" data-title="Клятва" data-sec="20">
+  <p class="kicker">ASHEN OATH</p>
+  <p class="s7-oath">Любой ноутбук с&nbsp;камерой&nbsp;— <em>игра, тренер и&nbsp;урок движения</em></p>
+  <div class="s7-act">
+    <a class="btn btn--primary" href="../index.html?demo&amp;present&amp;fury=100" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15L19.5 12z"/></svg>Живой показ</a>
+    <a class="btn" href="ASHEN_OATH_pitch.pdf" download>PDF</a>
+  </div>
+  <p class="s7-url">diiaanns07-droid.github.io/ADMIT_STUTU</p>
+  <figure class="s7-qr">
+    <div class="s7-qr__code"><svg viewBox="0 0 41 41" role="img" aria-label="QR-код: https://diiaanns07-droid.github.io/ADMIT_STUTU/"><rect width="41" height="41" fill="#eadfc5"/><path fill="#15120f" d="M4 4h7v1h-7zM13 4h3v1h-3zM18 4h1v1h-1zM20 4h1v1h-1zM22 4h3v1h-3zM27 4h1v1h-1zM30 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM15 5h2v1h-2zM19 5h1v1h-1zM22 5h1v1h-1zM25 5h2v1h-2zM30 5h1v1h-1zM36 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM12 6h1v1h-1zM18 6h2v1h-2zM23 6h1v1h-1zM25 6h1v1h-1zM28 6h1v1h-1zM30 6h1v1h-1zM32 6h3v1h-3zM36 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM12 7h1v1h-1zM14 7h2v1h-2zM22 7h1v1h-1zM26 7h1v1h-1zM28 7h1v1h-1zM30 7h1v1h-1zM32 7h3v1h-3zM36 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM12 8h3v1h-3zM18 8h4v1h-4zM24 8h1v1h-1zM26 8h3v1h-3zM30 8h1v1h-1zM32 8h3v1h-3zM36 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM12 9h2v1h-2zM16 9h1v1h-1zM18 9h1v1h-1zM21 9h1v1h-1zM23 9h1v1h-1zM26 9h2v1h-2zM30 9h1v1h-1zM36 9h1v1h-1zM4 10h7v1h-7zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM26 10h1v1h-1zM28 10h1v1h-1zM30 10h7v1h-7zM12 11h1v1h-1zM14 11h3v1h-3zM18 11h1v1h-1zM20 11h1v1h-1zM23 11h3v1h-3zM28 11h1v1h-1zM4 12h1v1h-1zM6 12h5v1h-5zM14 12h5v1h-5zM21 12h1v1h-1zM23 12h2v1h-2zM26 12h3v1h-3zM30 12h5v1h-5zM4 13h1v1h-1zM6 13h1v1h-1zM13 13h2v1h-2zM16 13h2v1h-2zM20 13h6v1h-6zM27 13h1v1h-1zM30 13h2v1h-2zM33 13h2v1h-2zM36 13h1v1h-1zM4 14h1v1h-1zM6 14h2v1h-2zM9 14h3v1h-3zM13 14h2v1h-2zM16 14h4v1h-4zM21 14h1v1h-1zM25 14h2v1h-2zM30 14h1v1h-1zM32 14h1v1h-1zM34 14h2v1h-2zM5 15h1v1h-1zM7 15h3v1h-3zM11 15h1v1h-1zM13 15h2v1h-2zM17 15h1v1h-1zM19 15h4v1h-4zM24 15h1v1h-1zM26 15h1v1h-1zM28 15h2v1h-2zM32 15h4v1h-4zM5 16h1v1h-1zM10 16h1v1h-1zM12 16h1v1h-1zM14 16h1v1h-1zM18 16h3v1h-3zM24 16h3v1h-3zM28 16h2v1h-2zM31 16h1v1h-1zM33 16h1v1h-1zM36 16h1v1h-1zM4 17h3v1h-3zM9 17h1v1h-1zM11 17h4v1h-4zM16 17h2v1h-2zM19 17h1v1h-1zM21 17h2v1h-2zM28 17h2v1h-2zM33 17h1v1h-1zM35 17h2v1h-2zM4 18h3v1h-3zM8 18h1v1h-1zM10 18h4v1h-4zM19 18h2v1h-2zM22 18h1v1h-1zM24 18h1v1h-1zM26 18h1v1h-1zM29 18h2v1h-2zM33 18h1v1h-1zM35 18h1v1h-1zM4 19h1v1h-1zM7 19h1v1h-1zM12 19h1v1h-1zM14 19h1v1h-1zM18 19h2v1h-2zM25 19h1v1h-1zM29 19h2v1h-2zM32 19h1v1h-1zM34 19h1v1h-1zM4 20h2v1h-2zM7 20h1v1h-1zM9 20h5v1h-5zM18 20h4v1h-4zM26 20h1v1h-1zM28 20h2v1h-2zM31 20h2v1h-2zM36 20h1v1h-1zM4 21h1v1h-1zM6 21h2v1h-2zM9 21h1v1h-1zM14 21h1v1h-1zM18 21h1v1h-1zM20 21h1v1h-1zM22 21h6v1h-6zM30 21h2v1h-2zM33 21h2v1h-2zM36 21h1v1h-1zM8 22h1v1h-1zM10 22h1v1h-1zM13 22h2v1h-2zM17 22h1v1h-1zM19 22h2v1h-2zM22 22h1v1h-1zM24 22h3v1h-3zM29 22h1v1h-1zM31 22h2v1h-2zM34 22h2v1h-2zM4 23h1v1h-1zM7 23h2v1h-2zM12 23h1v1h-1zM16 23h4v1h-4zM24 23h2v1h-2zM28 23h1v1h-1zM31 23h4v1h-4zM36 23h1v1h-1zM5 24h4v1h-4zM10 24h4v1h-4zM15 24h1v1h-1zM17 24h2v1h-2zM22 24h2v1h-2zM25 24h1v1h-1zM27 24h1v1h-1zM29 24h1v1h-1zM31 24h1v1h-1zM33 24h1v1h-1zM35 24h2v1h-2zM4 25h5v1h-5zM12 25h1v1h-1zM15 25h2v1h-2zM18 25h3v1h-3zM24 25h2v1h-2zM27 25h3v1h-3zM33 25h1v1h-1zM36 25h1v1h-1zM4 26h1v1h-1zM6 26h7v1h-7zM14 26h2v1h-2zM23 26h1v1h-1zM28 26h2v1h-2zM31 26h1v1h-1zM33 26h1v1h-1zM35 26h1v1h-1zM4 27h1v1h-1zM7 27h2v1h-2zM13 27h3v1h-3zM20 27h1v1h-1zM22 27h5v1h-5zM28 27h1v1h-1zM33 27h3v1h-3zM4 28h1v1h-1zM6 28h1v1h-1zM8 28h3v1h-3zM12 28h1v1h-1zM16 28h2v1h-2zM21 28h3v1h-3zM28 28h5v1h-5zM34 28h1v1h-1zM36 28h1v1h-1zM12 29h2v1h-2zM17 29h1v1h-1zM20 29h4v1h-4zM26 29h1v1h-1zM28 29h1v1h-1zM32 29h1v1h-1zM34 29h1v1h-1zM36 29h1v1h-1zM4 30h7v1h-7zM13 30h2v1h-2zM16 30h1v1h-1zM19 30h3v1h-3zM24 30h1v1h-1zM26 30h3v1h-3zM30 30h1v1h-1zM32 30h1v1h-1zM34 30h1v1h-1zM4 31h1v1h-1zM10 31h1v1h-1zM12 31h1v1h-1zM15 31h3v1h-3zM20 31h5v1h-5zM27 31h2v1h-2zM32 31h3v1h-3zM36 31h1v1h-1zM4 32h1v1h-1zM6 32h3v1h-3zM10 32h1v1h-1zM12 32h3v1h-3zM17 32h4v1h-4zM24 32h3v1h-3zM28 32h6v1h-6zM4 33h1v1h-1zM6 33h3v1h-3zM10 33h1v1h-1zM12 33h1v1h-1zM14 33h2v1h-2zM17 33h3v1h-3zM21 33h2v1h-2zM25 33h1v1h-1zM27 33h3v1h-3zM32 33h1v1h-1zM34 33h1v1h-1zM36 33h1v1h-1zM4 34h1v1h-1zM6 34h3v1h-3zM10 34h1v1h-1zM12 34h2v1h-2zM15 34h7v1h-7zM24 34h2v1h-2zM30 34h2v1h-2zM33 34h2v1h-2zM4 35h1v1h-1zM10 35h1v1h-1zM13 35h1v1h-1zM15 35h2v1h-2zM19 35h1v1h-1zM22 35h1v1h-1zM25 35h1v1h-1zM29 35h2v1h-2zM32 35h3v1h-3zM4 36h7v1h-7zM12 36h1v1h-1zM16 36h1v1h-1zM18 36h2v1h-2zM21 36h1v1h-1zM24 36h1v1h-1zM28 36h4v1h-4zM34 36h2v1h-2z"/></svg></div>
+    <p>Сыграйте сами</p>
+  </figure>
+  <p class="s7-thanks">Спасибо!</p>
+  <aside class="notes">Наша клятва: любой ноутбук с камерой — это игра, тренер и урок движения. QR ведёт в игру — попробуйте сами, она откроется в браузере. А сейчас покажем вживую. Спасибо!</aside>
+</section>
+
+</main>
+
+<nav class="bar" aria-label="Навигация">
+  <button type="button" data-nav="prev" aria-label="Назад"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+  <span class="bar__n" aria-live="polite"></span>
+  <button type="button" data-nav="next" aria-label="Вперёд"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+  <button type="button" data-nav="full" aria-label="Во весь экран (F)"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
+</nav>
+<div class="prog" aria-hidden="true"><i></i></div>
+<div class="notes-box" hidden></div>
+
+<script>
+/* Клавиши: → пробел PageDown — вперёд (сначала шаги слайда); ← PageUp — назад; Home/End; F — полный экран;
+ * N — заметки докладчика. Щелчок по правой трети — вперёд, по левой — назад; на телефоне — свайп.
+ * Номер слайда — в адресе (#3). Вход назад и переход по номеру показывают слайд сразу целиком. */
+(function () {
+  'use strict';
+  var deck = document.getElementById('deck');
+  var slides = [].slice.call(deck.querySelectorAll('.slide'));
+  var bar = document.querySelector('.bar'), barN = bar.querySelector('.bar__n');
+  var prog = document.querySelector('.prog i'), notesBox = document.querySelector('.notes-box');
+  var reducedMQ = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  function reduced() { return !!(reducedMQ && reducedMQ.matches); }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function svg(tag, attrs, parent) { var e = document.createElementNS(SVGNS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+
+  /* ---------- Кисть: 21 точка MediaPipe. Координаты — настоящие, из dev/fixtures/hands/hagrid_images.json
+   * (MediaPipe HandLandmarker 0.10.35 по фото датасета HaGRID, CC BY-SA 4.0): запястье в начале координат,
+   * ось запястье → основание среднего пальца смотрит вверх, её длина — 1. «almost» — тот же «OK»
+   * с отведённым большим пальцем: так выглядит жест, который почти получился. */
+  var POSE = {
+    fist: [[0.000,0.000],[0.334,-0.213],[0.636,-0.560],[0.694,-0.849],[0.464,-0.878],[0.287,-1.011],[0.340,-1.092],[0.347,-0.752],[0.303,-0.686],[0.000,-1.000],[0.069,-1.065],[0.125,-0.651],[0.107,-0.650],[-0.252,-0.908],[-0.186,-1.002],[-0.086,-0.640],[-0.113,-0.620],[-0.491,-0.790],[-0.416,-0.858],[-0.312,-0.639],[-0.326,-0.600]],
+    open: [[0.000,0.000],[0.312,-0.194],[0.570,-0.475],[0.781,-0.697],[0.838,-0.931],[0.252,-0.978],[0.318,-1.348],[0.352,-1.552],[0.372,-1.721],[0.000,-1.000],[-0.026,-1.406],[-0.028,-1.640],[-0.035,-1.836],[-0.223,-0.920],[-0.314,-1.268],[-0.345,-1.478],[-0.366,-1.676],[-0.416,-0.766],[-0.580,-0.967],[-0.686,-1.113],[-0.769,-1.259]],
+    ok: [[0.000,0.000],[0.255,-0.121],[0.465,-0.279],[0.657,-0.418],[0.823,-0.572],[0.200,-0.885],[0.442,-1.063],[0.631,-0.946],[0.777,-0.787],[0.000,-1.000],[0.086,-1.462],[0.174,-1.760],[0.232,-2.020],[-0.224,-0.962],[-0.352,-1.438],[-0.430,-1.757],[-0.481,-2.025],[-0.444,-0.792],[-0.666,-1.102],[-0.804,-1.316],[-0.911,-1.522]],
+    almost: [[0.000,0.000],[0.255,-0.121],[0.465,-0.279],[0.702,-0.271],[0.927,-0.289],[0.200,-0.885],[0.442,-1.063],[0.631,-0.946],[0.777,-0.787],[0.000,-1.000],[0.086,-1.462],[0.174,-1.760],[0.232,-2.020],[-0.224,-0.962],[-0.352,-1.438],[-0.430,-1.757],[-0.481,-2.025],[-0.444,-0.792],[-0.666,-1.102],[-0.804,-1.316],[-0.911,-1.522]],
+  };
+  var BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+  var PALM = [0, 1, 5, 9, 13, 17];
+  function Hand(g) {
+    this.g = g; this.cx = +g.getAttribute('data-cx'); this.cy = +g.getAttribute('data-cy'); this.s = +g.getAttribute('data-s');
+    this.base = g.getAttribute('data-pose'); this.pose = POSE[this.base].map(function (p) { return p.slice(); });
+    var flesh = svg('g', { 'class': 'h-flesh' }, g);
+    this.palm = svg('polygon', {}, flesh);
+    this.fl = BONES.map(function () { return svg('line', {}, flesh); });
+    var bones = svg('g', { 'class': 'h-bones' }, g);
+    this.bl = BONES.map(function (b, i) { var l = svg('line', { 'class': 'h-bone', pathLength: 1 }, bones); l.style.setProperty('--d', (200 + i * 30) + 'ms'); return l; });
+    var pts = svg('g', { 'class': 'h-pts' }, g);
+    this.pt = this.pose.map(function (p, i) { var c = svg('circle', { 'class': 'h-pt', r: 11 }, pts); c.style.setProperty('--d', (i * 40) + 'ms'); return c; });
+    this.raf = 0; this.draw();
+  }
+  Hand.prototype.xy = function (i) { var p = this.pose[i]; return [this.cx + p[0] * this.s, this.cy + p[1] * this.s]; };
+  Hand.prototype.draw = function () {
+    var self = this, P = this.pose.map(function (p, i) { return self.xy(i); });
+    this.palm.setAttribute('points', PALM.map(function (i) { return P[i][0].toFixed(1) + ',' + P[i][1].toFixed(1); }).join(' '));
+    BONES.forEach(function (b, i) {
+      [self.fl[i], self.bl[i]].forEach(function (l) { l.setAttribute('x1', P[b[0]][0].toFixed(1)); l.setAttribute('y1', P[b[0]][1].toFixed(1)); l.setAttribute('x2', P[b[1]][0].toFixed(1)); l.setAttribute('y2', P[b[1]][1].toFixed(1)); });
+    });
+    this.pt.forEach(function (c, i) { c.setAttribute('cx', P[i][0].toFixed(1)); c.setAttribute('cy', P[i][1].toFixed(1)); });
+    if (this.onDraw) this.onDraw();
+  };
+  Hand.prototype.set = function (name) { cancelAnimationFrame(this.raf); this.pose = POSE[name].map(function (p) { return p.slice(); }); this.draw(); };
+  Hand.prototype.morph = function (name, ms, done) {
+    var self = this, from = this.pose.map(function (p) { return p.slice(); }), to = POSE[name], t0 = 0;
+    cancelAnimationFrame(this.raf);
+    if (reduced()) { this.set(name); if (done) done(); return; }
+    (function tick(t) {
+      if (!t0) t0 = t;
+      var u = Math.min(1, (t - t0) / ms), e = u < .5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+      self.pose = from.map(function (p, i) { return [p[0] + (to[i][0] - p[0]) * e, p[1] + (to[i][1] - p[1]) * e]; });
+      self.draw();
+      if (u < 1) self.raf = requestAnimationFrame(tick); else if (done) done();
+    })(performance.now());
+  };
+  Hand.prototype.center = function () { var x = 0, y = 0; PALM.forEach(function (i) { var p = this.xy(i); x += p[0]; y += p[1]; }, this); return [x / PALM.length, y / PALM.length]; };
+
+  /* ---------- Слайд 3: кадр → 21 точка → геометрия → жест → удар */
+  var CTL = {};
+  CTL.scheme = function (el) {
+    var svgEl = el.querySelector('.cam svg'), hand = new Hand(el.querySelector('.hand'));
+    var scan = el.querySelector('.scan'), chips = el.querySelector('.chips'), shot = el.querySelector('.shot');
+    var c = hand.center();
+    var charge = svg('circle', { 'class': 'charge', cx: c[0].toFixed(1), cy: (c[1] - 30).toFixed(1), r: 205, pathLength: 1, transform: 'rotate(-90 ' + c[0].toFixed(1) + ' ' + (c[1] - 30).toFixed(1) + ')' });
+    svgEl.insertBefore(charge, hand.g);
+    var curls = [6, 10, 14, 18].map(function (i, k) { var a = svg('circle', { 'class': 'curl', r: 24 }, svgEl); a.style.setProperty('--d', (k * 90) + 'ms'); return a; });
+    hand.onDraw = function () { [6, 10, 14, 18].forEach(function (i, k) { var p = hand.xy(i); curls[k].setAttribute('cx', p[0].toFixed(1)); curls[k].setAttribute('cy', p[1].toFixed(1)); }); };
+    hand.draw();
+    var rays = svg('g', { 'class': 'rays' }, svgEl);
+    for (var i = 0; i < 14; i++) {
+      var a = i / 14 * Math.PI * 2, r0 = 120, r1 = 300;
+      var ry = svg('line', { 'class': 'ray', pathLength: 1, 'stroke-dasharray': '.45 1',
+        x1: (c[0] + Math.cos(a) * r0).toFixed(1), y1: (c[1] - 60 + Math.sin(a) * r0).toFixed(1),
+        x2: (c[0] + Math.cos(a) * r1).toFixed(1), y2: (c[1] - 60 + Math.sin(a) * r1).toFixed(1) }, rays);
+      ry.style.animationDelay = (i % 3) * 40 + 'ms';
+    }
+    svgEl.appendChild(shot);
+    var timers = [];
+    function clear() { timers.forEach(clearTimeout); timers = []; }
+    function chip(n, on) { el.querySelector('[data-chip="' + n + '"]').classList.toggle('lit', on); }
+    return {
+      render: function (k, anim) {
+        clear();
+        el.querySelectorAll('.flow li').forEach(function (li) {
+          var n = +li.getAttribute('data-row');
+          li.classList.toggle('is-done', n < k); li.classList.toggle('is-cur', n === k);
+        });
+        hand.g.querySelector('.h-flesh').style.opacity = k >= 2 ? .55 : 1;
+        if (anim && k === 1) { scan.classList.remove('run'); void scan.getBBox(); scan.classList.add('run'); }
+        hand.g.classList.toggle('pts-on', k >= 2);
+        curls.forEach(function (a) { a.style.opacity = k === 3 ? 1 : 0; });
+        chips.classList.toggle('on', k >= 3);
+        chip(1, k >= 3); chip(2, k >= 4); chip(3, k >= 4 && !anim || k >= 5);
+        charge.classList.toggle('on', k === 3);
+        if (k === 3) {
+          charge.classList.remove('fill');
+          if (anim) { void charge.getBBox(); timers.push(setTimeout(function () { charge.classList.add('fill'); }, 60)); }
+          else charge.classList.add('fill');
+        } else charge.classList.remove('fill');
+        if (k >= 4) {
+          if (anim && k === 4) {
+            hand.set('fist');
+            timers.push(setTimeout(function () {
+              hand.morph('open', 220, function () { chip(3, true); rays.classList.remove('go'); void rays.getBBox(); rays.classList.add('go'); });
+            }, 350));
+          } else { hand.set('open'); chip(3, true); }
+        } else { hand.set('fist'); rays.classList.remove('go'); }
+        shot.classList.toggle('on', k >= 5);
+      },
+      stop: clear
+    };
+  };
+
+  /* ---------- Слайд 4: «OK» почти получился → подсказка игры (точки 4 и 8, «СОМКНИ») → исправили */
+  CTL.error = function (el) {
+    var svgEl = el.querySelector('.cam svg'), hand = new Hand(el.querySelector('.hand'));
+    var link = el.querySelector('.mark-link'), ring = el.querySelector('.mark-ring'), lbl = el.querySelector('.mark-lbl');
+    var card = el.querySelector('.card'), num = el.querySelector('[data-count]');
+    var state = 'idle';
+    hand.onDraw = function () {
+      var a = hand.xy(4), b = hand.xy(8);
+      link.setAttribute('x1', a[0].toFixed(1)); link.setAttribute('y1', a[1].toFixed(1)); link.setAttribute('x2', b[0].toFixed(1)); link.setAttribute('y2', b[1].toFixed(1));
+      var mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      ring.setAttribute('cx', mx.toFixed(1)); ring.setAttribute('cy', my.toFixed(1));
+      lbl.setAttribute('transform', 'translate(' + (Math.max(a[0], b[0]) + 40).toFixed(1) + ' ' + (my - 23).toFixed(1) + ')');
+    };
+    hand.draw();
+    svgEl.appendChild(link); svgEl.appendChild(ring); svgEl.appendChild(lbl);
+    function marks(on, ok) {
+      [hand.pt[4], hand.pt[8]].forEach(function (c) { c.classList.toggle('is-err', on && !ok); c.classList.toggle('is-ok', on && ok); });
+      [link, ring, lbl].forEach(function (e) { e.classList.toggle('on', on); e.classList.toggle('is-ok', !!ok); });
+      lbl.querySelector('text').textContent = ok ? 'ЕСТЬ' : 'СОМКНИ';
+      lbl.querySelector('rect').setAttribute('width', ok ? 104 : 150);
+      card.classList.toggle('is-ok', !!ok);
+    }
+    var cntRaf = 0;
+    function count(anim) {
+      cancelAnimationFrame(cntRaf);
+      var to = +num.getAttribute('data-count');
+      if (!anim || reduced()) { num.textContent = to; return; }
+      var t0 = 0;
+      (function tick(t) { if (!t0) t0 = t; var u = Math.min(1, (t - t0) / 700); num.textContent = Math.round(to * (1 - Math.pow(1 - u, 3))); if (u < 1) cntRaf = requestAnimationFrame(tick); })(performance.now());
+    }
+    return {
+      render: function (k, anim) {
+        if (k >= 2) {
+          if (anim && k === 2) { hand.set('almost'); marks(true, false); hand.morph('ok', 650, function () { marks(true, true); }); }
+          else if (state !== 'ok' || !anim) { hand.set('ok'); marks(true, true); }
+          state = 'ok';
+        } else { hand.set('almost'); marks(k >= 1, false); state = k >= 1 ? 'err' : 'idle'; }
+        if (k === 3) count(anim); else if (k < 3) num.textContent = num.getAttribute('data-count');
+      },
+      stop: function () { cancelAnimationFrame(cntRaf); }
+    };
+  };
+
+  /* ---------- Слайд 5: шторка «было → стало» сама едет к середине, дальше тянется мышью или пальцем */
+  CTL.wipe = function (el) {
+    var w = el.querySelector('.wipe'), t = 0;
+    function put(e) { var r = w.getBoundingClientRect(); if (!r.width) return; var x = Math.min(100, Math.max(0, (e.clientX - r.left) / r.width * 100)); clearTimeout(t); w.style.setProperty('--x', x.toFixed(2) + '%'); }
+    w.addEventListener('pointerdown', function (e) { if (e.button > 0) return; e.preventDefault(); try { w.setPointerCapture(e.pointerId); } catch (err) { /* без захвата */ } w.classList.add('is-drag'); put(e); });
+    w.addEventListener('pointermove', function (e) { if (w.classList.contains('is-drag')) put(e); });
+    w.addEventListener('pointerup', function () { w.classList.remove('is-drag'); });
+    w.addEventListener('pointercancel', function () { w.classList.remove('is-drag'); });
+    return {
+      enter: function (fresh) {
+        clearTimeout(t); w.style.removeProperty('--x');
+        if (!fresh || reduced()) return;
+        w.classList.add('is-drag'); w.style.setProperty('--x', '100%'); void w.offsetWidth; w.classList.remove('is-drag');
+        t = setTimeout(function () { w.style.removeProperty('--x'); }, 500);
+      },
+      render: function () {},
+      stop: function () { clearTimeout(t); }
+    };
+  };
+
+  /* ---------- Навигация */
+  var ctl = slides.map(function (el) { var k = el.getAttribute('data-ctl'); return k && CTL[k] ? CTL[k](el) : null; });
+  var cur = -1, shown = 0, runT = 0;
+  function maxOf(el) {
+    var m = +el.getAttribute('data-steps') || 0;
+    el.querySelectorAll('[data-step]').forEach(function (e) { m = Math.max(m, +e.getAttribute('data-step')); });
+    return m;
+  }
+  function setStep(k, anim) {
+    var el = slides[cur]; shown = k;
+    el.querySelectorAll('[data-step]').forEach(function (e) { e.classList.toggle('is-shown', +e.getAttribute('data-step') <= k); });
+    for (var i = 1; i <= 5; i++) el.classList.toggle('st-' + i, i <= k);
+    if (ctl[cur]) ctl[cur].render(k, anim && !reduced());
+    ui();
+  }
+  function stopRun() { clearTimeout(runT); runT = 0; }
+  function go(i, mode) {
+    i = Math.max(0, Math.min(slides.length - 1, i));
+    if (i === cur) return;
+    stopRun();
+    var prev = slides[cur];
+    if (prev) { prev.classList.remove('is-on'); if (ctl[cur]) ctl[cur].stop(); }
+    cur = i;
+    var el = slides[cur], fresh = mode === 'fwd' && !reduced();
+    el.classList.toggle('is-instant', !fresh);
+    setStep(fresh ? 0 : maxOf(el), false);
+    void el.offsetWidth;
+    el.classList.remove('is-instant');
+    el.classList.add('is-on');
+    if (ctl[cur] && ctl[cur].enter) ctl[cur].enter(fresh);
+    try { history.replaceState(null, '', '#' + (cur + 1)); } catch (e) { /* file:// в старых браузерах */ }
+    document.title = cur === 0 ? 'Питч ASHEN OATH' : 'ASHEN OATH · ' + el.getAttribute('data-title');
+    ui();
+  }
+  function next() { stopRun(); var el = slides[cur]; if (shown < maxOf(el)) setStep(shown + 1, true); else go(cur + 1, 'fwd'); }
+  function prev() { stopRun(); go(cur - 1, 'back'); }
+  function ui() {
+    var el = slides[cur], m = maxOf(el);
+    barN.textContent = pad(cur + 1) + ' / ' + pad(slides.length);
+    prog.style.setProperty('--p', ((cur + (m ? shown / (m + 1) : 0)) / (slides.length - 1)).toFixed(4));
+    var n = el.querySelector('.notes');
+    if (!notesBox.hidden) notesBox.textContent = n ? n.textContent : '';
+  }
+  // Кнопки демонстрации внутри слайда
+  function demo(action) {
+    var el = slides[cur], m = maxOf(el);
+    stopRun();
+    if (action === 'reset') { setStep(0, false); return; }
+    if (action === 'next') { if (shown < m) setStep(shown + 1, true); return; }
+    if (action === 'check') { setStep(1, true); return; }
+    if (action === 'fix') { setStep(Math.max(2, shown < 2 ? 2 : shown), true); return; }
+    if (action === 'run') {
+      if (shown >= m) setStep(0, false);
+      (function tick() { if (shown < m) { setStep(shown + 1, true); runT = setTimeout(tick, shown === 3 ? 1500 : 1300); } })();
+    }
+  }
+
+  function fit() { document.documentElement.style.setProperty('--s', Math.min(window.innerWidth / 1920, window.innerHeight / 1080)); }
+  function fullscreen() {
+    var d = document;
+    if (!d.fullscreenElement) { if (d.documentElement.requestFullscreen) d.documentElement.requestFullscreen().catch(function () {}); }
+    else if (d.exitFullscreen) d.exitFullscreen().catch(function () {});
+  }
+  var wakeT = 0;
+  function wake() { bar.classList.add('is-awake'); clearTimeout(wakeT); wakeT = setTimeout(function () { bar.classList.remove('is-awake'); }, 2200); }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    var c = e.code, t = e.target;
+    if (t && t.closest && t.closest('button, a') && (c === 'Enter' || c === 'Space')) return;
+    if (c === 'ArrowRight' || c === 'ArrowDown' || c === 'Space' || c === 'PageDown' || c === 'Enter') { next(); e.preventDefault(); }
+    else if (c === 'ArrowLeft' || c === 'ArrowUp' || c === 'PageUp' || c === 'Backspace') { prev(); e.preventDefault(); }
+    else if (c === 'Home') { go(0, 'jump'); e.preventDefault(); }
+    else if (c === 'End') { go(slides.length - 1, 'jump'); e.preventDefault(); }
+    else if (c === 'KeyF' && !e.repeat) { fullscreen(); e.preventDefault(); }
+    else if (c === 'KeyN' && !e.repeat) { notesBox.hidden = !notesBox.hidden; ui(); }
+  });
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    var nb = t.closest && t.closest('[data-nav]');
+    if (nb) { var k = nb.getAttribute('data-nav'); if (k === 'prev') prev(); else if (k === 'next') next(); else fullscreen(); return; }
+    var db = t.closest && t.closest('[data-demo]');
+    if (db) { demo(db.getAttribute('data-demo')); return; }
+    if (t.closest && t.closest('a, button, [data-interactive], .notes-box')) return;
+    var x = e.clientX / window.innerWidth;
+    if (x > .67) next(); else if (x < .33) prev();
+  });
+  var tx = null, ty = null;
+  document.addEventListener('touchstart', function (e) { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    if (tx === null) return;
+    var t = e.target; if (t.closest && t.closest('[data-interactive]')) { tx = null; return; }
+    var dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = ty = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.3) { if (dx < 0) next(); else prev(); }
+  });
+  document.addEventListener('mousemove', wake, { passive: true });
+  window.addEventListener('resize', fit);
+  window.addEventListener('hashchange', function () { var k = parseInt(location.hash.slice(1), 10); if (k) go(k - 1, 'jump'); });
+  // Печать: каждый слайд — в конечном состоянии
+  function printAll() { slides.forEach(function (el, i) { var keep = cur; cur = i; setStep(maxOf(el), false); cur = keep; }); }
+  window.addEventListener('beforeprint', printAll);
+
+  fit();
+  var start = parseInt((location.hash || '').slice(1), 10);
+  go(start ? start - 1 : 0, start > 1 ? 'jump' : 'fwd');
+  wake();
+  window.DECK = { go: function (n) { go(n - 1, 'jump'); }, next: next, prev: prev, demo: demo, printAll: printAll, get n() { return cur + 1; }, get step() { return shown; } };
+})();
+</script>
 </body>
 </html>
