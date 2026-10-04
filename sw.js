@@ -17,7 +17,7 @@
 'use strict';
 
 // <AO_MANIFEST> — генерирует node tools/sw_manifest.mjs, руками не править
-const VERSION = '73ed0c9b11de';
+const VERSION = 'c3bed10ca5df';
 const VENDOR_VERSION = 'b3f563930682';
 const SHELL = [
   "./",
@@ -72,6 +72,7 @@ const SHELL = [
   "modules/coach.css",
   "modules/combat.js",
   "modules/combatHand.js",
+  "modules/coop.js",
   "modules/effects.js",
   "modules/elfVillage.js",
   "modules/fx/bolts.js",

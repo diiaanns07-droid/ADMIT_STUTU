@@ -43,6 +43,13 @@ export function createNetLobby({ root, actions }) {
     local: el('button', { type: 'button', class: 'nl-seg', 'data-mode': 'local', text: 'Две вкладки' }),
   };
   for (const [m, b] of Object.entries(modeBtns)) b.addEventListener('click', () => A.mode && A.mode(m));
+  // [КООП] что играем: дуэль друг с другом или вдвоём против Регента (выбирает хост, гость видит его выбор)
+  const gameBtns = {
+    duel: el('button', { type: 'button', class: 'nl-seg', 'data-game': 'duel', text: 'Дуэль' }),
+    coop: el('button', { type: 'button', class: 'nl-seg', 'data-game': 'coop', text: 'Вместе против Регента' }),
+  };
+  for (const [g, b] of Object.entries(gameBtns)) b.addEventListener('click', () => A.coop && A.coop(g === 'coop'));
+  const gameHint = el('p', { class: 'nl-hint' });
   const lanIn = el('input', { class: 'nl-input nl-input--mono', type: 'text', inputmode: 'decimal', placeholder: '192.168.1.23', spellcheck: 'false', 'aria-label': 'IP ноутбука-хоста' });
   const lanHint = el('p', { class: 'nl-hint' });
   const lanCheckBtn = el('button', { type: 'button', class: 'nl-btn nl-btn--small', text: 'Проверить' });
@@ -86,11 +93,12 @@ export function createNetLobby({ root, actions }) {
   leaveBtn.addEventListener('click', () => A.leave && A.leave());
   const countdown = el('div', { class: 'nl-countdown', 'aria-live': 'assertive' });
   const lanIpLine = el('div', { class: 'nl-lanip' });
+  const vsSep = el('div', { class: 'nl-vs__sep', text: 'VS' });
   const roomBox = el('div', { class: 'nl-room' },
     el('div', { class: 'nl-code-label', text: 'Код комнаты' }),
     el('div', { class: 'nl-coderow' }, codeBig, copyBtn),
     lanIpLine,
-    el('div', { class: 'nl-vs' }, meCard, el('div', { class: 'nl-vs__sep', text: 'VS' }), oppCard),
+    el('div', { class: 'nl-vs' }, meCard, vsSep, oppCard),
     countdown,
     el('div', { class: 'nl-roomrow' }, readyBtn, leaveBtn));
 
@@ -110,11 +118,13 @@ export function createNetLobby({ root, actions }) {
   const panel = el('section', { class: 'nl-panel', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'nl-title' },
     el('header', { class: 'nl-head' },
       el('div', { class: 'nl-head__orn', 'aria-hidden': 'true' }),
-      el('h2', { class: 'nl-title', id: 'nl-title', text: 'Онлайн-дуэль' }),
+      el('h2', { class: 'nl-title', id: 'nl-title', text: 'Онлайн вдвоём' }),
       el('p', { class: 'nl-sub', text: 'Два героя, два ноутбука, одна арена' }),
       closeBtn),
     el('div', { class: 'nl-grid' },
       el('div', { class: 'nl-col' },
+        el('div', { class: 'nl-label', text: 'Игра' }),
+        el('div', { class: 'nl-segs', role: 'group', 'aria-label': 'Что играем' }, gameBtns.duel, gameBtns.coop), gameHint,
         el('label', { class: 'nl-label', text: 'Имя' }), nameIn,
         el('div', { class: 'nl-label', text: 'Герой' }), heroBox,
         el('div', { class: 'nl-label', text: 'Связь' }),
@@ -158,6 +168,16 @@ export function createNetLobby({ root, actions }) {
     }
     const inRoom = v.status !== 'idle' || !!v.code;
     // режим
+    for (const [g, b] of Object.entries(gameBtns)) {
+      const onG = (g === 'coop') === !!v.coop;
+      b.classList.toggle('is-on', onG);
+      b.setAttribute('aria-pressed', onG ? 'true' : 'false');
+      b.disabled = !v.isHost && v.status !== 'idle';   // в комнате выбирает хост
+    }
+    gameHint.textContent = v.coop
+      ? 'Вдвоём против одного Регента: урон складывается, победа общая. Регент атакует каждого на его экране.'
+      : 'Друг против друга: раунды до двух побед.';
+    vsSep.textContent = v.coop ? '+' : 'VS';
     for (const [m, b] of Object.entries(modeBtns)) {
       b.classList.toggle('is-on', v.mode === m);
       b.setAttribute('aria-pressed', v.mode === m ? 'true' : 'false');
@@ -188,7 +208,7 @@ export function createNetLobby({ root, actions }) {
     if (v.code !== lastRenderedCode) { codeBig.textContent = v.code || '····'; lastRenderedCode = v.code; }
     copyBtn.hidden = !(v.isHost && v.code);
     card(meCard, { title: v.isHost ? 'Вы · хост' : 'Вы', name: v.name, hero: (v.heroes.find((h) => h.id === v.hero) || {}).name || v.hero, ready: v.meReady });
-    card(oppCard, { title: 'Соперник', name: v.opponent && v.opponent.name, hero: v.opponent && v.opponent.heroName, ready: v.oppReady, empty: !v.opponent || v.status === 'idle' });
+    card(oppCard, { title: v.coop ? 'Напарник' : 'Соперник', name: v.opponent && v.opponent.name, hero: v.opponent && v.opponent.heroName, ready: v.oppReady, empty: !v.opponent || v.status === 'idle' });
     readyBtn.disabled = v.status !== 'connected' || v.started;
     readyBtn.textContent = v.meReady ? 'Не готов' : 'Готов';
     readyBtn.classList.toggle('is-on', v.meReady);

@@ -493,6 +493,24 @@ const STRETCH_CARDS = [
     tip: 'Сомкни ладони, подержи и резко растяни: одну руку вверх, другую вниз.', keyText: 'G — держать и отпустить',
     pic: picWrap('mini', PALMS_TOGETHER + '<g class="pic-arrows"><path d="M104 36 V6 M92 18 L104 6 L116 18 M104 178 V214 M92 202 L104 214 L116 202"/></g>') },
 ];
+// Печати «Мастера» (core/handGestures.js: clap, frame, twin → delta/cor; цифры — combat.js sigils):
+// по карточке на печать, со схемой движения — одной строки в общем списке не хватало.
+const SEAL_CARDS = [
+  { id: 'clap', title: 'Хлопок', effect: 'гасит снаряды вокруг, Регент рядом получает урон и оглушение на 1,2 с',
+    tip: 'Раскрытые ладони на уровне груди быстро сведи вместе — как хлопок в ладоши.', keyText: 'Z',
+    pic: picWrap('mini', PALMS_TOGETHER + '<g class="pic-arrows"><path d="M104 30 V8 M80 36 L66 20 M128 36 L142 20"/></g>') },
+  { id: 'frame', title: 'Рамка', effect: 'метка на Регента: +30 % урона на 8 с',
+    tip: 'Обе руки — буквой «Г»: указательный вверх, большой в сторону, остальные согнуты. Одна рука выше, другая ниже — по диагонали. Держи 0,3 с.', keyText: 'C',
+    pic: picWrap('mini', '<path class="pic-line" d="M40 40 H168 V180 H40 Z"/><g class="pic-arrows"><path d="M40 100 V40 H100 M168 120 V180 H108"/></g>') },
+  { id: 'delta', title: 'Дельта ▲', effect: 'луч: 4 удара по Регенту и гасит его сферы на линии',
+    tip: 'Сведи кончики указательных (большие пальцы врозь) и замри. Обе руки зеркально рисуют треугольник: вниз-наружу, потом по основанию навстречу, пока кончики не сойдутся. Крупно, за 3 с.', keyText: 'V',
+    pic: picWrap('mini', '<path class="pic-line" d="M104 34 L184 186 H24 Z"/><g class="pic-arrows"><circle cx="104" cy="34" r="7"/>' +
+      '<path d="M149 105 L148 118 L137 111 M71 111 L60 118 L59 105 M147 193 L136 186 L147 179 M61 179 L72 186 L61 193"/></g>') },
+  { id: 'cor', title: 'Кор ♥', effect: 'лечение +45 HP за 3 с и оберег от одного удара',
+    tip: 'Кончики указательных вместе сверху. Каждая рука ведёт дугу вверх, наружу и вниз к острию сердца — там кончики снова сходятся. Крупно, за 3 с.', keyText: 'Shift+B',
+    pic: picWrap('mini', '<path class="pic-line" d="M104 68 C104 40 128 26 150 29 C178 33 196 56 192 84 C188 120 140 150 104 191 C68 150 20 120 16 84 C12 56 30 33 58 29 C80 26 104 40 104 68 Z"/>' +
+      '<g class="pic-arrows"><circle cx="104" cy="68" r="7"/><path d="M141 22 L152 29 L141 35 M67 35 L56 29 L67 22 M173 133 L160 136 L163 123 M45 123 L48 136 L35 133"/></g>') },
+];
 // Маленькие (статичные) — для полосы шагов, итога и «Книги заклинаний».
 const TRAINER_MINI = {
   walk: picWrap('mini', '<path class="pic-line" d="M8 104 H200"/><g transform="translate(14 22) scale(0.82)">' + handG(HAND_OPEN, 'left') + '</g>'),
@@ -1664,7 +1682,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     // [ONBOARD] одна большая кнопка «Играть»: камера, калибровка и обучение дальше идут сами
     const start = btn(cfg.quickStart ? 'Играть' : 'Начать', () => invoke('onStart', { from: 'menu' }), { variant: 'primary', size: cfg.quickStart ? 'xl' : 'lg' });
     const oathBtn = btn('Клятва героя', () => invoke('onOath', { from: 'menu' }), { variant: 'secondary' });
-    const netBtn = btn('Онлайн-дуэль', () => invoke('onNet', { from: 'menu' }), { variant: 'secondary' }); // [NET] экран лобби — modules/netLobby.js
+    const netBtn = btn('Онлайн вдвоём', () => invoke('onNet', { from: 'menu' }), { variant: 'secondary' }); // [NET] экран лобби — modules/netLobby.js
     const bookM = localBtn('Книга заклинаний', (e) => openBook(e && e.currentTarget), { iconName: 'book' }); // [ТРЕНАЖЁР] все жесты
     // [ПРОЕКТОР] в окне до 1200 px высотой «Настройки» свёрнуты, чтобы меню влезало без прокрутки; кнопка раскрывает их на месте
     const setBody = el('div', { class: 'ao-menu__setbody', id: `${uid}-menu-set` }, buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'difficulty', 'reducedMotion'], 'menu'));
@@ -2568,6 +2586,13 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         el('h3', { class: 'ao-h3', text: `${st.title} → ${st.effect}` }), el('p', { class: 'ao-tut-gesture', text: st.tip }), key);
       return { key, node };
     });
+    const sealCards = SEAL_CARDS.map((st) => {
+      const key = el('p', { class: 'ao-book-card__key', hidden: true, text: `Отладка: ${st.keyText}` });
+      const node = el('article', { class: 'ao-book-card', 'data-side': 'both', 'data-seal': st.id },
+        el('div', { class: 'ao-book-card__pic', html: st.pic }), el('p', { class: 'ao-trn-hand', text: 'Обе руки · «Мастер»' }),
+        el('h3', { class: 'ao-h3', text: `${st.title} → ${st.effect}` }), el('p', { class: 'ao-tut-gesture', text: st.tip }), key);
+      return { key, node };
+    });
     const paintBasic = (moveMode, debug) => {
       for (const c of basicCards) {
         const v = c.st.stick && moveMode === 'stick' ? { ...c.st, ...c.st.stick } : c.st;
@@ -2576,6 +2601,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         setHidden(c.key, !debug);
       }
       for (const c of magicCards) setHidden(c.key, !debug);
+      for (const c of sealCards) setHidden(c.key, !debug);
     };
     paintBasic('steer', false);
     const basic = el('div', { class: 'ao-book-basic' }, basicCards.map((c) => c.node));
@@ -2586,7 +2612,9 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
         el('p', { class: 'ao-lead', text: 'Эти жесты учит тренажёр «Научись за 60 секунд» перед боем. Их хватает, чтобы победить.' }), basic,
         el('p', { class: 'ao-lead ao-book-magic__lead', text: 'Мощная магия двух ладоней: сомкни ладони → растяни. Работает в обоих режимах.' }), magic),
       adv: el('div', { class: 'ao-book-pane', role: 'tabpanel', id: `${uid}-book-adv`, 'aria-labelledby': `${uid}-book-tab-adv`, hidden: true },
-        el('p', { class: 'ao-lead', text: 'Рывок, искра, рассечение, парирование, руны ▲ ϟ ○ ★ @ ∞ ^ ∨ ⧗ ℓ, печати двумя руками, лук и стихии.' }), grid),
+        el('p', { class: 'ao-lead', text: 'Печати двумя руками — в режиме «Мастер». Схема показывает, куда ведут руки.' }),
+        el('div', { class: 'ao-book-basic ao-book-magic ao-book-seals' }, sealCards.map((c) => c.node)),
+        el('p', { class: 'ao-lead ao-book-magic__lead', text: 'Рывок, искра, рассечение, парирование, руны ▲ ϟ ○ ★ @ ∞ ^ ∨ ⧗ ℓ, лук и стихии.' }), grid),
     };
     for (const [key, label] of TABS) {
       const t = el('button', { type: 'button', class: 'ao-book-tab', role: 'tab', id: `${uid}-book-tab-${key}`, 'aria-controls': `${uid}-book-${key}`, 'aria-selected': key === 'basic' ? 'true' : 'false', 'data-ui-local': '', text: label });
