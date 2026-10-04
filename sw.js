@@ -393,8 +393,8 @@ async function networkFirst(e, req, cacheName, timeoutMs) {
   });
   const fromCache = async () => (await cache.match(req, { ignoreSearch: true }))
     || (await caches.match(req, { ignoreSearch: true }))
-    // страницы вне игры (презентация pitch/) не подменяем игрой: на медленной сети — ждём сеть
-    || (req.mode === 'navigate' && !/\/pitch\//.test(new URL(req.url).pathname) ? (await caches.match(abs('index.html'))) || (await caches.match(abs('./'))) : undefined);
+    // страницы вне игры (презентация pitch/, видео docs/) не подменяем игрой: на медленной сети — ждём сеть
+    || (req.mode === 'navigate' && !/\/(pitch|docs)\//.test(new URL(req.url).pathname) ? (await caches.match(abs('index.html'))) || (await caches.match(abs('./'))) : undefined);
   if (timeoutMs > 0) {
     const first = await Promise.race([net.catch(() => 'fail'), new Promise((r) => setTimeout(r, timeoutMs, 'slow'))]);
     if (first !== 'slow' && first !== 'fail') return first;
