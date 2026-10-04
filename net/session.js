@@ -17,6 +17,7 @@ import { createRemotePlayer } from '../modules/remotePlayer.js';
 const ST_EVERY_MS = 50;    // 20 Гц
 const LAST_KEY = 'ashen-oath.net.last';
 const MODE_KEY = 'ashen-oath.net.mode';
+const COOP_KEY = 'ashen-oath.net.coop';   // [КООП] «Вместе против Регента» вместо дуэли
 const LAST_TTL_MS = 15 * 60 * 1000;   // хост перезагрузил страницу — та же комната ещё 15 минут
 function readLast() {
   try { const v = JSON.parse(localStorage.getItem(LAST_KEY) || 'null'); return v && Date.now() - v.at < LAST_TTL_MS && isValidRoomCode(v.code) ? v : null; } catch (e) { return null; }
@@ -45,6 +46,7 @@ function urlOpts() {
     if (q.get('netHero')) o.hero = q.get('netHero');
     if (q.get('lanHost')) o.lanHost = q.get('lanHost');
     if (q.has('netReady')) o.ready = true;
+    if (q.has('netCoop')) o.coop = true;                       // [КООП] тесты: хост сразу «Вместе против Регента»
   } catch (e) { /* ignore */ }
   return o;
 }
@@ -61,6 +63,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     inEvents: [], remoteProj: [], remoteProjAt: 0,
     lanHost: U.lanHost || (settings && settings.netLanHost) || '',
     lobbyOpen: false, busy: false, oppGone: false,
+    coop: U.coop || (() => { try { return localStorage.getItem(COOP_KEY) === '1'; } catch (e) { return false; } })(),   // [КООП] выбор хоста
     lanIps: null, lanCheck: '', netCheck: '',
   };
   const remote = createRemotePlayer({ THREE, scene, world, heroFactory, camera, heroes });
@@ -129,6 +132,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
       S.oppReady = !!m.ready;
       if (!S.oppReady) cancelStart(net.isHost);        // соперник передумал во время отсчёта
       if (m.name || m.hero) remote.setInfo({ name: m.name, hero: m.hero });
+      if (!net.isHost && typeof m.coop === 'boolean') S.coop = m.coop;   // [КООП] режим выбирает хост
       if (net.isHost) maybeGo();
       changed();
     });
@@ -136,6 +140,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
       if (net.isHost) return;
       if (m.cancel) { cancelStart(false); changed(); return; }
       if (!Number.isFinite(m.at)) return;
+      if (typeof m.coop === 'boolean') S.coop = m.coop;   // [КООП]
       // общее время хоста → мои часы; оценка смещения ещё не готова (странная задержка) — просто 3 с от сейчас
       let at = net.sharedToLocal(m.at);
       const d = at - performance.now();
@@ -261,7 +266,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
   function sendLobby() {
     if (!S.net) return;
     const p = profile();
-    S.net.send('lobby', { ready: S.meReady, name: p.name, hero: p.hero });
+    S.net.send('lobby', { ready: S.meReady, name: p.name, hero: p.hero, ...(S.net.isHost ? { coop: !!S.coop } : null) });
   }
   function setReady(on) {
     S.meReady = !!on;
@@ -281,7 +286,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     if (!net || !net.isHost || S.startTimer || S.started) return;
     if (!(S.meReady && S.oppReady && net.state === 'connected')) return;
     const at = net.sharedNow() + START_DELAY_MS;
-    net.send('go', { at });
+    net.send('go', { at, coop: !!S.coop });
     scheduleStart(net.sharedToLocal(at));
   }
   function scheduleStart(localAt) {
@@ -300,7 +305,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     S.startAt = 0;
     closeLobby();
     const net = S.net;
-    const info = { net, remote, isHost: net ? net.isHost : false, code: net ? net.code : null, opponent: net ? net.remote : null, mode: S.mode, seed: net && net.code ? hashCode(net.code) : 0 };
+    const info = { net, remote, isHost: net ? net.isHost : false, code: net ? net.code : null, opponent: net ? net.remote : null, mode: S.mode, seed: net && net.code ? hashCode(net.code) : 0, coop: !!S.coop };
     try { if (hooks.onReady) hooks.onReady(info); } catch (e) { console.error('[NET] onReady', e); }
     changed();
   }
@@ -376,7 +381,7 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
     const net = S.net;
     const p = profile();
     return {
-      mode: S.mode, status: net ? net.state : 'idle', busy: S.busy, message: S.message, error: S.error, errorCode: S.errorCode,
+      mode: S.mode, coop: !!S.coop, status: net ? net.state : 'idle', busy: S.busy, message: S.message, error: S.error, errorCode: S.errorCode,
       code: net ? net.code : null, isHost: net ? net.isHost : false, ping: net ? net.ping : 0,
       opponent: net && net.remote ? { ...net.remote, heroName: heroes && heroes[net.remote.hero] ? heroes[net.remote.hero].name : net.remote.hero } : null,
       meReady: S.meReady, oppReady: S.oppReady, startIn: S.startAt ? Math.max(0, S.startAt - performance.now()) : 0, started: S.started,
@@ -403,6 +408,12 @@ export function createNetSession({ THREE, scene, world, camera, heroFactory, her
           leave: () => leave(),
           close: () => closeLobby(),
           mode: (m2) => { if (!S.net || S.net.state === 'idle') { S.mode = m2; S.error = null; changed(); } },
+          coop: (on) => {   // [КООП] в комнате менять может только хост (и не во время отсчёта)
+            if (S.net && S.net.state !== 'idle' && (!S.net.isHost || S.startAt)) return;
+            S.coop = !!on;
+            try { localStorage.setItem(COOP_KEY, S.coop ? '1' : '0'); } catch (e) { /* ignore */ }
+            sendLobby(); changed();
+          },
           checkLan: (ip) => checkLan(ip),
           checkInternet: () => checkInternet(),
           profile: (patch) => { if (hooks.saveSettings) hooks.saveSettings(patch); if (S.net) S.net.setProfile(profile()); sendLobby(); changed(); },

@@ -1219,6 +1219,24 @@ export function createCombat({ config, bossBrain, layout } = {}) {
     if (B.hp <= 0) finish('victory');
   }
 
+  // [КООП] «Вместе против Регента» (modules/coop.js): урон напарника по общему Регенту — как есть,
+  // без комбо, ярости и статистики игрока; события не шлём (удар напарника рисует его ev из сети).
+  function coopDamage(amount) {
+    if ((PV && PV.on) || st.status !== 'playing' || !(amount > 0)) return 0;
+    const B = st.b;
+    const dealt = Math.min(B.hp, amount);
+    B.hp -= dealt;
+    if (B.hp < 1e-6) B.hp = 0;
+    if (B.hp <= 0) finish('victory');
+    return dealt;
+  }
+  // [КООП] здоровье Регента у хоста: у гостя оно не выше (догоняет пропущенный урон)
+  function coopSyncHp(hp) {
+    if ((PV && PV.on) || st.status !== 'playing' || !Number.isFinite(hp) || hp >= st.b.hp) return;
+    st.b.hp = Math.max(0, hp);
+    if (st.b.hp <= 0) finish('victory');
+  }
+
   // Результат удара босса определяется ДО событий (чистая функция).
   function outcomeFor(att) {
     const P = st.p;
@@ -2672,7 +2690,7 @@ export function createCombat({ config, bossBrain, layout } = {}) {
 
 
   reset();
-  return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig, setSpawn, get hand() { return hand; } /* [HAND] */,
+  return { reset, update, getSnapshot, drainEvents, getDebugInfo, getConfig, setUpgrades, getUpgrades, getEffectiveConfig, setSpawn, coopDamage, coopSyncHp, get hand() { return hand; } /* [HAND] */,
     setDifficulty, getDifficulty,   // [FEEL]
     setFury,   // [W3-ULT]
     attachPvp, setMode, getMode, setOpponent, applyRemoteHit };   // [PVP]

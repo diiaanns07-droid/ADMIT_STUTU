@@ -714,7 +714,7 @@ function leaveCamera() {
     app.pauseReason = why; setScreen('paused'); app.pauseReason = why;
     return;
   }
-  if (DEMO || chal.session.phase === 'armed' || (pvpCtl && pvpCtl.active && pvpCtl.inMatch)) { startFight(); return; }   // [W3-CHALLENGE] испытание — без обучения   // [PVP] дуэль уже идёт — обратно в бой
+  if (DEMO || chal.session.phase === 'armed' || (pvpCtl && pvpCtl.active && pvpCtl.inMatch) || (coop && coop.active)) { startFight(); return; }   // [КООП] напарник уже в бою   // [W3-CHALLENGE] испытание — без обучения   // [PVP] дуэль уже идёт — обратно в бой
   setScreen('tutorial');
 }
 
@@ -1101,6 +1101,7 @@ const callbacks = {
 
   onExit() {
     if (pvpCtl && pvpCtl.active) pvpCtl.stop();   // [PVP] выход из дуэли: бой возвращается к Регенту
+    stopCoop();                           // [КООП]
     challengeExit();                      // [W3-CHALLENGE] обычный бой: случайный seed, улучшения клятвы
     app.nav = [];
     app.resumableFight = false;
@@ -1133,6 +1134,7 @@ function openNet() {
           setDebug: (on) => callbacks.onDebug(on),
           onReady: (info) => {
             app.netInfo = info;
+            if (info.coop) { startCoop(info); return; }   // [КООП] «Вместе против Регента» — обычный бой с общим Регентом
             // [NET] хост и гость — на разных точках Поляны дуэлей (C7), друг напротив друга
             const duel = worldLayout && worldLayout.spawns && worldLayout.spawns.duel;
             if (Array.isArray(duel) && duel.length >= 2 && !info.spawn) info.spawn = duel[info.isHost ? 0 : 1];
@@ -1140,7 +1142,7 @@ function openNet() {
             app.introShown = true;                        // без облёта Регента
             if (app.debug) startFight(); else setScreen('camera');
           },
-          onLeave: () => { app.netInfo = null; if (pvpCtl && pvpCtl.active) pvpCtl.stop(true); },   // [PVP] соперник/лобби закрыты — дуэль кончилась
+          onLeave: () => { app.netInfo = null; stopCoop(); if (pvpCtl && pvpCtl.active) pvpCtl.stop(true); },   // [PVP] соперник/лобби закрыты — дуэль кончилась
           fxSupportsRemote: () => !!(effects && effects.supportsRemote),   // [NET] №7: true — эффекты сами рисуют события соперника
         },
       });
@@ -1275,6 +1277,19 @@ function finishCoach() {
   coachEnd = { ...s, prev, compare: compareCoach(s, prev) };
 }
 function resetCoach() { coachStats.reset(); coachEnd = null; coachEdge.attack = false; coachEdge.shield = false; }
+// [КООП] «Вместе против Регента» (modules/coop.js): героя напарника рисует net/session.js, здесь — общий Регент.
+// Оба у края арены, рядом; после калибровки — сразу в бой.
+let coop = null;
+function startCoop(info) {
+  stopCoop();
+  const s = edgeSpawn();
+  info.spawn = s ? { x: s.x + (info.isHost ? -2.5 : 2.5), z: s.z, yaw: s.yaw } : null;
+  const go = () => { app.introShown = true; if (app.debug || (vision && trackingReady())) startFight(); else setScreen('camera'); };
+  import('./modules/coop.js').then((m) => { coop = m.createCoop({ net: info.net, combat }); go(); })
+    .catch((e) => { console.error('[КООП] модуль не загрузился', e); go(); });
+}
+function stopCoop() { if (coop) { try { coop.stop(); } catch (e) { /* ignore */ } coop = null; } }
+
 // [PVP] дуэль игрок против игрока (modules/pvp.js, №3): грузится динамически; при ошибке — обычный бой.
 // ?pvp=local — две вкладки одного браузера (DEBUG, клавиатура). Лобби №2: window.__ashenPvp.start(net, {name, hero}).
 let pvpCtl = null;
@@ -2163,6 +2178,7 @@ function frame(now) {
     }
     events = adaptEvents(combat.drainEvents());
     if (pvpCtl && pvpCtl.active) { try { events = pvpCtl.afterUpdate(events); } catch (e) { console.error('[PVP] afterUpdate', e); } } // [PVP] сеть, раунды
+    if (coop) { try { coop.afterUpdate(events, now); } catch (e) { console.error('[КООП] afterUpdate', e); } } // [КООП] урон по общему Регенту
     timeEvents(events, now);
     lastSnapshot = combat.getSnapshot();
     try { ultEvents(events, now); } catch (e) { console.warn('[W3-ULT] события', e); }   // [W3-ULT]
@@ -2461,6 +2477,7 @@ window.__ASHEN__ = Object.freeze({
   voice: () => (voiceCoach ? voiceCoach.status() : null), // [W3-VOICE] голос, очередь, последние фразы
   technique: () => (techView ? JSON.parse(JSON.stringify({ ...techView, synthHands: null, synthPose: null, focus: techView.focus ? { ...techView.focus, pictogram: !!techView.focus.pictogram } : null })) : null), // [ТВИСТ «ОШИБКА»] QA тренажёра
   pvp: () => (pvpCtl ? pvpCtl.debug() : null),   // [PVP] QA: фаза, счёт, статистика дуэли
+  coop: () => (coop ? coop.debug() : null),   // [КООП] QA: отправлено/получено урона
   ult: () => ({ cine: ULT.cine ? { ...ULT.cine } : null, gesture: ULT.g ? { ...ULT.g } : null, rig: !!rig.cinematicActive, fx: !!(ULT.fx && ULT.fx.active) }),   // [W3-ULT] QA
   zoneMood: (m) => { try { world.atmosphere.setZoneMood(m); return true; } catch (e) { return false; } }, // [BDO] QA: настроение зоны
   heroMax: () => { const c = typeof combat.getEffectiveConfig === 'function' ? combat.getEffectiveConfig() : null; return c ? { hp: c.player.maxHp, energy: c.player.maxEnergy } : null; },
