@@ -118,7 +118,7 @@ export function createNetLobby({ root, actions }) {
   const panel = el('section', { class: 'nl-panel', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'nl-title' },
     el('header', { class: 'nl-head' },
       el('div', { class: 'nl-head__orn', 'aria-hidden': 'true' }),
-      el('h2', { class: 'nl-title', id: 'nl-title', text: 'Онлайн-дуэль' }),
+      el('h2', { class: 'nl-title', id: 'nl-title', text: 'Онлайн вдвоём' }),
       el('p', { class: 'nl-sub', text: 'Два героя, два ноутбука, одна арена' }),
       closeBtn),
     el('div', { class: 'nl-grid' },

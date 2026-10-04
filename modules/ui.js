@@ -1682,7 +1682,7 @@ export function createUI({ root, callbacks = {}, options = {} } = {}) {
     // [ONBOARD] одна большая кнопка «Играть»: камера, калибровка и обучение дальше идут сами
     const start = btn(cfg.quickStart ? 'Играть' : 'Начать', () => invoke('onStart', { from: 'menu' }), { variant: 'primary', size: cfg.quickStart ? 'xl' : 'lg' });
     const oathBtn = btn('Клятва героя', () => invoke('onOath', { from: 'menu' }), { variant: 'secondary' });
-    const netBtn = btn('Онлайн-дуэль', () => invoke('onNet', { from: 'menu' }), { variant: 'secondary' }); // [NET] экран лобби — modules/netLobby.js
+    const netBtn = btn('Онлайн вдвоём', () => invoke('onNet', { from: 'menu' }), { variant: 'secondary' }); // [NET] экран лобби — modules/netLobby.js
     const bookM = localBtn('Книга заклинаний', (e) => openBook(e && e.currentTarget), { iconName: 'book' }); // [ТРЕНАЖЁР] все жесты
     // [ПРОЕКТОР] в окне до 1200 px высотой «Настройки» свёрнуты, чтобы меню влезало без прокрутки; кнопка раскрывает их на месте
     const setBody = el('div', { class: 'ao-menu__setbody', id: `${uid}-menu-set` }, buildSettings(['moveMode', 'startZone', 'quality', 'volume', 'difficulty', 'reducedMotion'], 'menu'));
