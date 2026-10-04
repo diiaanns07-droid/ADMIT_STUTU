@@ -7,7 +7,7 @@
 | | |
 |---|---|
 | ▶ **Играть (деплой)** | **https://diiaanns07-droid.github.io/ADMIT_STUTU/** — Chrome или Edge, любая веб-камера |
-| 🎴 **Презентация** | [PDF, 12 слайдов](https://github.com/diiaanns07-droid/ADMIT_STUTU/raw/main/pitch/ASHEN_OATH_pitch.pdf) · [онлайн](https://diiaanns07-droid.github.io/ADMIT_STUTU/pitch/) · [HTML одним файлом](https://diiaanns07-droid.github.io/ADMIT_STUTU/pitch/ASHEN_OATH_pitch.html) (картинки внутри, сохраняется через Ctrl+S) |
+| 🎴 **Презентация** | [PDF, 13 слайдов](https://github.com/diiaanns07-droid/ADMIT_STUTU/raw/main/pitch/ASHEN_OATH_pitch.pdf) · [онлайн](https://diiaanns07-droid.github.io/ADMIT_STUTU/pitch/) · [HTML одним файлом](https://diiaanns07-droid.github.io/ADMIT_STUTU/pitch/ASHEN_OATH_pitch.html) (картинки и шрифты внутри, открывается без интернета) |
 | 🎬 **Запасное видео демо** | [70 с: бой, магия руками, «Дух игрока», «Небесный суд», тренер «ОШИБКА», «Кошмар»](https://diiaanns07-droid.github.io/ADMIT_STUTU/docs/video/ASHEN_OATH_demo_backup.mp4) |
 | 📖 **Подробная инструкция** | [README_RU.md](README_RU.md) — все жесты, тренировки, дуэль, решение проблем |
 
@@ -299,6 +299,7 @@ for f in tools/qa_node.mjs dev/*.test.mjs dev/*.test.js dev/controls.soak.mjs; d
 
 - **Казахский язык** — интерфейс, 63 подсказки и голосовые фразы. Тексты уже собраны в `core/gestureCoach.js`, `core/voicePhrases.js` и счётчиках упражнений, поэтому перевод не требует менять логику.
 - **Режим учителя для класса** — основа уже есть: «Испытание · 60 с» даёт всем одинаковую минуту боя, а «Зал славы дня» показывает рейтинг.
+- **Совместный бой онлайн** — двое против Регента. Связь между игроками уже есть: дуэль идёт напрямую через WebRTC (PeerJS), без своего сервера; останется синхронизировать босса.
 - **Пилот в школе** — игра работает без установки, офлайн и на слабых ноутбуках; дуэль работает по локальной сети.
 
 ---
