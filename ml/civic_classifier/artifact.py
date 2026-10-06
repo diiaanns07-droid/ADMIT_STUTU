@@ -97,7 +97,8 @@ def validate_payload(p):
     return p
 
 
-def read_registry(model_dir=MODEL_DIR):
+def read_registry(model_dir=None):
+    model_dir = model_dir or MODEL_DIR
     path = os.path.join(model_dir, REGISTRY_NAME)
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -109,8 +110,9 @@ def read_registry(model_dir=MODEL_DIR):
     return reg
 
 
-def load_artifact(name=None, model_dir=MODEL_DIR):
+def load_artifact(name=None, model_dir=None):
     """Load a registered artifact by *name* (registry key), verifying sha256."""
+    model_dir = model_dir or MODEL_DIR
     reg = read_registry(model_dir)
     name = name or reg["default"]
     entry = reg["artifacts"].get(name)
