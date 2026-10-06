@@ -3,7 +3,7 @@ R08 -> R01/R06: ИНТЕГРАЦИЯ КЛАССИФИКАТОРА ТЕМ (civic-
 Источник: https://github.com/diiaanns07-droid/ADMIT_STUTU ветка claude/eager-hawking-4up40k
 (среда сессии R08 была ADMIT_STUTU, не GOV_DIPLOME; истории не связаны —
 импортировать КОПИРОВАНИЕМ путей, не merge). Пути для импорта:
-  ml/civic_classifier/            (код, data/, model/, документация; ~2.5 МБ)
+  ml/civic_classifier/            (код, data/, model/, документация; ~2.2 МБ)
   tests/civic/R08/
 Зависимости: только стандартная библиотека Python. Корневые requirements не меняются.
 Пакет ml/ — namespace package (ml/__init__.py не нужен и R08 его не создаёт).

@@ -1,0 +1,85 @@
+{
+  "round": 11,
+  "role": "R08",
+  "branch": "claude/eager-hawking-4up40k",
+  "repository": "https://github.com/diiaanns07-droid/ADMIT_STUTU",
+  "repository_note": "Session environment provided ADMIT_STUTU instead of GOV_DIPLOME; remote not changed. Unrelated history: R01 imports owned paths by copy, not merge.",
+  "base_sha": "c698f7f3005842907a25299fd3cf50df2d0886a5",
+  "pack_sha": "9c2f5c0dae14b46c0697a9dfc7f854351bfd570d",
+  "status": "ready",
+  "owned_paths": [
+    "ml/civic_classifier/",
+    "tests/civic/R08/",
+    "research/round-11-results/R08/",
+    "research/handoffs/astana/R08/round-11/STATUS.md"
+  ],
+  "integration_notes": "research/round-11-results/R08/INTEGRATION.txt",
+  "code_commit": "f6754e102971168832bb74cc364e13aea0ddd739",
+  "checks": [
+    {
+      "name": "unit tests R08 (43)",
+      "status": "PASS",
+      "command": "cd tests/civic/R08 && python3 -m unittest discover -s . -p 'test_*.py'",
+      "input": "committed splits + artifacts at code_commit",
+      "reason": "contract schema, unknown input, reload reproducibility, artifact sha/pickle/path safety, bad manifests, split leakage, Kazakh normalisation, deterministic training, result honesty"
+    },
+    {
+      "name": "mutation sanity of tests",
+      "status": "PASS",
+      "command": "manual: disable verify_no_leakage in load_splits; map қ->q in normalize",
+      "input": "temporary source edits, reverted",
+      "reason": "leakage test and Kazakh-normalisation tests failed as expected on mutants"
+    },
+    {
+      "name": "deterministic rebuild",
+      "status": "PASS",
+      "command": "python3 -m ml.civic_classifier.cli build-data && python3 -m ml.civic_classifier.cli experiment",
+      "input": "templates.json + handwritten.jsonl, seed 20261006",
+      "reason": "identical split sha256 and artifact sha256 on repeated runs"
+    },
+    {
+      "name": "split leakage check",
+      "status": "PASS",
+      "command": "python3 -m ml.civic_classifier.cli build-data",
+      "input": "2333 records",
+      "reason": "0 exact, 0 group, 0 near-duplicate (Jaccard>=0.8) cross-split pairs; no oversampling"
+    },
+    {
+      "name": "demonstration metrics on synthetic data",
+      "status": "PASS",
+      "command": "python3 -m ml.civic_classifier.cli experiment && python3 -m ml.civic_classifier.cli cv",
+      "input": "synthetic test n=400; 6-fold leave-templates-out",
+      "reason": "metrics.json / cv_results.json written; demonstration only"
+    },
+    {
+      "name": "metrics on real citizen messages",
+      "status": "NOT_RUN",
+      "command": null,
+      "input": null,
+      "reason": "no permitted de-identified real corpus available; eOtinish/chats/private exports excluded by policy"
+    },
+    {
+      "name": "multilingual encoder fine-tuning",
+      "status": "NOT_RUN",
+      "command": null,
+      "input": null,
+      "reason": "no legal real corpus; synthetic data would make results meaningless; no torch, CPU only, no paid GPU"
+    },
+    {
+      "name": "integration into app (R01/R06)",
+      "status": "NOT_RUN",
+      "command": null,
+      "input": null,
+      "reason": "shared files are owned by R01; adapter given in INTEGRATION.txt"
+    }
+  ],
+  "limitations": [
+    "training_data_status=synthetic_only: all metrics are demonstrations on agent-written text",
+    "Kazakh texts not reviewed by a native speaker; labels by a single author (not independent)",
+    "known shipped-model error: 'Светофор не работает на перекрёстке' -> lighting (score 0.69, not flagged)",
+    "high-confidence errors on borderline cases (bus not stopping -> transport_stops 0.997) are not caught by needs_review",
+    "Latin-script text (incl. Kazakh Latin) rejected as unsupported_script",
+    "score is an uncalibrated margin, not a probability"
+  ],
+  "next_step": "R01: copy ml/civic_classifier/ and tests/civic/R08/ from code_commit, wire suggest_topic() adapter per INTEGRATION.txt into staff moderation view (R06). Research: obtain a permitted de-identified corpus with two annotators before any real-quality claim."
+}
