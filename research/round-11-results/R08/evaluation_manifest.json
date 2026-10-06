@@ -1,0 +1,29 @@
+{
+  "schema": "civic-r08-evaluation-manifest-v1",
+  "command": "python -m ml.civic_classifier.cli experiment",
+  "evaluated_on": {
+    "validation": {
+      "n": 403,
+      "sha256": "9b43d22b3af76d14ce9fccc9e05a3b2162e0fef93146fd248f2b7700e6c08398"
+    },
+    "test": {
+      "n": 400,
+      "sha256": "fd4dac04420164f137da111aa79f4f74ed478cd28325e54ee7b4c9b701ff57e9"
+    }
+  },
+  "language_passed_to_classify": null,
+  "language_note": "evaluation calls classify logic with language=None (auto-detect), as a caller without a language field would",
+  "slices": [
+    "lang_ru",
+    "lang_kk",
+    "lang_mixed",
+    "short_le_4_words",
+    "kk_without_kazakh_letters",
+    "ambiguous_by_annotator",
+    "source_template",
+    "source_handwritten"
+  ],
+  "metrics_file": "metrics.json",
+  "errors_file": "test_errors.json",
+  "real_data_evaluation": "NOT_RUN"
+}

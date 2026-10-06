@@ -1,0 +1,19 @@
+{
+  "default": "softmax_char25",
+  "artifacts": {
+    "nb_char24": {
+      "file": "nb_char24.json",
+      "sha256": "eaaf3d8e0a30ecd750fc9595ecc9c3ebafd099a41ea4c63d6260c6930d38d090",
+      "model_version": "civic-clf-r11-nb_char24-77579019",
+      "bytes": 415114,
+      "training_data_status": "synthetic_only"
+    },
+    "softmax_char25": {
+      "file": "softmax_char25.json",
+      "sha256": "bc4e06466cbe19ab7d6feda118b8d4a21c91afd9bee138c1c209e3095c518c6f",
+      "model_version": "civic-clf-r11-softmax_char25-77579019",
+      "bytes": 558759,
+      "training_data_status": "synthetic_only"
+    }
+  }
+}

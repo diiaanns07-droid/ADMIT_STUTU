@@ -1,0 +1,1890 @@
+{
+  "schema": "civic-r08-metrics-v1",
+  "metrics_kind": "DEMONSTRATION_ON_SYNTHETIC_DATA",
+  "warning": "All numbers below are computed on author-written synthetic messages (template-generated + handwritten). They demonstrate that the pipeline works; they are NOT estimates of quality on real citizen messages.",
+  "real_data_metrics": {
+    "status": "NOT_RUN",
+    "reason": "no permitted, de-identified real corpus available",
+    "macro_f1": null,
+    "per_class": null
+  },
+  "corpus_sha256": "77579019aa56698a12f9176595ca1d4c2f49928f09b5765136ddb93635ffae8a",
+  "split_sizes": {
+    "train": 1530,
+    "validation": 403,
+    "test": 400
+  },
+  "test_composition": {
+    "by_language": {
+      "kk": 196,
+      "mixed": 3,
+      "ru": 201
+    },
+    "by_label": {
+      "landscaping": 67,
+      "lighting": 66,
+      "other": 68,
+      "roads": 68,
+      "sidewalks": 66,
+      "transport_stops": 65
+    },
+    "by_source": {
+      "synthetic_handwritten": 40,
+      "synthetic_template": 360
+    }
+  },
+  "seed": 20261006,
+  "selection_rule": "shipped default = highest validation macro-F1 (test not used)",
+  "shipped_default": "softmax_char25",
+  "baseline": "nb_char24",
+  "comparison": [
+    {
+      "variant": "majority",
+      "role": "sanity",
+      "val_macro_f1": 0.0487,
+      "test_macro_f1": 0.0484,
+      "test_acc": 0.17,
+      "test_template_macro_f1": 0.0476,
+      "test_handwritten_macro_f1": 0.0555,
+      "test_kk_macro_f1": 0.0493,
+      "test_ru_macro_f1": 0.0482,
+      "test_no_kk_letters_acc": 0.0,
+      "test_needs_review_rate": 1.0,
+      "test_auto_accepted_acc": null,
+      "review_threshold": 1.0
+    },
+    {
+      "variant": "nb_char24",
+      "role": "baseline",
+      "val_macro_f1": 0.6378,
+      "test_macro_f1": 0.4647,
+      "test_acc": 0.4725,
+      "test_template_macro_f1": 0.4297,
+      "test_handwritten_macro_f1": 0.746,
+      "test_kk_macro_f1": 0.5083,
+      "test_ru_macro_f1": 0.4039,
+      "test_no_kk_letters_acc": 1.0,
+      "test_needs_review_rate": 0.915,
+      "test_auto_accepted_acc": 0.8824,
+      "review_threshold": 0.511933
+    },
+    {
+      "variant": "nb_char24_kkfold",
+      "role": "candidate",
+      "val_macro_f1": 0.5604,
+      "test_macro_f1": 0.4399,
+      "test_acc": 0.45,
+      "test_template_macro_f1": 0.4014,
+      "test_handwritten_macro_f1": 0.746,
+      "test_kk_macro_f1": 0.4636,
+      "test_ru_macro_f1": 0.3907,
+      "test_no_kk_letters_acc": 1.0,
+      "test_needs_review_rate": 0.975,
+      "test_auto_accepted_acc": 0.9,
+      "review_threshold": 0.895888
+    },
+    {
+      "variant": "softmax_char25",
+      "role": "candidate",
+      "val_macro_f1": 0.8021,
+      "test_macro_f1": 0.6544,
+      "test_acc": 0.65,
+      "test_template_macro_f1": 0.6402,
+      "test_handwritten_macro_f1": 0.7769,
+      "test_kk_macro_f1": 0.768,
+      "test_ru_macro_f1": 0.5479,
+      "test_no_kk_letters_acc": 1.0,
+      "test_needs_review_rate": 0.6975,
+      "test_auto_accepted_acc": 0.9587,
+      "review_threshold": 0.663222
+    },
+    {
+      "variant": "softmax_char25_kkfold",
+      "role": "candidate",
+      "val_macro_f1": 0.7771,
+      "test_macro_f1": 0.6285,
+      "test_acc": 0.625,
+      "test_template_macro_f1": 0.6145,
+      "test_handwritten_macro_f1": 0.7518,
+      "test_kk_macro_f1": 0.7151,
+      "test_ru_macro_f1": 0.5484,
+      "test_no_kk_letters_acc": 1.0,
+      "test_needs_review_rate": 0.78,
+      "test_auto_accepted_acc": 0.9545,
+      "review_threshold": 0.741937
+    }
+  ],
+  "variants": {
+    "majority": {
+      "validation": {
+        "n": 403,
+        "accuracy": 0.1712,
+        "macro_f1": 0.0487,
+        "macro_f1_over_labels_present": 6,
+        "per_class": {
+          "roads": {
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "support": 69
+          },
+          "sidewalks": {
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "support": 66
+          },
+          "transport_stops": {
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "support": 65
+          },
+          "lighting": {
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "support": 67
+          },
+          "landscaping": {
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "support": 67
+          },
+          "other": {
+            "precision": 0.1712,
+            "recall": 1.0,
+            "f1": 0.2924,
+            "support": 69
+          }
+        },
+        "confusion": {
+          "roads": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 69,
+            "<rejected>": 0
+          },
+          "sidewalks": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 66,
+            "<rejected>": 0
+          },
+          "transport_stops": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 65,
+            "<rejected>": 0
+          },
+          "lighting": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 67,
+            "<rejected>": 0
+          },
+          "landscaping": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 67,
+            "<rejected>": 0
+          },
+          "other": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 69,
+            "<rejected>": 0
+          }
+        },
+        "needs_review_rate": 1.0,
+        "auto_accepted_n": 0,
+        "auto_accepted_accuracy": null,
+        "detected_language_counts": {
+          "ru": 195,
+          "und": 7,
+          "kk": 200,
+          "mixed": 1
+        },
+        "slices": {
+          "lang_ru": {
+            "n": 199,
+            "accuracy": 0.1709,
+            "macro_f1": 0.0486,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 1.0
+          },
+          "lang_kk": {
+            "n": 201,
+            "accuracy": 0.1692,
+            "macro_f1": 0.0482,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 1.0
+          },
+          "lang_mixed": {
+            "n": 3,
+            "accuracy": 0.3333,
+            "macro_f1": 0.1667,
+            "macro_f1_over_labels_present": 3,
+            "needs_review_rate": 1.0
+          },
+          "short_le_4_words": {
+            "n": 13,
+            "accuracy": 0.2308,
+            "macro_f1": 0.0625,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 1.0
+          },
+          "kk_without_kazakh_letters": {
+            "n": 5,
+            "accuracy": 0.2,
+            "macro_f1": 0.0667,
+            "macro_f1_over_labels_present": 5,
+            "needs_review_rate": 1.0
+          },
+          "ambiguous_by_annotator": {
+            "n": 15,
+            "accuracy": 0.2,
+            "macro_f1": 0.0555,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 1.0
+          },
+          "source_template": {
+            "n": 360,
+            "accuracy": 0.1667,
+            "macro_f1": 0.0476,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 1.0
+          },
+          "source_handwritten": {
+            "n": 43,
+            "accuracy": 0.2093,
+            "macro_f1": 0.0577,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 1.0
+          }
+        }
+      },
+      "test": {
+        "n": 400,
+        "accuracy": 0.17,
+        "macro_f1": 0.0484,
+        "macro_f1_over_labels_present": 6,
+        "per_class": {
+          "roads": {
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "support": 68
+          },
+          "sidewalks": {
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "support": 66
+          },
+          "transport_stops": {
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "support": 65
+          },
+          "lighting": {
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "support": 66
+          },
+          "landscaping": {
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "support": 67
+          },
+          "other": {
+            "precision": 0.17,
+            "recall": 1.0,
+            "f1": 0.2906,
+            "support": 68
+          }
+        },
+        "confusion": {
+          "roads": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 68,
+            "<rejected>": 0
+          },
+          "sidewalks": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 66,
+            "<rejected>": 0
+          },
+          "transport_stops": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 65,
+            "<rejected>": 0
+          },
+          "lighting": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 66,
+            "<rejected>": 0
+          },
+          "landscaping": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 67,
+            "<rejected>": 0
+          },
+          "other": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 68,
+            "<rejected>": 0
+          }
+        },
+        "needs_review_rate": 1.0,
+        "auto_accepted_n": 0,
+        "auto_accepted_accuracy": null,
+        "detected_language_counts": {
+          "ru": 200,
+          "und": 5,
+          "kk": 194,
+          "mixed": 1
+        },
+        "slices": {
+          "lang_ru": {
+            "n": 201,
+            "accuracy": 0.1692,
+            "macro_f1": 0.0482,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 1.0
+          },
+          "lang_kk": {
+            "n": 196,
+            "accuracy": 0.1735,
+            "macro_f1": 0.0493,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 1.0
+          },
+          "lang_mixed": {
+            "n": 3,
+            "accuracy": 0.0,
+            "macro_f1": 0.0,
+            "macro_f1_over_labels_present": 3,
+            "needs_review_rate": 1.0
+          },
+          "short_le_4_words": {
+            "n": 11,
+            "accuracy": 0.3636,
+            "macro_f1": 0.1067,
+            "macro_f1_over_labels_present": 5,
+            "needs_review_rate": 1.0
+          },
+          "kk_without_kazakh_letters": {
+            "n": 1,
+            "accuracy": 0.0,
+            "macro_f1": 0.0,
+            "macro_f1_over_labels_present": 1,
+            "needs_review_rate": 1.0
+          },
+          "ambiguous_by_annotator": {
+            "n": 15,
+            "accuracy": 0.2667,
+            "macro_f1": 0.0702,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 1.0
+          },
+          "source_template": {
+            "n": 360,
+            "accuracy": 0.1667,
+            "macro_f1": 0.0476,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 1.0
+          },
+          "source_handwritten": {
+            "n": 40,
+            "accuracy": 0.2,
+            "macro_f1": 0.0555,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 1.0
+          }
+        }
+      },
+      "review_threshold": 1.0,
+      "threshold_selection": {
+        "method": "n/a"
+      },
+      "feature_policy": {
+        "char_ngram_min": 2,
+        "char_ngram_max": 4,
+        "word_unigrams": true,
+        "word_bigrams": false,
+        "kk_fold": false,
+        "max_chars": 2000
+      },
+      "train_seconds": 0.45,
+      "vocab_size": 0
+    },
+    "nb_char24": {
+      "validation": {
+        "n": 403,
+        "accuracy": 0.6452,
+        "macro_f1": 0.6378,
+        "macro_f1_over_labels_present": 6,
+        "per_class": {
+          "roads": {
+            "precision": 0.5556,
+            "recall": 0.7246,
+            "f1": 0.6289,
+            "support": 69
+          },
+          "sidewalks": {
+            "precision": 0.8333,
+            "recall": 0.3788,
+            "f1": 0.5208,
+            "support": 66
+          },
+          "transport_stops": {
+            "precision": 0.5849,
+            "recall": 0.9538,
+            "f1": 0.7251,
+            "support": 65
+          },
+          "lighting": {
+            "precision": 0.8644,
+            "recall": 0.7612,
+            "f1": 0.8095,
+            "support": 67
+          },
+          "landscaping": {
+            "precision": 0.7556,
+            "recall": 0.5075,
+            "f1": 0.6071,
+            "support": 67
+          },
+          "other": {
+            "precision": 0.5205,
+            "recall": 0.5507,
+            "f1": 0.5352,
+            "support": 69
+          }
+        },
+        "confusion": {
+          "roads": {
+            "roads": 50,
+            "sidewalks": 2,
+            "transport_stops": 0,
+            "lighting": 4,
+            "landscaping": 0,
+            "other": 13,
+            "<rejected>": 0
+          },
+          "sidewalks": {
+            "roads": 21,
+            "sidewalks": 25,
+            "transport_stops": 1,
+            "lighting": 1,
+            "landscaping": 5,
+            "other": 13,
+            "<rejected>": 0
+          },
+          "transport_stops": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 62,
+            "lighting": 0,
+            "landscaping": 3,
+            "other": 0,
+            "<rejected>": 0
+          },
+          "lighting": {
+            "roads": 6,
+            "sidewalks": 0,
+            "transport_stops": 1,
+            "lighting": 51,
+            "landscaping": 1,
+            "other": 8,
+            "<rejected>": 0
+          },
+          "landscaping": {
+            "roads": 0,
+            "sidewalks": 2,
+            "transport_stops": 28,
+            "lighting": 2,
+            "landscaping": 34,
+            "other": 1,
+            "<rejected>": 0
+          },
+          "other": {
+            "roads": 13,
+            "sidewalks": 1,
+            "transport_stops": 14,
+            "lighting": 1,
+            "landscaping": 2,
+            "other": 38,
+            "<rejected>": 0
+          }
+        },
+        "needs_review_rate": 0.8883,
+        "auto_accepted_n": 45,
+        "auto_accepted_accuracy": 0.9556,
+        "detected_language_counts": {
+          "ru": 195,
+          "und": 7,
+          "kk": 200,
+          "mixed": 1
+        },
+        "slices": {
+          "lang_ru": {
+            "n": 199,
+            "accuracy": 0.6181,
+            "macro_f1": 0.571,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.8744
+          },
+          "lang_kk": {
+            "n": 201,
+            "accuracy": 0.6667,
+            "macro_f1": 0.6626,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.9104
+          },
+          "lang_mixed": {
+            "n": 3,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 3,
+            "needs_review_rate": 0.3333
+          },
+          "short_le_4_words": {
+            "n": 13,
+            "accuracy": 0.9231,
+            "macro_f1": 0.9333,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.3846
+          },
+          "kk_without_kazakh_letters": {
+            "n": 5,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 5,
+            "needs_review_rate": 0.6
+          },
+          "ambiguous_by_annotator": {
+            "n": 15,
+            "accuracy": 0.5333,
+            "macro_f1": 0.525,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.6
+          },
+          "source_template": {
+            "n": 360,
+            "accuracy": 0.6278,
+            "macro_f1": 0.6163,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.9333
+          },
+          "source_handwritten": {
+            "n": 43,
+            "accuracy": 0.7907,
+            "macro_f1": 0.7944,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.5116
+          }
+        }
+      },
+      "test": {
+        "n": 400,
+        "accuracy": 0.4725,
+        "macro_f1": 0.4647,
+        "macro_f1_over_labels_present": 6,
+        "per_class": {
+          "roads": {
+            "precision": 0.1719,
+            "recall": 0.1618,
+            "f1": 0.1667,
+            "support": 68
+          },
+          "sidewalks": {
+            "precision": 0.7619,
+            "recall": 0.4848,
+            "f1": 0.5926,
+            "support": 66
+          },
+          "transport_stops": {
+            "precision": 0.5962,
+            "recall": 0.9538,
+            "f1": 0.7337,
+            "support": 65
+          },
+          "lighting": {
+            "precision": 0.4615,
+            "recall": 0.5455,
+            "f1": 0.5,
+            "support": 66
+          },
+          "landscaping": {
+            "precision": 0.6136,
+            "recall": 0.403,
+            "f1": 0.4865,
+            "support": 67
+          },
+          "other": {
+            "precision": 0.3088,
+            "recall": 0.3088,
+            "f1": 0.3088,
+            "support": 68
+          }
+        },
+        "confusion": {
+          "roads": {
+            "roads": 11,
+            "sidewalks": 7,
+            "transport_stops": 16,
+            "lighting": 22,
+            "landscaping": 3,
+            "other": 9,
+            "<rejected>": 0
+          },
+          "sidewalks": {
+            "roads": 8,
+            "sidewalks": 32,
+            "transport_stops": 5,
+            "lighting": 3,
+            "landscaping": 6,
+            "other": 12,
+            "<rejected>": 0
+          },
+          "transport_stops": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 62,
+            "lighting": 0,
+            "landscaping": 3,
+            "other": 0,
+            "<rejected>": 0
+          },
+          "lighting": {
+            "roads": 4,
+            "sidewalks": 0,
+            "transport_stops": 13,
+            "lighting": 36,
+            "landscaping": 4,
+            "other": 9,
+            "<rejected>": 0
+          },
+          "landscaping": {
+            "roads": 17,
+            "sidewalks": 2,
+            "transport_stops": 2,
+            "lighting": 2,
+            "landscaping": 27,
+            "other": 17,
+            "<rejected>": 0
+          },
+          "other": {
+            "roads": 24,
+            "sidewalks": 1,
+            "transport_stops": 6,
+            "lighting": 15,
+            "landscaping": 1,
+            "other": 21,
+            "<rejected>": 0
+          }
+        },
+        "needs_review_rate": 0.915,
+        "auto_accepted_n": 34,
+        "auto_accepted_accuracy": 0.8824,
+        "detected_language_counts": {
+          "ru": 200,
+          "und": 5,
+          "kk": 194,
+          "mixed": 1
+        },
+        "slices": {
+          "lang_ru": {
+            "n": 201,
+            "accuracy": 0.408,
+            "macro_f1": 0.4039,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.9353
+          },
+          "lang_kk": {
+            "n": 196,
+            "accuracy": 0.5306,
+            "macro_f1": 0.5083,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.9031
+          },
+          "lang_mixed": {
+            "n": 3,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 3,
+            "needs_review_rate": 0.3333
+          },
+          "short_le_4_words": {
+            "n": 11,
+            "accuracy": 0.8182,
+            "macro_f1": 0.8314,
+            "macro_f1_over_labels_present": 5,
+            "needs_review_rate": 0.6364
+          },
+          "kk_without_kazakh_letters": {
+            "n": 1,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 1,
+            "needs_review_rate": 1.0
+          },
+          "ambiguous_by_annotator": {
+            "n": 15,
+            "accuracy": 0.4667,
+            "macro_f1": 0.4667,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.6
+          },
+          "source_template": {
+            "n": 360,
+            "accuracy": 0.4417,
+            "macro_f1": 0.4297,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.9639
+          },
+          "source_handwritten": {
+            "n": 40,
+            "accuracy": 0.75,
+            "macro_f1": 0.746,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.475
+          }
+        }
+      },
+      "review_threshold": 0.511933,
+      "threshold_selection": {
+        "method": "smallest validation margin threshold with accepted-error <= 0.05",
+        "target_accepted_error": 0.05,
+        "validation_accepted_error": 0.04,
+        "validation_coverage": 0.1241
+      },
+      "feature_policy": {
+        "char_ngram_min": 2,
+        "char_ngram_max": 4,
+        "word_unigrams": true,
+        "word_bigrams": false,
+        "kk_fold": false,
+        "max_chars": 2000
+      },
+      "train_seconds": 0.37,
+      "vocab_size": 5362
+    },
+    "nb_char24_kkfold": {
+      "validation": {
+        "n": 403,
+        "accuracy": 0.5732,
+        "macro_f1": 0.5604,
+        "macro_f1_over_labels_present": 6,
+        "per_class": {
+          "roads": {
+            "precision": 0.4851,
+            "recall": 0.7101,
+            "f1": 0.5765,
+            "support": 69
+          },
+          "sidewalks": {
+            "precision": 0.7273,
+            "recall": 0.2424,
+            "f1": 0.3636,
+            "support": 66
+          },
+          "transport_stops": {
+            "precision": 0.5568,
+            "recall": 0.7538,
+            "f1": 0.6405,
+            "support": 65
+          },
+          "lighting": {
+            "precision": 0.6892,
+            "recall": 0.7612,
+            "f1": 0.7234,
+            "support": 67
+          },
+          "landscaping": {
+            "precision": 0.7805,
+            "recall": 0.4776,
+            "f1": 0.5926,
+            "support": 67
+          },
+          "other": {
+            "precision": 0.4416,
+            "recall": 0.4928,
+            "f1": 0.4658,
+            "support": 69
+          }
+        },
+        "confusion": {
+          "roads": {
+            "roads": 49,
+            "sidewalks": 2,
+            "transport_stops": 0,
+            "lighting": 3,
+            "landscaping": 0,
+            "other": 15,
+            "<rejected>": 0
+          },
+          "sidewalks": {
+            "roads": 25,
+            "sidewalks": 16,
+            "transport_stops": 0,
+            "lighting": 2,
+            "landscaping": 4,
+            "other": 19,
+            "<rejected>": 0
+          },
+          "transport_stops": {
+            "roads": 1,
+            "sidewalks": 0,
+            "transport_stops": 49,
+            "lighting": 13,
+            "landscaping": 2,
+            "other": 0,
+            "<rejected>": 0
+          },
+          "lighting": {
+            "roads": 6,
+            "sidewalks": 0,
+            "transport_stops": 1,
+            "lighting": 51,
+            "landscaping": 1,
+            "other": 8,
+            "<rejected>": 0
+          },
+          "landscaping": {
+            "roads": 1,
+            "sidewalks": 2,
+            "transport_stops": 27,
+            "lighting": 4,
+            "landscaping": 32,
+            "other": 1,
+            "<rejected>": 0
+          },
+          "other": {
+            "roads": 19,
+            "sidewalks": 2,
+            "transport_stops": 11,
+            "lighting": 1,
+            "landscaping": 2,
+            "other": 34,
+            "<rejected>": 0
+          }
+        },
+        "needs_review_rate": 0.9752,
+        "auto_accepted_n": 10,
+        "auto_accepted_accuracy": 1.0,
+        "detected_language_counts": {
+          "ru": 195,
+          "und": 7,
+          "kk": 200,
+          "mixed": 1
+        },
+        "slices": {
+          "lang_ru": {
+            "n": 199,
+            "accuracy": 0.608,
+            "macro_f1": 0.5558,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.9799
+          },
+          "lang_kk": {
+            "n": 201,
+            "accuracy": 0.5323,
+            "macro_f1": 0.521,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.9801
+          },
+          "lang_mixed": {
+            "n": 3,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 3,
+            "needs_review_rate": 0.3333
+          },
+          "short_le_4_words": {
+            "n": 13,
+            "accuracy": 0.8462,
+            "macro_f1": 0.8278,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.8462
+          },
+          "kk_without_kazakh_letters": {
+            "n": 5,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 5,
+            "needs_review_rate": 0.6
+          },
+          "ambiguous_by_annotator": {
+            "n": 15,
+            "accuracy": 0.4667,
+            "macro_f1": 0.3504,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.8667
+          },
+          "source_template": {
+            "n": 360,
+            "accuracy": 0.5556,
+            "macro_f1": 0.5352,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.9972
+          },
+          "source_handwritten": {
+            "n": 43,
+            "accuracy": 0.7209,
+            "macro_f1": 0.7238,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.7907
+          }
+        }
+      },
+      "test": {
+        "n": 400,
+        "accuracy": 0.45,
+        "macro_f1": 0.4399,
+        "macro_f1_over_labels_present": 6,
+        "per_class": {
+          "roads": {
+            "precision": 0.0933,
+            "recall": 0.1029,
+            "f1": 0.0979,
+            "support": 68
+          },
+          "sidewalks": {
+            "precision": 0.6944,
+            "recall": 0.3788,
+            "f1": 0.4902,
+            "support": 66
+          },
+          "transport_stops": {
+            "precision": 0.5833,
+            "recall": 0.9692,
+            "f1": 0.7283,
+            "support": 65
+          },
+          "lighting": {
+            "precision": 0.4699,
+            "recall": 0.5909,
+            "f1": 0.5235,
+            "support": 66
+          },
+          "landscaping": {
+            "precision": 0.619,
+            "recall": 0.3881,
+            "f1": 0.4771,
+            "support": 67
+          },
+          "other": {
+            "precision": 0.3571,
+            "recall": 0.2941,
+            "f1": 0.3226,
+            "support": 68
+          }
+        },
+        "confusion": {
+          "roads": {
+            "roads": 7,
+            "sidewalks": 8,
+            "transport_stops": 24,
+            "lighting": 22,
+            "landscaping": 2,
+            "other": 5,
+            "<rejected>": 0
+          },
+          "sidewalks": {
+            "roads": 18,
+            "sidewalks": 25,
+            "transport_stops": 5,
+            "lighting": 2,
+            "landscaping": 6,
+            "other": 10,
+            "<rejected>": 0
+          },
+          "transport_stops": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 63,
+            "lighting": 0,
+            "landscaping": 2,
+            "other": 0,
+            "<rejected>": 0
+          },
+          "lighting": {
+            "roads": 5,
+            "sidewalks": 0,
+            "transport_stops": 9,
+            "lighting": 39,
+            "landscaping": 4,
+            "other": 9,
+            "<rejected>": 0
+          },
+          "landscaping": {
+            "roads": 23,
+            "sidewalks": 2,
+            "transport_stops": 1,
+            "lighting": 3,
+            "landscaping": 26,
+            "other": 12,
+            "<rejected>": 0
+          },
+          "other": {
+            "roads": 22,
+            "sidewalks": 1,
+            "transport_stops": 6,
+            "lighting": 17,
+            "landscaping": 2,
+            "other": 20,
+            "<rejected>": 0
+          }
+        },
+        "needs_review_rate": 0.975,
+        "auto_accepted_n": 10,
+        "auto_accepted_accuracy": 0.9,
+        "detected_language_counts": {
+          "ru": 200,
+          "und": 5,
+          "kk": 194,
+          "mixed": 1
+        },
+        "slices": {
+          "lang_ru": {
+            "n": 201,
+            "accuracy": 0.393,
+            "macro_f1": 0.3907,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.9701
+          },
+          "lang_kk": {
+            "n": 196,
+            "accuracy": 0.5,
+            "macro_f1": 0.4636,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.9898
+          },
+          "lang_mixed": {
+            "n": 3,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 3,
+            "needs_review_rate": 0.3333
+          },
+          "short_le_4_words": {
+            "n": 11,
+            "accuracy": 0.8182,
+            "macro_f1": 0.8314,
+            "macro_f1_over_labels_present": 5,
+            "needs_review_rate": 0.8182
+          },
+          "kk_without_kazakh_letters": {
+            "n": 1,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 1,
+            "needs_review_rate": 1.0
+          },
+          "ambiguous_by_annotator": {
+            "n": 15,
+            "accuracy": 0.4667,
+            "macro_f1": 0.4667,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.8667
+          },
+          "source_template": {
+            "n": 360,
+            "accuracy": 0.4167,
+            "macro_f1": 0.4014,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 1.0
+          },
+          "source_handwritten": {
+            "n": 40,
+            "accuracy": 0.75,
+            "macro_f1": 0.746,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.75
+          }
+        }
+      },
+      "review_threshold": 0.895888,
+      "threshold_selection": {
+        "method": "smallest validation margin threshold with accepted-error <= 0.05",
+        "target_accepted_error": 0.05,
+        "validation_accepted_error": 0.0,
+        "validation_coverage": 0.0298
+      },
+      "feature_policy": {
+        "char_ngram_min": 2,
+        "char_ngram_max": 4,
+        "word_unigrams": true,
+        "word_bigrams": false,
+        "kk_fold": true,
+        "max_chars": 2000
+      },
+      "train_seconds": 0.57,
+      "vocab_size": 6358
+    },
+    "softmax_char25": {
+      "validation": {
+        "n": 403,
+        "accuracy": 0.8015,
+        "macro_f1": 0.8021,
+        "macro_f1_over_labels_present": 6,
+        "per_class": {
+          "roads": {
+            "precision": 0.6517,
+            "recall": 0.8406,
+            "f1": 0.7342,
+            "support": 69
+          },
+          "sidewalks": {
+            "precision": 0.8226,
+            "recall": 0.7727,
+            "f1": 0.7969,
+            "support": 66
+          },
+          "transport_stops": {
+            "precision": 0.9559,
+            "recall": 1.0,
+            "f1": 0.9774,
+            "support": 65
+          },
+          "lighting": {
+            "precision": 0.8769,
+            "recall": 0.8507,
+            "f1": 0.8636,
+            "support": 67
+          },
+          "landscaping": {
+            "precision": 0.8367,
+            "recall": 0.6119,
+            "f1": 0.7069,
+            "support": 67
+          },
+          "other": {
+            "precision": 0.7286,
+            "recall": 0.7391,
+            "f1": 0.7338,
+            "support": 69
+          }
+        },
+        "confusion": {
+          "roads": {
+            "roads": 58,
+            "sidewalks": 0,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 11,
+            "<rejected>": 0
+          },
+          "sidewalks": {
+            "roads": 15,
+            "sidewalks": 51,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 0,
+            "<rejected>": 0
+          },
+          "transport_stops": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 65,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 0,
+            "<rejected>": 0
+          },
+          "lighting": {
+            "roads": 3,
+            "sidewalks": 0,
+            "transport_stops": 1,
+            "lighting": 57,
+            "landscaping": 1,
+            "other": 5,
+            "<rejected>": 0
+          },
+          "landscaping": {
+            "roads": 5,
+            "sidewalks": 10,
+            "transport_stops": 1,
+            "lighting": 7,
+            "landscaping": 41,
+            "other": 3,
+            "<rejected>": 0
+          },
+          "other": {
+            "roads": 8,
+            "sidewalks": 1,
+            "transport_stops": 1,
+            "lighting": 1,
+            "landscaping": 7,
+            "other": 51,
+            "<rejected>": 0
+          }
+        },
+        "needs_review_rate": 0.6377,
+        "auto_accepted_n": 146,
+        "auto_accepted_accuracy": 0.9521,
+        "detected_language_counts": {
+          "ru": 195,
+          "und": 7,
+          "kk": 200,
+          "mixed": 1
+        },
+        "slices": {
+          "lang_ru": {
+            "n": 199,
+            "accuracy": 0.7739,
+            "macro_f1": 0.7483,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.6432
+          },
+          "lang_kk": {
+            "n": 201,
+            "accuracy": 0.8259,
+            "macro_f1": 0.8348,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.6368
+          },
+          "lang_mixed": {
+            "n": 3,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 3,
+            "needs_review_rate": 0.3333
+          },
+          "short_le_4_words": {
+            "n": 13,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.3846
+          },
+          "kk_without_kazakh_letters": {
+            "n": 5,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 5,
+            "needs_review_rate": 0.6
+          },
+          "ambiguous_by_annotator": {
+            "n": 15,
+            "accuracy": 0.7333,
+            "macro_f1": 0.5873,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.4667
+          },
+          "source_template": {
+            "n": 360,
+            "accuracy": 0.8028,
+            "macro_f1": 0.804,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.6528
+          },
+          "source_handwritten": {
+            "n": 43,
+            "accuracy": 0.7907,
+            "macro_f1": 0.7862,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.5116
+          }
+        }
+      },
+      "test": {
+        "n": 400,
+        "accuracy": 0.65,
+        "macro_f1": 0.6544,
+        "macro_f1_over_labels_present": 6,
+        "per_class": {
+          "roads": {
+            "precision": 0.4808,
+            "recall": 0.3676,
+            "f1": 0.4167,
+            "support": 68
+          },
+          "sidewalks": {
+            "precision": 0.9231,
+            "recall": 0.7273,
+            "f1": 0.8136,
+            "support": 66
+          },
+          "transport_stops": {
+            "precision": 0.9559,
+            "recall": 1.0,
+            "f1": 0.9774,
+            "support": 65
+          },
+          "lighting": {
+            "precision": 0.675,
+            "recall": 0.8182,
+            "f1": 0.7397,
+            "support": 66
+          },
+          "landscaping": {
+            "precision": 0.6102,
+            "recall": 0.5373,
+            "f1": 0.5714,
+            "support": 67
+          },
+          "other": {
+            "precision": 0.3596,
+            "recall": 0.4706,
+            "f1": 0.4076,
+            "support": 68
+          }
+        },
+        "confusion": {
+          "roads": {
+            "roads": 25,
+            "sidewalks": 0,
+            "transport_stops": 0,
+            "lighting": 15,
+            "landscaping": 9,
+            "other": 19,
+            "<rejected>": 0
+          },
+          "sidewalks": {
+            "roads": 9,
+            "sidewalks": 48,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 9,
+            "<rejected>": 0
+          },
+          "transport_stops": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 65,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 0,
+            "<rejected>": 0
+          },
+          "lighting": {
+            "roads": 1,
+            "sidewalks": 0,
+            "transport_stops": 1,
+            "lighting": 54,
+            "landscaping": 0,
+            "other": 10,
+            "<rejected>": 0
+          },
+          "landscaping": {
+            "roads": 9,
+            "sidewalks": 3,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 36,
+            "other": 19,
+            "<rejected>": 0
+          },
+          "other": {
+            "roads": 8,
+            "sidewalks": 1,
+            "transport_stops": 2,
+            "lighting": 11,
+            "landscaping": 14,
+            "other": 32,
+            "<rejected>": 0
+          }
+        },
+        "needs_review_rate": 0.6975,
+        "auto_accepted_n": 121,
+        "auto_accepted_accuracy": 0.9587,
+        "detected_language_counts": {
+          "ru": 200,
+          "und": 5,
+          "kk": 194,
+          "mixed": 1
+        },
+        "slices": {
+          "lang_ru": {
+            "n": 201,
+            "accuracy": 0.5423,
+            "macro_f1": 0.5479,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.6915
+          },
+          "lang_kk": {
+            "n": 196,
+            "accuracy": 0.7551,
+            "macro_f1": 0.768,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.7092
+          },
+          "lang_mixed": {
+            "n": 3,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 3,
+            "needs_review_rate": 0.3333
+          },
+          "short_le_4_words": {
+            "n": 11,
+            "accuracy": 0.8182,
+            "macro_f1": 0.8314,
+            "macro_f1_over_labels_present": 5,
+            "needs_review_rate": 0.3636
+          },
+          "kk_without_kazakh_letters": {
+            "n": 1,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 1,
+            "needs_review_rate": 1.0
+          },
+          "ambiguous_by_annotator": {
+            "n": 15,
+            "accuracy": 0.4667,
+            "macro_f1": 0.4833,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.4667
+          },
+          "source_template": {
+            "n": 360,
+            "accuracy": 0.6361,
+            "macro_f1": 0.6402,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.7278
+          },
+          "source_handwritten": {
+            "n": 40,
+            "accuracy": 0.775,
+            "macro_f1": 0.7769,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.425
+          }
+        }
+      },
+      "review_threshold": 0.663222,
+      "threshold_selection": {
+        "method": "smallest validation margin threshold with accepted-error <= 0.05",
+        "target_accepted_error": 0.05,
+        "validation_accepted_error": 0.0467,
+        "validation_coverage": 0.3722
+      },
+      "feature_policy": {
+        "char_ngram_min": 2,
+        "char_ngram_max": 5,
+        "word_unigrams": true,
+        "word_bigrams": false,
+        "kk_fold": false,
+        "max_chars": 2000
+      },
+      "train_seconds": 5.9,
+      "vocab_size": 7680
+    },
+    "softmax_char25_kkfold": {
+      "validation": {
+        "n": 403,
+        "accuracy": 0.7742,
+        "macro_f1": 0.7771,
+        "macro_f1_over_labels_present": 6,
+        "per_class": {
+          "roads": {
+            "precision": 0.5806,
+            "recall": 0.7826,
+            "f1": 0.6667,
+            "support": 69
+          },
+          "sidewalks": {
+            "precision": 0.8448,
+            "recall": 0.7424,
+            "f1": 0.7903,
+            "support": 66
+          },
+          "transport_stops": {
+            "precision": 0.9559,
+            "recall": 1.0,
+            "f1": 0.9774,
+            "support": 65
+          },
+          "lighting": {
+            "precision": 0.8235,
+            "recall": 0.8358,
+            "f1": 0.8296,
+            "support": 67
+          },
+          "landscaping": {
+            "precision": 0.8696,
+            "recall": 0.597,
+            "f1": 0.708,
+            "support": 67
+          },
+          "other": {
+            "precision": 0.6857,
+            "recall": 0.6957,
+            "f1": 0.6906,
+            "support": 69
+          }
+        },
+        "confusion": {
+          "roads": {
+            "roads": 54,
+            "sidewalks": 1,
+            "transport_stops": 0,
+            "lighting": 1,
+            "landscaping": 0,
+            "other": 13,
+            "<rejected>": 0
+          },
+          "sidewalks": {
+            "roads": 15,
+            "sidewalks": 49,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 2,
+            "<rejected>": 0
+          },
+          "transport_stops": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 65,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 0,
+            "<rejected>": 0
+          },
+          "lighting": {
+            "roads": 4,
+            "sidewalks": 0,
+            "transport_stops": 1,
+            "lighting": 56,
+            "landscaping": 1,
+            "other": 5,
+            "<rejected>": 0
+          },
+          "landscaping": {
+            "roads": 7,
+            "sidewalks": 7,
+            "transport_stops": 1,
+            "lighting": 10,
+            "landscaping": 40,
+            "other": 2,
+            "<rejected>": 0
+          },
+          "other": {
+            "roads": 13,
+            "sidewalks": 1,
+            "transport_stops": 1,
+            "lighting": 1,
+            "landscaping": 5,
+            "other": 48,
+            "<rejected>": 0
+          }
+        },
+        "needs_review_rate": 0.7643,
+        "auto_accepted_n": 95,
+        "auto_accepted_accuracy": 0.9474,
+        "detected_language_counts": {
+          "ru": 195,
+          "und": 7,
+          "kk": 200,
+          "mixed": 1
+        },
+        "slices": {
+          "lang_ru": {
+            "n": 199,
+            "accuracy": 0.7739,
+            "macro_f1": 0.7444,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.7085
+          },
+          "lang_kk": {
+            "n": 201,
+            "accuracy": 0.7711,
+            "macro_f1": 0.7848,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.8259
+          },
+          "lang_mixed": {
+            "n": 3,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 3,
+            "needs_review_rate": 0.3333
+          },
+          "short_le_4_words": {
+            "n": 13,
+            "accuracy": 0.9231,
+            "macro_f1": 0.9333,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.4615
+          },
+          "kk_without_kazakh_letters": {
+            "n": 5,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 5,
+            "needs_review_rate": 0.6
+          },
+          "ambiguous_by_annotator": {
+            "n": 15,
+            "accuracy": 0.6,
+            "macro_f1": 0.4456,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.4667
+          },
+          "source_template": {
+            "n": 360,
+            "accuracy": 0.7778,
+            "macro_f1": 0.7814,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.7917
+          },
+          "source_handwritten": {
+            "n": 43,
+            "accuracy": 0.7442,
+            "macro_f1": 0.7426,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.5349
+          }
+        }
+      },
+      "test": {
+        "n": 400,
+        "accuracy": 0.625,
+        "macro_f1": 0.6285,
+        "macro_f1_over_labels_present": 6,
+        "per_class": {
+          "roads": {
+            "precision": 0.4255,
+            "recall": 0.2941,
+            "f1": 0.3478,
+            "support": 68
+          },
+          "sidewalks": {
+            "precision": 0.9245,
+            "recall": 0.7424,
+            "f1": 0.8235,
+            "support": 66
+          },
+          "transport_stops": {
+            "precision": 0.9559,
+            "recall": 1.0,
+            "f1": 0.9774,
+            "support": 65
+          },
+          "lighting": {
+            "precision": 0.5952,
+            "recall": 0.7576,
+            "f1": 0.6667,
+            "support": 66
+          },
+          "landscaping": {
+            "precision": 0.6207,
+            "recall": 0.5373,
+            "f1": 0.576,
+            "support": 67
+          },
+          "other": {
+            "precision": 0.3333,
+            "recall": 0.4412,
+            "f1": 0.3797,
+            "support": 68
+          }
+        },
+        "confusion": {
+          "roads": {
+            "roads": 20,
+            "sidewalks": 0,
+            "transport_stops": 0,
+            "lighting": 20,
+            "landscaping": 8,
+            "other": 20,
+            "<rejected>": 0
+          },
+          "sidewalks": {
+            "roads": 9,
+            "sidewalks": 49,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 8,
+            "<rejected>": 0
+          },
+          "transport_stops": {
+            "roads": 0,
+            "sidewalks": 0,
+            "transport_stops": 65,
+            "lighting": 0,
+            "landscaping": 0,
+            "other": 0,
+            "<rejected>": 0
+          },
+          "lighting": {
+            "roads": 1,
+            "sidewalks": 0,
+            "transport_stops": 1,
+            "lighting": 50,
+            "landscaping": 1,
+            "other": 13,
+            "<rejected>": 0
+          },
+          "landscaping": {
+            "roads": 9,
+            "sidewalks": 3,
+            "transport_stops": 0,
+            "lighting": 0,
+            "landscaping": 36,
+            "other": 19,
+            "<rejected>": 0
+          },
+          "other": {
+            "roads": 8,
+            "sidewalks": 1,
+            "transport_stops": 2,
+            "lighting": 14,
+            "landscaping": 13,
+            "other": 30,
+            "<rejected>": 0
+          }
+        },
+        "needs_review_rate": 0.78,
+        "auto_accepted_n": 88,
+        "auto_accepted_accuracy": 0.9545,
+        "detected_language_counts": {
+          "ru": 200,
+          "und": 5,
+          "kk": 194,
+          "mixed": 1
+        },
+        "slices": {
+          "lang_ru": {
+            "n": 201,
+            "accuracy": 0.5423,
+            "macro_f1": 0.5484,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.7512
+          },
+          "lang_kk": {
+            "n": 196,
+            "accuracy": 0.7041,
+            "macro_f1": 0.7151,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.8112
+          },
+          "lang_mixed": {
+            "n": 3,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 3,
+            "needs_review_rate": 0.6667
+          },
+          "short_le_4_words": {
+            "n": 11,
+            "accuracy": 0.8182,
+            "macro_f1": 0.8314,
+            "macro_f1_over_labels_present": 5,
+            "needs_review_rate": 0.3636
+          },
+          "kk_without_kazakh_letters": {
+            "n": 1,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "macro_f1_over_labels_present": 1,
+            "needs_review_rate": 1.0
+          },
+          "ambiguous_by_annotator": {
+            "n": 15,
+            "accuracy": 0.4667,
+            "macro_f1": 0.4833,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.6
+          },
+          "source_template": {
+            "n": 360,
+            "accuracy": 0.6111,
+            "macro_f1": 0.6145,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.8139
+          },
+          "source_handwritten": {
+            "n": 40,
+            "accuracy": 0.75,
+            "macro_f1": 0.7518,
+            "macro_f1_over_labels_present": 6,
+            "needs_review_rate": 0.475
+          }
+        }
+      },
+      "review_threshold": 0.741937,
+      "threshold_selection": {
+        "method": "smallest validation margin threshold with accepted-error <= 0.05",
+        "target_accepted_error": 0.05,
+        "validation_accepted_error": 0.05,
+        "validation_coverage": 0.2481
+      },
+      "feature_policy": {
+        "char_ngram_min": 2,
+        "char_ngram_max": 5,
+        "word_unigrams": true,
+        "word_bigrams": false,
+        "kk_fold": true,
+        "max_chars": 2000
+      },
+      "train_seconds": 7.78,
+      "vocab_size": 9286
+    }
+  },
+  "second_experiment_multilingual_encoder": {
+    "status": "NOT_RUN",
+    "reason": "no permitted real corpus; synthetic template data would make fine-tuning results meaningless; no torch/transformers installed, CPU only; downloading model weights not justified for this corpus"
+  },
+  "environment": {
+    "python": "3.13.16",
+    "platform": "Linux-6.18.44-fc-v70-x86_64-with-glibc2.39",
+    "dependencies": "python stdlib only"
+  }
+}

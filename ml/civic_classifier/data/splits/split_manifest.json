@@ -1,0 +1,111 @@
+{
+  "schema": "civic-r08-split-manifest-v1",
+  "seed": 20261006,
+  "method": "group split: per (language,label) 1 template->test, 1->validation, rest->train; handwritten records only validation/test (alternating per label after seeded shuffle); near-duplicate clusters (char-5 shingle Jaccard>=0.8) merged before final assignment",
+  "near_dup_threshold": 0.8,
+  "oversampling": "none",
+  "inputs": {
+    "templates.json": "3b1dd77ef66691c5bb1130e71fc47800be8deb4f7ca3221870ee16ccf3489099",
+    "handwritten.jsonl": "7883fcd9405e012b7b0efc40612f2b36a921c0171f754a997fbdc2a610a5eff2"
+  },
+  "corpus_after_cleaning": {
+    "n": 2333,
+    "by_label": {
+      "landscaping": 374,
+      "lighting": 373,
+      "other": 437,
+      "roads": 407,
+      "sidewalks": 372,
+      "transport_stops": 370
+    },
+    "by_language": {
+      "kk": 1147,
+      "mixed": 6,
+      "ru": 1180
+    },
+    "by_source": {
+      "synthetic_handwritten": 83,
+      "synthetic_template": 2250
+    },
+    "groups": 158,
+    "sha256": "77579019aa56698a12f9176595ca1d4c2f49928f09b5765136ddb93635ffae8a"
+  },
+  "cleaning": {
+    "raw_records": 2333,
+    "exact_duplicates_dropped": 0
+  },
+  "split_report": {
+    "cross_group_near_dup_pairs": 0,
+    "groups_moved_by_cluster_merge": []
+  },
+  "leakage_check": "PASS (exact, group, near-duplicate across all split pairs)",
+  "splits": {
+    "train": {
+      "n": 1530,
+      "by_label": {
+        "landscaping": 240,
+        "lighting": 240,
+        "other": 300,
+        "roads": 270,
+        "sidewalks": 240,
+        "transport_stops": 240
+      },
+      "by_language": {
+        "kk": 750,
+        "ru": 780
+      },
+      "by_source": {
+        "synthetic_template": 1530
+      },
+      "groups": 51,
+      "sha256": "6e46ae22cadbe06cfab4b8da9cd0b8563cbb10124bc757c52bbf247009fa9f8b",
+      "file": "train.jsonl"
+    },
+    "validation": {
+      "n": 403,
+      "by_label": {
+        "landscaping": 67,
+        "lighting": 67,
+        "other": 69,
+        "roads": 69,
+        "sidewalks": 66,
+        "transport_stops": 65
+      },
+      "by_language": {
+        "kk": 201,
+        "mixed": 3,
+        "ru": 199
+      },
+      "by_source": {
+        "synthetic_handwritten": 43,
+        "synthetic_template": 360
+      },
+      "groups": 55,
+      "sha256": "9b43d22b3af76d14ce9fccc9e05a3b2162e0fef93146fd248f2b7700e6c08398",
+      "file": "validation.jsonl"
+    },
+    "test": {
+      "n": 400,
+      "by_label": {
+        "landscaping": 67,
+        "lighting": 66,
+        "other": 68,
+        "roads": 68,
+        "sidewalks": 66,
+        "transport_stops": 65
+      },
+      "by_language": {
+        "kk": 196,
+        "mixed": 3,
+        "ru": 201
+      },
+      "by_source": {
+        "synthetic_handwritten": 40,
+        "synthetic_template": 360
+      },
+      "groups": 52,
+      "sha256": "fd4dac04420164f137da111aa79f4f74ed478cd28325e54ee7b4c9b701ff57e9",
+      "file": "test.jsonl"
+    }
+  }
+}

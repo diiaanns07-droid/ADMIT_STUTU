@@ -1,0 +1,4945 @@
+{
+  "note": "Test-split errors (ids refer to synthetic records in ml/civic_classifier/data/splits/test.jsonl).",
+  "errors": {
+    "nb_char24": [
+      {
+        "id": "hw-009",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.030121,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "borderline"
+        ]
+      },
+      {
+        "id": "hw-015",
+        "true": "other",
+        "pred": "transport_stops",
+        "score": 0.938968,
+        "needs_review": false,
+        "reasons": [],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "borderline"
+        ]
+      },
+      {
+        "id": "hw-022",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.106031,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_handwritten",
+        "tags": []
+      },
+      {
+        "id": "hw-026",
+        "true": "landscaping",
+        "pred": "sidewalks",
+        "score": 0.569918,
+        "needs_review": false,
+        "reasons": [],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "borderline"
+        ]
+      },
+      {
+        "id": "hw-027",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.182433,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_handwritten",
+        "tags": []
+      },
+      {
+        "id": "hw-059",
+        "true": "landscaping",
+        "pred": "sidewalks",
+        "score": 0.675731,
+        "needs_review": false,
+        "reasons": [],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "borderline"
+        ]
+      },
+      {
+        "id": "hw-065",
+        "true": "other",
+        "pred": "sidewalks",
+        "score": 0.268863,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "borderline"
+        ]
+      },
+      {
+        "id": "hw-067",
+        "true": "other",
+        "pred": "transport_stops",
+        "score": 0.869425,
+        "needs_review": true,
+        "reasons": [
+          "language_und",
+          "very_short"
+        ],
+        "language_annotated": "kk",
+        "language_used": "und",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "short"
+        ]
+      },
+      {
+        "id": "hw-080",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.408973,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "multi_topic"
+        ]
+      },
+      {
+        "id": "hw-083",
+        "true": "lighting",
+        "pred": "transport_stops",
+        "score": 0.237021,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "multi_topic",
+          "borderline"
+        ]
+      },
+      {
+        "id": "kk-landscaping-06-002",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.022733,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-003",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.14178,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-004",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.062389,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-006",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.167611,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-010",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.010001,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-013",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.001651,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-023",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.100996,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-024",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.172107,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-026",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.133411,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-028",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.049835,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-001",
+        "true": "lighting",
+        "pred": "transport_stops",
+        "score": 0.049625,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-002",
+        "true": "lighting",
+        "pred": "landscaping",
+        "score": 0.044923,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-004",
+        "true": "lighting",
+        "pred": "transport_stops",
+        "score": 0.007269,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-006",
+        "true": "lighting",
+        "pred": "transport_stops",
+        "score": 0.1063,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-008",
+        "true": "lighting",
+        "pred": "transport_stops",
+        "score": 0.094015,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-011",
+        "true": "lighting",
+        "pred": "transport_stops",
+        "score": 0.01825,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-014",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.012576,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-017",
+        "true": "lighting",
+        "pred": "landscaping",
+        "score": 0.029302,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-019",
+        "true": "lighting",
+        "pred": "transport_stops",
+        "score": 0.071657,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-020",
+        "true": "lighting",
+        "pred": "transport_stops",
+        "score": 0.093845,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-021",
+        "true": "lighting",
+        "pred": "landscaping",
+        "score": 0.061794,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-022",
+        "true": "lighting",
+        "pred": "transport_stops",
+        "score": 0.074992,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-023",
+        "true": "lighting",
+        "pred": "transport_stops",
+        "score": 0.067524,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-026",
+        "true": "lighting",
+        "pred": "transport_stops",
+        "score": 0.039384,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-027",
+        "true": "lighting",
+        "pred": "transport_stops",
+        "score": 0.012409,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-029",
+        "true": "lighting",
+        "pred": "landscaping",
+        "score": 0.011473,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-lighting-06-030",
+        "true": "lighting",
+        "pred": "transport_stops",
+        "score": 0.058554,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-007",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.226858,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-008",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.028091,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-009",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.12837,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-010",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.096162,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-016",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.025205,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-017",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.029544,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-020",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.065435,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-021",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.011111,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-022",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.212701,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-023",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.116477,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-025",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.016196,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-026",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.056769,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-027",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.040655,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-028",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.114213,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-029",
+        "true": "other",
+        "pred": "landscaping",
+        "score": 0.061055,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-001",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.003473,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-002",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.145335,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-003",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.097547,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-004",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.073568,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-005",
+        "true": "roads",
+        "pred": "sidewalks",
+        "score": 0.00681,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-006",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.028092,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-007",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.136027,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-009",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.081099,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-011",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.066294,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-012",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.00465,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-013",
+        "true": "roads",
+        "pred": "sidewalks",
+        "score": 0.083645,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-015",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.029122,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-016",
+        "true": "roads",
+        "pred": "sidewalks",
+        "score": 0.1324,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-017",
+        "true": "roads",
+        "pred": "landscaping",
+        "score": 0.025606,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-018",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.046468,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-020",
+        "true": "roads",
+        "pred": "sidewalks",
+        "score": 0.029301,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-021",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.002359,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-022",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.022449,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-023",
+        "true": "roads",
+        "pred": "sidewalks",
+        "score": 0.010335,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-024",
+        "true": "roads",
+        "pred": "sidewalks",
+        "score": 0.127923,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-025",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.017925,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-026",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.075021,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-027",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.103447,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-028",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.066021,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-029",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.073427,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-030",
+        "true": "roads",
+        "pred": "sidewalks",
+        "score": 0.076152,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-001",
+        "true": "sidewalks",
+        "pred": "transport_stops",
+        "score": 0.107927,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-002",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.062088,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-004",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.018386,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-005",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.022928,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-006",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.054056,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-007",
+        "true": "sidewalks",
+        "pred": "transport_stops",
+        "score": 0.089717,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-010",
+        "true": "sidewalks",
+        "pred": "transport_stops",
+        "score": 0.017409,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-011",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.003599,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-013",
+        "true": "sidewalks",
+        "pred": "landscaping",
+        "score": 0.049691,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-016",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.006782,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-017",
+        "true": "sidewalks",
+        "pred": "landscaping",
+        "score": 0.025103,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-021",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.08469,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-022",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.061691,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-023",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.16943,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-024",
+        "true": "sidewalks",
+        "pred": "transport_stops",
+        "score": 0.049874,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-025",
+        "true": "sidewalks",
+        "pred": "landscaping",
+        "score": 0.042173,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-027",
+        "true": "sidewalks",
+        "pred": "transport_stops",
+        "score": 0.153675,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-028",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.053762,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-029",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.099027,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-030",
+        "true": "sidewalks",
+        "pred": "landscaping",
+        "score": 0.035826,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-001",
+        "true": "landscaping",
+        "pred": "transport_stops",
+        "score": 0.087736,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-002",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.105699,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-003",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.07424,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-004",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.089708,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-005",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.211075,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-006",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.009881,
+        "needs_review": true,
+        "reasons": [
+          "low_margin",
+          "language_und"
+        ],
+        "language_annotated": "ru",
+        "language_used": "und",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-007",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.001328,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-008",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.213493,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-010",
+        "true": "landscaping",
+        "pred": "lighting",
+        "score": 0.034047,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-011",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.013578,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-012",
+        "true": "landscaping",
+        "pred": "transport_stops",
+        "score": 0.003071,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-013",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.12035,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-014",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.012555,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-015",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.091423,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-016",
+        "true": "landscaping",
+        "pred": "lighting",
+        "score": 0.069418,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-017",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.07456,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-019",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.005447,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-020",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.141479,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-021",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.087028,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-022",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.04472,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-023",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.076443,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-024",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.011493,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-025",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.141303,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-027",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.275206,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-028",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.289329,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-029",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.032491,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-030",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.036335,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-005",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.182536,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-007",
+        "true": "lighting",
+        "pred": "roads",
+        "score": 0.093421,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-009",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.154861,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-013",
+        "true": "lighting",
+        "pred": "roads",
+        "score": 0.116405,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-015",
+        "true": "lighting",
+        "pred": "roads",
+        "score": 0.061517,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-016",
+        "true": "lighting",
+        "pred": "roads",
+        "score": 0.094778,
+        "needs_review": true,
+        "reasons": [
+          "low_margin",
+          "language_und"
+        ],
+        "language_annotated": "ru",
+        "language_used": "und",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-018",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.030067,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-021",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.143877,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-023",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.096305,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-026",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.061508,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-027",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.123019,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-001",
+        "true": "other",
+        "pred": "transport_stops",
+        "score": 0.166535,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-002",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.121526,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-003",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.044168,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-004",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.000977,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-005",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.089342,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-006",
+        "true": "other",
+        "pred": "transport_stops",
+        "score": 0.037344,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-007",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.099853,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-008",
+        "true": "other",
+        "pred": "transport_stops",
+        "score": 0.183124,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-009",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.031995,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-010",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.122143,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-011",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.092675,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-013",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.037928,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-014",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.059434,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-015",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.010917,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-016",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.057357,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-017",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.066281,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-018",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.060025,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-019",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.125936,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-020",
+        "true": "other",
+        "pred": "transport_stops",
+        "score": 0.25061,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-021",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.016105,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-022",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.059865,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-023",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.072565,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-024",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.040537,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-025",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.036786,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-026",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.010245,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-027",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.185129,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-028",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.125197,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-029",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.043,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-030",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.006711,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-001",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.032255,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-002",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.090953,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-003",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.043645,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-004",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.010892,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-005",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.011509,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-006",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.450219,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-007",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.169567,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-008",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.082794,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-009",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.161952,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-010",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.551766,
+        "needs_review": false,
+        "reasons": [],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-011",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.000212,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-012",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.018344,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-013",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.15223,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-014",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.022178,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-015",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.295945,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-016",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.343809,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-017",
+        "true": "roads",
+        "pred": "landscaping",
+        "score": 0.069178,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-018",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.038687,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-019",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.00116,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-020",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.031018,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-021",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.053099,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-022",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.002516,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-023",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.029518,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-024",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.068123,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-025",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.056744,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-026",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.281879,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-027",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.312727,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-028",
+        "true": "roads",
+        "pred": "landscaping",
+        "score": 0.0126,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-029",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.084019,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-030",
+        "true": "roads",
+        "pred": "transport_stops",
+        "score": 0.023919,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-001",
+        "true": "sidewalks",
+        "pred": "lighting",
+        "score": 0.140714,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-004",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.028007,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-007",
+        "true": "sidewalks",
+        "pred": "lighting",
+        "score": 0.334621,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-008",
+        "true": "sidewalks",
+        "pred": "lighting",
+        "score": 0.022654,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-009",
+        "true": "sidewalks",
+        "pred": "landscaping",
+        "score": 0.003591,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-010",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.104525,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-016",
+        "true": "sidewalks",
+        "pred": "landscaping",
+        "score": 0.055562,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-020",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.06946,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-021",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.16007,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-023",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.115144,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-026",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.005274,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-028",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.064821,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-030",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.011312,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-stops-02-014",
+        "true": "transport_stops",
+        "pred": "landscaping",
+        "score": 0.009685,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-stops-02-017",
+        "true": "transport_stops",
+        "pred": "landscaping",
+        "score": 0.025809,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-stops-02-030",
+        "true": "transport_stops",
+        "pred": "landscaping",
+        "score": 0.064147,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      }
+    ],
+    "softmax_char25": [
+      {
+        "id": "hw-004",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.282052,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "borderline"
+        ]
+      },
+      {
+        "id": "hw-010",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.017416,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "borderline"
+        ]
+      },
+      {
+        "id": "hw-015",
+        "true": "other",
+        "pred": "transport_stops",
+        "score": 0.997493,
+        "needs_review": false,
+        "reasons": [],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "borderline"
+        ]
+      },
+      {
+        "id": "hw-026",
+        "true": "landscaping",
+        "pred": "sidewalks",
+        "score": 0.930217,
+        "needs_review": false,
+        "reasons": [],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "borderline"
+        ]
+      },
+      {
+        "id": "hw-027",
+        "true": "landscaping",
+        "pred": "sidewalks",
+        "score": 0.119997,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_handwritten",
+        "tags": []
+      },
+      {
+        "id": "hw-059",
+        "true": "landscaping",
+        "pred": "sidewalks",
+        "score": 0.932668,
+        "needs_review": false,
+        "reasons": [],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "borderline"
+        ]
+      },
+      {
+        "id": "hw-065",
+        "true": "other",
+        "pred": "sidewalks",
+        "score": 0.663553,
+        "needs_review": false,
+        "reasons": [],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "borderline"
+        ]
+      },
+      {
+        "id": "hw-067",
+        "true": "other",
+        "pred": "transport_stops",
+        "score": 0.009876,
+        "needs_review": true,
+        "reasons": [
+          "low_margin",
+          "language_und",
+          "very_short"
+        ],
+        "language_annotated": "kk",
+        "language_used": "und",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "short"
+        ]
+      },
+      {
+        "id": "hw-083",
+        "true": "lighting",
+        "pred": "transport_stops",
+        "score": 0.822243,
+        "needs_review": false,
+        "reasons": [],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_handwritten",
+        "tags": [
+          "multi_topic",
+          "borderline"
+        ]
+      },
+      {
+        "id": "kk-landscaping-06-002",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.184433,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-003",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.199283,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-004",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.261259,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-006",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.557689,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-010",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.202468,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-011",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.032869,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-023",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.18341,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-024",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.361991,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-026",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.232564,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-landscaping-06-028",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.095419,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-007",
+        "true": "other",
+        "pred": "landscaping",
+        "score": 0.11457,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-008",
+        "true": "other",
+        "pred": "landscaping",
+        "score": 0.400614,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-010",
+        "true": "other",
+        "pred": "landscaping",
+        "score": 0.028972,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-016",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.001063,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-017",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.076418,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-020",
+        "true": "other",
+        "pred": "landscaping",
+        "score": 0.412145,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-021",
+        "true": "other",
+        "pred": "landscaping",
+        "score": 0.238764,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-022",
+        "true": "other",
+        "pred": "landscaping",
+        "score": 0.207818,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-023",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.011994,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-025",
+        "true": "other",
+        "pred": "landscaping",
+        "score": 0.421288,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-027",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.080527,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-other-05-028",
+        "true": "other",
+        "pred": "landscaping",
+        "score": 0.360042,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-001",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.217244,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-002",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.632879,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-003",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.388294,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-007",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.528863,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-011",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.342461,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-015",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.275173,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-018",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.206521,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-024",
+        "true": "roads",
+        "pred": "landscaping",
+        "score": 0.054489,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-026",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.298994,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-027",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.44953,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-028",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.453858,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-roads-05-029",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.177127,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-002",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.182324,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-003",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.176158,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-004",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.414896,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-011",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.269879,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-015",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.071476,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-020",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.019339,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-021",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.490991,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-023",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.612478,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-028",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.310833,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "kk-sidewalks-06-029",
+        "true": "sidewalks",
+        "pred": "other",
+        "score": 0.383479,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "kk",
+        "language_used": "kk",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-001",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.139424,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-004",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.079871,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-005",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.042245,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-006",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.006388,
+        "needs_review": true,
+        "reasons": [
+          "low_margin",
+          "language_und"
+        ],
+        "language_annotated": "ru",
+        "language_used": "und",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-008",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.085069,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-012",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.044033,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-013",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.119954,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-014",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.034074,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-015",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.035779,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-017",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.068484,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-019",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.002142,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-020",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.206004,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-021",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.15017,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-023",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.313219,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-025",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.038134,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-027",
+        "true": "landscaping",
+        "pred": "roads",
+        "score": 0.1316,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-028",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.279735,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-landscaping-03-030",
+        "true": "landscaping",
+        "pred": "other",
+        "score": 0.342715,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-005",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.424384,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-007",
+        "true": "lighting",
+        "pred": "roads",
+        "score": 0.065751,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-009",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.318062,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-013",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.073094,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-015",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.178578,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-018",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.207525,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-020",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.068622,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-021",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.260196,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-023",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.119964,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-026",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.269341,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-lighting-02-027",
+        "true": "lighting",
+        "pred": "other",
+        "score": 0.27821,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-001",
+        "true": "other",
+        "pred": "landscaping",
+        "score": 0.045783,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-002",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.107425,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-003",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.121754,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-004",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.061095,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-005",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.218329,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-006",
+        "true": "other",
+        "pred": "landscaping",
+        "score": 0.249367,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-007",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.035471,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-010",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.191634,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-011",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.026986,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-013",
+        "true": "other",
+        "pred": "landscaping",
+        "score": 0.071628,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-014",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.073156,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-015",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.188073,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-016",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.250975,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-017",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.120084,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-018",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.264452,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-020",
+        "true": "other",
+        "pred": "landscaping",
+        "score": 0.049379,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-022",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.011035,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-023",
+        "true": "other",
+        "pred": "lighting",
+        "score": 0.299436,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-026",
+        "true": "other",
+        "pred": "landscaping",
+        "score": 0.16043,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-028",
+        "true": "other",
+        "pred": "roads",
+        "score": 0.249866,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-other-06-030",
+        "true": "other",
+        "pred": "landscaping",
+        "score": 0.104496,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-001",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.134386,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-002",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.002248,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-003",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.131664,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-004",
+        "true": "roads",
+        "pred": "landscaping",
+        "score": 0.039661,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-005",
+        "true": "roads",
+        "pred": "landscaping",
+        "score": 0.01245,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-006",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.601946,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-007",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.054594,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-008",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.06547,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-009",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.247172,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-010",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.641501,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-011",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.0827,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-012",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.318454,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-013",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.135722,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-014",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.226225,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-015",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.304825,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-016",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.257652,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-017",
+        "true": "roads",
+        "pred": "landscaping",
+        "score": 0.096601,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-018",
+        "true": "roads",
+        "pred": "landscaping",
+        "score": 0.043157,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-019",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.024783,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-020",
+        "true": "roads",
+        "pred": "landscaping",
+        "score": 0.021776,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-021",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.063759,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-022",
+        "true": "roads",
+        "pred": "other",
+        "score": 0.247701,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-023",
+        "true": "roads",
+        "pred": "landscaping",
+        "score": 0.055529,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-024",
+        "true": "roads",
+        "pred": "landscaping",
+        "score": 0.037406,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-025",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.076503,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-026",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.416121,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-027",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.375227,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-028",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.016419,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-029",
+        "true": "roads",
+        "pred": "lighting",
+        "score": 0.022383,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-roads-03-030",
+        "true": "roads",
+        "pred": "landscaping",
+        "score": 0.019368,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-001",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.327222,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-004",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.267423,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-007",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.134337,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-010",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.580479,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-014",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.25896,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-021",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.636458,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      },
+      {
+        "id": "ru-sidewalks-06-023",
+        "true": "sidewalks",
+        "pred": "roads",
+        "score": 0.568202,
+        "needs_review": true,
+        "reasons": [
+          "low_margin"
+        ],
+        "language_annotated": "ru",
+        "language_used": "ru",
+        "source": "synthetic_template",
+        "tags": []
+      }
+    ]
+  }
+}

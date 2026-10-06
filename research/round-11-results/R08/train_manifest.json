@@ -1,0 +1,136 @@
+{
+  "schema": "civic-r08-train-manifest-v1",
+  "command": "python -m ml.civic_classifier.cli build-data && python -m ml.civic_classifier.cli experiment",
+  "seed": 20261006,
+  "python": "3.13.16",
+  "dependencies": "stdlib only",
+  "corpus_sha256": "77579019aa56698a12f9176595ca1d4c2f49928f09b5765136ddb93635ffae8a",
+  "split_manifest_sha256": "d2b62d3cc0373c122bdd45c9d4b3dc9b507ec9875c7cf23dd550345127ad0669",
+  "variants": {
+    "majority": {
+      "feature_policy": {
+        "char_ngram_min": 2,
+        "char_ngram_max": 4,
+        "word_unigrams": true,
+        "word_bigrams": false,
+        "kk_fold": false,
+        "max_chars": 2000
+      },
+      "review_threshold": 1.0,
+      "threshold_selection": {
+        "method": "n/a"
+      },
+      "train_seconds": 0.45,
+      "vocab_size": 0
+    },
+    "nb_char24": {
+      "feature_policy": {
+        "char_ngram_min": 2,
+        "char_ngram_max": 4,
+        "word_unigrams": true,
+        "word_bigrams": false,
+        "kk_fold": false,
+        "max_chars": 2000
+      },
+      "review_threshold": 0.511933,
+      "threshold_selection": {
+        "method": "smallest validation margin threshold with accepted-error <= 0.05",
+        "target_accepted_error": 0.05,
+        "validation_accepted_error": 0.04,
+        "validation_coverage": 0.1241
+      },
+      "train_seconds": 0.37,
+      "vocab_size": 5362
+    },
+    "nb_char24_kkfold": {
+      "feature_policy": {
+        "char_ngram_min": 2,
+        "char_ngram_max": 4,
+        "word_unigrams": true,
+        "word_bigrams": false,
+        "kk_fold": true,
+        "max_chars": 2000
+      },
+      "review_threshold": 0.895888,
+      "threshold_selection": {
+        "method": "smallest validation margin threshold with accepted-error <= 0.05",
+        "target_accepted_error": 0.05,
+        "validation_accepted_error": 0.0,
+        "validation_coverage": 0.0298
+      },
+      "train_seconds": 0.57,
+      "vocab_size": 6358
+    },
+    "softmax_char25": {
+      "feature_policy": {
+        "char_ngram_min": 2,
+        "char_ngram_max": 5,
+        "word_unigrams": true,
+        "word_bigrams": false,
+        "kk_fold": false,
+        "max_chars": 2000
+      },
+      "review_threshold": 0.663222,
+      "threshold_selection": {
+        "method": "smallest validation margin threshold with accepted-error <= 0.05",
+        "target_accepted_error": 0.05,
+        "validation_accepted_error": 0.0467,
+        "validation_coverage": 0.3722
+      },
+      "train_seconds": 5.9,
+      "vocab_size": 7680
+    },
+    "softmax_char25_kkfold": {
+      "feature_policy": {
+        "char_ngram_min": 2,
+        "char_ngram_max": 5,
+        "word_unigrams": true,
+        "word_bigrams": false,
+        "kk_fold": true,
+        "max_chars": 2000
+      },
+      "review_threshold": 0.741937,
+      "threshold_selection": {
+        "method": "smallest validation margin threshold with accepted-error <= 0.05",
+        "target_accepted_error": 0.05,
+        "validation_accepted_error": 0.05,
+        "validation_coverage": 0.2481
+      },
+      "train_seconds": 7.78,
+      "vocab_size": 9286
+    }
+  },
+  "hyperparameters": {
+    "nb": {
+      "alpha": 0.5,
+      "min_df": 2
+    },
+    "softmax": {
+      "epochs": 12,
+      "lr": 0.5,
+      "l2": 0.0001,
+      "min_df": 2,
+      "seed": 6,
+      "tf": "l2-normalised counts"
+    }
+  },
+  "registry": {
+    "default": "softmax_char25",
+    "artifacts": {
+      "nb_char24": {
+        "file": "nb_char24.json",
+        "sha256": "eaaf3d8e0a30ecd750fc9595ecc9c3ebafd099a41ea4c63d6260c6930d38d090",
+        "model_version": "civic-clf-r11-nb_char24-77579019",
+        "bytes": 415114,
+        "training_data_status": "synthetic_only"
+      },
+      "softmax_char25": {
+        "file": "softmax_char25.json",
+        "sha256": "bc4e06466cbe19ab7d6feda118b8d4a21c91afd9bee138c1c209e3095c518c6f",
+        "model_version": "civic-clf-r11-softmax_char25-77579019",
+        "bytes": 558759,
+        "training_data_status": "synthetic_only"
+      }
+    }
+  }
+}
