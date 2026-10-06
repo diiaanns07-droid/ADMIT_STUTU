@@ -1,0 +1,20 @@
+R08 CONTRACT DELTA (предложение, civic-v1 остаётся обязательным)
+
+CONTRACT.txt §6: classify(text,language) возвращает label, score|null, score_kind,
+needs_review, model_version, training_data_status.
+
+Уточнения (аддитивные, совместимые с v1):
+1. label может быть null, если status != "ok" (пустой/слишком длинный текст,
+   неподдержанный язык или письменность, модель недоступна). Обоснование:
+   подставлять "other" значило бы выдавать отсутствие ответа за тему
+   (аналог «unknown как 0», запрещённого общими правилами).
+2. model_version = null только при status="model_unavailable"; тогда
+   training_data_status = "unknown".
+3. Дополнительные поля: schema_version, status, review_reasons, alternatives,
+   language, language_source, advisory. Потребители v1 могут их игнорировать.
+4. language: "ru" | "kk" | null/"auto" (автоопределение). Другие значения ->
+   status "rejected_input", reason "unsupported_language".
+
+Совместимость: потребитель, читающий только поля v1, получает их всегда; при
+label=null он должен считать подсказку отсутствующей.
+Изменение общего контракта — решение R01.

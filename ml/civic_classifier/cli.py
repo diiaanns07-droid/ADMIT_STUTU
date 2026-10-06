@@ -4,6 +4,7 @@
     python -m ml.civic_classifier.cli experiment          # train all variants, evaluate, register default
     python -m ml.civic_classifier.cli train --variant nb_char24
     python -m ml.civic_classifier.cli evaluate --artifact default
+    python -m ml.civic_classifier.cli cv                  # 6-fold leave-templates-out comparison
     python -m ml.civic_classifier.cli predict "Фонари не горят во дворе" [--language ru]
     python -m ml.civic_classifier.cli active-review       # uncertain validation/test ids, no text
     python -m ml.civic_classifier.cli export-annotation --out FILE.csv
@@ -28,6 +29,7 @@ from .corpus import (DATA_DIR, SPLITS, clean, generate_from_templates, load_spli
                      write_jsonl)
 from .features import DEFAULT_POLICY, extract
 from .labels import LABELS
+from .textnorm import kk_fold, normalize
 from .metrics import confusion, prf
 from .models import MultinomialNB, SoftmaxLinear, MajorityClass, score_from_decision
 
@@ -189,7 +191,7 @@ def cmd_train(args, splits=None, man=None, register_as=None):
             "review_threshold": thr, "variant": v, "seed": SEED,
             "corpus_sha256": man["corpus_after_cleaning"]["sha256"],
             "train_split_sha256": man["splits"]["train"]["sha256"],
-            "threshold_selection": thr_info, "train_seconds": round(train_s, 2)}
+            "threshold_selection": thr_info}
     fname = f"{v}.json"
     path = os.path.join(art.MODEL_DIR, fname)
     sha = art.dump_artifact(model, policy, meta, path)
@@ -295,6 +297,12 @@ def cmd_experiment(args):
         model, policy, thr, thr_info, train_s, payload, val = trained[v]
         test, errs, _ = evaluate_records(payload, model, splits["test"])
         errors_by_variant[v] = errs
+        stripped = [dict(r, text=kk_fold(normalize(r["text"]))) for r in splits["test"]
+                    if r["language"] == "kk"]
+        test["stress_kk_without_kazakh_letters"] = {
+            k: x for k, x in evaluate_records(payload, model, stripped)[0].items()
+            if k in ("n", "accuracy", "macro_f1", "needs_review_rate",
+                     "detected_language_counts")}
         all_metrics[v] = {"validation": val, "test": test, "review_threshold": thr,
                           "threshold_selection": thr_info, "feature_policy": policy,
                           "train_seconds": round(train_s, 2),
@@ -309,6 +317,7 @@ def cmd_experiment(args):
             "test_kk_macro_f1": test["slices"]["lang_kk"].get("macro_f1"),
             "test_ru_macro_f1": test["slices"]["lang_ru"].get("macro_f1"),
             "test_no_kk_letters_acc": test["slices"]["kk_without_kazakh_letters"].get("accuracy"),
+            "stress_kk_stripped_macro_f1": test["stress_kk_without_kazakh_letters"]["macro_f1"],
             "test_needs_review_rate": test["needs_review_rate"],
             "test_auto_accepted_acc": test["auto_accepted_accuracy"],
             "review_threshold": thr,
@@ -360,7 +369,7 @@ def write_experiment_outputs(exp):
     # markdown-free plain comparison table
     cols = ["variant", "role", "val_macro_f1", "test_macro_f1", "test_template_macro_f1",
             "test_handwritten_macro_f1", "test_ru_macro_f1", "test_kk_macro_f1",
-            "test_no_kk_letters_acc", "test_needs_review_rate", "test_auto_accepted_acc",
+            "test_no_kk_letters_acc", "stress_kk_stripped_macro_f1", "test_needs_review_rate", "test_auto_accepted_acc",
             "review_threshold"]
     lines = ["COMPARISON (synthetic data, demonstration only; test n=%d)"
              % man["splits"]["test"]["n"], "\t".join(cols)]
@@ -473,6 +482,88 @@ def cmd_bench(args):
     print(json.dumps(out, ensure_ascii=False, indent=2))
 
 
+# ------------------------------------------------------------------ grouped CV
+def template_folds(records, k=6, seed=SEED):
+    """Fold i holds out the i-th template (after seeded shuffle) of every
+    (language, label) pair. Handwritten records are never trained on."""
+    import random
+    from collections import defaultdict
+    rng = random.Random(seed)
+    by = defaultdict(set)
+    for r in records:
+        if r["source"] == "synthetic_template":
+            by[(r["language"], r["label"])].add(r["group"])
+    order = {}
+    for key in sorted(by):
+        g = sorted(by[key])
+        rng.shuffle(g)
+        order[key] = g
+    folds = []
+    for i in range(k):
+        held = {g[i] for g in order.values() if i < len(g)}
+        folds.append(held)
+    return folds
+
+
+def cmd_cv(args):
+    import statistics
+    splits, man = load_splits(SPLIT_DIR)
+    allrecs = [r for s in SPLITS for r in splits[s]]
+    tmpl = [r for r in allrecs if r["source"] == "synthetic_template"]
+    hw = [r for r in allrecs if r["source"] == "synthetic_handwritten"]
+    variants = [v for v in VARIANTS if v != "majority"]
+    folds = template_folds(tmpl, k=args.folds)
+    per_fold = []
+    for i, held in enumerate(folds):
+        train = [r for r in tmpl if r["group"] not in held]
+        test = [r for r in tmpl if r["group"] in held]
+        verify_no_leakage({"train": train, "validation": [], "test": test + hw})
+        row = {"fold": i, "n_train": len(train), "n_test_template": len(test),
+               "n_handwritten": len(hw), "held_out_templates": sorted(held)}
+        for v in variants:
+            policy = _policy(v)
+            model = _make_model(VARIANTS[v]["model"])
+            model.fit([extract(r["text"], policy) for r in train], [r["label"] for r in train])
+            payload = _payload(model, policy, 0.0, v)
+            mt, _, _ = evaluate_records(payload, model, test)
+            mh, _, _ = evaluate_records(payload, model, hw)
+            row[v] = {"template_macro_f1": mt["macro_f1"], "handwritten_macro_f1": mh["macro_f1"],
+                      "template_ru_macro_f1": mt["slices"]["lang_ru"].get("macro_f1"),
+                      "template_kk_macro_f1": mt["slices"]["lang_kk"].get("macro_f1")}
+        per_fold.append(row)
+        print(f"fold {i}: " + ", ".join(f"{v}={row[v]['template_macro_f1']}" for v in variants))
+
+    def agg(v, key):
+        xs = [f[v][key] for f in per_fold if f[v][key] is not None]
+        return {"mean": round(statistics.mean(xs), 4),
+                "std": round(statistics.stdev(xs), 4) if len(xs) > 1 else None,
+                "min": min(xs), "max": max(xs), "folds": len(xs)}
+    summary = {v: {k: agg(v, k) for k in ("template_macro_f1", "handwritten_macro_f1",
+                                          "template_ru_macro_f1", "template_kk_macro_f1")}
+               for v in variants}
+    paired = {}
+    for v in variants:
+        if v == BASELINE:
+            continue
+        d = [f[v]["template_macro_f1"] - f[BASELINE]["template_macro_f1"] for f in per_fold]
+        paired[f"{v}_minus_{BASELINE}"] = {
+            "mean_diff": round(statistics.mean(d), 4),
+            "std_diff": round(statistics.stdev(d), 4) if len(d) > 1 else None,
+            "folds_candidate_better": sum(1 for x in d if x > 0), "folds": len(d)}
+    out = {"schema": "civic-r08-grouped-cv-v1",
+           "metrics_kind": "DEMONSTRATION_ON_SYNTHETIC_DATA",
+           "method": f"{args.folds}-fold leave-templates-out: fold i holds out the i-th template "
+                     "of every (language,label) pair; handwritten set (never trained) evaluated "
+                     "in every fold; leakage verified per fold; no threshold (labels only)",
+           "seed": SEED, "corpus_sha256": man["corpus_after_cleaning"]["sha256"],
+           "summary": summary, "paired_vs_baseline": paired, "per_fold": per_fold,
+           "caveat": "Folds share slot fillers (places, greetings) across train/test by design; "
+                     "the only unseen element is the template core phrasing. Small number of "
+                     "folds -> std is itself uncertain."}
+    _json_dump(out, os.path.join(RESULTS_DIR, "cv_results.json"))
+    print(json.dumps({"summary": summary, "paired": paired}, ensure_ascii=False, indent=1))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="civic_classifier")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -484,6 +575,8 @@ def main(argv=None):
     p = sub.add_parser("evaluate")
     p.add_argument("--artifact", default="default")
     sub.add_parser("experiment")
+    p = sub.add_parser("cv")
+    p.add_argument("--folds", type=int, default=6)
     p = sub.add_parser("predict")
     p.add_argument("text")
     p.add_argument("--language", default=None)
@@ -507,6 +600,8 @@ def main(argv=None):
         print("chosen default:", exp["chosen"])
         for r in exp["rows"]:
             print(r)
+    elif a.cmd == "cv":
+        cmd_cv(a)
     elif a.cmd == "predict":
         cmd_predict(a)
     elif a.cmd == "active-review":

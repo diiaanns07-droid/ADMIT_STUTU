@@ -1,0 +1,20 @@
+{
+  "machine": {
+    "platform": "Linux-6.18.44-fc-v70-x86_64-with-glibc2.39",
+    "processor": "x86_64",
+    "python": "3.13.16",
+    "cpu_count": 4
+  },
+  "default": {
+    "model_version": "civic-clf-r11-softmax_char25-77579019",
+    "load_seconds": 0.019,
+    "mean_ms_per_message": 0.472,
+    "messages": 1200
+  },
+  "nb_char24": {
+    "model_version": "civic-clf-r11-nb_char24-77579019",
+    "load_seconds": 0.014,
+    "mean_ms_per_message": 0.463,
+    "messages": 1200
+  }
+}

@@ -1,8 +1,8 @@
 COMPARISON (synthetic data, demonstration only; test n=400)
-variant	role	val_macro_f1	test_macro_f1	test_template_macro_f1	test_handwritten_macro_f1	test_ru_macro_f1	test_kk_macro_f1	test_no_kk_letters_acc	test_needs_review_rate	test_auto_accepted_acc	review_threshold
-majority	sanity	0.0487	0.0484	0.0476	0.0555	0.0482	0.0493	0.0	1.0		1.0
-nb_char24	baseline	0.6378	0.4647	0.4297	0.746	0.4039	0.5083	1.0	0.915	0.8824	0.511933
-nb_char24_kkfold	candidate	0.5604	0.4399	0.4014	0.746	0.3907	0.4636	1.0	0.975	0.9	0.895888
-softmax_char25	candidate	0.8021	0.6544	0.6402	0.7769	0.5479	0.768	1.0	0.6975	0.9587	0.663222
-softmax_char25_kkfold	candidate	0.7771	0.6285	0.6145	0.7518	0.5484	0.7151	1.0	0.78	0.9545	0.741937
+variant	role	val_macro_f1	test_macro_f1	test_template_macro_f1	test_handwritten_macro_f1	test_ru_macro_f1	test_kk_macro_f1	test_no_kk_letters_acc	stress_kk_stripped_macro_f1	test_needs_review_rate	test_auto_accepted_acc	review_threshold
+majority	sanity	0.0487	0.0484	0.0476	0.0555	0.0482	0.0493	0.0	0.0493	1.0		1.0
+nb_char24	baseline	0.6378	0.4647	0.4297	0.746	0.4039	0.5083	1.0	0.486	0.915	0.8824	0.511933
+nb_char24_kkfold	candidate	0.5604	0.4399	0.4014	0.746	0.3907	0.4636	1.0	0.5013	0.975	0.9	0.895888
+softmax_char25	candidate	0.8021	0.6544	0.6402	0.7769	0.5479	0.768	1.0	0.6533	0.6975	0.9587	0.663222
+softmax_char25_kkfold	candidate	0.7771	0.6285	0.6145	0.7518	0.5484	0.7151	1.0	0.7255	0.78	0.9545	0.741937
 multilingual_encoder_finetune	candidate-2	NOT_RUN (see metrics.json)

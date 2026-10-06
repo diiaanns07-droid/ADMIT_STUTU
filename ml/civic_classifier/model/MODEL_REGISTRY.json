@@ -3,16 +3,16 @@
   "artifacts": {
     "nb_char24": {
       "file": "nb_char24.json",
-      "sha256": "eaaf3d8e0a30ecd750fc9595ecc9c3ebafd099a41ea4c63d6260c6930d38d090",
+      "sha256": "483b9917ab5f60b467112a7d68dbc8569574af51486332317a6c25c2e16cf3c1",
       "model_version": "civic-clf-r11-nb_char24-77579019",
-      "bytes": 415114,
+      "bytes": 415093,
       "training_data_status": "synthetic_only"
     },
     "softmax_char25": {
       "file": "softmax_char25.json",
-      "sha256": "bc4e06466cbe19ab7d6feda118b8d4a21c91afd9bee138c1c209e3095c518c6f",
+      "sha256": "6a8afe10bf29b6da9628a7df59345c7d19a71bea9fa398f2e247e0e8debf3205",
       "model_version": "civic-clf-r11-softmax_char25-77579019",
-      "bytes": 558759,
+      "bytes": 558738,
       "training_data_status": "synthetic_only"
     }
   }

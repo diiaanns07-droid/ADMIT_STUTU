@@ -1,0 +1,416 @@
+{
+  "schema": "civic-r08-grouped-cv-v1",
+  "metrics_kind": "DEMONSTRATION_ON_SYNTHETIC_DATA",
+  "method": "6-fold leave-templates-out: fold i holds out the i-th template of every (language,label) pair; handwritten set (never trained) evaluated in every fold; leakage verified per fold; no threshold (labels only)",
+  "seed": 20261006,
+  "corpus_sha256": "77579019aa56698a12f9176595ca1d4c2f49928f09b5765136ddb93635ffae8a",
+  "summary": {
+    "nb_char24": {
+      "template_macro_f1": {
+        "mean": 0.5996,
+        "std": 0.0827,
+        "min": 0.4861,
+        "max": 0.7104,
+        "folds": 6
+      },
+      "handwritten_macro_f1": {
+        "mean": 0.7454,
+        "std": 0.0318,
+        "min": 0.6868,
+        "max": 0.783,
+        "folds": 6
+      },
+      "template_ru_macro_f1": {
+        "mean": 0.6061,
+        "std": 0.1219,
+        "min": 0.3961,
+        "max": 0.7318,
+        "folds": 6
+      },
+      "template_kk_macro_f1": {
+        "mean": 0.5541,
+        "std": 0.1001,
+        "min": 0.4722,
+        "max": 0.7299,
+        "folds": 6
+      }
+    },
+    "nb_char24_kkfold": {
+      "template_macro_f1": {
+        "mean": 0.5543,
+        "std": 0.0826,
+        "min": 0.4597,
+        "max": 0.6688,
+        "folds": 6
+      },
+      "handwritten_macro_f1": {
+        "mean": 0.7379,
+        "std": 0.0261,
+        "min": 0.7119,
+        "max": 0.7841,
+        "folds": 6
+      },
+      "template_ru_macro_f1": {
+        "mean": 0.5719,
+        "std": 0.1165,
+        "min": 0.3655,
+        "max": 0.7017,
+        "folds": 6
+      },
+      "template_kk_macro_f1": {
+        "mean": 0.5011,
+        "std": 0.1229,
+        "min": 0.3461,
+        "max": 0.6859,
+        "folds": 6
+      }
+    },
+    "softmax_char25": {
+      "template_macro_f1": {
+        "mean": 0.6917,
+        "std": 0.1096,
+        "min": 0.4946,
+        "max": 0.8129,
+        "folds": 6
+      },
+      "handwritten_macro_f1": {
+        "mean": 0.7388,
+        "std": 0.0221,
+        "min": 0.7043,
+        "max": 0.7661,
+        "folds": 6
+      },
+      "template_ru_macro_f1": {
+        "mean": 0.6758,
+        "std": 0.1727,
+        "min": 0.4445,
+        "max": 0.8629,
+        "folds": 6
+      },
+      "template_kk_macro_f1": {
+        "mean": 0.6879,
+        "std": 0.1227,
+        "min": 0.5286,
+        "max": 0.8395,
+        "folds": 6
+      }
+    },
+    "softmax_char25_kkfold": {
+      "template_macro_f1": {
+        "mean": 0.6777,
+        "std": 0.1028,
+        "min": 0.4934,
+        "max": 0.8002,
+        "folds": 6
+      },
+      "handwritten_macro_f1": {
+        "mean": 0.7225,
+        "std": 0.0183,
+        "min": 0.704,
+        "max": 0.7556,
+        "folds": 6
+      },
+      "template_ru_macro_f1": {
+        "mean": 0.6781,
+        "std": 0.1762,
+        "min": 0.4463,
+        "max": 0.8519,
+        "folds": 6
+      },
+      "template_kk_macro_f1": {
+        "mean": 0.654,
+        "std": 0.1459,
+        "min": 0.5039,
+        "max": 0.8183,
+        "folds": 6
+      }
+    }
+  },
+  "paired_vs_baseline": {
+    "nb_char24_kkfold_minus_nb_char24": {
+      "mean_diff": -0.0452,
+      "std_diff": 0.0376,
+      "folds_candidate_better": 1,
+      "folds": 6
+    },
+    "softmax_char25_minus_nb_char24": {
+      "mean_diff": 0.0922,
+      "std_diff": 0.0736,
+      "folds_candidate_better": 5,
+      "folds": 6
+    },
+    "softmax_char25_kkfold_minus_nb_char24": {
+      "mean_diff": 0.0782,
+      "std_diff": 0.0701,
+      "folds_candidate_better": 5,
+      "folds": 6
+    }
+  },
+  "per_fold": [
+    {
+      "fold": 0,
+      "n_train": 1890,
+      "n_test_template": 360,
+      "n_handwritten": 83,
+      "held_out_templates": [
+        "kk-landscaping-06",
+        "kk-lighting-06",
+        "kk-other-05",
+        "kk-roads-05",
+        "kk-sidewalks-06",
+        "kk-stops-02",
+        "ru-landscaping-03",
+        "ru-lighting-02",
+        "ru-other-06",
+        "ru-roads-03",
+        "ru-sidewalks-06",
+        "ru-stops-02"
+      ],
+      "nb_char24": {
+        "template_macro_f1": 0.4861,
+        "handwritten_macro_f1": 0.7468,
+        "template_ru_macro_f1": 0.3961,
+        "template_kk_macro_f1": 0.5533
+      },
+      "nb_char24_kkfold": {
+        "template_macro_f1": 0.4597,
+        "handwritten_macro_f1": 0.7224,
+        "template_ru_macro_f1": 0.3655,
+        "template_kk_macro_f1": 0.5247
+      },
+      "softmax_char25": {
+        "template_macro_f1": 0.6526,
+        "handwritten_macro_f1": 0.7569,
+        "template_ru_macro_f1": 0.4896,
+        "template_kk_macro_f1": 0.7819
+      },
+      "softmax_char25_kkfold": {
+        "template_macro_f1": 0.6499,
+        "handwritten_macro_f1": 0.7243,
+        "template_ru_macro_f1": 0.4872,
+        "template_kk_macro_f1": 0.7893
+      }
+    },
+    {
+      "fold": 1,
+      "n_train": 1890,
+      "n_test_template": 360,
+      "n_handwritten": 83,
+      "held_out_templates": [
+        "kk-landscaping-05",
+        "kk-lighting-03",
+        "kk-other-04",
+        "kk-roads-06",
+        "kk-sidewalks-03",
+        "kk-stops-03",
+        "ru-landscaping-02",
+        "ru-lighting-03",
+        "ru-other-07",
+        "ru-roads-07",
+        "ru-sidewalks-03",
+        "ru-stops-05"
+      ],
+      "nb_char24": {
+        "template_macro_f1": 0.7104,
+        "handwritten_macro_f1": 0.783,
+        "template_ru_macro_f1": 0.6278,
+        "template_kk_macro_f1": 0.7299
+      },
+      "nb_char24_kkfold": {
+        "template_macro_f1": 0.6688,
+        "handwritten_macro_f1": 0.7841,
+        "template_ru_macro_f1": 0.6001,
+        "template_kk_macro_f1": 0.6859
+      },
+      "softmax_char25": {
+        "template_macro_f1": 0.8129,
+        "handwritten_macro_f1": 0.7661,
+        "template_ru_macro_f1": 0.7654,
+        "template_kk_macro_f1": 0.8395
+      },
+      "softmax_char25_kkfold": {
+        "template_macro_f1": 0.8002,
+        "handwritten_macro_f1": 0.7556,
+        "template_ru_macro_f1": 0.7588,
+        "template_kk_macro_f1": 0.8183
+      }
+    },
+    {
+      "fold": 2,
+      "n_train": 1890,
+      "n_test_template": 360,
+      "n_handwritten": 83,
+      "held_out_templates": [
+        "kk-landscaping-02",
+        "kk-lighting-04",
+        "kk-other-07",
+        "kk-roads-04",
+        "kk-sidewalks-01",
+        "kk-stops-05",
+        "ru-landscaping-05",
+        "ru-lighting-06",
+        "ru-other-05",
+        "ru-roads-04",
+        "ru-sidewalks-05",
+        "ru-stops-04"
+      ],
+      "nb_char24": {
+        "template_macro_f1": 0.5761,
+        "handwritten_macro_f1": 0.7481,
+        "template_ru_macro_f1": 0.6002,
+        "template_kk_macro_f1": 0.4743
+      },
+      "nb_char24_kkfold": {
+        "template_macro_f1": 0.5884,
+        "handwritten_macro_f1": 0.7482,
+        "template_ru_macro_f1": 0.5799,
+        "template_kk_macro_f1": 0.5317
+      },
+      "softmax_char25": {
+        "template_macro_f1": 0.7129,
+        "handwritten_macro_f1": 0.7333,
+        "template_ru_macro_f1": 0.8093,
+        "template_kk_macro_f1": 0.6046
+      },
+      "softmax_char25_kkfold": {
+        "template_macro_f1": 0.6988,
+        "handwritten_macro_f1": 0.7243,
+        "template_ru_macro_f1": 0.8519,
+        "template_kk_macro_f1": 0.5039
+      }
+    },
+    {
+      "fold": 3,
+      "n_train": 1890,
+      "n_test_template": 360,
+      "n_handwritten": 83,
+      "held_out_templates": [
+        "kk-landscaping-03",
+        "kk-lighting-01",
+        "kk-other-03",
+        "kk-roads-01",
+        "kk-sidewalks-05",
+        "kk-stops-01",
+        "ru-landscaping-01",
+        "ru-lighting-05",
+        "ru-other-04",
+        "ru-roads-05",
+        "ru-sidewalks-01",
+        "ru-stops-03"
+      ],
+      "nb_char24": {
+        "template_macro_f1": 0.6625,
+        "handwritten_macro_f1": 0.6868,
+        "template_ru_macro_f1": 0.7318,
+        "template_kk_macro_f1": 0.6026
+      },
+      "nb_char24_kkfold": {
+        "template_macro_f1": 0.6115,
+        "handwritten_macro_f1": 0.7119,
+        "template_ru_macro_f1": 0.7017,
+        "template_kk_macro_f1": 0.5375
+      },
+      "softmax_char25": {
+        "template_macro_f1": 0.7321,
+        "handwritten_macro_f1": 0.7442,
+        "template_ru_macro_f1": 0.6829,
+        "template_kk_macro_f1": 0.7609
+      },
+      "softmax_char25_kkfold": {
+        "template_macro_f1": 0.7249,
+        "handwritten_macro_f1": 0.7081,
+        "template_ru_macro_f1": 0.6778,
+        "template_kk_macro_f1": 0.7476
+      }
+    },
+    {
+      "fold": 4,
+      "n_train": 1890,
+      "n_test_template": 360,
+      "n_handwritten": 83,
+      "held_out_templates": [
+        "kk-landscaping-01",
+        "kk-lighting-02",
+        "kk-other-06",
+        "kk-roads-02",
+        "kk-sidewalks-02",
+        "kk-stops-04",
+        "ru-landscaping-04",
+        "ru-lighting-04",
+        "ru-other-01",
+        "ru-roads-01",
+        "ru-sidewalks-02",
+        "ru-stops-01"
+      ],
+      "nb_char24": {
+        "template_macro_f1": 0.5372,
+        "handwritten_macro_f1": 0.7485,
+        "template_ru_macro_f1": 0.5644,
+        "template_kk_macro_f1": 0.4722
+      },
+      "nb_char24_kkfold": {
+        "template_macro_f1": 0.4719,
+        "handwritten_macro_f1": 0.738,
+        "template_ru_macro_f1": 0.534,
+        "template_kk_macro_f1": 0.3461
+      },
+      "softmax_char25": {
+        "template_macro_f1": 0.4946,
+        "handwritten_macro_f1": 0.7277,
+        "template_ru_macro_f1": 0.4445,
+        "template_kk_macro_f1": 0.5286
+      },
+      "softmax_char25_kkfold": {
+        "template_macro_f1": 0.4934,
+        "handwritten_macro_f1": 0.7187,
+        "template_ru_macro_f1": 0.4463,
+        "template_kk_macro_f1": 0.5208
+      }
+    },
+    {
+      "fold": 5,
+      "n_train": 1890,
+      "n_test_template": 360,
+      "n_handwritten": 83,
+      "held_out_templates": [
+        "kk-landscaping-04",
+        "kk-lighting-05",
+        "kk-other-01",
+        "kk-roads-03",
+        "kk-sidewalks-04",
+        "kk-stops-06",
+        "ru-landscaping-06",
+        "ru-lighting-01",
+        "ru-other-02",
+        "ru-roads-02",
+        "ru-sidewalks-04",
+        "ru-stops-06"
+      ],
+      "nb_char24": {
+        "template_macro_f1": 0.625,
+        "handwritten_macro_f1": 0.7592,
+        "template_ru_macro_f1": 0.7165,
+        "template_kk_macro_f1": 0.4925
+      },
+      "nb_char24_kkfold": {
+        "template_macro_f1": 0.5255,
+        "handwritten_macro_f1": 0.7225,
+        "template_ru_macro_f1": 0.6502,
+        "template_kk_macro_f1": 0.3807
+      },
+      "softmax_char25": {
+        "template_macro_f1": 0.7454,
+        "handwritten_macro_f1": 0.7043,
+        "template_ru_macro_f1": 0.8629,
+        "template_kk_macro_f1": 0.6118
+      },
+      "softmax_char25_kkfold": {
+        "template_macro_f1": 0.6993,
+        "handwritten_macro_f1": 0.704,
+        "template_ru_macro_f1": 0.8467,
+        "template_kk_macro_f1": 0.5438
+      }
+    }
+  ],
+  "caveat": "Folds share slot fillers (places, greetings) across train/test by design; the only unseen element is the template core phrasing. Small number of folds -> std is itself uncertain."
+}

@@ -1,0 +1,159 @@
+{
+  "schema": "civic-r08-dataset-manifest-v1",
+  "city": "astana",
+  "created": "2026-10-06",
+  "author_role": "R08 (round 11)",
+  "summary": "Only synthetic, author-written data is used. No real citizen messages are included or used for training/evaluation.",
+  "training_data_status": "synthetic_only",
+  "corpora": [
+    {
+      "id": "r08-synthetic-templates",
+      "file": "ml/civic_classifier/data/templates.json",
+      "sha256": "3b1dd77ef66691c5bb1130e71fc47800be8deb4f7ca3221870ee16ccf3489099",
+      "evidence_type": "synthetic",
+      "origin": "75 templates (RU 38, KK 37) written by the R08 agent; expanded deterministically by corpus.generate_from_templates(seed=20261006, per_template=30)",
+      "llm_generated": true,
+      "llm_note": "Text was written by an AI coding agent (Claude) during this session; it is LLM-authored synthetic text, not collected data.",
+      "human_reviewed": false,
+      "kazakh_quality": "written by a non-native author; not reviewed by a native Kazakh speaker",
+      "labels": "inherited from template by the same author (not independent annotation)",
+      "license": "CC0-1.0 (authored for this project)",
+      "personal_data": "none; place names are generic Astana street/district names, house numbers are invented",
+      "records_generated": 2250
+    },
+    {
+      "id": "r08-synthetic-handwritten",
+      "file": "ml/civic_classifier/data/handwritten.jsonl",
+      "sha256": "7883fcd9405e012b7b0efc40612f2b36a921c0171f754a997fbdc2a610a5eff2",
+      "evidence_type": "synthetic",
+      "origin": "83 individually written informal / borderline / short / mixed-language / no-Kazakh-letter messages by the R08 agent",
+      "llm_generated": true,
+      "human_reviewed": false,
+      "labels": "single author, with ambiguous flag and note; not an independent expert assessment",
+      "license": "CC0-1.0 (authored for this project)",
+      "personal_data": "none",
+      "usage": "never used for training; split between validation (threshold selection) and test",
+      "records": 83
+    }
+  ],
+  "real_data_audit": {
+    "date": "2026-10-06",
+    "result": "No permitted, de-identified real corpus of Astana/Kazakhstan civic messages with topic labels was available to this session.",
+    "checked": [
+      {
+        "source": "GOV_DIPLOME repository at PACK_SHA 9c2f5c0dae14b46c0697a9dfc7f854351bfd570d",
+        "result": "no message corpus (only round-11 prompts/fixtures)"
+      },
+      {
+        "source": "E-Otinish / former 'Open Dialogue' appeals",
+        "result": "NOT USED. Web search result (egov.kz article) states appeals were moved to E-Otinish in April 2023 and closed from public access; scraping or leaked exports are excluded by policy. Not verified by direct fetch."
+      },
+      {
+        "source": "data.egov.kz open data portal",
+        "result": "not used; search did not surface a dataset of appeal TEXTS with topic labels; aggregates of appeals, if any, are not suitable for text training. Not exhaustively checked."
+      },
+      {
+        "source": "KazSAnDRA (arXiv 2403.19335, CC BY 4.0) and other open Kazakh corpora",
+        "result": "not used: sentiment/reviews domain, no civic topic labels; possible future use only for language-robustness checks with attribution"
+      }
+    ],
+    "excluded_by_policy": [
+      "eOtinish exports",
+      "chat exports",
+      "private messages",
+      "social media scraping without license"
+    ]
+  },
+  "processing": {
+    "normalisation": "NFC, casefold, Latin homoglyph -> Cyrillic inside Cyrillic-majority words, ё->е; Kazakh letters preserved",
+    "deduplication": "exact on normalised text (dropped: 0)",
+    "near_duplicates": "char-5 shingle Jaccard >= 0.8 clustered and kept in one split (cross-group pairs: 0)",
+    "oversampling": "none",
+    "split_manifest": "ml/civic_classifier/data/splits/split_manifest.json"
+  },
+  "corpus_after_cleaning": {
+    "n": 2333,
+    "by_label": {
+      "landscaping": 374,
+      "lighting": 373,
+      "other": 437,
+      "roads": 407,
+      "sidewalks": 372,
+      "transport_stops": 370
+    },
+    "by_language": {
+      "kk": 1147,
+      "mixed": 6,
+      "ru": 1180
+    },
+    "by_source": {
+      "synthetic_handwritten": 83,
+      "synthetic_template": 2250
+    },
+    "groups": 158,
+    "sha256": "77579019aa56698a12f9176595ca1d4c2f49928f09b5765136ddb93635ffae8a"
+  },
+  "splits": {
+    "train": {
+      "n": 1530,
+      "by_label": {
+        "landscaping": 240,
+        "lighting": 240,
+        "other": 300,
+        "roads": 270,
+        "sidewalks": 240,
+        "transport_stops": 240
+      },
+      "by_language": {
+        "kk": 750,
+        "ru": 780
+      },
+      "by_source": {
+        "synthetic_template": 1530
+      },
+      "sha256": "6e46ae22cadbe06cfab4b8da9cd0b8563cbb10124bc757c52bbf247009fa9f8b"
+    },
+    "validation": {
+      "n": 403,
+      "by_label": {
+        "landscaping": 67,
+        "lighting": 67,
+        "other": 69,
+        "roads": 69,
+        "sidewalks": 66,
+        "transport_stops": 65
+      },
+      "by_language": {
+        "kk": 201,
+        "mixed": 3,
+        "ru": 199
+      },
+      "by_source": {
+        "synthetic_handwritten": 43,
+        "synthetic_template": 360
+      },
+      "sha256": "9b43d22b3af76d14ce9fccc9e05a3b2162e0fef93146fd248f2b7700e6c08398"
+    },
+    "test": {
+      "n": 400,
+      "by_label": {
+        "landscaping": 67,
+        "lighting": 66,
+        "other": 68,
+        "roads": 68,
+        "sidewalks": 66,
+        "transport_stops": 65
+      },
+      "by_language": {
+        "kk": 196,
+        "mixed": 3,
+        "ru": 201
+      },
+      "by_source": {
+        "synthetic_handwritten": 40,
+        "synthetic_template": 360
+      },
+      "sha256": "fd4dac04420164f137da111aa79f4f74ed478cd28325e54ee7b4c9b701ff57e9"
+    }
+  }
+}

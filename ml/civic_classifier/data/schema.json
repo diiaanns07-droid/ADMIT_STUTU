@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "civic-r08 dataset record (one JSON object per JSONL line)",
+  "type": "object",
+  "required": ["id", "text", "language", "label", "group", "source", "evidence_type", "annotation"],
+  "properties": {
+    "id": {"type": "string"},
+    "text": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "language": {"enum": ["ru", "kk", "mixed"]},
+    "label": {"enum": ["roads", "sidewalks", "transport_stops", "lighting", "landscaping", "other"]},
+    "group": {"type": "string", "description": "split unit: template id or near-duplicate cluster"},
+    "template_id": {"type": "string"},
+    "source": {"enum": ["synthetic_template", "synthetic_handwritten", "real_permitted"]},
+    "evidence_type": {"enum": ["synthetic", "observed"], "description": "synthetic sources must be 'synthetic'"},
+    "annotation": {"type": "string"},
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "ambiguous": {"type": "boolean"},
+    "note": {"type": "string"}
+  },
+  "additionalProperties": true
+}

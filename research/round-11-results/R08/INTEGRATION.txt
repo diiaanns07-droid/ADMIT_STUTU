@@ -1,0 +1,75 @@
+R08 -> R01/R06: ИНТЕГРАЦИЯ КЛАССИФИКАТОРА ТЕМ (civic-v1)
+
+Источник: https://github.com/diiaanns07-droid/ADMIT_STUTU ветка claude/eager-hawking-4up40k
+(среда сессии R08 была ADMIT_STUTU, не GOV_DIPLOME; истории не связаны —
+импортировать КОПИРОВАНИЕМ путей, не merge). Пути для импорта:
+  ml/civic_classifier/            (код, data/, model/, документация; ~2.5 МБ)
+  tests/civic/R08/
+Зависимости: только стандартная библиотека Python. Корневые requirements не меняются.
+Пакет ml/ — namespace package (ml/__init__.py не нужен и R08 его не создаёт).
+
+1. ГЛАВНОЕ ПРАВИЛО
+Модель не нужна для запуска карты, сохранения обращения и модерации.
+Ошибка импорта/загрузки модели => просто нет подсказки. Никогда не 500.
+
+2. ВЫЗОВ (рекомендуемый адаптер, например в ui/civic_feedback/ у R06 или у R01)
+
+    import importlib, logging
+    _clf = None
+    def suggest_topic(text, language=None):
+        global _clf
+        try:
+            if _clf is None:
+                _clf = importlib.import_module("ml.civic_classifier")
+            return _clf.classify(text, language)   # никогда не бросает на вводе
+        except Exception:                          # нет модуля / сломан пакет
+            logging.getLogger("civic").warning("topic classifier unavailable", exc_info=True)
+            return None
+
+- Импорт пакета НЕ грузит модель; артефакт (~0.5 МБ JSON) грузится при первом
+  classify(), потокобезопасно, ~0.02 с; дальше ~0.5 мс на сообщение.
+- Вызывать можно синхронно в обработчике POST /feedback после валидации и
+  сохранения сообщения (или лениво при открытии очереди модерации).
+- classify принимает только (text, language). Путь к модели, pickle, URL из
+  запроса не принимаются; артефакт берётся из model/MODEL_REGISTRY.json с
+  проверкой sha256.
+
+3. ОТВЕТ
+{schema_version:"civic-v1", status:"ok"|"rejected_input"|"model_unavailable",
+ label, score, score_kind, needs_review, review_reasons:[...], alternatives:[...],
+ language, language_source, model_version, training_data_status, advisory}
+- status != "ok"  => label=null, score=null, score_kind="none", needs_review=true.
+  Причины: empty_or_too_short, too_long (>2000 символов), text_not_string,
+  unsupported_language (language не ru/kk/auto/None), unsupported_script
+  (латиница), model_unavailable.
+- score — некалиброванный margin [0..1]. В UI НЕ показывать как «уверенность N%».
+  Допустимо: «подсказка модели: lighting (требует проверки)».
+- training_data_status сейчас "synthetic_only": UI редактора должен это показывать
+  рядом с подсказкой.
+
+4. КАК ИСПОЛЬЗОВАТЬ В R06 (обращения и модерация)
+- Категорию, выбранную жителем (category из POST /feedback), НЕ перезаписывать.
+  Подсказку хранить отдельно: suggested_topic, suggested_topic_model_version,
+  suggested_topic_needs_review — только в staff-представлении.
+- В публичный DTO подсказку модели не включать.
+- Модель не удаляет, не отклоняет и не публикует сообщения; сортировка очереди
+  по подсказке — только как вспомогательный фильтр редактора.
+- Пример: житель выбрал other, модель предлагает lighting -> показать редактору
+  расхождение; решение за ним.
+- Текст обращения не логировать вместе с ответом модели (персональные данные).
+
+5. HTTP (опционально, решает R01)
+Отдельный endpoint не обязателен. Если нужен: POST /api/civic/v1/staff/classify
+{text, language|null} -> {ok:true,data:<ответ classify>} только для авторизованного
+редактора (cookie + CSRF), лимит размера тела 8 КБ, 413 при превышении.
+Публичный endpoint не делать.
+
+6. ПРОВЕРКА ПОСЛЕ ИМПОРТА
+python -m ml.civic_classifier.cli predict "Во дворе не горят фонари"
+cd tests/civic/R08 && python -m unittest discover -s . -p "test_*.py"   # 40+ тестов
+Ожидаемо: label "lighting", training_data_status "synthetic_only".
+
+7. ОБНОВЛЕНИЕ МОДЕЛИ
+Новый артефакт = JSON + новая запись в MODEL_REGISTRY.json (sha256). После замены
+файлов вызвать ml.civic_classifier.reset_cache() или перезапустить сервер.
+Большие веса (encoder) в Git не класть: только манифест, sha256 и скрипт получения.
