@@ -1,5 +1,6 @@
-head=e9634ece8724ed6676965c732416af8626aad34d
+head=5cdf7d5be12bcf270e446aa4232b811284647b95
 base=56538a3a7504d4589c38ab4d3c5107f12aa7f8a6
-patch_sha256=cd50adb7883533e8d2b820d7b26a1c44c805c89a1ef8e84dcb48291b9f1e99ea
+patch_sha256=b493bf7a3438a0ea745cc67cfba7160e04704c4bd6bb032d2536acb97ce30803
+5cdf7d5 R07: schedule of work variants over all interval boundaries + phasing case
 e9634ec R07: readable scenario UI — place names, closure periods/status, plan overview, camera return, schedule table
 2e6a82d R07: reuse prepared city network for closures (overlay adjacency, bounded LRU)

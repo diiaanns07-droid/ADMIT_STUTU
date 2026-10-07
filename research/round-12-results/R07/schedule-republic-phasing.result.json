@@ -1,0 +1,1172 @@
+{
+ "schema_version": "civic-scenario-schedule-v1",
+ "input": {
+  "payload_digest": "26723f9ce872d99d7f610208137dbfb5bdae9b83d10e4eb03482ba278284c2f0",
+  "graph_id": "osm-astana-walking-20260506",
+  "graph_digest": "a694be21cc08ef1bf8000387a5120e7e5ad810ee37a955a4c223c004aeba5e35",
+  "mode": "walking",
+  "graph_evidence_type": "derived",
+  "window_start": "2026-10-12T08:00:00+05:00",
+  "window_end": "2026-10-16T08:00:00+05:00",
+  "interval_rule": "start_at <= t < end_at"
+ },
+ "baseline": [
+  {
+   "origin_node_id": "osm-n13657601063",
+   "destination_node_id": "osm-n9961409043",
+   "status": "ok",
+   "length_m": 18980.904
+  },
+  {
+   "origin_node_id": "osm-n13657601063",
+   "destination_node_id": "osm-n4113163428",
+   "status": "ok",
+   "length_m": 17123.719
+  },
+  {
+   "origin_node_id": "osm-n13657601063",
+   "destination_node_id": "osm-n4113163443",
+   "status": "ok",
+   "length_m": 17434.615
+  },
+  {
+   "origin_node_id": "osm-n4113162926",
+   "destination_node_id": "osm-n9961409043",
+   "status": "ok",
+   "length_m": 3343.527
+  },
+  {
+   "origin_node_id": "osm-n4113162926",
+   "destination_node_id": "osm-n4113163428",
+   "status": "ok",
+   "length_m": 1486.342
+  },
+  {
+   "origin_node_id": "osm-n4113162926",
+   "destination_node_id": "osm-n4113163443",
+   "status": "ok",
+   "length_m": 1797.238
+  },
+  {
+   "origin_node_id": "osm-n4113162901",
+   "destination_node_id": "osm-n9961409043",
+   "status": "ok",
+   "length_m": 3256.734
+  },
+  {
+   "origin_node_id": "osm-n4113162901",
+   "destination_node_id": "osm-n4113163428",
+   "status": "ok",
+   "length_m": 1399.549
+  },
+  {
+   "origin_node_id": "osm-n4113162901",
+   "destination_node_id": "osm-n4113163443",
+   "status": "ok",
+   "length_m": 1710.445
+  }
+ ],
+ "segments": [
+  {
+   "start_at": "2026-10-12T08:00:00+05:00",
+   "end_at": "2026-10-14T08:00:00+05:00",
+   "start_utc": "2026-10-12T03:00:00Z",
+   "end_utc": "2026-10-14T03:00:00Z",
+   "duration_h": 48.0,
+   "active": {
+    "A": [
+     "osm-w257241672-0",
+     "osm-w257241675-0",
+     "osm-w257241675-1",
+     "osm-w257244483-3",
+     "osm-w257244483-4",
+     "osm-w257244483-5",
+     "osm-w257244483-6",
+     "osm-w257244483-7",
+     "osm-w257244483-8",
+     "osm-w258156801-3",
+     "osm-w409391525-1",
+     "osm-w409391525-2",
+     "osm-w409391525-3",
+     "osm-w409391527-0",
+     "osm-w409391527-1",
+     "osm-w409391530-0",
+     "osm-w409391530-1",
+     "osm-w409391530-2"
+    ],
+    "B": [
+     "osm-w258156801-3",
+     "osm-w409391525-1",
+     "osm-w409391525-2",
+     "osm-w409391525-3",
+     "osm-w409391527-0",
+     "osm-w409391530-0",
+     "osm-w409391530-1",
+     "osm-w409391530-2"
+    ]
+   },
+   "key": "A:osm-w257241672-0,osm-w257241675-0,osm-w257241675-1,osm-w257244483-3,osm-w257244483-4,osm-w257244483-5,osm-w257244483-6,osm-w257244483-7,osm-w257244483-8,osm-w258156801-3,osm-w409391525-1,osm-w409391525-2,osm-w409391525-3,osm-w409391527-0,osm-w409391527-1,osm-w409391530-0,osm-w409391530-1,osm-w409391530-2|B:osm-w258156801-3,osm-w409391525-1,osm-w409391525-2,osm-w409391525-3,osm-w409391527-0,osm-w409391530-0,osm-w409391530-1,osm-w409391530-2",
+   "none_active": false,
+   "result_digest": "a8aeec1995fb06c66f7a3ad09edba787267245de024c93a1f79c23c601344ab5",
+   "plans": {
+    "A": {
+     "active_closed_edge_ids": [
+      "osm-w257241672-0",
+      "osm-w257241675-0",
+      "osm-w257241675-1",
+      "osm-w257244483-3",
+      "osm-w257244483-4",
+      "osm-w257244483-5",
+      "osm-w257244483-6",
+      "osm-w257244483-7",
+      "osm-w257244483-8",
+      "osm-w258156801-3",
+      "osm-w409391525-1",
+      "osm-w409391525-2",
+      "osm-w409391525-3",
+      "osm-w409391527-0",
+      "osm-w409391527-1",
+      "osm-w409391530-0",
+      "osm-w409391530-1",
+      "osm-w409391530-2"
+     ],
+     "pairs": [
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 19504.923,
+       "delta_m": 524.019,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 15688.866,
+        "length_m": 15688.866,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 17668.011,
+       "delta_m": 544.292,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 13860.723,
+        "length_m": 13860.723,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 17978.907,
+       "delta_m": 544.292,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 14171.619,
+        "length_m": 14171.619,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 3964.415,
+       "delta_m": 620.888,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 3255.259,
+        "length_m": 3255.259,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 2127.503,
+       "delta_m": 641.161,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1427.116,
+        "length_m": 1427.116,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 2438.399,
+       "delta_m": 641.161,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1738.012,
+        "length_m": 1738.012,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 3883.262,
+       "delta_m": 626.528,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 3168.466,
+        "length_m": 3168.466,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 2046.35,
+       "delta_m": 646.801,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1340.323,
+        "length_m": 1340.323,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 2357.246,
+       "delta_m": 646.801,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1651.219,
+        "length_m": 1651.219,
+        "delta_m": 0.0
+       }
+      }
+     ],
+     "summary": {
+      "pairs": 9,
+      "comparable_pairs": 9,
+      "changes": {
+       "unchanged": 0,
+       "longer": 9,
+       "shorter": 0,
+       "lost_within_model": 0,
+       "became_uncertain": 0,
+       "gained": 0,
+       "not_comparable": 0
+      },
+      "mean_delta_m_comparable": 603.994,
+      "max_delta_m_comparable": 646.801,
+      "sum_delta_m_comparable": 5435.943,
+      "note": "средние/суммы только по парам со статусом ok в обоих состояниях; пары без пути не считаются нулём"
+     }
+    },
+    "B": {
+     "active_closed_edge_ids": [
+      "osm-w258156801-3",
+      "osm-w409391525-1",
+      "osm-w409391525-2",
+      "osm-w409391525-3",
+      "osm-w409391527-0",
+      "osm-w409391530-0",
+      "osm-w409391530-1",
+      "osm-w409391530-2"
+     ],
+     "pairs": [
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 19504.923,
+       "delta_m": 524.019,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 15688.866,
+        "length_m": 15688.866,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 17665.731,
+       "delta_m": 542.012,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 13860.723,
+        "length_m": 13860.723,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 17976.627,
+       "delta_m": 542.012,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 14171.619,
+        "length_m": 14171.619,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 3964.415,
+       "delta_m": 620.888,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 3255.259,
+        "length_m": 3255.259,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 2125.223,
+       "delta_m": 638.881,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1427.116,
+        "length_m": 1427.116,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 2436.119,
+       "delta_m": 638.881,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1738.012,
+        "length_m": 1738.012,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 3883.262,
+       "delta_m": 626.528,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 3168.466,
+        "length_m": 3168.466,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 2044.07,
+       "delta_m": 644.521,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1340.323,
+        "length_m": 1340.323,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 2354.966,
+       "delta_m": 644.521,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1651.219,
+        "length_m": 1651.219,
+        "delta_m": 0.0
+       }
+      }
+     ],
+     "summary": {
+      "pairs": 9,
+      "comparable_pairs": 9,
+      "changes": {
+       "unchanged": 0,
+       "longer": 9,
+       "shorter": 0,
+       "lost_within_model": 0,
+       "became_uncertain": 0,
+       "gained": 0,
+       "not_comparable": 0
+      },
+      "mean_delta_m_comparable": 602.474,
+      "max_delta_m_comparable": 644.521,
+      "sum_delta_m_comparable": 5422.263,
+      "note": "средние/суммы только по парам со статусом ok в обоих состояниях; пары без пути не считаются нулём"
+     }
+    }
+   }
+  },
+  {
+   "start_at": "2026-10-14T08:00:00+05:00",
+   "end_at": "2026-10-15T08:00:00+05:00",
+   "start_utc": "2026-10-14T03:00:00Z",
+   "end_utc": "2026-10-15T03:00:00Z",
+   "duration_h": 24.0,
+   "active": {
+    "A": [
+     "osm-w257241672-0",
+     "osm-w257241675-0",
+     "osm-w257241675-1",
+     "osm-w257244483-3",
+     "osm-w257244483-4",
+     "osm-w257244483-5",
+     "osm-w257244483-6",
+     "osm-w257244483-7",
+     "osm-w257244483-8",
+     "osm-w258156801-3",
+     "osm-w409391525-1",
+     "osm-w409391525-2",
+     "osm-w409391525-3",
+     "osm-w409391527-0",
+     "osm-w409391527-1",
+     "osm-w409391530-0",
+     "osm-w409391530-1",
+     "osm-w409391530-2"
+    ],
+    "B": [
+     "osm-w257241672-0",
+     "osm-w257241675-0",
+     "osm-w257241675-1",
+     "osm-w257244483-3",
+     "osm-w257244483-4",
+     "osm-w257244483-5",
+     "osm-w257244483-6",
+     "osm-w257244483-7",
+     "osm-w257244483-8",
+     "osm-w409391527-1"
+    ]
+   },
+   "key": "A:osm-w257241672-0,osm-w257241675-0,osm-w257241675-1,osm-w257244483-3,osm-w257244483-4,osm-w257244483-5,osm-w257244483-6,osm-w257244483-7,osm-w257244483-8,osm-w258156801-3,osm-w409391525-1,osm-w409391525-2,osm-w409391525-3,osm-w409391527-0,osm-w409391527-1,osm-w409391530-0,osm-w409391530-1,osm-w409391530-2|B:osm-w257241672-0,osm-w257241675-0,osm-w257241675-1,osm-w257244483-3,osm-w257244483-4,osm-w257244483-5,osm-w257244483-6,osm-w257244483-7,osm-w257244483-8,osm-w409391527-1",
+   "none_active": false,
+   "result_digest": "5e91b65af14677b5a523868ce5889ed58eeeffcc0fc6fb307b19b994c1911277",
+   "plans": {
+    "A": {
+     "active_closed_edge_ids": [
+      "osm-w257241672-0",
+      "osm-w257241675-0",
+      "osm-w257241675-1",
+      "osm-w257244483-3",
+      "osm-w257244483-4",
+      "osm-w257244483-5",
+      "osm-w257244483-6",
+      "osm-w257244483-7",
+      "osm-w257244483-8",
+      "osm-w258156801-3",
+      "osm-w409391525-1",
+      "osm-w409391525-2",
+      "osm-w409391525-3",
+      "osm-w409391527-0",
+      "osm-w409391527-1",
+      "osm-w409391530-0",
+      "osm-w409391530-1",
+      "osm-w409391530-2"
+     ],
+     "pairs": [
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 19504.923,
+       "delta_m": 524.019,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 15688.866,
+        "length_m": 15688.866,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 17668.011,
+       "delta_m": 544.292,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 13860.723,
+        "length_m": 13860.723,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 17978.907,
+       "delta_m": 544.292,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 14171.619,
+        "length_m": 14171.619,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 3964.415,
+       "delta_m": 620.888,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 3255.259,
+        "length_m": 3255.259,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 2127.503,
+       "delta_m": 641.161,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1427.116,
+        "length_m": 1427.116,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 2438.399,
+       "delta_m": 641.161,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1738.012,
+        "length_m": 1738.012,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 3883.262,
+       "delta_m": 626.528,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 3168.466,
+        "length_m": 3168.466,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 2046.35,
+       "delta_m": 646.801,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1340.323,
+        "length_m": 1340.323,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 2357.246,
+       "delta_m": 646.801,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1651.219,
+        "length_m": 1651.219,
+        "delta_m": 0.0
+       }
+      }
+     ],
+     "summary": {
+      "pairs": 9,
+      "comparable_pairs": 9,
+      "changes": {
+       "unchanged": 0,
+       "longer": 9,
+       "shorter": 0,
+       "lost_within_model": 0,
+       "became_uncertain": 0,
+       "gained": 0,
+       "not_comparable": 0
+      },
+      "mean_delta_m_comparable": 603.994,
+      "max_delta_m_comparable": 646.801,
+      "sum_delta_m_comparable": 5435.943,
+      "note": "средние/суммы только по парам со статусом ok в обоих состояниях; пары без пути не считаются нулём"
+     }
+    },
+    "B": {
+     "active_closed_edge_ids": [
+      "osm-w257241672-0",
+      "osm-w257241675-0",
+      "osm-w257241675-1",
+      "osm-w257244483-3",
+      "osm-w257244483-4",
+      "osm-w257244483-5",
+      "osm-w257244483-6",
+      "osm-w257244483-7",
+      "osm-w257244483-8",
+      "osm-w409391527-1"
+     ],
+     "pairs": [
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 19181.86,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 15688.866,
+        "length_m": 15688.866,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 17324.675,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 13860.723,
+        "length_m": 13860.723,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 17635.571,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 14171.619,
+        "length_m": 14171.619,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 3544.483,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 3255.259,
+        "length_m": 3255.259,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 1687.298,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1427.116,
+        "length_m": 1427.116,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 1998.194,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1738.012,
+        "length_m": 1738.012,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 3457.69,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 3168.466,
+        "length_m": 3168.466,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 1600.505,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1340.323,
+        "length_m": 1340.323,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 1911.401,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1651.219,
+        "length_m": 1651.219,
+        "delta_m": 0.0
+       }
+      }
+     ],
+     "summary": {
+      "pairs": 9,
+      "comparable_pairs": 9,
+      "changes": {
+       "unchanged": 0,
+       "longer": 9,
+       "shorter": 0,
+       "lost_within_model": 0,
+       "became_uncertain": 0,
+       "gained": 0,
+       "not_comparable": 0
+      },
+      "mean_delta_m_comparable": 200.956,
+      "max_delta_m_comparable": 200.956,
+      "sum_delta_m_comparable": 1808.604,
+      "note": "средние/суммы только по парам со статусом ok в обоих состояниях; пары без пути не считаются нулём"
+     }
+    }
+   }
+  },
+  {
+   "start_at": "2026-10-15T08:00:00+05:00",
+   "end_at": "2026-10-16T08:00:00+05:00",
+   "start_utc": "2026-10-15T03:00:00Z",
+   "end_utc": "2026-10-16T03:00:00Z",
+   "duration_h": 24.0,
+   "active": {
+    "A": [],
+    "B": [
+     "osm-w257241672-0",
+     "osm-w257241675-0",
+     "osm-w257241675-1",
+     "osm-w257244483-3",
+     "osm-w257244483-4",
+     "osm-w257244483-5",
+     "osm-w257244483-6",
+     "osm-w257244483-7",
+     "osm-w257244483-8",
+     "osm-w409391527-1"
+    ]
+   },
+   "key": "A:|B:osm-w257241672-0,osm-w257241675-0,osm-w257241675-1,osm-w257244483-3,osm-w257244483-4,osm-w257244483-5,osm-w257244483-6,osm-w257244483-7,osm-w257244483-8,osm-w409391527-1",
+   "none_active": false,
+   "result_digest": "d66609742c9c331f49c57d7d75950698ebb315181771026688508f1de2ba9546",
+   "plans": {
+    "A": {
+     "active_closed_edge_ids": [],
+     "pairs": [
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 18980.904,
+       "delta_m": 0.0,
+       "change": "unchanged",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 15688.866,
+        "length_m": 15688.866,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 17123.719,
+       "delta_m": 0.0,
+       "change": "unchanged",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 13860.723,
+        "length_m": 13860.723,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 17434.615,
+       "delta_m": 0.0,
+       "change": "unchanged",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 14171.619,
+        "length_m": 14171.619,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 3343.527,
+       "delta_m": 0.0,
+       "change": "unchanged",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 3255.259,
+        "length_m": 3255.259,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 1486.342,
+       "delta_m": 0.0,
+       "change": "unchanged",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1427.116,
+        "length_m": 1427.116,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 1797.238,
+       "delta_m": 0.0,
+       "change": "unchanged",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1738.012,
+        "length_m": 1738.012,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 3256.734,
+       "delta_m": 0.0,
+       "change": "unchanged",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 3168.466,
+        "length_m": 3168.466,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 1399.549,
+       "delta_m": 0.0,
+       "change": "unchanged",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1340.323,
+        "length_m": 1340.323,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 1710.445,
+       "delta_m": 0.0,
+       "change": "unchanged",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1651.219,
+        "length_m": 1651.219,
+        "delta_m": 0.0
+       }
+      }
+     ],
+     "summary": {
+      "pairs": 9,
+      "comparable_pairs": 9,
+      "changes": {
+       "unchanged": 9,
+       "longer": 0,
+       "shorter": 0,
+       "lost_within_model": 0,
+       "became_uncertain": 0,
+       "gained": 0,
+       "not_comparable": 0
+      },
+      "mean_delta_m_comparable": 0.0,
+      "max_delta_m_comparable": 0.0,
+      "sum_delta_m_comparable": 0.0,
+      "note": "средние/суммы только по парам со статусом ok в обоих состояниях; пары без пути не считаются нулём"
+     }
+    },
+    "B": {
+     "active_closed_edge_ids": [
+      "osm-w257241672-0",
+      "osm-w257241675-0",
+      "osm-w257241675-1",
+      "osm-w257244483-3",
+      "osm-w257244483-4",
+      "osm-w257244483-5",
+      "osm-w257244483-6",
+      "osm-w257244483-7",
+      "osm-w257244483-8",
+      "osm-w409391527-1"
+     ],
+     "pairs": [
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 19181.86,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 15688.866,
+        "length_m": 15688.866,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 17324.675,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 13860.723,
+        "length_m": 13860.723,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n13657601063",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 17635.571,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 14171.619,
+        "length_m": 14171.619,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 3544.483,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 3255.259,
+        "length_m": 3255.259,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 1687.298,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1427.116,
+        "length_m": 1427.116,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162926",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 1998.194,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1738.012,
+        "length_m": 1738.012,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n9961409043",
+       "status": "ok",
+       "reason": null,
+       "length_m": 3457.69,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 3168.466,
+        "length_m": 3168.466,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n4113163428",
+       "status": "ok",
+       "reason": null,
+       "length_m": 1600.505,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1340.323,
+        "length_m": 1340.323,
+        "delta_m": 0.0
+       }
+      },
+      {
+       "origin_node_id": "osm-n4113162901",
+       "destination_node_id": "osm-n4113163443",
+       "status": "ok",
+       "reason": null,
+       "length_m": 1911.401,
+       "delta_m": 200.956,
+       "change": "longer",
+       "if_unknown_access_allowed": {
+        "baseline_length_m": 1651.219,
+        "length_m": 1651.219,
+        "delta_m": 0.0
+       }
+      }
+     ],
+     "summary": {
+      "pairs": 9,
+      "comparable_pairs": 9,
+      "changes": {
+       "unchanged": 0,
+       "longer": 9,
+       "shorter": 0,
+       "lost_within_model": 0,
+       "became_uncertain": 0,
+       "gained": 0,
+       "not_comparable": 0
+      },
+      "mean_delta_m_comparable": 200.956,
+      "max_delta_m_comparable": 200.956,
+      "sum_delta_m_comparable": 1808.604,
+      "note": "средние/суммы только по парам со статусом ok в обоих состояниях; пары без пути не считаются нулём"
+     }
+    }
+   }
+  }
+ ],
+ "unique_states_computed": 3,
+ "totals": {
+  "A": {
+   "pair_hours_lost_within_model": 0.0,
+   "pair_hours_became_uncertain": 0.0,
+   "extra_length_m_h": 391387.896,
+   "pairs_with_any_loss": 0,
+   "units": {
+    "pair_hours": "пара·ч",
+    "extra_length_m_h": "м·ч"
+   }
+  },
+  "B": {
+   "pair_hours_lost_within_model": 0.0,
+   "pair_hours_became_uncertain": 0.0,
+   "extra_length_m_h": 347081.616,
+   "pairs_with_any_loss": 0,
+   "units": {
+    "pair_hours": "пара·ч",
+    "extra_length_m_h": "м·ч"
+   }
+  }
+ },
+ "timeline_result_digest": "521f6066d8dd8d4b34fc8e3bdbbeedd951b6be4fb75fb7d0590ff2825630de12",
+ "sensitivity_note": "if_unknown_access_allowed — справочный пересчёт, где рёбра с неизвестным доступом считаются разрешёнными. Если там delta_m близка к 0, обход в основном расчёте вызван политикой неизвестного доступа, а не доказанным отсутствием пути на месте.",
+ "note": "Длина пути по графу (м); м·ч и пара·ч — разные величины, общий балл не вычисляется. Не время в пути, не пробки, не число жителей. Перекрытия — гипотеза, не официальное решение.",
+ "result_digest": "10a7726107eff0c968cbaea0a8fa66b1e777a2ca501c56a40911824083d6edfd"
+}

@@ -1,7 +1,7 @@
 From 2e6a82dc14b9d7a74659248ae340f72cadf6f4d9 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 10:15:04 +0000
-Subject: [PATCH 1/2] R07: reuse prepared city network for closures (overlay
+Subject: [PATCH 1/3] R07: reuse prepared city network for closures (overlay
  adjacency, bounded LRU)
 
 Closures no longer rebuild the 94k-edge index: base adjacency is built once per
@@ -246,7 +246,7 @@ index b9f6034..9054efb 100644
 From e9634ece8724ed6676965c732416af8626aad34d Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 10:23:13 +0000
-Subject: [PATCH 2/2] =?UTF-8?q?R07:=20readable=20scenario=20UI=20=E2=80=94?=
+Subject: [PATCH 2/3] =?UTF-8?q?R07:=20readable=20scenario=20UI=20=E2=80=94?=
  =?UTF-8?q?=20place=20names,=20closure=20periods/status,=20plan=20overview?=
  =?UTF-8?q?,=20camera=20return,=20schedule=20table?=
 MIME-Version: 1.0
@@ -723,6 +723,409 @@ index d067c86..73810c6 100644
 -  root.CivicScenarios = { mount };
 +  root.CivicScenarios = { mount, helpers: { closureState, fmtPeriod, placeName, scheduleSegments } };
  })(typeof window !== "undefined" ? window : globalThis);
+-- 
+2.43.0
+
+
+From 5cdf7d5be12bcf270e446aa4232b811284647b95 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 7 Oct 2026 10:28:47 +0000
+Subject: [PATCH 3/3] R07: schedule of work variants over all interval
+ boundaries + phasing case
+
+- engine/civic_scenarios/schedule.py: cuts the window at every A/B boundary, runs plain
+  compare() once per unique closure state, totals from timeline(); CLI for saved cases;
+  separate unknown-access sensitivity (never mixed into main numbers);
+- hypothesis case astana-republic-sidewalk-phasing-v1: sidewalk along Respubliki
+  (Kenesary..Seifullin, 18 edges, ~732 m) closed at once (72 h) vs in two 48 h phases;
+- tests: UI (Node) and engine segmentation agree, segments == compare, totals == timeline.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01CcnxZPmJeLbSLt4S9JZCrb
+---
+ ...ana-republic-sidewalk-phasing-v1.case.json |  90 ++++++++++
+ engine/civic_scenarios/schedule.py            | 155 ++++++++++++++++++
+ tests/civic/R07/test_r07_schedule.py          | 112 +++++++++++++
+ 3 files changed, 357 insertions(+)
+ create mode 100644 engine/civic_scenarios/cases/astana-republic-sidewalk-phasing-v1.case.json
+ create mode 100644 engine/civic_scenarios/schedule.py
+ create mode 100644 tests/civic/R07/test_r07_schedule.py
+
+diff --git a/engine/civic_scenarios/cases/astana-republic-sidewalk-phasing-v1.case.json b/engine/civic_scenarios/cases/astana-republic-sidewalk-phasing-v1.case.json
+new file mode 100644
+index 0000000..4fb1b52
+--- /dev/null
++++ b/engine/civic_scenarios/cases/astana-republic-sidewalk-phasing-v1.case.json
+@@ -0,0 +1,90 @@
++{
++ "case_id": "astana-republic-sidewalk-phasing-v1",
++ "title": "Тротуар вдоль пр. Республики: сразу или по этапам",
++ "evidence_type": "hypothesis",
++ "note": "ГИПОТЕЗА, не сведения о реальных работах. Участок пешеходной сети вдоль проспекта Республики между ул. Кенесары и ул. Сакена Сейфуллина (18 рёбер, ≈732 м по графу) выбран на базовом пути кейса astana-citywide-north-south-v1. План A: весь участок закрыт 12.10 08:00 – 15.10 08:00. План B: два этапа по ≈362 и ≈370 м, каждый по 48 ч (12.10–14.10 и 14.10–16.10). Даты условные. Пары: старт/цель городского кейса и узлы у ул. Агыбай батыра, Амангельды Иманова, Алиби Жангельдина, Богенбай батыра. Рёбра с неизвестным доступом в расчёт не входят: если на противоположной стороне есть тротуар без подтверждённого доступа, реальный обход может быть короче.",
++ "payload": {
++  "schema_version": "civic-scenario-v1",
++  "city": "astana",
++  "graph_id": "osm-astana-walking-20260506",
++  "graph_digest": "a694be21cc08ef1bf8000387a5120e7e5ad810ee37a955a4c223c004aeba5e35",
++  "mode": "walking",
++  "analysis_at": "2026-10-13T09:00:00+05:00",
++  "origin_node_ids": [
++   "osm-n13657601063",
++   "osm-n4113162926",
++   "osm-n4113162901"
++  ],
++  "destination_node_ids": [
++   "osm-n9961409043",
++   "osm-n4113163428",
++   "osm-n4113163443"
++  ],
++  "plans": [
++   {
++    "id": "A",
++    "closures": [
++     {
++      "edge_ids": [
++       "osm-w257241672-0",
++       "osm-w257241675-0",
++       "osm-w257241675-1",
++       "osm-w257244483-3",
++       "osm-w257244483-4",
++       "osm-w257244483-5",
++       "osm-w257244483-6",
++       "osm-w257244483-7",
++       "osm-w257244483-8",
++       "osm-w258156801-3",
++       "osm-w409391525-1",
++       "osm-w409391525-2",
++       "osm-w409391525-3",
++       "osm-w409391527-0",
++       "osm-w409391527-1",
++       "osm-w409391530-0",
++       "osm-w409391530-1",
++       "osm-w409391530-2"
++      ],
++      "start_at": "2026-10-12T08:00:00+05:00",
++      "end_at": "2026-10-15T08:00:00+05:00"
++     }
++    ]
++   },
++   {
++    "id": "B",
++    "closures": [
++     {
++      "edge_ids": [
++       "osm-w258156801-3",
++       "osm-w409391525-1",
++       "osm-w409391525-2",
++       "osm-w409391525-3",
++       "osm-w409391527-0",
++       "osm-w409391530-0",
++       "osm-w409391530-1",
++       "osm-w409391530-2"
++      ],
++      "start_at": "2026-10-12T08:00:00+05:00",
++      "end_at": "2026-10-14T08:00:00+05:00"
++     },
++     {
++      "edge_ids": [
++       "osm-w257241672-0",
++       "osm-w257241675-0",
++       "osm-w257241675-1",
++       "osm-w257244483-3",
++       "osm-w257244483-4",
++       "osm-w257244483-5",
++       "osm-w257244483-6",
++       "osm-w257244483-7",
++       "osm-w257244483-8",
++       "osm-w409391527-1"
++      ],
++      "start_at": "2026-10-14T08:00:00+05:00",
++      "end_at": "2026-10-16T08:00:00+05:00"
++     }
++    ]
++   }
++  ]
++ }
++}
+diff --git a/engine/civic_scenarios/schedule.py b/engine/civic_scenarios/schedule.py
+new file mode 100644
+index 0000000..c86b846
+--- /dev/null
++++ b/engine/civic_scenarios/schedule.py
+@@ -0,0 +1,155 @@
++"""Расписание двух вариантов работ: A и B на каждом отрезке между границами интервалов.
++
++    schedule(payload, graph) -> civic-scenario-schedule-v1
++
++Окно — от самого раннего start_at до самого позднего end_at перекрытий обоих планов (с участками).
++Окно режется по всем границам интервалов A и B; внутри отрезка набор действующих перекрытий
++постоянен (правило start_at <= t < end_at), поэтому каждое уникальное состояние считается один раз
++обычным compare() с analysis_at = начало отрезка. Та же сегментация реализована в UI
++(web/civic/scenarios/scenarios.js, scheduleSegments) — тест сверяет их.
++
++Итог по окну берётся из timeline(): м·ч добавочной длины и пара·ч без пути в модели. Это длина пути
++по графу, умноженная на часы, а не время в пути, не задержка и не число пострадавших жителей.
++
++CLI (воспроизводимый расчёт по сохранённому кейсу):
++    python3 -m engine.civic_scenarios.schedule engine/civic_scenarios/cases/<case>.case.json [--out file.json]
++"""
++import argparse
++import json
++import sys
++from pathlib import Path
++
++from .canon import sha256_hex
++from .compare import EXPLORATORY, compare
++from .graph import PreparedGraph, prepare_graph
++from .payload import parse_ts, utc_iso, validate_payload
++from .routing import dijkstra
++from .timeline import timeline
++
++SCHEMA = "civic-scenario-schedule-v1"
++
++
++def segments(plans):
++    """Отрезки расписания по сырым plans payload (строки ISO). Повторяет scheduleSegments из UI."""
++    closures = [c for p in plans for c in p["closures"] if c["edge_ids"]]
++    iso = {}
++    for c in closures:
++        for key in ("start_at", "end_at"):
++            iso.setdefault(parse_ts(c[key], key), c[key])
++    cuts = sorted(iso)
++    out = []
++    for t0, t1 in zip(cuts, cuts[1:]):
++        active = {}
++        for p in plans:
++            ids = set()
++            for c in p["closures"]:
++                if c["edge_ids"] and parse_ts(c["start_at"], "start_at") <= t0 < parse_ts(c["end_at"], "end_at"):
++                    ids.update(c["edge_ids"])
++            active[p["id"]] = sorted(ids)
++        out.append({
++            "start_at": iso[t0], "end_at": iso[t1],
++            "start_utc": utc_iso(t0), "end_utc": utc_iso(t1),
++            "duration_h": round((t1 - t0).total_seconds() / 3600, 6),
++            "active": active,
++            "key": "|".join(p["id"] + ":" + ",".join(active[p["id"]]) for p in plans),
++            "none_active": all(not active[p["id"]] for p in plans),
++        })
++    return out
++
++
++def _pair_rows(res, plan_id):
++    plan = next(p for p in res["plans"] if p["id"] == plan_id)
++    deltas = {(d["origin_node_id"], d["destination_node_id"]): d for d in plan["vs_baseline"]["pairs"]}
++    rows = []
++    for r in plan["routes"]:
++        d = deltas[(r["origin_node_id"], r["destination_node_id"])]
++        rows.append({"origin_node_id": r["origin_node_id"], "destination_node_id": r["destination_node_id"],
++                     "status": r["status"], "reason": r["reason"], "length_m": r["length_m"],
++                     "delta_m": d["delta_m"], "change": d["change"]})
++    return {"active_closed_edge_ids": plan["active_closed_edge_ids"], "pairs": rows,
++            "summary": plan["vs_baseline"]["summary"]}
++
++
++def _sensitivity(pg, origins, dests, closed):
++    """Длины, если бы рёбра с неизвестным доступом были разрешены (только для оценки зависимости
++    результата от неизвестного доступа; в решениях и в основном расчёте не используется)."""
++    adj = pg.adjacency(EXPLORATORY, frozenset(closed))
++    out = {}
++    for o in origins:
++        dist = dijkstra(adj, o)[0]
++        for d in dests:
++            out[(o, d)] = dist[d] / 1000 if d in dist else None
++    return out
++
++
++def schedule(payload, graph):
++    pg = graph if isinstance(graph, PreparedGraph) else prepare_graph(graph)
++    validate_payload(payload, pg)
++    plans = sorted(payload["plans"], key=lambda p: p["id"])
++    segs = segments(plans)
++    if not segs:
++        raise ValueError("в планах нет перекрытий с участками — расписание пустое")
++    cache = {}
++    out_segments = []
++    for sg in segs:
++        if sg["key"] not in cache:
++            body = dict(payload, analysis_at=sg["start_at"])
++            cache[sg["key"]] = compare(body, pg)
++        res = cache[sg["key"]]
++        out_segments.append(dict(sg, result_digest=res["result_digest"],
++                                 plans={p["id"]: _pair_rows(res, p["id"]) for p in plans}))
++    origins, dests = payload["origin_node_ids"], payload["destination_node_ids"]
++    sens_base = _sensitivity(pg, origins, dests, ())
++    for sg in out_segments:
++        for pid, pl in sg["plans"].items():
++            sens = _sensitivity(pg, origins, dests, pl["active_closed_edge_ids"])
++            for row in pl["pairs"]:
++                k = (row["origin_node_id"], row["destination_node_id"])
++                b, v = sens_base[k], sens[k]
++                row["if_unknown_access_allowed"] = {
++                    "baseline_length_m": b, "length_m": v,
++                    "delta_m": None if b is None or v is None else round(v - b, 3)}
++    any_res = next(iter(cache.values()))
++    baseline = [{"origin_node_id": r["origin_node_id"], "destination_node_id": r["destination_node_id"],
++                 "status": r["status"], "length_m": r["length_m"]} for r in any_res["baseline"]["routes"]]
++    window = (segs[0]["start_at"], segs[-1]["end_at"])
++    tl = timeline(payload, pg, *window)
++    result = {
++        "schema_version": SCHEMA,
++        "input": {"payload_digest": sha256_hex(payload), "graph_id": pg.id, "graph_digest": pg.digest,
++                  "mode": pg.mode, "graph_evidence_type": pg.evidence_type,
++                  "window_start": window[0], "window_end": window[1], "interval_rule": "start_at <= t < end_at"},
++        "baseline": baseline,
++        "segments": out_segments,
++        "unique_states_computed": len(cache),
++        "totals": {p["id"]: p["totals"] for p in tl["plans"]},
++        "timeline_result_digest": tl["result_digest"],
++        "sensitivity_note": "if_unknown_access_allowed — справочный пересчёт, где рёбра с неизвестным доступом "
++                            "считаются разрешёнными. Если там delta_m близка к 0, обход в основном расчёте "
++                            "вызван политикой неизвестного доступа, а не доказанным отсутствием пути на месте.",
++        "note": "Длина пути по графу (м); м·ч и пара·ч — разные величины, общий балл не вычисляется. "
++                "Не время в пути, не пробки, не число жителей. Перекрытия — гипотеза, не официальное решение.",
++    }
++    result["result_digest"] = sha256_hex({k: v for k, v in result.items() if k != "result_digest"})
++    return result
++
++
++def main(argv=None):
++    from .registry import load_graph
++    ap = argparse.ArgumentParser(description="Расписание вариантов A/B по сохранённому кейсу")
++    ap.add_argument("case", type=Path)
++    ap.add_argument("--out", type=Path)
++    a = ap.parse_args(argv)
++    case = json.loads(a.case.read_text("utf-8"))
++    payload = case.get("payload", case)
++    res = schedule(payload, load_graph(payload["graph_id"]))
++    text = json.dumps(res, ensure_ascii=False, indent=1)
++    if a.out:
++        a.out.write_text(text + "\n", encoding="utf-8")
++    else:
++        sys.stdout.write(text + "\n")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/civic/R07/test_r07_schedule.py b/tests/civic/R07/test_r07_schedule.py
+new file mode 100644
+index 0000000..d19df52
+--- /dev/null
++++ b/tests/civic/R07/test_r07_schedule.py
+@@ -0,0 +1,112 @@
++"""R07 round 12: schedule of two work variants (A/B) over all interval boundaries.
++
++* UI segmentation (scenarios.js scheduleSegments, run in Node) == engine segmentation (schedule.segments);
++* every segment equals a plain compare() at its start; totals equal timeline();
++* the phasing case is reproducible and keeps its documented numbers;
++* the unknown-access sensitivity is reported, never mixed into the main numbers.
++"""
++import json
++import shutil
++import subprocess
++from pathlib import Path
++
++import pytest
++
++from engine.civic_scenarios import compare, timeline
++from engine.civic_scenarios.registry import load_graph
++from engine.civic_scenarios.schedule import schedule, segments
++
++ROOT = Path(__file__).resolve().parents[3]
++CASES = ROOT / "engine/civic_scenarios/cases"
++PHASING = json.loads((CASES / "astana-republic-sidewalk-phasing-v1.case.json").read_text("utf-8"))
++TINY = json.loads((CASES / "synthetic-tiny-v1.case.json").read_text("utf-8"))["payload"]
++
++TRICKY_PLANS = [
++    {"id": "A", "closures": [
++        {"edge_ids": ["x2", "x1"], "start_at": "2026-10-07T08:00:00+05:00", "end_at": "2026-10-07T18:00:00+05:00"},
++        {"edge_ids": ["x1"], "start_at": "2026-10-07T03:00:00Z", "end_at": "2026-10-08T00:00:00+05:00"},   # 08:00+05 == 03:00Z
++        {"edge_ids": [], "start_at": "2026-10-01T00:00:00+05:00", "end_at": "2026-10-30T00:00:00+05:00"}]},  # empty: ignored
++    {"id": "B", "closures": [
++        {"edge_ids": ["y"], "start_at": "2026-10-09T00:00:00+05:00", "end_at": "2026-10-10T00:00:00+05:00"}]},  # gap before
++]
++
++
++def js_segments(plans):
++    script = ("const s=require(process.argv[1]);process.stdout.write(JSON.stringify("
++              "globalThis.CivicScenarios.helpers.scheduleSegments(JSON.parse(process.argv[2]))))")
++    out = subprocess.run(["node", "-e", script, str(ROOT / "web/civic/scenarios/scenarios.js"), json.dumps(plans)],
++                         capture_output=True, text=True, check=True).stdout
++    return json.loads(out)
++
++
++def comparable(segs):
++    return [(s["start_at"], s["end_at"], s["active"], s["key"], s["none_active"]) for s in segs]
++
++
++@pytest.mark.skipif(not shutil.which("node"), reason="NOT_RUN: node недоступен")
++@pytest.mark.parametrize("plans", [TRICKY_PLANS, PHASING["payload"]["plans"], TINY["plans"]])
++def test_ui_and_engine_segment_the_same_way(plans):
++    assert comparable(js_segments(plans)) == comparable(segments(plans))
++
++
++def test_tricky_segmentation_semantics():
++    segs = segments(TRICKY_PLANS)
++    # same instant written with two offsets is one boundary; empty closure adds no boundary
++    assert [s["start_at"][:16] for s in segs] == ["2026-10-07T08:00", "2026-10-07T18:00", "2026-10-08T00:00", "2026-10-09T00:00"]
++    assert segs[0]["active"] == {"A": ["x1", "x2"], "B": []}
++    assert segs[1]["active"] == {"A": ["x1"], "B": []}
++    assert segs[2]["none_active"] is True                       # gap: nothing closed
++    assert segs[3]["active"] == {"A": [], "B": ["y"]}
++
++
++@pytest.fixture(scope="module")
++def phasing():
++    payload = PHASING["payload"]
++    graph = load_graph(payload["graph_id"])
++    return payload, graph, schedule(payload, graph)
++
++
++def test_each_segment_equals_plain_compare(phasing):
++    payload, graph, res = phasing
++    assert res["unique_states_computed"] == 3 and len(res["segments"]) == 3
++    for seg in res["segments"]:
++        direct = compare(dict(payload, analysis_at=seg["start_at"]), graph)
++        assert direct["result_digest"] == seg["result_digest"]
++        for p in direct["plans"]:
++            assert [r["length_m"] for r in p["routes"]] == [r["length_m"] for r in seg["plans"][p["id"]]["pairs"]]
++
++
++def test_totals_come_from_timeline(phasing):
++    payload, graph, res = phasing
++    tl = timeline(payload, graph, res["input"]["window_start"], res["input"]["window_end"])
++    assert res["totals"] == {p["id"]: p["totals"] for p in tl["plans"]}
++
++
++def test_phasing_case_documented_numbers(phasing):
++    payload, graph, res = phasing
++    assert PHASING["evidence_type"] == "hypothesis"
++    s0, s1, s2 = res["segments"]
++    assert [s["duration_h"] for s in res["segments"]] == [48.0, 24.0, 24.0]
++    assert len(s0["plans"]["A"]["active_closed_edge_ids"]) == 18 and len(s0["plans"]["B"]["active_closed_edge_ids"]) == 8
++    assert s0["plans"]["A"]["pairs"][0]["delta_m"] == 524.019          # city pair, full closure
++    assert s1["plans"]["B"]["pairs"][0]["delta_m"] == 200.956          # second phase
++    assert s2["plans"]["A"]["active_closed_edge_ids"] == []            # A already finished
++    assert res["totals"]["A"]["extra_length_m_h"] == 391387.896
++    assert res["totals"]["B"]["extra_length_m_h"] == 347081.616
++    assert all(r["status"] == "ok" for s in res["segments"] for p in s["plans"].values() for r in p["pairs"])
++    # reproducible
++    assert schedule(payload, graph)["result_digest"] == res["result_digest"]
++
++
++def test_unknown_access_sensitivity_is_separate(phasing):
++    payload, graph, res = phasing
++    row = res["segments"][0]["plans"]["A"]["pairs"][4]
++    assert row["delta_m"] == 641.161                                   # strict policy
++    assert row["if_unknown_access_allowed"]["delta_m"] == 0.0          # parallel path only via unknown edges
++    assert "sensitivity_note" in res
++
++
++def test_empty_schedule_is_an_error():
++    payload = dict(TINY, plans=[{"id": "A", "closures": []}])
++    with pytest.raises(ValueError):
++        schedule(payload, load_graph(payload["graph_id"]))
 -- 
 2.43.0
 
