@@ -1,0 +1,10 @@
+{
+ "file": "challenge_r13_v1.jsonl",
+ "sha256": "b25a6a19ac3a0efbd41570248a03a590c10a2ad4452997e4bd62293139f95bde",
+ "rows": 134,
+ "frozen_before_any_model_run": true,
+ "evidence_type": "synthetic",
+ "labels_by": "agent (Claude, R08 round 13) by LABELING_GUIDE.md; not residents, not independent experts",
+ "rule": "Evaluated once with the pre-registered protocol (research/round-13-results/R08/PROTOCOL.md). After its errors are viewed it becomes exploratory; any change to the file or to models/rules tuned on it must use a new version (challenge_r13_v2) and cannot be called a final check.",
+ "license": "CC0-1.0 (authored for this project)"
+}

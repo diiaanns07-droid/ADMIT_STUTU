@@ -1,7 +1,8 @@
-worktree_head=dc848640a58eb72169c5de30f159c2517716a6f4
+worktree_head=f2dffd491df2171c5b0b3f57b702cd95b99adfe8
 base=56538a3a7504d4589c38ab4d3c5107f12aa7f8a6
 restore_commit=fb1a0bcd025318fe1472b28eb6470fac5c25b418 (= R08 paths of e311ba822c82d4904f9be72b2db05d991dc8ae12)
-full_patch_sha256=8e9001a91d4920a962fefdaf6f176c6869bd0c1e2cadeb9c1374e6c5546e91ce
-delta_patch_sha256=63f147f53b81668332ea608bdefdd9fd433340c935aa956cca3d3ca0cadbb92f
+full_patch_sha256=cd5d9007ecb5a252c2e0cc225aca848e704725d27acf0d91e95e6a5d0dc45b7a
+delta_patch_sha256=7cd300c6cd7ef97039119407a846aa6e7f82fea4582f4fd7d7f5a23c1bf925bd
+f2dffd4 R08 r13: freeze challenge_r13_v1 (134 agent-labeled synthetic messages) before any model run
 dc84864 R08 r13: reproducibility and split-leakage audit (python -m ml.civic_classifier audit)
 fb1a0bc R08 r13: restore round-12 delivery paths (ml/civic_classifier, tests/civic/R08) from e311ba8 unchanged
