@@ -1,7 +1,7 @@
 From 2e6a82dc14b9d7a74659248ae340f72cadf6f4d9 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 10:15:04 +0000
-Subject: [PATCH] R07: reuse prepared city network for closures (overlay
+Subject: [PATCH 1/2] R07: reuse prepared city network for closures (overlay
  adjacency, bounded LRU)
 
 Closures no longer rebuild the 94k-edge index: base adjacency is built once per
@@ -239,6 +239,490 @@ index b9f6034..9054efb 100644
  
  
  def test_bad_graph_id_is_validation_error():
+-- 
+2.43.0
+
+
+From e9634ece8724ed6676965c732416af8626aad34d Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 7 Oct 2026 10:23:13 +0000
+Subject: [PATCH 2/2] =?UTF-8?q?R07:=20readable=20scenario=20UI=20=E2=80=94?=
+ =?UTF-8?q?=20place=20names,=20closure=20periods/status,=20plan=20overview?=
+ =?UTF-8?q?,=20camera=20return,=20schedule=20table?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- start/target labelled by OSM street names at the node (ID kept in tooltip);
+- closed segments listed with name, length, access and per-segment 'show'/'remove';
+- each interval shows period, duration and state at analysis time; date inputs folded;
+- A/B overview: what is closed, when, active or not;
+- camera: every automatic move saves the user's view; 'return' restores it; after
+  compare the map stays put unless the route is entirely off-screen;
+- schedule table: A and B for every interval segment via existing POST /compare;
+- technical digests/IDs moved into <details>.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01CcnxZPmJeLbSLt4S9JZCrb
+---
+ tests/civic/R07/test_r07_http_ui.py |   2 +-
+ web/civic/scenarios/scenarios.css   |  19 ++
+ web/civic/scenarios/scenarios.js    | 266 ++++++++++++++++++++++++----
+ 3 files changed, 252 insertions(+), 35 deletions(-)
+
+diff --git a/tests/civic/R07/test_r07_http_ui.py b/tests/civic/R07/test_r07_http_ui.py
+index 1e44fa8..5c970e8 100644
+--- a/tests/civic/R07/test_r07_http_ui.py
++++ b/tests/civic/R07/test_r07_http_ui.py
+@@ -51,7 +51,7 @@ def test_cases_reference_known_graphs_with_current_digest():
+ 
+ 
+ def test_ui_contract_and_safety():
+-    assert "root.CivicScenarios = { mount }" in JS
++    assert "root.CivicScenarios = { mount, helpers:" in JS
+     assert "innerHTML" not in JS and "insertAdjacentHTML" not in JS and "eval(" not in JS
+     assert "document.body" not in JS                       # компонент не трогает body
+     assert "new maplibregl.Map" not in JS                  # вторую карту не создаёт
+diff --git a/web/civic/scenarios/scenarios.css b/web/civic/scenarios/scenarios.css
+index 585520a..eef0a3c 100644
+--- a/web/civic/scenarios/scenarios.css
++++ b/web/civic/scenarios/scenarios.css
+@@ -43,3 +43,22 @@
+ .civic-r07-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: #495057; margin: 4px 0 6px; }
+ .civic-r07-lg { display: inline-flex; align-items: center; gap: 4px; }
+ .civic-r07-lg i { display: inline-block; width: 18px; height: 0; }
++/* round 12: понятные подписи, сводка планов, расписание, возврат к виду */
++.civic-r07-overview { display: grid; gap: 4px; margin: 8px 0; font-size: 12px; }
++.civic-r07-ov-row { border-left: 4px solid; padding: 2px 8px; background: #f8f9fa; border-radius: 0 6px 6px 0; }
++.civic-r07-state { font-size: 12px; margin: 2px 0 4px; }
++.civic-r07-state-active { color: #2b8a3e; }
++.civic-r07-state-not_started, .civic-r07-state-ended { color: #868e96; }
++.civic-r07-segs { list-style: none; padding: 0; margin: 4px 0; }
++.civic-r07-seg { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; padding: 2px 0; border-bottom: 1px dashed #e9ecef; }
++.civic-r07-seg-name { font-weight: 600; overflow-wrap: anywhere; }
++.civic-r07-pts-row { margin: 4px 0; }
++.civic-r07-pt { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-right: 6px; overflow-wrap: anywhere; }
++.civic-r07-back { border-color: #1971c2; color: #1971c2; }
++.civic-r07-subtitle { font-size: 14px; margin: 14px 0 4px; }
++.civic-r07-schedule { margin-top: 6px; }
++.civic-r07-panel details > summary { cursor: pointer; font-size: 12px; color: #495057; }
++@media (max-width: 760px) {
++  .civic-r07-table { font-size: 11px; }
++  .civic-r07-btn, .civic-r07-chip { min-height: 32px; }
++}
+diff --git a/web/civic/scenarios/scenarios.js b/web/civic/scenarios/scenarios.js
+index d067c86..73810c6 100644
+--- a/web/civic/scenarios/scenarios.js
++++ b/web/civic/scenarios/scenarios.js
+@@ -35,7 +35,7 @@
+   }
+   const fmtM = (m) => (m === null || m === undefined ? "—" : (Math.round(m * 10) / 10).toLocaleString("ru-RU") + " м");
+   const fmtD = (m) => (m === null || m === undefined ? "—" : (m > 0 ? "+" : m < 0 ? "−" : "±") + (Math.round(Math.abs(m) * 10) / 10).toLocaleString("ru-RU") + " м");
+-  const short = (id) => (id.length > 14 ? "…" + id.slice(-6) : id);
++  const plural = (n, one, few, many) => n + " " + (n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? few : many);
+ 
+   // "2026-10-07T09:00" + "+05:00" -> ISO с явным смещением
+   const isoWithOffset = (local, off) => (local.length === 16 ? local + ":00" : local) + off;
+@@ -44,6 +44,57 @@
+     return m ? { local: m[1], off: m[2] === "Z" ? "+00:00" : m[2] } : { local: "", off: "+05:00" };
+   }
+ 
++  // ---------- чистые функции (проверяются в Node, см. tests/civic/R07/test_r07_ui_logic.py) ----------
++  const ACCESS_LABEL = { allowed: "доступ разрешён", unknown: "доступ неизвестен — в расчёте не используется", denied: "доступ запрещён" };
++  const STATE_LABEL = { active: "действует в момент анализа", not_started: "ещё не началось", ended: "уже закончилось" };
++  function closureState(c, atIso) {
++    const at = Date.parse(atIso), s = Date.parse(c.start_at), e = Date.parse(c.end_at);
++    return at < s ? "not_started" : at >= e ? "ended" : "active";
++  }
++  // "2026-10-07T00:00:00+05:00" -> "07.10 00:00" (время в смещении самой записи, без пересчёта в часовой пояс браузера)
++  function fmtLocal(iso) {
++    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(iso || "");
++    return m ? m[3] + "." + m[2] + " " + m[4] + ":" + m[5] : String(iso || "—");
++  }
++  function fmtPeriod(startIso, endIso) {
++    const h = (Date.parse(endIso) - Date.parse(startIso)) / 3600e3;
++    const dur = !Number.isFinite(h) ? "" : h >= 48 && h % 24 === 0 ? " (" + h / 24 + " сут)" : " (" + (Math.round(h * 10) / 10).toLocaleString("ru-RU") + " ч)";
++    return fmtLocal(startIso) + " – " + fmtLocal(endIso) + dur;
++  }
++  // Название точки по улицам, которые в ней сходятся (OSM name рёбер); ID узла остаётся в деталях.
++  function placeName(nodeId, nodeEdges, edgeIndex) {
++    const count = new Map();
++    for (const eid of nodeEdges.get(nodeId) || []) {
++      const n = (edgeIndex.get(eid) || {}).name;
++      if (n) count.set(n, (count.get(n) || 0) + 1);
++    }
++    const names = [...count.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map((x) => x[0]).slice(0, 2);
++    return names.length ? names.join(" × ") : "точка на участке без названия";
++  }
++  // Расписание двух планов: окно режется по всем границам интервалов; внутри отрезка набор действующих
++  // перекрытий постоянен (правило [start, end)). key — набор действующих участков A|B: одинаковые
++  // состояния считаются один раз.
++  function scheduleSegments(plans) {
++    const all = [];
++    for (const p of plans) for (const c of p.closures) if (c.edge_ids.length) all.push(c);
++    const cuts = [...new Set(all.flatMap((c) => [Date.parse(c.start_at), Date.parse(c.end_at)]))].filter(Number.isFinite).sort((a, b) => a - b);
++    const iso = new Map();
++    for (const c of all) { if (!iso.has(Date.parse(c.start_at))) iso.set(Date.parse(c.start_at), c.start_at); if (!iso.has(Date.parse(c.end_at))) iso.set(Date.parse(c.end_at), c.end_at); }
++    const out = [];
++    for (let i = 0; i + 1 < cuts.length; i++) {
++      const t = cuts[i], seg = { start_at: iso.get(t), end_at: iso.get(cuts[i + 1]), active: {} };
++      for (const p of plans) {
++        const ids = new Set();
++        for (const c of p.closures) if (Date.parse(c.start_at) <= t && t < Date.parse(c.end_at)) for (const e of c.edge_ids) ids.add(e);
++        seg.active[p.id] = [...ids].sort();
++      }
++      seg.key = plans.map((p) => p.id + ":" + seg.active[p.id].join(",")).join("|");
++      seg.none_active = plans.every((p) => !seg.active[p.id].length);
++      out.push(seg);
++    }
++    return out;
++  }
++
+   function mount(opts) {
+     const host = opts && opts.root, map = (opts && opts.map) || null, api = opts && opts.api;
+     if (!host || !api || typeof api.request !== "function") throw new Error("CivicScenarios.mount: нужны root и api.request");
+@@ -51,7 +102,7 @@
+     const state = {
+       graphs: [], cases: [], graph: null, edgeIndex: new Map(), nodeIndex: new Map(),
+       payload: null, editPlan: "A", clickMode: "close", result: null, selectedPair: null, busy: false, destroyed: false,
+-      graphSeq: 0, resultSeq: 0, drawnGraph: null,
++      graphSeq: 0, resultSeq: 0, drawnGraph: null, nodeEdges: new Map(), returnView: null, schedule: null,
+     };
+     const listeners = [];
+     const ui = {};
+@@ -75,6 +126,9 @@
+     ui.points = el("div", { class: P + "points" });
+     ui.run = el("button", { class: P + "btn " + P + "primary", type: "button", text: "Сравнить", disabled: true, onclick: run });
+     ui.err = el("div", { class: P + "error", role: "alert", hidden: true });
++    ui.back = el("button", { type: "button", class: P + "btn " + P + "back", hidden: true, text: "↩ Вернуться к прежнему виду карты", onclick: returnToView });
++    ui.overview = el("div", { class: P + "overview", "aria-live": "polite" });
++    ui.schedule = el("div", { class: P + "schedule" });
+     ui.out = el("div", { class: P + "result", "aria-live": "polite" });
+ 
+     wrap.append(
+@@ -87,9 +141,9 @@
+         [PLAN_COLORS.A, "solid", "закрыто в плане A / путь A"], [PLAN_COLORS.B, "solid", "закрыто в плане B / путь B"], ["#adb5bd", "dotted", "перекрытие не действует в момент анализа"], [ROUTE_COLORS.base, "solid", "путь в базе"],
+       ].map(([c, st, t]) => el("span", { class: P + "lg" }, [el("i", { style: "border-top:3px " + st + " " + c }), t]))),
+       el("div", { class: P + "row" }, [el("label", { class: P + "lbl" }, ["Момент анализа ", ui.atLocal]), ui.atOff]),
+-      ui.planTabs, ui.modeBar, ui.planBody, ui.points,
+-      el("div", { class: P + "row" }, [ui.run, el("button", { class: P + "btn", type: "button", text: "Вся сеть", onclick: () => drawGraph(true) })]),
+-      ui.err, ui.out,
++      ui.overview, ui.planTabs, ui.modeBar, ui.planBody, ui.points,
++      el("div", { class: P + "row" }, [ui.run, el("button", { class: P + "btn", type: "button", text: "Вся сеть", onclick: () => { saveView(); drawGraph(true); } }), ui.back]),
++      ui.err, ui.out, ui.schedule,
+     );
+ 
+     // ---------- загрузка ----------
+@@ -125,6 +179,8 @@
+         if (state.destroyed || seq !== state.graphSeq) return;
+         const g = d.graph;
+         state.graph = g; state.edgeIndex = new Map(g.edges.map((e) => [e.id, e])); state.nodeIndex = new Map(g.nodes.map((n) => [n.id, n]));
++        state.nodeEdges = new Map();
++        for (const e of g.edges) for (const n of [e.from, e.to]) { const l = state.nodeEdges.get(n); if (l) l.push(e.id); else state.nodeEdges.set(n, [e.id]); }
+         state.result = null; state.selectedPair = null; ui.out.replaceChildren();
+         renderGraphInfo();
+         const cases = state.cases.filter((c) => c.payload.graph_id === id);
+@@ -144,7 +200,7 @@
+       ui.graphInfo.replaceChildren(
+         el("div", {}, [badge, " ", el("span", { text: "режим: " + (MODE_LABEL[g.mode] || g.mode) + " · участков " + g.edges.length.toLocaleString("ru-RU") })]),
+         el("p", { text: g.source?.snapshot_at ? "Состояние OSM: " + g.source.snapshot_at.slice(0, 10) + ". Приблизьте карту, чтобы выбрать участок, старт и цель." : "Расчёт доступен только на показанных линиях. Приблизьте карту для выбора точек." }),
+-        el("details", {}, [el("summary", { text: "Пределы данных и источник" }), lim,
++        el("details", {}, [el("summary", { text: "Пределы данных и источник (технические детали)" }), lim,
+           el("div", { class: P + "src", text: "Узлов " + g.nodes.length + " · digest " + g.digest }),
+           el("div", { class: P + "src", text: g.source && g.source.commit ? "Источник: " + g.source.path + " @ " + g.source.commit.slice(0, 10) + (g.license && g.license.id ? " · лицензия " + g.license.id : "") : "Источник: " + ((g.source && g.source.kind) || "—") })]),
+       );
+@@ -166,10 +222,11 @@
+       const s = splitIso(state.payload.analysis_at);
+       ui.atLocal.value = s.local; if ([...ui.atOff.options].some((o) => o.value === s.off)) ui.atOff.value = s.off;
+       state.result = null; ui.out.replaceChildren();
+-      renderPlans(); renderPoints(); drawOverlays();
++      state.schedule = null;
++      renderPlans(); renderPoints(); renderOverview(); renderSchedule(); drawOverlays();
+     }
+-    function invalidateResult() { ++state.resultSeq; state.result = null; state.selectedPair = null; ui.out.replaceChildren(); }
+-    function syncAt() { if (state.payload && ui.atLocal.value) { const at = isoWithOffset(ui.atLocal.value, ui.atOff.value); if (state.payload.analysis_at !== at) invalidateResult(); state.payload.analysis_at = at; drawOverlays(); } }
++    function invalidateResult() { ++state.resultSeq; state.result = null; state.selectedPair = null; state.schedule = null; ui.out.replaceChildren(); renderSchedule(); renderOverview(); }
++    function syncAt() { if (state.payload && ui.atLocal.value) { const at = isoWithOffset(ui.atLocal.value, ui.atOff.value); if (state.payload.analysis_at !== at) invalidateResult(); state.payload.analysis_at = at; renderPlans(); drawOverlays(); } }
+ 
+     // ---------- планы ----------
+     const plan = (id) => state.payload.plans.find((p) => p.id === id);
+@@ -180,6 +237,18 @@
+       for (const c of plan(id).closures) if (Date.parse(c.start_at) <= at && at < Date.parse(c.end_at)) for (const e of c.edge_ids) s.add(e);
+       return s;
+     }
++    // Безымянная дорожка подписывается по названной улице, сходящейся с ней в узле; иначе — честно «без названия».
++    function edgeName(e) {
++      if (!e) return "участок без названия";
++      if (e.name) return e.name;
++      for (const n of [e.from, e.to]) for (const id of state.nodeEdges.get(n) || []) {
++        const o = state.edgeIndex.get(id);
++        if (o && o.name) return "дорожка у «" + o.name + "»";
++      }
++      return "участок без названия";
++    }
++    const nodeName = (id) => placeName(id, state.nodeEdges, state.edgeIndex);
++    function closureStatus(c) { return closureState(c, state.payload.analysis_at); }
+     function renderPlans() {
+       if (!state.payload) return;
+       ui.planTabs.replaceChildren(...["A", "B"].map((id) => el("button", {
+@@ -190,14 +259,28 @@
+         el("button", { type: "button", class: P + "chip" + (state.clickMode === m ? " " + P + "active" : ""), onclick: () => { state.clickMode = m; renderPlans(); drawOverlays(); }, text: t })));
+       const p = plan(state.editPlan);
+       const items = p.closures.map((c, i) => {
+-        const s = splitIso(c.start_at), e = splitIso(c.end_at);
+-        const sIn = el("input", { type: "datetime-local", class: P + "input", value: s.local, "aria-label": "Начало", onchange: () => { invalidateResult(); c.start_at = isoWithOffset(sIn.value, s.off); drawOverlays(); } });
+-        const eIn = el("input", { type: "datetime-local", class: P + "input", value: e.local, "aria-label": "Конец", onchange: () => { invalidateResult(); c.end_at = isoWithOffset(eIn.value, e.off); drawOverlays(); } });
++        const s = splitIso(c.start_at), e = splitIso(c.end_at), st = closureStatus(c);
++        const sIn = el("input", { type: "datetime-local", class: P + "input", value: s.local, "aria-label": "Начало", onchange: () => { invalidateResult(); c.start_at = isoWithOffset(sIn.value, s.off); renderPlans(); drawOverlays(); } });
++        const eIn = el("input", { type: "datetime-local", class: P + "input", value: e.local, "aria-label": "Конец", onchange: () => { invalidateResult(); c.end_at = isoWithOffset(eIn.value, e.off); renderPlans(); drawOverlays(); } });
++        const segs = c.edge_ids.map((id) => {
++          const ed = state.edgeIndex.get(id);
++          return el("li", { class: P + "seg" }, [
++            el("span", { class: P + "seg-name", text: edgeName(ed) }),
++            el("span", { class: P + "hint", text: " · " + fmtM(ed && ed.length_m) + (ed && ed.access !== "allowed" ? " · " + ACCESS_LABEL[ed.access] : "") }),
++            el("button", { type: "button", class: P + "chip", text: "показать", "aria-label": "Показать участок на карте", onclick: () => showEdges([id]) }),
++            el("button", { type: "button", class: P + "chip", text: "×", "aria-label": "Убрать участок из перекрытия", onclick: () => toggleEdge(id, state.editPlan) }),
++          ]);
++        });
+         return el("li", { class: P + "closure" }, [
+-          el("div", { text: "Перекрытие " + (i + 1) + ": участков " + c.edge_ids.length + " · UTC" + s.off }),
+-          el("div", { class: P + "row" }, [el("label", { class: P + "lbl" }, ["с ", sIn]), el("label", { class: P + "lbl" }, ["до ", eIn])]),
+-          el("div", { class: P + "hint", text: "[начало, конец): начало включительно, конец — нет" }),
+-          el("button", { type: "button", class: P + "btn", text: "Удалить", onclick: () => { invalidateResult(); p.closures.splice(i, 1); renderPlans(); drawOverlays(); } }),
++          el("div", {}, [el("strong", { text: "Перекрытие " + (i + 1) + ": " }), fmtPeriod(c.start_at, c.end_at)]),
++          el("div", { class: P + "state " + P + "state-" + st, text: STATE_LABEL[st] + " (момент анализа " + fmtLocal(state.payload.analysis_at) + ")" }),
++          el("ul", { class: P + "segs" }, segs.length ? segs : [el("li", { class: P + "hint", text: "Участков нет: нажмите на линию на карте." })]),
++          el("details", {}, [el("summary", { text: "Изменить период (UTC" + s.off + ")" }),
++            el("div", { class: P + "row" }, [el("label", { class: P + "lbl" }, ["с ", sIn]), el("label", { class: P + "lbl" }, ["до ", eIn])]),
++            el("div", { class: P + "hint", text: "[начало, конец): начало включительно, конец — нет" })]),
++          el("div", { class: P + "row" }, [
++            c.edge_ids.length ? el("button", { type: "button", class: P + "btn", text: "Показать все участки", onclick: () => showEdges(c.edge_ids) }) : null,
++            el("button", { type: "button", class: P + "btn", text: "Удалить перекрытие", onclick: () => { invalidateResult(); p.closures.splice(i, 1); renderPlans(); drawOverlays(); } })]),
+         ]);
+       });
+       ui.planBody.replaceChildren(
+@@ -205,21 +288,42 @@
+         el("button", { type: "button", class: P + "btn", text: "+ интервал перекрытия", onclick: () => {
+           const at = splitIso(state.payload.analysis_at);
+           const d = new Date(at.local + ":00Z"); const end = new Date(d.getTime() + 6 * 3600e3).toISOString().slice(0, 16);
++          invalidateResult();
+           p.closures.push({ edge_ids: [], start_at: at.local + ":00" + at.off, end_at: end + ":00" + at.off });
+           renderPlans();
+         } }),
+         el("div", { class: P + "hint", text: state.graph && state.graph.edges.length ? "Приблизьте карту и нажмите на нужную линию. Участок добавится в последнее перекрытие плана " + state.editPlan + "." : "" }),
+       );
++      renderOverview();
++    }
++    // Краткая сводка: что закрыто в A и в B, когда и действует ли в момент анализа.
++    function renderOverview() {
++      if (!state.payload || !state.graph) { ui.overview.replaceChildren(); return; }
++      const rows = ["A", "B"].map((id) => {
++        const pl = plan(id);
++        const parts = pl.closures.filter((c) => c.edge_ids.length).map((c) => {
++          const names = [...new Set(c.edge_ids.map((e) => edgeName(state.edgeIndex.get(e))))];
++          return el("div", { class: P + "state-" + closureStatus(c) }, [
++            names.slice(0, 2).join(", ") + (names.length > 2 ? " и ещё " + (names.length - 2) : "") + " · " + c.edge_ids.length + " уч. · " + fmtPeriod(c.start_at, c.end_at) + " — " + STATE_LABEL[closureStatus(c)]]);
++        });
++        return el("div", { class: P + "ov-row", style: "border-left-color:" + PLAN_COLORS[id] }, [el("strong", { text: "План " + id + ": " }),
++          ...(parts.length ? parts : [el("span", { class: P + "hint", text: "перекрытий нет" })])]);
++      });
++      ui.overview.replaceChildren(...rows);
+     }
+     function renderPoints() {
+-      const mk = (ids, key, label) => el("div", {}, [el("strong", { text: label + ": " }),
+-        ...ids.map((id) => el("button", { type: "button", class: P + "chip", title: id, text: short(id) + " ×", onclick: () => {
+-          if (!state.payload) return; invalidateResult(); state.payload[key] = state.payload[key].filter((x) => x !== id); renderPoints(); drawOverlays(); } }))]);
+-      ui.points.replaceChildren(mk(state.payload.origin_node_ids, "origin_node_ids", "Старты"), mk(state.payload.destination_node_ids, "destination_node_ids", "Цели"));
++      const mk = (ids, key, label) => el("div", { class: P + "pts-row" }, [el("strong", { text: label + ": " }),
++        ids.length ? null : el("span", { class: P + "hint", text: "не выбрано — режим «" + (key === "origin_node_ids" ? "Выбрать старт" : "Выбрать цель") + "», затем точка на карте" }),
++        ...ids.map((id) => el("span", { class: P + "pt" }, [
++          el("span", { title: "узел графа " + id, text: nodeName(id) }),
++          el("button", { type: "button", class: P + "chip", text: "показать", "aria-label": "Показать точку на карте", onclick: () => showNodes([id]) }),
++          el("button", { type: "button", class: P + "chip", text: "×", "aria-label": "Убрать точку", onclick: () => {
++            if (!state.payload) return; invalidateResult(); state.payload[key] = state.payload[key].filter((x) => x !== id); renderPoints(); drawOverlays(); } })]))]);
++      ui.points.replaceChildren(mk(state.payload.origin_node_ids, "origin_node_ids", "Старт"), mk(state.payload.destination_node_ids, "destination_node_ids", "Цель"));
+     }
+-    function toggleEdge(id) {
++    function toggleEdge(id, planId) {
+       invalidateResult();
+-      const p = plan(state.editPlan);
++      const p = plan(planId || state.editPlan);
+       const holder = p.closures.find((c) => c.edge_ids.includes(id));
+       if (holder) { holder.edge_ids = holder.edge_ids.filter((x) => x !== id); if (!holder.edge_ids.length) p.closures.splice(p.closures.indexOf(holder), 1); }
+       else {
+@@ -249,7 +353,8 @@
+         state.result = r; state.sentPayload = body;
+         const first = r.baseline.routes[0];
+         state.selectedPair = first ? first.origin_node_id + ">" + first.destination_node_id : null;
+-        renderResult(); drawOverlays(); fitSelectedRoute();
++        renderResult(); drawOverlays(); renderSchedule();
++        if (map && !selectedRouteVisible()) fitSelectedRoute();   // маршрут целиком за кадром — приблизить (вид сохранён)
+       }).catch((e) => { if (!state.destroyed && seq === state.resultSeq) showError(e); }).finally(() => { state.busy = false; ui.run.disabled = !state.graph; ui.run.textContent = "Сравнить"; });
+     }
+ 
+@@ -263,7 +368,7 @@
+       const s = p.vs_baseline.summary, ch = s.changes;
+       return el("div", { class: P + "card", style: "border-top-color:" + PLAN_COLORS[p.id] }, [
+         el("h3", { text: "План " + p.id }),
+-        el("div", { text: "Закрыто участков в момент анализа: " + p.active_closed_edge_ids.length + "; неактивных интервалов: " + p.inactive_closures.length }),
++        el("div", { text: "Закрыто сейчас: " + (p.active_closed_edge_ids.length ? [...new Set(p.active_closed_edge_ids.map((e) => edgeName(state.edgeIndex.get(e))))].slice(0, 3).join(", ") + " (" + p.active_closed_edge_ids.length + " уч.)" : "ничего") + (p.inactive_closures.length ? "; не действуют в этот момент интервалов: " + p.inactive_closures.length : "") }),
+         el("div", { text: "Сопоставимых пар: " + s.comparable_pairs + " из " + s.pairs }),
+         el("div", { text: "Средний прирост длины (только сопоставимые): " + fmtD(s.mean_delta_m_comparable) }),
+         el("div", { text: "Максимальный прирост: " + fmtD(s.max_delta_m_comparable) }),
+@@ -281,9 +386,12 @@
+       const bRows = r.baseline.routes, aRows = plans.A ? idx(plans.A.routes) : new Map(), bbRows = plans.B ? idx(plans.B.routes) : new Map();
+       const dA = plans.A ? idx(plans.A.vs_baseline.pairs) : new Map(), dB = plans.B ? idx(plans.B.vs_baseline.pairs) : new Map();
+       const head = el("div", { class: P + "meta" }, [
+-        el("div", { text: "Момент: " + inp.analysis_at + " (UTC " + inp.analysis_at_utc + ")" }),
+-        el("div", { text: "Граф " + inp.graph_id + " · " + (EVIDENCE_LABEL[inp.graph_evidence_type] || inp.graph_evidence_type) + " · режим " + (MODE_LABEL[inp.mode] || inp.mode) }),
+-        el("div", { class: P + "hint", text: "scenario " + inp.scenario_digest.slice(0, 12) + " · result " + r.result_digest.slice(0, 12) + " · правило " + inp.interval_rule }),
++        el("div", { text: "Результат на момент " + fmtLocal(inp.analysis_at) + " · " + (EVIDENCE_LABEL[inp.graph_evidence_type] || inp.graph_evidence_type) + " · " + (MODE_LABEL[inp.mode] || inp.mode) }),
++        el("details", {}, [el("summary", { text: "Технические детали расчёта" }),
++          el("div", { class: P + "src", text: "analysis_at " + inp.analysis_at + " (UTC " + inp.analysis_at_utc + ") · правило " + inp.interval_rule }),
++          el("div", { class: P + "src", text: "граф " + inp.graph_id + " · digest " + inp.graph_digest }),
++          el("div", { class: P + "src", text: "scenario_digest " + inp.scenario_digest }),
++          el("div", { class: P + "src", text: "result_digest " + r.result_digest + (r.timing_ms !== undefined ? " · " + r.timing_ms + " мс" : "") })]),
+       ]);
+       const cards = el("div", { class: P + "cards" }, r.plans.map(planCard));
+       let ab = null;
+@@ -293,9 +401,9 @@
+       const tbody = el("tbody", {}, bRows.map((b) => {
+         const k = pairKey(b);
+         const tr = el("tr", { class: P + "pair" + (state.selectedPair === k ? " " + P + "active" : ""), tabindex: "0",
+-          onclick: () => { state.selectedPair = k; renderResult(); drawOverlays(); fitSelectedRoute(); },
+-          onkeydown: (ev) => { if (ev.key === "Enter") { state.selectedPair = k; renderResult(); drawOverlays(); fitSelectedRoute(); } } }, [
+-          el("td", { title: b.origin_node_id + " → " + b.destination_node_id, text: short(b.origin_node_id) + " → " + short(b.destination_node_id) }),
++          onclick: () => { state.selectedPair = k; renderResult(); drawOverlays(); },
++          onkeydown: (ev) => { if (ev.key === "Enter") { state.selectedPair = k; renderResult(); drawOverlays(); } } }, [
++          el("td", { title: "узлы " + b.origin_node_id + " → " + b.destination_node_id, text: nodeName(b.origin_node_id) + " → " + nodeName(b.destination_node_id) }),
+           cell(b), cell(aRows.get(k), dA.get(k) && dA.get(k).delta_m), cell(bbRows.get(k), dB.get(k) && dB.get(k).delta_m)]);
+         return tr;
+       }));
+@@ -307,10 +415,71 @@
+         const a = el("a", { href: URL.createObjectURL(blob), download: "scenario-" + inp.scenario_digest.slice(0, 12) + ".json" });
+         a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+       } });
+-      ui.out.replaceChildren(head, cards, ab, el("div", { class: P + "hint", text: "Щёлкните строку, чтобы показать пути на карте (синий — база)." }), table,
++      const showRoutes = el("button", { type: "button", class: P + "btn", text: "Показать маршруты выбранной пары целиком", onclick: fitSelectedRoute });
++      ui.out.replaceChildren(head, cards, ab, el("div", { class: P + "hint", text: "Щёлкните строку, чтобы выбрать пару (синий — база). Карта остаётся на месте; «Показать маршруты» приблизит их." }), showRoutes, table,
+         el("details", {}, [el("summary", { text: "Предупреждения и ограничения" }), warns, lims]), dl);
+     }
+ 
++
++    // ---------- расписание: оба плана по всем интервалам ----------
++    // Каждый отрезок между границами интервалов считается обычным POST /compare на его начало
++    // (analysis_at = граница, правило [start, end)). Одинаковые наборы закрытых участков считаются один раз.
++    function renderSchedule() {
++      if (!state.payload || !state.graph) { ui.schedule.replaceChildren(); return; }
++      const segs = scheduleSegments(state.payload.plans);
++      const head = el("h3", { class: P + "subtitle", text: "По расписанию: A и B во всех интервалах" });
++      if (!segs.length) { ui.schedule.replaceChildren(head, el("div", { class: P + "hint", text: "Добавьте участки в перекрытия — здесь появится сравнение по всем периодам." })); return; }
++      const sc = state.schedule;
++      const pairKey = (x) => x.origin_node_id + ">" + x.destination_node_id;
++      const want = state.selectedPair || (sc && sc.firstPair) || null;
++      const cellFor = (res, pid) => {
++        if (!res) return el("td", { class: P + "hint", text: sc && sc.running ? "…" : "—" });
++        if (res.error) return el("td", { class: P + "st-unreachable", text: "ошибка: " + res.error });
++        const pl = res.plans.find((x) => x.id === pid);
++        if (!pl) return el("td", { text: "—" });
++        const row = pl.routes.find((x) => pairKey(x) === want) || pl.routes[0];
++        const d = pl.vs_baseline.pairs.find((x) => pairKey(x) === pairKey(row));
++        if (!pl.active_closed_edge_ids.length) return el("td", { class: P + "hint", text: "не действует — как база" });
++        return cell(row, d && d.delta_m);
++      };
++      const rows = segs.map((sg) => {
++        const res = sc && sc.byKey[sg.key];
++        return el("tr", {}, [el("td", { text: fmtPeriod(sg.start_at, sg.end_at) }), cellFor(res, "A"), cellFor(res, "B")]);
++      });
++      const pairNote = want ? "Пара: " + nodeName(want.split(">")[0]) + " → " + nodeName(want.split(">")[1]) : "";
++      const btn = el("button", { type: "button", class: P + "btn", disabled: !!(sc && sc.running) || !state.payload.origin_node_ids.length || !state.payload.destination_node_ids.length,
++        text: sc && sc.running ? "Считаю " + sc.done + " из " + sc.total + "…" : "Рассчитать по всем интервалам (" + plural(new Set(segs.filter((x) => !x.none_active).map((x) => x.key)).size, "расчёт", "расчёта", "расчётов") + ")", onclick: runSchedule });
++      ui.schedule.replaceChildren(head,
++        el("div", { class: P + "hint", text: "Отрезки построены по всем границам интервалов A и B. В каждом указаны длина пути и изменение относительно базы на начало отрезка. Это длина по графу, не время и не пробки." }),
++        btn, pairNote ? el("div", { class: P + "hint", text: pairNote }) : null,
++        el("table", { class: P + "table" }, [el("thead", {}, el("tr", {}, ["Период", "План A", "План B"].map((t) => el("th", { text: t })))), el("tbody", {}, rows)]));
++    }
++    function runSchedule() {
++      if (!state.payload || (state.schedule && state.schedule.running)) return;
++      clearError(); syncAt();
++      const base = JSON.parse(JSON.stringify(state.payload));
++      base.plans = base.plans.map((p) => ({ id: p.id, closures: p.closures.filter((c) => c.edge_ids.length) }));
++      const segs = scheduleSegments(base.plans);
++      const todo = [];
++      for (const sg of segs) if (!sg.none_active && !todo.some((x) => x.key === sg.key)) todo.push(sg);
++      // любое изменение сценария вызывает invalidateResult() -> state.schedule = null, и ответы старого расчёта отбрасываются
++      const sc = state.schedule = { running: true, done: 0, total: todo.length, byKey: {}, firstPair: null };
++      renderSchedule();
++      const next = (i) => {
++        if (state.destroyed || state.schedule !== sc) return;
++        if (i >= todo.length) { sc.running = false; renderSchedule(); return; }
++        const body = JSON.parse(JSON.stringify(base));
++        body.analysis_at = todo[i].start_at;
++        req("POST", "/compare", body).then((r) => {
++          if (state.schedule !== sc) return;
++          sc.byKey[todo[i].key] = r;
++          if (!sc.firstPair && r.baseline.routes[0]) sc.firstPair = r.baseline.routes[0].origin_node_id + ">" + r.baseline.routes[0].destination_node_id;
++        }).catch((e) => { if (state.schedule === sc) sc.byKey[todo[i].key] = { error: (e && (e.code || e.message)) || "ошибка" }; })
++          .finally(() => { if (state.schedule !== sc) return; sc.done = i + 1; renderSchedule(); next(i + 1); });
++      };
++      next(0);
++    }
++
+     // ---------- карта ----------
+     const LAYERS = [P + "coverage", P + "edges-allowed", P + "edges-unknown", P + "edges-denied", P + "closed-A", P + "closed-B", P + "closed-A-other", P + "closed-B-other", P + "route-base", P + "route-A", P + "route-B", P + "pts"];
+     const SOURCES = [P + "coverage", P + "graph", P + "closed", P + "routes", P + "pts"];
+@@ -345,13 +514,42 @@
+         "circle-stroke-color": "#fff", "circle-stroke-width": ["match", ["get", "kind"], "node", 0, 2],
+         "circle-opacity": ["match", ["get", "kind"], "node", 0.5, 1] } });
+     }
+-    function fitCoordinates(coords) {
++    // Камера: перед любым автоматическим перемещением запоминаем вид пользователя (найденную улицу),
++    // чтобы к нему можно было вернуться одной кнопкой. Повторные перемещения не затирают исходный вид.
++    function saveView() {
++      if (!map || state.returnView) return;
++      state.returnView = { center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() };
++      ui.back.hidden = false;
++    }
++    function returnToView() {
++      if (!map || !state.returnView) return;
++      map.jumpTo(state.returnView);
++      state.returnView = null; ui.back.hidden = true;
++    }
++    function showEdges(ids) {
++      const coords = ids.map((id) => state.edgeIndex.get(id)).filter(Boolean).flatMap(edgeLine);
++      fitCoordinates(coords, 17);
++    }
++    function showNodes(ids) {
++      fitCoordinates(ids.map((id) => state.nodeIndex.get(id)).filter(Boolean).map((n) => [n.lon, n.lat]), 17);
++    }
++    function fitCoordinates(coords, maxZoom) {
+       if (!map || !coords.length) return;
++      saveView();
+       const b = coords.reduce((box, n) => [Math.min(box[0], n[0]), Math.min(box[1], n[1]), Math.max(box[2], n[0]), Math.max(box[3], n[1])], [180, 90, -180, -90]);
+       const mobile = innerWidth < 761;
+       const padding = mobile ? { top: 85, left: 24, right: 60, bottom: Math.round(innerHeight * 0.64) }
+         : { top: 120, left: 50, right: Math.min(innerWidth * 0.65, 650), bottom: 60 };
+-      map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding, pitch: map.getPitch(), bearing: map.getBearing(), maxZoom: 16, duration: 0 });
++      map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding, pitch: map.getPitch(), bearing: map.getBearing(), maxZoom: maxZoom || 16, duration: 0 });
++    }
++    function selectedRouteCoords() {
++      if (!state.result || !state.selectedPair) return [];
++      const rows = [state.result.baseline.routes, ...state.result.plans.map((p) => p.routes)];
++      return rows.flatMap((rs) => rs.filter((r) => r.status === "ok" && r.origin_node_id + ">" + r.destination_node_id === state.selectedPair).flatMap(routeLine));
++    }
++    function selectedRouteVisible() {
++      const b = map.getBounds();
++      return selectedRouteCoords().some((c) => b.contains(c));
+     }
+     function fitSelectedRoute() {
+       if (!state.result || !state.selectedPair) return;
+@@ -444,5 +642,5 @@
+     return { destroy };
+   }
+ 
+-  root.CivicScenarios = { mount };
++  root.CivicScenarios = { mount, helpers: { closureState, fmtPeriod, placeName, scheduleSegments } };
+ })(typeof window !== "undefined" ? window : globalThis);
 -- 
 2.43.0
 

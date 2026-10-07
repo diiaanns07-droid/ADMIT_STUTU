@@ -1,4 +1,5 @@
-head=2e6a82dc14b9d7a74659248ae340f72cadf6f4d9
+head=e9634ece8724ed6676965c732416af8626aad34d
 base=56538a3a7504d4589c38ab4d3c5107f12aa7f8a6
-patch_sha256=5945e751d6aa4f3b2e8d5b6579a2a33aa9de957e3f00422a83d1bdad567b06f0
+patch_sha256=cd50adb7883533e8d2b820d7b26a1c44c805c89a1ef8e84dcb48291b9f1e99ea
+e9634ec R07: readable scenario UI — place names, closure periods/status, plan overview, camera return, schedule table
 2e6a82d R07: reuse prepared city network for closures (overlay adjacency, bounded LRU)

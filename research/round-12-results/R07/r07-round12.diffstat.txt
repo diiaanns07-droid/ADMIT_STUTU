@@ -1,4 +1,7 @@
- engine/civic_scenarios/graph.py   | 86 +++++++++++++++++++++++++++++++--------
- tests/civic/R07/test_r07_scale.py | 77 +++++++++++++++++++++++++++++++++++
- tests/civic/test_citywide_osm.py  |  2 +-
- 3 files changed, 147 insertions(+), 18 deletions(-)
+ engine/civic_scenarios/graph.py     |  86 +++++++++---
+ tests/civic/R07/test_r07_http_ui.py |   2 +-
+ tests/civic/R07/test_r07_scale.py   |  77 +++++++++++
+ tests/civic/test_citywide_osm.py    |   2 +-
+ web/civic/scenarios/scenarios.css   |  19 +++
+ web/civic/scenarios/scenarios.js    | 266 +++++++++++++++++++++++++++++++-----
+ 6 files changed, 399 insertions(+), 53 deletions(-)
