@@ -1,0 +1,138 @@
+{
+ "schema": "r07-osm-audit-v1",
+ "graph_id": "osm-astana-walking-20260506",
+ "graph_digest": "a694be21cc08ef1bf8000387a5120e7e5ad810ee37a955a4c223c004aeba5e35",
+ "snapshot_at": "2026-05-06T03:25:00Z",
+ "raw_sha256": "477bff5d1fa207aca2cc9df00288ebfcf152f890cceac3364af0404a63f80f0c",
+ "levels": {
+  "edges_by_level_and_access": {
+   "bridge": {
+    "unknown": 160,
+    "allowed": 133,
+    "denied": 19
+   },
+   "ground": {
+    "unknown": 62733,
+    "denied": 1564,
+    "allowed": 28889
+   },
+   "layer": {
+    "unknown": 162,
+    "allowed": 172,
+    "denied": 3
+   },
+   "tunnel": {
+    "unknown": 206,
+    "allowed": 42,
+    "denied": 6
+   }
+  },
+  "unconnected_crossings_involving_bridge_tunnel_layer": {
+   "bridge/bridge": 1,
+   "bridge/ground": 313,
+   "bridge/layer": 3,
+   "bridge/tunnel": 18,
+   "ground/layer": 15,
+   "ground/tunnel": 77
+  },
+  "examples": [
+   {
+    "edge_a": "osm-w23190839-2",
+    "level_a": "ground",
+    "edge_b": "osm-w753217989-0",
+    "level_b": "tunnel",
+    "name_a": "проспект Кабанбай Батыра",
+    "name_b": "Объездная Астаны"
+   },
+   {
+    "edge_a": "osm-w23190839-2",
+    "level_a": "ground",
+    "edge_b": "osm-w753217992-0",
+    "level_b": "tunnel",
+    "name_a": "проспект Кабанбай Батыра",
+    "name_b": "Объездная Астаны"
+   },
+   {
+    "edge_a": "osm-w753217989-0",
+    "level_a": "tunnel",
+    "edge_b": "osm-w1337015113-2",
+    "level_b": "ground",
+    "name_a": "Объездная Астаны",
+    "name_b": ""
+   },
+   {
+    "edge_a": "osm-w753217989-0",
+    "level_a": "tunnel",
+    "edge_b": "osm-w1337015114-2",
+    "level_b": "ground",
+    "name_a": "Объездная Астаны",
+    "name_b": ""
+   },
+   {
+    "edge_a": "osm-w753217989-0",
+    "level_a": "tunnel",
+    "edge_b": "osm-w1452653518-2",
+    "level_b": "ground",
+    "name_a": "Объездная Астаны",
+    "name_b": "проспект Кабанбай Батыра"
+   }
+  ],
+  "rule": "рёбра соединяются только через общий ID узла OSM; пересечение линий разных уровней без общего узла не создаёт перехода"
+ },
+ "boundary": {
+  "boundary_nodes": 89,
+  "max_distance_to_bbox_edge_m": 3600.8,
+  "median_distance_to_bbox_edge_m": 43.1
+ },
+ "conditional_access": {
+  "edges_by_access": {},
+  "rule": "*:conditional не превращается в постоянный allowed"
+ },
+ "barriers": {
+  "edges_touching_barrier_by_access": {
+   "unknown": 861,
+   "denied": 197,
+   "allowed": 4
+  },
+  "allowed_only_with_explicit_node_permission": 4,
+  "rule": "барьер без явного foot/access=yes делает ребро unknown"
+ },
+ "street_search": {
+  "names": 1666,
+  "entries": 1939,
+  "names_with_several_parts": 203,
+  "largest_bbox_diagonals_m": [
+   {
+    "m": 39124,
+    "label": "Объездная Астаны"
+   },
+   {
+    "m": 15140,
+    "label": "шоссе Алаш"
+   },
+   {
+    "m": 15089,
+    "label": "Коргалжинское шоссе"
+   },
+   {
+    "m": 14728,
+    "label": "проспект Кабанбай Батыра"
+   },
+   {
+    "m": 13182,
+    "label": "Green Belt Cycle Path"
+   }
+  ]
+ },
+ "allowed_connectivity": {
+  "components": 669,
+  "allowed_length_km": 1149.7,
+  "largest_component_share_of_length": 0.7382,
+  "top3_component_km": [
+   848.7,
+   31.4,
+   30.8
+  ],
+  "note": "маленькие компоненты — фрагменты, соединённые с остальной сетью только рёбрами с неизвестным доступом или вне среза; путь между ними в строгом расчёте не найдётся"
+ }
+}

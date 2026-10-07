@@ -1,6 +1,6 @@
 # R07 · раунд 12 · Астана — симулятор городских работ и масштабируемая сеть
 
-Статус: PARTIAL (checkpoint 4)
+Статус: PARTIAL (checkpoint 5: + аудит реального графа, osm-audit.json)
 
 ## BASE_MISMATCH
 - Среда Claude Code выдала репозиторий ADMIT_STUTU (ветка `claude/eager-hawking-4up40k`), а не GOV_DIPLOME.
