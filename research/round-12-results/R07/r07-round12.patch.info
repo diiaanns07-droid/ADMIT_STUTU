@@ -1,0 +1,4 @@
+head=2e6a82dc14b9d7a74659248ae340f72cadf6f4d9
+base=56538a3a7504d4589c38ab4d3c5107f12aa7f8a6
+patch_sha256=5945e751d6aa4f3b2e8d5b6579a2a33aa9de957e3f00422a83d1bdad567b06f0
+2e6a82d R07: reuse prepared city network for closures (overlay adjacency, bounded LRU)

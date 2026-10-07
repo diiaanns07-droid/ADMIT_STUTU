@@ -1,0 +1,244 @@
+From 2e6a82dc14b9d7a74659248ae340f72cadf6f4d9 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 7 Oct 2026 10:15:04 +0000
+Subject: [PATCH] R07: reuse prepared city network for closures (overlay
+ adjacency, bounded LRU)
+
+Closures no longer rebuild the 94k-edge index: base adjacency is built once per
+(access, direction) and closed edges are removed via a small per-node overlay.
+Results are byte-identical (citywide result_digest fd80debd...); compare on the
+city case drops from ~1.7 s to 0.47 s (first) / 0.13-0.22 s (repeated edits).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01CcnxZPmJeLbSLt4S9JZCrb
+---
+ engine/civic_scenarios/graph.py   | 86 +++++++++++++++++++++++++------
+ tests/civic/R07/test_r07_scale.py | 77 +++++++++++++++++++++++++++
+ tests/civic/test_citywide_osm.py  |  2 +-
+ 3 files changed, 147 insertions(+), 18 deletions(-)
+ create mode 100644 tests/civic/R07/test_r07_scale.py
+
+diff --git a/engine/civic_scenarios/graph.py b/engine/civic_scenarios/graph.py
+index 86706b6..c18e5be 100644
+--- a/engine/civic_scenarios/graph.py
++++ b/engine/civic_scenarios/graph.py
+@@ -15,6 +15,8 @@ graph: {id, city, digest, mode, evidence_type,
+ access ∈ allowed|denied|unknown; oneway=true — движение только from -> to.
+ """
+ import math
++import threading
++from collections import OrderedDict
+ 
+ from .canon import graph_digest, length_mm
+ from .errors import ScenarioError
+@@ -39,8 +41,32 @@ def _bad(msg, **fields):
+     raise ScenarioError("invalid_graph", msg, fields or None)
+ 
+ 
++class _Overlay:
++    """Read-only view: base adjacency with a few node lists replaced (closed edges removed).
++
++    Only ``get`` is provided — the routing code reads adjacency exclusively through it.
++    """
++    __slots__ = ("base", "over")
++
++    def __init__(self, base, over):
++        self.base = base
++        self.over = over
++
++    def get(self, node, default=None):
++        row = self.over.get(node)
++        if row is not None:
++            return row
++        return self.base.get(node, default)
++
++
+ class PreparedGraph:
+-    """Неизменяемый индекс графа. Исходный dict не модифицируется."""
++    """Неизменяемый индекс графа. Исходный dict не модифицируется.
++
++    Смежность без перекрытий строится один раз на (access, направление) и хранится всё время жизни
++    графа (для городского графа это 3 индекса). Перекрытие не пересобирает сеть: поверх базового
++    индекса создаётся маленький оверлей только для концов закрытых рёбер. Оверлеи кэшируются LRU.
++    """
++    OVERLAY_CACHE = 32
+ 
+     def __init__(self, graph, node_ids, edges, warnings, coverage):
+         self.id = graph["id"]
+@@ -53,35 +79,61 @@ class PreparedGraph:
+         self.edges = edges                # dict id -> (from, to, mm, access, oneway)
+         self.warnings = warnings
+         self.coverage = coverage
+-        self._adj_cache = {}
+-
+-    def adjacency(self, accesses, closed, reverse=False):
+-        """Список смежности: node -> [(edge_id, neighbor, mm)], отсортированный по edge_id.
+-
+-        accesses — допустимые значения access; closed — множество закрытых edge_id (обе стороны).
+-        """
+-        key = (tuple(sorted(accesses)), frozenset(closed), reverse)
+-        adj = self._adj_cache.get(key)
++        self._base_adj = {}               # (accesses, reverse) -> dict, unbounded (<= 4 keys)
++        self._adj_cache = OrderedDict()   # (accesses, closed, reverse) -> _Overlay, LRU
++        self._lock = threading.Lock()
++        self.stats = {"base_builds": 0, "overlay_builds": 0, "overlay_hits": 0}
++
++    def _base(self, accesses, reverse):
++        key = (accesses, reverse)
++        adj = self._base_adj.get(key)
+         if adj is not None:
+             return adj
+         adj = {}
+         for eid in sorted(self.edges):
+             frm, to, mm, access, oneway = self.edges[eid]
+-            if access not in accesses or eid in closed:
++            if access not in accesses:
+                 continue
+             pairs = [(frm, to)] if oneway else [(frm, to), (to, frm)]
+             for a, b in pairs:
+                 if reverse:
+                     a, b = b, a
+                 adj.setdefault(a, []).append((eid, b, mm))
+-        # A city graph has ~100k edges: retaining 65 alternate closure indexes
+-        # can exhaust memory. Bound the cache by graph size, not just requests.
+-        cache_limit = max(2, min(64, 200_000 // max(1, len(self.edges))))
+-        if len(self._adj_cache) >= cache_limit:
+-            self._adj_cache.clear()
+-        self._adj_cache[key] = adj
++        self._base_adj[key] = adj
++        self.stats["base_builds"] += 1
+         return adj
+ 
++    def adjacency(self, accesses, closed, reverse=False):
++        """Смежность: node -> [(edge_id, neighbor, mm)], отсортированная по edge_id.
++
++        accesses — допустимые значения access; closed — множество закрытых edge_id (обе стороны).
++        Возвращает dict (без перекрытий) или _Overlay; обе формы читаются только через .get().
++        """
++        accesses = tuple(sorted(accesses))
++        closed = frozenset(closed)
++        with self._lock:
++            base = self._base(accesses, reverse)
++            if not closed:
++                return base
++            key = (accesses, closed, reverse)
++            ov = self._adj_cache.get(key)
++            if ov is not None:
++                self._adj_cache.move_to_end(key)
++                self.stats["overlay_hits"] += 1
++                return ov
++            touched = set()
++            for eid in closed:
++                rec = self.edges.get(eid)
++                if rec is not None and rec[3] in accesses:
++                    touched.update((rec[0], rec[1]))
++            over = {u: [t for t in base.get(u, ()) if t[0] not in closed] for u in touched}
++            ov = _Overlay(base, over)
++            self._adj_cache[key] = ov
++            while len(self._adj_cache) > self.OVERLAY_CACHE:
++                self._adj_cache.popitem(last=False)
++            self.stats["overlay_builds"] += 1
++            return ov
++
+ 
+ def prepare_graph(graph, check_digest=True):
+     if not isinstance(graph, dict):
+diff --git a/tests/civic/R07/test_r07_scale.py b/tests/civic/R07/test_r07_scale.py
+new file mode 100644
+index 0000000..bb61d5d
+--- /dev/null
++++ b/tests/civic/R07/test_r07_scale.py
+@@ -0,0 +1,77 @@
++"""R07 round 12: closures reuse the prepared city network instead of rebuilding it.
++
++The overlay adjacency must give exactly the same routes as a full rebuild (reference
++implementation below), and repeated scenario edits must not rebuild the base index.
++"""
++import json
++import random
++from pathlib import Path
++
++import pytest
++
++from engine.civic_scenarios import compare
++from engine.civic_scenarios.adapters.osm_city import GRAPH_ID
++from engine.civic_scenarios.compare import EXPLORATORY, STRICT
++from engine.civic_scenarios.registry import load_graph
++from engine.civic_scenarios.routing import dijkstra, reachable
++
++ROOT = Path(__file__).resolve().parents[3]
++CITY_CASE = json.loads((ROOT / "engine/civic_scenarios/cases/astana-citywide-v1.case.json").read_text("utf-8"))
++
++
++def naive_adjacency(pg, accesses, closed, reverse=False):
++    """Pre-round-12 behaviour: rebuild the whole index for every closure set."""
++    adj = {}
++    for eid in sorted(pg.edges):
++        frm, to, mm, access, oneway = pg.edges[eid]
++        if access not in accesses or eid in closed:
++            continue
++        for a, b in ([(frm, to)] if oneway else [(frm, to), (to, frm)]):
++            if reverse:
++                a, b = b, a
++            adj.setdefault(a, []).append((eid, b, mm))
++    return adj
++
++
++@pytest.fixture(scope="module")
++def city():
++    return load_graph(GRAPH_ID)
++
++
++def test_overlay_equals_full_rebuild_on_city_graph(city):
++    rnd = random.Random(12)
++    allowed = sorted(e for e, rec in city.edges.items() if rec[3] == "allowed")
++    unknown = sorted(e for e, rec in city.edges.items() if rec[3] == "unknown")
++    origin = CITY_CASE["payload"]["origin_node_ids"][0]
++    for _ in range(4):
++        closed = frozenset(rnd.sample(allowed, 40) + rnd.sample(unknown, 10))
++        for accesses, reverse in ((STRICT, False), (EXPLORATORY, False), (EXPLORATORY, True)):
++            fast = city.adjacency(accesses, closed, reverse)
++            ref = naive_adjacency(city, accesses, closed, reverse)
++            touched = {n for e in closed for n in city.edges[e][:2]}
++            for u in touched | set(rnd.sample(sorted(ref), 200)):
++                assert list(fast.get(u, ())) == ref.get(u, []), u
++        d_fast = dijkstra(city.adjacency(STRICT, closed), origin)[0]
++        d_ref = dijkstra(naive_adjacency(city, STRICT, closed), origin)[0]
++        assert d_fast == d_ref
++        assert reachable(city.adjacency(EXPLORATORY, closed), origin) == reachable(
++            naive_adjacency(city, EXPLORATORY, closed), origin)
++
++
++def test_repeated_edits_do_not_rebuild_base_and_cache_is_bounded(city):
++    payload = json.loads(json.dumps(CITY_CASE["payload"]))
++    compare(payload, city)
++    builds = city.stats["base_builds"]
++    assert builds <= 4 and len(city._base_adj) <= 4
++    allowed = sorted(e for e, rec in city.edges.items() if rec[3] == "allowed")
++    for i in range(city.OVERLAY_CACHE + 5):  # many different edits
++        payload["plans"][0]["closures"][0]["edge_ids"] = [allowed[i * 97]]
++        compare(payload, city)
++    assert city.stats["base_builds"] == builds
++    assert len(city._adj_cache) <= city.OVERLAY_CACHE
++
++
++def test_city_example_numbers_are_unchanged(city):
++    r = compare(CITY_CASE["payload"], city)
++    assert r["baseline"]["routes"][0]["length_m"] == 18980.904
++    assert [p["routes"][0]["length_m"] for p in r["plans"]] == [18998.069, 18987.577]
+diff --git a/tests/civic/test_citywide_osm.py b/tests/civic/test_citywide_osm.py
+index b9f6034..9054efb 100644
+--- a/tests/civic/test_citywide_osm.py
++++ b/tests/civic/test_citywide_osm.py
+@@ -104,7 +104,7 @@ def test_long_route_and_both_closures_are_computed():
+         assert route["status"] == "ok" and route["length_m"] > base["length_m"]
+         assert not set(plan["active_closed_edge_ids"]) & set(route["edge_ids"])
+         assert all(graph.edges[e][3] == "allowed" for e in route["edge_ids"])
+-    assert len(graph._adj_cache) <= 2
++    assert len(graph._base_adj) <= 4 and len(graph._adj_cache) <= graph.OVERLAY_CACHE
+ 
+ 
+ def test_bad_graph_id_is_validation_error():
+-- 
+2.43.0
+
