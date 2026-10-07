@@ -6,6 +6,7 @@
   predict TEXT [--language ru|kk|unknown]   classify() одного сообщения (JSON)
   info                    версия/хэши загруженной модели
   audit [--out DIR]       раунд 13: воспроизведение (sha256) и аудит утечек splits -> audit.json
+  protocol --sets cv,test,probe | challenge [--out DIR]   раунд 13: честное сравнение (PROTOCOL.md)
 """
 
 from __future__ import annotations
@@ -33,6 +34,9 @@ def main(argv=None) -> int:
     sub.add_parser("info")
     a = sub.add_parser("audit")
     a.add_argument("--out", default=str(RESULTS13))
+    pr = sub.add_parser("protocol")
+    pr.add_argument("--sets", default="cv,test,probe")
+    pr.add_argument("--out", default=str(RESULTS13))
     args = ap.parse_args(argv)
     if args.cmd == "build-corpus":
         from ml.civic_classifier.corpus import build
@@ -61,6 +65,10 @@ def main(argv=None) -> int:
         (out / "audit.json").write_text(json.dumps(rep, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
         print(json.dumps({"reproduction_identical": rep["reproduction"]["identical"],
                           "leakage": rep["leakage"]["per_split"]}, ensure_ascii=False, indent=1))
+    elif args.cmd == "protocol":
+        from ml.civic_classifier.protocol import run
+        r = run([x for x in args.sets.split(",") if x], Path(args.out))
+        print(json.dumps({k: r[k] for k in ("policy",)}, ensure_ascii=False))
     elif args.cmd == "info":
         from ml.civic_classifier import model_info
         print(json.dumps(model_info(), ensure_ascii=False, indent=1))

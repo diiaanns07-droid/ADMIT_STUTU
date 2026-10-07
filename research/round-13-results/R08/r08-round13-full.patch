@@ -1,7 +1,7 @@
 From fb1a0bcd025318fe1472b28eb6470fac5c25b418 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 17:01:05 +0000
-Subject: [PATCH 1/3] R08 r13: restore round-12 delivery paths
+Subject: [PATCH 1/4] R08 r13: restore round-12 delivery paths
  (ml/civic_classifier, tests/civic/R08) from e311ba8 unchanged
 
 Source: claude/wizardly-ptolemy-qy8ltw head 9660885 (code e311ba8). No content changes.
@@ -10993,7 +10993,7 @@ index 0000000..d460ef0
 From dc848640a58eb72169c5de30f159c2517716a6f4 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 17:04:52 +0000
-Subject: [PATCH 2/3] R08 r13: reproducibility and split-leakage audit (python
+Subject: [PATCH 2/4] R08 r13: reproducibility and split-leakage audit (python
  -m ml.civic_classifier audit)
 
 Rebuilds corpus/split and retrains into a temp dir; sha256 identical to the pinned files.
@@ -11193,7 +11193,7 @@ index 0000000..6cb0e58
 From f2dffd491df2171c5b0b3f57b702cd95b99adfe8 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 17:07:52 +0000
-Subject: [PATCH 3/3] R08 r13: freeze challenge_r13_v1 (134 agent-labeled
+Subject: [PATCH 3/4] R08 r13: freeze challenge_r13_v1 (134 agent-labeled
  synthetic messages) before any model run
 
 sha256 b25a6a19ac3a0efbd41570248a03a590c10a2ad4452997e4bd62293139f95bde. RU/KK/mixed/translit/
@@ -11364,6 +11364,598 @@ index 0000000..2279c43
 +{"id": "ch13-132", "text": "На перекрёстке у школы машины не пропускают пешеходов", "label": "other", "language": "ru", "phenomena": ["address_trap", "ambiguous"], "also_labels": [], "expected_abstain": false, "note": "", "evidence_type": "synthetic", "labels_by": "agent (Claude, R08 r13), not residents, not independent experts"}
 +{"id": "ch13-133", "text": "Bus stop has no roof, we get wet", "label": "transport_stops", "language": "en", "phenomena": ["foreign_language"], "also_labels": [], "expected_abstain": true, "note": "язык не поддерживается", "evidence_type": "synthetic", "labels_by": "agent (Claude, R08 r13), not residents, not independent experts"}
 +{"id": "ch13-134", "text": "Street lights are off in our yard", "label": "lighting", "language": "en", "phenomena": ["foreign_language"], "also_labels": [], "expected_abstain": true, "note": "язык не поддерживается", "evidence_type": "synthetic", "labels_by": "agent (Claude, R08 r13), not residents, not independent experts"}
+-- 
+2.43.0
+
+
+From 4673764bad49c0d4b17a19e69027ef393235e662 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 7 Oct 2026 17:14:36 +0000
+Subject: [PATCH 4/4] R08 r13: abstention + limited explanation in classify();
+ leave-family-out protocol
+
+- abstain.py: multi_topic / latin_script / low_margin (M=0.25 chosen on round-12 validation)
+  / no_content; explanation = matched stems + top word-prefix contributions vs runner-up.
+- classify(): contract fields unchanged; on abstain score=None, score_kind=abstain:<reasons>;
+  additive fields abstain, abstain_reasons, alternatives, explanation, policy_version.
+- protocol.py: 5-fold leave-family-out CV (56 origin groups) for keyword/logreg/hybrid/nb/
+  hybrid+abstain with round-12 hyperparameters (no tuning); exploratory test/probe.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01CcnxZPmJeLbSLt4S9JZCrb
+---
+ ml/civic_classifier/__init__.py           |  54 ++++--
+ ml/civic_classifier/__main__.py           |   8 +
+ ml/civic_classifier/abstain.py            | 112 +++++++++++
+ ml/civic_classifier/data/abstain_r13.json |  67 +++++++
+ ml/civic_classifier/protocol.py           | 219 ++++++++++++++++++++++
+ tests/civic/R08/test_r08_contract.py      |   4 +-
+ 6 files changed, 451 insertions(+), 13 deletions(-)
+ create mode 100644 ml/civic_classifier/abstain.py
+ create mode 100644 ml/civic_classifier/data/abstain_r13.json
+ create mode 100644 ml/civic_classifier/protocol.py
+
+diff --git a/ml/civic_classifier/__init__.py b/ml/civic_classifier/__init__.py
+index 9781f04..4660e83 100644
+--- a/ml/civic_classifier/__init__.py
++++ b/ml/civic_classifier/__init__.py
+@@ -1,7 +1,12 @@
+-"""R08 civic_classifier — подсказка категории сообщения жителя (RU/KK), раунд 12.
++"""R08 civic_classifier — подсказка категории сообщения жителя (RU/KK), раунды 12–13.
+ 
+     classify(text, language) -> {label, score, score_kind, needs_review, model_version,
+-                                 training_data_status}
++                                 training_data_status,
++                                 # раунд 13, аддитивно (R06 может игнорировать):
++                                 abstain, abstain_reasons, alternatives, explanation, policy_version}
++
++Раунд 13: при отказе (несколько тем, латиница, малая разница оценок, пустой текст) score = None,
++score_kind = "abstain:<причины>", label — лучшая метка только как подсказка, needs_review = True.
+ 
+ Контракт civic-v1 (CONTRACT.txt раздел 6) и ui/civic_feedback (CODE_BASE_SHA 56538a3):
+ label ∈ roads|sidewalks|transport_stops|lighting|landscaping|other. Импорт ничего не скачивает;
+@@ -50,14 +55,23 @@ def model_info() -> dict:
+         return {"available": False, "model_version": FALLBACK_VERSION, "reason": _state.get("error")}
+     return {"available": True, "model_version": m["version"], "kind": m["kind"],
+             "training_data_status": m["training_data_status"], "threshold": m["threshold"],
+-            "corpus_sha256": m["corpus_sha256"]}
++            "corpus_sha256": m["corpus_sha256"], "policy_version": _policy()["version"],
++            "abstain_margin_threshold": _policy()["margin_threshold"]}
+ 
+ 
+ def _fallback(text: str) -> dict:
+-    from ml.civic_classifier.heuristic import heuristic_label
++    from ml.civic_classifier.abstain import topic_labels
++    from ml.civic_classifier.heuristic import STEMS, heuristic_label
++    from ml.civic_classifier.text import normalize as _n
+     label, _hits = heuristic_label(text)
++    t = " " + _n(text) + " "
+     return {"label": label, "score": None, "score_kind": "none", "needs_review": True,
+-            "model_version": FALLBACK_VERSION, "training_data_status": FALLBACK_STATUS}
++            "model_version": FALLBACK_VERSION, "training_data_status": FALLBACK_STATUS,
++            "abstain": len(topic_labels(text)) >= 2, "abstain_reasons": ["multi_topic"] if len(topic_labels(text)) >= 2 else [],
++            "alternatives": [], "policy_version": "fallback",
++            "explanation": {"kind": "keyword_match", "keyword_stems": [x.strip() for x in STEMS[label] if x in t][:5],
++                            "word_prefixes": [], "versus": None,
++                            "note": "совпадения словаря эвристики; модель недоступна"}}
+ 
+ 
+ def classify(text, language=None) -> dict:
+@@ -68,20 +82,36 @@ def classify(text, language=None) -> dict:
+     model = _model()
+     if model is None:
+         return _fallback(text)
++    from ml.civic_classifier.abstain import explain, load_policy, reasons
+     from ml.civic_classifier.model import predict_scores
++    policy = _policy()
+     norm = normalize(text)
++    base = {"model_version": model["version"], "training_data_status": model["training_data_status"],
++            "policy_version": policy["version"]}
+     if len(norm.replace(" ", "")) < 3:
+         # Пустое/бессодержательное сообщение: модель не применяем.
+-        return {"label": "other", "score": None, "score_kind": "none", "needs_review": True,
+-                "model_version": model["version"], "training_data_status": model["training_data_status"]}
++        return dict(base, label="other", score=None, score_kind="abstain:no_content", needs_review=True,
++                    abstain=True, abstain_reasons=["no_content"], alternatives=[], explanation=None)
+     probs = predict_scores(text, model)
+-    best = max(range(len(LABELS)), key=lambda k: (probs[k], -k))
++    order = sorted(range(len(LABELS)), key=lambda k: (-probs[k], k))
++    best, second = order[0], order[1]
+     score = round(probs[best], 4)
++    why = reasons(text, probs, policy["margin_threshold"])
+     # Пока модель обучена только на синтетике, порог (подобран на синтетической validation) не переносится
+     # на реальных жителей: подсказка всегда требует проверки. Порог работает для модели с реальной оценкой.
+     synthetic_only = model["training_data_status"].startswith("synthetic")
+-    needs_review = (synthetic_only or score < model["threshold"] or LABELS[best] == "other"
++    needs_review = (synthetic_only or bool(why) or score < model["threshold"] or LABELS[best] == "other"
+                     or language not in ("ru", "kk"))
+-    return {"label": LABELS[best], "score": score, "score_kind": model["score_kind"],
+-            "needs_review": bool(needs_review), "model_version": model["version"],
+-            "training_data_status": model["training_data_status"]}
++    return dict(base, label=LABELS[best],
++                score=None if why else score,
++                score_kind=("abstain:" + ",".join(why))[:80] if why else model["score_kind"],
++                needs_review=bool(needs_review), abstain=bool(why), abstain_reasons=why,
++                alternatives=[LABELS[k] for k in order[1:3]],
++                explanation=explain(text, model, best, second))
++
++
++def _policy() -> dict:
++    if "policy" not in _state:
++        from ml.civic_classifier.abstain import load_policy
++        _state["policy"] = load_policy()
++    return _state["policy"]
+diff --git a/ml/civic_classifier/__main__.py b/ml/civic_classifier/__main__.py
+index 7f9cac0..2ad94b5 100644
+--- a/ml/civic_classifier/__main__.py
++++ b/ml/civic_classifier/__main__.py
+@@ -6,6 +6,7 @@
+   predict TEXT [--language ru|kk|unknown]   classify() одного сообщения (JSON)
+   info                    версия/хэши загруженной модели
+   audit [--out DIR]       раунд 13: воспроизведение (sha256) и аудит утечек splits -> audit.json
++  protocol --sets cv,test,probe | challenge [--out DIR]   раунд 13: честное сравнение (PROTOCOL.md)
+ """
+ 
+ from __future__ import annotations
+@@ -33,6 +34,9 @@ def main(argv=None) -> int:
+     sub.add_parser("info")
+     a = sub.add_parser("audit")
+     a.add_argument("--out", default=str(RESULTS13))
++    pr = sub.add_parser("protocol")
++    pr.add_argument("--sets", default="cv,test,probe")
++    pr.add_argument("--out", default=str(RESULTS13))
+     args = ap.parse_args(argv)
+     if args.cmd == "build-corpus":
+         from ml.civic_classifier.corpus import build
+@@ -61,6 +65,10 @@ def main(argv=None) -> int:
+         (out / "audit.json").write_text(json.dumps(rep, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+         print(json.dumps({"reproduction_identical": rep["reproduction"]["identical"],
+                           "leakage": rep["leakage"]["per_split"]}, ensure_ascii=False, indent=1))
++    elif args.cmd == "protocol":
++        from ml.civic_classifier.protocol import run
++        r = run([x for x in args.sets.split(",") if x], Path(args.out))
++        print(json.dumps({k: r[k] for k in ("policy",)}, ensure_ascii=False))
+     elif args.cmd == "info":
+         from ml.civic_classifier import model_info
+         print(json.dumps(model_info(), ensure_ascii=False, indent=1))
+diff --git a/ml/civic_classifier/abstain.py b/ml/civic_classifier/abstain.py
+new file mode 100644
+index 0000000..d594fd5
+--- /dev/null
++++ b/ml/civic_classifier/abstain.py
+@@ -0,0 +1,112 @@
++"""Отказ (abstain) и ограниченное объяснение подсказки — раунд 13.
++
++Правила зафиксированы в research/round-13-results/R08/PROTOCOL.md до запуска на challenge-наборе:
++  R1 multi_topic  — совпадения словаря у >= 2 разных меток, кроме other;
++  R2 latin_script — латинских букв > 50 % (транслит/иностранный язык; обучение — только кириллица);
++  R3 low_margin   — разница двух лучших оценок < margin_threshold (выбран на validation раунда 12);
++  R4 no_content   — < 3 значимых символов.
++Отказ не меняет метку-подсказку и не публикует ничего: он говорит сотруднику «модель не берётся».
++
++Объяснение — признаки линейной модели, а не причина и не свободный текст:
++совпавшие основы словаря для выбранной метки и до 3 «начал слов» с наибольшим вкладом
++(вес выбранной метки − вес второй метки) × значение признака.
++"""
++
++from __future__ import annotations
++
++import json
++from pathlib import Path
++
++from ml.civic_classifier.labels import LABELS
++
++POLICY_PATH = Path(__file__).resolve().parent / "data" / "abstain_r13.json"
++POLICY_VERSION = "abstain-r13-v1"
++MARGIN_GRID = tuple(round(0.05 * i, 2) for i in range(1, 11))  # 0.05 … 0.50
++TARGET_ACCEPTED_ACCURACY = 0.95
++EXPLAIN_NOTE = "признаки линейной модели, повлиявшие на выбор; не причина и не доказательство"
++
++
++def latin_share(text: str) -> float:
++    letters = [ch for ch in text if ch.isalpha()]
++    if not letters:
++        return 0.0
++    return sum(1 for ch in letters if "a" <= ch.lower() <= "z") / len(letters)
++
++
++def topic_labels(text: str) -> list[str]:
++    """Метки (кроме other), у которых совпала хотя бы одна основа словаря."""
++    from ml.civic_classifier.heuristic import keyword_hits
++    hits = keyword_hits(text)
++    return [lab for lab in LABELS if lab != "other" and hits.get(lab)]
++
++
++def reasons(text: str, probs: list[float], margin_threshold: float) -> list[str]:
++    order = sorted(range(len(LABELS)), key=lambda k: (-probs[k], k))
++    out = []
++    if len(topic_labels(text)) >= 2:
++        out.append("multi_topic")
++    if latin_share(text) > 0.5:
++        out.append("latin_script")
++    if probs[order[0]] - probs[order[1]] < margin_threshold:
++        out.append("low_margin")
++    return out
++
++
++def load_policy(path: Path | None = None) -> dict:
++    path = POLICY_PATH if path is None else path
++    try:
++        policy = json.loads(path.read_text(encoding="utf-8"))
++        m = float(policy["margin_threshold"])
++        if not 0.0 <= m <= 1.0 or policy.get("version") != POLICY_VERSION:
++            raise ValueError("bad policy")
++        return policy
++    except (OSError, ValueError, KeyError, TypeError):
++        # Без файла политики отказываемся осторожно: любой неуверенный ответ — отказ.
++        return {"version": POLICY_VERSION + "-fallback", "margin_threshold": 1.0}
++
++
++def select_margin(model: dict, rows: list[dict]) -> dict:
++    """Минимальный порог разницы, при котором точность непринятых к отказу >= цели (только validation)."""
++    from ml.civic_classifier.model import predict_scores
++    preds = []
++    for r in rows:
++        p = predict_scores(r["text"], model)
++        order = sorted(range(len(LABELS)), key=lambda k: (-p[k], k))
++        base = [x for x in reasons(r["text"], p, 0.0) if x != "low_margin"]
++        preds.append((order[0] == LABELS.index(r["label"]), p[order[0]] - p[order[1]], bool(base)))
++    grid = []
++    for m in MARGIN_GRID:
++        kept = [ok for ok, margin, other in preds if not other and margin >= m]
++        grid.append({"margin": m, "coverage": round(len(kept) / len(preds), 4),
++                     "accepted_accuracy": round(sum(kept) / len(kept), 4) if kept else None})
++    ok = [g for g in grid if g["accepted_accuracy"] is not None and g["accepted_accuracy"] >= TARGET_ACCEPTED_ACCURACY]
++    chosen = ok[0]["margin"] if ok else max((g for g in grid if g["accepted_accuracy"] is not None),
++                                            key=lambda g: (g["accepted_accuracy"], -g["margin"]))["margin"]
++    return {"version": POLICY_VERSION, "margin_threshold": chosen, "target_accepted_accuracy": TARGET_ACCEPTED_ACCURACY,
++            "target_met": bool(ok), "selected_on": "round-12 validation split (template group split), n=%d" % len(rows),
++            "grid": grid, "rules": ["multi_topic", "latin_script", "low_margin", "no_content"],
++            "note": "Порог выбран на синтетической validation; на реальных сообщениях не проверен."}
++
++
++def explain(text: str, model: dict, best: int, second: int, top: int = 3) -> dict:
++    from ml.civic_classifier.heuristic import STEMS
++    from ml.civic_classifier.model import vectorize
++    from ml.civic_classifier.text import normalize
++    t = " " + normalize(text) + " "
++    stems = [s.strip() for s in STEMS[LABELS[best]] if s in t]
++    items = []
++    if model["kind"] == "logreg":
++        vec = vectorize(text, model)
++        w = model["params"]["weights"]
++        feats = model["features"]
++        contrib = []
++        for i, v in vec.items():
++            name = feats[i]
++            if name.startswith("w:"):
++                c = (w[i][best] - w[i][second]) * v
++                if c > 0:
++                    contrib.append((c, name[2:]))
++        contrib.sort(key=lambda x: (-x[0], x[1]))
++        items = [f"начало слова «{name}»" for _, name in contrib[:top]]
++    return {"kind": "linear_feature_contributions", "keyword_stems": stems[:5], "word_prefixes": items,
++            "versus": LABELS[second], "note": EXPLAIN_NOTE}
+diff --git a/ml/civic_classifier/data/abstain_r13.json b/ml/civic_classifier/data/abstain_r13.json
+new file mode 100644
+index 0000000..18b2006
+--- /dev/null
++++ b/ml/civic_classifier/data/abstain_r13.json
+@@ -0,0 +1,67 @@
++{
++ "version": "abstain-r13-v1",
++ "margin_threshold": 0.25,
++ "target_accepted_accuracy": 0.95,
++ "target_met": true,
++ "selected_on": "round-12 validation split (template group split), n=581",
++ "grid": [
++  {
++   "margin": 0.05,
++   "coverage": 0.8434,
++   "accepted_accuracy": 0.9327
++  },
++  {
++   "margin": 0.1,
++   "coverage": 0.8348,
++   "accepted_accuracy": 0.9381
++  },
++  {
++   "margin": 0.15,
++   "coverage": 0.8262,
++   "accepted_accuracy": 0.9437
++  },
++  {
++   "margin": 0.2,
++   "coverage": 0.821,
++   "accepted_accuracy": 0.9476
++  },
++  {
++   "margin": 0.25,
++   "coverage": 0.8038,
++   "accepted_accuracy": 0.9529
++  },
++  {
++   "margin": 0.3,
++   "coverage": 0.7935,
++   "accepted_accuracy": 0.9566
++  },
++  {
++   "margin": 0.35,
++   "coverage": 0.7883,
++   "accepted_accuracy": 0.9607
++  },
++  {
++   "margin": 0.4,
++   "coverage": 0.7762,
++   "accepted_accuracy": 0.9667
++  },
++  {
++   "margin": 0.45,
++   "coverage": 0.7711,
++   "accepted_accuracy": 0.9665
++  },
++  {
++   "margin": 0.5,
++   "coverage": 0.7642,
++   "accepted_accuracy": 0.9685
++  }
++ ],
++ "rules": [
++  "multi_topic",
++  "latin_script",
++  "low_margin",
++  "no_content"
++ ],
++ "note": "Порог выбран на синтетической validation; на реальных сообщениях не проверен.",
++ "model_payload_sha256": "104c46a6f972bd48ceae47cb1736caeeada1f1a5cd91e5dce444f941462e4ff7"
++}
+diff --git a/ml/civic_classifier/protocol.py b/ml/civic_classifier/protocol.py
+new file mode 100644
+index 0000000..8a1c975
+--- /dev/null
++++ b/ml/civic_classifier/protocol.py
+@@ -0,0 +1,219 @@
++"""Честный протокол сравнения раунда 13 (research/round-13-results/R08/PROTOCOL.md).
++
++    python -m ml.civic_classifier protocol --sets cv,test,probe   # разработка/exploratory
++    python -m ml.civic_classifier protocol --sets challenge       # один раз, замороженный набор
++
++Методы: keyword (эвристика), logreg (n-граммы), hybrid (logreg + словарь), nb, hybrid+abstain.
++Гиперпараметры — выбранные в раунде 12 по validation; здесь ничего не подбирается.
++"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import statistics
++from pathlib import Path
++
++from ml.civic_classifier.abstain import load_policy, reasons
++from ml.civic_classifier.corpus import CORPUS_PATH, load_corpus, sha256_file
++from ml.civic_classifier.heuristic import heuristic_label, keyword_hits
++from ml.civic_classifier.labels import LABELS
++from ml.civic_classifier.metrics import classification_report
++from ml.civic_classifier.model import load_model, predict_scores
++from ml.civic_classifier.train import (FEATURE_PARAMS, KW_FEATURES, SEED, _model_dict, _raw, build_vocab, train_lr,
++                                       train_nb)
++
++DATA = CORPUS_PATH.parent
++CHALLENGE = DATA / "challenge_r13_v1.jsonl"
++CHALLENGE_FREEZE = DATA / "challenge_r13_v1.freeze.json"
++PROBE = DATA / "probe_agent_v1.jsonl"
++FOLDS = 5
++LR_PLAIN = {"l2": 1e-5, "epochs": 24, "lr0": 0.5}            # лучшая «чистая» logreg раунда 12 по validation
++HYBRID = {"l2": 1e-4, "epochs": 12, "lr0": 0.5, "keyword_scale": 1.0}   # выбранный гибрид раунда 12
++NB_ALPHA = 0.1                                               # лучший NB раунда 12 по validation
++CONFIDENT = 0.9
++METHODS = ("keyword", "logreg", "hybrid", "nb", "hybrid+abstain")
++
++
++def family(r: dict) -> str:
++    return f'{r["label"]}/{r["family"]}'
++
++
++def family_folds(rows: list[dict], k: int = FOLDS) -> dict[str, int]:
++    """Группа = (метка, семейство). Внутри метки — порядок sha256(seed:группа), затем по кругу со сдвигом."""
++    by_label: dict[str, set] = {}
++    for r in rows:
++        by_label.setdefault(r["label"], set()).add(family(r))
++    out = {}
++    for li, label in enumerate(LABELS):
++        fams = sorted(by_label.get(label, ()), key=lambda f: hashlib.sha256(f"{SEED}:{f}".encode()).hexdigest())
++        for j, f in enumerate(fams):
++            out[f] = (j + li) % k
++    return out
++
++
++def train_models(rows: list[dict], corpus_sha: str = "cv", split_sha: str = "cv") -> dict:
++    texts = [r["text"] for r in rows]
++    raw = _raw(texts)
++    y = [LABELS.index(r["label"]) for r in rows]
++    vocab = build_vocab(raw)
++    nb = _model_dict("nb", vocab, train_nb(raw, y, vocab, NB_ALPHA), {"alpha": NB_ALPHA}, corpus_sha, split_sha)
++    lr = _model_dict("logreg", vocab, train_lr(raw, y, vocab, **LR_PLAIN), LR_PLAIN, corpus_sha, split_sha)
++    vocab_kw = sorted(set(vocab) | set(KW_FEATURES))
++    fp = dict(FEATURE_PARAMS, keyword_features=True, keyword_scale=HYBRID["keyword_scale"])
++    lr_h = {k: v for k, v in HYBRID.items() if k != "keyword_scale"}
++    hy = _model_dict("logreg", vocab_kw, train_lr(raw, y, vocab_kw, **lr_h, texts=texts,
++                                                   keyword_scale=HYBRID["keyword_scale"]), HYBRID, corpus_sha,
++                     split_sha, feature_params=fp)
++    for m in (nb, lr, hy):
++        m["_index"] = {f: i for i, f in enumerate(m["features"])}
++    return {"logreg": lr, "hybrid": hy, "nb": nb}
++
++
++def predict_all(models: dict, rows: list[dict], margin: float) -> dict[str, list[dict]]:
++    out = {m: [] for m in METHODS}
++    for r in rows:
++        t = r["text"]
++        lab, hits = heuristic_label(t)
++        out["keyword"].append({"pred": lab, "score": None, "confident": hits >= 2, "abstain": False})
++        for name in ("logreg", "hybrid", "nb"):
++            p = predict_scores(t, models[name])
++            k = max(range(len(LABELS)), key=lambda j: (p[j], -j))
++            out[name].append({"pred": LABELS[k], "score": round(p[k], 4), "confident": p[k] >= CONFIDENT,
++                              "abstain": False})
++            if name == "hybrid":
++                why = reasons(t, p, margin)
++                out["hybrid+abstain"].append({"pred": LABELS[k], "score": round(p[k], 4),
++                                              "confident": p[k] >= CONFIDENT, "abstain": bool(why), "reasons": why})
++    return out
++
++
++def summarize(rows: list[dict], preds: list[dict], slice_keys=("language",)) -> dict:
++    y = [LABELS.index(r["label"]) for r in rows]
++    yp = [LABELS.index(p["pred"]) for p in preds]
++    rep = classification_report(y, yp)
++    accepted = [i for i, p in enumerate(preds) if not p["abstain"]]
++    correct_acc = [i for i in accepted if preds[i]["pred"] == rows[i]["label"]]
++    conf_err = [i for i in accepted if preds[i]["confident"] and preds[i]["pred"] != rows[i]["label"]]
++    safe = 0
++    for r, p in zip(rows, preds):
++        ok = {r["label"], *r.get("also_labels", [])}
++        safe += 1 if (p["abstain"] or p["pred"] in ok) else 0
++    out = {"n": len(rows), "accuracy_all": rep["accuracy"], "macro_f1_all": rep["macro_f1"],
++           "per_class": rep["per_class"], "confusion": rep["confusion"],
++           "coverage": round(len(accepted) / len(rows), 4) if rows else None,
++           "accuracy_accepted": round(len(correct_acc) / len(accepted), 4) if accepted else None,
++           "confident_errors": len(conf_err), "safe_outcome_rate": round(safe / len(rows), 4) if rows else None,
++           "slices": {}}
++    for key in slice_keys:
++        groups: dict[str, list[int]] = {}
++        for i, r in enumerate(rows):
++            vals = r.get(key)
++            for v in (vals if isinstance(vals, list) else [vals]):
++                groups.setdefault(str(v), []).append(i)
++        out["slices"][key] = {}
++        for v, idx in sorted(groups.items()):
++            sub = classification_report([y[i] for i in idx], [yp[i] for i in idx])
++            acc_idx = [i for i in idx if not preds[i]["abstain"]]
++            out["slices"][key][v] = {
++                "n": len(idx), "accuracy": sub["accuracy"], "macro_f1": sub["macro_f1"],
++                "coverage": round(len(acc_idx) / len(idx), 4),
++                "safe_outcome_rate": round(sum(1 for i in idx if preds[i]["abstain"] or preds[i]["pred"] in
++                                               {rows[i]["label"], *rows[i].get("also_labels", [])}) / len(idx), 4)}
++    return out
++
++
++def run_cv(margin: float) -> dict:
++    rows, man = load_corpus()
++    rows = [r for r in rows if r["split"] != "excluded_near_dup"]
++    folds = family_folds(rows)
++    per_fold, pooled = [], {m: [None] * len(rows) for m in METHODS}
++    for k in range(FOLDS):
++        tr = [r for r in rows if folds[family(r)] != k]
++        te_idx = [i for i, r in enumerate(rows) if folds[family(r)] == k]
++        models = train_models(tr)
++        preds = predict_all(models, [rows[i] for i in te_idx], margin)
++        row = {"fold": k, "train_rows": len(tr), "test_rows": len(te_idx),
++               "test_families": len({family(rows[i]) for i in te_idx})}
++        for m in METHODS:
++            for i, p in zip(te_idx, preds[m]):
++                pooled[m][i] = p
++            s = summarize([rows[i] for i in te_idx], preds[m], slice_keys=())
++            row[m] = {"macro_f1": s["macro_f1_all"], "accuracy": s["accuracy_all"], "coverage": s["coverage"],
++                      "accuracy_accepted": s["accuracy_accepted"]}
++        per_fold.append(row)
++        print(f"fold {k}: " + ", ".join(f"{m}={row[m]['macro_f1']}" for m in METHODS), flush=True)
++    result = {"protocol": "leave-family-out CV", "folds": FOLDS, "groups": len(folds), "rows": len(rows),
++              "corpus_sha256": man["corpus_sha256"], "fold_of_group": folds, "per_fold": per_fold,
++              "pooled": {m: summarize(rows, pooled[m], slice_keys=("language", "short", "ambiguous"))
++                         for m in METHODS}}
++    spread = {}
++    for m in METHODS:
++        xs = [f[m]["macro_f1"] for f in per_fold]
++        spread[m] = {"mean": round(statistics.mean(xs), 4), "min": min(xs), "max": max(xs),
++                     "stdev": round(statistics.stdev(xs), 4)}
++    paired = {}
++    for m in ("logreg", "hybrid", "nb"):
++        d = [f[m]["macro_f1"] - f["keyword"]["macro_f1"] for f in per_fold]
++        paired[f"{m}_minus_keyword"] = {"per_fold": [round(x, 4) for x in d], "mean": round(statistics.mean(d), 4),
++                                        "folds_better": sum(1 for x in d if x > 0), "folds": len(d)}
++    result["macro_f1_over_folds"] = spread
++    result["paired_vs_keyword"] = paired
++    result["note"] = ("5 фолдов по 56 группам происхождения; разброс по фолдам, а не доверительный интервал. "
++                      "Синтетика одного автора: перенос на реальные обращения не следует.")
++    return result
++
++
++def run_fixed(names: list[str], margin: float) -> dict:
++    """Модели, обученные на train split раунда 12; оценка на test/probe/challenge."""
++    rows, man = load_corpus()
++    pinned_h = load_model()
++    pinned_nb = load_model(DATA / "model_alt_nb.json.gz")
++    tr = [r for r in rows if r["split"] == "train"]
++    plain = train_models(tr, man["corpus_sha256"], sha256_file(DATA / "split_v2.json"))["logreg"]
++    models = {"hybrid": pinned_h, "nb": pinned_nb, "logreg": plain}
++    out = {"models": {"hybrid": pinned_h["version"] + " (pinned model.json.gz, payload " + pinned_h["payload_sha256"][:12] + ")",
++                      "nb": pinned_nb["version"] + " (pinned model_alt_nb.json.gz)",
++                      "logreg": "retrained on round-12 train split with " + json.dumps(LR_PLAIN),
++                      "keyword": "heuristic.py STEMS (unchanged since a26e598)"},
++           "abstain_margin": margin}
++    sets = {}
++    if "test" in names:
++        sets["test_r12_exploratory"] = [r for r in rows if r["split"] == "test"]
++    if "probe" in names:
++        sets["probe_r12_exploratory"] = [json.loads(x) for x in PROBE.read_text(encoding="utf-8").splitlines() if x.strip()]
++    if "challenge" in names:
++        freeze = json.loads(CHALLENGE_FREEZE.read_text(encoding="utf-8"))
++        actual = hashlib.sha256(CHALLENGE.read_bytes()).hexdigest()
++        if actual != freeze["sha256"]:
++            raise SystemExit("challenge file differs from its freeze record — not a valid final check")
++        sets["challenge_r13_v1"] = [json.loads(x) for x in CHALLENGE.read_text(encoding="utf-8").splitlines() if x.strip()]
++        out["challenge_sha256"] = actual
++    for name, rs in sets.items():
++        preds = predict_all(models, rs, margin)
++        keys = ("language", "phenomena") if name.startswith("challenge") else ("language", "short", "ambiguous", "style")
++        out[name] = {m: summarize(rs, preds[m], slice_keys=keys) for m in METHODS}
++        out[name]["errors_hybrid_abstain"] = [
++            {"id": r["id"], "text": r["text"], "label": r["label"], "also": r.get("also_labels", []),
++             "pred": p["pred"], "score": p["score"], "abstain": p["abstain"], "reasons": p.get("reasons", []),
++             "keyword_pred": kp["pred"], "language": r.get("language"), "phenomena": r.get("phenomena", r.get("style"))}
++            for r, p, kp in zip(rs, preds["hybrid+abstain"], preds["keyword"])
++            if p["pred"] not in {r["label"], *r.get("also_labels", [])}]
++    return out
++
++
++def run(sets: list[str], out_dir: Path) -> dict:
++    policy = load_policy()
++    margin = policy["margin_threshold"]
++    result = {"schema": "civic-r08-protocol-v1", "policy": {k: policy[k] for k in ("version", "margin_threshold")},
++              "hyper": {"logreg": LR_PLAIN, "hybrid": HYBRID, "nb_alpha": NB_ALPHA}, "confident_score": CONFIDENT,
++              "evidence": "synthetic/agent-labeled only; real_data_NOT_EVALUATED"}
++    if "cv" in sets:
++        result["cv"] = run_cv(margin)
++    fixed = [s for s in sets if s in ("test", "probe", "challenge")]
++    if fixed:
++        result["fixed"] = run_fixed(fixed, margin)
++    out_dir.mkdir(parents=True, exist_ok=True)
++    name = "protocol_challenge.json" if sets == ["challenge"] else "protocol_dev.json"
++    (out_dir / name).write_text(json.dumps(result, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
++    return result
+diff --git a/tests/civic/R08/test_r08_contract.py b/tests/civic/R08/test_r08_contract.py
+index f89e4d6..44204f4 100644
+--- a/tests/civic/R08/test_r08_contract.py
++++ b/tests/civic/R08/test_r08_contract.py
+@@ -13,6 +13,8 @@ from ml.civic_classifier.text import anonymize, detect_language, normalize
+ 
+ FEEDBACK_CATEGORIES = ("roads", "sidewalks", "transport_stops", "lighting", "landscaping", "other")
+ KEYS = {"label", "score", "score_kind", "needs_review", "model_version", "training_data_status"}
++# Раунд 13: аддитивные поля (R06 _clean_suggestion и check_suggestion их игнорируют).
++EXTRA = {"abstain", "abstain_reasons", "alternatives", "explanation", "policy_version"}
+ 
+ 
+ def test_labels_match_feedback_categories():
+@@ -40,7 +42,7 @@ def r06_clean(value):
+ ])
+ def test_result_shape_is_accepted_by_r06(text, lang):
+     out = clf.classify(text, lang)
+-    assert set(out) == KEYS
++    assert KEYS <= set(out) <= KEYS | EXTRA
+     cleaned = r06_clean(out)
+     assert cleaned is not None and cleaned["label"] == out["label"]
+     for k in ("score_kind", "model_version", "training_data_status"):
 -- 
 2.43.0
 

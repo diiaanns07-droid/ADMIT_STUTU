@@ -1,0 +1,67 @@
+{
+ "version": "abstain-r13-v1",
+ "margin_threshold": 0.25,
+ "target_accepted_accuracy": 0.95,
+ "target_met": true,
+ "selected_on": "round-12 validation split (template group split), n=581",
+ "grid": [
+  {
+   "margin": 0.05,
+   "coverage": 0.8434,
+   "accepted_accuracy": 0.9327
+  },
+  {
+   "margin": 0.1,
+   "coverage": 0.8348,
+   "accepted_accuracy": 0.9381
+  },
+  {
+   "margin": 0.15,
+   "coverage": 0.8262,
+   "accepted_accuracy": 0.9437
+  },
+  {
+   "margin": 0.2,
+   "coverage": 0.821,
+   "accepted_accuracy": 0.9476
+  },
+  {
+   "margin": 0.25,
+   "coverage": 0.8038,
+   "accepted_accuracy": 0.9529
+  },
+  {
+   "margin": 0.3,
+   "coverage": 0.7935,
+   "accepted_accuracy": 0.9566
+  },
+  {
+   "margin": 0.35,
+   "coverage": 0.7883,
+   "accepted_accuracy": 0.9607
+  },
+  {
+   "margin": 0.4,
+   "coverage": 0.7762,
+   "accepted_accuracy": 0.9667
+  },
+  {
+   "margin": 0.45,
+   "coverage": 0.7711,
+   "accepted_accuracy": 0.9665
+  },
+  {
+   "margin": 0.5,
+   "coverage": 0.7642,
+   "accepted_accuracy": 0.9685
+  }
+ ],
+ "rules": [
+  "multi_topic",
+  "latin_script",
+  "low_margin",
+  "no_content"
+ ],
+ "note": "Порог выбран на синтетической validation; на реальных сообщениях не проверен.",
+ "model_payload_sha256": "104c46a6f972bd48ceae47cb1736caeeada1f1a5cd91e5dce444f941462e4ff7"
+}

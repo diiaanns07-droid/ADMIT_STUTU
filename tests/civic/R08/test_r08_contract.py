@@ -13,6 +13,8 @@ from ml.civic_classifier.text import anonymize, detect_language, normalize
 
 FEEDBACK_CATEGORIES = ("roads", "sidewalks", "transport_stops", "lighting", "landscaping", "other")
 KEYS = {"label", "score", "score_kind", "needs_review", "model_version", "training_data_status"}
+# Раунд 13: аддитивные поля (R06 _clean_suggestion и check_suggestion их игнорируют).
+EXTRA = {"abstain", "abstain_reasons", "alternatives", "explanation", "policy_version"}
 
 
 def test_labels_match_feedback_categories():
@@ -40,7 +42,7 @@ def r06_clean(value):
 ])
 def test_result_shape_is_accepted_by_r06(text, lang):
     out = clf.classify(text, lang)
-    assert set(out) == KEYS
+    assert KEYS <= set(out) <= KEYS | EXTRA
     cleaned = r06_clean(out)
     assert cleaned is not None and cleaned["label"] == out["label"]
     for k in ("score_kind", "model_version", "training_data_status"):
