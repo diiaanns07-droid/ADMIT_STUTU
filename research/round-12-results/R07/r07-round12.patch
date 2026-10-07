@@ -1,7 +1,7 @@
 From 2e6a82dc14b9d7a74659248ae340f72cadf6f4d9 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 10:15:04 +0000
-Subject: [PATCH 1/5] R07: reuse prepared city network for closures (overlay
+Subject: [PATCH 1/6] R07: reuse prepared city network for closures (overlay
  adjacency, bounded LRU)
 
 Closures no longer rebuild the 94k-edge index: base adjacency is built once per
@@ -246,7 +246,7 @@ index b9f6034..9054efb 100644
 From e9634ece8724ed6676965c732416af8626aad34d Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 10:23:13 +0000
-Subject: [PATCH 2/5] =?UTF-8?q?R07:=20readable=20scenario=20UI=20=E2=80=94?=
+Subject: [PATCH 2/6] =?UTF-8?q?R07:=20readable=20scenario=20UI=20=E2=80=94?=
  =?UTF-8?q?=20place=20names,=20closure=20periods/status,=20plan=20overview?=
  =?UTF-8?q?,=20camera=20return,=20schedule=20table?=
 MIME-Version: 1.0
@@ -730,7 +730,7 @@ index d067c86..73810c6 100644
 From 5cdf7d5be12bcf270e446aa4232b811284647b95 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 10:28:47 +0000
-Subject: [PATCH 3/5] R07: schedule of work variants over all interval
+Subject: [PATCH 3/6] R07: schedule of work variants over all interval
  boundaries + phasing case
 
 - engine/civic_scenarios/schedule.py: cuts the window at every A/B boundary, runs plain
@@ -1133,7 +1133,7 @@ index 0000000..d19df52
 From 1a3e3db4f8f43e3eda63c81b2657aee378af5e97 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 10:34:42 +0000
-Subject: [PATCH 4/5] R07: proposed mapping of a work object's geometry to
+Subject: [PATCH 4/6] R07: proposed mapping of a work object's geometry to
  graph edges (never auto-closes)
 
 engine/civic_scenarios/mapping.py: propose_mapping(geometry, precision, graph, osm_tags)
@@ -1735,7 +1735,7 @@ index 0000000..f5b320a
 From 733f3bbee882e1c3d8af37c4166120ab9eb8784c Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 10:36:43 +0000
-Subject: [PATCH 5/5] R07: real-snapshot audit of the city graph (levels,
+Subject: [PATCH 5/6] R07: real-snapshot audit of the city graph (levels,
  boundary, barriers, conditional, namesakes, connectivity)
 
 adapters/osm_audit.py + tests: every graph node is a real OSM node with raw coordinates,
@@ -2046,6 +2046,37 @@ index 0000000..55d73d1
 +    assert rep["levels"]["unconnected_crossings_involving_bridge_tunnel_layer"]
 +    assert rep["barriers"]["edges_touching_barrier_by_access"].get("allowed", 0) == rep["barriers"]["allowed_only_with_explicit_node_permission"]
 +    assert 0 < rep["allowed_connectivity"]["largest_component_share_of_length"] < 1
+-- 
+2.43.0
+
+
+From a354e4797024b998021d5b77a0478ecaffd227e1 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 7 Oct 2026 10:38:09 +0000
+Subject: [PATCH 6/6] R07: schedule table follows the pair selected in the
+ result table
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01CcnxZPmJeLbSLt4S9JZCrb
+---
+ web/civic/scenarios/scenarios.js | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/web/civic/scenarios/scenarios.js b/web/civic/scenarios/scenarios.js
+index 73810c6..102c0df 100644
+--- a/web/civic/scenarios/scenarios.js
++++ b/web/civic/scenarios/scenarios.js
+@@ -401,8 +401,8 @@
+       const tbody = el("tbody", {}, bRows.map((b) => {
+         const k = pairKey(b);
+         const tr = el("tr", { class: P + "pair" + (state.selectedPair === k ? " " + P + "active" : ""), tabindex: "0",
+-          onclick: () => { state.selectedPair = k; renderResult(); drawOverlays(); },
+-          onkeydown: (ev) => { if (ev.key === "Enter") { state.selectedPair = k; renderResult(); drawOverlays(); } } }, [
++          onclick: () => { state.selectedPair = k; renderResult(); drawOverlays(); renderSchedule(); },
++          onkeydown: (ev) => { if (ev.key === "Enter") { state.selectedPair = k; renderResult(); drawOverlays(); renderSchedule(); } } }, [
+           el("td", { title: "узлы " + b.origin_node_id + " → " + b.destination_node_id, text: nodeName(b.origin_node_id) + " → " + nodeName(b.destination_node_id) }),
+           cell(b), cell(aRows.get(k), dA.get(k) && dA.get(k).delta_m), cell(bbRows.get(k), dB.get(k) && dB.get(k).delta_m)]);
+         return tr;
 -- 
 2.43.0
 

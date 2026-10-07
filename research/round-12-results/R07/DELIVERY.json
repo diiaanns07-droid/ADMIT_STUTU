@@ -1,0 +1,105 @@
+{
+  "round": 12,
+  "role": "R07",
+  "branch": "claude/eager-hawking-4up40k",
+  "repository": "https://github.com/diiaanns07-droid/ADMIT_STUTU",
+  "base_mismatch": "Session environment provided ADMIT_STUTU, not GOV_DIPLOME; remote not changed. Work done in a GOV_DIPLOME worktree at CODE_BASE_SHA and delivered as a patch of R07-owned paths only.",
+  "base_sha": "56538a3a7504d4589c38ab4d3c5107f12aa7f8a6",
+  "code_sha": "a354e4797024b998021d5b77a0478ecaffd227e1",
+  "code_sha_note": "commit in the local GOV_DIPLOME worktree (branch r07-round12, not pushed: no push rights there); reproduce with `git am r07-round12.patch` on base_sha",
+  "patch": {
+    "file": "research/round-12-results/R07/r07-round12.patch",
+    "sha256": "2258afbd4d54660702cc71b9eebcff4e06419e33860fccb2c5e5b7ecb0bd7fa7",
+    "verified": "export_patch.sh: applies on base_sha and reproduces code_sha for owned paths"
+  },
+  "push_status": "OK for checkpoints b8c560d, 94996ff, e07f1c9, ebda9e4, 2a61fb8 on claude/eager-hawking-4up40k; final SHA reported in chat/STATUS",
+  "changed_paths": [
+    "engine/civic_scenarios/graph.py",
+    "engine/civic_scenarios/schedule.py",
+    "engine/civic_scenarios/mapping.py",
+    "engine/civic_scenarios/http.py",
+    "engine/civic_scenarios/adapters/osm_audit.py",
+    "engine/civic_scenarios/cases/astana-republic-sidewalk-phasing-v1.case.json",
+    "web/civic/scenarios/scenarios.js",
+    "web/civic/scenarios/scenarios.css",
+    "tests/civic/R07/test_r07_scale.py",
+    "tests/civic/R07/test_r07_schedule.py",
+    "tests/civic/R07/test_r07_mapping.py",
+    "tests/civic/R07/test_r07_osm_audit.py",
+    "tests/civic/R07/test_r07_http_ui.py",
+    "tests/civic/test_citywide_osm.py"
+  ],
+  "unchanged_owned_data": "graph JSON, MANIFEST.json, SOURCE.json, overpass.json.gz, streets.json (digest a694be21…, snapshot 2026-05-06)",
+  "tests": [
+    {
+      "name": "city example reproduced",
+      "status": "PASS",
+      "command": "compare(astana-citywide-v1)",
+      "result": "18980.904 / 18998.069 / 18987.577, result_digest fd80debd… before and after"
+    },
+    {
+      "name": "R07 + citywide OSM tests",
+      "status": "PASS",
+      "command": "python3 -m pytest -q tests/civic/R07 tests/civic/test_citywide_osm.py",
+      "result": "all passed at code_sha"
+    },
+    {
+      "name": "full pytest (Linux, Python 3.13.16)",
+      "status": "PASS",
+      "command": "python3 -m pytest -q",
+      "result": "894 passed, 2 skipped at code_sha"
+    },
+    {
+      "name": "overlay == full rebuild on city graph + mutation check",
+      "status": "PASS",
+      "command": "tests/civic/R07/test_r07_scale.py",
+      "result": "mutant (overlay not filtering) caught"
+    },
+    {
+      "name": "UI segmentation (Node) == engine segmentation",
+      "status": "PASS",
+      "command": "tests/civic/R07/test_r07_schedule.py",
+      "result": "incl. same instant with two offsets, gap, empty closure"
+    },
+    {
+      "name": "browser: street view kept, return button, schedule (Chromium 1366x900 and 522x911)",
+      "status": "PASS",
+      "command": "Playwright probes (scratch), screenshots in screenshots/",
+      "result": "camera unchanged after compare (z12.88), show segment z17, return restores z12.88; mobile no horizontal overflow; schedule numbers equal Python"
+    },
+    {
+      "name": "map-object through real server with proposed R01 route",
+      "status": "PASS",
+      "command": "temporary git apply of r01 patch, POST /api/civic/v1/scenarios/map-object, then reverted",
+      "result": "200 proposed 17 (requires_confirmation), 409 stale digest, 422 extra key"
+    },
+    {
+      "name": "basemap / 3D buildings",
+      "status": "NOT_RUN",
+      "command": null,
+      "result": "OpenFreeMap unreachable from cloud (ERR_TUNNEL_CONNECTION_FAILED); app showed simplified background"
+    },
+    {
+      "name": "Windows run-city.bat",
+      "status": "NOT_RUN",
+      "command": null,
+      "result": "Linux cloud; started via python3 -B app.py --port 8611"
+    },
+    {
+      "name": "staff login / editor flow",
+      "status": "NOT_RUN",
+      "command": null,
+      "result": "outside R07 scope this round"
+    }
+  ],
+  "known_limits": [
+    "Phasing case is a hypothesis: segment chosen on the baseline path, dates conditional; not a real work.",
+    "Strict policy drives the detour: with unknown access allowed the detour is 0 m (parallel path along the primary carriageway of Respubliki, no foot/sidewalk tags); real detour between 0 and ~+650 m, needs field check.",
+    "Allowed network: 669 components, largest 73.8 % of length; 'no path in model' often means missing access data.",
+    "Mapping is a proposal only; with 'approximate' geometry the 35 m buffer catches both sides of a street, carriageway and service roads.",
+    "No snapshot ways carry *:conditional tags, so that rule is verified on fixtures only.",
+    "Walking length only: no travel time, traffic, emissions or affected residents; driving NOT_READY.",
+    "OSM snapshot 2026-05-06 (retrieved 2026-10-07), not live."
+  ],
+  "next_step": "Coordinator: git am r07-round12.patch on codex/govtech-main-interface@56538a3, apply r01-web_server-map-object.proposed.patch (one route line), rerun tests/civic."
+}

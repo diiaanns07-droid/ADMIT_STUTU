@@ -1,0 +1,47 @@
+R07 · РАУНД 12 · ЧТО ПОДКЛЮЧИТЬ КООРДИНАТОРУ
+
+ИСТОЧНИК
+  Репозиторий сессии: https://github.com/diiaanns07-droid/ADMIT_STUTU, ветка claude/eager-hawking-4up40k
+  (BASE_MISMATCH: среда выдала не GOV_DIPLOME; remote не менялся).
+  Поставка: research/round-12-results/R07/r07-round12.patch (git am на CODE_BASE_SHA 56538a3).
+  Патч затрагивает только пути R07. В той же ветке ADMIT_STUTU лежат результаты R08 раунда 11 —
+  к R07 они не относятся.
+
+1. БЕЗ ИЗМЕНЕНИЯ ОБЩИХ ФАЙЛОВ (работает сразу после git am)
+  - Ускорение движка: PreparedGraph.adjacency с оверлеем перекрытий. Результаты compare не изменились
+    (дайджесты те же). Базовые индексы (3 на городской граф) живут всё время процесса; рост VmRSS
+    не замечен (206 → 207 МБ, без роста за 41 расчёт).
+  - UI (web/civic/scenarios/*): mount({root,map,api,apiPrefix?}) -> {destroy} без изменений; добавлен
+    экспорт CivicScenarios.helpers (чистые функции, только для тестов). Слои и классы по-прежнему
+    с префиксом civic-r07-. innerHTML/localStorage/document.body/второй карты нет (статический тест).
+  - Расписание в UI использует существующий POST /scenarios/compare (несколько последовательных запросов,
+    не больше числа уникальных состояний). Сервер ограничивает два одновременных расчёта
+    (SCENARIO_SLOTS). При 503 busy отрезок покажет «ошибка: busy»; повторный запуск пересчитает.
+  - Новый кейс astana-republic-sidewalk-phasing-v1 (hypothesis) появится в GET /scenarios/cases.
+    СОСЕД R09: помощник читает кейсы R07 через r07_case_loader, поэтому новый кейс станет доступным
+    фактом. tests/civic целиком проходят (см. DELIVERY.json).
+  - Python: engine/civic_scenarios/schedule.py (CLI), mapping.py, adapters/osm_audit.py.
+
+2. НУЖНА ОДНА СТРОКА У R01 (общий файл ui/web_server.py)
+  Чтобы открыть POST /api/civic/v1/scenarios/map-object через сервер приложения:
+    research/round-12-results/R07/r01-web_server-map-object.proposed.patch
+    (добавляет ("POST", ("scenarios", "map-object"), "scenarios") в таблицу маршрутов).
+  Существующая защита _scenarios подходит: graph_id-строка обязательна, SCENARIO_SLOTS ограничивает
+  параллельность. Endpoint только читает: ничего не сохраняет и не закрывает. Вход принимается строго:
+  {graph_id, graph_digest, geometry, geometry_precision}, лишние ключи → 422, устаревший digest → 409.
+  Без этой строки map-object доступен только из Python/devserver; остальное работает.
+
+3. ПРЕДЛАГАЕМЫЙ СЛЕДУЮЩИЙ ШАГ ДЛЯ R03/R04 (НЕ сделано, нужен контракт)
+  Карточка объекта → «Предложить участки для сравнения» → POST map-object → человек отмечает
+  подходящие участки → открывается CivicScenarios с этими участками в плане A. Для этого нужна
+  новая необязательная опция mount (например initialClosures). Это изменение контракта; решает
+  координатор. Автоматически закрывать «ближайшую линию» нельзя: см. mapping-demo-objects.json —
+  при approximate в буфер попадают обе стороны улицы, проезжая часть и служебные проезды.
+
+4. КОНТРАКТ (аддитивно)
+  civic-scenario-v1 payload и civic-scenario-result-v1 не изменены.
+  Новые схемы ответов: civic-scenario-mapping-v1 (map-object), civic-scenario-schedule-v1 (только Python/CLI).
+
+5. ЧТО НЕ ЗАТРОНУТО
+  Граф, SOURCE.json, overpass.json.gz, streets.json и MANIFEST.json не менялись (digest a694be21…,
+  дата снимка прежняя). Автомобильный режим остаётся NOT_READY.

@@ -1,6 +1,7 @@
-head=733f3bbee882e1c3d8af37c4166120ab9eb8784c
+head=a354e4797024b998021d5b77a0478ecaffd227e1
 base=56538a3a7504d4589c38ab4d3c5107f12aa7f8a6
-patch_sha256=d09cd5d1cd3cfcc1ba8e6f8e60982f139110a81c0f326c0645962f454c5c6123
+patch_sha256=2258afbd4d54660702cc71b9eebcff4e06419e33860fccb2c5e5b7ecb0bd7fa7
+a354e47 R07: schedule table follows the pair selected in the result table
 733f3bb R07: real-snapshot audit of the city graph (levels, boundary, barriers, conditional, namesakes, connectivity)
 1a3e3db R07: proposed mapping of a work object's geometry to graph edges (never auto-closes)
 5cdf7d5 R07: schedule of work variants over all interval boundaries + phasing case

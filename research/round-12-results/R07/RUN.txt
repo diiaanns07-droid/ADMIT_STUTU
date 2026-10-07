@@ -1,0 +1,53 @@
+R07 · РАУНД 12 · КАК ЗАПУСТИТЬ И ПРОВЕРИТЬ
+
+0. ПОЛУЧИТЬ КОД (BASE_MISMATCH)
+   Сессия R07 работала в репозитории ADMIT_STUTU, ветка claude/eager-hawking-4up40k. Изменения R07 для
+   GOV_DIPLOME поставлены патчем относительно CODE_BASE_SHA 56538a3a7504d4589c38ab4d3c5107f12aa7f8a6:
+     git clone https://github.com/diiaanns07-droid/GOV_DIPLOME.git && cd GOV_DIPLOME
+     git checkout -b r07-round12 56538a3a7504d4589c38ab4d3c5107f12aa7f8a6
+     git am /path/to/research/round-12-results/R07/r07-round12.patch
+   Патч меняет только пути R07 (engine/civic_scenarios/, web/civic/scenarios/, tests/civic/R07/,
+   tests/civic/test_citywide_osm.py). Перед экспортом export_patch.sh проверяет, что патч применяется
+   на чистом CODE_BASE_SHA и повторяет HEAD рабочего дерева. sha256 патча — в r07-round12.patch.info.
+
+1. ЗАПУСК ПРИЛОЖЕНИЯ
+   Windows: run-city.bat → http://127.0.0.1:8611/
+   Linux/облако (так проверялось):
+     pip install numpy pytest
+     CIVIC_DEMO=1 python3 -B app.py --port 8611 --civic-db /tmp/r07.sqlite3
+   Откройте http://127.0.0.1:8611/ и найдите улицу, например «проспект Республики».
+   Затем нажмите «Сравнить ограничения» и выберите кейс «Тротуар вдоль пр. Республики: сразу или по этапам».
+
+2. ЧТО МОЖЕТ СДЕЛАТЬ ПОЛЬЗОВАТЕЛЬ
+   - Увидеть сводку A/B: что закрыто, на какой период, действует ли в выбранный момент.
+   - Выбрать старт и цель на карте: они подписаны названиями улиц OSM, ID узла есть в подсказке.
+   - Нажимать на линии, чтобы закрыть или открыть участок. У каждого участка есть название, длина,
+     доступ и кнопки «показать» и «×».
+   - Нажать «Сравнить»: карта остаётся на найденной улице. «Показать маршруты» приближает пути, а
+     «↩ Вернуться к прежнему виду» возвращает исходный вид.
+   - Нажать «Рассчитать по всем интервалам»: таблица A/B по каждому отрезку расписания.
+   - Скачать вход и результат (JSON). Технические digest и ID лежат в раскрываемых «Технических деталях».
+
+3. ВОСПРОИЗВЕСТИ ЧИСЛА БЕЗ БРАУЗЕРА
+   Городской пример (18980.904 / 18998.069 / 18987.577):
+     python3 -c "import json;from engine.civic_scenarios import compare;from engine.civic_scenarios.registry import load_graph;c=json.load(open('engine/civic_scenarios/cases/astana-citywide-v1.case.json'))['payload'];r=compare(c,load_graph(c['graph_id']));print(r['baseline']['routes'][0]['length_m'],[p['routes'][0]['length_m'] for p in r['plans']],r['result_digest'])"
+   Расписание кейса поэтапного ремонта (result_digest 10a7726107ef…):
+     python3 -m engine.civic_scenarios.schedule engine/civic_scenarios/cases/astana-republic-sidewalk-phasing-v1.case.json --out schedule.json
+   Аудит реального графа:
+     python3 -m engine.civic_scenarios.adapters.osm_audit --out osm-audit.json
+   Сопоставление объекта с графом (Python):
+     from engine.civic_scenarios.mapping import propose_mapping, osm_way_tags
+     propose_mapping(object["geometry"], object["geometry_precision"], load_graph_dict(graph_id), osm_way_tags())
+   HTTP (после строки маршрута у R01, см. INTEGRATION.txt):
+     POST /api/civic/v1/scenarios/map-object {graph_id, graph_digest, geometry, geometry_precision}
+
+4. ТЕСТЫ
+     python3 -m pytest -q tests/civic/R07 tests/civic/test_citywide_osm.py
+     python3 -m pytest -q tests/civic
+   Для теста сверки UI и движка нужен node (без node он пропускается как NOT_RUN).
+   Браузерные пробы (Playwright + Chromium) лежали во временной папке сессии; их сценарий описан в
+   STATUS.md, а результат — скриншоты в screenshots/.
+
+5. ОГРАНИЧЕНИЯ ПРОВЕРКИ
+   В облаке подложка OpenFreeMap недоступна (ERR_TUNNEL_CONNECTION_FAILED). Приложение показало
+   «упрощённый фон», поэтому 3D-здания и подложка здесь НЕ подтверждены. Staff-вход не проверялся.

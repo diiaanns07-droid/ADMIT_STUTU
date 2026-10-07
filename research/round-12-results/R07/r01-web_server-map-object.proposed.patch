@@ -1,0 +1,11 @@
+--- a/ui/web_server.py	2026-10-07 10:40:29.216665952 +0000
++++ b/ui/web_server.py	2026-10-07 10:40:29.245831985 +0000
+@@ -110,6 +110,8 @@
+     ("GET", ("scenarios", "graphs", "{id}"), "scenarios"),
+     ("GET", ("scenarios", "cases"), "scenarios"),
+     ("POST", ("scenarios", "compare"), "scenarios"),
++    # R07 round 12 (proposed): read-only mapping of an object's geometry to graph edges; never closes edges.
++    ("POST", ("scenarios", "map-object"), "scenarios"),
+     ("POST", ("assistant",), "assistant"),
+     # R09 contract_delta (accepted): editor-only extraction draft from supplied publication text.
+     ("POST", ("staff", "assistant", "extract"), "assistant"),
