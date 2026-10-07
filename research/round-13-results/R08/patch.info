@@ -1,8 +1,10 @@
-worktree_head=4673764bad49c0d4b17a19e69027ef393235e662
+worktree_head=678e8d439c01eaccc755503003dc069f8f486506
 base=56538a3a7504d4589c38ab4d3c5107f12aa7f8a6
 restore_commit=fb1a0bcd025318fe1472b28eb6470fac5c25b418 (= R08 paths of e311ba822c82d4904f9be72b2db05d991dc8ae12)
-full_patch_sha256=447072bffcf0f1f63c009a406ca1c388c24981f02bc5cc0e3d40d5e5ba768f2e
-delta_patch_sha256=f48c8c59d150c36f66b52c9d9122f5d0cb3fd0cb776565c2b519105f452d31c2
+full_patch_sha256=ca5f33c99c8f74e2ecb15a80bf3d94655182275eddd5bfb10bdedb2f173c23bb
+delta_patch_sha256=f672190a0bc7a176f0faedff73e45f2fda2d6695aa98a250279fdcd006b32cc2
+678e8d4 R08 r13: abstain test accepts both R06 versions (contract-only storage or proposed bounded fields)
+c57d51c R08 r13: integration tests with real R06 (abstain in editor queue, corrupted artifact, first-call timeout, r08_status probe)
 4673764 R08 r13: abstention + limited explanation in classify(); leave-family-out protocol
 f2dffd4 R08 r13: freeze challenge_r13_v1 (134 agent-labeled synthetic messages) before any model run
 dc84864 R08 r13: reproducibility and split-leakage audit (python -m ml.civic_classifier audit)

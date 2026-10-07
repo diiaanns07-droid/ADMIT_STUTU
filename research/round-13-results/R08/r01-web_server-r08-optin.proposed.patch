@@ -1,0 +1,19 @@
+--- a/ui/web_server.py	2026-10-07 17:18:44.070773824 +0000
++++ b/ui/web_server.py	2026-10-07 17:18:44.094024205 +0000
+@@ -253,9 +253,14 @@
+                     return None  # published but no public view: never fall back to the staff copy
+                 return staff_item
+ 
+-            # classifier=None: the R08 model is not integrated/verified in this build.
++            # R08 is opt-in (CIVIC_R08_CLASSIFIER=1): a synthetic-only demo model, every hint needs review.
++            # Default stays None, so the site starts and stores messages without loading any model.
++            classifier = None
++            if os.environ.get("CIVIC_R08_CLASSIFIER") == "1":
++                adapter = importlib.import_module("ui.civic_feedback.classifier_adapter")
++                classifier = adapter.load_r08_classifier()   # None if missing/broken/contract mismatch
+             return service_module.FeedbackService(str(db_path), lookup, getattr(store_service, "clock", None),
+-                                                  classifier=None)
++                                                  classifier=classifier)
+ 
+         def scenarios():
+             # R07 @22fa413: graphs only by id from its MANIFEST; every graph is hashed at start so a

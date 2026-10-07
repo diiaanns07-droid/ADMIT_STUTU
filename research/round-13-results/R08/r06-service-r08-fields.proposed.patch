@@ -1,0 +1,33 @@
+--- a/ui/civic_feedback/service.py	2026-10-07 17:18:44.079880189 +0000
++++ b/ui/civic_feedback/service.py	2026-10-07 17:18:44.094471917 +0000
+@@ -1338,10 +1338,26 @@
+         def short(key):
+             item = value.get(key)
+             return item[:80] if isinstance(item, str) else None
+-        return {"label": value["label"], "label_text": CATEGORY_LABELS[value["label"]], "score": score,
+-                "score_kind": short("score_kind"), "needs_review": value.get("needs_review") is not False,
+-                "model_version": short("model_version"),
+-                "training_data_status": short("training_data_status")}
++        out = {"label": value["label"], "label_text": CATEGORY_LABELS[value["label"]], "score": score,
++               "score_kind": short("score_kind"), "needs_review": value.get("needs_review") is not False,
++               "model_version": short("model_version"),
++               "training_data_status": short("training_data_status")}
++        # R08 round 13 (optional, bounded, staff-only): abstention and a limited feature explanation.
++        if isinstance(value.get("abstain"), bool):
++            out["abstain"] = value["abstain"]
++            reasons = value.get("abstain_reasons")
++            out["abstain_reasons"] = [r[:40] for r in reasons[:4] if isinstance(r, str)] if isinstance(reasons, list) else []
++        alts = value.get("alternatives")
++        if isinstance(alts, list):
++            out["alternatives"] = [a for a in alts[:2] if a in CATEGORIES]
++        exp = value.get("explanation")
++        if isinstance(exp, Mapping):
++            def strings(key, n=5, width=40):
++                items = exp.get(key)
++                return [x[:width] for x in items[:n] if isinstance(x, str)] if isinstance(items, list) else []
++            out["explanation"] = {"keyword_stems": strings("keyword_stems"), "word_prefixes": strings("word_prefixes", 3, 60),
++                                  "note": exp.get("note")[:120] if isinstance(exp.get("note"), str) else None}
++        return out
+ 
+     def _store_classifier(self, message_id: int, status: str, suggestion: dict | None) -> None:
+         try:

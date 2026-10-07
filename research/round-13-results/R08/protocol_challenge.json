@@ -1,0 +1,1809 @@
+{
+ "schema": "civic-r08-protocol-v1",
+ "policy": {
+  "version": "abstain-r13-v1",
+  "margin_threshold": 0.25
+ },
+ "hyper": {
+  "logreg": {
+   "l2": 1e-05,
+   "epochs": 24,
+   "lr0": 0.5
+  },
+  "hybrid": {
+   "l2": 0.0001,
+   "epochs": 12,
+   "lr0": 0.5,
+   "keyword_scale": 1.0
+  },
+  "nb_alpha": 0.1
+ },
+ "confident_score": 0.9,
+ "evidence": "synthetic/agent-labeled only; real_data_NOT_EVALUATED",
+ "fixed": {
+  "models": {
+   "hybrid": "civic-clf-logreg-kw-cf4464341-pe9ba054a (pinned model.json.gz, payload 104c46a6f972)",
+   "nb": "civic-clf-nb-cf4464341-p378f4882 (pinned model_alt_nb.json.gz)",
+   "logreg": "retrained on round-12 train split with {\"l2\": 1e-05, \"epochs\": 24, \"lr0\": 0.5}",
+   "keyword": "heuristic.py STEMS (unchanged since a26e598)"
+  },
+  "abstain_margin": 0.25,
+  "challenge_sha256": "b25a6a19ac3a0efbd41570248a03a590c10a2ad4452997e4bd62293139f95bde",
+  "challenge_r13_v1": {
+   "keyword": {
+    "n": 134,
+    "accuracy_all": 0.6791,
+    "macro_f1_all": 0.6794,
+    "per_class": {
+     "roads": {
+      "precision": 0.7647,
+      "recall": 0.619,
+      "f1": 0.6842,
+      "support": 21
+     },
+     "sidewalks": {
+      "precision": 0.7857,
+      "recall": 0.5789,
+      "f1": 0.6667,
+      "support": 19
+     },
+     "transport_stops": {
+      "precision": 0.6842,
+      "recall": 0.7222,
+      "f1": 0.7027,
+      "support": 18
+     },
+     "lighting": {
+      "precision": 0.6818,
+      "recall": 0.6818,
+      "f1": 0.6818,
+      "support": 22
+     },
+     "landscaping": {
+      "precision": 0.625,
+      "recall": 0.7143,
+      "f1": 0.6667,
+      "support": 14
+     },
+     "other": {
+      "precision": 0.6304,
+      "recall": 0.725,
+      "f1": 0.6744,
+      "support": 40
+     }
+    },
+    "confusion": {
+     "labels": [
+      "roads",
+      "sidewalks",
+      "transport_stops",
+      "lighting",
+      "landscaping",
+      "other"
+     ],
+     "rows_true_cols_pred": [
+      [
+       13,
+       2,
+       0,
+       3,
+       0,
+       3
+      ],
+      [
+       2,
+       11,
+       2,
+       1,
+       0,
+       3
+      ],
+      [
+       0,
+       0,
+       13,
+       1,
+       0,
+       4
+      ],
+      [
+       0,
+       0,
+       1,
+       15,
+       2,
+       4
+      ],
+      [
+       0,
+       0,
+       0,
+       1,
+       10,
+       3
+      ],
+      [
+       2,
+       1,
+       3,
+       1,
+       4,
+       29
+      ]
+     ]
+    },
+    "coverage": 1.0,
+    "accuracy_accepted": 0.6791,
+    "confident_errors": 9,
+    "safe_outcome_rate": 0.7463,
+    "slices": {
+     "language": {
+      "en": {
+       "n": 2,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0
+      },
+      "kk": {
+       "n": 30,
+       "accuracy": 0.8,
+       "macro_f1": 0.8057,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.8667
+      },
+      "mixed": {
+       "n": 12,
+       "accuracy": 0.9167,
+       "macro_f1": 0.9111,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.9167
+      },
+      "ru": {
+       "n": 71,
+       "accuracy": 0.7324,
+       "macro_f1": 0.7076,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.831
+      },
+      "translit_kk": {
+       "n": 6,
+       "accuracy": 0.1667,
+       "macro_f1": 0.0476,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.1667
+      },
+      "translit_ru": {
+       "n": 13,
+       "accuracy": 0.2308,
+       "macro_f1": 0.0625,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.2308
+      }
+     },
+     "phenomena": {
+      "address_trap": {
+       "n": 10,
+       "accuracy": 0.4,
+       "macro_f1": 0.5833,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.4
+      },
+      "ambiguous": {
+       "n": 5,
+       "accuracy": 0.8,
+       "macro_f1": 0.6667,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.8
+      },
+      "clear": {
+       "n": 42,
+       "accuracy": 0.9762,
+       "macro_f1": 0.9761,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.9762
+      },
+      "foreign_language": {
+       "n": 2,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0
+      },
+      "gibberish": {
+       "n": 1,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "keyword_trap": {
+       "n": 1,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0
+      },
+      "mixed_language": {
+       "n": 12,
+       "accuracy": 0.9167,
+       "macro_f1": 0.9111,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.9167
+      },
+      "multi_problem_same_label": {
+       "n": 1,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "multi_topic": {
+       "n": 12,
+       "accuracy": 0.25,
+       "macro_f1": 0.12,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "negation": {
+       "n": 11,
+       "accuracy": 0.3636,
+       "macro_f1": 0.3444,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.3636
+      },
+      "no_topic": {
+       "n": 1,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "off_topic": {
+       "n": 14,
+       "accuracy": 0.8571,
+       "macro_f1": 0.9231,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.8571
+      },
+      "short": {
+       "n": 14,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "translit": {
+       "n": 18,
+       "accuracy": 0.1667,
+       "macro_f1": 0.0476,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.1667
+      }
+     }
+    }
+   },
+   "logreg": {
+    "n": 134,
+    "accuracy_all": 0.6119,
+    "macro_f1_all": 0.6323,
+    "per_class": {
+     "roads": {
+      "precision": 0.6316,
+      "recall": 0.5714,
+      "f1": 0.6,
+      "support": 21
+     },
+     "sidewalks": {
+      "precision": 0.5217,
+      "recall": 0.6316,
+      "f1": 0.5714,
+      "support": 19
+     },
+     "transport_stops": {
+      "precision": 0.7222,
+      "recall": 0.7222,
+      "f1": 0.7222,
+      "support": 18
+     },
+     "lighting": {
+      "precision": 0.7143,
+      "recall": 0.6818,
+      "f1": 0.6977,
+      "support": 22
+     },
+     "landscaping": {
+      "precision": 0.6667,
+      "recall": 0.7143,
+      "f1": 0.6897,
+      "support": 14
+     },
+     "other": {
+      "precision": 0.5263,
+      "recall": 0.5,
+      "f1": 0.5128,
+      "support": 40
+     }
+    },
+    "confusion": {
+     "labels": [
+      "roads",
+      "sidewalks",
+      "transport_stops",
+      "lighting",
+      "landscaping",
+      "other"
+     ],
+     "rows_true_cols_pred": [
+      [
+       12,
+       5,
+       0,
+       1,
+       0,
+       3
+      ],
+      [
+       2,
+       12,
+       2,
+       0,
+       0,
+       3
+      ],
+      [
+       0,
+       0,
+       13,
+       1,
+       0,
+       4
+      ],
+      [
+       0,
+       0,
+       1,
+       15,
+       1,
+       5
+      ],
+      [
+       0,
+       0,
+       0,
+       1,
+       10,
+       3
+      ],
+      [
+       5,
+       6,
+       2,
+       3,
+       4,
+       20
+      ]
+     ]
+    },
+    "coverage": 1.0,
+    "accuracy_accepted": 0.6119,
+    "confident_errors": 6,
+    "safe_outcome_rate": 0.6716,
+    "slices": {
+     "language": {
+      "en": {
+       "n": 2,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0
+      },
+      "kk": {
+       "n": 30,
+       "accuracy": 0.7,
+       "macro_f1": 0.7151,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.8
+      },
+      "mixed": {
+       "n": 12,
+       "accuracy": 0.8333,
+       "macro_f1": 0.8333,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.8333
+      },
+      "ru": {
+       "n": 71,
+       "accuracy": 0.662,
+       "macro_f1": 0.6701,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.7324
+      },
+      "translit_kk": {
+       "n": 6,
+       "accuracy": 0.1667,
+       "macro_f1": 0.0476,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.1667
+      },
+      "translit_ru": {
+       "n": 13,
+       "accuracy": 0.2308,
+       "macro_f1": 0.0625,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.2308
+      }
+     },
+     "phenomena": {
+      "address_trap": {
+       "n": 10,
+       "accuracy": 0.5,
+       "macro_f1": 0.5815,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.5
+      },
+      "ambiguous": {
+       "n": 5,
+       "accuracy": 0.8,
+       "macro_f1": 0.6667,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.8
+      },
+      "clear": {
+       "n": 42,
+       "accuracy": 0.881,
+       "macro_f1": 0.8744,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.881
+      },
+      "foreign_language": {
+       "n": 2,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0
+      },
+      "gibberish": {
+       "n": 1,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "keyword_trap": {
+       "n": 1,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "mixed_language": {
+       "n": 12,
+       "accuracy": 0.8333,
+       "macro_f1": 0.8333,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.8333
+      },
+      "multi_problem_same_label": {
+       "n": 1,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0
+      },
+      "multi_topic": {
+       "n": 12,
+       "accuracy": 0.3333,
+       "macro_f1": 0.3133,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "negation": {
+       "n": 11,
+       "accuracy": 0.4545,
+       "macro_f1": 0.3722,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.4545
+      },
+      "no_topic": {
+       "n": 1,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "off_topic": {
+       "n": 14,
+       "accuracy": 0.4286,
+       "macro_f1": 0.6,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.4286
+      },
+      "short": {
+       "n": 14,
+       "accuracy": 0.9286,
+       "macro_f1": 0.9259,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.9286
+      },
+      "translit": {
+       "n": 18,
+       "accuracy": 0.1667,
+       "macro_f1": 0.0476,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.1667
+      }
+     }
+    }
+   },
+   "hybrid": {
+    "n": 134,
+    "accuracy_all": 0.7239,
+    "macro_f1_all": 0.7363,
+    "per_class": {
+     "roads": {
+      "precision": 0.7619,
+      "recall": 0.7619,
+      "f1": 0.7619,
+      "support": 21
+     },
+     "sidewalks": {
+      "precision": 0.8235,
+      "recall": 0.7368,
+      "f1": 0.7778,
+      "support": 19
+     },
+     "transport_stops": {
+      "precision": 0.7647,
+      "recall": 0.7222,
+      "f1": 0.7429,
+      "support": 18
+     },
+     "lighting": {
+      "precision": 0.8,
+      "recall": 0.7273,
+      "f1": 0.7619,
+      "support": 22
+     },
+     "landscaping": {
+      "precision": 0.7143,
+      "recall": 0.7143,
+      "f1": 0.7143,
+      "support": 14
+     },
+     "other": {
+      "precision": 0.6222,
+      "recall": 0.7,
+      "f1": 0.6588,
+      "support": 40
+     }
+    },
+    "confusion": {
+     "labels": [
+      "roads",
+      "sidewalks",
+      "transport_stops",
+      "lighting",
+      "landscaping",
+      "other"
+     ],
+     "rows_true_cols_pred": [
+      [
+       16,
+       2,
+       0,
+       0,
+       0,
+       3
+      ],
+      [
+       2,
+       14,
+       0,
+       0,
+       0,
+       3
+      ],
+      [
+       0,
+       0,
+       13,
+       1,
+       0,
+       4
+      ],
+      [
+       0,
+       0,
+       1,
+       16,
+       1,
+       4
+      ],
+      [
+       0,
+       0,
+       0,
+       1,
+       10,
+       3
+      ],
+      [
+       3,
+       1,
+       3,
+       2,
+       3,
+       28
+      ]
+     ]
+    },
+    "coverage": 1.0,
+    "accuracy_accepted": 0.7239,
+    "confident_errors": 16,
+    "safe_outcome_rate": 0.7687,
+    "slices": {
+     "language": {
+      "en": {
+       "n": 2,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0
+      },
+      "kk": {
+       "n": 30,
+       "accuracy": 0.8333,
+       "macro_f1": 0.8396,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.9
+      },
+      "mixed": {
+       "n": 12,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "ru": {
+       "n": 71,
+       "accuracy": 0.7887,
+       "macro_f1": 0.786,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.8451
+      },
+      "translit_kk": {
+       "n": 6,
+       "accuracy": 0.1667,
+       "macro_f1": 0.0476,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.1667
+      },
+      "translit_ru": {
+       "n": 13,
+       "accuracy": 0.2308,
+       "macro_f1": 0.0625,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.2308
+      }
+     },
+     "phenomena": {
+      "address_trap": {
+       "n": 10,
+       "accuracy": 0.4,
+       "macro_f1": 0.5167,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.4
+      },
+      "ambiguous": {
+       "n": 5,
+       "accuracy": 0.8,
+       "macro_f1": 0.6667,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.8
+      },
+      "clear": {
+       "n": 42,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "foreign_language": {
+       "n": 2,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0
+      },
+      "gibberish": {
+       "n": 1,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "keyword_trap": {
+       "n": 1,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0
+      },
+      "mixed_language": {
+       "n": 12,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "multi_problem_same_label": {
+       "n": 1,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "multi_topic": {
+       "n": 12,
+       "accuracy": 0.5,
+       "macro_f1": 0.32,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "negation": {
+       "n": 11,
+       "accuracy": 0.4545,
+       "macro_f1": 0.3929,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.4545
+      },
+      "no_topic": {
+       "n": 1,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "off_topic": {
+       "n": 14,
+       "accuracy": 0.8571,
+       "macro_f1": 0.9231,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.8571
+      },
+      "short": {
+       "n": 14,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "translit": {
+       "n": 18,
+       "accuracy": 0.1667,
+       "macro_f1": 0.0476,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.1667
+      }
+     }
+    }
+   },
+   "nb": {
+    "n": 134,
+    "accuracy_all": 0.6119,
+    "macro_f1_all": 0.6115,
+    "per_class": {
+     "roads": {
+      "precision": 0.625,
+      "recall": 0.7143,
+      "f1": 0.6667,
+      "support": 21
+     },
+     "sidewalks": {
+      "precision": 0.4615,
+      "recall": 0.6316,
+      "f1": 0.5333,
+      "support": 19
+     },
+     "transport_stops": {
+      "precision": 0.65,
+      "recall": 0.7222,
+      "f1": 0.6842,
+      "support": 18
+     },
+     "lighting": {
+      "precision": 0.6364,
+      "recall": 0.6364,
+      "f1": 0.6364,
+      "support": 22
+     },
+     "landscaping": {
+      "precision": 0.4737,
+      "recall": 0.6429,
+      "f1": 0.5455,
+      "support": 14
+     },
+     "other": {
+      "precision": 0.8261,
+      "recall": 0.475,
+      "f1": 0.6032,
+      "support": 40
+     }
+    },
+    "confusion": {
+     "labels": [
+      "roads",
+      "sidewalks",
+      "transport_stops",
+      "lighting",
+      "landscaping",
+      "other"
+     ],
+     "rows_true_cols_pred": [
+      [
+       15,
+       3,
+       0,
+       2,
+       1,
+       0
+      ],
+      [
+       1,
+       12,
+       2,
+       0,
+       3,
+       1
+      ],
+      [
+       2,
+       1,
+       13,
+       1,
+       0,
+       1
+      ],
+      [
+       1,
+       1,
+       1,
+       14,
+       4,
+       1
+      ],
+      [
+       1,
+       2,
+       0,
+       1,
+       9,
+       1
+      ],
+      [
+       4,
+       7,
+       4,
+       4,
+       2,
+       19
+      ]
+     ]
+    },
+    "coverage": 1.0,
+    "accuracy_accepted": 0.6119,
+    "confident_errors": 32,
+    "safe_outcome_rate": 0.6791,
+    "slices": {
+     "language": {
+      "en": {
+       "n": 2,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0
+      },
+      "kk": {
+       "n": 30,
+       "accuracy": 0.6667,
+       "macro_f1": 0.6645,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.7667
+      },
+      "mixed": {
+       "n": 12,
+       "accuracy": 0.9167,
+       "macro_f1": 0.9111,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.9167
+      },
+      "ru": {
+       "n": 71,
+       "accuracy": 0.6761,
+       "macro_f1": 0.6771,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.7606
+      },
+      "translit_kk": {
+       "n": 6,
+       "accuracy": 0.3333,
+       "macro_f1": 0.1667,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.3333
+      },
+      "translit_ru": {
+       "n": 13,
+       "accuracy": 0.0769,
+       "macro_f1": 0.0556,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0769
+      }
+     },
+     "phenomena": {
+      "address_trap": {
+       "n": 10,
+       "accuracy": 0.5,
+       "macro_f1": 0.5815,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.5
+      },
+      "ambiguous": {
+       "n": 5,
+       "accuracy": 0.8,
+       "macro_f1": 0.6667,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.8
+      },
+      "clear": {
+       "n": 42,
+       "accuracy": 0.8571,
+       "macro_f1": 0.8558,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.8571
+      },
+      "foreign_language": {
+       "n": 2,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0
+      },
+      "gibberish": {
+       "n": 1,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0
+      },
+      "keyword_trap": {
+       "n": 1,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0
+      },
+      "mixed_language": {
+       "n": 12,
+       "accuracy": 0.9167,
+       "macro_f1": 0.9111,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.9167
+      },
+      "multi_problem_same_label": {
+       "n": 1,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0
+      },
+      "multi_topic": {
+       "n": 12,
+       "accuracy": 0.25,
+       "macro_f1": 0.2633,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "negation": {
+       "n": 11,
+       "accuracy": 0.4545,
+       "macro_f1": 0.4397,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.4545
+      },
+      "no_topic": {
+       "n": 1,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "off_topic": {
+       "n": 14,
+       "accuracy": 0.5,
+       "macro_f1": 0.6667,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.5
+      },
+      "short": {
+       "n": 14,
+       "accuracy": 0.8571,
+       "macro_f1": 0.9012,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.8571
+      },
+      "translit": {
+       "n": 18,
+       "accuracy": 0.1667,
+       "macro_f1": 0.1157,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.1667
+      }
+     }
+    }
+   },
+   "hybrid+abstain": {
+    "n": 134,
+    "accuracy_all": 0.7239,
+    "macro_f1_all": 0.7363,
+    "per_class": {
+     "roads": {
+      "precision": 0.7619,
+      "recall": 0.7619,
+      "f1": 0.7619,
+      "support": 21
+     },
+     "sidewalks": {
+      "precision": 0.8235,
+      "recall": 0.7368,
+      "f1": 0.7778,
+      "support": 19
+     },
+     "transport_stops": {
+      "precision": 0.7647,
+      "recall": 0.7222,
+      "f1": 0.7429,
+      "support": 18
+     },
+     "lighting": {
+      "precision": 0.8,
+      "recall": 0.7273,
+      "f1": 0.7619,
+      "support": 22
+     },
+     "landscaping": {
+      "precision": 0.7143,
+      "recall": 0.7143,
+      "f1": 0.7143,
+      "support": 14
+     },
+     "other": {
+      "precision": 0.6222,
+      "recall": 0.7,
+      "f1": 0.6588,
+      "support": 40
+     }
+    },
+    "confusion": {
+     "labels": [
+      "roads",
+      "sidewalks",
+      "transport_stops",
+      "lighting",
+      "landscaping",
+      "other"
+     ],
+     "rows_true_cols_pred": [
+      [
+       16,
+       2,
+       0,
+       0,
+       0,
+       3
+      ],
+      [
+       2,
+       14,
+       0,
+       0,
+       0,
+       3
+      ],
+      [
+       0,
+       0,
+       13,
+       1,
+       0,
+       4
+      ],
+      [
+       0,
+       0,
+       1,
+       16,
+       1,
+       4
+      ],
+      [
+       0,
+       0,
+       0,
+       1,
+       10,
+       3
+      ],
+      [
+       3,
+       1,
+       3,
+       2,
+       3,
+       28
+      ]
+     ]
+    },
+    "coverage": 0.6493,
+    "accuracy_accepted": 0.8621,
+    "confident_errors": 10,
+    "safe_outcome_rate": 0.9179,
+    "slices": {
+     "language": {
+      "en": {
+       "n": 2,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 0.0,
+       "safe_outcome_rate": 1.0
+      },
+      "kk": {
+       "n": 30,
+       "accuracy": 0.8333,
+       "macro_f1": 0.8396,
+       "coverage": 0.8333,
+       "safe_outcome_rate": 0.9
+      },
+      "mixed": {
+       "n": 12,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 0.9167,
+       "safe_outcome_rate": 1.0
+      },
+      "ru": {
+       "n": 71,
+       "accuracy": 0.7887,
+       "macro_f1": 0.786,
+       "coverage": 0.7183,
+       "safe_outcome_rate": 0.8873
+      },
+      "translit_kk": {
+       "n": 6,
+       "accuracy": 0.1667,
+       "macro_f1": 0.0476,
+       "coverage": 0.0,
+       "safe_outcome_rate": 1.0
+      },
+      "translit_ru": {
+       "n": 13,
+       "accuracy": 0.2308,
+       "macro_f1": 0.0625,
+       "coverage": 0.0,
+       "safe_outcome_rate": 1.0
+      }
+     },
+     "phenomena": {
+      "address_trap": {
+       "n": 10,
+       "accuracy": 0.4,
+       "macro_f1": 0.5167,
+       "coverage": 0.6,
+       "safe_outcome_rate": 0.4
+      },
+      "ambiguous": {
+       "n": 5,
+       "accuracy": 0.8,
+       "macro_f1": 0.6667,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.8
+      },
+      "clear": {
+       "n": 42,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 0.9286,
+       "safe_outcome_rate": 1.0
+      },
+      "foreign_language": {
+       "n": 2,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 0.0,
+       "safe_outcome_rate": 1.0
+      },
+      "gibberish": {
+       "n": 1,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 0.0,
+       "safe_outcome_rate": 1.0
+      },
+      "keyword_trap": {
+       "n": 1,
+       "accuracy": 0.0,
+       "macro_f1": 0.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 0.0
+      },
+      "mixed_language": {
+       "n": 12,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 0.9167,
+       "safe_outcome_rate": 1.0
+      },
+      "multi_problem_same_label": {
+       "n": 1,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 0.0,
+       "safe_outcome_rate": 1.0
+      },
+      "multi_topic": {
+       "n": 12,
+       "accuracy": 0.5,
+       "macro_f1": 0.32,
+       "coverage": 0.1667,
+       "safe_outcome_rate": 1.0
+      },
+      "negation": {
+       "n": 11,
+       "accuracy": 0.4545,
+       "macro_f1": 0.3929,
+       "coverage": 0.4545,
+       "safe_outcome_rate": 0.7273
+      },
+      "no_topic": {
+       "n": 1,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 1.0,
+       "safe_outcome_rate": 1.0
+      },
+      "off_topic": {
+       "n": 14,
+       "accuracy": 0.8571,
+       "macro_f1": 0.9231,
+       "coverage": 0.8571,
+       "safe_outcome_rate": 0.8571
+      },
+      "short": {
+       "n": 14,
+       "accuracy": 1.0,
+       "macro_f1": 1.0,
+       "coverage": 0.9286,
+       "safe_outcome_rate": 1.0
+      },
+      "translit": {
+       "n": 18,
+       "accuracy": 0.1667,
+       "macro_f1": 0.0476,
+       "coverage": 0.0,
+       "safe_outcome_rate": 1.0
+      }
+     }
+    }
+   },
+   "errors_hybrid_abstain": [
+    {
+     "id": "ch13-055",
+     "text": "na doroge ogromnaya yama, kolesa probivaem",
+     "label": "roads",
+     "also": [],
+     "pred": "other",
+     "score": 0.6937,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "translit_ru",
+     "phenomena": [
+      "translit"
+     ]
+    },
+    {
+     "id": "ch13-056",
+     "text": "svetofor ne rabotaet na perekrestke",
+     "label": "roads",
+     "also": [],
+     "pred": "other",
+     "score": 0.6823,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "translit_ru",
+     "phenomena": [
+      "translit"
+     ]
+    },
+    {
+     "id": "ch13-057",
+     "text": "trotuar razbit, plitka vsya slomana",
+     "label": "sidewalks",
+     "also": [],
+     "pred": "other",
+     "score": 0.696,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "translit_ru",
+     "phenomena": [
+      "translit"
+     ]
+    },
+    {
+     "id": "ch13-058",
+     "text": "net pandusa u vhoda v polikliniku",
+     "label": "sidewalks",
+     "also": [],
+     "pred": "other",
+     "score": 0.685,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "translit_ru",
+     "phenomena": [
+      "translit"
+     ]
+    },
+    {
+     "id": "ch13-059",
+     "text": "na ostanovke slomana skameyka",
+     "label": "transport_stops",
+     "also": [],
+     "pred": "other",
+     "score": 0.696,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "translit_ru",
+     "phenomena": [
+      "translit"
+     ]
+    },
+    {
+     "id": "ch13-060",
+     "text": "pavilion na ostanovke razbit",
+     "label": "transport_stops",
+     "also": [],
+     "pred": "other",
+     "score": 0.688,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "translit_ru",
+     "phenomena": [
+      "translit"
+     ]
+    },
+    {
+     "id": "ch13-061",
+     "text": "vo dvore ne goryat fonari uzhe nedelyu",
+     "label": "lighting",
+     "also": [],
+     "pred": "other",
+     "score": 0.6827,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "translit_ru",
+     "phenomena": [
+      "translit"
+     ]
+    },
+    {
+     "id": "ch13-062",
+     "text": "temno na ulice, svet ne gorit",
+     "label": "lighting",
+     "also": [],
+     "pred": "other",
+     "score": 0.6876,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "translit_ru",
+     "phenomena": [
+      "translit"
+     ]
+    },
+    {
+     "id": "ch13-063",
+     "text": "derevya v skvere zasohli",
+     "label": "landscaping",
+     "also": [],
+     "pred": "other",
+     "score": 0.6918,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "translit_ru",
+     "phenomena": [
+      "translit"
+     ]
+    },
+    {
+     "id": "ch13-064",
+     "text": "kacheli na detskoy ploshadke slomany",
+     "label": "landscaping",
+     "also": [],
+     "pred": "other",
+     "score": 0.6915,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "translit_ru",
+     "phenomena": [
+      "translit"
+     ]
+    },
+    {
+     "id": "ch13-067",
+     "text": "jolda ulken shunkyr bar",
+     "label": "roads",
+     "also": [],
+     "pred": "other",
+     "score": 0.7011,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "translit_kk",
+     "phenomena": [
+      "translit"
+     ]
+    },
+    {
+     "id": "ch13-068",
+     "text": "trotuardagy plitkalar synyp qalgan",
+     "label": "sidewalks",
+     "also": [],
+     "pred": "other",
+     "score": 0.6918,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "translit_kk",
+     "phenomena": [
+      "translit"
+     ]
+    },
+    {
+     "id": "ch13-069",
+     "text": "ayaldamada oryndyq joq",
+     "label": "transport_stops",
+     "also": [],
+     "pred": "other",
+     "score": 0.7029,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "translit_kk",
+     "phenomena": [
+      "translit"
+     ]
+    },
+    {
+     "id": "ch13-070",
+     "text": "auladagy shamdar janbaydy",
+     "label": "lighting",
+     "also": [],
+     "pred": "other",
+     "score": 0.7011,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "translit_kk",
+     "phenomena": [
+      "translit"
+     ]
+    },
+    {
+     "id": "ch13-071",
+     "text": "skverde agashtar qurap qaldy",
+     "label": "landscaping",
+     "also": [],
+     "pred": "other",
+     "score": 0.6918,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "translit_kk",
+     "phenomena": [
+      "translit"
+     ]
+    },
+    {
+     "id": "ch13-099",
+     "text": "Продам велосипед, недорого",
+     "label": "other",
+     "also": [],
+     "pred": "roads",
+     "score": 0.9928,
+     "abstain": false,
+     "reasons": [],
+     "keyword_pred": "roads",
+     "language": "ru",
+     "phenomena": [
+      "off_topic"
+     ]
+    },
+    {
+     "id": "ch13-111",
+     "text": "Ищу работу водителем автобуса",
+     "label": "other",
+     "also": [],
+     "pred": "transport_stops",
+     "score": 0.9933,
+     "abstain": false,
+     "reasons": [],
+     "keyword_pred": "transport_stops",
+     "language": "ru",
+     "phenomena": [
+      "off_topic",
+      "keyword_trap"
+     ]
+    },
+    {
+     "id": "ch13-112",
+     "text": "Фонари во дворе починили, теперь всё горит, спасибо",
+     "label": "other",
+     "also": [],
+     "pred": "lighting",
+     "score": 0.7776,
+     "abstain": false,
+     "reasons": [],
+     "keyword_pred": "other",
+     "language": "ru",
+     "phenomena": [
+      "negation"
+     ]
+    },
+    {
+     "id": "ch13-113",
+     "text": "Яма не на дороге, а на тротуаре возле подъезда",
+     "label": "sidewalks",
+     "also": [],
+     "pred": "roads",
+     "score": 0.9179,
+     "abstain": true,
+     "reasons": [
+      "multi_topic"
+     ],
+     "keyword_pred": "roads",
+     "language": "ru",
+     "phenomena": [
+      "negation"
+     ]
+    },
+    {
+     "id": "ch13-115",
+     "text": "Не про освещение: во дворе сломали скамейку",
+     "label": "landscaping",
+     "also": [],
+     "pred": "lighting",
+     "score": 0.9614,
+     "abstain": true,
+     "reasons": [
+      "multi_topic"
+     ],
+     "keyword_pred": "lighting",
+     "language": "ru",
+     "phenomena": [
+      "negation"
+     ]
+    },
+    {
+     "id": "ch13-116",
+     "text": "Дорогу отремонтировали, претензий нет",
+     "label": "other",
+     "also": [],
+     "pred": "roads",
+     "score": 0.9715,
+     "abstain": false,
+     "reasons": [],
+     "keyword_pred": "roads",
+     "language": "ru",
+     "phenomena": [
+      "negation"
+     ]
+    },
+    {
+     "id": "ch13-118",
+     "text": "Деревья не трогайте, лучше почините фонарь",
+     "label": "lighting",
+     "also": [],
+     "pred": "landscaping",
+     "score": 0.8763,
+     "abstain": true,
+     "reasons": [
+      "multi_topic"
+     ],
+     "keyword_pred": "landscaping",
+     "language": "ru",
+     "phenomena": [
+      "negation"
+     ]
+    },
+    {
+     "id": "ch13-119",
+     "text": "Шамдар енді жанады, рақмет",
+     "label": "other",
+     "also": [],
+     "pred": "lighting",
+     "score": 0.9839,
+     "abstain": false,
+     "reasons": [],
+     "keyword_pred": "lighting",
+     "language": "kk",
+     "phenomena": [
+      "negation"
+     ]
+    },
+    {
+     "id": "ch13-124",
+     "text": "Живу возле остановки Жастар, соседи шумят по ночам",
+     "label": "other",
+     "also": [],
+     "pred": "transport_stops",
+     "score": 0.9953,
+     "abstain": false,
+     "reasons": [],
+     "keyword_pred": "transport_stops",
+     "language": "ru",
+     "phenomena": [
+      "address_trap"
+     ]
+    },
+    {
+     "id": "ch13-125",
+     "text": "Проспект Абая, дом у сквера — в подъезде не работает лифт",
+     "label": "other",
+     "also": [],
+     "pred": "landscaping",
+     "score": 0.9288,
+     "abstain": false,
+     "reasons": [],
+     "keyword_pred": "landscaping",
+     "language": "ru",
+     "phenomena": [
+      "address_trap"
+     ]
+    },
+    {
+     "id": "ch13-128",
+     "text": "Дом на Дорожной улице — протекает крыша",
+     "label": "other",
+     "also": [],
+     "pred": "roads",
+     "score": 0.5069,
+     "abstain": false,
+     "reasons": [],
+     "keyword_pred": "other",
+     "language": "ru",
+     "phenomena": [
+      "address_trap"
+     ]
+    },
+    {
+     "id": "ch13-129",
+     "text": "Саябақ маңындағы үйде жылу жоқ",
+     "label": "other",
+     "also": [],
+     "pred": "landscaping",
+     "score": 0.9393,
+     "abstain": false,
+     "reasons": [],
+     "keyword_pred": "landscaping",
+     "language": "kk",
+     "phenomena": [
+      "address_trap"
+     ]
+    },
+    {
+     "id": "ch13-130",
+     "text": "Аялдама жанындағы дүкен түнде шулайды",
+     "label": "other",
+     "also": [],
+     "pred": "transport_stops",
+     "score": 0.9883,
+     "abstain": false,
+     "reasons": [],
+     "keyword_pred": "transport_stops",
+     "language": "kk",
+     "phenomena": [
+      "address_trap"
+     ]
+    },
+    {
+     "id": "ch13-132",
+     "text": "На перекрёстке у школы машины не пропускают пешеходов",
+     "label": "other",
+     "also": [],
+     "pred": "sidewalks",
+     "score": 0.9971,
+     "abstain": false,
+     "reasons": [],
+     "keyword_pred": "sidewalks",
+     "language": "ru",
+     "phenomena": [
+      "address_trap",
+      "ambiguous"
+     ]
+    },
+    {
+     "id": "ch13-133",
+     "text": "Bus stop has no roof, we get wet",
+     "label": "transport_stops",
+     "also": [],
+     "pred": "other",
+     "score": 0.6918,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "en",
+     "phenomena": [
+      "foreign_language"
+     ]
+    },
+    {
+     "id": "ch13-134",
+     "text": "Street lights are off in our yard",
+     "label": "lighting",
+     "also": [],
+     "pred": "other",
+     "score": 0.6918,
+     "abstain": true,
+     "reasons": [
+      "latin_script"
+     ],
+     "keyword_pred": "other",
+     "language": "en",
+     "phenomena": [
+      "foreign_language"
+     ]
+    }
+   ]
+  }
+ }
+}
