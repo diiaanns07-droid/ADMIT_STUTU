@@ -1,0 +1,341 @@
+{
+ "schema": "r07-demo-mapping-report-v1",
+ "graph_id": "osm-astana-walking-20260506",
+ "graph_digest": "a694be21cc08ef1bf8000387a5120e7e5ad810ee37a955a4c223c004aeba5e35",
+ "objects_source": "data/civic/astana/demo_synthetic.json (SYNTHETIC demo objects, not real works)",
+ "command": "see research/round-12-results/R07/RUN.txt (mapping report)",
+ "items": [
+  {
+   "object_id": "demo-astana-archived",
+   "evidence_type": "synthetic",
+   "geometry_type": "Point",
+   "geometry_precision": "approximate",
+   "status": "point_needs_manual_selection",
+   "proposed_edges": 0,
+   "partial_edges": 10,
+   "proposed_allowed_length_m": 0,
+   "object_length_m": null,
+   "object_covered_share": null,
+   "unmatched_object_parts": [],
+   "warnings": [
+    "point_geometry"
+   ],
+   "by_osm_way_top5": [],
+   "result_digest": "39a63778a3af76b1682468f6a820ab088c12ce8b7e7436103454fb4ea0ec417a"
+  },
+  {
+   "object_id": "demo-astana-construction-unknown",
+   "evidence_type": "synthetic",
+   "geometry_type": "Point",
+   "geometry_precision": "approximate",
+   "status": "point_needs_manual_selection",
+   "proposed_edges": 0,
+   "partial_edges": 10,
+   "proposed_allowed_length_m": 0,
+   "object_length_m": null,
+   "object_covered_share": null,
+   "unmatched_object_parts": [],
+   "warnings": [
+    "point_geometry"
+   ],
+   "by_osm_way_top5": [],
+   "result_digest": "060b4b6b86263353607ee6fcd5f6ef55cab2a068112af7570215db10b3807053"
+  },
+  {
+   "object_id": "demo-astana-draft-hidden",
+   "evidence_type": "synthetic",
+   "geometry_type": "Point",
+   "geometry_precision": "approximate",
+   "status": "point_needs_manual_selection",
+   "proposed_edges": 0,
+   "partial_edges": 10,
+   "proposed_allowed_length_m": 0,
+   "object_length_m": null,
+   "object_covered_share": null,
+   "unmatched_object_parts": [],
+   "warnings": [
+    "point_geometry"
+   ],
+   "by_osm_way_top5": [],
+   "result_digest": "ca82127adba19f471eeac57dcd73bb558a3e8e9ec8c72433f9cca2da004ddc3a"
+  },
+  {
+   "object_id": "demo-astana-event-weekend",
+   "evidence_type": "synthetic",
+   "geometry_type": "Point",
+   "geometry_precision": "approximate",
+   "status": "point_needs_manual_selection",
+   "proposed_edges": 0,
+   "partial_edges": 10,
+   "proposed_allowed_length_m": 0,
+   "object_length_m": null,
+   "object_covered_share": null,
+   "unmatched_object_parts": [],
+   "warnings": [
+    "point_geometry"
+   ],
+   "by_osm_way_top5": [],
+   "result_digest": "a16c20ea638dbc07b0e576837b1f261ac1a6d41894fc6e2b42cb689901aa961b"
+  },
+  {
+   "object_id": "demo-astana-landscaping-yard",
+   "evidence_type": "synthetic",
+   "geometry_type": "Polygon",
+   "geometry_precision": "approximate",
+   "status": "proposed",
+   "proposed_edges": 33,
+   "partial_edges": 39,
+   "proposed_allowed_length_m": 363.8,
+   "object_length_m": null,
+   "object_covered_share": null,
+   "unmatched_object_parts": [],
+   "warnings": [
+    "proposed_not_allowed"
+   ],
+   "by_osm_way_top5": [
+    {
+     "osm_way_id": 1165590888,
+     "name": null,
+     "osm_highway": "secondary_link",
+     "access": [
+      "unknown"
+     ],
+     "edges": 1,
+     "length_m": 62.9,
+     "mean_distance_m": 0.0
+    },
+    {
+     "osm_way_id": 1166009687,
+     "name": "улица Алиби Жангельдина",
+     "osm_highway": "tertiary",
+     "access": [
+      "unknown"
+     ],
+     "edges": 1,
+     "length_m": 3.4,
+     "mean_distance_m": 0.0
+    },
+    {
+     "osm_way_id": 1177629193,
+     "name": null,
+     "osm_highway": "footway",
+     "access": [
+      "allowed"
+     ],
+     "edges": 1,
+     "length_m": 7.6,
+     "mean_distance_m": 0.0
+    },
+    {
+     "osm_way_id": 1457503086,
+     "name": null,
+     "osm_highway": "footway",
+     "access": [
+      "allowed"
+     ],
+     "edges": 2,
+     "length_m": 20.2,
+     "mean_distance_m": 0.0
+    },
+    {
+     "osm_way_id": 1457509658,
+     "name": "улица Алиби Жангельдина",
+     "osm_highway": "tertiary",
+     "access": [
+      "unknown"
+     ],
+     "edges": 1,
+     "length_m": 6.7,
+     "mean_distance_m": 0.0
+    }
+   ],
+   "result_digest": "8f9ca509facb6846bb3eb27d658cb619e4d5cf757df5b61dfc3b20044f9d1872"
+  },
+  {
+   "object_id": "demo-astana-list-only",
+   "evidence_type": "synthetic",
+   "geometry_type": null,
+   "geometry_precision": "unknown",
+   "status": "no_geometry",
+   "proposed_edges": 0,
+   "partial_edges": 0,
+   "proposed_allowed_length_m": 0,
+   "object_length_m": null,
+   "object_covered_share": null,
+   "unmatched_object_parts": [],
+   "warnings": [
+    "no_geometry"
+   ],
+   "by_osm_way_top5": [],
+   "result_digest": "dcd89c9ba551ed4188c21b39e1d5e2b8e502178f50a8c922db6b6c5e12fe1341"
+  },
+  {
+   "object_id": "demo-astana-roadworks-cancelled",
+   "evidence_type": "synthetic",
+   "geometry_type": "Point",
+   "geometry_precision": "approximate",
+   "status": "point_needs_manual_selection",
+   "proposed_edges": 0,
+   "partial_edges": 9,
+   "proposed_allowed_length_m": 0,
+   "object_length_m": null,
+   "object_covered_share": null,
+   "unmatched_object_parts": [],
+   "warnings": [
+    "point_geometry"
+   ],
+   "by_osm_way_top5": [],
+   "result_digest": "879b6c062bd4ee5165ac038cff620788f46cc3a4fc4485f8ac6876a39efc6233"
+  },
+  {
+   "object_id": "demo-astana-roadworks-completed",
+   "evidence_type": "synthetic",
+   "geometry_type": "LineString",
+   "geometry_precision": "approximate",
+   "status": "proposed",
+   "proposed_edges": 17,
+   "partial_edges": 16,
+   "proposed_allowed_length_m": 57.1,
+   "object_length_m": 311.5,
+   "object_covered_share": 1.0,
+   "unmatched_object_parts": [],
+   "warnings": [
+    "disconnected_groups",
+    "proposed_not_allowed"
+   ],
+   "by_osm_way_top5": [
+    {
+     "osm_way_id": 424894817,
+     "name": null,
+     "osm_highway": "service",
+     "access": [
+      "unknown"
+     ],
+     "edges": 1,
+     "length_m": 114.2,
+     "mean_distance_m": 6.0
+    },
+    {
+     "osm_way_id": 1337323088,
+     "name": null,
+     "osm_highway": "service",
+     "access": [
+      "unknown"
+     ],
+     "edges": 1,
+     "length_m": 7.9,
+     "mean_distance_m": 9.5
+    },
+    {
+     "osm_way_id": 520586633,
+     "name": "улица Коркыта",
+     "osm_highway": "service",
+     "access": [
+      "unknown"
+     ],
+     "edges": 2,
+     "length_m": 28.1,
+     "mean_distance_m": 11.1
+    },
+    {
+     "osm_way_id": 724878657,
+     "name": "улица Кенесары",
+     "osm_highway": "secondary",
+     "access": [
+      "unknown"
+     ],
+     "edges": 1,
+     "length_m": 6.5,
+     "mean_distance_m": 12.0
+    },
+    {
+     "osm_way_id": 261484563,
+     "name": "улица Отырар",
+     "osm_highway": "residential",
+     "access": [
+      "unknown"
+     ],
+     "edges": 1,
+     "length_m": 47.9,
+     "mean_distance_m": 13.8
+    }
+   ],
+   "result_digest": "9a5fd5bac699e53aca7267facab92014f2925c633f1812464f7ed589d26e6c32"
+  },
+  {
+   "object_id": "demo-astana-roadworks-delay",
+   "evidence_type": "synthetic",
+   "geometry_type": "LineString",
+   "geometry_precision": "approximate",
+   "status": "proposed",
+   "proposed_edges": 73,
+   "partial_edges": 14,
+   "proposed_allowed_length_m": 1027.5,
+   "object_length_m": 529.3,
+   "object_covered_share": 1.0,
+   "unmatched_object_parts": [],
+   "warnings": [
+    "disconnected_groups",
+    "proposed_not_allowed"
+   ],
+   "by_osm_way_top5": [
+    {
+     "osm_way_id": 693873791,
+     "name": "проспект Республики",
+     "osm_highway": "primary",
+     "access": [
+      "unknown"
+     ],
+     "edges": 1,
+     "length_m": 13.6,
+     "mean_distance_m": 5.7
+    },
+    {
+     "osm_way_id": 409183339,
+     "name": null,
+     "osm_highway": "footway",
+     "access": [
+      "allowed"
+     ],
+     "edges": 2,
+     "length_m": 207.1,
+     "mean_distance_m": 5.9
+    },
+    {
+     "osm_way_id": 261484299,
+     "name": null,
+     "osm_highway": "service",
+     "access": [
+      "denied"
+     ],
+     "edges": 5,
+     "length_m": 166.2,
+     "mean_distance_m": 6.1
+    },
+    {
+     "osm_way_id": 693873792,
+     "name": null,
+     "osm_highway": "primary_link",
+     "access": [
+      "unknown"
+     ],
+     "edges": 1,
+     "length_m": 55.2,
+     "mean_distance_m": 6.9
+    },
+    {
+     "osm_way_id": 409436764,
+     "name": null,
+     "osm_highway": "footway",
+     "access": [
+      "allowed"
+     ],
+     "edges": 2,
+     "length_m": 123.2,
+     "mean_distance_m": 10.9
+    }
+   ],
+   "result_digest": "b475a0307439b9e19be76688fbaf10518f51389889e48a043f9f4e37fb12209c"
+  }
+ ]
+}

@@ -1,6 +1,6 @@
 # R07 · раунд 12 · Астана — симулятор городских работ и масштабируемая сеть
 
-Статус: PARTIAL (checkpoint 3)
+Статус: PARTIAL (checkpoint 4)
 
 ## BASE_MISMATCH
 - Среда Claude Code выдала репозиторий ADMIT_STUTU (ветка `claude/eager-hawking-4up40k`), а не GOV_DIPLOME.
@@ -47,5 +47,19 @@
 - Тесты: сегментация UI (Node) == движка; отрезки == compare; итоги == timeline. tests/civic 747 passed, 2 skipped.
 - Результат: research/round-12-results/R07/schedule-republic-phasing.result.json
 
+## Checkpoint 4 — предлагаемое сопоставление объекта работ с графом (DONE)
+- engine/civic_scenarios/mapping.py: propose_mapping(geometry, precision, graph, osm_tags) — только
+  предложение (requires_confirmation=true), ничего не закрывает. Буфер по точности: source 12 м,
+  approximate 35 м, unknown 60 м. LineString: proposed ≥60 % длины участка в буфере, partial 20–60 %
+  (так выглядят пересекающие улицы), несовпавшие части линии объекта; Polygon — участки внутри;
+  Point — только ручной выбор; null — no_geometry. Предупреждения: несвязанные группы, мост/тоннель
+  (теги исходного снимка OSM, sha256 сверяется), доступ не allowed. Сводка по линиям OSM по близости.
+- HTTP: POST /scenarios/map-object в http.py (нужна строка маршрута у R01 — см. INTEGRATION).
+- Отчёт по 7 синтетическим демо-объектам: research/round-12-results/R07/mapping-demo-objects.json
+  (5 точек — ручной выбор, 1 без геометрии, полигон и 2 линии — кандидаты с предупреждениями).
+- Тесты: 9 новых (синтетическая сеть: тротуар/противоположная сторона/поперечная/мост);
+  tests/civic 756 passed, 2 skipped.
+
 ## Следующий шаг
-Предлагаемое сопоставление объекта работ (геометрия civic-v1) с участками графа — чистая функция + INTEGRATION.
+Проверки реального графа (мосты/тоннели, граница, одноимённые улицы, foot conditional, барьеры),
+записка сравнения, RUN/INTEGRATION/DELIVERY.

@@ -1,7 +1,7 @@
 From 2e6a82dc14b9d7a74659248ae340f72cadf6f4d9 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 10:15:04 +0000
-Subject: [PATCH 1/3] R07: reuse prepared city network for closures (overlay
+Subject: [PATCH 1/4] R07: reuse prepared city network for closures (overlay
  adjacency, bounded LRU)
 
 Closures no longer rebuild the 94k-edge index: base adjacency is built once per
@@ -246,7 +246,7 @@ index b9f6034..9054efb 100644
 From e9634ece8724ed6676965c732416af8626aad34d Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 10:23:13 +0000
-Subject: [PATCH 2/3] =?UTF-8?q?R07:=20readable=20scenario=20UI=20=E2=80=94?=
+Subject: [PATCH 2/4] =?UTF-8?q?R07:=20readable=20scenario=20UI=20=E2=80=94?=
  =?UTF-8?q?=20place=20names,=20closure=20periods/status,=20plan=20overview?=
  =?UTF-8?q?,=20camera=20return,=20schedule=20table?=
 MIME-Version: 1.0
@@ -730,7 +730,7 @@ index d067c86..73810c6 100644
 From 5cdf7d5be12bcf270e446aa4232b811284647b95 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 10:28:47 +0000
-Subject: [PATCH 3/3] R07: schedule of work variants over all interval
+Subject: [PATCH 3/4] R07: schedule of work variants over all interval
  boundaries + phasing case
 
 - engine/civic_scenarios/schedule.py: cuts the window at every A/B boundary, runs plain
@@ -1126,6 +1126,608 @@ index 0000000..d19df52
 +    payload = dict(TINY, plans=[{"id": "A", "closures": []}])
 +    with pytest.raises(ValueError):
 +        schedule(payload, load_graph(payload["graph_id"]))
+-- 
+2.43.0
+
+
+From 1a3e3db4f8f43e3eda63c81b2657aee378af5e97 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 7 Oct 2026 10:34:42 +0000
+Subject: [PATCH 4/4] R07: proposed mapping of a work object's geometry to
+ graph edges (never auto-closes)
+
+engine/civic_scenarios/mapping.py: propose_mapping(geometry, precision, graph, osm_tags)
+returns proposed/partial candidates with share near object, distance, access, OSM
+highway and bridge/tunnel level; unmatched parts of the object line; per-OSM-way summary;
+requires_confirmation=true always. Point -> manual selection only; null -> no_geometry.
+http.py: POST /scenarios/map-object (read-only; R01 route needed, see INTEGRATION).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01CcnxZPmJeLbSLt4S9JZCrb
+---
+ engine/civic_scenarios/http.py      |   9 +-
+ engine/civic_scenarios/mapping.py   | 385 ++++++++++++++++++++++++++++
+ tests/civic/R07/test_r07_mapping.py | 148 +++++++++++
+ 3 files changed, 541 insertions(+), 1 deletion(-)
+ create mode 100644 engine/civic_scenarios/mapping.py
+ create mode 100644 tests/civic/R07/test_r07_mapping.py
+
+diff --git a/engine/civic_scenarios/http.py b/engine/civic_scenarios/http.py
+index cb2446f..1401771 100644
+--- a/engine/civic_scenarios/http.py
++++ b/engine/civic_scenarios/http.py
+@@ -11,10 +11,13 @@ Endpoint'ы только читают подготовленные данные
+   GET  /api/civic/v1/scenarios/graphs/{id}      граф для карты (узлы, рёбра, геометрия, digest)
+   GET  /api/civic/v1/scenarios/cases            подготовленные кейсы (payload-шаблоны)
+   POST /api/civic/v1/scenarios/compare          compare(payload, load_graph(payload.graph_id))
++  POST /api/civic/v1/scenarios/map-object       предложение участков графа для геометрии объекта (только чтение;
++                                                ничего не закрывает; R01 должен добавить маршрут, см. INTEGRATION)
+ """
+ import time
+ 
+ from .compare import compare
++from .mapping import map_object_request
+ from .errors import ScenarioError
+ from .registry import list_cases, load_graph, load_graph_dict, manifest
+ 
+@@ -55,7 +58,11 @@ def handle(method, path, query=None, body=None):
+             res = compare(body, load_graph(body.get("graph_id")))
+             res = dict(res, timing_ms=round((time.perf_counter() - t0) * 1000, 1))
+             return _ok(res)
+-        if sub in ("/graphs", "/cases", "/compare") or sub.startswith("/graphs/"):
++        if sub == "/map-object" and method == "POST":
++            if not isinstance(body, dict):
++                return _err(400, "invalid_payload", "ожидается JSON-объект")
++            return _ok(map_object_request(body))
++        if sub in ("/graphs", "/cases", "/compare", "/map-object") or sub.startswith("/graphs/"):
+             return _err(405, "method_not_allowed", "метод не поддерживается")
+         return _err(404, "not_found", "неизвестный путь")
+     except ScenarioError as e:
+diff --git a/engine/civic_scenarios/mapping.py b/engine/civic_scenarios/mapping.py
+new file mode 100644
+index 0000000..e62141c
+--- /dev/null
++++ b/engine/civic_scenarios/mapping.py
+@@ -0,0 +1,385 @@
++"""Предлагаемое сопоставление объекта работ (геометрия civic-v1) с участками графа.
++
++    propose_mapping(geometry, geometry_precision, graph_dict, osm_tags=None) -> civic-scenario-mapping-v1
++
++Это ПРЕДЛОЖЕНИЕ для человека, а не перекрытие. Функция ничего не закрывает и никогда не выбирает
++«ближайшую линию» автоматически: каждый кандидат объясняется (доля участка рядом с объектом,
++расстояние, доступ, тип OSM, мост/тоннель), а итог всегда requires_confirmation=true.
++
++Правила (метры, локальная равнопромежуточная проекция вокруг объекта; погрешность в пределах города < 0,5 %):
++  буфер по точности геометрии: source 12 м, approximate 35 м, unknown 60 м (+ предупреждение);
++  LineString: участок «proposed», если >= 60 % его длины в буфере линии объекта; 20–60 % — «partial»
++              (проверить; так выглядят пересекающие улицы и соседние дорожки); меньше — не показывается;
++              части линии объекта дальше буфера от предложенных участков — unmatched_object_parts;
++  Polygon:    «proposed» — >= 60 % длины участка внутри полигона (дыры учитываются), «partial» — 20–60 %
++              или участок у границы в пределах буфера;
++  Point:      точка не задаёт протяжённость: до 10 ближайших участков в радиусе 2×буфер только как
++              «partial», статус point_needs_manual_selection;
++  null:       no_geometry (объект показывается списком, сопоставление невозможно).
++Предупреждения: кандидаты образуют несвязанные группы (параллельные тротуары, мост над дорогой, разрыв);
++кандидат на мосту/в тоннеле (по тегам OSM исходного снимка); доступ кандидата не «allowed».
++"""
++import gzip
++import hashlib
++import json
++import math
++from pathlib import Path
++
++from .canon import sha256_hex
++from .errors import ScenarioError
++
++SCHEMA = "civic-scenario-mapping-v1"
++BUFFER_M = {"source": 12.0, "approximate": 35.0, "unknown": 60.0}
++PROPOSE_SHARE = 0.6
++PARTIAL_SHARE = 0.2
++STEP_M = 5.0
++CELL_M = 100.0
++MAX_VERTICES = 2000
++MAX_POINT_CANDIDATES = 10
++ROOT = Path(__file__).resolve().parents[2]
++OSM_DIR = ROOT / "data/civic/astana/osm-walking"
++
++
++def _bad(msg, **fields):
++    raise ScenarioError("invalid_payload", msg, fields or None)
++
++
++class _Proj:
++    def __init__(self, lon0, lat0):
++        self.lon0, self.lat0 = lon0, lat0
++        self.kx = 111320.0 * math.cos(math.radians(lat0))
++        self.ky = 110540.0
++
++    def __call__(self, p):
++        return ((p[0] - self.lon0) * self.kx, (p[1] - self.lat0) * self.ky)
++
++
++def _densify(pts, step=STEP_M):
++    out = [pts[0]]
++    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
++        L = math.hypot(x1 - x0, y1 - y0)
++        n = max(1, int(math.ceil(L / step)))
++        for i in range(1, n + 1):
++            t = i / n
++            out.append((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t))
++    return out
++
++
++def _seg_dist(p, a, b):
++    ax, ay = a
++    dx, dy = b[0] - ax, b[1] - ay
++    L2 = dx * dx + dy * dy
++    t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((p[0] - ax) * dx + (p[1] - ay) * dy) / L2))
++    return math.hypot(p[0] - (ax + t * dx), p[1] - (ay + t * dy))
++
++
++def _line_dist(p, line):
++    return min(_seg_dist(p, a, b) for a, b in zip(line, line[1:])) if len(line) > 1 else math.hypot(p[0] - line[0][0], p[1] - line[0][1])
++
++
++def _in_ring(p, ring):
++    x, y = p
++    inside = False
++    for (x0, y0), (x1, y1) in zip(ring, ring[1:] + ring[:1]):
++        if (y0 > y) != (y1 > y) and x < x0 + (y - y0) * (x1 - x0) / (y1 - y0):
++            inside = not inside
++    return inside
++
++
++def _check_coords(coords, depth, where):
++    def pt(c):
++        if (not isinstance(c, list) or len(c) < 2 or not all(isinstance(v, (int, float)) and not isinstance(v, bool)
++                                                              and math.isfinite(v) for v in c[:2])
++                or abs(c[0]) > 180 or abs(c[1]) > 90):
++            _bad(f"{where}: координаты — [долгота, широта] WGS84", field="geometry")
++        return [float(c[0]), float(c[1])]
++    if depth == 0:
++        return pt(coords)
++    if not isinstance(coords, list) or not coords:
++        _bad(f"{where}: пустые координаты", field="geometry")
++    return [_check_coords(c, depth - 1, where) for c in coords]
++
++
++def validate_geometry(geometry):
++    if geometry is None:
++        return None
++    if not isinstance(geometry, dict) or set(geometry) - {"type", "coordinates"}:
++        _bad("geometry — GeoJSON {type, coordinates} или null", field="geometry")
++    kind = geometry.get("type")
++    depth = {"Point": 0, "LineString": 1, "Polygon": 2}.get(kind)
++    if depth is None:
++        _bad("geometry.type — Point | LineString | Polygon", field="geometry")
++    coords = _check_coords(geometry.get("coordinates"), depth, kind)
++    n = 1 if depth == 0 else len(coords) if depth == 1 else sum(len(r) for r in coords)
++    if n > MAX_VERTICES:
++        raise ScenarioError("too_large", f"geometry: не больше {MAX_VERTICES} вершин")
++    if kind == "LineString" and len(coords) < 2:
++        _bad("LineString: минимум 2 точки", field="geometry")
++    if kind == "Polygon" and any(len(r) < 4 for r in coords):
++        _bad("Polygon: кольцо минимум из 4 точек (замкнутое)", field="geometry")
++    return {"type": kind, "coordinates": coords}
++
++
++class EdgeGrid:
++    """Сетка 100 м по bbox геометрии рёбер; строится один раз на граф (кэш по digest)."""
++
++    def __init__(self, graph):
++        self.digest = graph["digest"]
++        nodes = {n["id"]: (n["lon"], n["lat"]) for n in graph["nodes"]}
++        self.edges = {}
++        lats = [n["lat"] for n in graph["nodes"]] or [0.0]
++        self.proj = _Proj(0.0, sum(lats) / len(lats))   # общая проекция только для индекса
++        self.cells = {}
++        for e in graph["edges"]:
++            geom = e.get("geometry") or [list(nodes[e["from"]]), list(nodes[e["to"]])]
++            self.edges[e["id"]] = (e, geom)
++            xy = [self.proj(p) for p in geom]
++            x0, y0 = min(p[0] for p in xy), min(p[1] for p in xy)
++            x1, y1 = max(p[0] for p in xy), max(p[1] for p in xy)
++            for cx in range(int(x0 // CELL_M), int(x1 // CELL_M) + 1):
++                for cy in range(int(y0 // CELL_M), int(y1 // CELL_M) + 1):
++                    self.cells.setdefault((cx, cy), []).append(e["id"])
++
++    def near(self, lonlat_points, radius_m):
++        xy = [self.proj(p) for p in lonlat_points]
++        x0, y0 = min(p[0] for p in xy) - radius_m, min(p[1] for p in xy) - radius_m
++        x1, y1 = max(p[0] for p in xy) + radius_m, max(p[1] for p in xy) + radius_m
++        out = set()
++        for cx in range(int(x0 // CELL_M), int(x1 // CELL_M) + 1):
++            for cy in range(int(y0 // CELL_M), int(y1 // CELL_M) + 1):
++                out.update(self.cells.get((cx, cy), ()))
++        return sorted(out)
++
++
++_GRIDS = {}
++_TAGS = {}
++
++
++def grid_for(graph):
++    g = _GRIDS.get(graph["digest"])
++    if g is None:
++        _GRIDS.clear()      # один городской граф в памяти
++        g = _GRIDS[graph["digest"]] = EdgeGrid(graph)
++    return g
++
++
++def osm_way_tags():
++    """Теги путей исходного снимка (мост/тоннель/слой/тип). sha256 сверяется с SOURCE.json."""
++    if "ways" in _TAGS:
++        return _TAGS["ways"]
++    source = json.loads((OSM_DIR / "SOURCE.json").read_text("utf-8"))
++    raw = gzip.decompress((OSM_DIR / "overpass.json.gz").read_bytes())
++    if hashlib.sha256(raw).hexdigest() != source["raw_sha256"]:
++        raise ScenarioError("graph_digest_mismatch", "исходный снимок OSM не совпадает с SOURCE.json")
++    keep = ("highway", "bridge", "tunnel", "layer", "covered", "footway", "sidewalk")
++    ways = {}
++    for x in json.loads(raw)["elements"]:
++        if x["type"] == "way":
++            t = x.get("tags", {})
++            ways[x["id"]] = {k: t[k] for k in keep if k in t}
++    _TAGS["ways"] = ways
++    return ways
++
++
++def _components(cands, edges):
++    parent = {c: c for c in cands}
++
++    def find(a):
++        while parent[a] != a:
++            parent[a] = parent[parent[a]]
++            a = parent[a]
++        return a
++    by_node = {}
++    for c in cands:
++        e = edges[c][0]
++        for n in (e["from"], e["to"]):
++            if n in by_node:
++                parent[find(c)] = find(by_node[n])
++            else:
++                by_node[n] = c
++    roots = sorted({find(c) for c in cands})
++    return {c: roots.index(find(c)) + 1 for c in cands}
++
++
++def propose_mapping(geometry, geometry_precision, graph, osm_tags=None):
++    geom = validate_geometry(geometry)
++    precision = geometry_precision if geometry_precision in BUFFER_M else "unknown"
++    buf = BUFFER_M[precision]
++    base = {"schema_version": SCHEMA, "graph_id": graph["id"], "graph_digest": graph["digest"],
++            "input_digest": sha256_hex({"geometry": geometry, "geometry_precision": geometry_precision}),
++            "requires_confirmation": True,
++            "rule": {"buffer_m": buf, "precision": precision, "propose_share": PROPOSE_SHARE,
++                     "partial_share": PARTIAL_SHARE, "sample_step_m": STEP_M},
++            "proposed": [], "partial": [], "unmatched_object_parts": [], "warnings": [],
++            "note": "Предложение для проверки человеком. Ни один участок не закрывается автоматически; "
++                    "совпадение линий на карте не доказывает, что объект работ — эта дорога или дорожка."}
++    if geom is None:
++        return _finish(dict(base, status="no_geometry",
++                            warnings=[{"code": "no_geometry", "message": "у объекта нет достоверной геометрии; сопоставление невозможно"}]), None)
++    if precision != geometry_precision or precision == "unknown":
++        base["warnings"].append({"code": "precision_unknown",
++                                 "message": "точность геометрии неизвестна: сопоставление только ориентировочное"})
++    grid = grid_for(graph)
++    kind = geom["type"]
++    if kind == "Point":
++        pts = [geom["coordinates"]]
++    elif kind == "LineString":
++        pts = geom["coordinates"]
++    else:
++        pts = [p for ring in geom["coordinates"] for p in ring]
++    lon0 = sum(p[0] for p in pts) / len(pts)
++    lat0 = sum(p[1] for p in pts) / len(pts)
++    proj = _Proj(lon0, lat0)
++    radius = buf * 2 if kind == "Point" else buf
++    cand_ids = grid.near(pts, radius)
++    tags = osm_tags if osm_tags is not None else {}
++
++    def describe(eid, share, dists):
++        e, _ = grid.edges[eid]
++        t = tags.get(e.get("osm_way_id"), {})
++        row = {"edge_id": eid, "name": e.get("name") or None, "access": e["access"], "length_m": e["length_m"],
++               "share_near_object": round(share, 3), "mean_distance_m": round(sum(dists) / len(dists), 1),
++               "max_distance_m": round(max(dists), 1), "osm_way_id": e.get("osm_way_id"),
++               "osm_highway": t.get("highway")}
++        level = {k: t[k] for k in ("bridge", "tunnel", "layer", "covered") if k in t and t[k] != "no"}
++        if level:
++            row["osm_level"] = level
++        return row
++
++    if kind == "Point":
++        p = proj(geom["coordinates"])
++        rows = []
++        for eid in cand_ids:
++            line = [proj(q) for q in grid.edges[eid][1]]
++            d = _line_dist(p, line)
++            if d <= radius:
++                rows.append((d, eid))
++        rows.sort()
++        partial = [describe(eid, 0.0, [d]) for d, eid in rows[:MAX_POINT_CANDIDATES]]
++        res = dict(base, status="point_needs_manual_selection" if partial else "no_candidates", partial=partial)
++        res["warnings"].append({"code": "point_geometry",
++                                "message": "точка не задаёт протяжённость работ: выберите участки вручную"})
++        return _finish(res, grid)
++
++    if kind == "LineString":
++        obj = [proj(q) for q in geom["coordinates"]]
++        inside = lambda q: _line_dist(q, obj) <= buf                      # noqa: E731
++        dist_to_obj = lambda q: _line_dist(q, obj)                          # noqa: E731
++    else:
++        rings = [[proj(q) for q in ring] for ring in geom["coordinates"]]
++        outer, holes = rings[0], rings[1:]
++        boundary = [r for r in rings]
++
++        def dist_to_obj(q):
++            return min(_line_dist(q, r + r[:1]) for r in boundary)
++
++        def inside(q):
++            return _in_ring(q, outer) and not any(_in_ring(q, h) for h in holes)
++
++    proposed, partial = [], []
++    for eid in cand_ids:
++        line = _densify([proj(q) for q in grid.edges[eid][1]])
++        flags = [inside(q) for q in line]
++        dists = [0.0 if (kind == "Polygon" and f) else dist_to_obj(q) for q, f in zip(line, flags)]
++        share = sum(flags) / len(flags)
++        if kind == "Polygon" and share < PROPOSE_SHARE and min(dists) <= buf:
++            share = max(share, PARTIAL_SHARE)            # участок у границы полигона — проверить
++        if share >= PROPOSE_SHARE:
++            proposed.append(describe(eid, share, dists))
++        elif share >= PARTIAL_SHARE:
++            partial.append(describe(eid, share, dists))
++    proposed.sort(key=lambda r: r["edge_id"])
++    partial.sort(key=lambda r: r["edge_id"])
++
++    if kind == "LineString" and len(obj) > 1:
++        samples = _densify(obj)
++        prop_lines = [[proj(q) for q in grid.edges[r["edge_id"]][1]] for r in proposed]
++        covered = [any(_line_dist(q, l) <= buf for l in prop_lines) for q in samples]
++        pos, run = [0.0], None
++        for a, b in zip(samples, samples[1:]):
++            pos.append(pos[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
++        for i, c in enumerate(covered + [True]):
++            if not c and run is None:
++                run = i
++            elif c and run is not None:
++                part = {"from_m": round(pos[run], 1), "to_m": round(pos[i - 1], 1),
++                        "length_m": round(pos[i - 1] - pos[run], 1)}
++                if part["length_m"] >= STEP_M:
++                    base["unmatched_object_parts"].append(part)
++                run = None
++        base["object_length_m"] = round(pos[-1], 1)
++        base["object_covered_share"] = round(sum(covered) / len(covered), 3)
++    status = "proposed" if proposed else ("partial_only" if partial else "no_candidates")
++    return _finish(dict(base, status=status, proposed=proposed, partial=partial), grid)
++
++
++def _finish(res, grid):
++    w = res["warnings"]
++    if res["proposed"]:
++        groups = _components([r["edge_id"] for r in res["proposed"]], grid.edges)
++        for r in res["proposed"]:
++            r["group"] = groups[r["edge_id"]]
++        n = max(groups.values())
++        # Сводка по исходным линиям OSM: человеку проще решить «тротуар в 5 м» против «проезжая часть в 19 м».
++        ways = {}
++        for r in res["proposed"]:
++            way = ways.setdefault(r["osm_way_id"], {"osm_way_id": r["osm_way_id"], "name": r["name"],
++                                                  "osm_highway": r["osm_highway"], "access": set(), "edges": 0,
++                                                  "length_m": 0.0, "_wd": 0.0})
++            way["access"].add(r["access"]); way["edges"] += 1
++            way["length_m"] += r["length_m"]; way["_wd"] += r["mean_distance_m"] * r["length_m"]
++        summary = []
++        for way in ways.values():
++            way["mean_distance_m"] = round(way.pop("_wd") / way["length_m"], 1) if way["length_m"] else None
++            way["length_m"] = round(way["length_m"], 1)
++            way["access"] = sorted(way["access"])
++            summary.append(way)
++        summary.sort(key=lambda x: (x["mean_distance_m"] is None, x["mean_distance_m"], str(x["osm_way_id"])))
++        res["by_osm_way"] = summary
++        if n > 1:
++            w.append({"code": "disconnected_groups", "count": n,
++                      "message": f"предложенные участки образуют {n} несвязанные группы: это могут быть тротуары "
++                                 "по обе стороны, мост над дорогой или разрыв сети — подтвердите каждую"})
++    for key in ("proposed", "partial"):
++        lv = [r["edge_id"] for r in res[key] if "osm_level" in r]
++        if lv:
++            w.append({"code": "bridge_or_tunnel_" + key, "edge_ids": lv,
++                      "message": "среди кандидатов есть мост/тоннель/другой уровень (OSM): линия объекта может "
++                                 "относиться к другому уровню"})
++    na = [r["edge_id"] for r in res["proposed"] if r["access"] != "allowed"]
++    if na:
++        w.append({"code": "proposed_not_allowed", "edge_ids": na,
++                  "message": "часть предложенных участков и так не используется в строгом расчёте (доступ неизвестен/запрещён)"})
++    if res.get("unmatched_object_parts"):
++        w.append({"code": "unmatched_object_parts",
++                  "message": "часть линии объекта не совпала ни с одним участком графа (нет линии в OSM-срезе или "
++                             "объект нарисован приблизительно)"})
++    res["result_digest"] = sha256_hex({k: v for k, v in res.items() if k != "result_digest"})
++    return res
++
++
++MAP_KEYS = {"graph_id", "graph_digest", "geometry", "geometry_precision"}
++
++
++def map_object_request(body):
++    """HTTP-вход: {graph_id, graph_digest, geometry, geometry_precision}. Граф — только из реестра."""
++    from .registry import _entry, load_graph_dict
++    if not isinstance(body, dict):
++        _bad("ожидается JSON-объект")
++    extra = sorted(set(body) - MAP_KEYS)
++    if extra:
++        _bad("неизвестные поля: " + ", ".join(extra[:10]), fields=extra[:10])
++    if not isinstance(body.get("graph_id"), str):
++        _bad("graph_id — строка", field="graph_id")
++    entry = _entry(body["graph_id"])
++    if body.get("graph_digest") != entry["digest"]:
++        raise ScenarioError("graph_digest_mismatch", "graph_digest не совпадает с текущей версией графа",
++                            {"expected": entry["digest"], "got": body.get("graph_digest")})
++    precision = body.get("geometry_precision")
++    if precision not in BUFFER_M:
++        _bad("geometry_precision — source | approximate | unknown", field="geometry_precision")
++    graph = {"id": entry["id"], "digest": entry["digest"]}
++    if entry["digest"] not in _GRIDS:
++        graph = load_graph_dict(entry["id"])
++    tags = osm_way_tags() if (entry.get("source") or {}).get("kind") == "overpass_snapshot" else {}
++    return propose_mapping(body.get("geometry"), precision, graph, tags)
+diff --git a/tests/civic/R07/test_r07_mapping.py b/tests/civic/R07/test_r07_mapping.py
+new file mode 100644
+index 0000000..f5b320a
+--- /dev/null
++++ b/tests/civic/R07/test_r07_mapping.py
+@@ -0,0 +1,148 @@
++"""R07 round 12: proposed mapping of a work object's geometry to graph edges.
++
++Synthetic street layout in metres around (71.40, 51.10):
++  main footway   y=0,   x=0..400 (4 edges of 100 m, connected)
++  far side       y=+25, x=0..400 (1 edge, NOT connected to the main footway)
++  crossing       x=200, y=-200..200 (2 edges, shares node with main footway)
++  bridge         x=300, y=-60..60 (OSM bridge=yes, layer=1; no shared node)
++"""
++import copy
++import json
++import math
++
++import pytest
++
++from engine.civic_scenarios import ScenarioError
++from engine.civic_scenarios.http import handle
++from engine.civic_scenarios.mapping import BUFFER_M, propose_mapping
++from engine.civic_scenarios.registry import manifest
++
++LON0, LAT0 = 71.40, 51.10
++KX, KY = 111320.0 * math.cos(math.radians(LAT0)), 110540.0
++
++
++def ll(x, y):
++    return [LON0 + x / KX, LAT0 + y / KY]
++
++
++def build():
++    nodes, edges = {}, []
++
++    def node(name, x, y):
++        nodes[name] = {"id": name, "lon": ll(x, y)[0], "lat": ll(x, y)[1]}
++        return name
++
++    def edge(eid, a, b, access="allowed", way=None, name=""):
++        pa, pb = nodes[a], nodes[b]
++        L = math.hypot((pb["lon"] - pa["lon"]) * KX, (pb["lat"] - pa["lat"]) * KY)
++        edges.append({"id": eid, "from": a, "to": b, "length_m": round(L, 3), "access": access, "oneway": False,
++                      "geometry": [[pa["lon"], pa["lat"]], [pb["lon"], pb["lat"]]], "name": name,
++                      "osm_way_id": way})
++    for i in range(5):
++        node(f"m{i}", i * 100, 0)
++    for i in range(4):
++        edge(f"main-{i}", f"m{i}", f"m{i + 1}", way=1, name="Тротуар")
++    node("f0", 0, 25), node("f1", 400, 25)
++    edge("far", "f0", "f1", way=2, name="Тротуар напротив")
++    node("c0", 200, -200), node("c1", 200, 200)
++    edge("cross-s", "c0", "m2", access="unknown", way=3, name="Поперечная")
++    edge("cross-n", "m2", "c1", access="unknown", way=3, name="Поперечная")
++    node("b0", 300, -60), node("b1", 300, 60)
++    edge("bridge", "b0", "b1", way=4, name="Мост")
++    return {"id": "test-mapping", "digest": "test-mapping-digest", "nodes": list(nodes.values()), "edges": edges}
++
++
++GRAPH = build()
++TAGS = {1: {"highway": "footway"}, 2: {"highway": "footway"}, 3: {"highway": "residential"},
++        4: {"highway": "footway", "bridge": "yes", "layer": "1"}}
++
++
++def line(*pts):
++    return {"type": "LineString", "coordinates": [ll(x, y) for x, y in pts]}
++
++
++def ids(rows):
++    return sorted(r["edge_id"] for r in rows)
++
++
++def test_line_along_footway_proposes_it_not_the_crossing_street():
++    r = propose_mapping(line((0, 2), (400, 2)), "source", GRAPH, TAGS)
++    assert r["status"] == "proposed" and r["requires_confirmation"] is True
++    assert ids(r["proposed"]) == ["main-0", "main-1", "main-2", "main-3"]
++    assert "cross-n" not in ids(r["proposed"] + r["partial"]) and "far" not in ids(r["proposed"])
++    assert r["object_covered_share"] == 1.0 and r["unmatched_object_parts"] == []
++    assert "plans" not in r and "closures" not in json.dumps(r)        # never a ready-made closure
++
++
++def test_bridge_over_the_line_is_flagged_not_silently_proposed():
++    r = propose_mapping(line((0, 2), (400, 2)), "source", GRAPH, TAGS)
++    assert "bridge" not in ids(r["proposed"])          # only ~24 m of a 120 m bridge is near the line
++    r = propose_mapping(line((300, -60), (300, 60)), "source", GRAPH, TAGS)
++    assert ids(r["proposed"]) == ["bridge"]
++    assert any(w["code"] == "bridge_or_tunnel_proposed" for w in r["warnings"])
++
++
++def test_approximate_geometry_also_catches_far_side_and_warns_about_groups():
++    r = propose_mapping(line((0, 2), (400, 2)), "approximate", GRAPH, TAGS)
++    assert {"far", "main-0"} <= set(ids(r["proposed"]))
++    assert any(w["code"] == "disconnected_groups" for w in r["warnings"])
++    assert r["by_osm_way"][0]["osm_way_id"] == 1                 # closest line listed first
++    assert r["rule"]["buffer_m"] == BUFFER_M["approximate"]
++
++
++def test_unmatched_part_of_object_is_reported():
++    r = propose_mapping(line((0, 0), (550, 0)), "source", GRAPH, TAGS)
++    assert r["object_length_m"] == pytest.approx(550, abs=1)
++    (part,) = r["unmatched_object_parts"]
++    assert part["length_m"] == pytest.approx(150 - BUFFER_M["source"], abs=STEP_TOL)
++    assert any(w["code"] == "unmatched_object_parts" for w in r["warnings"])
++
++
++STEP_TOL = 6
++
++
++def test_point_never_proposes_edges():
++    r = propose_mapping({"type": "Point", "coordinates": ll(150, 3)}, "approximate", GRAPH, TAGS)
++    assert r["status"] == "point_needs_manual_selection" and r["proposed"] == []
++    assert r["partial"][0]["edge_id"] == "main-1"
++
++
++def test_polygon_inside_proposed_edge_partially_inside_is_partial():
++    ring = [ll(50, -10), ll(250, -10), ll(250, 10), ll(50, 10), ll(50, -10)]
++    r = propose_mapping({"type": "Polygon", "coordinates": [ring]}, "source", GRAPH, TAGS)
++    assert ids(r["proposed"]) == ["main-1"]
++    assert {"main-0", "main-2"} <= set(ids(r["partial"]))
++
++
++def test_no_geometry_and_invalid_geometry():
++    empty = propose_mapping(None, "unknown", GRAPH, TAGS)
++    assert empty["status"] == "no_geometry" and len(empty["result_digest"]) == 64
++    for bad in ({"type": "Point", "coordinates": [500, 0]}, {"type": "Circle", "coordinates": [0, 0]},
++                {"type": "LineString", "coordinates": [ll(0, 0)]}, {"type": "Point", "coordinates": [float("nan"), 0]},
++                {"type": "LineString", "coordinates": [ll(0, 0), ll(1, 1)], "url": "http://x"}):
++        with pytest.raises(ScenarioError):
++            propose_mapping(bad, "source", GRAPH, TAGS)
++    with pytest.raises(ScenarioError) as e:
++        propose_mapping(line(*[(i, 0) for i in range(2001)]), "source", GRAPH, TAGS)
++    assert e.value.code == "too_large"
++
++
++def test_unknown_precision_warns_and_result_is_deterministic():
++    r1 = propose_mapping(line((0, 2), (400, 2)), "garbage", GRAPH, TAGS)
++    assert r1["rule"]["precision"] == "unknown" and any(w["code"] == "precision_unknown" for w in r1["warnings"])
++    assert propose_mapping(line((0, 2), (400, 2)), "garbage", copy.deepcopy(GRAPH), TAGS)["result_digest"] == r1["result_digest"]
++
++
++def test_http_map_object_contract():
++    tiny = next(g for g in manifest()["graphs"] if g["id"] == "synthetic-tiny-v1")
++    api = "/api/civic/v1/scenarios/map-object"
++    body = {"graph_id": tiny["id"], "graph_digest": tiny["digest"], "geometry": None, "geometry_precision": "unknown"}
++    r = handle("POST", api, body=body)
++    assert r["status"] == 200 and r["body"]["data"]["status"] == "no_geometry"
++    for patch, status, code in (({"graph_digest": "0" * 64}, 409, "graph_digest_mismatch"),
++                                ({"graph_id": "/etc/passwd"}, 404, "unknown_graph"),
++                                ({"file": "x"}, 422, "invalid_payload"),
++                                ({"geometry_precision": "exact"}, 422, "invalid_payload")):
++        r = handle("POST", api, body=dict(body, **patch))
++        assert r["status"] == status and r["body"]["error"]["code"] == code, patch
++    assert handle("GET", api)["status"] == 405
 -- 
 2.43.0
 

@@ -1,10 +1,13 @@
- .../astana-republic-sidewalk-phasing-v1.case.json  |  90 +++++++
- engine/civic_scenarios/graph.py                    |  86 +++++--
- engine/civic_scenarios/schedule.py                 | 155 ++++++++++++
+ .../astana-republic-sidewalk-phasing-v1.case.json  |  90 +++++
+ engine/civic_scenarios/graph.py                    |  86 ++++-
+ engine/civic_scenarios/http.py                     |   9 +-
+ engine/civic_scenarios/mapping.py                  | 385 +++++++++++++++++++++
+ engine/civic_scenarios/schedule.py                 | 155 +++++++++
  tests/civic/R07/test_r07_http_ui.py                |   2 +-
- tests/civic/R07/test_r07_scale.py                  |  77 ++++++
- tests/civic/R07/test_r07_schedule.py               | 112 +++++++++
+ tests/civic/R07/test_r07_mapping.py                | 148 ++++++++
+ tests/civic/R07/test_r07_scale.py                  |  77 +++++
+ tests/civic/R07/test_r07_schedule.py               | 112 ++++++
  tests/civic/test_citywide_osm.py                   |   2 +-
- web/civic/scenarios/scenarios.css                  |  19 ++
- web/civic/scenarios/scenarios.js                   | 266 ++++++++++++++++++---
- 9 files changed, 756 insertions(+), 53 deletions(-)
+ web/civic/scenarios/scenarios.css                  |  19 +
+ web/civic/scenarios/scenarios.js                   | 266 ++++++++++++--
+ 12 files changed, 1297 insertions(+), 54 deletions(-)
