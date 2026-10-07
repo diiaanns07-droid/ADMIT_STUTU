@@ -1,0 +1,35 @@
+R08 · РАУНД 13 · КОМАНДЫ И СЦЕНАРИЙ
+
+0. КОД
+   Ветка claude/eager-hawking-4up40k (ADMIT_STUTU) содержит пути R08 (ml/civic_classifier/, tests/civic/R08/).
+   Для GOV_DIPLOME (BASE_MISMATCH):
+     git checkout -b r08-round13 56538a3a7504d4589c38ab4d3c5107f12aa7f8a6
+     git am research/round-13-results/R08/r08-round13-full.patch     # восстановление e311ba8 + раунд 13
+   либо поверх уже перенесённого R08 раунда 12 (e311ba8):  git am r08-round13-delta.patch
+   Зависимости: только стандартная библиотека Python ≥ 3.10; pytest — для тестов. Ни сети, ни GPU, ни ключей.
+
+1. ВОСПРОИЗВЕДЕНИЕ И АУДИТ (≈40 с)
+     python3 -m ml.civic_classifier audit --out /tmp/r08
+   Пересобирает корпус/split, переобучает модели во временной папке, сравнивает sha256 с закреплёнными
+   файлами; пишет утечки (семейства/переводы через splits, круговая лексика).
+
+2. СРАВНЕНИЕ ПО ПРОТОКОЛУ (PROTOCOL.md)
+     python3 -m ml.civic_classifier protocol --sets cv,test,probe --out /tmp/r08    # ≈2.5 мин
+     python3 -m ml.civic_classifier protocol --sets challenge --out /tmp/r08        # проверяет sha256 заморозки
+     python3 -m ml.civic_classifier report13 --dir /tmp/r08                          # нужен также resources.json (необязательно)
+   Результаты раунда 13: audit.json, protocol_dev.json, protocol_challenge.json, EXPERIMENT_REPORT.md.
+
+3. ОДНО СООБЩЕНИЕ
+     python3 -m ml.civic_classifier predict "На Кенесары яма на дороге и рядом не горит фонарь"
+   -> label roads (подсказка), score null, score_kind "abstain:multi_topic", needs_review true, explanation.
+
+4. ТЕСТЫ
+     python3 -m pytest -q tests/civic/R08            # на ветке без ui/civic_feedback интеграционные — skip
+     python3 -m pytest -q tests/civic                # в сборке 56538a3 + R08
+
+5. В ПРИЛОЖЕНИИ (после патча R01, см. INTEGRATION.txt)
+     CIVIC_R08_CLASSIFIER=1 CIVIC_DEMO=1 python3 -B app.py --port 8611 --civic-db /tmp/r08.sqlite3
+   Житель отправляет сообщение как обычно (категория — его выбор). В очереди сотрудника появляется подсказка
+   «демо-модель, синтетическое обучение, требует проверки»; при многотемном/латинском/неуверенном тексте —
+   отказ (score пустой, score_kind abstain:…). Без переменной модель не загружается, сообщения сохраняются.
+   На Windows: set CIVIC_R08_CLASSIFIER=1 перед run-city.bat (не проверялось — облачная среда Linux).

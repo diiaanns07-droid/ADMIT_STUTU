@@ -1,0 +1,52 @@
+R08 · РАУНД 13 · ПОДКЛЮЧЕНИЕ, КОНТРАКТЫ, СОВМЕСТИМОСТЬ
+
+ИСТОЧНИКИ
+  Продолжение поставки R08 раунда 12: claude/wizardly-ptolemy-qy8ltw HEAD 9660885, код e311ba8.
+  Раунд 13: ветка claude/eager-hawking-4up40k (репозиторий ADMIT_STUTU — BASE_MISMATCH, remote не менялся).
+  Изолированная сборка: GOV_DIPLOME 56538a3 + пути R08 e311ba8 (без изменений, коммит fb1a0bc) + раунд 13.
+  Патчи только путей R08: r08-round13-full.patch (git am на 56538a3), r08-round13-delta.patch (поверх e311ba8).
+  Состав и sha256: patch.info.
+
+1. КОНТРАКТ classify(text, language) — НЕ МЕНЯЛСЯ
+  Обязательные поля: label ∈ CATEGORIES, score float|null, score_kind str, needs_review bool,
+  model_version str, training_data_status str (все строки ≤ 80). TypeError на нестроковый text.
+  Аддитивно (раунд 13): abstain bool, abstain_reasons [str], alternatives [label ≤2],
+  explanation {kind, keyword_stems, word_prefixes, versus, note}, policy_version.
+  При отказе: score = null, score_kind = "abstain:<причины>" (≤80), label — лучшая метка только как подсказка,
+  needs_review = true. Синтетическая версия ВСЕГДА needs_review = true. score не вероятность.
+  Проверено с настоящим R06: база 56538a3 (_clean_suggestion) и поставка R06 раунда 12 e0b4741
+  (check_suggestion, r08_status, load_r08_classifier с пробным вызовом) — подсказка принимается, отказ
+  сохраняется как score null + score_kind abstain:…; новые поля текущий R06 отбрасывает.
+
+2. ПРЕДЛАГАЕМЫЙ ПАТЧ R01 (общий файл ui/web_server.py) — ЯВНОЕ ВКЛЮЧЕНИЕ
+  r01-web_server-r08-optin.proposed.patch: по умолчанию classifier=None (как сейчас: «R08 не подключён»);
+  при CIVIC_R08_CLASSIFIER=1 — ui.civic_feedback.classifier_adapter.load_r08_classifier() (None при отсутствии/
+  поломке/несоответствии контракту). Проверка через app.py на временной БД (база 56538a3 + R08): с флагом
+  POST /feedback 201 за 0.026 с, classifier_status ok, label lighting, needs_review true; без флага 201 за
+  0.003 с, unavailable. Правка откачена; ui/web_server.py принадлежит R01.
+
+3. ПРЕДЛАГАЕМЫЙ ПАТЧ R06 (ui/civic_feedback/service.py, поставка e0b4741) — ОТКАЗ И ОБЪЯСНЕНИЕ В ОЧЕРЕДИ
+  r06-service-r08-fields.proposed.patch: _clean_suggestion дополнительно сохраняет ограниченные поля
+  abstain (bool), abstain_reasons (≤4×40), alternatives (≤2, только CATEGORIES), explanation (основы ≤5×40,
+  начала слов ≤3×60, note ≤120). Только staff-представление. Проверено временным применением на сборке
+  56538a3 + R06 e0b4741 + R08: tests/civic/R06 + R08 199 passed, 1 skipped; правка откачена.
+  Без патча продукт работает: отказ виден как score_kind "abstain:…".
+  Интерфейсу R06/R04: показывать «подсказка демо-модели (синтетические данные), требует проверки»; при abstain —
+  «модель воздержалась: <причина>», альтернативы как варианты, объяснение мелким текстом с оговоркой
+  «признаки, не причина». Не выводить score процентами.
+
+4. РЕСУРСЫ И ОТКАЗОУСТОЙЧИВОСТЬ
+  Модель 105 КБ (JSON+gzip, sha256 полезной нагрузки, без pickle); первый вызов с загрузкой ≈0.12 с; пик
+  выделений ≈5 МБ; classify ≈0.4 мс (p95 0.6 мс) — resources.json. Укладывается в classifier_timeout_s R06 = 2 с.
+  Нет модели / испорченный файл → эвристика-fallback (model_version civic-clf-heuristic-fallback-v1, score null).
+  Нет/испорчен файл политики отказа → осторожный режим: отказ при любой неуверенности (порог 1.0).
+  Слишком малый таймаут R06 → R06 пишет status timeout, сообщение сохраняется; загрузка завершается в фоне.
+
+5. ЗАВИСИМОСТИ
+  Только стандартная библиотека; ничего не скачивается при импорте или открытии сайта; корневые requirements
+  не меняются. ml/__init__.py не нужен (namespace package).
+
+6. ОГРАНИЧЕНИЯ
+  Синтетика одного агента; real_data_NOT_EVALUATED; превосходство над словарём не доказано (leave-family-out:
+  словарь 0.861 ≈ гибрид 0.856). Латиница/иностранный язык — только отказ. Адресные слова-ловушки и отрицание
+  ошибочны у всех методов. Модель не решает срочность/исполнителя и не меняет категорию жителя.

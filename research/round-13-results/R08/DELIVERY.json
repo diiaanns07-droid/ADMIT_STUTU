@@ -1,0 +1,134 @@
+{
+  "round": 13,
+  "role": "R08",
+  "branch": "claude/eager-hawking-4up40k",
+  "repository": "https://github.com/diiaanns07-droid/ADMIT_STUTU",
+  "base_mismatch": "Session environment is ADMIT_STUTU, not GOV_DIPLOME; remote unchanged. Isolated build = GOV_DIPLOME worktree at reference_base_sha + R08 paths of e311ba8 + round-13 commits; R08 paths mirrored into this branch; scoped patches provided.",
+  "base_sha": "56538a3a7504d4589c38ab4d3c5107f12aa7f8a6",
+  "source_deliveries": [
+    {
+      "role": "R08",
+      "branch": "claude/wizardly-ptolemy-qy8ltw",
+      "head_sha": "9660885db5baadac4a8ac15b0a6532314407bba2",
+      "code_sha": "e311ba822c82d4904f9be72b2db05d991dc8ae12",
+      "use": "continued; restored unchanged as fb1a0bc in the isolated build"
+    },
+    {
+      "role": "R06",
+      "branch": "claude/brave-hopper-bkc58b",
+      "head_sha": "1139eeb90beb05a0f6199a292c37599b466cb0cd",
+      "code_sha": "e0b474124db49a3f60c65e93f47d65e52aeac478",
+      "use": "integration check only (temporary checkout, not committed)"
+    }
+  ],
+  "code_sha": "9354e13b735755b1a4d4f8dc42206ff19e201b31",
+  "code_sha_note": "ADMIT_STUTU commit with R08 code; byte-identical to isolated-build commit 85597219cb41ec35f646f5edccddc4d51de56534 (GOV_DIPLOME worktree, not pushed)",
+  "tested_sha": {
+    "isolated_build": "85597219cb41ec35f646f5edccddc4d51de56534 (= 56538a3 + R08 paths)",
+    "r06_r12_checkout": "56538a3 + R06 e0b4741 paths + R08 8559721 paths (INTEGRATION_CHECKOUT_R06r12.json)"
+  },
+  "patches": {
+    "full": "research/round-13-results/R08/r08-round13-full.patch (git am on 56538a3)",
+    "delta": "research/round-13-results/R08/r08-round13-delta.patch (on top of e311ba8)",
+    "info": "research/round-13-results/R08/patch.info"
+  },
+  "push_status": "OK for 9354e13 (code) and earlier checkpoints ad7db1b, 622dabf, fc9c5ac, 2935ac5; final SHA in chat/STATUS",
+  "changed_paths": [
+    "ml/civic_classifier/audit.py",
+    "ml/civic_classifier/abstain.py",
+    "ml/civic_classifier/protocol.py",
+    "ml/civic_classifier/report13.py",
+    "ml/civic_classifier/__init__.py",
+    "ml/civic_classifier/__main__.py",
+    "ml/civic_classifier/MODEL_CARD.md",
+    "ml/civic_classifier/data/abstain_r13.json",
+    "ml/civic_classifier/data/challenge_r13_v1.jsonl",
+    "ml/civic_classifier/data/challenge_r13_v1.freeze.json",
+    "tests/civic/R08/test_r08_contract.py",
+    "tests/civic/R08/test_r08_r06_r13.py",
+    "tests/civic/R08/test_r08_r13_honesty.py"
+  ],
+  "unchanged": "model.json.gz (payload 104c46a6…), model_alt_nb.json.gz, corpus_synthetic_v2.jsonl, split_v2.json, probe_agent_v1.jsonl, heuristic.py STEMS",
+  "tests": [
+    {
+      "name": "reproduction without network (corpus, split, both models byte-identical)",
+      "status": "PASS",
+      "command": "python3 -m ml.civic_classifier audit",
+      "where": "isolated build 8559721"
+    },
+    {
+      "name": "tests/civic full (base R06 + R08)",
+      "status": "PASS",
+      "command": "python3 -m pytest -q tests/civic",
+      "result": "780 passed, 4 skipped",
+      "where": "isolated build 8559721, Linux, Python 3.13.16"
+    },
+    {
+      "name": "R06 round-12 delivery + R08",
+      "status": "PASS",
+      "command": "python3 -m pytest -q tests/civic/R06 tests/civic/R08",
+      "result": "212 passed, 1 skipped (reports dir not transferred)",
+      "where": "56538a3 + R06 e0b4741 + R08 8559721"
+    },
+    {
+      "name": "real R06 r08_status probe with real R08",
+      "status": "PASS",
+      "command": "tests/civic/R08/test_r08_r06_r13.py::test_r06_r12_probe_with_real_r08",
+      "where": "R06 e0b4741 checkout; SKIP on base R06 (function absent)"
+    },
+    {
+      "name": "proposed R06 patch (bounded abstain/explanation fields)",
+      "status": "PASS",
+      "command": "temporary patch -p1; pytest tests/civic/R06 tests/civic/R08",
+      "result": "199 passed, 1 skipped; reverted"
+    },
+    {
+      "name": "proposed R01 opt-in through app.py on temp DB",
+      "status": "PASS",
+      "command": "CIVIC_R08_CLASSIFIER=1 python3 -B app.py --port 8612 --civic-db <tmp>",
+      "result": "with flag: 201, classifier_status ok/lighting; without: 201, unavailable; reverted"
+    },
+    {
+      "name": "leave-family-out CV comparison",
+      "status": "PASS",
+      "command": "python3 -m ml.civic_classifier protocol --sets cv,test,probe",
+      "result": "keyword 0.861 ≈ hybrid 0.856 > logreg 0.738 > nb 0.581 (macro-F1 mean over 5 folds)"
+    },
+    {
+      "name": "frozen challenge_r13_v1 single run",
+      "status": "PASS",
+      "command": "python3 -m ml.civic_classifier protocol --sets challenge",
+      "result": "keyword 0.679, hybrid 0.736 macro-F1; hybrid+abstain coverage 0.649, accepted accuracy 0.862"
+    },
+    {
+      "name": "real resident messages",
+      "status": "NOT_RUN",
+      "reason": "no legally usable de-identified corpus; data.egov.kz/opendata.kz/huggingface.co CONNECT 403 from this environment"
+    },
+    {
+      "name": "double human annotation",
+      "status": "NOT_RUN",
+      "reason": "requires two people; protocol prepared (ANNOTATION_PROTOCOL.md)"
+    },
+    {
+      "name": "browser UI of moderation with suggestion",
+      "status": "NOT_RUN",
+      "reason": "UI belongs to R06/R04; storage checked via API and DB"
+    },
+    {
+      "name": "Windows run-city.bat",
+      "status": "NOT_RUN",
+      "reason": "Linux cloud environment"
+    }
+  ],
+  "known_limits": [
+    "Synthetic, agent-written and agent-labeled data only; real_data_NOT_EVALUATED; needs_review always true.",
+    "Hybrid superiority over the keyword baseline is NOT supported by leave-family-out CV (mean difference -0.005, better in 2 of 5 folds); the learned model alone is worse in all folds.",
+    "Round-12 test and probe were viewed before and are exploratory; challenge_r13_v1 is exploratory after its single run.",
+    "Lexical circularity: 85 % of corpus messages contain a stem of their own label (same author for templates and dictionary).",
+    "All methods fail on address/place-name traps, negation/thanks and substring traps; Latin script and foreign languages only abstain.",
+    "score is an uncalibrated softmax maximum; no calibration on independent data.",
+    "Current R06 stores only contract fields: abstain/explanation need the proposed R06 patch; the app (R01) keeps the model off unless the proposed opt-in is applied."
+  ],
+  "next_step": "R01/coordinator: apply r08-round13-full.patch on 56538a3 (or delta on top of e311ba8) and, if desired, r01-web_server-r08-optin and r06-service-r08-fields proposed patches; diploma: legal real corpus with two annotators per ANNOTATION_PROTOCOL.md."
+}

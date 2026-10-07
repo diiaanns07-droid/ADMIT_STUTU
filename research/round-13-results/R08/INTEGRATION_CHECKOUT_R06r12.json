@@ -16,64 +16,16 @@
   {
    "role": "R08",
    "source": "isolated worktree r08-round13",
-   "code_sha": "678e8d439c01eaccc755503003dc069f8f486506",
+   "code_sha": "85597219cb41ec35f646f5edccddc4d51de56534",
    "paths": [
     "ml/civic_classifier/",
     "tests/civic/R08/"
    ],
-   "note": "ml/civic_classifier identical to 4673764; tests/civic/R08 as of this commit"
+   "note": "final R08 worktree commit (mirrored in ADMIT_STUTU 9354e13)"
   }
  ],
- "files_sha256": {
-  "ml/civic_classifier/.gitattributes": "de52a76ae7d7c8f105c2d1c51f07e5ab78ed64b28b12be1c37b4c310cac730a1",
-  "ml/civic_classifier/LABELING_GUIDE.md": "aba567d9bfa60ab575596d1b30f571026b851b97ff0c9d9c7e7b95507f0b6b42",
-  "ml/civic_classifier/MODEL_CARD.md": "8337b370149a085199455d057d5bace59ea5dd55f5ee97bc11dc15926145b13b",
-  "ml/civic_classifier/__init__.py": "3d7cf5fe667f1e92f10693f6cf279011fbed0b18dae3cd1e3ae1e749d2f2a695",
-  "ml/civic_classifier/__main__.py": "803ea66c56aa0d809625fbce285db153a9aec23aff3b35ca477c58710a5f2a3c",
-  "ml/civic_classifier/abstain.py": "7bc551903c507f201518d106fff8177927e422f0aa81013d52ee0fd78fd4b462",
-  "ml/civic_classifier/audit.py": "cfba9bf371d87936b7332a938ecf74048d33e40465d1fc77c5955e60f09e344d",
-  "ml/civic_classifier/corpus.py": "a0c2c528e6cd0e9aae5b38f14288675e0691470518adc28019f4ea58bc40eb50",
-  "ml/civic_classifier/data/abstain_r13.json": "581cc28fc4d454affd4db1e20c818f2153e9ee6fc9c9baf51f31385b2dd4f530",
-  "ml/civic_classifier/data/challenge_r13_v1.freeze.json": "b45d3afe85345b76b7839d98875cf5b66d08cc281c7bc275c953893a0ad8efae",
-  "ml/civic_classifier/data/challenge_r13_v1.jsonl": "b25a6a19ac3a0efbd41570248a03a590c10a2ad4452997e4bd62293139f95bde",
-  "ml/civic_classifier/data/corpus_synthetic_v2.jsonl": "f446434196768da0146ba84ca95449ee1b50a409c5256eeacc4a3d3eeb9cc45b",
-  "ml/civic_classifier/data/model.json.gz": "79cfee3e0f575b13ba24e0a82aa9edfbe8d773f4ac0df39c644299ff0e0fb429",
-  "ml/civic_classifier/data/model_alt_nb.json.gz": "c2fcde6b54835a5d4c974095c901c394b72a76266e946565b35ff4fb1ffa2387",
-  "ml/civic_classifier/data/probe_agent_v1.jsonl": "b2dd64ba73aa2518e9b290a2df9eee738c7bd3727526845ce9211ef68bade483",
-  "ml/civic_classifier/data/split_v2.json": "75758b620bc6bafea0d4f6956ef201b28a639d76a11bf5b20fd2e53b515e9dff",
-  "ml/civic_classifier/evaluate.py": "a413da6f0988f0c45ff01ed74dcaba31692c7f683e100be4ff6fe17a17b216b0",
-  "ml/civic_classifier/heuristic.py": "acdbebe82824947c0d36ff9fbe2b20ee85b978ab9f0cbdff57f8540c8e322f65",
-  "ml/civic_classifier/labels.py": "d3cdd9b2b975e4cd334409fca5f12e1817b0804d176ab1be67be63c82e203fd9",
-  "ml/civic_classifier/metrics.py": "a0f0ed0d1b323cf2ecda87072240b05e09e9759f64d4c8884725b1e98738b2c6",
-  "ml/civic_classifier/model.py": "e8bf3ea67a795ecb4cb7d7a0aceef8f10f38abbbceb348ac671745c28f39d764",
-  "ml/civic_classifier/protocol.py": "6cfe1ef929cb4bcab89150dfac072a052cf1d614591dd227d0248746d66d7488",
-  "ml/civic_classifier/requirements.txt": "200b6651d5bc1babffdfbe47fac13b1af6b94b4f5f2ada8195b5056558faa272",
-  "ml/civic_classifier/text.py": "5102e53a20f6ee4978cd58fe16b98936043e6ae0ec28ffdcbf86715c75cb193f",
-  "ml/civic_classifier/train.py": "22968e781541156e92781fbcfe940ad90ba9240d9b32900b7e8a57a90f64e8f6",
-  "tests/civic/R06/app_e2e_r06.cjs": "181b56baa99a110c1747dfb20348188ff4148e1f08721c57a5fa7063dedbecdc",
-  "tests/civic/R06/browser_r06.cjs": "9e86c1733dcf735fc79e2784c737f1ba526d7bc6fa662ff048db5e85e8762461",
-  "tests/civic/R06/harness/serve_r06.py": "65c1cdbd2533e3987901e1ef17871336feee428d7ef3157e64a8e739ee5164bc",
-  "tests/civic/R06/test_r06_frontend_http.py": "f272bc74c01d023d3b768d87cd5f568d5b4177cbad077695b018b4bbe5cd8ead",
-  "tests/civic/R06/test_r06_handling.py": "37c137ace1f191f1d5943537bea31c370015de8945c93d2c19d30b3f67169281",
-  "tests/civic/R06/test_r06_moderation.py": "5d793207fd8cefa0d6a5aac6f8a864200652f0dbe57f32957abd65fa208997e8",
-  "tests/civic/R06/test_r06_r08_adapter.py": "cf32c51511cb9b73a86caf2ba29e2d3349536d98cb889fe2ac36d738824352a5",
-  "tests/civic/R06/test_r06_r12_acceptance.py": "4646a77c1cab6401e8a8953d9757b1286f7a487570260e9ac0e1e40fe54a1b43",
-  "tests/civic/R08/test_r08_contract.py": "7624ccb5ced358a14d5b93377e34539cb8b6b42720f3cca0c2af723b14834dc5",
-  "tests/civic/R08/test_r08_corpus.py": "e9df4dc1505f7ea3fe039aabb125012e956873d4b9ee31942ec4dbd26f97af7e",
-  "tests/civic/R08/test_r08_feedback_integration.py": "22ee41c3568b2ec2d099420d4322fe759ff9f7ad96b206c02bf80fa1d173b26a",
-  "tests/civic/R08/test_r08_r06_r13.py": "7ee1265fd1a723e7e7089fc4fddf98c50a164ba7eada96257b89ab26d34def70",
-  "tests/civic/R08/test_r08_reports.py": "8c67ab6a7b07a7250ac92b2a7f2e1fea5163e681e68d7e4a65b31c358e453499",
-  "tests/civic/R08/test_r08_train.py": "6495da5536936addd0d0d73ed895356100a16015e08b758be5475a06c44b0578",
-  "ui/civic_feedback/__init__.py": "06693413f9444fb9cc98b02ab9ce2061b1775eaa63657b924af9de18b9c743ab",
-  "ui/civic_feedback/classifier_adapter.py": "2b7e9f07ef4470d0c7cf6df51039264e1af7477e8db913e6343c15808d4dbd47",
-  "ui/civic_feedback/fixtures.py": "4b900ed4aefc153b6747e528e10c6b5fb099adaae305d0ca0e6c0eadd2407219",
-  "ui/civic_feedback/service.py": "03f4ca0d5eb98f63dd0d811d739f184711017791fea584881c9fcc4ea589404d",
-  "ui/civic_feedback/text.py": "a2f1208008b21a0ae0765f481f2f7bac62051b869b604e69f325bcfdc5a0a79e",
-  "web/civic/feedback/feedback.css": "59ef449729d3ec40237418813052414226c90260484b17f787d912c297fb579c",
-  "web/civic/feedback/feedback.js": "1400b7b0696288f9842768d38b731dfdc6fb3ab7a8467abcbc240824cc3e54e5"
- },
  "command": "python3 -m pytest -q tests/civic/R06 tests/civic/R08 -p no:cacheprovider",
- "result": "199 passed, 1 skipped (test_r08_reports: results dir not transferred)",
+ "result": "final: 212 passed, 1 skipped (test_r08_reports: results dir not transferred)",
  "environment": "Linux x86_64, Python 3.13.16, pytest 9.1.1; cloud container",
  "proposed_r06_patch_check": "r06-service-r08-fields.proposed.patch applied temporarily: 199 passed, 1 skipped; editor queue shows abstain/alternatives/explanation; reverted",
  "proposed_r01_patch_check": {
@@ -81,5 +33,6 @@
   "with CIVIC_R08_CLASSIFIER=1": "POST /api/civic/v1/feedback 201 in 0.026 s; DB classifier_status=ok, label lighting, needs_review true",
   "without": "201 in 0.003 s; classifier_status=unavailable",
   "reverted": true
- }
+ },
+ "files_note": "R06 files = e0b4741 versions of ui/civic_feedback/, web/civic/feedback/, tests/civic/R06/; R08 files = worktree 8559721"
 }

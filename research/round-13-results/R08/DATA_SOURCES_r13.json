@@ -1,0 +1,12 @@
+{
+ "role": "R08", "round": 13, "checked_at": "2026-10-07",
+ "real_corpus_status": "real_data_NOT_EVALUATED",
+ "attempts_this_round": [
+  {"host": "data.egov.kz", "command": "curl -sS -o /dev/null -m 15 https://data.egov.kz", "result": "CONNECT tunnel failed, response 403 (сетевая политика среды)", "bypassed": false},
+  {"host": "opendata.kz", "command": "curl -sS -o /dev/null -m 15 https://opendata.kz", "result": "CONNECT tunnel failed, response 403", "bypassed": false},
+  {"host": "huggingface.co", "command": "curl -sS -o /dev/null -m 15 https://huggingface.co", "result": "CONNECT tunnel failed, response 403", "bypassed": false}
+ ],
+ "previous": "research/round-12-results/R08/DATA_SOURCES.json (тот же результат для data.egov.kz, opendata.kz, huggingface.co, kaggle.com, gov.kz)",
+ "not_used_by_policy": ["runtime SQLite обращений платформы", "eOtinish", "чаты/частные выгрузки"],
+ "note": "Недоступность из этой среды не доказывает отсутствия данных. Протокол будущей разметки: ANNOTATION_PROTOCOL.md."
+}

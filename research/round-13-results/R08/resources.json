@@ -1,0 +1,10 @@
+{
+ "first_call_incl_load_s": 0.116,
+ "python_alloc_peak_mb": 5.3,
+ "python_alloc_after_load_mb": 2.8,
+ "classify_ms_mean": 0.413,
+ "classify_ms_p95": 0.616,
+ "n": 765,
+ "model_file_bytes": 104804,
+ "env": "Linux x86_64, 4 vCPU Intel Xeon 2.8 GHz, CPython 3.13.16, one thread, no GPU/network"
+}
