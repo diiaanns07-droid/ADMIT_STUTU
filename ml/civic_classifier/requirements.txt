@@ -1,3 +1,3 @@
-# R08 civic_classifier: Python standard library only (tested with Python 3.13.16).
-# No third-party packages are needed for build-data / train / evaluate / predict / tests.
-# Root requirements are owned by R01 and need no change for this module.
+# R08 civic_classifier: только стандартная библиотека Python >= 3.10.
+# Обучение, оценка и инференс не требуют сторонних пакетов, сети, GPU или API-ключа.
+# Тесты: pytest (уже есть в корневом requirements.txt проекта).

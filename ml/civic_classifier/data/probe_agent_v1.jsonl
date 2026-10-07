@@ -1,0 +1,112 @@
+{"id": "probe-000", "text": "Колдобины такие, что подвеску разбил, когда уже заделают?", "label": "roads", "language": "ru", "style": "slang", "ambiguous": false, "short": false}
+{"id": "probe-001", "text": "Каждый день езжу на работу через этот участок, асфальт будто после бомбёжки, машины виляют между дырами", "label": "roads", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-002", "text": "Светофор на пересечении у торгового центра показывает зелёный сразу и пешеходам и машинам", "label": "roads", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-003", "text": "Прошу проверить состояние дорожного покрытия на въезде в жилой комплекс, образовалась глубокая колея", "label": "roads", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-004", "text": "дорогу раскопали и бросили, щебень по всей улице", "label": "roads", "language": "ru", "style": "slang", "ambiguous": false, "short": false}
+{"id": "probe-005", "text": "Отсутствует дорожный знак ограничения скорости возле школы", "label": "roads", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-006", "text": "зебру возле садика совсем не видно, дети переходят где попало", "label": "roads", "language": "ru", "style": "narrative", "ambiguous": true, "short": false}
+{"id": "probe-007", "text": "колея на дороге", "label": "roads", "language": "ru", "style": "short", "ambiguous": false, "short": true}
+{"id": "probe-008", "text": "На проезжей части образовалась наледь, произошло несколько аварий", "label": "roads", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-009", "text": "Жол өте нашар, көлік дөңгелегі шұңқырға түсіп кетті", "label": "roads", "language": "kk", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-010", "text": "Көшедегі асфальт жөнделмей тұр, жүргізушілер қиналады", "label": "roads", "language": "kk", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-011", "text": "жол бұзылған", "label": "roads", "language": "kk", "style": "short", "ambiguous": false, "short": true}
+{"id": "probe-012", "text": "Бағдаршам үш күннен бері сөніп тұр, қиылыста кептеліс", "label": "roads", "language": "kk", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-013", "text": "Жол белгілері жоқ, жүргізушілер бағытты шатастырады", "label": "roads", "language": "kk", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-014", "text": "Жолда асфальт жоқ, машины едут по грязи", "label": "roads", "language": "mixed", "style": "mixed", "ambiguous": false, "short": false}
+{"id": "probe-015", "text": "Светофор сломан, қиылыста апат болуы мүмкін", "label": "roads", "language": "mixed", "style": "mixed", "ambiguous": false, "short": false}
+{"id": "probe-016", "text": "yama na doroge vozle shkoly, opasno", "label": "roads", "language": "ru", "style": "translit", "ambiguous": false, "short": false}
+{"id": "probe-017", "text": "Ямища!", "label": "roads", "language": "ru", "style": "short", "ambiguous": false, "short": true}
+{"id": "probe-018", "text": "После прокладки труб дорогу засыпали песком, теперь там лужи и грязь до колена", "label": "roads", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-019", "text": "Требуется нанести дорожную разметку на новом участке дороги", "label": "roads", "language": "ru", "style": "formal", "ambiguous": true, "short": false}
+{"id": "probe-020", "text": "Жолдағы шұңқырды қашан жабасыздар? уже месяц ждём", "label": "roads", "language": "kk", "style": "mixed", "ambiguous": false, "short": false}
+{"id": "probe-021", "text": "лежачих полицейских понаставили слишком высоких, днищем цепляем", "label": "roads", "language": "ru", "style": "slang", "ambiguous": false, "short": false}
+{"id": "probe-022", "text": "Бабушка споткнулась о вывороченную плитку и упала, плитка лежит горбом уже давно", "label": "sidewalks", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-023", "text": "Прошу обустроить пешеходную дорожку от остановки до поликлиники, люди ходят по газону и обочине", "label": "sidewalks", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-024", "text": "по тротуару не пройти, всё в грязи после стройки", "label": "sidewalks", "language": "ru", "style": "slang", "ambiguous": false, "short": false}
+{"id": "probe-025", "text": "Стройплощадку оградили до самой дороги, пешеходам идти некуда", "label": "sidewalks", "language": "ru", "style": "narrative", "ambiguous": true, "short": false}
+{"id": "probe-026", "text": "На спуске в подземный переход нет пандуса для колясок", "label": "sidewalks", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-027", "text": "скользко на тротуаре", "label": "sidewalks", "language": "ru", "style": "short", "ambiguous": false, "short": true}
+{"id": "probe-028", "text": "с маленьким ребёнком на коляске невозможно заехать на бордюр, он высотой сантиметров двадцать", "label": "sidewalks", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-029", "text": "Пешеходный тротуар вдоль проспекта сужен припаркованными автомобилями", "label": "sidewalks", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-030", "text": "Тротуар тайғақ, кеше бір қария құлап қалды", "label": "sidewalks", "language": "kk", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-031", "text": "Жаяу жүретін жол салынбаған, балалар мектепке жолдың шетімен барады", "label": "sidewalks", "language": "kk", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-032", "text": "тротуар сынған", "label": "sidewalks", "language": "kk", "style": "short", "ambiguous": false, "short": true}
+{"id": "probe-033", "text": "Өткелге түсетін жерде пандус жоқ", "label": "sidewalks", "language": "kk", "style": "formal", "ambiguous": true, "short": false}
+{"id": "probe-034", "text": "Тротуарда лужа, жаяу өту невозможно", "label": "sidewalks", "language": "mixed", "style": "mixed", "ambiguous": false, "short": false}
+{"id": "probe-035", "text": "Плитка по всему тротуару шайқалып тұр", "label": "sidewalks", "language": "mixed", "style": "mixed", "ambiguous": false, "short": false}
+{"id": "probe-036", "text": "net trotuara vdol ulicy, hodim po doroge", "label": "sidewalks", "language": "ru", "style": "translit", "ambiguous": false, "short": false}
+{"id": "probe-037", "text": "тротуар превратили в парковку, ходим по проезжей части", "label": "sidewalks", "language": "ru", "style": "slang", "ambiguous": false, "short": false}
+{"id": "probe-038", "text": "В переходе под улицей течёт с потолка и стоят лужи, обходить негде", "label": "sidewalks", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-039", "text": "Жер асты өтпесінде жарық бар, бірақ еден су", "label": "sidewalks", "language": "kk", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-040", "text": "На нашей остановке сорвало крышу ветром, теперь стоим под открытым небом", "label": "transport_stops", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-041", "text": "Просим установить остановочный павильон на новой остановке маршрута", "label": "transport_stops", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-042", "text": "автобусная будка вся в граффити и без стекла", "label": "transport_stops", "language": "ru", "style": "slang", "ambiguous": false, "short": false}
+{"id": "probe-043", "text": "Информационное табло показывает время прибытия, которое никогда не совпадает, а иногда просто чёрный экран", "label": "transport_stops", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-044", "text": "остановку убрали", "label": "transport_stops", "language": "ru", "style": "short", "ambiguous": false, "short": true}
+{"id": "probe-045", "text": "Водители маршрута не делают остановку по требованию у рынка", "label": "transport_stops", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-046", "text": "остановку перенесли на двести метров из-за ремонта дороги и никаких объявлений не повесили", "label": "transport_stops", "language": "ru", "style": "narrative", "ambiguous": true, "short": false}
+{"id": "probe-047", "text": "На посадочной площадке остановки образовалась глубокая лужа, невозможно сесть в автобус", "label": "transport_stops", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-048", "text": "Аялдамада күтетін орын жоқ, жаңбырда су боламыз", "label": "transport_stops", "language": "kk", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-049", "text": "Аялдама павильоны қираған, жөндеу қажет", "label": "transport_stops", "language": "kk", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-050", "text": "аялдама жоқ", "label": "transport_stops", "language": "kk", "style": "short", "ambiguous": false, "short": true}
+{"id": "probe-051", "text": "Автобус аялдамада тоқтамайды, жүргізуші есікті ашпайды", "label": "transport_stops", "language": "kk", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-052", "text": "Аялдамада скамейка сломана, отыруға болмайды", "label": "transport_stops", "language": "mixed", "style": "mixed", "ambiguous": false, "short": false}
+{"id": "probe-053", "text": "Табло на остановке көрсетпейді время автобуса", "label": "transport_stops", "language": "mixed", "style": "mixed", "ambiguous": false, "short": false}
+{"id": "probe-054", "text": "na ostanovke net navesa", "label": "transport_stops", "language": "ru", "style": "translit", "ambiguous": false, "short": false}
+{"id": "probe-055", "text": "на остановке грязища, весь снег сгребли прямо к посадке", "label": "transport_stops", "language": "ru", "style": "slang", "ambiguous": false, "short": false}
+{"id": "probe-056", "text": "Аялдамадағы ақпараттық табло сөнген", "label": "transport_stops", "language": "kk", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-057", "text": "Остановка стоит прямо в луже, люди заходят в автобус по колено в воде", "label": "transport_stops", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-058", "text": "Вечером на нашей улице темень, ни один фонарь не работает, страшно возвращаться", "label": "lighting", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-059", "text": "Прошу восстановить уличное освещение вдоль пешеходной аллеи", "label": "lighting", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-060", "text": "фонарики во дворе сдохли ещё в сентябре", "label": "lighting", "language": "ru", "style": "slang", "ambiguous": false, "short": false}
+{"id": "probe-061", "text": "нет света на улице", "label": "lighting", "language": "ru", "style": "short", "ambiguous": false, "short": true}
+{"id": "probe-062", "text": "Лампа на столбе у подъезда то включается, то гаснет всю ночь, мешает спать", "label": "lighting", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-063", "text": "Уличные светильники работают в дневное время", "label": "lighting", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-064", "text": "На остановке темно, ни одной лампы, вечером стоять опасно", "label": "lighting", "language": "ru", "style": "narrative", "ambiguous": true, "short": false}
+{"id": "probe-065", "text": "Опора уличного освещения повреждена после ДТП и наклонена над тротуаром", "label": "lighting", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-066", "text": "Кешкі уақытта көшеде жарық жоқ, балалар қорқады", "label": "lighting", "language": "kk", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-067", "text": "Көше жарығын қалпына келтіруді сұраймыз", "label": "lighting", "language": "kk", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-068", "text": "жарық жоқ", "label": "lighting", "language": "kk", "style": "short", "ambiguous": false, "short": true}
+{"id": "probe-069", "text": "Подъезд алдындағы шам түні бойы жыпылықтайды", "label": "lighting", "language": "kk", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-070", "text": "Аулада фонарь не горит, қараңғы", "label": "lighting", "language": "mixed", "style": "mixed", "ambiguous": false, "short": false}
+{"id": "probe-071", "text": "Көшеде темно, шамдар отключены", "label": "lighting", "language": "mixed", "style": "mixed", "ambiguous": false, "short": false}
+{"id": "probe-072", "text": "fonari ne goryat vo dvore", "label": "lighting", "language": "ru", "style": "translit", "ambiguous": false, "short": false}
+{"id": "probe-073", "text": "в парке на аллее хоть глаз выколи, светильники разбиты", "label": "lighting", "language": "ru", "style": "slang", "ambiguous": false, "short": false}
+{"id": "probe-074", "text": "Аялдама маңында жарық жоқ", "label": "lighting", "language": "kk", "style": "formal", "ambiguous": true, "short": false}
+{"id": "probe-075", "text": "Новые фонари поставили, но их так и не подключили", "label": "lighting", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-076", "text": "Во дворе спилили все старые тополя, остались одни пни, дети играют на солнцепёке", "label": "landscaping", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-077", "text": "Просим установить детский игровой комплекс во дворе многоквартирного дома", "label": "landscaping", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-078", "text": "горка на площадке ржавая, дети режутся", "label": "landscaping", "language": "ru", "style": "slang", "ambiguous": false, "short": false}
+{"id": "probe-079", "text": "нужны деревья", "label": "landscaping", "language": "ru", "style": "short", "ambiguous": false, "short": true}
+{"id": "probe-080", "text": "После замены труб двор перекопали и газон так и не восстановили, всюду глина", "label": "landscaping", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-081", "text": "Предлагаю благоустроить пустырь между домами: дорожки, лавочки и озеленение", "label": "landscaping", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-082", "text": "В сквере сломаны все лавочки и нет урн, мусор валяется", "label": "landscaping", "language": "ru", "style": "narrative", "ambiguous": true, "short": false}
+{"id": "probe-083", "text": "Требуется обрезка аварийных деревьев возле детского сада", "label": "landscaping", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-084", "text": "Аулада бірде-бір ағаш қалмады, барлығын кесіп тастады", "label": "landscaping", "language": "kk", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-085", "text": "Балаларға арналған ойын алаңын жөндеуді сұраймыз", "label": "landscaping", "language": "kk", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-086", "text": "көгал жоқ", "label": "landscaping", "language": "kk", "style": "short", "ambiguous": false, "short": true}
+{"id": "probe-087", "text": "Саябақтағы орындықтар сынған, демалатын жер жоқ", "label": "landscaping", "language": "kk", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-088", "text": "Ауладағы площадка сломана, балалар ойнай алмайды", "label": "landscaping", "language": "mixed", "style": "mixed", "ambiguous": false, "short": false}
+{"id": "probe-089", "text": "Саябақта газон вытоптан, гүлдер жоқ", "label": "landscaping", "language": "mixed", "style": "mixed", "ambiguous": false, "short": false}
+{"id": "probe-090", "text": "detskaya ploshadka slomana", "label": "landscaping", "language": "ru", "style": "translit", "ambiguous": false, "short": false}
+{"id": "probe-091", "text": "фонтан в парке опять сухой, лето без воды", "label": "landscaping", "language": "ru", "style": "slang", "ambiguous": false, "short": false}
+{"id": "probe-092", "text": "Көше бойына жасыл желек отырғызу қажет", "label": "landscaping", "language": "kk", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-093", "text": "Посадили саженцы, но их никто не поливает, половина засохла", "label": "landscaping", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-094", "text": "Контейнеры у дома переполнены, мусор не забирали с прошлой недели", "label": "other", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-095", "text": "Прошу принять меры в отношении строительной площадки, работы ведутся после 23:00", "label": "other", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-096", "text": "собаки во дворе кидаются на детей", "label": "other", "language": "ru", "style": "slang", "ambiguous": false, "short": false}
+{"id": "probe-097", "text": "когда закончат?", "label": "other", "language": "ru", "style": "short", "ambiguous": false, "short": true}
+{"id": "probe-098", "text": "Хочу поблагодарить за отремонтированную дорогу, ездить стало приятно", "label": "other", "language": "ru", "style": "narrative", "ambiguous": true, "short": false}
+{"id": "probe-099", "text": "В квартирах нет отопления, хотя отопительный сезон начался", "label": "other", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-100", "text": "Подскажите, когда откроют проезд по улице после ремонта?", "label": "other", "language": "ru", "style": "narrative", "ambiguous": true, "short": false}
+{"id": "probe-101", "text": "Как получить справку о составе семьи?", "label": "other", "language": "ru", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-102", "text": "Қоқыс контейнерлері толып кетті, ешкім әкетпейді", "label": "other", "language": "kk", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-103", "text": "Түнгі уақытта құрылыс жұмыстары жүріп жатыр, ұйықтай алмаймыз", "label": "other", "language": "kk", "style": "formal", "ambiguous": false, "short": false}
+{"id": "probe-104", "text": "рахмет сіздерге", "label": "other", "language": "kk", "style": "short", "ambiguous": false, "short": true}
+{"id": "probe-105", "text": "Пәтерде жылу жоқ, суық", "label": "other", "language": "kk", "style": "narrative", "ambiguous": false, "short": false}
+{"id": "probe-106", "text": "Мусор шығарылмайды уже две недели", "label": "other", "language": "mixed", "style": "mixed", "ambiguous": false, "short": false}
+{"id": "probe-107", "text": "Иесіз собаки во дворе көп", "label": "other", "language": "mixed", "style": "mixed", "ambiguous": false, "short": false}
+{"id": "probe-108", "text": "musor ne vyvozyat", "label": "other", "language": "ru", "style": "translit", "ambiguous": false, "short": false}
+{"id": "probe-109", "text": "соседи сверху топят уже третий раз", "label": "other", "language": "ru", "style": "slang", "ambiguous": false, "short": false}
+{"id": "probe-110", "text": "Жөндеу жұмыстары қашан аяқталады?", "label": "other", "language": "kk", "style": "formal", "ambiguous": true, "short": false}
+{"id": "probe-111", "text": "Не приходит квитанция за воду, куда обратиться?", "label": "other", "language": "ru", "style": "narrative", "ambiguous": false, "short": false}

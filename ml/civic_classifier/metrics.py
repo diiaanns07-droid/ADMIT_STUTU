@@ -1,38 +1,66 @@
-"""Classification metrics (pure Python)."""
+"""Метрики классификации без сторонних библиотек: P/R/F1 по классам, macro-F1, матрица ошибок,
+бутстрэп-интервал macro-F1 и ECE (ошибка калибровки) для max-score."""
 
-from .labels import LABELS
+from __future__ import annotations
 
-NONE_LABEL = "<rejected>"
+import random
+
+from ml.civic_classifier.labels import LABELS
 
 
-def confusion(y_true, y_pred, labels=LABELS):
-    cols = list(labels) + [NONE_LABEL]
-    m = {t: {p: 0 for p in cols} for t in labels}
+def confusion(y_true, y_pred, k=len(LABELS)):
+    m = [[0] * k for _ in range(k)]
     for t, p in zip(y_true, y_pred):
-        m[t][p if p in labels else NONE_LABEL] += 1
+        m[t][p] += 1
     return m
 
 
-def prf(y_true, y_pred, labels=LABELS):
+def classification_report(y_true, y_pred) -> dict:
+    k = len(LABELS)
+    m = confusion(y_true, y_pred, k)
     per = {}
-    for lab in labels:
-        tp = sum(1 for t, p in zip(y_true, y_pred) if t == lab and p == lab)
-        fp = sum(1 for t, p in zip(y_true, y_pred) if t != lab and p == lab)
-        fn = sum(1 for t, p in zip(y_true, y_pred) if t == lab and p != lab)
-        support = tp + fn
-        prec = tp / (tp + fp) if tp + fp else None
-        rec = tp / support if support else None
-        if prec is None or rec is None:
-            f1 = None if support == 0 else 0.0
-        else:
-            f1 = 0.0 if prec + rec == 0 else 2 * prec * rec / (prec + rec)
-        per[lab] = {"precision": _r(prec), "recall": _r(rec), "f1": _r(f1), "support": support}
-    present = [per[l]["f1"] for l in labels if per[l]["support"] > 0]
-    macro = sum(present) / len(present) if present else None
-    acc = (sum(1 for t, p in zip(y_true, y_pred) if t == p) / len(y_true)) if y_true else None
-    return {"n": len(y_true), "accuracy": _r(acc), "macro_f1": _r(macro),
-            "macro_f1_over_labels_present": len(present), "per_class": per}
+    f1s = []
+    for c in range(k):
+        tp = m[c][c]
+        fp = sum(m[r][c] for r in range(k)) - tp
+        fn = sum(m[c]) - tp
+        support = sum(m[c])
+        prec = tp / (tp + fp) if tp + fp else 0.0
+        rec = tp / (tp + fn) if tp + fn else 0.0
+        f1 = 2 * prec * rec / (prec + rec) if prec + rec else 0.0
+        per[LABELS[c]] = {"precision": round(prec, 4), "recall": round(rec, 4), "f1": round(f1, 4), "support": support}
+        if support:
+            f1s.append(f1)
+    n = len(y_true)
+    return {"n": n, "accuracy": round(sum(1 for t, p in zip(y_true, y_pred) if t == p) / n, 4) if n else None,
+            "macro_f1": round(sum(f1s) / len(f1s), 4) if f1s else None, "per_class": per,
+            "confusion": {"labels": list(LABELS), "rows_true_cols_pred": m},
+            "macro_over": "классы с support > 0"}
 
 
-def _r(x):
-    return None if x is None else round(x, 4)
+def bootstrap_macro_f1(y_true, y_pred, n_boot=1000, seed=20261007) -> dict:
+    if not y_true:
+        return {"low": None, "high": None}
+    rng = random.Random(seed)
+    idx = list(range(len(y_true)))
+    vals = []
+    for _ in range(n_boot):
+        s = [rng.choice(idx) for _ in idx]
+        vals.append(classification_report([y_true[i] for i in s], [y_pred[i] for i in s])["macro_f1"] or 0.0)
+    vals.sort()
+    return {"low": round(vals[int(0.025 * n_boot)], 4), "high": round(vals[int(0.975 * n_boot) - 1], 4),
+            "n_boot": n_boot, "level": 0.95}
+
+
+def ece(correct, scores, bins=10) -> float | None:
+    if not scores:
+        return None
+    total, err = len(scores), 0.0
+    for b in range(bins):
+        lo, hi = b / bins, (b + 1) / bins
+        sel = [i for i, s in enumerate(scores) if (lo < s <= hi) or (b == 0 and s == 0)]
+        if sel:
+            acc = sum(correct[i] for i in sel) / len(sel)
+            conf = sum(scores[i] for i in sel) / len(sel)
+            err += len(sel) / total * abs(acc - conf)
+    return round(err, 4)

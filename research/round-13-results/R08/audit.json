@@ -1,0 +1,105 @@
+{
+ "schema": "civic-r08-audit-v1",
+ "corpus_sha256": "f446434196768da0146ba84ca95449ee1b50a409c5256eeacc4a3d3eeb9cc45b",
+ "split_sha256": "75758b620bc6bafea0d4f6956ef201b28a639d76a11bf5b20fd2e53b515e9dff",
+ "probe_sha256": "b2dd64ba73aa2518e9b290a2df9eee738c7bd3727526845ce9211ef68bade483",
+ "reproduction": {
+  "corpus_sha256_rebuilt": "f446434196768da0146ba84ca95449ee1b50a409c5256eeacc4a3d3eeb9cc45b",
+  "corpus_sha256_pinned": "f446434196768da0146ba84ca95449ee1b50a409c5256eeacc4a3d3eeb9cc45b",
+  "split_sha256_rebuilt": "75758b620bc6bafea0d4f6956ef201b28a639d76a11bf5b20fd2e53b515e9dff",
+  "split_sha256_pinned": "75758b620bc6bafea0d4f6956ef201b28a639d76a11bf5b20fd2e53b515e9dff",
+  "model_file_sha256_rebuilt": "79cfee3e0f575b13ba24e0a82aa9edfbe8d773f4ac0df39c644299ff0e0fb429",
+  "model_file_sha256_pinned": "79cfee3e0f575b13ba24e0a82aa9edfbe8d773f4ac0df39c644299ff0e0fb429",
+  "alt_nb_file_equal": true,
+  "model_version": "civic-clf-logreg-kw-cf4464341-pe9ba054a",
+  "selection": {
+   "kind": "logreg+keywords",
+   "hyper": {
+    "l2": 0.0001,
+    "epochs": 12,
+    "lr0": 0.5,
+    "keyword_scale": 1.0
+   }
+  },
+  "identical": true
+ },
+ "leakage": {
+  "rows": {
+   "train": 1512,
+   "val": 581,
+   "test": 631,
+   "excluded_near_dup": 1
+  },
+  "exact_duplicates_across_splits": 0,
+  "templates": 191,
+  "families": 56,
+  "families_in_more_than_one_split": 41,
+  "per_split": {
+   "val": {
+    "rows": 581,
+    "max_train_jaccard_ge_0_6": 15,
+    "max_train_jaccard_mean": 0.372,
+    "rows_whose_family_is_in_train": 501,
+    "rows_with_same_family_train_rows_in_another_language": 439,
+    "families": 26
+   },
+   "test": {
+    "rows": 631,
+    "max_train_jaccard_ge_0_6": 40,
+    "max_train_jaccard_mean": 0.41,
+    "rows_whose_family_is_in_train": 552,
+    "rows_with_same_family_train_rows_in_another_language": 534,
+    "families": 29
+   }
+  }
+ },
+ "probe_vs_corpus": {
+  "rows": 112,
+  "max_jaccard_ge_0_6": 1,
+  "max_jaccard_max": 0.636,
+  "status": "exploratory: written by the same agent; errors listed in round-12 FAILURES.md"
+ },
+ "lexical_circularity": {
+  "train": {
+   "rows": 1512,
+   "share_with_gold_label_stem": 0.847,
+   "share_with_any_stem": 0.883,
+   "share_with_stems_of_2plus_labels": 0.296
+  },
+  "val": {
+   "rows": 581,
+   "share_with_gold_label_stem": 0.847,
+   "share_with_any_stem": 0.864,
+   "share_with_stems_of_2plus_labels": 0.337
+  },
+  "test": {
+   "rows": 631,
+   "share_with_gold_label_stem": 0.848,
+   "share_with_any_stem": 0.865,
+   "share_with_stems_of_2plus_labels": 0.255
+  },
+  "probe_agent_v1": {
+   "rows": 112,
+   "share_with_gold_label_stem": 0.768,
+   "share_with_any_stem": 0.804,
+   "share_with_stems_of_2plus_labels": 0.196
+  },
+  "stems_per_label": {
+   "lighting": 17,
+   "transport_stops": 9,
+   "sidewalks": 11,
+   "roads": 15,
+   "landscaping": 18,
+   "other": 11
+  },
+  "note": "Основы словаря и шаблоны корпуса написаны одним агентом. Высокая доля сообщений с основой своей метки означает, что синтетика благоприятствует эвристике; на реальных текстах это не так."
+ },
+ "labels": [
+  "roads",
+  "sidewalks",
+  "transport_stops",
+  "lighting",
+  "landscaping",
+  "other"
+ ]
+}
