@@ -7,6 +7,7 @@
   info                    версия/хэши загруженной модели
   audit [--out DIR]       раунд 13: воспроизведение (sha256) и аудит утечек splits -> audit.json
   protocol --sets cv,test,probe | challenge [--out DIR]   раунд 13: честное сравнение (PROTOCOL.md)
+  report13 [--dir DIR]    раунд 13: EXPERIMENT_REPORT.md из сохранённых JSON
 """
 
 from __future__ import annotations
@@ -37,6 +38,8 @@ def main(argv=None) -> int:
     pr = sub.add_parser("protocol")
     pr.add_argument("--sets", default="cv,test,probe")
     pr.add_argument("--out", default=str(RESULTS13))
+    rr = sub.add_parser("report13")
+    rr.add_argument("--dir", default=str(RESULTS13))
     args = ap.parse_args(argv)
     if args.cmd == "build-corpus":
         from ml.civic_classifier.corpus import build
@@ -69,6 +72,11 @@ def main(argv=None) -> int:
         from ml.civic_classifier.protocol import run
         r = run([x for x in args.sets.split(",") if x], Path(args.out))
         print(json.dumps({k: r[k] for k in ("policy",)}, ensure_ascii=False))
+    elif args.cmd == "report13":
+        from ml.civic_classifier.report13 import build
+        d = Path(args.dir)
+        (d / "EXPERIMENT_REPORT.md").write_text(build(d), encoding="utf-8")
+        print(d / "EXPERIMENT_REPORT.md")
     elif args.cmd == "info":
         from ml.civic_classifier import model_info
         print(json.dumps(model_info(), ensure_ascii=False, indent=1))

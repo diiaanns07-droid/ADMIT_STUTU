@@ -1,7 +1,7 @@
 From dc848640a58eb72169c5de30f159c2517716a6f4 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 17:04:52 +0000
-Subject: [PATCH 1/5] R08 r13: reproducibility and split-leakage audit (python
+Subject: [PATCH 1/7] R08 r13: reproducibility and split-leakage audit (python
  -m ml.civic_classifier audit)
 
 Rebuilds corpus/split and retrains into a temp dir; sha256 identical to the pinned files.
@@ -201,7 +201,7 @@ index 0000000..6cb0e58
 From f2dffd491df2171c5b0b3f57b702cd95b99adfe8 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 17:07:52 +0000
-Subject: [PATCH 2/5] R08 r13: freeze challenge_r13_v1 (134 agent-labeled
+Subject: [PATCH 2/7] R08 r13: freeze challenge_r13_v1 (134 agent-labeled
  synthetic messages) before any model run
 
 sha256 b25a6a19ac3a0efbd41570248a03a590c10a2ad4452997e4bd62293139f95bde. RU/KK/mixed/translit/
@@ -379,7 +379,7 @@ index 0000000..2279c43
 From 4673764bad49c0d4b17a19e69027ef393235e662 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 17:14:36 +0000
-Subject: [PATCH 3/5] R08 r13: abstention + limited explanation in classify();
+Subject: [PATCH 3/7] R08 r13: abstention + limited explanation in classify();
  leave-family-out protocol
 
 - abstain.py: multi_topic / latin_script / low_margin (M=0.25 chosen on round-12 validation)
@@ -971,7 +971,7 @@ index f89e4d6..44204f4 100644
 From c57d51c5a7ae7759b02f9fa45cd0af5c820f0d3f Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 17:18:29 +0000
-Subject: [PATCH 4/5] R08 r13: integration tests with real R06 (abstain in
+Subject: [PATCH 4/7] R08 r13: integration tests with real R06 (abstain in
  editor queue, corrupted artifact, first-call timeout, r08_status probe)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
@@ -1108,7 +1108,7 @@ index 0000000..26db280
 From 678e8d439c01eaccc755503003dc069f8f486506 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 17:20:39 +0000
-Subject: [PATCH 5/5] R08 r13: abstain test accepts both R06 versions
+Subject: [PATCH 5/7] R08 r13: abstain test accepts both R06 versions
  (contract-only storage or proposed bounded fields)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
@@ -1138,6 +1138,397 @@ index 26db280..0b5d175 100644
      finally:
          svc.close()
  
+-- 
+2.43.0
+
+
+From 4759ab50f9318c33dc6d34b8cb154966ec273c25 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 7 Oct 2026 17:23:34 +0000
+Subject: [PATCH 6/7] R08 r13: honesty tests (abstain rules, explanation
+ vocabulary-only, policy fallback, disjoint folds, frozen challenge) +
+ report13
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01CcnxZPmJeLbSLt4S9JZCrb
+---
+ ml/civic_classifier/__main__.py         |   8 +
+ ml/civic_classifier/report13.py         | 190 ++++++++++++++++++++++++
+ tests/civic/R08/test_r08_r13_honesty.py |  94 ++++++++++++
+ 3 files changed, 292 insertions(+)
+ create mode 100644 ml/civic_classifier/report13.py
+ create mode 100644 tests/civic/R08/test_r08_r13_honesty.py
+
+diff --git a/ml/civic_classifier/__main__.py b/ml/civic_classifier/__main__.py
+index 2ad94b5..926dc3f 100644
+--- a/ml/civic_classifier/__main__.py
++++ b/ml/civic_classifier/__main__.py
+@@ -7,6 +7,7 @@
+   info                    версия/хэши загруженной модели
+   audit [--out DIR]       раунд 13: воспроизведение (sha256) и аудит утечек splits -> audit.json
+   protocol --sets cv,test,probe | challenge [--out DIR]   раунд 13: честное сравнение (PROTOCOL.md)
++  report13 [--dir DIR]    раунд 13: EXPERIMENT_REPORT.md из сохранённых JSON
+ """
+ 
+ from __future__ import annotations
+@@ -37,6 +38,8 @@ def main(argv=None) -> int:
+     pr = sub.add_parser("protocol")
+     pr.add_argument("--sets", default="cv,test,probe")
+     pr.add_argument("--out", default=str(RESULTS13))
++    rr = sub.add_parser("report13")
++    rr.add_argument("--dir", default=str(RESULTS13))
+     args = ap.parse_args(argv)
+     if args.cmd == "build-corpus":
+         from ml.civic_classifier.corpus import build
+@@ -69,6 +72,11 @@ def main(argv=None) -> int:
+         from ml.civic_classifier.protocol import run
+         r = run([x for x in args.sets.split(",") if x], Path(args.out))
+         print(json.dumps({k: r[k] for k in ("policy",)}, ensure_ascii=False))
++    elif args.cmd == "report13":
++        from ml.civic_classifier.report13 import build
++        d = Path(args.dir)
++        (d / "EXPERIMENT_REPORT.md").write_text(build(d), encoding="utf-8")
++        print(d / "EXPERIMENT_REPORT.md")
+     elif args.cmd == "info":
+         from ml.civic_classifier import model_info
+         print(json.dumps(model_info(), ensure_ascii=False, indent=1))
+diff --git a/ml/civic_classifier/report13.py b/ml/civic_classifier/report13.py
+new file mode 100644
+index 0000000..0521ae9
+--- /dev/null
++++ b/ml/civic_classifier/report13.py
+@@ -0,0 +1,190 @@
++"""Отчёт раунда 13 из сохранённых JSON (audit.json, protocol_dev.json, protocol_challenge.json).
++
++    python -m ml.civic_classifier report13 [--dir DIR]   -> DIR/EXPERIMENT_REPORT.md
++
++Числа берутся только из файлов результатов. Для перечня расхождений на challenge-наборе предсказания
++пересчитываются тем же замороженным кодом; сводка сверяется с единственным сохранённым запуском.
++"""
++
++from __future__ import annotations
++
++import json
++from pathlib import Path
++
++from ml.civic_classifier.labels import LABELS
++
++M5 = ("keyword", "logreg", "hybrid", "nb", "hybrid+abstain")
++NAMES = {"keyword": "словарь (эвристика)", "logreg": "logreg (n-граммы)", "hybrid": "гибрид logreg+словарь",
++         "nb": "Naive Bayes", "hybrid+abstain": "гибрид + отказ"}
++
++
++def f(x, nd=3):
++    return "—" if x is None else (f"{x:.{nd}f}" if isinstance(x, float) else str(x))
++
++
++def table(header, rows):
++    out = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
++    out += ["| " + " | ".join(str(c) for c in r) + " |" for r in rows]
++    return "\n".join(out)
++
++
++def confusion_md(conf):
++    m = conf["rows_true_cols_pred"]
++    return table(["истина \\ прогноз"] + list(LABELS), [[LABELS[i]] + m[i] for i in range(len(LABELS))])
++
++
++def summary_rows(block):
++    return [[NAMES[m], f(block[m]["accuracy_all"]), f(block[m]["macro_f1_all"]), f(block[m]["coverage"]),
++             f(block[m]["accuracy_accepted"]), block[m]["confident_errors"], f(block[m]["safe_outcome_rate"])]
++            for m in M5]
++
++
++SUMMARY_HEADER = ["метод", "точность (все)", "macro-F1 (все)", "покрытие", "точность принятых",
++                  "уверенные ошибки", "безопасный исход"]
++
++
++def discordance():
++    from ml.civic_classifier.abstain import load_policy
++    from ml.civic_classifier.corpus import load_corpus, sha256_file
++    from ml.civic_classifier.model import load_model
++    from ml.civic_classifier.protocol import CHALLENGE, DATA, predict_all, train_models
++    rows, man = load_corpus()
++    models = {"hybrid": load_model(), "nb": load_model(DATA / "model_alt_nb.json.gz"),
++              "logreg": train_models([r for r in rows if r["split"] == "train"], man["corpus_sha256"],
++                                     sha256_file(DATA / "split_v2.json"))["logreg"]}
++    ch = [json.loads(x) for x in CHALLENGE.read_text(encoding="utf-8").splitlines() if x.strip()]
++    preds = predict_all(models, ch, load_policy()["margin_threshold"])
++    hk = sum(1 for r, h, k in zip(ch, preds["hybrid"], preds["keyword"]) if h["pred"] == r["label"] != k["pred"])
++    kh = sum(1 for r, h, k in zip(ch, preds["hybrid"], preds["keyword"]) if k["pred"] == r["label"] != h["pred"])
++    same_wrong = sum(1 for r, h, k in zip(ch, preds["hybrid"], preds["keyword"])
++                     if h["pred"] == k["pred"] != r["label"])
++    hyb_wrong = sum(1 for r, h in zip(ch, preds["hybrid"]) if h["pred"] != r["label"])
++    acc = sum(1 for r, h in zip(ch, preds["hybrid"]) if h["pred"] == r["label"]) / len(ch)
++    return {"hybrid_right_keyword_wrong": hk, "keyword_right_hybrid_wrong": kh,
++            "both_wrong_same_label": same_wrong, "hybrid_wrong": hyb_wrong, "hybrid_accuracy_recomputed": round(acc, 4)}
++
++
++def build(d: Path) -> str:
++    audit = json.loads((d / "audit.json").read_text(encoding="utf-8"))
++    dev = json.loads((d / "protocol_dev.json").read_text(encoding="utf-8"))
++    chal = json.loads((d / "protocol_challenge.json").read_text(encoding="utf-8"))
++    res = json.loads((d / "resources.json").read_text(encoding="utf-8")) if (d / "resources.json").exists() else None
++    cv, fx, ch = dev["cv"], dev["fixed"], chal["fixed"]["challenge_r13_v1"]
++    disc = discordance()
++    assert disc["hybrid_accuracy_recomputed"] == ch["hybrid"]["accuracy_all"], "recomputed != stored single run"
++    L = []
++    a = L.append
++    a("# R08 · раунд 13 · отчёт эксперимента: словарь vs обученная модель vs гибрид\n")
++    a("**Все данные синтетические и размечены агентом. Качество на реальных обращениях: real_data_NOT_EVALUATED.**")
++    a("Сгенерировано `python -m ml.civic_classifier report13` из audit.json, protocol_dev.json, protocol_challenge.json.\n")
++    a("## 1. Главный вывод\n")
++    sp, pv = cv["macro_f1_over_folds"], cv["paired_vs_keyword"]
++    a(f"- По строгому протоколу (leave-family-out CV, {cv['folds']} фолдов, {cv['groups']} групп происхождения) "
++      f"словарь {f(sp['keyword']['mean'])} ≈ гибрид {f(sp['hybrid']['mean'])} > logreg {f(sp['logreg']['mean'])} > "
++      f"NB {f(sp['nb']['mean'])} (macro-F1, среднее по фолдам). Гибрид лучше словаря в "
++      f"{pv['hybrid_minus_keyword']['folds_better']} из {pv['hybrid_minus_keyword']['folds']} фолдов, средняя разница "
++      f"{pv['hybrid_minus_keyword']['mean']:+.3f}: **превосходство гибрида не подтверждено**. Чистая обученная модель "
++      f"хуже словаря во всех фолдах ({pv['logreg_minus_keyword']['mean']:+.3f}).")
++    a(f"- На замороженном challenge-наборе (n={ch['hybrid']['n']}, один запуск) гибрид {f(ch['hybrid']['macro_f1_all'])} "
++      f"против словаря {f(ch['keyword']['macro_f1_all'])}: гибрид прав там, где словарь ошибся, в "
++      f"{disc['hybrid_right_keyword_wrong']} сообщениях, обратное — в {disc['keyword_right_hybrid_wrong']}; "
++      f"в {disc['both_wrong_same_label']} из {disc['hybrid_wrong']} ошибок гибрида (по основной метке) словарь выдаёт ту же неверную метку. Один агентский "
++      "набор такого размера не доказывает преимущества.")
++    a(f"- Гибрид делает больше уверенных ошибок (score ≥ 0.9), чем словарь (≥ 2 совпадения): CV "
++      f"{cv['pooled']['hybrid']['confident_errors']} против {cv['pooled']['keyword']['confident_errors']}; "
++      f"отказ снижает их до {cv['pooled']['hybrid+abstain']['confident_errors']} при покрытии "
++      f"{f(cv['pooled']['hybrid+abstain']['coverage'])}. score не вероятность: у NB «уверены» почти все ответы "
++      f"({cv['pooled']['nb']['confident_errors']} уверенных ошибок).")
++    a("- Где полезна: ясные однотемные сообщения RU/KK/смешанные; где ошибается: адресные слова-ловушки, "
++      "отрицание/благодарность, вне темы с совпадающей подстрокой, транслит и иностранный язык (только отказ).\n")
++
++    a("## 2. Воспроизводимость и утечки\n")
++    rp = audit["reproduction"]
++    a(f"- Пересборка без сети: корпус `{rp['corpus_sha256_pinned'][:12]}…`, split и обе модели совпали побайтно: "
++      f"**{rp['identical']}** (модель {rp['model_version']}).\n")
++    lk = audit["leakage"]
++    rows = [[s, v["rows"], v["max_train_jaccard_ge_0_6"], v["rows_whose_family_is_in_train"],
++             v["rows_with_same_family_train_rows_in_another_language"], v["families"]] for s, v in lk["per_split"].items()]
++    a(table(["split", "сообщений", "Jaccard к train ≥0.6", "семейство есть в train", "из них через перевод", "семейств"], rows))
++    a(f"\nТочных дублей между splits: {lk['exact_duplicates_across_splits']}. Шаблонов {lk['templates']}, семейств "
++      f"{lk['families']}, из них в нескольких splits: {lk['families_in_more_than_one_split']}.")
++    lc = audit["lexical_circularity"]
++    a(f"Круговая лексика: основа словаря своей метки есть в {lc['test']['share_with_gold_label_stem']*100:.0f} % "
++      f"сообщений test и {lc['probe_agent_v1']['share_with_gold_label_stem']*100:.0f} % пробного набора — синтетика одного "
++      "автора благоприятствует словарю. Основы STEMS не менялись после первого коммита (до корпуса и до test); "
++      "гибридная архитектура выбрана после первого просмотра test (журнал раунда 12) → test раунда 12 = exploratory.\n")
++
++    a("## 3. Основной протокол: leave-family-out CV\n")
++    a(table(["метод", "среднее", "min", "max", "stdev"],
++            [[NAMES[m], f(sp[m]["mean"]), f(sp[m]["min"]), f(sp[m]["max"]), f(sp[m]["stdev"])] for m in M5 if m != "hybrid+abstain"]))
++    a("\nmacro-F1 по фолдам:\n")
++    a(table(["фолд", "групп в проверке", "сообщений"] + [NAMES[m] for m in ("keyword", "logreg", "hybrid", "nb")],
++            [[x["fold"], x["test_families"], x["test_rows"]] + [f(x[m]["macro_f1"]) for m in ("keyword", "logreg", "hybrid", "nb")]
++             for x in cv["per_fold"]]))
++    a("\nОбъединённые предсказания CV:\n")
++    a(table(SUMMARY_HEADER, summary_rows(cv["pooled"])))
++    a("\nF1 по классам (CV):\n")
++    a(table(["класс"] + [NAMES[m] for m in ("keyword", "logreg", "hybrid")],
++            [[lab] + [f(cv["pooled"][m]["per_class"][lab]["f1"]) for m in ("keyword", "logreg", "hybrid")] for lab in LABELS]))
++    a("\nПо языкам (CV, macro-F1 / покрытие гибрида с отказом):\n")
++    langs = sorted(cv["pooled"]["keyword"]["slices"]["language"])
++    a(table(["язык", "n"] + [NAMES[m] for m in ("keyword", "logreg", "hybrid")] + ["покрытие с отказом"],
++            [[lg, cv["pooled"]["keyword"]["slices"]["language"][lg]["n"]] +
++             [f(cv["pooled"][m]["slices"]["language"][lg]["macro_f1"]) for m in ("keyword", "logreg", "hybrid")] +
++             [f(cv["pooled"]["hybrid+abstain"]["slices"]["language"][lg]["coverage"])] for lg in langs]))
++    a("\nМатрица ошибок, словарь (CV):\n")
++    a(confusion_md(cv["pooled"]["keyword"]["confusion"]))
++    a("\nМатрица ошибок, гибрид (CV):\n")
++    a(confusion_md(cv["pooled"]["hybrid"]["confusion"]))
++
++    a("\n## 4. Exploratory-наборы раунда 12 (уже просмотрены, не независимая проверка)\n")
++    for name, title in (("test_r12_exploratory", "test раунда 12 (split по шаблонам; 87 % семейств есть в train)"),
++                        ("probe_r12_exploratory", "пробный набор раунда 12 (112; ошибки разобраны в FAILURES.md)")):
++        a(f"**{title}**\n")
++        a(table(SUMMARY_HEADER, summary_rows(fx[name])))
++        a("")
++    a("На test раунда 12 гибрид выглядит лучше словаря, а в leave-family-out — нет: выигрыш объясняется "
++      "семействами/переводами, общими для train и test.\n")
++
++    a(f"## 5. Challenge_r13_v1 — замороженный набор, один запуск (sha256 `{chal['fixed']['challenge_sha256'][:12]}…`)\n")
++    a("Разметка агентом; не жители и не независимые эксперты. После этого запуска набор — exploratory.\n")
++    a(table(SUMMARY_HEADER, summary_rows(ch)))
++    a("\nПо явлениям (точность словаря / гибрида; покрытие и безопасный исход гибрида с отказом):\n")
++    ph = ch["hybrid+abstain"]["slices"]["phenomena"]
++    a(table(["явление", "n", "словарь", "гибрид", "покрытие с отказом", "безопасный исход"],
++            [[k, v["n"], f(ch["keyword"]["slices"]["phenomena"][k]["accuracy"]), f(ch["hybrid"]["slices"]["phenomena"][k]["accuracy"]),
++              f(v["coverage"]), f(v["safe_outcome_rate"])] for k, v in sorted(ph.items(), key=lambda kv: -kv[1]["n"])]))
++    a("\nПо языкам (гибрид с отказом):\n")
++    lg = ch["hybrid+abstain"]["slices"]["language"]
++    a(table(["язык", "n", "точность", "покрытие", "безопасный исход"],
++            [[k, v["n"], f(v["accuracy"]), f(v["coverage"]), f(v["safe_outcome_rate"])] for k, v in sorted(lg.items())]))
++    a("\nМатрица ошибок гибрида (challenge):\n")
++    a(confusion_md(ch["hybrid"]["confusion"]))
++    a(f"\nОшибки гибрида (метка вне {{label}} ∪ also_labels), {len(ch['errors_hybrid_abstain'])}:\n")
++    a(table(["id", "явление", "истина", "прогноз", "score", "отказ", "словарь", "текст"],
++            [[e["id"], ",".join(e["phenomena"]) if isinstance(e["phenomena"], list) else e["phenomena"], e["label"], e["pred"],
++              f(e["score"]), ",".join(e["reasons"]) or "нет", e["keyword_pred"], e["text"][:60]] for e in ch["errors_hybrid_abstain"]]))
++    a("\nМеханизмы: (1) подстрока словаря в чужом слове («недорого» ⊃ «дорог»); (2) адрес/ориентир называет объект "
++      "(«живу возле остановки…», «дом у сквера»); (3) отрицание и благодарность («починили, спасибо»); (4) латиница — "
++      "признаков нет, модель выдаёт почти константу, правило отказа срабатывает всегда. Механизмы 1–3 гибрид наследует от "
++      "словаря и выдаёт уверенно (score > 0.9), без отказа.\n")
++
++    a("## 6. Отказ и объяснение\n")
++    a(f"- Политика {dev['policy']['version']}: multi_topic, latin_script, low_margin (M = {dev['policy']['margin_threshold']}, "
++      "выбран на validation раунда 12), no_content. Определена до запуска challenge (PROTOCOL.md).")
++    a("- Отказ передаётся в поля контракта: score = null, score_kind = \"abstain:<причины>\", needs_review = true.")
++    a("- Объяснение: совпавшие основы словаря и до 3 «начал слов» с наибольшим вкладом против второй метки. Это "
++      "признаки линейной модели, не причина. Иногда они выдают артефакты шаблонов (например, «рядом» в "
++      "многотемном сообщении) — это видно сотруднику и полезно для разбора.\n")
++
++    if res:
++        a("## 7. Ресурсы\n")
++        a(f"Файл модели {res['model_file_bytes']} байт; первый вызов с загрузкой {res['first_call_incl_load_s']} с; пик "
++          f"выделений Python {res['python_alloc_peak_mb']} МБ; classify {res['classify_ms_mean']} мс в среднем, p95 "
++          f"{res['classify_ms_p95']} мс (n={res['n']}). {res['env']}.\n")
++    a("## 8. Границы применимости\n")
++    a("- Только синтетика одного агента; качество на реальных обращениях неизвестно. Интервалы не публикуются для "
++      "challenge (n мал, одна разметка); для CV указан разброс по 5 фолдам, а не доверительный интервал.")
++    a("- Синтетическая версия всегда требует проверки сотрудником; score не вероятность; калибровка не выполнялась.")
++    a("- Модель не определяет срочность, исполнителя, правоту сторон и не меняет категорию жителя.")
++    return "\n".join(L) + "\n"
+diff --git a/tests/civic/R08/test_r08_r13_honesty.py b/tests/civic/R08/test_r08_r13_honesty.py
+new file mode 100644
+index 0000000..229a871
+--- /dev/null
++++ b/tests/civic/R08/test_r08_r13_honesty.py
+@@ -0,0 +1,94 @@
++"""R08 раунд 13: отказ, объяснение, протокол без утечки групп, заморозка challenge-набора."""
++
++import hashlib
++import json
++
++import pytest
++
++import ml.civic_classifier as clf
++from ml.civic_classifier import abstain
++from ml.civic_classifier.corpus import load_corpus
++from ml.civic_classifier.heuristic import STEMS
++from ml.civic_classifier.model import load_model
++from ml.civic_classifier.protocol import CHALLENGE, CHALLENGE_FREEZE, family, family_folds, run_fixed
++
++
++@pytest.fixture(autouse=True)
++def fresh(monkeypatch):
++    monkeypatch.setattr(clf, "_state", {})
++
++
++@pytest.mark.parametrize("text,reason", [
++    ("На Кенесары яма на дороге и рядом не горит фонарь", "multi_topic"),
++    ("vo dvore ne goryat fonari", "latin_script"),
++    ("Street lights are off", "latin_script"),
++])
++def test_abstain_rules(text, reason):
++    out = clf.classify(text, "ru")
++    assert out["abstain"] is True and reason in out["abstain_reasons"]
++    assert out["score"] is None and out["score_kind"].startswith("abstain:") and len(out["score_kind"]) <= 80
++    assert out["needs_review"] is True and out["label"] in clf.LABELS
++
++
++def test_clear_message_not_abstained_but_still_needs_review():
++    out = clf.classify("Во дворе дома не горят фонари", "ru")
++    assert out["abstain"] is False and out["label"] == "lighting" and out["needs_review"] is True
++
++
++def test_explanation_uses_only_model_vocabulary_and_fixed_stems():
++    text = "Иванов Пётр, тел. +7 701 234 56 78, ivanov@mail.kz: во дворе не горят фонари"
++    out = clf.classify(text, "ru")
++    exp = out["explanation"]
++    model = load_model()
++    vocab = {f[2:] for f in model["features"] if f.startswith("w:")}
++    stems = {s.strip() for v in STEMS.values() for s in v}
++    assert set(exp["keyword_stems"]) <= stems
++    for item in exp["word_prefixes"]:
++        prefix = item.split("«")[1].rstrip("»")
++        assert prefix in vocab and not any(ch.isdigit() for ch in prefix) and "иван" not in prefix
++    assert "не причина" in exp["note"]
++    assert "ivanov" not in json.dumps(out, ensure_ascii=False) and "701" not in json.dumps(out)
++
++
++@pytest.mark.parametrize("content", [None, "{not json", json.dumps({"version": "other", "margin_threshold": 0.2}),
++                                     json.dumps({"version": abstain.POLICY_VERSION, "margin_threshold": 7})])
++def test_missing_or_bad_policy_abstains_conservatively(tmp_path, content):
++    path = tmp_path / "policy.json"
++    if content is not None:
++        path.write_text(content, encoding="utf-8")
++    policy = abstain.load_policy(path)
++    assert policy["margin_threshold"] == 1.0 and policy["version"].endswith("fallback")
++
++
++def test_pinned_policy_and_model_match():
++    policy = abstain.load_policy()
++    assert policy["margin_threshold"] == 0.25 and policy["model_payload_sha256"] == load_model()["payload_sha256"]
++    assert "validation" in policy["selected_on"]
++
++
++def test_family_folds_are_deterministic_and_disjoint():
++    rows, _ = load_corpus()
++    f1, f2 = family_folds(rows), family_folds(rows)
++    assert f1 == f2 and len(f1) == 56
++    by_fold = {}
++    for fam, k in f1.items():
++        by_fold.setdefault(k, set()).add(fam)
++    assert sum(len(v) for v in by_fold.values()) == len(f1)          # каждая группа ровно в одном фолде
++    for r in rows:                                                    # переводы/парафразы одной группы не делятся
++        assert family(r) in f1
++
++
++def test_challenge_is_frozen():
++    freeze = json.loads(CHALLENGE_FREEZE.read_text(encoding="utf-8"))
++    assert hashlib.sha256(CHALLENGE.read_bytes()).hexdigest() == freeze["sha256"]
++    rows = [json.loads(x) for x in CHALLENGE.read_text(encoding="utf-8").splitlines() if x.strip()]
++    assert len(rows) == freeze["rows"] and all(r["evidence_type"] == "synthetic" for r in rows)
++
++
++def test_modified_challenge_is_rejected(monkeypatch, tmp_path):
++    import ml.civic_classifier.protocol as protocol
++    fake = tmp_path / "challenge.jsonl"
++    fake.write_text(CHALLENGE.read_text(encoding="utf-8") + "\n", encoding="utf-8")
++    monkeypatch.setattr(protocol, "CHALLENGE", fake)
++    with pytest.raises(SystemExit):
++        run_fixed(["challenge"], 0.25)
+-- 
+2.43.0
+
+
+From 85597219cb41ec35f646f5edccddc4d51de56534 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 7 Oct 2026 17:24:00 +0000
+Subject: [PATCH 7/7] R08 r13: model card round-13 section (honest comparison,
+ abstention, explanation)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01CcnxZPmJeLbSLt4S9JZCrb
+---
+ ml/civic_classifier/MODEL_CARD.md | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/ml/civic_classifier/MODEL_CARD.md b/ml/civic_classifier/MODEL_CARD.md
+index 6bd3d12..0461c50 100644
+--- a/ml/civic_classifier/MODEL_CARD.md
++++ b/ml/civic_classifier/MODEL_CARD.md
+@@ -63,3 +63,20 @@
+ ## Воспроизведение
+ `python -m ml.civic_classifier build-corpus` · `train` · `evaluate` · `predict "текст"` — см. `research/round-12-results/R08/RUN.txt`.
+ Переобучение на Linux/CPython 3.13 воспроизводит файл модели побайтно (тест `test_r08_train.py`).
++
++## Раунд 13 — честная оценка (артефакт модели тот же, payload 104c46a6…)
++- Воспроизведение без сети: корпус, split, model.json.gz и model_alt_nb.json.gz пересобираются побайтно
++  (`python -m ml.civic_classifier audit`).
++- Аудит: 87 % сообщений test раунда 12 принадлежат «семействам» (парафразы/переводы), которые есть в train;
++  85 % сообщений корпуса содержат основу словаря своей метки. Test и пробный набор раунда 12 — exploratory.
++- Основной протокол — leave-family-out CV (5 фолдов, 56 групп), гиперпараметры раунда 12 без подстройки:
++  словарь 0.861 ≈ гибрид 0.856 > logreg 0.738 > NB 0.581 (macro-F1, среднее по фолдам); гибрид лучше словаря в
++  2 из 5 фолдов → **превосходство гибрида не подтверждено**; обученная модель без словаря хуже во всех фолдах.
++- Замороженный challenge_r13_v1 (134 агентских сообщения; один запуск): словарь 0.679, гибрид 0.736 (macro-F1);
++  общие провалы — адресные ловушки, отрицание, подстроки словаря, транслит. Не доказательство преимущества.
++- Отказ (abstain-r13-v1): несколько тем, латиница, малая разница оценок (M = 0.25 по validation), пустой текст.
++  На challenge: покрытие 0.649, точность принятых 0.862, уверенных ошибок 10 вместо 16.
++- Объяснение: совпавшие основы словаря и «начала слов» с наибольшим вкладом; не причина. Только словарь модели —
++  тексты жителей и персональные данные в объяснение не попадают (тест).
++- Поля контракта не изменились; добавлены abstain, abstain_reasons, alternatives, explanation, policy_version.
++- Отчёт: `research/round-13-results/R08/EXPERIMENT_REPORT.md`; протокол — `PROTOCOL.md` там же.
 -- 
 2.43.0
 

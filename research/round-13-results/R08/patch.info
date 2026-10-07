@@ -1,8 +1,10 @@
-worktree_head=678e8d439c01eaccc755503003dc069f8f486506
+worktree_head=85597219cb41ec35f646f5edccddc4d51de56534
 base=56538a3a7504d4589c38ab4d3c5107f12aa7f8a6
 restore_commit=fb1a0bcd025318fe1472b28eb6470fac5c25b418 (= R08 paths of e311ba822c82d4904f9be72b2db05d991dc8ae12)
-full_patch_sha256=ca5f33c99c8f74e2ecb15a80bf3d94655182275eddd5bfb10bdedb2f173c23bb
-delta_patch_sha256=f672190a0bc7a176f0faedff73e45f2fda2d6695aa98a250279fdcd006b32cc2
+full_patch_sha256=3c6f6e8ca97a61817cd0a07c74a31ff08d7c0ddf4ae781b2ccea438694ad99ce
+delta_patch_sha256=0dad56eeeabc168e1513eec8f8396ed583fbb6150fb2ac24395ca8365fc54b6f
+8559721 R08 r13: model card round-13 section (honest comparison, abstention, explanation)
+4759ab5 R08 r13: honesty tests (abstain rules, explanation vocabulary-only, policy fallback, disjoint folds, frozen challenge) + report13
 678e8d4 R08 r13: abstain test accepts both R06 versions (contract-only storage or proposed bounded fields)
 c57d51c R08 r13: integration tests with real R06 (abstain in editor queue, corrupted artifact, first-call timeout, r08_status probe)
 4673764 R08 r13: abstention + limited explanation in classify(); leave-family-out protocol
